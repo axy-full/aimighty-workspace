@@ -60,8 +60,9 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
   const clip = gens.find((g) => g.id === activeId) ?? null;
 
   // Clicking anywhere OUTSIDE the clip dismisses it. "The clip" is the viewer
-  // (video, transport, its action buttons) and the filmstrip (so choosing
-  // another clip, or dragging the strip's scrollbar, never blanks the view).
+  // plus its prompt panel (so Copy/Use don't dismiss what they act on) and
+  // the filmstrip (so choosing another clip, or dragging the strip's
+  // scrollbar, never blanks the view).
   const viewerRef = useRef<HTMLElement>(null);
   const stripRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -166,15 +167,27 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
 
       {/* ── CENTRE: viewer over prompt ───────────────────────────── */}
       <div className="bench-centre flex flex-col gap-px bg-line">
-        <Panel
-          rootRef={viewerRef}
-          title="Viewer" className="min-h-0 flex-1 border-0" bodyClass="flex flex-col"
-          right={clip && (
-            <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(clip.id)}</span>
+        <div ref={viewerRef as React.Ref<HTMLDivElement>} className="flex min-h-0 flex-1 flex-col gap-px bg-line">
+          <Panel
+            title="Viewer" className="min-h-0 flex-1 border-0" bodyClass="flex flex-col"
+            right={clip && (
+              <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(clip.id)}</span>
+            )}
+          >
+            <ViewerBody clip={clip} onChanged={afterChange} />
+          </Panel>
+
+          {clip && (
+            <ClipPrompt
+              clip={clip}
+              onUse={() => {
+                if (prompt.trim() && !confirm("Replace what's in the composer with this clip's prompt?")) return;
+                setPrompt(clip.prompt);
+                promptEl.current?.focus();
+              }}
+            />
           )}
-        >
-          <ViewerBody clip={clip} onChanged={afterChange} />
-        </Panel>
+        </div>
 
         <Panel
           title="Prompt" className="shrink-0 border-0"
@@ -285,6 +298,56 @@ function PoolRow({ label, icon, active, onClick, disabled, count, spend }: {
   );
 }
 
+/** Full prompt of the selected clip — the team's shared memory, readable and
+ *  reusable instead of clamped to two lines in a corner. */
+function ClipPrompt({ clip, onUse }: { clip: Gen; onUse: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const p = clip.params as {
+    resolution?: string; ratio?: string; duration?: number; seed?: number | string | null;
+  };
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(clip.prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch { /* clipboard blocked — nothing sensible to do */ }
+  }
+
+  return (
+    <Panel
+      title="Clip prompt"
+      className="shrink-0 border-0"
+      right={
+        <>
+          <button onClick={copy}
+            className="rounded-[2px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            {copied ? "COPIED ✓" : "COPY"}
+          </button>
+          <button onClick={onUse} title="Load into the composer"
+            className="rounded-[2px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            USE
+          </button>
+        </>
+      }
+    >
+      <p className="max-h-[110px] select-text overflow-y-auto whitespace-pre-wrap px-3 py-2 text-[12.5px] leading-relaxed text-bone/90">
+        {clip.prompt}
+      </p>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-hair px-3 py-1.5 font-mono text-[9.5px] text-mute">
+        <span className="text-dim">{clip.model.includes("2-5") ? "SD 2.5" : "SD 2.0"}</span>
+        {p.resolution && <span>{String(p.resolution).toUpperCase()}</span>}
+        {p.ratio && <span>{p.ratio}</span>}
+        {p.duration != null && <span>{p.duration}s</span>}
+        {p.seed != null && p.seed !== "" && <span>seed {p.seed}</span>}
+        {clip.totalTokens != null && <span>{compactTokens(clip.totalTokens)}t</span>}
+        {clip.costUsd != null && <span className="text-lift">{usd(clip.costUsd)}</span>}
+        {clip.authorName && <span className="ml-auto text-dim">{clip.authorName}</span>}
+      </div>
+    </Panel>
+  );
+}
+
 function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => void }) {
   if (!clip) {
     return (
@@ -339,8 +402,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
       </div>
 
       <div className="shrink-0 border-t border-line bg-panel2 px-3 py-2">
-        <p className="line-clamp-2 text-[12px] leading-relaxed text-bone/85">{clip.prompt}</p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[9.5px] text-mute">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[9.5px] text-mute">
           <span className={s.cls}>{s.label}</span>
           {p.resolution && <span className="text-dim">{p.resolution.toUpperCase()}</span>}
           {p.ratio && <span>{p.ratio}</span>}
