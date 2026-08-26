@@ -3,7 +3,7 @@ import { listGenerations, syncPending } from "@/lib/jobs";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   const got = await requireUser();

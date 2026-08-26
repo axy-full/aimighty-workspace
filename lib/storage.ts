@@ -33,6 +33,10 @@ export async function storeVideo(genId: string, sourceUrl: string): Promise<stri
       access: "private",
       contentType: "video/mp4",
       addRandomSuffix: false,
+      // Saves are retried by every poll until they stick. Without this, a
+      // partial first attempt leaves a blob behind and every retry then dies
+      // on "blob already exists" — the video never records as saved.
+      allowOverwrite: true,
     });
     // Always hand back our own route, never a storage URL.
     return `/api/media/${genId}`;
@@ -76,7 +80,7 @@ export async function storeUpload(
   if (usingBlob()) {
     const { put } = await import("@vercel/blob");
     await put(uploadPath(uploadId, ext), buf, {
-      access: "private", contentType, addRandomSuffix: false,
+      access: "private", contentType, addRandomSuffix: false, allowOverwrite: true,
     });
     return {
       url: `/api/uploads/${uploadId}`,

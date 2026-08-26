@@ -123,8 +123,10 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   if (task.status === "succeeded" && task.videoUrl && !storedUrl) {
     try {
       storedUrl = await storeVideo(gen.id, task.videoUrl);
-    } catch {
+    } catch (e) {
       // Keep the (expiring) Ark URL as a fallback rather than losing the render.
+      // Loud in the logs: a silent failure here cost us two near-lost videos.
+      console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
       storedUrl = null;
     }
     if (task.totalTokens != null) {
