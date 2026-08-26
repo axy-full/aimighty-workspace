@@ -68,8 +68,14 @@ export default function References({
   const [err, setErr] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
 
-  // Production uploads go browser → Blob directly (Vercel caps request
-  // bodies at 4.5MB, well under a normal camera photo). Local dev posts here.
+  // Two upload paths, split by size:
+  //  • ≤4MB — through our own authed route (fits under Vercel's 4.5MB request
+  //    cap), stored fully private. This covers most reference stills.
+  //  • >4MB — browser → Blob directly via the documented client-token flow,
+  //    which only supports public objects; addRandomSuffix makes the URL
+  //    crypto-random (unguessable), and the app only ever serves it through
+  //    the authed proxy. Private client uploads need an SDK flow that isn't
+  //    stable yet — revisit when it is.
   useEffect(() => {
     let alive = true;
     fetch("/api/uploads")
@@ -79,11 +85,13 @@ export default function References({
     return () => { alive = false; };
   }, []);
 
+  const SERVER_ROUTE_MAX = 4 * 1024 * 1024;
+
   async function uploadOne(file: File) {
-    if (direct) {
+    if (direct && file.size > SERVER_ROUTE_MAX) {
       const { upload } = await import("@vercel/blob/client");
       const blob = await upload(file.name, file, {
-        access: "private",
+        access: "public",
         handleUploadUrl: "/api/uploads/token",
         contentType: file.type || undefined,
       });

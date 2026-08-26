@@ -11,12 +11,15 @@ const ALLOWED = [
 ];
 
 /**
- * Issues a short-lived token so the BROWSER can upload straight to Blob
- * storage. Vercel caps an inbound request body at 4.5MB, which a normal
- * camera photo blows straight past — going direct sidesteps that entirely.
+ * Issues a short-lived token so the BROWSER can upload a >4MB image straight
+ * to Blob storage — Vercel caps an inbound request body at 4.5MB, which a
+ * normal camera photo blows past. Smaller files go through /api/uploads.
  *
- * The file still travels untouched: this route never sees the bytes, and
- * /api/uploads/register re-reads and hashes what actually landed.
+ * Client-token uploads only support PUBLIC objects, so these blobs rely on
+ * addRandomSuffix (crypto-random, unguessable URL) and are only ever served
+ * through the authed proxy. The file still travels untouched: this route
+ * never sees the bytes, and /api/uploads/register re-reads and hashes what
+ * actually landed.
  */
 export async function POST(req: Request) {
   const got = await requireUser();

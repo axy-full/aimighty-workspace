@@ -29,13 +29,19 @@ export async function POST(req: Request) {
 
   let buf: Buffer;
   try {
-    const { get } = await import("@vercel/blob");
-    const found = await get(url, { access: "private" });
-    if (!found?.stream) throw new Error("not found");
-    const chunks: Uint8Array[] = [];
-    // @ts-expect-error - web stream is async-iterable at runtime
-    for await (const c of found.stream) chunks.push(c as Uint8Array);
-    buf = Buffer.concat(chunks);
+    if (url.includes(".public.blob.vercel-storage.com/")) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("not found");
+      buf = Buffer.from(await res.arrayBuffer());
+    } else {
+      const { get } = await import("@vercel/blob");
+      const found = await get(url, { access: "private" });
+      if (!found?.stream) throw new Error("not found");
+      const chunks: Uint8Array[] = [];
+      // @ts-expect-error - web stream is async-iterable at runtime
+      for await (const c of found.stream) chunks.push(c as Uint8Array);
+      buf = Buffer.concat(chunks);
+    }
   } catch {
     return NextResponse.json({ error: "Could not read the uploaded file" }, { status: 400 });
   }

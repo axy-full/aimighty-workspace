@@ -96,8 +96,17 @@ export async function storeUpload(
 export async function readUploadBytes(uploadId: string, ext: string, storedUrl: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
   if (usingBlob()) {
-    // storedUrl is a blob URL for browser-direct uploads, a pathname otherwise.
-    return readBlob(/^https?:\/\//.test(storedUrl) ? storedUrl : uploadPath(uploadId, ext));
+    if (/^https?:\/\//.test(storedUrl)) {
+      // Browser-direct upload. Public host segment → plain fetch;
+      // anything else goes through the authorized private read.
+      if (storedUrl.includes(".public.blob.vercel-storage.com/")) {
+        const res = await fetch(storedUrl);
+        if (!res.ok) throw new Error(`Could not read upload ${uploadId} (${res.status})`);
+        return Buffer.from(await res.arrayBuffer());
+      }
+      return readBlob(storedUrl);
+    }
+    return readBlob(uploadPath(uploadId, ext));
   }
   return readFile(path.join(UPLOAD_DIR, `${uploadId}.${ext}`));
 }

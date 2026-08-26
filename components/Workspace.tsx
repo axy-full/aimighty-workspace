@@ -95,6 +95,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
       if (!res.ok) throw new Error(json.error ?? "Submit failed");
       setPrompt("");
       setRefs([]);
+      setSelected(json.id); // pull the new render into the viewer immediately
       afterChange();
     } catch (e) {
       setErr((e as Error).message);
@@ -266,8 +267,13 @@ function PoolRow({ label, icon, active, onClick, disabled, count, spend }: {
 function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => void }) {
   if (!clip) {
     return (
-      <div className="desk-grid grid min-h-0 flex-1 place-items-center">
-        <p className="font-mono text-[10.5px] tracking-[.14em] text-mute">NO CLIP SELECTED</p>
+      <div className="grid min-h-0 flex-1 place-items-center bg-desk p-2" style={{ containerType: "size" }}>
+        <div
+          className="desk-grid relative grid place-items-center overflow-hidden border border-hair bg-black"
+          style={{ aspectRatio: "16 / 9", width: "min(100cqw - 16px, (100cqh - 16px) * 16 / 9)" }}
+        >
+          <p className="font-mono text-[10.5px] tracking-[.14em] text-mute">NO CLIP SELECTED</p>
+        </div>
       </div>
     );
   }
@@ -285,21 +291,30 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
 
   return (
     <>
-      <div className="grid min-h-0 flex-1 place-items-center bg-desk p-2">
-        {done ? (
-          <video key={clip.id} src={url!} controls loop preload="metadata"
-            className="max-h-full max-w-full object-contain" />
-        ) : (
-          <div className="desk-grid grid h-full w-full place-items-center px-6">
-            {clip.error ? (
-              <p className="max-w-[520px] text-center font-mono text-[11px] leading-relaxed text-lift/85">
-                {clip.error}
-              </p>
-            ) : (
-              <span className={`font-mono text-[11px] tracking-[.24em] ${s.cls}`}>{s.label}…</span>
-            )}
-          </div>
-        )}
+      <div
+        className="grid min-h-0 flex-1 place-items-center bg-desk p-2"
+        style={{ containerType: "size" }}
+      >
+        {/* Fixed 16:9 slate; non-16:9 clips letterbox inside it like any NLE viewer. */}
+        <div
+          className="relative overflow-hidden border border-hair bg-black"
+          style={{ aspectRatio: "16 / 9", width: "min(100cqw - 16px, (100cqh - 16px) * 16 / 9)" }}
+        >
+          {done ? (
+            <video key={clip.id} src={url!} controls loop preload="metadata"
+              className="absolute inset-0 h-full w-full object-contain" />
+          ) : (
+            <div className="desk-grid absolute inset-0 grid place-items-center px-6">
+              {clip.error ? (
+                <p className="max-w-[520px] text-center font-mono text-[11px] leading-relaxed text-lift/85">
+                  {clip.error}
+                </p>
+              ) : (
+                <span className={`font-mono text-[11px] tracking-[.24em] ${s.cls}`}>{s.label}…</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="shrink-0 border-t border-line bg-panel2 px-3 py-2">
