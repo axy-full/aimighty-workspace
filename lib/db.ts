@@ -87,6 +87,19 @@ const SCHEMA = [
      stored_url  TEXT NOT NULL,
      created_at  INTEGER NOT NULL
    )`,
+  `CREATE TABLE IF NOT EXISTS messages (
+     id         TEXT PRIMARY KEY,
+     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     text       TEXT NOT NULL DEFAULT '',
+     mentions   TEXT NOT NULL DEFAULT '[]',
+     upload_id  TEXT,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS chat_reads (
+     user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     last_read_at INTEGER NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS topups (
      id         TEXT PRIMARY KEY,
      amount_usd REAL NOT NULL,

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { IconPlus, IconClose } from "./Icons";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
+import { uploadFile, sha256OfFile } from "@/lib/uploadClient";
 import type { ModelDef } from "@/lib/models";
 
 export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
@@ -75,15 +76,6 @@ export function referenceProblem(
   return null;
 }
 
-/** SHA-256 of the file as picked, computed in the browser before upload. */
-async function hashFile(file: File): Promise<string> {
-  const buf = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-const CHUNK = 3_500_000; // stays under Vercel's 4.5MB request cap with room for form overhead
-
 export default function References({
   refs, setRefs, model, onCite,
 }: {
@@ -98,42 +90,6 @@ export default function References({
   const [err, setErr] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
 
-  /** Small files post whole; big ones go up in slices and reassemble server-side. */
-  async function uploadOne(file: File) {
-    if (file.size <= 4 * 1024 * 1024) {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/uploads", { method: "POST", body: fd });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Upload failed");
-      return json;
-    }
-
-    const session = crypto.randomUUID();
-    const count = Math.ceil(file.size / CHUNK);
-    for (let i = 0; i < count; i++) {
-      setProgress(`${file.name} — ${Math.round((i / count) * 100)}%`);
-      const fd = new FormData();
-      fd.append("session", session);
-      fd.append("index", String(i));
-      fd.append("chunk", file.slice(i * CHUNK, (i + 1) * CHUNK));
-      const res = await fetch("/api/uploads/chunk", { method: "POST", body: fd });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? `Chunk ${i + 1}/${count} failed`);
-      }
-    }
-    setProgress(`${file.name} — assembling…`);
-    const res = await fetch("/api/uploads/finish", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session, count, filename: file.name }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error ?? "Upload failed");
-    return json;
-  }
-
   async function add(files: FileList | File[]) {
     setBusy(true); setErr(null);
     const next: RefItem[] = [];
@@ -141,10 +97,15 @@ export default function References({
     for (const file of Array.from(files)) {
       try {
         // Hash the original first, so we can prove the stored copy matches.
-        const localHash = await hashFile(file);
-        const json = await uploadOne(file);
+        const localHash = await sha256OfFile(file);
+        const json = await uploadFile(file, "reference", (pct) =>
+          setProgress(pct < 100 ? `${file.name} — ${pct}%` : `${file.name} — assembling…`)
+        );
+        if (json.kind !== "image" && json.kind !== "video") {
+          throw new Error("References must be images or videos.");
+        }
         next.push({
-          ...json,
+          ...(json as RefItem),
           role: (json.kind === "video" ? "reference_video" : "reference_image") as ImageRole,
           verified: json.sha256 === localHash,
         });

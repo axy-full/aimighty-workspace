@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { identifyImage, validateImage, validateVideo } from "@/lib/imagemeta";
-import { assembleChunks, deleteChunks, storeUpload } from "@/lib/storage";
+import { assembleChunks, deleteChunks, storeUpload, streamAssembleUpload } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 const SESSION = /^[a-f0-9-]{16,64}$/;
 
@@ -26,12 +26,51 @@ export async function POST(req: Request) {
   const session = String(body.session ?? "");
   const count = Number(body.count);
   const filename = String(body.filename ?? "upload").slice(0, 200);
+  const purpose = body.purpose === "chat" ? "chat" : "reference";
 
-  if (!SESSION.test(session) || !Number.isInteger(count) || count < 1 || count > 100) {
+  if (!SESSION.test(session) || !Number.isInteger(count) || count < 1 || count > 600) {
     return NextResponse.json({ error: "Bad finish request" }, { status: 400 });
   }
 
   const scoped = `${got.user.id}/${session}`;
+
+  /* ── Chat attachments: any file type, streamed — never buffered whole ── */
+  if (purpose === "chat") {
+    const safeExt = (filename.match(/\.([A-Za-z0-9]{1,8})$/)?.[1] ?? "bin").toLowerCase();
+    const clientMime = String(body.mime ?? "");
+    const mime = /^[\w.-]+\/[\w.+-]+$/.test(clientMime) ? clientMime : "application/octet-stream";
+    const uploadId = id("file");
+    try {
+      const { sha256, bytes, headChunk } = await streamAssembleUpload(
+        scoped, count, uploadId, safeExt, mime
+      );
+      if (bytes > 2 * 1024 * 1024 * 1024) {
+        return NextResponse.json({ error: "Chat files top out at 2 GB." }, { status: 400 });
+      }
+      // Identify from the head so images/videos preview nicely; anything else
+      // is simply a file. (mp4s with the index at the tail read as duration
+      // unknown — chat doesn't need it.)
+      const meta = identifyImage(headChunk);
+      const kind = meta?.kind ?? "file";
+      await db().execute({
+        sql: `INSERT INTO uploads (id, filename, mime, ext, bytes, sha256, width, height, stored_url, kind, duration_s, created_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        args: [uploadId, filename, mime, safeExt, bytes, sha256,
+               meta?.width ?? null, meta?.height ?? null,
+               `/api/uploads/${uploadId}`, kind, meta?.durationS ?? null, now()],
+      });
+      return NextResponse.json({
+        id: uploadId, filename, mime, kind, bytes, sha256,
+        url: `/api/uploads/${uploadId}`,
+      });
+    } catch (e) {
+      console.error("chat assemble failed:", (e as Error).message);
+      return NextResponse.json({ error: "A chunk went missing — try the upload again." }, { status: 400 });
+    } finally {
+      await deleteChunks(scoped, count);
+    }
+  }
+
   let buf: Buffer;
   try {
     buf = await assembleChunks(scoped, count);

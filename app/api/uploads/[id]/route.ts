@@ -1,11 +1,17 @@
 import { db, ready } from "@/lib/db";
-import { readUploadBytes, deleteUpload } from "@/lib/storage";
 import { requireUser } from "@/lib/auth";
+import { readUploadBytes, deleteUpload, openUploadStream } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 800;
 type Ctx = { params: Promise<{ id: string }> };
 
-/** Serves the original bytes with the original content type. No transform. */
+/**
+ * Serves the original bytes with the original content type. No transform.
+ * Large files STREAM through — a 2GB chat attachment must never be buffered
+ * into function memory. Unknown types download as attachments with sniffing
+ * off, so an uploaded HTML file can't run in the app's origin.
+ */
 export async function GET(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
@@ -13,21 +19,34 @@ export async function GET(_req: Request, { params }: Ctx) {
   const { id } = await params;
 
   const rs = await db().execute({
-    sql: `SELECT mime, ext, stored_url FROM uploads WHERE id = ? LIMIT 1`,
+    sql: `SELECT mime, ext, bytes, kind, filename, stored_url FROM uploads WHERE id = ? LIMIT 1`,
     args: [id],
   });
-  const row = rs.rows[0] as unknown as { mime: string; ext: string; stored_url: string } | undefined;
+  const row = rs.rows[0] as unknown as {
+    mime: string; ext: string; bytes: number; kind: string; filename: string; stored_url: string;
+  } | undefined;
   if (!row) return new Response("Not found", { status: 404 });
 
+  const isMedia = row.kind === "image" || row.kind === "video";
+  const headers: Record<string, string> = {
+    "Content-Type": isMedia ? row.mime : "application/octet-stream",
+    "Cache-Control": "private, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+  };
+  if (!isMedia) {
+    headers["Content-Disposition"] =
+      `attachment; filename="${row.filename.replace(/[^\w. -]/g, "_")}"`;
+  }
+
   try {
+    if (Number(row.bytes) > 8 * 1024 * 1024 || row.kind === "file") {
+      const { stream, size } = await openUploadStream(id, row.ext);
+      if (size != null) headers["Content-Length"] = String(size);
+      return new Response(stream, { headers });
+    }
     const buf = await readUploadBytes(id, row.ext, row.stored_url);
-    return new Response(new Uint8Array(buf), {
-      headers: {
-        "Content-Type": row.mime,
-        "Content-Length": String(buf.length),
-        "Cache-Control": "private, max-age=31536000, immutable",
-      },
-    });
+    headers["Content-Length"] = String(buf.length);
+    return new Response(new Uint8Array(buf), { headers });
   } catch {
     return new Response("Not found", { status: 404 });
   }

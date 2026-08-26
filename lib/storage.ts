@@ -206,3 +206,80 @@ export async function presignedReadUrl(pathname: string, hours = 24): Promise<st
   });
   return presignedUrl;
 }
+
+/* ── Streaming assembly, for chat attachments up to 2GB ───────────────────
+ * A function must never hold a 2GB file: chunks are pulled one at a time and
+ * fed straight into storage — a multipart blob upload in production, an
+ * appending write stream on disk locally — while a running sha256 proves the
+ * assembled object is byte-identical to what the browser sliced.
+ * -------------------------------------------------------------------- */
+
+export async function streamAssembleUpload(
+  sess: string, count: number, uploadId: string, ext: string, contentType: string
+): Promise<{ sha256: string; bytes: number; headChunk: Buffer }> {
+  const { createHash } = await import("node:crypto");
+  const hash = createHash("sha256");
+  let total = 0;
+  let headChunk: Buffer | null = null;
+
+  const pathnameFor = uploadPath(uploadId, ext);
+
+  async function* chunks(): AsyncGenerator<Buffer> {
+    for (let i = 0; i < count; i++) {
+      const buf = usingBlob()
+        ? await readBlob(`chunks/${sess}/${i}`)
+        : await readFile(path.join(CHUNK_DIR, sess, String(i)));
+      if (i === 0) headChunk = buf;
+      hash.update(buf);
+      total += buf.length;
+      yield buf;
+    }
+  }
+
+  if (usingBlob()) {
+    const { put } = await import("@vercel/blob");
+    const { Readable } = await import("node:stream");
+    await put(pathnameFor, Readable.from(chunks()), {
+      access: "private",
+      contentType,
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      // The SDK splits the stream into parts itself — memory stays flat.
+      multipart: true,
+    });
+  } else {
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    const { createWriteStream } = await import("node:fs");
+    const { pipeline } = await import("node:stream/promises");
+    const { Readable } = await import("node:stream");
+    await pipeline(
+      Readable.from(chunks()),
+      createWriteStream(path.join(UPLOAD_DIR, `${uploadId}.${ext}`))
+    );
+  }
+
+  return { sha256: hash.digest("hex"), bytes: total, headChunk: headChunk ?? Buffer.alloc(0) };
+}
+
+/** Streams a stored upload out without buffering — a 2GB download must flow
+ *  through the function, never sit in it. */
+export async function openUploadStream(
+  uploadId: string, ext: string
+): Promise<{ stream: ReadableStream; size: number | null }> {
+  if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
+  if (usingBlob()) {
+    const { get } = await import("@vercel/blob");
+    const found = await get(uploadPath(uploadId, ext), { access: "private" });
+    if (!found?.stream) throw new Error("blob not found");
+    return { stream: found.stream as ReadableStream, size: found.blob?.size ?? null };
+  }
+  const { createReadStream } = await import("node:fs");
+  const { stat } = await import("node:fs/promises");
+  const file = path.join(UPLOAD_DIR, `${uploadId}.${ext}`);
+  const st = await stat(file);
+  const { Readable } = await import("node:stream");
+  return {
+    stream: Readable.toWeb(createReadStream(file)) as ReadableStream,
+    size: st.size,
+  };
+}

@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   const session = String(form?.get("session") ?? "");
   const index = Number(form?.get("index"));
 
-  if (!(file instanceof File) || !SESSION.test(session) || !Number.isInteger(index) || index < 0 || index > 100) {
+  if (!(file instanceof File) || !SESSION.test(session) || !Number.isInteger(index) || index < 0 || index > 600) {
     return NextResponse.json({ error: "Bad chunk" }, { status: 400 });
   }
   const buf = Buffer.from(await file.arrayBuffer());
