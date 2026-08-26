@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { sendChatPush } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -112,6 +113,21 @@ export async function POST(req: Request) {
     sql: `INSERT INTO messages (id, user_id, text, mentions, upload_id, created_at) VALUES (?,?,?,?,?,?)`,
     args: [mid, got.user.id, text, JSON.stringify(mentions), uploadId, ts],
   });
+
+  // Banner on every teammate's device; never blocks the send.
+  let attachmentName: string | null = null;
+  if (uploadId) {
+    const a = await db().execute({ sql: `SELECT filename FROM uploads WHERE id=?`, args: [uploadId] });
+    attachmentName = (a.rows[0] as any)?.filename ?? null;
+  }
+  try {
+    await sendChatPush({
+      authorId: got.user.id, authorName: got.user.name,
+      text, attachmentName, mentionIds: mentions,
+    });
+  } catch (e) {
+    console.error("push dispatch failed:", (e as Error).message);
+  }
   // Your own message never counts as unread for you.
   await db().execute({
     sql: `INSERT INTO chat_reads (user_id, last_read_at) VALUES (?,?)

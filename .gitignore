@@ -43,3 +43,6 @@ next-env.d.ts
 # local data
 .data/
 .env*.local
+
+# push key handoff (never commit)
+vapid-keys-for-vercel.txt

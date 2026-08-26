@@ -103,6 +103,92 @@ function ChatGlyph() {
   );
 }
 
+/* ── push notifications ─────────────────────────────────────────────── */
+
+function pushSupported() {
+  return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+}
+
+function urlB64ToUint8Array(base64: string) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+function PushBell() {
+  const [state, setState] = useState<"unsupported" | "off" | "on" | "busy" | "denied">("off");
+
+  useEffect(() => {
+    if (!pushSupported()) { setTimeout(() => setState("unsupported"), 0); return; }
+    if (Notification.permission === "denied") { setTimeout(() => setState("denied"), 0); return; }
+    navigator.serviceWorker.getRegistration().then(async (reg) => {
+      const sub = reg && (await reg.pushManager.getSubscription());
+      setState(sub ? "on" : "off");
+    }).catch(() => setState("off"));
+  }, []);
+
+  async function enable() {
+    setState("busy");
+    try {
+      const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!pub) throw new Error("no key");
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { setState(perm === "denied" ? "denied" : "off"); return; }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(pub),
+      });
+      const res = await fetch("/api/push/subscribe", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      });
+      if (!res.ok) throw new Error("subscribe failed");
+      setState("on");
+    } catch {
+      setState("off");
+    }
+  }
+
+  async function disable() {
+    setState("busy");
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && (await reg.pushManager.getSubscription());
+      if (sub) {
+        await fetch("/api/push/unsubscribe", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+    } finally { setState("off"); }
+  }
+
+  if (state === "unsupported") return null;
+  const title =
+    state === "on" ? "Notifications on — click to turn off"
+    : state === "denied" ? "Notifications blocked in browser settings"
+    : "Notify me of new messages";
+
+  return (
+    <button
+      onClick={state === "on" ? disable : state === "busy" || state === "denied" ? undefined : enable}
+      title={title}
+      className={`grid h-[20px] w-[20px] place-items-center rounded-[6px] transition-colors ${
+        state === "on" ? "text-lift" : state === "denied" ? "text-mute/40" : "text-mute hover:text-lift"
+      }`}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6" />
+        <path d="M10 20a2 2 0 0 0 4 0" />
+        {state !== "on" && <path d="M4 4l16 16" opacity=".55" />}
+      </svg>
+    </button>
+  );
+}
+
 /* ── the open panel ─────────────────────────────────────────────────── */
 
 function ChatPanel({ feed, members, refresh, onClose }: {
@@ -237,6 +323,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
       <header className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel2 px-2.5">
         <h2 className="ptitle text-[10.5px] tracking-[.1em] text-dim">TEAM CHAT</h2>
         <span className="font-mono text-[9px] text-mute">#general</span>
+        <PushBell />
         <button onClick={onClose} title="Collapse"
           className="ml-auto grid h-[20px] w-[20px] place-items-center rounded-[6px] text-mute hover:text-lift">
           <IconClose />

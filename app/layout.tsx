@@ -12,7 +12,11 @@ const jetbrains  = JetBrains_Mono({ variable: "--font-jetbrains", subsets: ["lat
 export const metadata: Metadata = {
   title: "aimighty workspace",
   description: "Internal video generation workspace — Seedance on BytePlus ModelArk",
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, title: "aimighty", statusBarStyle: "black-translucent" },
 };
+
+export const viewport = { themeColor: "#0B0A09" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
