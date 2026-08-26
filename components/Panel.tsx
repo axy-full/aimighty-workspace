@@ -1,11 +1,12 @@
 export function Panel({
-  title, right, children, className = "", bodyClass = "",
+  title, right, children, className = "", bodyClass = "", rootRef,
 }: {
   title?: string; right?: React.ReactNode;
   children: React.ReactNode; className?: string; bodyClass?: string;
+  rootRef?: React.Ref<HTMLElement>;
 }) {
   return (
-    <section className={`flex min-h-0 flex-col border border-line bg-panel ${className}`}>
+    <section ref={rootRef} className={`flex min-h-0 flex-col border border-line bg-panel ${className}`}>
       {title && (
         <header className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel2 px-2.5">
           <h2 className="ptitle text-[10.5px] tracking-[.1em] text-dim">{title}</h2>

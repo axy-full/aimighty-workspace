@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Inspector, { type Params } from "./Inspector";
 import References, { referenceProblem, type RefItem } from "./References";
@@ -58,6 +58,21 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
   // disappears (deleted), the viewer simply empties.
   const activeId = selected && gens.some((g) => g.id === selected) ? selected : null;
   const clip = gens.find((g) => g.id === activeId) ?? null;
+
+  // Clicking anywhere OUTSIDE the clip dismisses it. "The clip" is the viewer
+  // (video, transport, its action buttons) and the filmstrip (so choosing
+  // another clip, or dragging the strip's scrollbar, never blanks the view).
+  const viewerRef = useRef<HTMLElement>(null);
+  const stripRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    function onDown(e: PointerEvent) {
+      const t = e.target as Node;
+      if (viewerRef.current?.contains(t) || stripRef.current?.contains(t)) return;
+      setSelected(null);
+    }
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, []);
   const refProblem = referenceProblem(refs, getModel(params.modelId).maxReferenceImages, prompt);
   const pending = gens.filter((g) => g.status === "queued" || g.status === "running").length;
 
@@ -147,6 +162,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
       {/* ── CENTRE: viewer over prompt ───────────────────────────── */}
       <div className="bench-centre flex flex-col gap-px bg-line">
         <Panel
+          rootRef={viewerRef}
           title="Viewer" className="min-h-0 flex-1 border-0" bodyClass="flex flex-col"
           right={clip && (
             <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(clip.id)}</span>
@@ -201,6 +217,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
 
       {/* ── FILMSTRIP ───────────────────────────────────────────── */}
       <Panel
+        rootRef={stripRef}
         title="Clips" className="bench-strip border-0" bodyClass="overflow-x-auto overflow-y-hidden"
         right={
           <>
