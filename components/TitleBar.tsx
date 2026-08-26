@@ -169,6 +169,14 @@ export default function TitleBar({ user }: { user: U }) {
               <p className="truncate font-mono text-[9.5px] text-mute">{user.email}</p>
               <p className="lbl mt-1.5">{user.role}</p>
             </div>
+            {user.role === "admin" && (
+              <button
+                onClick={() => { setOpen(false); router.push("/team"); }}
+                className="w-full px-3 py-2 text-left font-mono text-[10.5px] tracking-wider text-dim hover:bg-panel2 hover:text-lift"
+              >
+                TEAM &amp; INVITES
+              </button>
+            )}
             <button
               onClick={signOut} disabled={busy}
               className="w-full px-3 py-2 text-left font-mono text-[10.5px] tracking-wider text-dim hover:bg-panel2 hover:text-lift"

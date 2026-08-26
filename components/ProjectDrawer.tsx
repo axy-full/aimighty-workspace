@@ -83,6 +83,7 @@ export default function ProjectDrawer() {
         <DrawerRow
           icon={<IconFilm className="!h-3.5 !w-3.5" />} label="Unfiled"
           active={selection === "unfiled"} onClick={() => openPool("unfiled")}
+          pasteTarget="unfiled"
         />
 
         <p className="lbl px-3 pb-1 pt-3 text-mute/70">Projects</p>
@@ -99,6 +100,7 @@ export default function ProjectDrawer() {
             meta={`${String(p.genCount).padStart(2, "0")} · ${usd(p.spend, 2)}`}
             active={selection === p.id}
             onClick={() => openPool(p.id)}
+            pasteTarget={p.id}
           />
         ))}
       </div>
@@ -113,12 +115,15 @@ export default function ProjectDrawer() {
   );
 }
 
-function DrawerRow({ icon, label, meta, active, onClick }: {
+function DrawerRow({ icon, label, meta, active, onClick, pasteTarget }: {
   icon: React.ReactNode; label: string; meta?: string; active: boolean; onClick: () => void;
+  pasteTarget?: string;
 }) {
   return (
     <button
       onClick={onClick}
+      data-project-target={pasteTarget}
+      data-project-name={pasteTarget ? label : undefined}
       className={`flex w-full items-center gap-2.5 px-3 py-[7px] text-left transition-colors ${
         active ? "bg-panel2 text-bone" : "text-dim hover:bg-panel2/60"
       }`}

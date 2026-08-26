@@ -60,7 +60,7 @@ export default function GenCard({
   }
 
   return (
-    <article className="group flex flex-col border border-line bg-panel transition-colors hover:border-[#34343f]">
+    <article data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)} className="group flex flex-col border border-line bg-panel transition-colors hover:border-[#34343f]">
       {/* Slate */}
       <div className="flex h-6 shrink-0 items-center gap-2 border-b border-line bg-panel2 px-2">
         <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(gen.id)}</span>

@@ -4,18 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
-import { IconCompose, IconLibrary, IconMeter, IconTeam } from "./Icons";
+import { IconCompose, IconLibrary, IconMeter } from "./Icons";
 
 const PAGES = [
-  { href: "/",      label: "Compose", Icon: IconCompose, admin: false },
-  { href: "/all",   label: "Library", Icon: IconLibrary, admin: false },
-  { href: "/usage", label: "Usage",   Icon: IconMeter,   admin: false },
-  { href: "/team",  label: "Team",    Icon: IconTeam,    admin: true  },
+  { href: "/",      label: "Compose", Icon: IconCompose },
+  { href: "/all",   label: "Library", Icon: IconLibrary },
+  { href: "/usage", label: "Usage",   Icon: IconMeter },
 ];
 
 type Usage = { remainingUsd: number; spentUsd: number; pending: number; succeeded: number };
 
-export default function PageSwitcher({ isAdmin = false }: { isAdmin?: boolean }) {
+export default function PageSwitcher() {
   const path = usePathname();
   const { data } = useApi<Usage>("/api/usage", 30000);
 
@@ -34,7 +33,7 @@ export default function PageSwitcher({ isAdmin = false }: { isAdmin?: boolean })
 
       {/* centre: the page switcher */}
       <nav className="flex items-center gap-1">
-        {PAGES.filter((p) => !p.admin || isAdmin).map(({ href, label, Icon }) => {
+        {PAGES.map(({ href, label, Icon }) => {
           const active = href === "/" ? path === "/" : path.startsWith(href);
           return (
             <Link

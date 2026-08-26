@@ -318,7 +318,8 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
 
   return (
     <>
-      <div className="viewer-stage grid min-h-0 flex-1 place-items-center bg-desk p-2">
+      <div className="viewer-stage grid min-h-0 flex-1 place-items-center bg-desk p-2"
+        data-gen-id={clip.id} data-gen-prompt={clip.prompt} data-gen-label={clipId(clip.id)}>
         {/* Fixed 16:9 slate; non-16:9 clips letterbox inside it like any NLE viewer. */}
         <div className="stage16 relative overflow-hidden rounded-[var(--r-sm)] border border-hair bg-black">
           {done ? (
@@ -376,6 +377,7 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
   return (
     <button
       onClick={onSelect}
+      data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)}
       className={`group relative flex h-full w-[214px] shrink-0 flex-col overflow-hidden rounded-[var(--r-sm)] border text-left transition-all ${
         active ? "border-lift bg-panel2 shadow-[0_0_0_1px_var(--color-lift)]" : "border-hair bg-panel hover:border-line hover:bg-panel2"
       }`}
