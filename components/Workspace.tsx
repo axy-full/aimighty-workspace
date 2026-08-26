@@ -9,9 +9,8 @@ import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
 import { DEFAULT_MODEL_ID, getModel, estimateCostUsd, estimateTokens } from "@/lib/models";
+import { useProject } from "@/lib/projectContext";
 import { IconDown, IconTrash } from "./Icons";
-
-type Project = { id: string; name: string; genCount: number; spend: number };
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
@@ -23,13 +22,12 @@ const STATUS: Record<string, { cls: string; label: string; live?: boolean }> = {
   cancelled: { cls: "text-mute", label: "CANCELLED" },
 };
 
-export default function Workspace({ lockedProjectId }: { lockedProjectId?: string }) {
-  const [bin, setBin] = useState<string>(lockedProjectId ?? "all");
+export default function Workspace() {
+  const { selection: bin, refreshProjects } = useProject();
   const [selected, setSelected] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState(lockedProjectId ?? "");
   const [refs, setRefs] = useState<RefItem[]>([]);
   const promptEl = useRef<HTMLTextAreaElement>(null);
 
@@ -39,14 +37,9 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
   });
   const patch = (p: Partial<Params>) => setParams((s) => ({ ...s, ...p }));
 
-  const { data: pj, refresh: refreshProjects } = useApi<{ projects: Project[] }>("/api/projects");
   const query =
-    bin === "mine" ? "&mine=1"
-    : bin === "all" || bin === "unfiled" ? ""
-    : `&projectId=${encodeURIComponent(bin)}`;
+    bin === "all" || bin === "unfiled" ? "" : `&projectId=${encodeURIComponent(bin)}`;
   const { data, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=300${query}`, 5000);
-
-  const projects = pj?.projects ?? [];
   const gens = useMemo(() => {
     const all = data?.generations ?? [];
     return bin === "unfiled" ? all.filter((g) => !g.projectId) : all;
@@ -113,7 +106,9 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
           prompt, model: params.modelId, ratio: params.ratio,
           resolution: params.resolution, duration: params.duration,
           watermark: params.watermark, generateAudio: params.generateAudio,
-          seed: params.seed || null, projectId: projectId || null,
+          seed: params.seed || null,
+          // Renders file into the project you're working in.
+          projectId: bin !== "all" && bin !== "unfiled" ? bin : null,
           references: refs.map((r) => ({ uploadId: r.id, role: r.role })),
         }),
       });
@@ -200,11 +195,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
 
       {/* ── INSPECTOR: pure settings ─────────────────────────────────── */}
       <div className="bench-inspector">
-        <Inspector
-          params={params} patch={patch} projects={projects}
-          projectId={projectId} setProjectId={setProjectId}
-          lockedProjectId={lockedProjectId}
-        />
+        <Inspector params={params} patch={patch} />
       </div>
 
       {/* ── FILMSTRIP with its own bin filter ────────────────────────── */}
@@ -217,17 +208,6 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
               <span className="flex items-center gap-1.5 font-mono text-[9.5px] tracking-wider text-run">
                 <span className="lamp lamp-live" />{pending} RENDERING
               </span>
-            )}
-            {!lockedProjectId && (
-              <select
-                value={bin} onChange={(e) => setBin(e.target.value)}
-                className="h-[24px] rounded-[6px] border border-line bg-desk px-1.5 font-mono text-[10px] text-dim"
-              >
-                <option value="all">All clips</option>
-                <option value="mine">My clips</option>
-                <option value="unfiled">Unfiled</option>
-                {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-              </select>
             )}
             <span className="font-mono text-[9.5px] tracking-wider text-mute">
               {String(gens.length).padStart(3, "0")}

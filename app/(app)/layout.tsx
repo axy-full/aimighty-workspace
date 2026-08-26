@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import TitleBar from "@/components/TitleBar";
 import PageSwitcher from "@/components/PageSwitcher";
 import ChatDock from "@/components/ChatDock";
+import { ProjectProvider } from "@/lib/projectContext";
 import { currentUser, userCount } from "@/lib/auth";
 
 /** Everything under this layout requires a signed-in user. */
@@ -13,13 +14,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="app">
-      <TitleBar user={user} />
-      <div className="app-work flex">
-        <div className="min-h-0 min-w-0 flex-1">{children}</div>
-        <ChatDock />
+    <ProjectProvider>
+      <div className="app">
+        <TitleBar user={user} />
+        <div className="app-work flex">
+          <div className="min-h-0 min-w-0 flex-1">{children}</div>
+          <ChatDock />
+        </div>
+        <PageSwitcher isAdmin={user.role === "admin"} />
       </div>
-      <PageSwitcher isAdmin={user.role === "admin"} />
-    </div>
+    </ProjectProvider>
   );
 }

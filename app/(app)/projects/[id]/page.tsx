@@ -1,9 +1,18 @@
 "use client";
 
-import { use } from "react";
-import Workspace from "@/components/Workspace";
+import { use, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useProject } from "@/lib/projectContext";
 
-export default function BinPage({ params }: { params: Promise<{ id: string }> }) {
+/** Legacy bin deep-link: select that project globally, then go compose. */
+export default function LegacyBinRedirect({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  return <Workspace key={id} lockedProjectId={id} />;
+  const router = useRouter();
+  const { setSelection } = useProject();
+  useEffect(() => {
+    setSelection(id);
+    router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once
+  }, []);
+  return null;
 }

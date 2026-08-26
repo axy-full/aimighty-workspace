@@ -4,14 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
-import { IconCompose, IconBins, IconLibrary, IconMeter, IconTeam } from "./Icons";
+import { IconCompose, IconLibrary, IconMeter, IconTeam } from "./Icons";
 
 const PAGES = [
-  { href: "/",         label: "Compose", Icon: IconCompose, admin: false },
-  { href: "/projects", label: "Bins",    Icon: IconBins,    admin: false },
-  { href: "/all",      label: "Library", Icon: IconLibrary, admin: false },
-  { href: "/usage",    label: "Usage",   Icon: IconMeter,   admin: false },
-  { href: "/team",     label: "Team",    Icon: IconTeam,    admin: true  },
+  { href: "/",      label: "Compose", Icon: IconCompose, admin: false },
+  { href: "/all",   label: "Library", Icon: IconLibrary, admin: false },
+  { href: "/usage", label: "Usage",   Icon: IconMeter,   admin: false },
+  { href: "/team",  label: "Team",    Icon: IconTeam,    admin: true  },
 ];
 
 type Usage = { remainingUsd: number; spentUsd: number; pending: number; succeeded: number };

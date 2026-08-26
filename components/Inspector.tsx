@@ -8,15 +8,9 @@ export type Params = {
   watermark: boolean; generateAudio: boolean; seed: string;
 };
 
-export default function Inspector({
-  params, patch, projects, projectId, setProjectId, lockedProjectId,
-}: {
+export default function Inspector({ params, patch }: {
   params: Params;
   patch: (p: Partial<Params>) => void;
-  projects: { id: string; name: string }[];
-  projectId: string;
-  setProjectId: (v: string) => void;
-  lockedProjectId?: string;
 }) {
   const model = getModel(params.modelId);
   const dims = dimensionsFor(params.resolution, params.ratio);
@@ -87,16 +81,6 @@ export default function Inspector({
           </Row>
         </Group>
 
-        {!lockedProjectId && (
-          <Group label="Destination">
-            <Row label="Bin">
-              <select className="ctl" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                <option value="">Unfiled</option>
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </Row>
-          </Group>
-        )}
       </div>
 
     </Panel>

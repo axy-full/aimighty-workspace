@@ -20,11 +20,13 @@ renders in `.data/generations/`.
 
 | Route | What it does |
 |---|---|
-| `/` | Compose — prompt panel + docked inspector, live cost estimate, recent bin |
-| `/projects` | Bins — create bins; per-bin clip count and spend |
-| `/projects/[id]` | Compose scoped to one bin; that bin's clips |
-| `/all` | Library — every clip, searchable by prompt, filterable by bin/status |
-| `/usage` | Credit drawdown, spend by model/bin/person/month, cost per render |
+| `/` | Compose — prompt-first composer, viewer, settings, project filmstrip |
+| `/all` | Library — the current project's clips, searchable and filterable |
+| `/usage` | Credit drawdown, spend by model/project/person/month, cost per render |
+
+Which project everything scopes to is the **title-bar project switcher** —
+create, rename, delete and select projects there; new renders file into the
+selected project automatically. `/projects/*` URLs redirect accordingly.
 | `/team` | **Admins only** — invite, promote, disable, unlock; clips and spend per person |
 | `/login`, `/setup`, `/invite/[code]` | Public auth screens |
 
