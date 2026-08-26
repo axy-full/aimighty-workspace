@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import logo from "@/public/aimighty-logo.png";
@@ -33,10 +34,14 @@ export default function TitleBar({ user }: { user: U }) {
   return (
     <header className="app-title relative flex items-center gap-3 border-b border-line bg-chrome px-3">
       {/* Brand red is 2.1:1 on near-black — lift the mark so it reads. */}
-      <Image src={logo} alt="aimighty" priority
-        className="h-[15px] w-auto select-none"
-        style={{ filter: "brightness(1.28) saturate(1.04)" }} />
-      <span className="ptitle text-[11px] tracking-[.16em] text-mute">WORKSPACE</span>
+      <Link href="/" title="Compose" className="group flex items-center gap-3">
+        <Image src={logo} alt="aimighty" priority
+          className="h-[15px] w-auto select-none"
+          style={{ filter: "brightness(1.28) saturate(1.04)" }} />
+        <span className="ptitle text-[11px] tracking-[.16em] text-mute transition-colors group-hover:text-dim">
+          WORKSPACE
+        </span>
+      </Link>
 
       <span className="h-4 w-px bg-line" />
       <span className="font-mono text-[10.5px] tracking-wide text-dim">~/{crumb}</span>
