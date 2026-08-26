@@ -103,6 +103,12 @@ export async function ready(): Promise<void> {
       try {
         await db().execute(`ALTER TABLE generations ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`);
       } catch { /* column already exists */ }
+      try {
+        await db().execute(`ALTER TABLE uploads ADD COLUMN kind TEXT NOT NULL DEFAULT 'image'`);
+      } catch { /* column already exists */ }
+      try {
+        await db().execute(`ALTER TABLE uploads ADD COLUMN duration_s REAL`);
+      } catch { /* column already exists */ }
     })();
   }
   return _ready;

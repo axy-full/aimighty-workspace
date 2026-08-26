@@ -9,7 +9,7 @@
  */
 
 import { getModel, type ModelDef } from "./models";
-import { readUploadBytes } from "./storage";
+import { readUploadBytes, presignedReadUrl, uploadPath, usingBlob } from "./storage";
 import { IMAGE_LIMITS } from "./imagemeta";
 
 const HOST =
@@ -27,7 +27,7 @@ export type VideoParams = {
   generateAudio?: boolean;
 };
 
-export type ImageRole = "first_frame" | "last_frame" | "reference_image";
+export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
 
 export type Reference = {
   id: string;
@@ -35,6 +35,7 @@ export type Reference = {
   ext: string;
   storedUrl: string;
   role: ImageRole;
+  kind: "image" | "video";
 };
 
 export type ArkStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -80,14 +81,29 @@ function buildFlagText(prompt: string, p: VideoParams, m: ModelDef): string {
 }
 
 /**
- * Turns a stored upload into the `image_url` content item ModelArk expects.
+ * Turns a stored upload into the content item ModelArk expects.
  *
- * The bytes are read back from storage and base64-encoded verbatim. Base64 is a
- * transport encoding, not a compression: the decoded bytes on ModelArk's side
- * are bit-identical to the file that was uploaded. Nothing in this path
- * resizes, re-encodes or strips anything.
+ * In production the URL is a time-limited presigned GET on the private blob —
+ * ModelArk fetches the exact stored bytes, nothing is made public, and
+ * reference videos (which accept ONLY a URL, never base64) work. Local dev
+ * has no presignable storage, so images fall back to base64 — a transport
+ * encoding, not a compression; the decoded bytes are bit-identical.
  */
-async function toImageContent(ref: Reference) {
+async function toRefContent(ref: Reference) {
+  if (ref.kind === "video") {
+    if (!usingBlob()) {
+      throw new Error(
+        "Reference videos need the deployed workspace — ModelArk fetches them by URL, which local storage can't provide."
+      );
+    }
+    const url = await presignedReadUrl(uploadPath(ref.id, ref.ext));
+    return { type: "video_url", video_url: { url }, role: "reference_video" };
+  }
+
+  if (usingBlob()) {
+    const url = await presignedReadUrl(uploadPath(ref.id, ref.ext));
+    return { type: "image_url", image_url: { url }, role: ref.role };
+  }
   const bytes = await readUploadBytes(ref.id, ref.ext, ref.storedUrl);
   // Format token must be lowercase, e.g. data:image/png;base64,...
   const mime = ref.mime.toLowerCase();
@@ -113,8 +129,11 @@ export async function buildRequestBody(
     };
   }
 
+  // Text first, then images, then videos — @ImageN / @VideoN indices count
+  // within their own kind, in the order the user arranged.
   const content: unknown[] = [{ type: "text", text: prompt.trim() }];
-  for (const ref of references) content.push(await toImageContent(ref));
+  for (const ref of references.filter((r) => r.kind === "image")) content.push(await toRefContent(ref));
+  for (const ref of references.filter((r) => r.kind === "video")) content.push(await toRefContent(ref));
 
   // Seedance 2.x — real JSON fields.
   const body: Record<string, unknown> = {
@@ -144,7 +163,7 @@ export async function submitTask(
   if (size > IMAGE_LIMITS.maxRequestBytes) {
     throw new Error(
       `Request body is ${(size / 1048576).toFixed(1)} MB, over ModelArk's 64 MB limit. ` +
-      `Remove a reference image or use a smaller original — images are never re-compressed to fit.`
+      `Remove a reference or use a smaller original — media is never re-compressed to fit.`
     );
   }
 

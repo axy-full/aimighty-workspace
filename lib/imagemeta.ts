@@ -9,10 +9,13 @@
  */
 
 export type ImageMeta = {
+  kind: "image" | "video";
   mime: string;
   ext: string;
   width: number | null;
   height: number | null;
+  /** Video only — parsed from the mp4/mov moov>mvhd box. */
+  durationS: number | null;
 };
 
 const ascii = (b: Buffer, off: number, len: number) => b.subarray(off, off + len).toString("latin1");
@@ -33,18 +36,18 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
   // ── PNG ──────────────────────────────────────────────────────────────
   if (buf[0] === 0x89 && ascii(buf, 1, 3) === "PNG") {
     // IHDR is always the first chunk: length(4) type(4) then w(4) h(4)
-    return { mime: "image/png", ext: "png", width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+    return { kind: "image", durationS: null, mime: "image/png", ext: "png", width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
   }
 
   // ── GIF ──────────────────────────────────────────────────────────────
   if (ascii(buf, 0, 3) === "GIF") {
-    return { mime: "image/gif", ext: "gif", width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
+    return { kind: "image", durationS: null, mime: "image/gif", ext: "gif", width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
   }
 
   // ── BMP ──────────────────────────────────────────────────────────────
   if (ascii(buf, 0, 2) === "BM") {
     return {
-      mime: "image/bmp", ext: "bmp",
+      kind: "image", durationS: null, mime: "image/bmp", ext: "bmp",
       width: Math.abs(buf.readInt32LE(18)), height: Math.abs(buf.readInt32LE(22)),
     };
   }
@@ -55,29 +58,29 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
     if (chunk === "VP8X") {
       const w = 1 + (buf[24] | (buf[25] << 8) | (buf[26] << 16));
       const h = 1 + (buf[27] | (buf[28] << 8) | (buf[29] << 16));
-      return { mime: "image/webp", ext: "webp", width: w, height: h };
+      return { kind: "image", durationS: null, mime: "image/webp", ext: "webp", width: w, height: h };
     }
     if (chunk === "VP8 ") {
       return {
-        mime: "image/webp", ext: "webp",
+        kind: "image", durationS: null, mime: "image/webp", ext: "webp",
         width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff,
       };
     }
     if (chunk === "VP8L") {
       const b = buf.readUInt32LE(21);
       return {
-        mime: "image/webp", ext: "webp",
+        kind: "image", durationS: null, mime: "image/webp", ext: "webp",
         width: (b & 0x3fff) + 1, height: ((b >> 14) & 0x3fff) + 1,
       };
     }
-    return { mime: "image/webp", ext: "webp", width: null, height: null };
+    return { kind: "image", durationS: null, mime: "image/webp", ext: "webp", width: null, height: null };
   }
 
   // ── TIFF ─────────────────────────────────────────────────────────────
   const le = ascii(buf, 0, 2) === "II" && buf[2] === 0x2a;
   const be = ascii(buf, 0, 2) === "MM" && buf[3] === 0x2a;
   if (le || be) {
-    const meta: ImageMeta = { mime: "image/tiff", ext: "tiff", width: null, height: null };
+    const meta: ImageMeta = { kind: "image", durationS: null, mime: "image/tiff", ext: "tiff", width: null, height: null };
     try {
       const ifd = le ? buf.readUInt32LE(4) : buf.readUInt32BE(4);
       const n = le ? buf.readUInt16LE(ifd) : buf.readUInt16BE(ifd);
@@ -95,18 +98,27 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
     return meta;
   }
 
-  // ── HEIC / HEIF ──────────────────────────────────────────────────────
+  // ── ftyp container: HEIC/HEIF stills, otherwise MP4/MOV video ────────
   if (ascii(buf, 4, 4) === "ftyp") {
     const brand = ascii(buf, 8, 4);
     if (["heic", "heix", "hevc", "heim", "heis", "mif1", "msf1"].includes(brand)) {
       // ispe parsing needs a full box walk; not worth it — dimensions stay unknown.
       const heif = brand === "mif1" || brand === "msf1";
       return {
+        kind: "image", durationS: null,
         mime: heif ? "image/heif" : "image/heic",
         ext: heif ? "heif" : "heic",
         width: null, height: null,
       };
     }
+    const mov = brand === "qt  ";
+    return {
+      kind: "video",
+      mime: mov ? "video/quicktime" : "video/mp4",
+      ext: mov ? "mov" : "mp4",
+      width: null, height: null,
+      durationS: mp4Duration(buf),
+    };
   }
 
   // ── JPEG ─────────────────────────────────────────────────────────────
@@ -123,7 +135,7 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
         (marker >= 0xcd && marker <= 0xcf);
       if (isSOF) {
         return {
-          mime: "image/jpeg", ext: "jpg",
+          kind: "image", durationS: null, mime: "image/jpeg", ext: "jpg",
           height: buf.readUInt16BE(off + 5), width: buf.readUInt16BE(off + 7),
         };
       }
@@ -132,9 +144,50 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
       if (len < 2) break;
       off += 2 + len;
     }
-    return { mime: "image/jpeg", ext: "jpg", width: null, height: null };
+    return { kind: "image", durationS: null, mime: "image/jpeg", ext: "jpg", width: null, height: null };
   }
 
+  return null;
+}
+
+/** Walks top-level mp4/mov boxes for moov→mvhd and reads duration/timescale. */
+function mp4Duration(buf: Buffer): number | null {
+  try {
+    let off = 0;
+    while (off + 8 <= buf.length) {
+      let size = buf.readUInt32BE(off);
+      const type = ascii(buf, off + 4, 4);
+      let header = 8;
+      if (size === 1) {
+        if (off + 16 > buf.length) return null;
+        size = Number(buf.readBigUInt64BE(off + 8));
+        header = 16;
+      } else if (size === 0) {
+        size = buf.length - off;
+      }
+      if (size < header) return null;
+      if (type === "moov") {
+        let inner = off + header;
+        const end = Math.min(off + size, buf.length);
+        while (inner + 8 <= end) {
+          const isize = buf.readUInt32BE(inner);
+          const itype = ascii(buf, inner + 4, 4);
+          if (itype === "mvhd" && inner + 28 <= end) {
+            const version = buf[inner + 8];
+            const timescale = version === 1 ? buf.readUInt32BE(inner + 28) : buf.readUInt32BE(inner + 20);
+            const duration = version === 1
+              ? Number(buf.readBigUInt64BE(inner + 32))
+              : buf.readUInt32BE(inner + 24);
+            return timescale > 0 ? duration / timescale : null;
+          }
+          if (isize < 8) return null;
+          inner += isize;
+        }
+        return null;
+      }
+      off += size;
+    }
+  } catch { /* fall through */ }
   return null;
 }
 
@@ -166,5 +219,24 @@ export function validateImage(meta: ImageMeta, bytes: number): string | null {
   if (ratio < IMAGE_LIMITS.minRatio || ratio > IMAGE_LIMITS.maxRatio) {
     return `Aspect ratio ${ratio.toFixed(2)} is outside ModelArk's accepted 0.4–2.5.`;
   }
+  return null;
+}
+
+/* ── ModelArk's documented limits for a single reference video ─────────── */
+export const VIDEO_LIMITS = {
+  maxBytes: 200 * 1024 * 1024,
+  minSeconds: 2,
+};
+
+export function validateVideo(meta: ImageMeta, bytes: number): string | null {
+  if (bytes > VIDEO_LIMITS.maxBytes) {
+    return `Video is ${(bytes / 1048576).toFixed(0)} MB — ModelArk's limit is 200 MB.`;
+  }
+  if (meta.durationS != null && meta.durationS < VIDEO_LIMITS.minSeconds) {
+    return `Video is ${meta.durationS.toFixed(1)}s — ModelArk needs at least 2 seconds.`;
+  }
+  // Per-model duration ceilings and counts are enforced at submit, where the
+  // engine is known. Resolution/fps limits are left to Ark — failed
+  // generations are not billed.
   return null;
 }

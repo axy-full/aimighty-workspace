@@ -1,19 +1,11 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import { identifyImage, validateImage } from "@/lib/imagemeta";
+import { identifyImage, validateImage, validateVideo } from "@/lib/imagemeta";
 import { storeUpload } from "@/lib/storage";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-/** Tells the browser whether to upload direct-to-storage (production) or
- *  through this route (local dev, where there's no 4.5MB body cap). */
-export async function GET() {
-  const got = await requireUser();
-  if (got.response) return got.response;
-  return NextResponse.json({ direct: Boolean(process.env.BLOB_READ_WRITE_TOKEN) });
-}
 
 /**
  * Accepts one image and stores it BYTE-FOR-BYTE.
@@ -38,34 +30,38 @@ export async function POST(req: Request) {
   const meta = identifyImage(buf);
   if (!meta) {
     return NextResponse.json(
-      { error: "Unrecognised image. ModelArk accepts jpeg, png, webp, bmp, tiff, gif, heic, heif." },
+      { error: "Unrecognised file. Images: jpeg/png/webp/bmp/tiff/gif/heic. Videos: mp4/mov." },
       { status: 400 }
     );
   }
 
-  const problem = validateImage(meta, buf.length);
+  const problem = meta.kind === "video"
+    ? validateVideo(meta, buf.length)
+    : validateImage(meta, buf.length);
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
-  const uploadId = id("img");
+  const uploadId = id(meta.kind === "video" ? "vid" : "img");
   const { url, sha256 } = await storeUpload(uploadId, meta.ext, buf, meta.mime);
 
   await db().execute({
-    sql: `INSERT INTO uploads (id, filename, mime, ext, bytes, sha256, width, height, stored_url, created_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO uploads (id, filename, mime, ext, bytes, sha256, width, height, stored_url, kind, duration_s, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [uploadId, file.name.slice(0, 200), meta.mime, meta.ext, buf.length,
-           sha256, meta.width, meta.height, url, now()],
+           sha256, meta.width, meta.height, url, meta.kind, meta.durationS, now()],
   });
 
   return NextResponse.json({
     id: uploadId,
     filename: file.name,
     mime: meta.mime,
+    kind: meta.kind,
     bytes: buf.length,
     width: meta.width,
     height: meta.height,
+    durationS: meta.durationS,
     sha256,
     url: `/api/uploads/${uploadId}`,
-    // base64 inflates by 4/3 — the client uses this to police the 64MB body cap.
-    base64Bytes: Math.ceil(buf.length / 3) * 4,
+    // base64 inflates by 4/3 — images may inline as base64 in local dev.
+    base64Bytes: meta.kind === "video" ? 0 : Math.ceil(buf.length / 3) * 4,
   });
 }

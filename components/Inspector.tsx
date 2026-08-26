@@ -13,7 +13,7 @@ export type Params = {
 
 export default function Inspector({
   params, patch, projects, projectId, setProjectId, lockedProjectId,
-  onRender, busy, canRender,
+  onRender, busy, canRender, inputSeconds = 0, hasVideoInput = false,
 }: {
   params: Params;
   patch: (p: Partial<Params>) => void;
@@ -24,10 +24,16 @@ export default function Inspector({
   onRender: () => void;
   busy: boolean;
   canRender: boolean;
+  /** Combined duration of attached reference videos, if any. */
+  inputSeconds?: number;
+  hasVideoInput?: boolean;
 }) {
   const model = getModel(params.modelId);
-  const est = estimateCostUsd(params.modelId, params.resolution, params.ratio, params.duration);
-  const tokens = estimateTokens(params.resolution, params.ratio, params.duration);
+  const est = estimateCostUsd(
+    params.modelId, params.resolution, params.ratio, params.duration,
+    inputSeconds, hasVideoInput
+  );
+  const tokens = estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
   const dims = dimensionsFor(params.resolution, params.ratio);
 
   function switchModel(next: string) {
@@ -134,6 +140,12 @@ export default function Inspector({
         {!est && (
           <p className="px-2.5 pt-2 text-[10px] leading-relaxed text-mute">
             Adaptive ratio — frame size is chosen at render, so cost lands after.
+          </p>
+        )}
+        {est && hasVideoInput && (
+          <p className="px-2.5 pt-2 text-[10px] leading-relaxed text-mute">
+            Includes {inputSeconds.toFixed(1)}s of reference video, billed at the
+            lower with-video rate.
           </p>
         )}
 

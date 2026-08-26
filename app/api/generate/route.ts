@@ -7,34 +7,44 @@ import { requireUser } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const ROLES: ImageRole[] = ["first_frame", "last_frame", "reference_image"];
+const ROLES: ImageRole[] = ["first_frame", "last_frame", "reference_image", "reference_video"];
 
 /**
  * ModelArk treats these as mutually exclusive scenarios:
  *   • image-to-video (first frame, and optionally last frame) — max 2 images
- *   • omni reference-to-video — 1..maxReferenceImages
+ *   • omni reference-to-video — reference images and/or reference videos
  * They cannot be mixed in one request.
  */
 function validateReferences(
-  refs: { role: ImageRole }[], maxReference: number
+  refs: { role: ImageRole; kind: string; durationS: number | null }[],
+  model: { maxReferenceImages: number; maxReferenceVideos: number; maxVideoSecondsTotal: number; label: string }
 ): string | null {
   if (!refs.length) return null;
 
   const frames = refs.filter((r) => r.role === "first_frame" || r.role === "last_frame");
-  const references = refs.filter((r) => r.role === "reference_image");
+  const images = refs.filter((r) => r.role === "reference_image");
+  const videos = refs.filter((r) => r.role === "reference_video");
 
-  if (frames.length && references.length) {
-    return "First/last frame and reference images can't be mixed — ModelArk treats them as separate modes.";
+  if (frames.length && (images.length || videos.length)) {
+    return "First/last frame and reference media can't be mixed — ModelArk treats them as separate modes.";
   }
   if (frames.length) {
+    if (frames.some((r) => r.kind === "video")) return "First/last frame must be an image.";
     if (frames.filter((r) => r.role === "first_frame").length > 1) return "Only one first frame.";
     if (frames.filter((r) => r.role === "last_frame").length > 1) return "Only one last frame.";
     if (!frames.some((r) => r.role === "first_frame")) {
       return "A last frame needs a first frame alongside it.";
     }
   }
-  if (references.length > maxReference) {
-    return `This model accepts at most ${maxReference} reference images (${references.length} attached).`;
+  if (images.length > model.maxReferenceImages) {
+    return `This model accepts at most ${model.maxReferenceImages} reference images (${images.length} attached).`;
+  }
+  if (videos.length > model.maxReferenceVideos) {
+    return `${model.label} accepts at most ${model.maxReferenceVideos} reference videos (${videos.length} attached).`;
+  }
+  const totalVideoS = videos.reduce((a, v) => a + (v.durationS ?? 0), 0);
+  if (totalVideoS > model.maxVideoSecondsTotal) {
+    return `Reference videos total ${totalVideoS.toFixed(1)}s — ${model.label} allows ${model.maxVideoSecondsTotal}s combined.`;
   }
   return null;
 }
@@ -76,37 +86,68 @@ export async function POST(req: Request) {
         .filter((r: { uploadId: string }) => r.uploadId)
     : [];
 
-  const refProblem = validateReferences(wanted, model.maxReferenceImages);
-  if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 });
-
   let references: Reference[] = [];
+  let inputSeconds = 0;
   if (wanted.length) {
     const placeholders = wanted.map(() => "?").join(",");
     const rs = await db().execute({
-      sql: `SELECT id, mime, ext, stored_url FROM uploads WHERE id IN (${placeholders})`,
+      sql: `SELECT id, mime, ext, stored_url, kind, duration_s FROM uploads WHERE id IN (${placeholders})`,
       args: wanted.map((w) => w.uploadId),
     });
     const byId = new Map(
       rs.rows.map((r) => {
-        const row = r as unknown as { id: string; mime: string; ext: string; stored_url: string };
+        const row = r as unknown as {
+          id: string; mime: string; ext: string; stored_url: string;
+          kind: string; duration_s: number | null;
+        };
         return [row.id, row];
       })
     );
     const missing = wanted.filter((w) => !byId.has(w.uploadId));
     if (missing.length) {
-      return NextResponse.json({ error: "A reference image is no longer available." }, { status: 400 });
+      return NextResponse.json({ error: "A reference is no longer available." }, { status: 400 });
     }
-    // Preserve the order the user arranged — @Image1 is the first in the list.
-    references = wanted.map((w) => {
+
+    // The KIND is the database's word, never the client's: a video row is a
+    // reference_video no matter what role the request claimed.
+    const enriched = wanted.map((w) => {
       const row = byId.get(w.uploadId)!;
-      return { id: row.id, mime: row.mime, ext: row.ext, storedUrl: row.stored_url, role: w.role };
+      const kind = row.kind === "video" ? "video" : "image";
+      return {
+        uploadId: w.uploadId,
+        role: (kind === "video" ? "reference_video" : w.role === "reference_video" ? "reference_image" : w.role) as ImageRole,
+        kind,
+        durationS: row.duration_s,
+      };
+    });
+
+    const refProblem = validateReferences(enriched, model);
+    if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 });
+
+    inputSeconds = enriched
+      .filter((r) => r.kind === "video")
+      .reduce((a, r) => a + (r.durationS ?? 0), 0);
+
+    // Preserve the order the user arranged — @Image1 is the first image.
+    references = enriched.map((w) => {
+      const row = byId.get(w.uploadId)!;
+      return {
+        id: row.id, mime: row.mime, ext: row.ext, storedUrl: row.stored_url,
+        role: w.role, kind: w.kind as "image" | "video",
+      };
     });
   }
 
   const projectId = body.projectId ? String(body.projectId) : null;
   const genId = id("gen");
   const ts = now();
-  const storedParams = { ...params, references: wanted };
+  const hasVideoInput = references.some((r) => r.kind === "video");
+  const storedParams = {
+    ...params,
+    references: references.map((r) => ({ uploadId: r.id, role: r.role, kind: r.kind })),
+    hasVideoInput,
+    inputSeconds: hasVideoInput ? inputSeconds : undefined,
+  };
 
   // Row first, so a failed submit is still visible rather than silently lost.
   await db().execute({

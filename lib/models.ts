@@ -55,6 +55,9 @@ export type ModelDef = {
   supportsCameraFixed: boolean;
   /** Max images in omni reference-to-video mode. */
   maxReferenceImages: number;
+  /** Max reference videos, and their combined duration ceiling (seconds). */
+  maxReferenceVideos: number;
+  maxVideoSecondsTotal: number;
   note?: string;
 };
 
@@ -75,6 +78,8 @@ export const MODELS: ModelDef[] = [
     supportsAudio: true,
     supportsCameraFixed: false,
     maxReferenceImages: 30,
+    maxReferenceVideos: 10,
+    maxVideoSecondsTotal: 30,
     note: "Up to 30s, native audio. Highest fidelity.",
   },
   {
@@ -94,6 +99,8 @@ export const MODELS: ModelDef[] = [
     supportsAudio: false,
     supportsCameraFixed: false,
     maxReferenceImages: 9,
+    maxReferenceVideos: 3,
+    maxVideoSecondsTotal: 15,
     note: "Cheaper per token. 4K tier is listed but untested — verify before relying on it.",
   },
 ];
@@ -154,19 +161,26 @@ export function dimensionsFor(resolution: string, ratio: string): { w: number; h
   return { w: up16(base), h: up16((base * rh) / rw) };
 }
 
+/**
+ * Official formula: tokens = (input video duration + output duration) ×
+ * output w × h × fps / 1024. Reference-video seconds are billed as if they
+ * were output frames at the output resolution — at the cheaper with-video rate.
+ */
 export function estimateTokens(
-  resolution: string, ratio: string, duration: number, fps = DEFAULT_FPS
+  resolution: string, ratio: string, duration: number,
+  inputSeconds = 0, fps = DEFAULT_FPS
 ): number | null {
   const d = dimensionsFor(resolution, ratio);
   if (!d) return null;
-  return Math.round((d.w * d.h * fps * duration) / 1024);
+  return Math.round((d.w * d.h * fps * (duration + inputSeconds)) / 1024);
 }
 
 export function estimateCostUsd(
-  modelId: string, resolution: string, ratio: string, duration: number
+  modelId: string, resolution: string, ratio: string, duration: number,
+  inputSeconds = 0, hasVideoInput = false
 ): { list: number; net: number } | null {
-  const tokens = estimateTokens(resolution, ratio, duration);
-  const list = listRate(modelId, resolution);
+  const tokens = estimateTokens(resolution, ratio, duration, inputSeconds);
+  const list = listRate(modelId, resolution, hasVideoInput);
   if (tokens == null || list == null) return null;
   return {
     list: costUsd(tokens, list),

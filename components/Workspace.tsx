@@ -73,7 +73,12 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, []);
-  const refProblem = referenceProblem(refs, getModel(params.modelId).maxReferenceImages, prompt);
+  const modelDef = getModel(params.modelId);
+  const refProblem = referenceProblem(refs, modelDef, prompt);
+  const hasVideoInput = refs.some((r) => r.kind === "video");
+  const inputSeconds = refs
+    .filter((r) => r.kind === "video")
+    .reduce((a, r) => a + (r.durationS ?? 0), 0);
   const pending = gens.filter((g) => g.status === "queued" || g.status === "running").length;
 
   function afterChange() { refresh(); refreshProjects(); }
@@ -175,10 +180,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
           title="Prompt" className="shrink-0 border-0"
           right={<span className="font-mono text-[9.5px] tabular-nums text-mute">{prompt.trim().length}/10000</span>}
         >
-          <References
-            refs={refs} setRefs={setRefs} onCite={cite}
-            maxReference={getModel(params.modelId).maxReferenceImages}
-          />
+          <References refs={refs} setRefs={setRefs} onCite={cite} model={modelDef} />
           <div className="flex items-stretch gap-px bg-line">
             <textarea
               ref={promptEl}
@@ -212,6 +214,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
           projectId={projectId} setProjectId={setProjectId}
           lockedProjectId={lockedProjectId}
           onRender={render} busy={busy} canRender={Boolean(prompt.trim()) && !refProblem}
+          inputSeconds={inputSeconds} hasVideoInput={hasVideoInput}
         />
       </div>
 

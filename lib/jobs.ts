@@ -141,8 +141,8 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
     // Snapshot the cost exactly ONCE — a storeVideo retry must not recompute
     // it at whatever the rate happens to be later; history stays truthful.
     if (cost == null && task.totalTokens != null) {
-      const res = String((gen.params as { resolution?: string }).resolution ?? "720p");
-      rate = effectiveRate(gen.model, res);
+      const p = gen.params as { resolution?: string; hasVideoInput?: boolean };
+      rate = effectiveRate(gen.model, String(p.resolution ?? "720p"), Boolean(p.hasVideoInput));
       cost = rate == null ? null : costUsd(task.totalTokens, rate);
     }
   }

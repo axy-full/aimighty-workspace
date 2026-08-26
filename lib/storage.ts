@@ -143,3 +143,66 @@ export async function deleteUpload(uploadId: string, ext: string, storedUrl: str
     }
   } catch { /* best-effort */ }
 }
+
+/* ── Chunked uploads ──────────────────────────────────────────────────────
+ * Vercel caps a request body at 4.5MB, but reference media runs to 30MB
+ * (images) or 200MB (videos). The browser slices the file and posts each
+ * chunk through our authed route; finish() reassembles them server-side and
+ * writes ONE final private object. Bytes are never transformed.
+ * -------------------------------------------------------------------- */
+
+const CHUNK_DIR = path.join(process.cwd(), ".data", "chunks");
+const chunkPath = (sess: string, i: number) => `chunks/${sess}/${i}`;
+
+export async function storeChunk(sess: string, i: number, buf: Buffer): Promise<void> {
+  if (usingBlob()) {
+    const { put } = await import("@vercel/blob");
+    await put(chunkPath(sess, i), buf, {
+      access: "private", contentType: "application/octet-stream",
+      addRandomSuffix: false, allowOverwrite: true,
+    });
+    return;
+  }
+  await mkdir(path.join(CHUNK_DIR, sess), { recursive: true });
+  await writeFile(path.join(CHUNK_DIR, sess, String(i)), buf);
+}
+
+export async function assembleChunks(sess: string, count: number): Promise<Buffer> {
+  const parts: Buffer[] = [];
+  for (let i = 0; i < count; i++) {
+    parts.push(
+      usingBlob()
+        ? await readBlob(chunkPath(sess, i))
+        : await readFile(path.join(CHUNK_DIR, sess, String(i)))
+    );
+  }
+  return Buffer.concat(parts);
+}
+
+export async function deleteChunks(sess: string, count: number): Promise<void> {
+  try {
+    if (usingBlob()) {
+      const { del } = await import("@vercel/blob");
+      await del(Array.from({ length: count }, (_, i) => chunkPath(sess, i)));
+    } else {
+      const { rm } = await import("node:fs/promises");
+      await rm(path.join(CHUNK_DIR, sess), { recursive: true, force: true });
+    }
+  } catch { /* best-effort */ }
+}
+
+/* ── Presigned reads ──────────────────────────────────────────────────────
+ * ModelArk fetches reference media over plain HTTPS — reference videos ONLY
+ * accept a URL (no base64). A presigned GET gives it a time-limited link to
+ * a private object: nothing becomes public, the link just works for a while.
+ * -------------------------------------------------------------------- */
+
+export async function presignedReadUrl(pathname: string, hours = 24): Promise<string> {
+  const { issueSignedToken, presignUrl } = await import("@vercel/blob");
+  const validUntil = Date.now() + hours * 3600_000;
+  const token = await issueSignedToken({ pathname, operations: ["get"], validUntil });
+  const { presignedUrl } = await presignUrl(token, {
+    operation: "get", pathname, access: "private", validUntil,
+  });
+  return presignedUrl;
+}
