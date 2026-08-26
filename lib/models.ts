@@ -16,14 +16,21 @@
  * generations are not charged.
  */
 
-/** Negotiated account discount with ByteDance. Applied to every list rate. */
-export const ACCOUNT_DISCOUNT = 0.20;
+/**
+ * Account-level discount off ModelArk list rates.
+ *
+ * Set to 0 on 2026-08-25: the introductory 20% no longer applies, so the
+ * workspace now bills at list. Historical generations are unaffected —
+ * each one snapshots the rate it was actually charged at.
+ */
+export const ACCOUNT_DISCOUNT = 0;
 
 /**
- * NOTE: BytePlus also runs public time-limited promos (e.g. 1080p on Seedance
- * 2.5 at 72% of list until 17 Sep 2026). Whether those stack with an account
- * discount is unconfirmed, so they are deliberately NOT applied here — the
- * figures below are list × (1 − ACCOUNT_DISCOUNT) and may be conservative.
+ * NOTE: BytePlus advertises a public time-limited promo — 1080p output on
+ * Seedance 2.5 at 72% of list, to 17 Sep 2026. It is NOT applied here because
+ * we haven't confirmed it lands on this account. If it does, 1080p on 2.5 is
+ * cheaper than these figures, and it should be added with its expiry date so
+ * it stops applying on its own rather than silently under-reporting later.
  */
 
 export type ParamStyle = "flags" | "fields";

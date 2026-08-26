@@ -72,8 +72,12 @@ export default function UsagePage() {
         </button>
         <span className="ml-auto shrink-0 pl-3 font-mono text-[9.5px] tracking-wider text-mute">
           ACTUALS FROM RETURNED TOKENS
-          <span className="mx-2 text-line">│</span>
-          <span className="text-ok">ACCOUNT −{Math.round(ACCOUNT_DISCOUNT * 100)}%</span>
+          {ACCOUNT_DISCOUNT > 0 && (
+            <>
+              <span className="mx-2 text-line">│</span>
+              <span className="text-ok">ACCOUNT −{Math.round(ACCOUNT_DISCOUNT * 100)}%</span>
+            </>
+          )}
         </span>
       </div>
 

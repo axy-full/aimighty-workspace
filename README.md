@@ -46,13 +46,14 @@ applies). List prices from the [ModelArk pricing page](https://docs.byteplus.com
 | Seedance 2.5 | 10.70 | 11.70 | — |
 | Seedance 2.0 | 7.00 | 7.70 | 4.00 |
 
-A **20% account discount** is applied to every list rate via
-`ACCOUNT_DISCOUNT` in `lib/models.ts`. The inspector shows both — net price
-with the list price struck through.
+`ACCOUNT_DISCOUNT` in `lib/models.ts` applies an account-level discount to
+every list rate. It is currently **0** — the introductory 20% has ended, so
+the workspace bills at list. Changing it affects future renders only:
+every generation snapshots the rate it was charged at.
 
-BytePlus also runs public time-limited promos (e.g. 1080p on 2.5 at 72% of list
-until 17 Sep 2026). Whether those stack with an account discount is unconfirmed,
-so they are **not** applied — quoted figures may be conservative.
+BytePlus advertises a public promo — 1080p on Seedance 2.5 at 72% of list to
+17 Sep 2026 — which is **not** applied, since it's unconfirmed on this
+account. If it does apply, add it with its expiry so it lapses on its own.
 
 Failed generations are not billed, and only succeeded clips enter the ledger.
 

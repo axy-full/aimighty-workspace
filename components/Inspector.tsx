@@ -122,7 +122,7 @@ export default function Inspector({
             <p className="mt-1 font-mono text-[14px] tabular-nums text-lift">
               {est ? usd(est.net) : "—"}
             </p>
-            {est && (
+            {est && ACCOUNT_DISCOUNT > 0 && (
               <p className="mt-0.5 font-mono text-[9px] text-mute">
                 <span className="line-through">{usd(est.list)}</span>
                 <span className="ml-1 text-ok">−{Math.round(ACCOUNT_DISCOUNT * 100)}%</span>
