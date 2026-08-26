@@ -83,7 +83,7 @@ export default function References({
     if (direct) {
       const { upload } = await import("@vercel/blob/client");
       const blob = await upload(file.name, file, {
-        access: "public",
+        access: "private",
         handleUploadUrl: "/api/uploads/token",
         contentType: file.type || undefined,
       });

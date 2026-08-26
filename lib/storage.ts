@@ -6,7 +6,15 @@ import path from "node:path";
  * storage the first time we see it complete, so links never rot.
  *
  * Vercel Blob when BLOB_READ_WRITE_TOKEN is present, local disk otherwise.
+ *
+ * Blobs are stored PRIVATE and streamed back through our own authenticated
+ * routes. A public blob URL is reachable by anyone who has the link, which is
+ * wrong for client work — nothing here should be viewable outside the login.
  */
+
+/** Deterministic blob paths, so a row id is enough to find the object. */
+export const videoPath  = (genId: string) => `generations/${genId}.mp4`;
+export const uploadPath = (uploadId: string, ext: string) => `uploads/${uploadId}.${ext}`;
 
 const LOCAL_DIR = path.join(process.cwd(), ".data", "generations");
 
@@ -21,12 +29,13 @@ export async function storeVideo(genId: string, sourceUrl: string): Promise<stri
 
   if (usingBlob()) {
     const { put } = await import("@vercel/blob");
-    const blob = await put(`generations/${genId}.mp4`, buf, {
-      access: "public",
+    await put(videoPath(genId), buf, {
+      access: "private",
       contentType: "video/mp4",
       addRandomSuffix: false,
     });
-    return blob.url;
+    // Always hand back our own route, never a storage URL.
+    return `/api/media/${genId}`;
   }
 
   await mkdir(LOCAL_DIR, { recursive: true });
@@ -34,8 +43,20 @@ export async function storeVideo(genId: string, sourceUrl: string): Promise<stri
   return `/api/media/${genId}`;
 }
 
-export async function readLocalVideo(genId: string): Promise<Buffer> {
+/** Reads a private blob back as bytes. */
+async function readBlob(pathnameOrUrl: string): Promise<Buffer> {
+  const { get } = await import("@vercel/blob");
+  const found = await get(pathnameOrUrl, { access: "private" });
+  if (!found?.stream) throw new Error("blob not found");
+  const chunks: Uint8Array[] = [];
+  // @ts-expect-error - web stream is async-iterable at runtime
+  for await (const c of found.stream) chunks.push(c as Uint8Array);
+  return Buffer.concat(chunks);
+}
+
+export async function readVideoBytes(genId: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
+  if (usingBlob()) return readBlob(videoPath(genId));
   return readFile(path.join(LOCAL_DIR, `${genId}.mp4`));
 }
 
@@ -54,10 +75,13 @@ export async function storeUpload(
 
   if (usingBlob()) {
     const { put } = await import("@vercel/blob");
-    const blob = await put(`uploads/${uploadId}.${ext}`, buf, {
-      access: "public", contentType, addRandomSuffix: false,
+    await put(uploadPath(uploadId, ext), buf, {
+      access: "private", contentType, addRandomSuffix: false,
     });
-    return { url: blob.url, sha256: createHash("sha256").update(buf).digest("hex") };
+    return {
+      url: `/api/uploads/${uploadId}`,
+      sha256: createHash("sha256").update(buf).digest("hex"),
+    };
   }
 
   await mkdir(UPLOAD_DIR, { recursive: true });
@@ -70,11 +94,10 @@ export async function storeUpload(
 }
 
 export async function readUploadBytes(uploadId: string, ext: string, storedUrl: string): Promise<Buffer> {
-  if (usingBlob() || /^https?:\/\//.test(storedUrl)) {
-    const res = await fetch(storedUrl);
-    if (!res.ok) throw new Error(`Could not read upload ${uploadId} (${res.status})`);
-    return Buffer.from(await res.arrayBuffer());
-  }
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
+  if (usingBlob()) {
+    // storedUrl is a blob URL for browser-direct uploads, a pathname otherwise.
+    return readBlob(/^https?:\/\//.test(storedUrl) ? storedUrl : uploadPath(uploadId, ext));
+  }
   return readFile(path.join(UPLOAD_DIR, `${uploadId}.${ext}`));
 }

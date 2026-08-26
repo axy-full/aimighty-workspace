@@ -25,7 +25,7 @@ export async function GET(_req: Request, { params }: Ctx) {
       headers: {
         "Content-Type": row.mime,
         "Content-Length": String(buf.length),
-        "Cache-Control": "public, max-age=31536000, immutable",
+        "Cache-Control": "private, max-age=31536000, immutable",
       },
     });
   } catch {

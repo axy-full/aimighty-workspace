@@ -23,15 +23,22 @@ export async function POST(req: Request) {
   const url = String(body.url ?? "");
   const filename = String(body.filename ?? "image").slice(0, 200);
 
-  if (!/^https:\/\/[\w.-]+\.public\.blob\.vercel-storage\.com\//.test(url)) {
+  if (!/^https:\/\/[\w.-]+\.blob\.vercel-storage\.com\//.test(url)) {
     return NextResponse.json({ error: "Not a valid upload URL" }, { status: 400 });
   }
 
-  const res = await fetch(url);
-  if (!res.ok) {
+  let buf: Buffer;
+  try {
+    const { get } = await import("@vercel/blob");
+    const found = await get(url, { access: "private" });
+    if (!found?.stream) throw new Error("not found");
+    const chunks: Uint8Array[] = [];
+    // @ts-expect-error - web stream is async-iterable at runtime
+    for await (const c of found.stream) chunks.push(c as Uint8Array);
+    buf = Buffer.concat(chunks);
+  } catch {
     return NextResponse.json({ error: "Could not read the uploaded file" }, { status: 400 });
   }
-  const buf = Buffer.from(await res.arrayBuffer());
 
   const meta = identifyImage(buf);
   const problem = meta ? validateImage(meta, buf.length) : null;
