@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import TitleBar from "@/components/TitleBar";
 import PageSwitcher from "@/components/PageSwitcher";
 import ChatDock from "@/components/ChatDock";
+import ProjectDrawer from "@/components/ProjectDrawer";
 import { ProjectProvider } from "@/lib/projectContext";
 import { currentUser, userCount } from "@/lib/auth";
 
@@ -18,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="app">
         <TitleBar user={user} />
         <div className="app-work flex">
+          <ProjectDrawer />
           <div className="min-h-0 min-w-0 flex-1">{children}</div>
           <ChatDock />
         </div>

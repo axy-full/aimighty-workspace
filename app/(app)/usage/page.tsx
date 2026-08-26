@@ -144,18 +144,22 @@ export default function UsagePage() {
           </Panel>
 
           <div className="grid gap-2.5 lg:grid-cols-2 2xl:grid-cols-3">
+            <Panel title="Credits used by project" right={
+              <span className="font-mono text-[9px] tracking-wider text-mute">
+                DELETED CLIPS STAY COUNTED
+              </span>
+            }>
+              <Rows rows={data.byProject.map((p) => ({
+                key: p.name, name: p.name,
+                meta: `${p.n} clip${p.n === 1 ? "" : "s"}`,
+                value: p.spend, max: maxProject,
+              }))} />
+            </Panel>
             <Panel title="Spend by model">
               <Rows rows={data.byModel.map((m) => ({
                 key: m.model, name: m.label,
                 meta: `${m.n} clips · ${compactTokens(m.tokens)} tokens`,
                 value: m.spend, max: maxModel,
-              }))} />
-            </Panel>
-            <Panel title="Spend by bin">
-              <Rows rows={data.byProject.map((p) => ({
-                key: p.name, name: p.name,
-                meta: `${p.n} clip${p.n === 1 ? "" : "s"}`,
-                value: p.spend, max: maxProject,
               }))} />
             </Panel>
             <Panel title="Spend by person">
