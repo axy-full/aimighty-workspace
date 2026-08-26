@@ -208,6 +208,20 @@ select.ctl {
   animation: renderSweep 2.6s ease-in-out infinite;
 }
 
+/* The viewer's fixed-ratio slate. Desktop: the panel has a definite height,
+   so the stage fits whichever dimension is tighter. Stacked/mobile: the
+   panel's height is content-driven — container-type:size would contain it
+   to ZERO — so we switch to inline-size and let width drive the ratio. */
+.viewer-stage { container-type: size; }
+.stage16 {
+  aspect-ratio: 16 / 9;
+  width: min(calc(100cqw - 16px), calc((100cqh - 16px) * 16 / 9));
+}
+@media (max-width: 860px) {
+  .viewer-stage { container-type: inline-size; }
+  .stage16 { width: calc(100cqw - 16px); }
+}
+
 /* Status lamp */
 .lamp {
   width: 6px; height: 6px; border-radius: 50%;

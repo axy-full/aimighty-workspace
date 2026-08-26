@@ -294,11 +294,8 @@ function ClipPrompt({ clip, onUse }: { clip: Gen; onUse: () => void }) {
 function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => void }) {
   if (!clip) {
     return (
-      <div className="grid min-h-0 flex-1 place-items-center bg-desk p-2" style={{ containerType: "size" }}>
-        <div
-          className="desk-grid relative grid place-items-center overflow-hidden border border-hair bg-black"
-          style={{ aspectRatio: "16 / 9", width: "min(100cqw - 16px, (100cqh - 16px) * 16 / 9)" }}
-        >
+      <div className="viewer-stage grid min-h-0 flex-1 place-items-center bg-desk p-2">
+        <div className="stage16 desk-grid relative grid place-items-center overflow-hidden rounded-[var(--r-sm)] border border-hair bg-black">
           <div className="text-center">
             <p className="ptitle text-[13px] text-dim">The screening room</p>
             <p className="mt-1 font-mono text-[10px] tracking-wide text-mute">click any clip on the strip to play it here</p>
@@ -321,15 +318,9 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
 
   return (
     <>
-      <div
-        className="grid min-h-0 flex-1 place-items-center bg-desk p-2"
-        style={{ containerType: "size" }}
-      >
+      <div className="viewer-stage grid min-h-0 flex-1 place-items-center bg-desk p-2">
         {/* Fixed 16:9 slate; non-16:9 clips letterbox inside it like any NLE viewer. */}
-        <div
-          className="relative overflow-hidden border border-hair bg-black"
-          style={{ aspectRatio: "16 / 9", width: "min(100cqw - 16px, (100cqh - 16px) * 16 / 9)" }}
-        >
+        <div className="stage16 relative overflow-hidden rounded-[var(--r-sm)] border border-hair bg-black">
           {done ? (
             <video key={clip.id} src={url!} controls loop preload="metadata"
               className="absolute inset-0 h-full w-full object-contain" />
