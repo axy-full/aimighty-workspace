@@ -174,9 +174,11 @@ titles, Inter Tight for body, JetBrains Mono for every number and micro-label.
 
 ## Deployment
 
-Runs on Vercel in **Singapore (`sin1`)**, pinned in `vercel.json` — next to
-ModelArk's `ap-southeast` endpoint and one short hop from Mumbai. The US
-default would bounce every render across two oceans for nothing.
+Runs on Vercel in **Mumbai (`bom1`)**, pinned in `vercel.json` — colocated
+with the team and with the Blob store, which is what the hot path touches:
+media is proxied through the app on every view, whereas ModelArk is called
+once per render. Create the Blob store in the same region. The US default
+would bounce everything across two oceans for nothing.
 
 Required environment variables in Vercel:
 
