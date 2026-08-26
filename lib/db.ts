@@ -99,6 +99,10 @@ export async function ready(): Promise<void> {
   if (!_ready) {
     _ready = (async () => {
       for (const stmt of SCHEMA) await db().execute(stmt);
+      // Lightweight migrations for columns added after first deploy.
+      try {
+        await db().execute(`ALTER TABLE generations ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`);
+      } catch { /* column already exists */ }
     })();
   }
   return _ready;

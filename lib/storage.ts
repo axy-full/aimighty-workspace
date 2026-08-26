@@ -114,3 +114,32 @@ export async function readUploadBytes(uploadId: string, ext: string, storedUrl: 
   }
   return readFile(path.join(UPLOAD_DIR, `${uploadId}.${ext}`));
 }
+
+/** Best-effort removal of a render's stored file (blob or local). */
+export async function deleteVideo(genId: string): Promise<void> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) return;
+  try {
+    if (usingBlob()) {
+      const { del } = await import("@vercel/blob");
+      await del(videoPath(genId));
+    } else {
+      const { rm } = await import("node:fs/promises");
+      await rm(path.join(LOCAL_DIR, `${genId}.mp4`), { force: true });
+    }
+  } catch { /* orphan cleanup is best-effort */ }
+}
+
+/** Best-effort removal of an upload's stored file (blob URL, pathname, or local). */
+export async function deleteUpload(uploadId: string, ext: string, storedUrl: string): Promise<void> {
+  if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) return;
+  try {
+    if (usingBlob()) {
+      const { del } = await import("@vercel/blob");
+      // Browser-direct uploads carry a random suffix known only via stored_url.
+      await del(/^https?:\/\//.test(storedUrl) ? storedUrl : uploadPath(uploadId, ext));
+    } else {
+      const { rm } = await import("node:fs/promises");
+      await rm(path.join(UPLOAD_DIR, `${uploadId}.${ext}`), { force: true });
+    }
+  } catch { /* best-effort */ }
+}

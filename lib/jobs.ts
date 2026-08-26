@@ -76,8 +76,9 @@ export async function listGenerations(opts: {
     args.push(`%${opts.search.toLowerCase()}%`);
   }
 
+  where.push("g.deleted = 0");
   const sql = `${SELECT}
-    ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+    WHERE ${where.join(" AND ")}
     ORDER BY g.created_at DESC
     LIMIT ?`;
   args.push(opts.limit ?? 200);
@@ -89,7 +90,7 @@ export async function listGenerations(opts: {
 export async function getGeneration(genId: string): Promise<Generation | null> {
   await ready();
   const rs = await db().execute({
-    sql: `${SELECT} WHERE g.id = ? LIMIT 1`,
+    sql: `${SELECT} WHERE g.id = ? AND g.deleted = 0 LIMIT 1`,
     args: [genId],
   });
   return rs.rows[0] ? rowToGeneration(rs.rows[0]) : null;
@@ -103,7 +104,13 @@ const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
  * snapshot the cost using the rate in effect right now.
  */
 export async function syncGeneration(gen: Generation): Promise<Generation> {
-  if (TERMINAL.has(gen.status) && (gen.status !== "succeeded" || gen.storedUrl)) {
+  // A succeeded row isn't final until the video is in our storage AND the
+  // cost is recorded — Ark can report success a beat before usage appears,
+  // and sealing early would make the clip permanently free in the ledger.
+  if (
+    TERMINAL.has(gen.status) &&
+    (gen.status !== "succeeded" || (gen.storedUrl && gen.costUsd != null))
+  ) {
     return gen;
   }
   if (!gen.arkTaskId) return gen;
@@ -120,17 +127,20 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   let cost = gen.costUsd;
   let rate: number | null = null;
 
-  if (task.status === "succeeded" && task.videoUrl && !storedUrl) {
-    try {
-      storedUrl = await storeVideo(gen.id, task.videoUrl);
-    } catch (e) {
-      // Keep the (expiring) Ark URL as a fallback rather than losing the render.
-      // Loud in the logs: a silent failure here cost us two near-lost videos.
-      console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
-      storedUrl = null;
+  if (task.status === "succeeded") {
+    if (task.videoUrl && !storedUrl) {
+      try {
+        storedUrl = await storeVideo(gen.id, task.videoUrl);
+      } catch (e) {
+        // Keep the (expiring) Ark URL as a fallback rather than losing the render.
+        // Loud in the logs: a silent failure here cost us two near-lost videos.
+        console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
+        storedUrl = null;
+      }
     }
-    if (task.totalTokens != null) {
-      // Rate depends on the output resolution tier, not just the model.
+    // Snapshot the cost exactly ONCE — a storeVideo retry must not recompute
+    // it at whatever the rate happens to be later; history stays truthful.
+    if (cost == null && task.totalTokens != null) {
       const res = String((gen.params as { resolution?: string }).resolution ?? "720p");
       rate = effectiveRate(gen.model, res);
       cost = rate == null ? null : costUsd(task.totalTokens, rate);
@@ -173,11 +183,15 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
 /** Sync every job that isn't finished yet. Called by list views. */
 export async function syncPending(limit = 12): Promise<void> {
   await ready();
+  // Repair clauses only look back 3 days: past that, Ark's task and URL are
+  // long gone (48h expiry) and re-polling a dead task forever is just noise.
+  const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
-    sql: `${SELECT} WHERE g.status NOT IN ('succeeded','failed','cancelled')
-             OR (g.status='succeeded' AND g.stored_url IS NULL)
+    sql: `${SELECT} WHERE (g.status NOT IN ('succeeded','failed','cancelled') AND g.deleted=0)
+             OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
+                 AND (g.stored_url IS NULL OR g.cost_usd IS NULL))
           ORDER BY g.created_at DESC LIMIT ?`,
-    args: [limit],
+    args: [horizon, limit],
   });
   await Promise.allSettled(rs.rows.map((r) => syncGeneration(rowToGeneration(r))));
 }

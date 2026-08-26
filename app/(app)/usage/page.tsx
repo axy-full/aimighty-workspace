@@ -23,15 +23,27 @@ export default function UsagePage() {
   const { data, refresh } = useApi<Usage>("/api/usage", 20000);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [topupBusy, setTopupBusy] = useState(false);
+  const [topupErr, setTopupErr] = useState<string | null>(null);
 
   async function addTopup() {
     const v = Number(amount);
-    if (!Number.isFinite(v) || v === 0) return;
-    await fetch("/api/topups", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amountUsd: v, note }),
-    });
-    setAmount(""); setNote(""); refresh();
+    if (!Number.isFinite(v) || v === 0 || topupBusy) return;
+    setTopupBusy(true); setTopupErr(null);
+    try {
+      const res = await fetch("/api/topups", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountUsd: v, note }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not record the top-up");
+      setAmount(""); setNote("");
+      refresh();
+    } catch (e) {
+      setTopupErr((e as Error).message);
+    } finally {
+      setTopupBusy(false);
+    }
   }
 
   if (!data) {
@@ -65,11 +77,14 @@ export default function UsagePage() {
           onKeyDown={(e) => e.key === "Enter" && addTopup()}
         />
         <button
-          onClick={addTopup}
-          className="ptitle h-[30px] shrink-0 rounded-[3px] border border-line bg-panel2 px-3 text-[10.5px] tracking-[.1em] text-dim hover:border-lift hover:text-lift"
+          onClick={addTopup} disabled={topupBusy}
+          className="ptitle h-[30px] shrink-0 rounded-[3px] border border-line bg-panel2 px-3 text-[10.5px] tracking-[.1em] text-dim hover:border-lift hover:text-lift disabled:opacity-40"
         >
-          Add
+          {topupBusy ? "…" : "Add"}
         </button>
+        {topupErr && (
+          <span className="shrink-0 font-mono text-[9.5px] text-lift">{topupErr}</span>
+        )}
         <span className="ml-auto shrink-0 pl-3 font-mono text-[9.5px] tracking-wider text-mute">
           ACTUALS FROM RETURNED TOKENS
           {ACCOUNT_DISCOUNT > 0 && (

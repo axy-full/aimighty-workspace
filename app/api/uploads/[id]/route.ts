@@ -1,5 +1,5 @@
 import { db, ready } from "@/lib/db";
-import { readUploadBytes } from "@/lib/storage";
+import { readUploadBytes, deleteUpload } from "@/lib/storage";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +38,12 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
+  // Remove the stored object BEFORE the row: a direct-upload blob's random
+  // suffix lives only in stored_url, so dropping the row first orphans the
+  // file beyond recovery.
+  const rs = await db().execute({ sql: `SELECT ext, stored_url FROM uploads WHERE id=? LIMIT 1`, args: [id] });
+  const row = rs.rows[0] as unknown as { ext: string; stored_url: string } | undefined;
+  if (row) await deleteUpload(id, row.ext, row.stored_url);
   await db().execute({ sql: `DELETE FROM uploads WHERE id = ?`, args: [id] });
   return Response.json({ ok: true });
 }

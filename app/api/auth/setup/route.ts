@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
-  SESSION_COOKIE, createSession, createUser, passwordProblem, userCount,
+  SESSION_COOKIE, createSession, createFirstAdmin, passwordProblem, userCount,
 } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,15 @@ export async function POST(req: Request) {
   const pwProblem = passwordProblem(password);
   if (pwProblem) return NextResponse.json({ error: pwProblem }, { status: 400 });
 
-  const user = await createUser(email, name, password, "admin");
+  // Atomic: the insert itself requires the users table to be empty, so a
+  // concurrent setup race produces exactly one admin.
+  const user = await createFirstAdmin(email, name, password);
+  if (!user) {
+    return NextResponse.json(
+      { error: "Setup is already complete. Ask an admin for an invite." },
+      { status: 403 }
+    );
+  }
   const token = await createSession(user.id);
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true, sameSite: "lax",

@@ -17,7 +17,19 @@ export type RefItem = {
  * Mirrors the server rule in /api/generate so the button can be disabled before
  * a doomed submit. The server still validates — this is only the UI's copy.
  */
-export function referenceProblem(refs: RefItem[], maxReference: number): string | null {
+export function referenceProblem(
+  refs: RefItem[], maxReference: number, prompt = ""
+): string | null {
+  // A prompt citing @ImageN beyond the current reference list means an image
+  // was removed (or re-roled) after being cited — the render would spend real
+  // money resolving the citation to the wrong image or to nothing.
+  const referenceCount = refs.filter((r) => r.role === "reference_image").length;
+  for (const m of prompt.matchAll(/@Image(\d+)/gi)) {
+    const n = Number(m[1]);
+    if (n < 1 || n > referenceCount) {
+      return `The prompt cites @Image${m[1]} but only ${referenceCount} reference image${referenceCount === 1 ? " is" : "s are"} attached — remove the citation or re-add the image.`;
+    }
+  }
   if (!refs.length) return null;
   const frames = refs.filter((r) => r.role !== "reference_image");
   const references = refs.filter((r) => r.role === "reference_image");
@@ -58,7 +70,7 @@ export default function References({
   refs, setRefs, maxReference, onCite,
 }: {
   refs: RefItem[];
-  setRefs: (r: RefItem[]) => void;
+  setRefs: React.Dispatch<React.SetStateAction<RefItem[]>>;
   maxReference: number;
   onCite: (token: string) => void;
 }) {
@@ -133,17 +145,19 @@ export default function References({
       }
     }
 
-    if (next.length) setRefs([...refs, ...next]);
+    // Functional update: two drops racing (or a remove mid-upload) must not
+    // resurrect a stale snapshot of the list.
+    if (next.length) setRefs((prev) => [...prev, ...next]);
     setBusy(false);
     if (input.current) input.current.value = "";
   }
 
   function setRole(id: string, role: ImageRole) {
-    setRefs(refs.map((r) => (r.id === id ? { ...r, role } : r)));
+    setRefs((prev) => prev.map((r) => (r.id === id ? { ...r, role } : r)));
   }
 
   async function remove(id: string) {
-    setRefs(refs.filter((r) => r.id !== id));
+    setRefs((prev) => prev.filter((r) => r.id !== id));
     fetch(`/api/uploads/${id}`, { method: "DELETE" }).catch(() => {});
   }
 

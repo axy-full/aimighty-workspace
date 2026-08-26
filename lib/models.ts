@@ -146,7 +146,12 @@ export function dimensionsFor(resolution: string, ratio: string): { w: number; h
   if (!base) return null;
   const m = ratio.match(/^(\d+):(\d+)$/);
   if (!m) return null;
-  return { h: up16(base), w: up16((base * Number(m[1])) / Number(m[2])) };
+  const [rw, rh] = [Number(m[1]), Number(m[2])];
+  // The resolution names the SHORT side. Treating it as the height regardless
+  // of orientation made a 9:16 portrait look like 416×720 instead of 720×1280
+  // — a cost estimate ~2.8× under what ByteDance actually bills.
+  if (rw >= rh) return { h: up16(base), w: up16((base * rw) / rh) };
+  return { w: up16(base), h: up16((base * rh) / rw) };
 }
 
 export function estimateTokens(

@@ -169,14 +169,61 @@ export async function createUser(
   };
 }
 
-/** Locks an account briefly after repeated failures. */
-export async function noteFailure(userId: string, failed: number): Promise<void> {
-  const next = failed + 1;
+/**
+ * Creates the very first admin, atomically. The INSERT itself carries the
+ * "no users exist yet" condition, so two racing setup requests can't both
+ * become admin — the loser's insert writes zero rows.
+ */
+export async function createFirstAdmin(
+  email: string, name: string, password: string
+): Promise<User | null> {
+  await ready();
+  const uid = id("usr");
+  const ts = now();
+  const rs = await db().execute({
+    sql: `INSERT INTO users (id,email,name,password_hash,role,created_at)
+          SELECT ?,?,?,?,'admin',?
+          WHERE NOT EXISTS (SELECT 1 FROM users)`,
+    args: [uid, email.trim().toLowerCase(), name.trim().slice(0, 80), hashPassword(password), ts],
+  });
+  if (Number(rs.rowsAffected) === 0) return null;
+  return {
+    id: uid, email: email.trim().toLowerCase(), name: name.trim(),
+    role: "admin", disabled: false, lastSeen: null, createdAt: ts,
+  };
+}
+
+/**
+ * Locks an account briefly after repeated failures.
+ *
+ * The increment happens IN SQL — a read-then-write version let N parallel
+ * wrong guesses advance the counter by one, quietly defeating the lockout.
+ * An expired lock resets the count first, so one typo after a lockout
+ * doesn't instantly re-lock.
+ */
+export async function noteFailure(userId: string): Promise<void> {
+  const ts = now();
   await db().execute({
-    sql: `UPDATE users SET failed_count=?, locked_until=? WHERE id=?`,
-    args: [next, next >= MAX_FAILED ? now() + LOCK_MINUTES * 60_000 : null, userId],
+    sql: `UPDATE users SET failed_count=0, locked_until=NULL
+          WHERE id=? AND locked_until IS NOT NULL AND locked_until <= ?`,
+    args: [userId, ts],
+  });
+  await db().execute({
+    sql: `UPDATE users SET failed_count = failed_count + 1 WHERE id=?`,
+    args: [userId],
+  });
+  await db().execute({
+    sql: `UPDATE users SET locked_until=? WHERE id=? AND failed_count >= ? AND locked_until IS NULL`,
+    args: [ts + LOCK_MINUTES * 60_000, userId, MAX_FAILED],
   });
 }
+
+/**
+ * A hash to verify against when the account doesn't exist, so the "wrong
+ * email" and "wrong password" paths cost the same scrypt work — response
+ * timing must not reveal which emails are real.
+ */
+export const DUMMY_HASH = hashPassword("dummy-timing-equalizer");
 
 export async function clearFailures(userId: string): Promise<void> {
   await db().execute({

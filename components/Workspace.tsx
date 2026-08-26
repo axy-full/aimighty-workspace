@@ -53,11 +53,13 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
     return bin === "unfiled" ? all.filter((g) => !g.projectId) : all;
   }, [data, bin]);
 
-  // Selection is derived, not stored in an effect: an explicit pick wins while
-  // it still exists, otherwise the viewer falls back to the newest clip.
+  // Selection is derived: an explicit pick wins while it exists, otherwise
+  // the newest clip. Starting playback pins the clip (onPlay → setSelected),
+  // so a teammate's render landing at the top of the shared list can't
+  // hijack the viewer mid-watch.
   const activeId = selected && gens.some((g) => g.id === selected) ? selected : gens[0]?.id ?? null;
   const clip = gens.find((g) => g.id === activeId) ?? null;
-  const refProblem = referenceProblem(refs, getModel(params.modelId).maxReferenceImages);
+  const refProblem = referenceProblem(refs, getModel(params.modelId).maxReferenceImages, prompt);
   const pending = gens.filter((g) => g.status === "queued" || g.status === "running").length;
 
   function afterChange() { refresh(); refreshProjects(); }
@@ -151,7 +153,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
             <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(clip.id)}</span>
           )}
         >
-          <ViewerBody clip={clip} onChanged={afterChange} />
+          <ViewerBody clip={clip} onChanged={afterChange} onPin={() => clip && setSelected(clip.id)} />
         </Panel>
 
         <Panel
@@ -264,7 +266,9 @@ function PoolRow({ label, icon, active, onClick, disabled, count, spend }: {
   );
 }
 
-function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => void }) {
+function ViewerBody({ clip, onChanged, onPin }: {
+  clip: Gen | null; onChanged: () => void; onPin: () => void;
+}) {
   if (!clip) {
     return (
       <div className="grid min-h-0 flex-1 place-items-center bg-desk p-2" style={{ containerType: "size" }}>
@@ -301,7 +305,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
           style={{ aspectRatio: "16 / 9", width: "min(100cqw - 16px, (100cqh - 16px) * 16 / 9)" }}
         >
           {done ? (
-            <video key={clip.id} src={url!} controls loop preload="metadata"
+            <video key={clip.id} src={url!} controls loop preload="metadata" onPlay={onPin}
               className="absolute inset-0 h-full w-full object-contain" />
           ) : (
             <div className="desk-grid absolute inset-0 grid place-items-center px-6">

@@ -23,7 +23,14 @@ export async function POST(req: Request) {
   const url = String(body.url ?? "");
   const filename = String(body.filename ?? "image").slice(0, 200);
 
-  if (!/^https:\/\/[\w.-]+\.blob\.vercel-storage\.com\//.test(url)) {
+  // Pin to OUR store: rw tokens embed the store id as segment 3
+  // (vercel_blob_rw_<storeId>_<secret>). A URL from any other store is data
+  // we never issued a token for.
+  const storeId = (process.env.BLOB_READ_WRITE_TOKEN ?? "").split("_")[3] ?? "";
+  const host = new RegExp(
+    `^https://${storeId}\\.(?:public|private)\\.blob\\.vercel-storage\\.com/`
+  );
+  if (!storeId || !host.test(url)) {
     return NextResponse.json({ error: "Not a valid upload URL" }, { status: 400 });
   }
 

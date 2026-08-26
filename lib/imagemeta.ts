@@ -18,7 +18,17 @@ export type ImageMeta = {
 const ascii = (b: Buffer, off: number, len: number) => b.subarray(off, off + len).toString("latin1");
 
 export function identifyImage(buf: Buffer): ImageMeta | null {
-  if (buf.length < 16) return null;
+  try {
+    return identifyImageInner(buf);
+  } catch {
+    // A truncated header (readUInt32 past the end) is just a bad file —
+    // it must surface as the clean "unrecognised image" 400, never a 500.
+    return null;
+  }
+}
+
+function identifyImageInner(buf: Buffer): ImageMeta | null {
+  if (buf.length < 30) return null;
 
   // ── PNG ──────────────────────────────────────────────────────────────
   if (buf[0] === 0x89 && ascii(buf, 1, 3) === "PNG") {

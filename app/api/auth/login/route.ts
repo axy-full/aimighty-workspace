@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
-  SESSION_COOKIE, LOCK_MESSAGE, createSession, findByEmail,
+  SESSION_COOKIE, LOCK_MESSAGE, DUMMY_HASH, createSession, findByEmail,
   verifyPassword, noteFailure, clearFailures,
 } from "@/lib/auth";
 import { now } from "@/lib/db";
@@ -19,16 +19,20 @@ export async function POST(req: Request) {
   const row = await findByEmail(email);
 
   // Same message whether the account is missing or the password is wrong —
-  // don't reveal which emails exist.
+  // don't reveal which emails exist. The dummy verify keeps the timing the
+  // same too: a fast "no such user" branch would leak just as loudly.
   const generic = { error: "Wrong email or password" };
-  if (!row || Number(row.disabled)) return NextResponse.json(generic, { status: 401 });
+  if (!row || Number(row.disabled)) {
+    verifyPassword(password, DUMMY_HASH);
+    return NextResponse.json(generic, { status: 401 });
+  }
 
   if (row.locked_until && Number(row.locked_until) > now()) {
     return NextResponse.json({ error: LOCK_MESSAGE }, { status: 429 });
   }
 
   if (!verifyPassword(password, row.password_hash)) {
-    await noteFailure(row.id, Number(row.failed_count ?? 0));
+    await noteFailure(row.id);
     return NextResponse.json(generic, { status: 401 });
   }
 

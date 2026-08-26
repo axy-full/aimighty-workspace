@@ -10,7 +10,7 @@ export async function GET() {
   await ready();
   const rs = await db().execute(`
     SELECT p.*,
-           (SELECT COUNT(*) FROM generations g WHERE g.project_id = p.id) AS gen_count,
+           (SELECT COUNT(*) FROM generations g WHERE g.project_id = p.id AND g.deleted=0) AS gen_count,
            (SELECT COALESCE(SUM(g.cost_usd),0) FROM generations g WHERE g.project_id = p.id) AS spend
     FROM projects p ORDER BY p.created_at DESC
   `);

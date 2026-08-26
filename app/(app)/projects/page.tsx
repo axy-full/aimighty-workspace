@@ -18,14 +18,25 @@ export default function BinsPage() {
   const [desc, setDesc] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const [err, setErr] = useState<string | null>(null);
+
   async function create() {
     if (!name.trim() || busy) return;
-    setBusy(true);
-    await fetch("/api/projects", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description: desc }),
-    });
-    setName(""); setDesc(""); setBusy(false); refresh();
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description: desc }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not create the bin");
+      setName(""); setDesc("");
+      refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   const projects = data?.projects ?? [];
@@ -51,6 +62,7 @@ export default function BinsPage() {
           <IconPlus /> New bin
         </button>
 
+        {err && <span className="shrink-0 font-mono text-[9.5px] text-lift">{err}</span>}
         <span className="ml-auto shrink-0 pl-3 font-mono text-[10px] tracking-wider text-mute">
           {String(projects.length).padStart(2, "0")} BINS
           <span className="mx-2 text-line">│</span>

@@ -1,24 +1,68 @@
 import { readVideoBytes } from "@/lib/storage";
 import { requireUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 type Ctx = { params: Promise<{ id: string }> };
 
-/** Serves renders from private storage — behind the login in every environment. */
-export async function GET(_req: Request, { params }: Ctx) {
+/**
+ * Serves renders from private storage — behind the login in every environment.
+ *
+ * Honors HTTP Range requests: Safari (iOS especially) probes with
+ * `Range: bytes=0-1` and refuses to play <video> from a server that answers
+ * 200 without range semantics, and seeking anywhere needs 206 responses.
+ * For a film team reviewing on phones, that's the primary path.
+ */
+export async function GET(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await params;
+
+  let buf: Buffer;
   try {
-    const buf = await readVideoBytes(id);
-    return new Response(new Uint8Array(buf), {
-      headers: {
-        "Content-Type": "video/mp4",
-        "Content-Length": String(buf.length),
-        // private: a shared cache must never hold a signed-in user's video
-        "Cache-Control": "private, max-age=31536000, immutable",
-      },
-    });
+    buf = await readVideoBytes(id);
   } catch {
     return new Response("Not found", { status: 404 });
   }
+
+  const common = {
+    "Content-Type": "video/mp4",
+    "Accept-Ranges": "bytes",
+    // private: a shared cache must never hold a signed-in user's video
+    "Cache-Control": "private, max-age=31536000, immutable",
+  };
+
+  const range = req.headers.get("range");
+  const m = range?.match(/^bytes=(\d*)-(\d*)$/);
+  if (m && (m[1] !== "" || m[2] !== "")) {
+    let start: number, end: number;
+    if (m[1] === "") {
+      // suffix form: bytes=-N (last N bytes)
+      const n = Math.min(Number(m[2]), buf.length);
+      start = buf.length - n;
+      end = buf.length - 1;
+    } else {
+      start = Number(m[1]);
+      end = m[2] === "" ? buf.length - 1 : Math.min(Number(m[2]), buf.length - 1);
+    }
+    if (start > end || start >= buf.length) {
+      return new Response(null, {
+        status: 416,
+        headers: { ...common, "Content-Range": `bytes */${buf.length}` },
+      });
+    }
+    const slice = buf.subarray(start, end + 1);
+    return new Response(new Uint8Array(slice), {
+      status: 206,
+      headers: {
+        ...common,
+        "Content-Length": String(slice.length),
+        "Content-Range": `bytes ${start}-${end}/${buf.length}`,
+      },
+    });
+  }
+
+  return new Response(new Uint8Array(buf), {
+    headers: { ...common, "Content-Length": String(buf.length) },
+  });
 }
