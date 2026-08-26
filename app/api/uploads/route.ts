@@ -7,6 +7,14 @@ import { requireUser } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+/** Tells the browser whether to upload direct-to-storage (production) or
+ *  through this route (local dev, where there's no 4.5MB body cap). */
+export async function GET() {
+  const got = await requireUser();
+  if (got.response) return got.response;
+  return NextResponse.json({ direct: Boolean(process.env.BLOB_READ_WRITE_TOKEN) });
+}
+
 /**
  * Accepts one image and stores it BYTE-FOR-BYTE.
  *

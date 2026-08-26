@@ -82,8 +82,15 @@ export default function TeamPage() {
           className="ptitle flex h-[30px] shrink-0 items-center gap-1.5 rounded-[3px] bg-red px-3 text-[10.5px] tracking-[.1em] text-white hover:bg-lift disabled:bg-panel3 disabled:text-mute">
           <IconPlus /> Invite
         </button>
-        <span className="ml-auto shrink-0 pl-3 font-mono text-[10px] tracking-wider text-mute">
-          {String(users.filter((u) => !u.disabled).length).padStart(2, "0")} ACTIVE
+        <span className="ml-auto flex shrink-0 items-center gap-2.5 pl-3">
+          <a href="/api/export" download
+            title="Download every prompt, cost and account record as JSON"
+            className="rounded-[2px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            EXPORT DATA
+          </a>
+          <span className="font-mono text-[10px] tracking-wider text-mute">
+            {String(users.filter((u) => !u.disabled).length).padStart(2, "0")} ACTIVE
+          </span>
         </span>
       </div>
 

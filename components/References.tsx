@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconPlus, IconClose } from "./Icons";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
 
@@ -63,9 +63,47 @@ export default function References({
   onCite: (token: string) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const [direct, setDirect] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
+
+  // Production uploads go browser → Blob directly (Vercel caps request
+  // bodies at 4.5MB, well under a normal camera photo). Local dev posts here.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/uploads")
+      .then((r) => r.json())
+      .then((j) => { if (alive) setDirect(Boolean(j.direct)); })
+      .catch(() => { if (alive) setDirect(false); });
+    return () => { alive = false; };
+  }, []);
+
+  async function uploadOne(file: File) {
+    if (direct) {
+      const { upload } = await import("@vercel/blob/client");
+      const blob = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/uploads/token",
+        contentType: file.type || undefined,
+      });
+      const res = await fetch("/api/uploads/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: blob.url, filename: file.name }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Upload failed");
+      return json;
+    }
+
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/uploads", { method: "POST", body: fd });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? "Upload failed");
+    return json;
+  }
 
   async function add(files: FileList | File[]) {
     setBusy(true); setErr(null);
@@ -75,12 +113,7 @@ export default function References({
       try {
         // Hash the original first, so we can prove the stored copy matches.
         const localHash = await hashFile(file);
-
-        const fd = new FormData();
-        fd.append("file", file);
-        const res = await fetch("/api/uploads", { method: "POST", body: fd });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Upload failed");
+        const json = await uploadOne(file);
 
         next.push({
           ...json,
