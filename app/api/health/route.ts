@@ -58,6 +58,9 @@ export async function GET() {
     videosSaved,
     videosAtRisk,
     arkKeyConfigured: Boolean(process.env.ARK_API_KEY),
+    pushConfigured: Boolean(
+      process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    ),
     region: process.env.VERCEL_REGION ?? "local",
     commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7),
   });

@@ -116,11 +116,14 @@ function urlB64ToUint8Array(base64: string) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
+const PUSH_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
 function PushBell() {
-  const [state, setState] = useState<"unsupported" | "off" | "on" | "busy" | "denied">("off");
+  const [state, setState] = useState<"unsupported" | "unconfigured" | "off" | "on" | "busy" | "denied">("off");
 
   useEffect(() => {
     if (!pushSupported()) { setTimeout(() => setState("unsupported"), 0); return; }
+    if (!PUSH_KEY) { setTimeout(() => setState("unconfigured"), 0); return; }
     if (Notification.permission === "denied") { setTimeout(() => setState("denied"), 0); return; }
     navigator.serviceWorker.getRegistration().then(async (reg) => {
       const sub = reg && (await reg.pushManager.getSubscription());
@@ -131,23 +134,31 @@ function PushBell() {
   async function enable() {
     setState("busy");
     try {
-      const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!pub) throw new Error("no key");
+      if (!PUSH_KEY) {
+        throw new Error(
+          "Push keys aren't in this build yet. Add the three VAPID variables in Vercel and REDEPLOY — the public key is baked in at build time."
+        );
+      }
       const reg = await navigator.serviceWorker.register("/sw.js");
       const perm = await Notification.requestPermission();
       if (perm !== "granted") { setState(perm === "denied" ? "denied" : "off"); return; }
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlB64ToUint8Array(pub),
+        applicationServerKey: urlB64ToUint8Array(PUSH_KEY),
       });
       const res = await fetch("/api/push/subscribe", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription: sub.toJSON() }),
       });
-      if (!res.ok) throw new Error("subscribe failed");
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? "The server rejected the subscription.");
+      }
       setState("on");
-    } catch {
-      setState("off");
+    } catch (e) {
+      // Silence was the worst possible behavior here — say what went wrong.
+      alert(`Couldn't turn on notifications:\n\n${(e as Error).message}`);
+      setState(PUSH_KEY ? "off" : "unconfigured");
     }
   }
 
@@ -169,15 +180,19 @@ function PushBell() {
   if (state === "unsupported") return null;
   const title =
     state === "on" ? "Notifications on — click to turn off"
-    : state === "denied" ? "Notifications blocked in browser settings"
+    : state === "denied" ? "Notifications are blocked for this site in the browser — allow them in site settings, then click again"
+    : state === "unconfigured" ? "Push keys not configured — add the VAPID env vars in Vercel and redeploy"
     : "Notify me of new messages";
 
   return (
     <button
-      onClick={state === "on" ? disable : state === "busy" || state === "denied" ? undefined : enable}
+      onClick={state === "on" ? disable : state === "busy" ? undefined : enable}
       title={title}
       className={`grid h-[20px] w-[20px] place-items-center rounded-[6px] transition-colors ${
-        state === "on" ? "text-lift" : state === "denied" ? "text-mute/40" : "text-mute hover:text-lift"
+        state === "on" ? "text-lift"
+        : state === "unconfigured" ? "text-warn/70 hover:text-warn"
+        : state === "denied" ? "text-mute/40 hover:text-mute"
+        : "text-mute hover:text-lift"
       }`}
     >
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
