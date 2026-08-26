@@ -53,11 +53,10 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
     return bin === "unfiled" ? all.filter((g) => !g.projectId) : all;
   }, [data, bin]);
 
-  // Selection is derived: an explicit pick wins while it exists, otherwise
-  // the newest clip. Starting playback pins the clip (onPlay → setSelected),
-  // so a teammate's render landing at the top of the shared list can't
-  // hijack the viewer mid-watch.
-  const activeId = selected && gens.some((g) => g.id === selected) ? selected : gens[0]?.id ?? null;
+  // The viewer shows a clip ONLY after an explicit filmstrip click — no
+  // auto-loading of the newest render, no fallback. If the selected clip
+  // disappears (deleted), the viewer simply empties.
+  const activeId = selected && gens.some((g) => g.id === selected) ? selected : null;
   const clip = gens.find((g) => g.id === activeId) ?? null;
   const refProblem = referenceProblem(refs, getModel(params.modelId).maxReferenceImages, prompt);
   const pending = gens.filter((g) => g.status === "queued" || g.status === "running").length;
@@ -97,7 +96,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
       if (!res.ok) throw new Error(json.error ?? "Submit failed");
       setPrompt("");
       setRefs([]);
-      setSelected(json.id); // pull the new render into the viewer immediately
+      if (!json?.id) throw new Error("Submit failed");
       afterChange();
     } catch (e) {
       setErr((e as Error).message);
@@ -153,7 +152,7 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
             <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(clip.id)}</span>
           )}
         >
-          <ViewerBody clip={clip} onChanged={afterChange} onPin={() => clip && setSelected(clip.id)} />
+          <ViewerBody clip={clip} onChanged={afterChange} />
         </Panel>
 
         <Panel
@@ -266,9 +265,7 @@ function PoolRow({ label, icon, active, onClick, disabled, count, spend }: {
   );
 }
 
-function ViewerBody({ clip, onChanged, onPin }: {
-  clip: Gen | null; onChanged: () => void; onPin: () => void;
-}) {
+function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => void }) {
   if (!clip) {
     return (
       <div className="grid min-h-0 flex-1 place-items-center bg-desk p-2" style={{ containerType: "size" }}>
@@ -276,7 +273,7 @@ function ViewerBody({ clip, onChanged, onPin }: {
           className="desk-grid relative grid place-items-center overflow-hidden border border-hair bg-black"
           style={{ aspectRatio: "16 / 9", width: "min(100cqw - 16px, (100cqh - 16px) * 16 / 9)" }}
         >
-          <p className="font-mono text-[10.5px] tracking-[.14em] text-mute">NO CLIP SELECTED</p>
+          <p className="font-mono text-[10.5px] tracking-[.14em] text-mute">CLICK A CLIP BELOW TO LOAD IT</p>
         </div>
       </div>
     );
@@ -305,7 +302,7 @@ function ViewerBody({ clip, onChanged, onPin }: {
           style={{ aspectRatio: "16 / 9", width: "min(100cqw - 16px, (100cqh - 16px) * 16 / 9)" }}
         >
           {done ? (
-            <video key={clip.id} src={url!} controls loop preload="metadata" onPlay={onPin}
+            <video key={clip.id} src={url!} controls loop preload="metadata"
               className="absolute inset-0 h-full w-full object-contain" />
           ) : (
             <div className="desk-grid absolute inset-0 grid place-items-center px-6">
