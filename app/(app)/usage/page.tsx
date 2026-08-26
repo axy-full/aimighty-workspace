@@ -78,10 +78,26 @@ export default function UsagePage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {data.purchasedUsd === 0 && (
+          <div className="border-b border-line bg-panel2 px-3 py-2.5">
+            <p className="text-[12.5px] leading-relaxed text-bone/90">
+              <span className="ptitle text-[11px] tracking-[.08em] text-lift">No credit recorded yet.</span>{" "}
+              BytePlus doesn&apos;t publish your account balance over the API, so this page can&apos;t read it
+              automatically. Enter what you&apos;ve loaded — e.g. <span className="font-mono text-lift">50</span> —
+              in the bar above and it will count down from there using the real cost of every render.
+            </p>
+          </div>
+        )}
+
         {/* Hero readouts — magnitude with no comparison, so tiles not charts */}
         <div className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
-          <Stat label="Credit remaining" value={usd(data.remainingUsd, 2)}
-                sub={`of ${usd(data.purchasedUsd, 2)} recorded`} accent />
+          <Stat
+            label="Credit remaining"
+            value={data.purchasedUsd > 0 ? usd(data.remainingUsd, 2) : "—"}
+            sub={data.purchasedUsd > 0
+              ? `of ${usd(data.purchasedUsd, 2)} recorded`
+              : "record your top-up above ↑"}
+            accent />
           <Stat label="Spent all time" value={usd(data.spentUsd, 2)}
                 sub={`${data.succeeded} finished renders`} />
           <Stat label="Average per clip" value={usd(data.avgCostUsd)}
@@ -101,8 +117,9 @@ export default function UsagePage() {
                 <div className="h-full bg-lift transition-[width] duration-700" style={{ width: `${usedPct}%` }} />
               </div>
               <p className="mt-2.5 text-[11.5px] leading-relaxed text-mute">
-                ModelArk doesn&apos;t expose account balance over the API, so record each
-                top-up in the bar above and this tracks the drawdown against it.
+                BytePlus&apos;s billing API reports spend, never remaining balance — so the
+                starting figure is entered here once and drawn down against the actual
+                token cost of every finished render.
               </p>
             </div>
           </Panel>
