@@ -171,3 +171,26 @@ Nothing scrolls but the panels themselves.
 aimighty palette: near-black desk, `#C3161C` for fills, `#FF4B3E` for red type
 and data marks (plain brand red is only 2.1:1 on near-black). Saira for panel
 titles, Inter Tight for body, JetBrains Mono for every number and micro-label.
+
+## Deployment
+
+Runs on Vercel in **Singapore (`sin1`)**, pinned in `vercel.json` — next to
+ModelArk's `ap-southeast` endpoint and one short hop from Mumbai. The US
+default would bounce every render across two oceans for nothing.
+
+Required environment variables in Vercel:
+
+| Variable | Where it comes from |
+|---|---|
+| `ARK_API_KEY` | BytePlus console → API key management |
+| `TURSO_DATABASE_URL` | Turso database |
+| `TURSO_AUTH_TOKEN` | Turso database |
+| `BLOB_READ_WRITE_TOKEN` | injected automatically when a Blob store is attached |
+
+With `BLOB_READ_WRITE_TOKEN` set, uploads go browser → Blob directly and the
+database and media live in the cloud. Without it everything falls back to the
+local `.data/` directory, which is what local development uses. No code
+changes between the two.
+
+**Production starts empty.** The local database doesn't travel; the first
+person to open the deployed site creates the admin account there.

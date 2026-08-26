@@ -5,7 +5,7 @@ import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const ROLES: ImageRole[] = ["first_frame", "last_frame", "reference_image"];
 
