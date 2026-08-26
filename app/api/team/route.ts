@@ -1,0 +1,73 @@
+import { NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
+import { db, ready, now } from "@/lib/db";
+import { requireAdmin, findByEmail } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
+const INVITE_DAYS = 7;
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+export async function GET() {
+  const got = await requireAdmin();
+  if (got.response) return got.response;
+  await ready();
+
+  const [users, invites] = await Promise.all([
+    db().execute(`
+      SELECT u.id, u.email, u.name, u.role, u.disabled, u.last_seen, u.created_at, u.locked_until,
+             (SELECT COUNT(*) FROM generations g WHERE g.created_by = u.id) AS clips,
+             (SELECT COALESCE(SUM(g.cost_usd),0) FROM generations g
+               WHERE g.created_by = u.id AND g.status='succeeded') AS spend
+      FROM users u ORDER BY u.created_at ASC`),
+    db().execute({
+      sql: `SELECT code, email, name, role, created_at, expires_at FROM invites
+            WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at DESC`,
+      args: [now()],
+    }),
+  ]);
+
+  return NextResponse.json({
+    users: users.rows.map((r: any) => ({
+      id: r.id, email: r.email, name: r.name, role: r.role,
+      disabled: Boolean(Number(r.disabled)),
+      locked: r.locked_until != null && Number(r.locked_until) > now(),
+      lastSeen: r.last_seen == null ? null : Number(r.last_seen),
+      createdAt: Number(r.created_at),
+      clips: Number(r.clips), spend: Number(r.spend),
+    })),
+    invites: invites.rows.map((r: any) => ({
+      code: r.code, email: r.email, name: r.name, role: r.role,
+      createdAt: Number(r.created_at), expiresAt: Number(r.expires_at),
+    })),
+  });
+}
+
+/** Creates an invite. No email is sent — the admin copies the link and shares it. */
+export async function POST(req: Request) {
+  const got = await requireAdmin();
+  if (got.response) return got.response;
+  await ready();
+
+  const body = await req.json().catch(() => ({}));
+  const email = String(body.email ?? "").trim().toLowerCase();
+  const name = String(body.name ?? "").trim();
+  const role = body.role === "admin" ? "admin" : "member";
+
+  if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return NextResponse.json({ error: "That doesn't look like an email address" }, { status: 400 });
+  }
+  if (await findByEmail(email)) {
+    return NextResponse.json({ error: "That person already has an account" }, { status: 409 });
+  }
+
+  const code = randomBytes(24).toString("base64url");
+  const ts = now();
+  await db().execute({
+    sql: `INSERT INTO invites (code,email,name,role,created_by,created_at,expires_at)
+          VALUES (?,?,?,?,?,?,?)`,
+    args: [code, email, name.slice(0, 80), role, got.user.id, ts, ts + INVITE_DAYS * 86400_000],
+  });
+
+  return NextResponse.json({ code, email, name, role, expiresInDays: INVITE_DAYS });
+}

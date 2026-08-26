@@ -1,36 +1,173 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# aimighty workspace
 
-## Getting Started
+Internal video-generation workspace on BytePlus ModelArk (Seedance 2.x).
 
-First, run the development server:
+Prompt + settings → job queue → bins → shared library → cost accounting,
+with named accounts so every clip and every dollar has an owner.
+
+## Run it
 
 ```bash
+npm install
+cp .env.example .env.local     # add ARK_API_KEY
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Local dev needs nothing else — SQLite lands in `.data/ark.db` and finished
+renders in `.data/generations/`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Screens
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Route | What it does |
+|---|---|
+| `/` | Compose — prompt panel + docked inspector, live cost estimate, recent bin |
+| `/projects` | Bins — create bins; per-bin clip count and spend |
+| `/projects/[id]` | Compose scoped to one bin; that bin's clips |
+| `/all` | Library — every clip, searchable by prompt, filterable by bin/status |
+| `/usage` | Credit drawdown, spend by model/bin/person/month, cost per render |
+| `/team` | **Admins only** — invite, promote, disable, unlock; clips and spend per person |
+| `/login`, `/setup`, `/invite/[code]` | Public auth screens |
 
-## Learn More
+## How costs are calculated
 
-To learn more about Next.js, take a look at the following resources:
+ModelArk returns the billed token count on every completed job, so recorded
+spend is **actual**, not estimated:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+cost = completion_tokens ÷ 1,000,000 × rate(model, output_resolution)
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Rates are tiered by output resolution**, and differ again when the input
+includes video (we only do text-to-video today, so the `withoutVideo` column
+applies). List prices from the [ModelArk pricing page](https://docs.byteplus.com/en/docs/ModelArk/1544106):
 
-## Deploy on Vercel
+| Model | 480p / 720p | 1080p | 4K |
+|---|---|---|---|
+| Seedance 2.5 | 10.70 | 11.70 | — |
+| Seedance 2.0 | 7.00 | 7.70 | 4.00 |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+A **20% account discount** is applied to every list rate via
+`ACCOUNT_DISCOUNT` in `lib/models.ts`. The inspector shows both — net price
+with the list price struck through.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+BytePlus also runs public time-limited promos (e.g. 1080p on 2.5 at 72% of list
+until 17 Sep 2026). Whether those stack with an account discount is unconfirmed,
+so they are **not** applied — quoted figures may be conservative.
+
+Failed generations are not billed, and only succeeded clips enter the ledger.
+
+The pre-flight estimate uses the official token formula, verified against the
+published price examples:
+
+```
+tokens = width × height × fps × duration ÷ 1024
+```
+
+Cross-checked against Seedance 2.5's published example: 5s 16:9 720p =
+108,000 tokens × $10.70/M = **$1.156**, which matches BytePlus exactly.
+
+Each generation snapshots the rate it was charged at, so changing a rate never
+rewrites history.
+
+## Accounts
+
+Invite-only, built for a team of about six. No external identity provider and no
+email sending to configure.
+
+**Getting started:** the first person to open the app is sent to `/setup` and
+becomes the admin. That route closes permanently once one account exists.
+The admin then invites people from `/team`, which mints a one-time link —
+**copy it and send it over Slack/WhatsApp yourself.** The invitee sets their own
+password; nobody ever types a password for someone else.
+
+**Roles.** `member` can render, browse and organise. `admin` can additionally
+manage people and record credit top-ups (`/api/topups` is admin-only, since it's
+the money). The last remaining admin can't be demoted or disabled.
+
+**How it's built.** Passwords are scrypt-hashed with node's stdlib — no bcrypt
+dependency. Sessions are server-side rows storing only a SHA-256 of the token,
+so a database copy hands over no live sessions; disabling someone deletes their
+sessions immediately. Login failures are counted per account and lock it for 15
+minutes after 8 tries, and an admin can clear a lockout from `/team`. Wrong
+password and unknown email return the identical message, so the login form can't
+be used to discover who has an account.
+
+**Every API route requires a session** — including `/api/media/[id]` and
+`/api/uploads/[id]`, so renders and reference images aren't publicly fetchable.
+Only the four `/api/auth/*` endpoints are open.
+
+Cloudflare Access is no longer required. It's still a reasonable second lock if
+you want the app invisible to the public internet, but the app now knows who
+people are on its own, which is what makes per-person attribution possible.
+
+## Reference images — and why they are never compressed
+
+Drop images into the **References** rail under the prompt. Two mutually
+exclusive modes, per ModelArk:
+
+| Mode | Roles | Count |
+|---|---|---|
+| Image-to-video | `first_frame`, optional `last_frame` | 1–2 |
+| Omni reference-to-video | `reference_image` | 1–30 (2.5) / 1–9 (2.0) |
+
+Reference images are cited in the prompt as `@Image1`, `@Image2`… — click the
+`@` on a thumbnail to insert the token at the caret.
+
+**Nothing in the upload path touches pixel data.** There is no image library,
+no canvas, no resize, no re-encode and no metadata stripping:
+
+- `lib/imagemeta.ts` identifies format and dimensions by reading **header bytes
+  only** — it never decodes the image.
+- `/api/uploads` writes the received bytes verbatim, re-reads them from storage
+  and returns the **sha256 of what actually landed**. The browser hashes the
+  file before upload and compares; the rail shows **✓ BYTE-IDENTICAL** when they
+  match.
+- `/api/uploads/[id]` serves the original bytes with the original content type.
+- `lib/ark.ts` base64-encodes those exact bytes. Base64 is a transport encoding,
+  not compression — what ByteDance decodes is bit-identical to the file picked.
+  (Verified end-to-end by capturing a real request body and re-hashing the
+  decoded image.)
+
+Base64 is used rather than a public URL because the app sits behind Cloudflare
+Access, so ModelArk cannot reach our storage.
+
+ModelArk limits, enforced at upload rather than worked around:
+formats jpeg/png/webp/bmp/tiff/gif/heic/heif · **300–6000 px** · aspect ratio
+**0.4–2.5** · **<30 MB** per image · **≤64 MB** total request body. If the
+encoded payload would exceed 64 MB the render is blocked with a message —
+**it is never shrunk to fit**.
+
+## Things worth knowing
+
+- **Ark's `video_url` expires (~24h).** Every finished render is copied into
+  our own storage the first time the poller sees it complete. Never hand anyone
+  an Ark URL.
+- **Models are Seedance 2.5 and 2.0.** Both send settings as real JSON fields
+  (`paramStyle: "fields"`). The `"flags"` branch in `lib/ark.ts` exists because
+  Seedance 1.x appended `--flags` to the prompt text instead — kept in case an
+  older engine is ever added back.
+- **Only 2.5 supports `generate_audio`.** Switching engines auto-clamps ratio,
+  resolution, duration and audio to what the selected model accepts.
+- **`adaptive` ratio means no pre-flight estimate** — the frame size is chosen at
+  render time, so cost is only known once the job returns its token count.
+- **No background worker.** Jobs are reconciled when a list view is opened or
+  polled. Closing the tab mid-render loses nothing.
+- **Model IDs are dated strings** and BytePlus retires them. When one 404s,
+  update `lib/models.ts`.
+
+## Deploy
+
+Vercel + Turso + Vercel Blob. Set `ARK_API_KEY`, `TURSO_DATABASE_URL`,
+`TURSO_AUTH_TOKEN`, `BLOB_READ_WRITE_TOKEN`, then put Cloudflare Access in
+front of the domain.
+
+## Look
+
+DaVinci Resolve-style application chrome. Fixed title bar carrying the aimighty
+mark, a **bottom page switcher** (Compose / Bins / Library / Usage) with
+transport readouts either side, and a horizontal three-column bench —
+**media pool │ viewer │ inspector** — with a full-width **filmstrip** beneath.
+Nothing scrolls but the panels themselves.
+aimighty palette: near-black desk, `#C3161C` for fills, `#FF4B3E` for red type
+and data marks (plain brand red is only 2.1:1 on near-black). Saira for panel
+titles, Inter Tight for body, JetBrains Mono for every number and micro-label.

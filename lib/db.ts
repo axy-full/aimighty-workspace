@@ -1,0 +1,113 @@
+import { createClient, type Client } from "@libsql/client";
+
+/**
+ * Local dev  -> file:.data/ark.db
+ * Production -> set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN
+ */
+let _db: Client | null = null;
+let _ready: Promise<void> | null = null;
+
+export function db(): Client {
+  if (!_db) {
+    const url = process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db";
+    _db = createClient({
+      url,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+  }
+  return _db;
+}
+
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS projects (
+     id          TEXT PRIMARY KEY,
+     name        TEXT NOT NULL,
+     description TEXT NOT NULL DEFAULT '',
+     created_at  INTEGER NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS generations (
+     id            TEXT PRIMARY KEY,
+     project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
+     ark_task_id   TEXT,
+     model         TEXT NOT NULL,
+     prompt        TEXT NOT NULL,
+     params        TEXT NOT NULL,
+     status        TEXT NOT NULL,
+     source_url    TEXT,
+     stored_url    TEXT,
+     total_tokens  INTEGER,
+     cost_usd      REAL,
+     rate_usd_per_m REAL,
+     error         TEXT,
+     created_by    TEXT NOT NULL DEFAULT '',
+     created_at    INTEGER NOT NULL,
+     updated_at    INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_gen_project ON generations(project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_gen_created ON generations(created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_gen_status  ON generations(status)`,
+  `CREATE TABLE IF NOT EXISTS users (
+     id            TEXT PRIMARY KEY,
+     email         TEXT NOT NULL UNIQUE,
+     name          TEXT NOT NULL,
+     password_hash TEXT NOT NULL,
+     role          TEXT NOT NULL DEFAULT 'member',
+     disabled      INTEGER NOT NULL DEFAULT 0,
+     failed_count  INTEGER NOT NULL DEFAULT 0,
+     locked_until  INTEGER,
+     last_seen     INTEGER,
+     created_at    INTEGER NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS sessions (
+     token_hash TEXT PRIMARY KEY,
+     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     created_at INTEGER NOT NULL,
+     expires_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
+  `CREATE TABLE IF NOT EXISTS invites (
+     code       TEXT PRIMARY KEY,
+     email      TEXT NOT NULL,
+     name       TEXT NOT NULL,
+     role       TEXT NOT NULL DEFAULT 'member',
+     created_by TEXT,
+     created_at INTEGER NOT NULL,
+     expires_at INTEGER NOT NULL,
+     used_at    INTEGER
+   )`,
+  `CREATE TABLE IF NOT EXISTS uploads (
+     id          TEXT PRIMARY KEY,
+     filename    TEXT NOT NULL,
+     mime        TEXT NOT NULL,
+     ext         TEXT NOT NULL,
+     bytes       INTEGER NOT NULL,
+     sha256      TEXT NOT NULL,
+     width       INTEGER,
+     height      INTEGER,
+     stored_url  TEXT NOT NULL,
+     created_at  INTEGER NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS topups (
+     id         TEXT PRIMARY KEY,
+     amount_usd REAL NOT NULL,
+     note       TEXT NOT NULL DEFAULT '',
+     created_at INTEGER NOT NULL
+   )`,
+];
+
+export async function ready(): Promise<void> {
+  if (!_ready) {
+    _ready = (async () => {
+      for (const stmt of SCHEMA) await db().execute(stmt);
+    })();
+  }
+  return _ready;
+}
+
+export function now(): number {
+  return Date.now();
+}
+
+export function id(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
