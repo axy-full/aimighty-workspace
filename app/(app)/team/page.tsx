@@ -79,13 +79,13 @@ export default function TeamPage() {
           <option value="admin">Admin</option>
         </select>
         <button onClick={invite} disabled={busy || !form.name.trim() || !form.email.trim()}
-          className="ptitle flex h-[30px] shrink-0 items-center gap-1.5 rounded-[3px] bg-red px-3 text-[10.5px] tracking-[.1em] text-white hover:bg-lift disabled:bg-panel3 disabled:text-mute">
+          className="ptitle flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] bg-red px-3 text-[10.5px] tracking-[.1em] text-white hover:bg-lift disabled:bg-panel3 disabled:text-mute">
           <IconPlus /> Invite
         </button>
         <span className="ml-auto flex shrink-0 items-center gap-2.5 pl-3">
           <a href="/api/export" download
             title="Download every prompt, cost and account record as JSON"
-            className="rounded-[2px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            className="rounded-[6px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-dim hover:border-lift hover:text-lift">
             EXPORT DATA
           </a>
           <span className="font-mono text-[10px] tracking-wider text-mute">
@@ -117,11 +117,11 @@ export default function TeamPage() {
                     </span>
                     <span className="ml-auto flex items-center gap-1.5">
                       <button onClick={() => copyLink(iv.code)}
-                        className="rounded-[2px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-dim hover:border-lift hover:text-lift">
+                        className="rounded-[6px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-dim hover:border-lift hover:text-lift">
                         {copied === iv.code ? "COPIED ✓" : "COPY LINK"}
                       </button>
                       <button onClick={() => revoke(iv.code)}
-                        className="rounded-[2px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-mute hover:border-lift hover:text-lift">
+                        className="rounded-[6px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-mute hover:border-lift hover:text-lift">
                         REVOKE
                       </button>
                     </span>
@@ -153,7 +153,7 @@ export default function TeamPage() {
                       <td className="px-2.5 py-2 font-mono text-[10.5px] text-mute">{u.email}</td>
                       <td className="px-2.5 py-2">
                         <select value={u.role} onChange={(e) => patch(u.id, { role: e.target.value })}
-                          className="h-[24px] rounded-[2px] border border-line bg-desk px-1 font-mono text-[10px] text-dim">
+                          className="h-[24px] rounded-[6px] border border-line bg-desk px-1 font-mono text-[10px] text-dim">
                           <option value="member">member</option>
                           <option value="admin">admin</option>
                         </select>
@@ -166,12 +166,12 @@ export default function TeamPage() {
                       <td className="whitespace-nowrap px-2.5 py-2 text-right">
                         {u.locked && (
                           <button onClick={() => patch(u.id, { unlock: true })}
-                            className="mr-1.5 rounded-[2px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-warn hover:border-warn">
+                            className="mr-1.5 rounded-[6px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-warn hover:border-warn">
                             UNLOCK
                           </button>
                         )}
                         <button onClick={() => patch(u.id, { disabled: !u.disabled })}
-                          className="rounded-[2px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-mute hover:border-lift hover:text-lift">
+                          className="rounded-[6px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-mute hover:border-lift hover:text-lift">
                           {u.disabled ? "ENABLE" : "DISABLE"}
                         </button>
                       </td>

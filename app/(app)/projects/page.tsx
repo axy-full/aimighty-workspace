@@ -57,7 +57,7 @@ export default function BinsPage() {
         />
         <button
           onClick={create} disabled={busy || !name.trim()}
-          className="ptitle flex h-[30px] shrink-0 items-center gap-1.5 rounded-[3px] bg-red px-3 text-[10.5px] tracking-[.1em] text-white transition-colors hover:bg-lift disabled:bg-panel3 disabled:text-mute"
+          className="ptitle flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] bg-red px-3 text-[10.5px] tracking-[.1em] text-white transition-colors hover:bg-lift disabled:bg-panel3 disabled:text-mute"
         >
           <IconPlus /> New bin
         </button>

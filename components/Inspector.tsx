@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  MODELS, getModel, estimateCostUsd, estimateTokens, dimensionsFor, ACCOUNT_DISCOUNT,
-} from "@/lib/models";
-import { usd, compactTokens } from "@/lib/format";
+import { MODELS, getModel, dimensionsFor } from "@/lib/models";
 import { Panel, Row, Group, Switch } from "./Panel";
 
 export type Params = {
@@ -13,7 +10,6 @@ export type Params = {
 
 export default function Inspector({
   params, patch, projects, projectId, setProjectId, lockedProjectId,
-  onRender, busy, canRender, inputSeconds = 0, hasVideoInput = false,
 }: {
   params: Params;
   patch: (p: Partial<Params>) => void;
@@ -21,19 +17,8 @@ export default function Inspector({
   projectId: string;
   setProjectId: (v: string) => void;
   lockedProjectId?: string;
-  onRender: () => void;
-  busy: boolean;
-  canRender: boolean;
-  /** Combined duration of attached reference videos, if any. */
-  inputSeconds?: number;
-  hasVideoInput?: boolean;
 }) {
   const model = getModel(params.modelId);
-  const est = estimateCostUsd(
-    params.modelId, params.resolution, params.ratio, params.duration,
-    inputSeconds, hasVideoInput
-  );
-  const tokens = estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
   const dims = dimensionsFor(params.resolution, params.ratio);
 
   function switchModel(next: string) {
@@ -114,51 +99,6 @@ export default function Inspector({
         )}
       </div>
 
-      {/* Transport */}
-      <div className="shrink-0 border-t border-line bg-panel2">
-        <div className="grid grid-cols-2 gap-px bg-line">
-          <div className="bg-panel2 px-2.5 py-2">
-            <p className="lbl">Est. tokens</p>
-            <p className="mt-1 font-mono text-[14px] tabular-nums text-bone">
-              {tokens != null ? compactTokens(tokens) : "—"}
-            </p>
-          </div>
-          <div className="bg-panel2 px-2.5 py-2">
-            <p className="lbl">Est. cost</p>
-            <p className="mt-1 font-mono text-[14px] tabular-nums text-lift">
-              {est ? usd(est.net) : "—"}
-            </p>
-            {est && ACCOUNT_DISCOUNT > 0 && (
-              <p className="mt-0.5 font-mono text-[9px] text-mute">
-                <span className="line-through">{usd(est.list)}</span>
-                <span className="ml-1 text-ok">−{Math.round(ACCOUNT_DISCOUNT * 100)}%</span>
-              </p>
-            )}
-          </div>
-        </div>
-
-        {!est && (
-          <p className="px-2.5 pt-2 text-[10px] leading-relaxed text-mute">
-            Adaptive ratio — frame size is chosen at render, so cost lands after.
-          </p>
-        )}
-        {est && hasVideoInput && (
-          <p className="px-2.5 pt-2 text-[10px] leading-relaxed text-mute">
-            Includes {inputSeconds.toFixed(1)}s of reference video, billed at the
-            lower with-video rate.
-          </p>
-        )}
-
-        <div className="p-2.5">
-          <button
-            type="button" onClick={onRender} disabled={busy || !canRender}
-            className="ptitle h-9 w-full rounded-[3px] bg-red text-[12px] tracking-[.1em] text-white transition-colors hover:bg-lift disabled:cursor-not-allowed disabled:bg-panel3 disabled:text-mute"
-          >
-            {busy ? "Submitting…" : "Render"}
-          </button>
-          <p className="lbl mt-2 text-center">⌘ + ↵</p>
-        </div>
-      </div>
     </Panel>
   );
 }

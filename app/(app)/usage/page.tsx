@@ -78,7 +78,7 @@ export default function UsagePage() {
         />
         <button
           onClick={addTopup} disabled={topupBusy}
-          className="ptitle h-[30px] shrink-0 rounded-[3px] border border-line bg-panel2 px-3 text-[10.5px] tracking-[.1em] text-dim hover:border-lift hover:text-lift disabled:opacity-40"
+          className="ptitle h-[30px] shrink-0 rounded-[8px] border border-line bg-panel2 px-3 text-[10.5px] tracking-[.1em] text-dim hover:border-lift hover:text-lift disabled:opacity-40"
         >
           {topupBusy ? "…" : "Add"}
         </button>

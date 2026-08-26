@@ -143,7 +143,21 @@ export default function References({
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) add(e.dataTransfer.files); }}
       className={`border-b border-line bg-panel transition-colors ${drag ? "bg-lift/8" : ""}`}
     >
-      <div className="flex items-center gap-2 px-2.5 pt-1.5">
+      {refs.length === 0 && !busy && (
+        <button
+          type="button" onClick={() => input.current?.click()}
+          className="mx-3 my-2.5 block w-[calc(100%-24px)] rounded-[var(--r-sm)] border border-dashed border-line px-3 py-2.5 text-left transition-colors hover:border-lift/60"
+        >
+          <p className="text-[11.5px] font-semibold text-bone/90">Add references</p>
+          <p className="mt-0.5 text-[10.5px] leading-relaxed text-mute">
+            Drop stills or clips to steer the look — cite them as
+            <span className="font-mono text-run"> @Image1</span> or
+            <span className="font-mono text-run"> @Video1</span> in your prompt.
+            Never recompressed.
+          </p>
+        </button>
+      )}
+      <div className={`flex items-center gap-2 px-2.5 pt-1.5 ${refs.length === 0 && !busy ? "hidden" : ""}`}>
         <span className="lbl">References</span>
         {refs.length > 0 && (
           <span className="font-mono text-[9px] text-mute">
@@ -162,10 +176,10 @@ export default function References({
         </span>
       </div>
 
-      <div className="flex items-stretch gap-1.5 overflow-x-auto px-2.5 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className={`flex items-stretch gap-1.5 overflow-x-auto px-2.5 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${refs.length === 0 && !busy ? "hidden" : ""}`}>
         <button
           type="button" onClick={() => input.current?.click()} disabled={busy}
-          className="grid h-[62px] w-[62px] shrink-0 place-items-center rounded-[3px] border border-dashed border-line text-mute transition-colors hover:border-lift hover:text-lift disabled:opacity-40"
+          className="grid h-[62px] w-[62px] shrink-0 place-items-center rounded-[8px] border border-dashed border-line text-mute transition-colors hover:border-lift hover:text-lift disabled:opacity-40"
           title="Add reference images or videos"
         >
           {busy ? <span className="font-mono text-[9px]">…</span> : <IconPlus />}
@@ -184,7 +198,7 @@ export default function References({
               : 0;
           const citeToken = r.kind === "video" ? `@Video${citeIndex}` : `@Image${citeIndex}`;
           return (
-            <div key={r.id} className="group relative h-[62px] w-[62px] shrink-0 overflow-hidden rounded-[3px] border border-line bg-desk">
+            <div key={r.id} className="group relative h-[62px] w-[62px] shrink-0 overflow-hidden rounded-[8px] border border-line bg-desk">
               {r.kind === "video" ? (
                 <video src={`${r.url}#t=0.1`} muted preload="metadata"
                   className="h-full w-full object-cover"

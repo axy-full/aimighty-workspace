@@ -8,8 +8,8 @@ import { Panel } from "./Panel";
 import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
-import { DEFAULT_MODEL_ID, getModel } from "@/lib/models";
-import { IconBins, IconLibrary, IconDown, IconTrash, IconFilm, IconTeam } from "./Icons";
+import { DEFAULT_MODEL_ID, getModel, estimateCostUsd, estimateTokens } from "@/lib/models";
+import { IconDown, IconTrash } from "./Icons";
 
 type Project = { id: string; name: string; genCount: number; spend: number };
 
@@ -39,7 +39,6 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
   });
   const patch = (p: Partial<Params>) => setParams((s) => ({ ...s, ...p }));
 
-  const { data: me } = useApi<{ id: string; name: string }>("/api/me");
   const { data: pj, refresh: refreshProjects } = useApi<{ projects: Project[] }>("/api/projects");
   const query =
     bin === "mine" ? "&mine=1"
@@ -80,6 +79,11 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
   const inputSeconds = refs
     .filter((r) => r.kind === "video")
     .reduce((a, r) => a + (r.durationS ?? 0), 0);
+  const est = estimateCostUsd(
+    params.modelId, params.resolution, params.ratio, params.duration,
+    inputSeconds, hasVideoInput
+  );
+  const estTokens = estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
   const pending = gens.filter((g) => g.status === "queued" || g.status === "running").length;
 
   function afterChange() { refresh(); refreshProjects(); }
@@ -126,121 +130,104 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
 
   return (
     <div className="bench">
-      {/* ── MEDIA POOL ──────────────────────────────────────────── */}
-      <Panel
-        title="Media pool" className="bench-pool border-0" bodyClass="overflow-y-auto"
-        right={
-          <>
-            {me && <span className="font-mono text-[9px] tracking-wider text-mute">{me.name.split(" ")[0].toUpperCase()}</span>}
-            <Link href="/projects" className="font-mono text-[9px] tracking-wider text-mute hover:text-lift">EDIT</Link>
-          </>
-        }
-      >
-        <ul className="py-1">
-          <PoolRow label="All clips" icon={<IconLibrary className="!h-3.5 !w-3.5" />}
-            active={bin === "all"} onClick={() => !lockedProjectId && setBin("all")}
-            disabled={Boolean(lockedProjectId)}
-            count={bin === "all" ? gens.length : undefined} />
-          <PoolRow label="My clips" icon={<IconTeam className="!h-3.5 !w-3.5" />}
-            active={bin === "mine"} onClick={() => !lockedProjectId && setBin("mine")}
-            disabled={Boolean(lockedProjectId)}
-            count={bin === "mine" ? gens.length : undefined} />
-          <PoolRow label="Unfiled" icon={<IconFilm className="!h-3.5 !w-3.5" />}
-            active={bin === "unfiled"} onClick={() => !lockedProjectId && setBin("unfiled")}
-            disabled={Boolean(lockedProjectId)} />
-          <li className="lbl px-2.5 pb-1 pt-3">Bins</li>
-          {projects.map((p) => (
-            <PoolRow
-              key={p.id} label={p.name} icon={<IconBins className="!h-3.5 !w-3.5" />}
-              active={bin === p.id} onClick={() => !lockedProjectId && setBin(p.id)}
-              disabled={Boolean(lockedProjectId) && lockedProjectId !== p.id}
-              count={p.genCount} spend={p.spend}
-            />
-          ))}
-          {projects.length === 0 && (
-            <li className="px-2.5 py-2 text-[11px] leading-relaxed text-mute">
-              No bins yet. <Link href="/projects" className="text-lift hover:underline">Create one →</Link>
-            </li>
-          )}
-        </ul>
-      </Panel>
-
-      {/* ── CENTRE: viewer over prompt ───────────────────────────── */}
-      <div className="bench-centre flex flex-col gap-px bg-line">
-        <div ref={viewerRef as React.Ref<HTMLDivElement>} className="flex min-h-0 flex-1 flex-col gap-px bg-line">
-          <Panel
-            title="Viewer" className="min-h-0 flex-1 border-0" bodyClass="flex flex-col"
-            right={clip && (
-              <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(clip.id)}</span>
-            )}
-          >
-            <ViewerBody clip={clip} onChanged={afterChange} />
-          </Panel>
-
-          {clip && (
-            <ClipPrompt
-              clip={clip}
-              onUse={() => {
-                if (prompt.trim() && !confirm("Replace what's in the composer with this clip's prompt?")) return;
-                setPrompt(clip.prompt);
-                promptEl.current?.focus();
-              }}
-            />
-          )}
-        </div>
-
+      {/* ── COMPOSE — the prompt is the product, so it leads ─────────── */}
+      <div className="bench-compose flex min-h-0 flex-col gap-2.5">
         <Panel
-          title="Prompt" className="shrink-0 border-0"
+          title="Write the shot"
+          className="min-h-0 flex-1"
+          bodyClass="flex min-h-0 flex-col"
           right={<span className="font-mono text-[9.5px] tabular-nums text-mute">{prompt.trim().length}/10000</span>}
         >
-          <References refs={refs} setRefs={setRefs} onCite={cite} model={modelDef} />
-          <div className="flex items-stretch gap-px bg-line">
-            <textarea
-              ref={promptEl}
-              value={prompt} onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); render(); }
-              }}
-              placeholder="Subject, action, camera move, lens, lighting, mood…"
-              spellCheck={false}
-              className="h-[76px] min-w-0 flex-1 resize-none bg-panel px-3 py-2.5 text-[13.5px] leading-relaxed text-bone placeholder:text-mute/60 focus:outline-none"
-            />
-            <button
-              onClick={render} disabled={busy || !prompt.trim() || Boolean(refProblem)}
-              className="ptitle w-[104px] shrink-0 bg-red text-[11px] tracking-[.1em] text-white transition-colors hover:bg-lift disabled:cursor-not-allowed disabled:bg-panel2 disabled:text-mute"
-            >
-              {busy ? "…" : "Render"}
-            </button>
-          </div>
+          <textarea
+            ref={promptEl}
+            value={prompt} onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); render(); }
+            }}
+            placeholder={"A slow dolly through monsoon rain on Marine Drive, sodium lamps blooming…\n\nSubject, action, camera, light, mood."}
+            spellCheck={false}
+            className="min-h-[120px] w-full flex-1 resize-none bg-panel px-3.5 py-3 text-[13.5px] leading-relaxed text-bone placeholder:text-mute/50 focus:outline-none"
+          />
           {err && (
-            <p className="border-t border-line bg-lift/8 px-3 py-1.5 font-mono text-[10.5px] leading-relaxed text-lift">
+            <p className="border-t border-hair bg-lift/8 px-3.5 py-2 font-mono text-[10.5px] leading-relaxed text-lift">
               {err}
             </p>
           )}
+          <References refs={refs} setRefs={setRefs} onCite={cite} model={modelDef} />
+          <div className="shrink-0 border-t border-hair bg-panel2 p-3">
+            <div className="mb-2.5 flex items-center justify-between font-mono text-[10px] text-mute">
+              <span>{estTokens != null ? `${compactTokens(estTokens)} tokens` : "cost lands after render"}</span>
+              <span className="text-[13px] font-semibold tabular-nums text-lift">{est ? usd(est.net) : "—"}</span>
+            </div>
+            {hasVideoInput && est && (
+              <p className="mb-2 font-mono text-[9px] leading-relaxed text-mute">
+                includes {inputSeconds.toFixed(1)}s reference video · with-video rate
+              </p>
+            )}
+            <button
+              type="button" onClick={render} disabled={busy || !prompt.trim() || Boolean(refProblem)}
+              className="btn-render h-10 w-full text-[13px]"
+            >
+              {busy ? "Sending…" : "Render"}
+            </button>
+            <p className="lbl mt-2 text-center opacity-60">⌘ + ↵</p>
+          </div>
         </Panel>
       </div>
 
-      {/* ── INSPECTOR ───────────────────────────────────────────── */}
+      {/* ── CENTRE: viewer + selected clip's prompt ─────────────────── */}
+      <div ref={viewerRef as React.Ref<HTMLDivElement>} className="bench-centre flex min-h-0 flex-col gap-2.5">
+        <Panel
+          title="Viewer" className="min-h-0 flex-1" bodyClass="flex flex-col"
+          right={clip && (
+            <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(clip.id)}</span>
+          )}
+        >
+          <ViewerBody clip={clip} onChanged={afterChange} />
+        </Panel>
+
+        {clip && (
+          <ClipPrompt
+            clip={clip}
+            onUse={() => {
+              if (prompt.trim() && !confirm("Replace what's in the composer with this clip's prompt?")) return;
+              setPrompt(clip.prompt);
+              promptEl.current?.focus();
+            }}
+          />
+        )}
+      </div>
+
+      {/* ── INSPECTOR: pure settings ─────────────────────────────────── */}
       <div className="bench-inspector">
         <Inspector
           params={params} patch={patch} projects={projects}
           projectId={projectId} setProjectId={setProjectId}
           lockedProjectId={lockedProjectId}
-          onRender={render} busy={busy} canRender={Boolean(prompt.trim()) && !refProblem}
-          inputSeconds={inputSeconds} hasVideoInput={hasVideoInput}
         />
       </div>
 
-      {/* ── FILMSTRIP ───────────────────────────────────────────── */}
+      {/* ── FILMSTRIP with its own bin filter ────────────────────────── */}
       <Panel
         rootRef={stripRef}
-        title="Clips" className="bench-strip border-0" bodyClass="overflow-x-auto overflow-y-hidden"
+        title="Clips" className="bench-strip" bodyClass="overflow-x-auto overflow-y-hidden"
         right={
           <>
             {pending > 0 && (
               <span className="flex items-center gap-1.5 font-mono text-[9.5px] tracking-wider text-run">
-                <span className="lamp lamp-live" />{pending} IN QUEUE
+                <span className="lamp lamp-live" />{pending} RENDERING
               </span>
+            )}
+            {!lockedProjectId && (
+              <select
+                value={bin} onChange={(e) => setBin(e.target.value)}
+                className="h-[24px] rounded-[6px] border border-line bg-desk px-1.5 font-mono text-[10px] text-dim"
+              >
+                <option value="all">All clips</option>
+                <option value="mine">My clips</option>
+                <option value="unfiled">Unfiled</option>
+                {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+              </select>
             )}
             <span className="font-mono text-[9.5px] tracking-wider text-mute">
               {String(gens.length).padStart(3, "0")}
@@ -252,13 +239,16 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
         }
       >
         {gens.length === 0 ? (
-          <div className="desk-grid grid h-full place-items-center">
-            <p className="font-mono text-[10.5px] tracking-[.14em] text-mute">
-              NO CLIPS — WRITE A PROMPT AND HIT RENDER
-            </p>
+          <div className="desk-grid grid h-full place-items-center px-6 text-center">
+            <div>
+              <p className="ptitle text-[13px] text-dim">Quiet in here.</p>
+              <p className="mt-1 font-mono text-[10px] tracking-wide text-mute">
+                Write a shot on the left, hit Render, and it lands on this strip.
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="flex h-full gap-px bg-line">
+          <div className="flex h-full gap-2 p-2">
             {gens.map((g) => (
               <StripItem key={g.id} gen={g} active={g.id === activeId} onSelect={() => setSelected(g.id)} />
             ))}
@@ -270,33 +260,6 @@ export default function Workspace({ lockedProjectId }: { lockedProjectId?: strin
 }
 
 /* ── pieces ──────────────────────────────────────────────────── */
-
-function PoolRow({ label, icon, active, onClick, disabled, count, spend }: {
-  label: string; icon: React.ReactNode; active: boolean; onClick: () => void;
-  disabled?: boolean; count?: number; spend?: number;
-}) {
-  return (
-    <li>
-      <button
-        onClick={onClick} disabled={disabled}
-        className={`flex w-full items-center gap-2 px-2.5 py-[6px] text-left transition-colors ${
-          active ? "bg-panel3 text-bone" : "text-dim hover:bg-panel2"
-        } ${disabled && !active ? "opacity-35" : ""}`}
-      >
-        <span className={active ? "text-lift" : "text-mute"}>{icon}</span>
-        <span className="min-w-0 flex-1 truncate text-[12px]">{label}</span>
-        {count != null && (
-          <span className="shrink-0 font-mono text-[9.5px] tabular-nums text-mute">
-            {String(count).padStart(2, "0")}
-          </span>
-        )}
-        {spend != null && spend > 0 && (
-          <span className="shrink-0 font-mono text-[9.5px] tabular-nums text-lift">{usd(spend, 2)}</span>
-        )}
-      </button>
-    </li>
-  );
-}
 
 /** Full prompt of the selected clip — the team's shared memory, readable and
  *  reusable instead of clamped to two lines in a corner. */
@@ -317,24 +280,24 @@ function ClipPrompt({ clip, onUse }: { clip: Gen; onUse: () => void }) {
   return (
     <Panel
       title="Clip prompt"
-      className="shrink-0 border-0"
+      className="shrink-0"
       right={
         <>
           <button onClick={copy}
-            className="rounded-[2px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            className="rounded-[6px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
             {copied ? "COPIED ✓" : "COPY"}
           </button>
           <button onClick={onUse} title="Load into the composer"
-            className="rounded-[2px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            className="rounded-[6px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
             USE
           </button>
         </>
       }
     >
-      <p className="max-h-[110px] select-text overflow-y-auto whitespace-pre-wrap px-3 py-2 text-[12.5px] leading-relaxed text-bone/90">
+      <p className="max-h-[110px] select-text overflow-y-auto whitespace-pre-wrap px-3.5 py-2.5 text-[12.5px] leading-relaxed text-bone/90">
         {clip.prompt}
       </p>
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-hair px-3 py-1.5 font-mono text-[9.5px] text-mute">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-hair px-3.5 py-1.5 font-mono text-[9.5px] text-mute">
         <span className="text-dim">{clip.model.includes("2-5") ? "SD 2.5" : "SD 2.0"}</span>
         {p.resolution && <span>{String(p.resolution).toUpperCase()}</span>}
         {p.ratio && <span>{p.ratio}</span>}
@@ -356,7 +319,10 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
           className="desk-grid relative grid place-items-center overflow-hidden border border-hair bg-black"
           style={{ aspectRatio: "16 / 9", width: "min(100cqw - 16px, (100cqh - 16px) * 16 / 9)" }}
         >
-          <p className="font-mono text-[10.5px] tracking-[.14em] text-mute">CLICK A CLIP BELOW TO LOAD IT</p>
+          <div className="text-center">
+            <p className="ptitle text-[13px] text-dim">The screening room</p>
+            <p className="mt-1 font-mono text-[10px] tracking-wide text-mute">click any clip on the strip to play it here</p>
+          </div>
         </div>
       </div>
     );
@@ -416,12 +382,12 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
           <span className="ml-auto flex items-center gap-1">
             {url && (
               <a href={url} download={`${clipId(clip.id)}.mp4`} title="Download"
-                className="grid h-[22px] w-[22px] place-items-center rounded-[2px] border border-line text-dim hover:border-lift hover:text-lift">
+                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift">
                 <IconDown />
               </a>
             )}
             <button onClick={remove} title="Delete"
-              className="grid h-[22px] w-[22px] place-items-center rounded-[2px] border border-line text-dim hover:border-lift hover:text-lift">
+              className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift">
               <IconTrash />
             </button>
           </span>
@@ -439,8 +405,8 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
   return (
     <button
       onClick={onSelect}
-      className={`group relative flex h-full w-[214px] shrink-0 flex-col bg-panel text-left transition-colors ${
-        active ? "ring-1 ring-inset ring-lift" : "hover:bg-panel2"
+      className={`group relative flex h-full w-[214px] shrink-0 flex-col overflow-hidden rounded-[var(--r-sm)] border text-left transition-all ${
+        active ? "border-lift bg-panel2 shadow-[0_0_0_1px_var(--color-lift)]" : "border-hair bg-panel hover:border-line hover:bg-panel2"
       }`}
     >
       <span className="flex h-[19px] shrink-0 items-center gap-1.5 border-b border-hair px-1.5">
@@ -455,7 +421,7 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
         {done ? (
           <video src={posterSrc(url!)} muted preload="metadata" className="h-full w-full object-cover" />
         ) : (
-          <span className={`desk-grid grid h-full place-items-center font-mono text-[9px] tracking-[.16em] ${s.cls}`}>
+          <span className={`desk-grid grid h-full place-items-center font-mono text-[9px] tracking-[.16em] ${s.cls} ${s.live ? "render-sweep" : ""}`}>
             {s.label}
           </span>
         )}

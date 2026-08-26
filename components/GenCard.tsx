@@ -122,7 +122,7 @@ export default function GenCard({
                 value={gen.projectId ?? ""}
                 onChange={(e) => move(e.target.value)}
                 title="Move to bin"
-                className="h-[22px] max-w-[92px] rounded-[2px] border border-line bg-desk px-1 text-[9.5px] text-dim"
+                className="h-[22px] max-w-[92px] rounded-[6px] border border-line bg-desk px-1 text-[9.5px] text-dim"
               >
                 <option value="">Unfiled</option>
                 {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
@@ -131,14 +131,14 @@ export default function GenCard({
             {url && (
               <a
                 href={url} download={`${clipId(gen.id)}.mp4`} title="Download"
-                className="grid h-[22px] w-[22px] place-items-center rounded-[2px] border border-line text-dim hover:border-lift hover:text-lift"
+                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift"
               >
                 <IconDown />
               </a>
             )}
             <button
               onClick={remove} title="Delete"
-              className="grid h-[22px] w-[22px] place-items-center rounded-[2px] border border-line text-dim hover:border-lift hover:text-lift"
+              className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift"
             >
               <IconTrash />
             </button>

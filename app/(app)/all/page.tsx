@@ -62,7 +62,7 @@ export default function LibraryPage() {
               placeholder="Search prompts" className="ctl w-[220px] pl-7" />
           </div>
 
-          <div className="flex shrink-0 items-center overflow-hidden rounded-[3px] border border-line">
+          <div className="flex shrink-0 items-center overflow-hidden rounded-[8px] border border-line">
             {STATUSES.map((s) => (
               <button key={s} onClick={() => setStatus(s)}
                 className={`h-[28px] border-r border-line px-2.5 font-mono text-[9.5px] uppercase tracking-wider transition-colors last:border-0 ${

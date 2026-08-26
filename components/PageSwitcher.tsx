@@ -40,7 +40,7 @@ export default function PageSwitcher({ isAdmin = false }: { isAdmin?: boolean })
           return (
             <Link
               key={href} href={href} title={label}
-              className={`flex h-[38px] items-center gap-2 rounded-[3px] px-3 transition-colors ${
+              className={`flex h-[38px] items-center gap-2 rounded-[8px] px-3 transition-colors ${
                 active
                   ? "bg-panel3 text-bone shadow-[inset_0_-2px_0_0_var(--color-lift)]"
                   : "text-mute hover:bg-panel2 hover:text-dim"

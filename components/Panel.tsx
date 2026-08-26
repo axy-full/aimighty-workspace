@@ -6,9 +6,9 @@ export function Panel({
   rootRef?: React.Ref<HTMLElement>;
 }) {
   return (
-    <section ref={rootRef} className={`flex min-h-0 flex-col border border-line bg-panel ${className}`}>
+    <section ref={rootRef} className={`flex min-h-0 flex-col overflow-hidden rounded-[var(--r)] border border-line bg-panel ${className}`}>
       {title && (
-        <header className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel2 px-2.5">
+        <header className="flex h-9 shrink-0 items-center gap-2 border-b border-hair bg-panel2 px-3">
           <h2 className="ptitle text-[10.5px] tracking-[.1em] text-dim">{title}</h2>
           {right && <div className="ml-auto flex items-center gap-2">{right}</div>}
         </header>

@@ -58,7 +58,7 @@ export default function TitleBar({ user }: { user: U }) {
 
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 rounded-[3px] px-1.5 py-1 transition-colors hover:bg-panel2"
+          className="flex items-center gap-2 rounded-[8px] px-1.5 py-1 transition-colors hover:bg-panel2"
           title={`${user.name} · ${user.email}`}
         >
           <span className="grid h-[20px] w-[20px] place-items-center rounded-full bg-panel3 font-mono text-[9px] text-bone">

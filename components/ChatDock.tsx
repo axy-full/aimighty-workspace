@@ -216,7 +216,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
           out.push(b);
           if (i < bits.length - 1) out.push(
             <span key={`${m.id}-${mem.id}-${i}`}
-              className={mem.id === me ? "rounded-[2px] bg-red/25 px-0.5 text-lift" : "text-run"}>
+              className={mem.id === me ? "rounded-[6px] bg-red/25 px-0.5 text-lift" : "text-run"}>
               {token}
             </span>
           );
@@ -238,7 +238,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
         <h2 className="ptitle text-[10.5px] tracking-[.1em] text-dim">TEAM CHAT</h2>
         <span className="font-mono text-[9px] text-mute">#general</span>
         <button onClick={onClose} title="Collapse"
-          className="ml-auto grid h-[20px] w-[20px] place-items-center rounded-[2px] text-mute hover:text-lift">
+          className="ml-auto grid h-[20px] w-[20px] place-items-center rounded-[6px] text-mute hover:text-lift">
           <IconClose />
         </button>
       </header>
@@ -300,7 +300,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
 
       <div className="relative shrink-0 border-t border-line bg-panel p-2">
         {menu && matches.length > 0 && (
-          <div className="absolute bottom-full left-2 right-2 mb-1 overflow-hidden rounded-[3px] border border-line bg-panel2 shadow-xl">
+          <div className="absolute bottom-full left-2 right-2 mb-1 overflow-hidden rounded-[8px] border border-line bg-panel2 shadow-xl">
             {matches.map((mm, i) => (
               <button key={mm.id}
                 onMouseDown={(e) => { e.preventDefault(); pick(mm); }}
@@ -313,7 +313,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
         <div className="flex items-end gap-1.5">
           <button onClick={() => fileRef.current?.click()} disabled={uploadPct != null}
             title="Attach a file (up to 2 GB, byte-identical)"
-            className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[3px] border border-line text-mute hover:border-lift hover:text-lift disabled:opacity-40">
+            className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border border-line text-mute hover:border-lift hover:text-lift disabled:opacity-40">
             <IconPlus />
           </button>
           <input ref={fileRef} type="file" hidden onChange={(e) => e.target.files?.[0] && attach(e.target.files[0])} />
@@ -330,10 +330,10 @@ function ChatPanel({ feed, members, refresh, onClose }: {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
             }}
             placeholder="Message the team — @ to mention"
-            className="max-h-[96px] min-h-[30px] w-full resize-none rounded-[3px] border border-line bg-desk px-2.5 py-1.5 text-[12.5px] leading-relaxed text-bone placeholder:text-mute/60 focus:outline-none"
+            className="max-h-[96px] min-h-[30px] w-full resize-none rounded-[8px] border border-line bg-desk px-2.5 py-1.5 text-[12.5px] leading-relaxed text-bone placeholder:text-mute/60 focus:outline-none"
           />
           <button onClick={() => send()} disabled={sending || (!text.trim())}
-            className="ptitle h-[30px] shrink-0 rounded-[3px] bg-red px-2.5 text-[10px] tracking-[.08em] text-white hover:bg-lift disabled:bg-panel3 disabled:text-mute">
+            className="ptitle h-[30px] shrink-0 rounded-[8px] bg-red px-2.5 text-[10px] tracking-[.08em] text-white hover:bg-lift disabled:bg-panel3 disabled:text-mute">
             SEND
           </button>
         </div>
@@ -348,20 +348,20 @@ function AttachmentTile({ a }: { a: Attachment }) {
       <a href={a.url} target="_blank" rel="noreferrer" className="mt-1 block w-fit max-w-full">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={a.url} alt={a.name} title={`${a.name} · ${fmtBytes(a.bytes)}`}
-          className="max-h-[160px] max-w-full rounded-[3px] border border-line object-contain" />
+          className="max-h-[160px] max-w-full rounded-[8px] border border-line object-contain" />
       </a>
     );
   }
   if (a.kind === "video") {
     return (
       <video src={`${a.url}#t=0.1`} controls preload="metadata"
-        className="mt-1 max-h-[180px] w-full rounded-[3px] border border-line bg-black" />
+        className="mt-1 max-h-[180px] w-full rounded-[8px] border border-line bg-black" />
     );
   }
   return (
     <a href={a.url} download={a.name}
       title={`sha256 ${a.sha256.slice(0, 16)}… — stored byte-identical`}
-      className="mt-1 flex w-fit max-w-full items-center gap-2 rounded-[3px] border border-line bg-panel2 px-2.5 py-1.5 hover:border-lift">
+      className="mt-1 flex w-fit max-w-full items-center gap-2 rounded-[8px] border border-line bg-panel2 px-2.5 py-1.5 hover:border-lift">
       <span className="font-mono text-[13px] text-lift">▼</span>
       <span className="min-w-0">
         <span className="block truncate text-[11.5px] text-bone">{a.name}</span>

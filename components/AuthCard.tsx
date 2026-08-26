@@ -36,7 +36,7 @@ export function Field({ label, children }: { label: string; children: React.Reac
 export function Submit({ busy, children }: { busy: boolean; children: React.ReactNode }) {
   return (
     <button type="submit" disabled={busy}
-      className="ptitle mt-1 h-9 w-full rounded-[3px] bg-red text-[12px] tracking-[.1em] text-white transition-colors hover:bg-lift disabled:bg-panel3 disabled:text-mute">
+      className="ptitle mt-1 h-9 w-full rounded-[8px] bg-red text-[12px] tracking-[.1em] text-white transition-colors hover:bg-lift disabled:bg-panel3 disabled:text-mute">
       {busy ? "…" : children}
     </button>
   );
