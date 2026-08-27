@@ -3,24 +3,27 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import logo from "@/public/aimighty-logo.png";
 import { useProject } from "@/lib/projectContext";
+import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
+import { UserMenu } from "./NavRail";
 
-const CRUMB: Record<string, string> = {
-  "/": "compose", "/all": "library", "/usage": "usage", "/team": "team",
+const TITLE: Record<string, string> = {
+  "/": "Compose", "/all": "Library", "/usage": "Usage", "/team": "Team",
 };
 
 type U = { name: string; email: string; role: string };
+type Usage = { pending: number };
 
+/** The design's 54px top bar: where you are, which project you're in,
+ *  and whether anything is rendering right now. */
 export default function TitleBar({ user }: { user: U }) {
   const path = usePathname();
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [projOpen, setProjOpen] = useState(false);
   const { selection, setSelection, projects, current, refreshProjects } = useProject();
+  const { data: usage } = useApi<Usage>("/api/usage", 20000);
 
   const projLabel =
     selection === "all" ? "All projects" : selection === "unfiled" ? "Unfiled" : current?.name ?? "All projects";
@@ -57,60 +60,48 @@ export default function TitleBar({ user }: { user: U }) {
     setProjOpen(false);
   }
 
-  const crumb = CRUMB[path] ?? path.replace(/^\//, "");
-
-  const initials = user.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-
-  async function signOut() {
-    setBusy(true);
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  }
-
   return (
-    <header className="app-title relative flex items-center gap-3 border-b border-line bg-chrome px-3">
-      {/* Brand red is 2.1:1 on near-black — lift the mark so it reads. */}
-      <Link href="/" title="Compose" className="group flex items-center gap-3">
+    <header className="app-title relative flex items-center gap-3 border-b border-line px-5 max-[860px]:px-3.5">
+      {/* Phones have no rail — the mark stands in for it. */}
+      <Link href="/" className="hidden shrink-0 items-center max-[860px]:flex">
         <Image src={logo} alt="aimighty" priority
-          className="h-[15px] w-auto select-none"
+          className="h-[12px] w-auto select-none"
           style={{ filter: "brightness(1.28) saturate(1.04)" }} />
-        <span className="ptitle text-[11px] tracking-[.16em] text-mute transition-colors group-hover:text-dim">
-          WORKSPACE
-        </span>
       </Link>
 
-      <span className="h-4 w-px bg-line" />
+      <span className="ptitle shrink-0 text-[15px] max-[860px]:hidden">{TITLE[path] ?? ""}</span>
+      <span className="h-4 w-px shrink-0 bg-line max-[860px]:hidden" />
 
       {/* Project switcher — the single "where am I working" control. */}
-      <div className="relative">
+      <div className="relative min-w-0">
         <button
           onClick={() => setProjOpen(!projOpen)}
-          className="flex items-center gap-1.5 rounded-[8px] border border-line bg-panel px-2.5 py-1 text-[12px] text-bone transition-colors hover:border-lift/60"
+          className="chip max-w-full !gap-2 !py-1.5 !text-[12.5px] !text-dim"
         >
-          <span className="max-w-[180px] truncate">{projLabel}</span>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-mute">
-            <path d="M6 9l6 6 6-6" />
+          <span className="h-2 w-2 shrink-0 rounded-[3px] bg-red" />
+          <span className="min-w-0 truncate">{projLabel}</span>
+          <svg width="8" height="6" viewBox="0 0 8 6" className="shrink-0">
+            <path d="M1 1.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />
           </svg>
         </button>
 
         {projOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setProjOpen(false)} />
-            <div className="absolute left-0 top-[34px] z-50 w-[248px] overflow-hidden rounded-[10px] border border-line bg-panel shadow-2xl">
-              <div className="max-h-[300px] overflow-y-auto py-1">
+            <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-[248px] overflow-hidden rounded-[11px] border border-line bg-panel2 shadow-[var(--shadow)]">
+              <div className="max-h-[300px] overflow-y-auto p-1">
                 {[{ id: "all", name: "All projects" }, { id: "unfiled", name: "Unfiled" }].map((row) => (
                   <button key={row.id}
                     onClick={() => { setSelection(row.id); setProjOpen(false); }}
-                    className={`block w-full px-3 py-1.5 text-left text-[12.5px] ${selection === row.id ? "text-lift" : "text-dim hover:bg-panel2"}`}>
+                    className={`menu-item ${selection === row.id ? "text-lift" : "text-dim"}`}>
                     {row.name}
                   </button>
                 ))}
-                {projects.length > 0 && <div className="mx-3 my-1 h-px bg-hair" />}
+                {projects.length > 0 && <div className="mx-2 my-1 h-px bg-hair" />}
                 {projects.map((pr) => (
                   <button key={pr.id}
                     onClick={() => { setSelection(pr.id); setProjOpen(false); }}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] ${selection === pr.id ? "text-lift" : "text-dim hover:bg-panel2"}`}>
+                    className={`menu-item ${selection === pr.id ? "text-lift" : "text-dim"}`}>
                     <span className="min-w-0 flex-1 truncate">{pr.name}</span>
                     <span className="shrink-0 font-mono text-[9px] text-mute">
                       {pr.genCount} · {usd(pr.spend, 2)}
@@ -118,15 +109,14 @@ export default function TitleBar({ user }: { user: U }) {
                   </button>
                 ))}
               </div>
-              <div className="border-t border-hair p-1.5">
-                <button onClick={newProject}
-                  className="block w-full rounded-[6px] px-2 py-1.5 text-left text-[12px] text-dim hover:bg-panel2 hover:text-lift">
+              <div className="border-t border-hair p-1">
+                <button onClick={newProject} className="menu-item text-dim hover:text-bone">
                   ＋ New project
                 </button>
                 {current && (
-                  <div className="mt-0.5 flex gap-1.5 px-2 pb-1">
+                  <div className="flex gap-2 px-2.5 pb-1.5 pt-0.5">
                     <button onClick={renameCurrent} className="font-mono text-[9.5px] tracking-wider text-mute hover:text-lift">RENAME</button>
-                    <span className="text-line">·</span>
+                    <span className="text-mute/40">·</span>
                     <button onClick={deleteCurrent} className="font-mono text-[9.5px] tracking-wider text-mute hover:text-lift">DELETE</button>
                   </div>
                 )}
@@ -136,56 +126,18 @@ export default function TitleBar({ user }: { user: U }) {
         )}
       </div>
 
-      <span className="hidden font-mono text-[10.5px] tracking-wide text-dim md:block">~/{crumb}</span>
-
-      <div className="ml-auto flex items-center gap-3">
-        <span className="hidden font-mono text-[10px] tracking-wider text-mute xl:block">
-          MODELARK · AP-SOUTHEAST
-        </span>
-        <span className="hidden h-4 w-px bg-line xl:block" />
-        <span className="hidden items-center gap-1.5 font-mono text-[10px] tracking-wider text-ok sm:flex">
-          <span className="lamp lamp-live" />READY
-        </span>
-        <span className="h-4 w-px bg-line" />
-
-        <button
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 rounded-[8px] px-1.5 py-1 transition-colors hover:bg-panel2"
-          title={`${user.name} · ${user.email}`}
-        >
-          <span className="grid h-[20px] w-[20px] place-items-center rounded-full bg-panel3 font-mono text-[9px] text-bone">
-            {initials}
+      <div className="ml-auto flex shrink-0 items-center gap-2.5">
+        {usage != null && usage.pending > 0 && (
+          <span className="flex items-center gap-2 rounded-full bg-chip px-3 py-1.5 text-[11.5px] text-dim">
+            <span className="lamp lamp-live text-lift" style={{ width: 7, height: 7 }} />
+            Rendering · {usage.pending}
           </span>
-          <span className="hidden font-mono text-[10px] text-dim md:block">{user.name}</span>
-        </button>
+        )}
+        {/* The rail carries the account on desktop; phones get it here. */}
+        <span className="hidden max-[860px]:block">
+          <UserMenu user={user} />
+        </span>
       </div>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-2 top-[38px] z-50 w-[212px] border border-line bg-panel shadow-xl">
-            <div className="border-b border-line px-3 py-2.5">
-              <p className="truncate text-[12px] text-bone">{user.name}</p>
-              <p className="truncate font-mono text-[9.5px] text-mute">{user.email}</p>
-              <p className="lbl mt-1.5">{user.role}</p>
-            </div>
-            {user.role === "admin" && (
-              <button
-                onClick={() => { setOpen(false); router.push("/team"); }}
-                className="w-full px-3 py-2 text-left font-mono text-[10.5px] tracking-wider text-dim hover:bg-panel2 hover:text-lift"
-              >
-                TEAM &amp; INVITES
-              </button>
-            )}
-            <button
-              onClick={signOut} disabled={busy}
-              className="w-full px-3 py-2 text-left font-mono text-[10.5px] tracking-wider text-dim hover:bg-panel2 hover:text-lift"
-            >
-              {busy ? "SIGNING OUT…" : "SIGN OUT"}
-            </button>
-          </div>
-        </>
-      )}
     </header>
   );
 }

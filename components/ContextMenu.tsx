@@ -173,20 +173,20 @@ export default function ContextMenu() {
       <div
         ref={boxRef}
         style={{ left: menu.x, top: menu.y }}
-        className="fixed z-[91] w-[240px] overflow-hidden rounded-[10px] border border-line bg-panel py-1 shadow-2xl"
+        className="fixed z-[91] w-[240px] overflow-hidden rounded-[11px] border border-line bg-panel2 p-1 shadow-[var(--shadow)]"
       >
         {menu.items.map((it, i) =>
           it.kind === "sep" ? (
-            <div key={i} className="mx-3 my-1 h-px bg-hair" />
+            <div key={i} className="mx-2 my-1 h-px bg-hair" />
           ) : (
             <button
               key={i}
               disabled={it.disabled}
               onClick={async () => { setMenu(null); await it.action(); }}
-              className={`block w-full px-3.5 py-[7px] text-left text-[12.5px] transition-colors ${
+              className={`block w-full rounded-[8px] px-2.5 py-[7px] text-left text-[12.5px] transition-colors ${
                 it.disabled ? "cursor-default text-mute/50"
                 : it.danger ? "text-lift hover:bg-lift/10"
-                : "text-bone/90 hover:bg-panel2"
+                : "text-bone/90 hover:bg-chip"
               }`}
             >
               {it.label}

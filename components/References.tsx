@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconPlus, IconClose } from "./Icons";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
 import { uploadFile, sha256OfFile } from "@/lib/uploadClient";
@@ -15,6 +15,9 @@ export type RefItem = {
   sha256: string; url: string; base64Bytes: number;
   role: ImageRole; verified: boolean;
 };
+
+/** Lets the island's "+ Reference" chip open this panel's file picker. */
+export type RefPicker = { open: () => void } | null;
 
 const ROLE_LABEL: Record<ImageRole, string> = {
   first_frame: "FIRST", last_frame: "LAST",
@@ -76,19 +79,27 @@ export function referenceProblem(
   return null;
 }
 
+/** The right-hand references panel — show the model instead of describing. */
 export default function References({
-  refs, setRefs, model, onCite,
+  refs, setRefs, model, onCite, pickerRef,
 }: {
   refs: RefItem[];
   setRefs: React.Dispatch<React.SetStateAction<RefItem[]>>;
   model: ModelDef;
   onCite: (token: string) => void;
+  pickerRef?: React.MutableRefObject<RefPicker>;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
+
+  useEffect(() => {
+    if (!pickerRef) return;
+    pickerRef.current = { open: () => input.current?.click() };
+    return () => { pickerRef.current = null; };
+  }, [pickerRef]);
 
   async function add(files: FileList | File[]) {
     setBusy(true); setErr(null);
@@ -134,132 +145,133 @@ export default function References({
   const referenceVideos = refs.filter((r) => r.kind === "video");
   const totalVideoS = referenceVideos.reduce((a, v) => a + (v.durationS ?? 0), 0);
   const unverified = refs.some((r) => !r.verified);
-  const problem = referenceProblem(refs, model);
 
   return (
     <div
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) add(e.dataTransfer.files); }}
-      className={`border-b border-line bg-panel transition-colors ${drag ? "bg-lift/8" : ""}`}
+      className={`flex min-h-full flex-col gap-3 p-4 transition-colors ${drag ? "bg-lift/8" : ""}`}
     >
-      {refs.length === 0 && !busy && (
-        <button
-          type="button" onClick={() => input.current?.click()}
-          className="mx-3 my-2.5 block w-[calc(100%-24px)] rounded-[var(--r-sm)] border border-dashed border-line px-3 py-2.5 text-left transition-colors hover:border-lift/60"
-        >
-          <p className="text-[11.5px] font-semibold text-bone/90">Add references</p>
-          <p className="mt-0.5 text-[10.5px] leading-relaxed text-mute">
-            Drop stills or clips to steer the look — cite them as
-            <span className="font-mono text-run"> @Image1</span> or
-            <span className="font-mono text-run"> @Video1</span> in your prompt.
-            Never recompressed.
-          </p>
-        </button>
-      )}
-      <div className={`flex items-center gap-2 px-2.5 pt-1.5 ${refs.length === 0 && !busy ? "hidden" : ""}`}>
-        <span className="lbl">References</span>
-        {refs.length > 0 && (
-          <span className="font-mono text-[9px] text-mute">
-            {refs.length}
-            {referenceVideos.length > 0 && ` · ${totalVideoS.toFixed(1)}s / ${model.maxVideoSecondsTotal}s video`}
-          </span>
-        )}
-        <span className="ml-auto flex items-center gap-2">
-          {progress && <span className="font-mono text-[9px] text-run">{progress}</span>}
-          {refs.length > 0 && !unverified && !progress && (
-            <span className="font-mono text-[9px] tracking-wider text-ok" title="Stored bytes hash-match the originals">
-              ✓ BYTE-IDENTICAL
-            </span>
-          )}
-          <span className="font-mono text-[9px] text-mute">IMAGES + VIDEOS · DROP OR CLICK +</span>
+      <div className="flex items-baseline gap-2">
+        <span className="ptitle text-[13.5px]">References</span>
+        <span className="ml-auto font-mono text-[10.5px] text-mute">
+          {refs.length > 0
+            ? `${refs.length}${referenceVideos.length > 0 ? ` · ${totalVideoS.toFixed(1)}s / ${model.maxVideoSecondsTotal}s` : ""}`
+            : ""}
         </span>
       </div>
+      <p className="text-[11.5px] leading-relaxed text-dim">
+        Show the model instead of describing. Attach stills and clips, then call
+        them in the prompt as <span className="font-mono text-lift">@Image1</span> or{" "}
+        <span className="font-mono text-lift">@Video1</span>.
+      </p>
 
-      <div className={`flex items-stretch gap-1.5 overflow-x-auto px-2.5 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${refs.length === 0 && !busy ? "hidden" : ""}`}>
-        <button
-          type="button" onClick={() => input.current?.click()} disabled={busy}
-          className="grid h-[62px] w-[62px] shrink-0 place-items-center rounded-[8px] border border-dashed border-line text-mute transition-colors hover:border-lift hover:text-lift disabled:opacity-40"
-          title="Add reference images or videos"
-        >
-          {busy ? <span className="font-mono text-[9px]">…</span> : <IconPlus />}
-        </button>
-        <input
-          ref={input} type="file" multiple hidden
-          accept="image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,video/mp4,video/quicktime"
-          onChange={(e) => e.target.files && add(e.target.files)}
-        />
+      <button
+        type="button" onClick={() => input.current?.click()} disabled={busy}
+        className="desk-grid grid h-[84px] w-full place-items-center rounded-[10px] border border-dashed border-line text-mute transition-colors hover:border-lift/60 hover:text-dim disabled:opacity-40"
+        title="Add reference images or videos"
+      >
+        {busy
+          ? <span className="font-mono text-[10px]">{progress ?? "…"}</span>
+          : <span className="flex items-center gap-2 font-mono text-[10px] tracking-wide">
+              <IconPlus /> drop stills or clips
+            </span>}
+      </button>
+      <input
+        ref={input} type="file" multiple hidden
+        accept="image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,video/mp4,video/quicktime"
+        onChange={(e) => e.target.files && add(e.target.files)}
+      />
 
-        {refs.map((r) => {
-          const citeIndex = r.kind === "video"
-            ? referenceVideos.findIndex((x) => x.id === r.id) + 1
-            : r.role === "reference_image"
-              ? referenceImages.findIndex((x) => x.id === r.id) + 1
-              : 0;
-          const citeToken = r.kind === "video" ? `@Video${citeIndex}` : `@Image${citeIndex}`;
-          return (
-            <div key={r.id} className="group relative h-[62px] w-[62px] shrink-0 overflow-hidden rounded-[8px] border border-line bg-desk">
-              {r.kind === "video" ? (
-                <video src={`${r.url}#t=0.1`} muted preload="metadata"
-                  className="h-full w-full object-cover"
-                  title={`${r.filename}\n${r.durationS?.toFixed(1) ?? "?"}s · ${kb(r.bytes)}\nsha256 ${r.sha256.slice(0, 16)}…`} />
-              ) : (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img src={r.url} alt={r.filename}
-                  className="h-full w-full object-cover"
-                  title={`${r.filename}\n${r.width ?? "?"}×${r.height ?? "?"} · ${kb(r.bytes)}\nsha256 ${r.sha256.slice(0, 16)}…`} />
-              )}
-
-              <span className={`absolute left-0 top-0 px-1 py-px font-mono text-[8px] tracking-wide ${
-                r.role === "reference_image" || r.role === "reference_video"
-                  ? "bg-desk/85 text-lift" : "bg-lift text-white"
-              }`}>
-                {citeIndex > 0 ? citeToken : ROLE_LABEL[r.role]}
-              </span>
-              {r.kind === "video" && r.durationS != null && (
-                <span className="absolute right-0 top-0 bg-desk/85 px-1 font-mono text-[8px] text-dim">
-                  {r.durationS.toFixed(1)}s
-                </span>
-              )}
-
-              {!r.verified && (
-                <span className="absolute bottom-0 left-0 bg-lift px-1 font-mono text-[8px] text-white" title="Stored bytes do not match the original">
-                  HASH?
-                </span>
-              )}
-
-              <div className="absolute inset-x-0 bottom-0 flex opacity-0 transition-opacity group-hover:opacity-100">
-                {r.kind === "image" && (
-                  <select
-                    value={r.role}
-                    onChange={(e) => setRole(r.id, e.target.value as ImageRole)}
-                    className="h-[17px] min-w-0 flex-1 border-0 bg-desk/95 px-0.5 font-mono text-[8px] text-dim"
-                    title="Role"
-                  >
-                    <option value="reference_image">ref</option>
-                    <option value="first_frame">first</option>
-                    <option value="last_frame">last</option>
-                  </select>
+      {refs.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          {refs.map((r) => {
+            const citeIndex = r.kind === "video"
+              ? referenceVideos.findIndex((x) => x.id === r.id) + 1
+              : r.role === "reference_image"
+                ? referenceImages.findIndex((x) => x.id === r.id) + 1
+                : 0;
+            const citeToken = r.kind === "video" ? `@Video${citeIndex}` : `@Image${citeIndex}`;
+            return (
+              <div key={r.id} className="group relative h-[84px] overflow-hidden rounded-[10px] border border-line bg-thumb">
+                {r.kind === "video" ? (
+                  <video src={`${r.url}#t=0.1`} muted preload="metadata"
+                    className="h-full w-full object-cover"
+                    title={`${r.filename}\n${r.durationS?.toFixed(1) ?? "?"}s · ${kb(r.bytes)}\nsha256 ${r.sha256.slice(0, 16)}…`} />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={r.url} alt={r.filename}
+                    className="h-full w-full object-cover"
+                    title={`${r.filename}\n${r.width ?? "?"}×${r.height ?? "?"} · ${kb(r.bytes)}\nsha256 ${r.sha256.slice(0, 16)}…`} />
                 )}
-                {citeIndex > 0 && (
-                  <button type="button" onClick={() => onCite(citeToken)} title="Cite in prompt"
-                    className="h-[17px] flex-1 bg-desk/95 px-1 font-mono text-[8px] text-dim hover:text-lift">@</button>
+
+                <span className={`absolute left-0 top-0 rounded-br-[6px] px-1.5 py-px font-mono text-[8px] tracking-wide ${
+                  r.role === "reference_image" || r.role === "reference_video"
+                    ? "bg-black/70 text-lift" : "bg-red text-white"
+                }`}>
+                  {citeIndex > 0 ? citeToken : ROLE_LABEL[r.role]}
+                </span>
+                {r.kind === "video" && r.durationS != null && (
+                  <span className="absolute right-0 top-0 rounded-bl-[6px] bg-black/70 px-1.5 font-mono text-[8px] text-white/80">
+                    {r.durationS.toFixed(1)}s
+                  </span>
                 )}
-                <button type="button" onClick={() => remove(r.id)} title="Remove"
-                  className="grid h-[17px] w-[17px] shrink-0 place-items-center bg-desk/95 text-dim hover:text-lift">
-                  <IconClose />
-                </button>
+
+                {!r.verified && (
+                  <span className="absolute bottom-0 left-0 bg-red px-1 font-mono text-[8px] text-white" title="Stored bytes do not match the original">
+                    HASH?
+                  </span>
+                )}
+
+                <div className="absolute inset-x-0 bottom-0 flex opacity-0 transition-opacity group-hover:opacity-100">
+                  {r.kind === "image" && (
+                    <select
+                      value={r.role}
+                      onChange={(e) => setRole(r.id, e.target.value as ImageRole)}
+                      className="h-[18px] min-w-0 flex-1 border-0 bg-black/80 px-0.5 font-mono text-[8px] text-white/80"
+                      title="Role"
+                    >
+                      <option value="reference_image">ref</option>
+                      <option value="first_frame">first</option>
+                      <option value="last_frame">last</option>
+                    </select>
+                  )}
+                  {citeIndex > 0 && (
+                    <button type="button" onClick={() => onCite(citeToken)} title="Cite in prompt"
+                      className="h-[18px] flex-1 bg-black/80 px-1 font-mono text-[8px] text-white/80 hover:text-lift">@</button>
+                  )}
+                  <button type="button" onClick={() => remove(r.id)} title="Remove"
+                    className="grid h-[18px] w-[18px] shrink-0 place-items-center bg-black/80 text-white/80 hover:text-lift">
+                    <IconClose />
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        {progress && !busy && <span className="font-mono text-[9px] text-run">{progress}</span>}
+        {refs.length > 0 && !unverified && !progress && (
+          <span className="font-mono text-[9px] tracking-wider text-ok" title="Stored bytes hash-match the originals">
+            ✓ BYTE-IDENTICAL
+          </span>
+        )}
       </div>
 
-      {(err || problem) && (
-        <p className="border-t border-line bg-lift/8 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed text-lift">
-          {err ?? problem}
+      {err && (
+        <p className="rounded-[8px] bg-lift/8 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed text-lift">
+          {err}
         </p>
       )}
+
+      <div className="mt-auto border-t border-line pt-3 font-mono text-[10px] leading-relaxed text-mute">
+        {model.label} — up to {model.maxReferenceImages} images ·{" "}
+        {model.maxReferenceVideos} videos, {model.maxVideoSecondsTotal}s combined.
+        Never recompressed: what you drop is byte-for-byte what the model sees.
+      </div>
     </div>
   );
 }

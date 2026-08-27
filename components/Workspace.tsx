@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import Inspector, { type Params } from "./Inspector";
-import References, { referenceProblem, type RefItem } from "./References";
-import { Panel } from "./Panel";
+import References, { referenceProblem, type RefItem, type RefPicker } from "./References";
 import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
-import { DEFAULT_MODEL_ID, getModel, estimateCostUsd, estimateTokens } from "@/lib/models";
+import { MODELS, DEFAULT_MODEL_ID, getModel, dimensionsFor, estimateCostUsd, estimateTokens } from "@/lib/models";
 import { useProject } from "@/lib/projectContext";
 import { IconDown, IconTrash } from "./Icons";
+
+export type Params = {
+  modelId: string; ratio: string; resolution: string; duration: number;
+  watermark: boolean; generateAudio: boolean; seed: string;
+};
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
@@ -22,6 +24,8 @@ const STATUS: Record<string, { cls: string; label: string; live?: boolean }> = {
   cancelled: { cls: "text-mute", label: "CANCELLED" },
 };
 
+type Menu = null | "model" | "dur" | "ratio" | "res" | "more";
+
 export default function Workspace() {
   const { selection: bin, refreshProjects } = useProject();
   const [selected, setSelected] = useState<string | null>(null);
@@ -29,13 +33,27 @@ export default function Workspace() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
+  const [menu, setMenu] = useState<Menu>(null);
   const promptEl = useRef<HTMLTextAreaElement>(null);
+  const overlayEl = useRef<HTMLDivElement>(null);
+  const picker = useRef<RefPicker>(null);
 
   const [params, setParams] = useState<Params>({
     modelId: DEFAULT_MODEL_ID, ratio: "16:9", resolution: "720p", duration: 5,
     watermark: false, generateAudio: false, seed: "",
   });
   const patch = (p: Partial<Params>) => setParams((s) => ({ ...s, ...p }));
+
+  function switchModel(next: string) {
+    const m = getModel(next);
+    patch({
+      modelId: next,
+      ratio: m.ratios.includes(params.ratio) ? params.ratio : m.ratios[0],
+      resolution: m.resolutions.includes(params.resolution) ? params.resolution : m.resolutions[0],
+      duration: m.durations.includes(params.duration) ? params.duration : m.durations[0],
+      generateAudio: m.supportsAudio ? params.generateAudio : false,
+    });
+  }
 
   const query =
     bin === "all" || bin === "unfiled" ? "" : `&projectId=${encodeURIComponent(bin)}`;
@@ -66,6 +84,17 @@ export default function Workspace() {
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, []);
+
+  // The composer grows with the prompt (to a lid), and the highlight layer
+  // must track the textarea's scroll exactly or the colored @cites drift.
+  useEffect(() => {
+    const el = promptEl.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+    if (overlayEl.current) overlayEl.current.scrollTop = el.scrollTop;
+  }, [prompt]);
+
   const modelDef = getModel(params.modelId);
   const refProblem = referenceProblem(refs, modelDef, prompt);
   const hasVideoInput = refs.some((r) => r.kind === "video");
@@ -77,7 +106,16 @@ export default function Workspace() {
     inputSeconds, hasVideoInput
   );
   const estTokens = estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
-  const pending = gens.filter((g) => g.status === "queued" || g.status === "running").length;
+  const dims = dimensionsFor(params.resolution, params.ratio);
+
+  const referenceImages = refs.filter((r) => r.kind === "image" && r.role === "reference_image");
+  const referenceVideos = refs.filter((r) => r.kind === "video");
+  const citeTokenFor = (r: RefItem) =>
+    r.kind === "video"
+      ? `@Video${referenceVideos.findIndex((x) => x.id === r.id) + 1}`
+      : r.role === "reference_image"
+        ? `@Image${referenceImages.findIndex((x) => x.id === r.id) + 1}`
+        : r.role === "first_frame" ? "FIRST" : "LAST";
 
   function afterChange() { refresh(); refreshProjects(); }
 
@@ -123,131 +161,272 @@ export default function Workspace() {
     } finally { setBusy(false); }
   }
 
+  // Prompt text with @cites picked out in accent, the design's overlay trick.
+  const segments = useMemo(() => {
+    const out: { t: string; tag: boolean }[] = [];
+    for (const part of prompt.split(/(@(?:Image|Video)\d+)/gi)) {
+      if (part) out.push({ t: part, tag: /^@(?:Image|Video)\d+$/i.test(part) });
+    }
+    if (prompt.endsWith("\n") || prompt === "") out.push({ t: "​", tag: false });
+    return out;
+  }, [prompt]);
+
   return (
-    <div className="bench">
-      {/* ── COMPOSE — the prompt is the product, so it leads ─────────── */}
-      <div className="bench-compose flex min-h-0 flex-col gap-2.5">
-        <Panel
-          title="Write the shot"
-          className="min-h-0 flex-1"
-          bodyClass="flex min-h-0 flex-col"
-          right={
-            <>
-              <span title="Every prompt is auto-refined with ByteDance's Seedance recipe before rendering. Start with raw: to send your exact words."
-                className="font-mono text-[9px] tracking-wider text-mute">
+    <div className="compose">
+      <div className="compose-main">
+        {/* ── PRO VIEWER ─────────────────────────────────────────────── */}
+        <section ref={viewerRef as React.Ref<HTMLElement>} className="flex min-h-0 flex-1 flex-col gap-3" style={{ minHeight: 200 }}>
+          <ViewerBody clip={clip} onChanged={afterChange} />
+          {clip && (
+            <ClipPrompt
+              clip={clip}
+              onUse={() => {
+                if (prompt.trim() && !confirm("Replace what's in the composer with this clip's prompt?")) return;
+                setPrompt(clip.prompt);
+                promptEl.current?.focus();
+              }}
+            />
+          )}
+        </section>
+
+        {/* ── FILMSTRIP ──────────────────────────────────────────────── */}
+        <section ref={stripRef as React.Ref<HTMLElement>}
+          className="flex shrink-0 gap-2.5 overflow-x-auto pb-1">
+          {gens.length === 0 ? (
+            <div className="desk-grid flex h-[72px] w-full items-center justify-center rounded-[9px] border border-line">
+              <p className="font-mono text-[10px] tracking-wide text-mute">
+                Quiet in here — write a shot below and it lands on this strip.
+              </p>
+            </div>
+          ) : (
+            gens.map((g) => (
+              <StripItem key={g.id} gen={g} active={g.id === activeId} onSelect={() => setSelected(g.id)} />
+            ))
+          )}
+        </section>
+
+        {/* ── THE ISLAND ─────────────────────────────────────────────── */}
+        <div className="island">
+          <div className="flex flex-wrap items-center gap-2">
+            {refs.map((r) => {
+              const token = citeTokenFor(r);
+              const citable = token.startsWith("@");
+              return (
+                <span key={r.id}
+                  className="flex items-center gap-1.5 rounded-[8px] border border-line bg-chip py-1 pl-2 pr-1.5 text-[11.5px]">
+                  <button
+                    onClick={() => citable && cite(token)}
+                    title={citable ? "Cite in prompt" : r.role.replace("_", " ")}
+                    className="flex items-center gap-1.5"
+                  >
+                    <span className={`h-2 w-2 rounded-[3px] ${r.kind === "video" ? "bg-ok" : "bg-warn"}`} />
+                    <span className="font-mono text-[11px] text-lift">{token}</span>
+                    <span className="max-w-[120px] truncate text-dim">{r.filename}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRefs((prev) => prev.filter((x) => x.id !== r.id));
+                      fetch(`/api/uploads/${r.id}`, { method: "DELETE" }).catch(() => {});
+                    }}
+                    className="px-0.5 text-[12px] text-mute hover:text-lift">×</button>
+                </span>
+              );
+            })}
+            <button onClick={() => picker.current?.open()}
+              className="rounded-[8px] border border-dashed border-line px-2.5 py-1 text-[11.5px] text-dim transition-colors hover:border-lift/60 hover:text-bone">
+              + Reference
+            </button>
+            <span className="ml-auto flex items-center gap-2.5 font-mono text-[9.5px] text-mute">
+              <span title="Every prompt is auto-refined with ByteDance's Seedance recipe before rendering. Start with raw: to send your exact words.">
                 ✦ AUTO-REFINE
               </span>
-              <span className="font-mono text-[9.5px] tabular-nums text-mute">{prompt.trim().length}/10000</span>
-            </>
-          }
-        >
-          <textarea
-            ref={promptEl}
-            value={prompt} onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); render(); }
-            }}
-            placeholder={"A slow dolly through monsoon rain on Marine Drive, sodium lamps blooming…\n\nSubject, action, camera, light, mood."}
-            spellCheck={false}
-            className="min-h-[120px] w-full flex-1 resize-none bg-panel px-3.5 py-3 text-[13.5px] leading-relaxed text-bone placeholder:text-mute/50 focus:outline-none"
-          />
-          {err && (
-            <p className="border-t border-hair bg-lift/8 px-3.5 py-2 font-mono text-[10.5px] leading-relaxed text-lift">
-              {err}
+              <span className="tabular-nums">{prompt.trim().length}/10000</span>
+            </span>
+          </div>
+
+          <div className="relative">
+            <div ref={overlayEl} aria-hidden
+              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-0.5 pt-0.5 text-[14px] leading-[1.5]">
+              {segments.map((s, i) =>
+                s.tag ? (
+                  <span key={i} className="rounded-[4px] text-lift"
+                    style={{ background: "color-mix(in oklab, var(--color-red) 16%, transparent)" }}>
+                    {s.t}
+                  </span>
+                ) : (
+                  <span key={i}>{s.t}</span>
+                )
+              )}
+            </div>
+            <textarea
+              ref={promptEl}
+              value={prompt} onChange={(e) => setPrompt(e.target.value)}
+              onScroll={(e) => { if (overlayEl.current) overlayEl.current.scrollTop = e.currentTarget.scrollTop; }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); render(); }
+              }}
+              placeholder="Describe the shot — subject, action, setting, camera, mood"
+              spellCheck={false}
+              className="relative block max-h-[180px] min-h-[56px] w-full resize-none bg-transparent px-0.5 pt-0.5 text-[14px] leading-[1.5] text-transparent caret-bone placeholder:text-mute/60 focus:outline-none"
+            />
+          </div>
+
+          {(err || refProblem) && (
+            <p className="rounded-[8px] bg-lift/8 px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed text-lift">
+              {err ?? refProblem}
             </p>
           )}
-          <References refs={refs} setRefs={setRefs} onCite={cite} model={modelDef} />
-          <div className="shrink-0 border-t border-hair bg-panel2 p-3">
-            <div className="mb-2.5 flex items-center justify-between font-mono text-[10px] text-mute">
-              <span>{estTokens != null ? `${compactTokens(estTokens)} tokens` : "cost lands after render"}</span>
-              <span className="text-[13px] font-semibold tabular-nums text-lift">{est ? usd(est.net) : "—"}</span>
-            </div>
-            {hasVideoInput && est && (
-              <p className="mb-2 font-mono text-[9px] leading-relaxed text-mute">
-                includes {inputSeconds.toFixed(1)}s reference video · with-video rate
-              </p>
-            )}
-            <button
-              type="button" onClick={render} disabled={busy || !prompt.trim() || Boolean(refProblem)}
-              className="btn-render h-10 w-full text-[13px]"
+
+          <div className="flex flex-wrap items-center gap-2">
+            <ChipMenu
+              open={menu === "model"} setOpen={(v) => setMenu(v ? "model" : null)}
+              label={<><span className="font-medium">{modelDef.label}</span></>}
+              width={230}
             >
-              {busy ? "Sending…" : "Render"}
-            </button>
-            <p className="lbl mt-2 text-center opacity-60">⌘ + ↵</p>
-          </div>
-        </Panel>
-      </div>
+              {MODELS.map((m) => (
+                <button key={m.id} onClick={() => { switchModel(m.id); setMenu(null); }} className="menu-item">
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="text-[12.5px] font-medium">{m.label}</span>
+                    <span className="text-[10.5px] text-mute">{m.note}</span>
+                  </span>
+                  <span className={`text-[11px] ${params.modelId === m.id ? "text-lift" : "text-transparent"}`}>✓</span>
+                </button>
+              ))}
+            </ChipMenu>
 
-      {/* ── CENTRE: viewer + selected clip's prompt ─────────────────── */}
-      <div ref={viewerRef as React.Ref<HTMLDivElement>} className="bench-centre flex min-h-0 flex-col gap-2.5">
-        <Panel
-          title="Viewer" className="min-h-0 flex-1" bodyClass="flex flex-col"
-          right={clip && (
-            <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(clip.id)}</span>
-          )}
-        >
-          <ViewerBody clip={clip} onChanged={afterChange} />
-        </Panel>
+            <ChipMenu
+              open={menu === "dur"} setOpen={(v) => setMenu(v ? "dur" : null)}
+              label={`${params.duration}s`}
+            >
+              {modelDef.durations.map((d) => {
+                const c = estimateCostUsd(params.modelId, params.resolution, params.ratio, d, inputSeconds, hasVideoInput);
+                return (
+                  <button key={d} onClick={() => { patch({ duration: d }); setMenu(null); }} className="menu-item">
+                    <span className={`flex-1 ${params.duration === d ? "text-lift" : ""}`}>{d}s</span>
+                    <span className="font-mono text-[10.5px] text-mute">{c ? `≈ ${usd(c.net, 2)}` : ""}</span>
+                  </button>
+                );
+              })}
+            </ChipMenu>
 
-        {clip && (
-          <ClipPrompt
-            clip={clip}
-            onUse={() => {
-              if (prompt.trim() && !confirm("Replace what's in the composer with this clip's prompt?")) return;
-              setPrompt(clip.prompt);
-              promptEl.current?.focus();
-            }}
-          />
-        )}
-      </div>
+            <ChipMenu
+              open={menu === "ratio"} setOpen={(v) => setMenu(v ? "ratio" : null)}
+              label={params.ratio === "adaptive" ? "Auto" : params.ratio} width={120}
+            >
+              {modelDef.ratios.map((r) => (
+                <button key={r} onClick={() => { patch({ ratio: r }); setMenu(null); }}
+                  className={`menu-item ${params.ratio === r ? "text-lift" : ""}`}>
+                  {r === "adaptive" ? "Auto" : r}
+                </button>
+              ))}
+            </ChipMenu>
 
-      {/* ── INSPECTOR: pure settings ─────────────────────────────────── */}
-      <div className="bench-inspector">
-        <Inspector params={params} patch={patch} />
-      </div>
-
-      {/* ── FILMSTRIP with its own bin filter ────────────────────────── */}
-      <Panel
-        rootRef={stripRef}
-        title="Clips" className="bench-strip" bodyClass="overflow-x-auto overflow-y-hidden"
-        right={
-          <>
-            {pending > 0 && (
-              <span className="flex items-center gap-1.5 font-mono text-[9.5px] tracking-wider text-run">
-                <span className="lamp lamp-live" />{pending} RENDERING
-              </span>
-            )}
-            <span className="font-mono text-[9.5px] tracking-wider text-mute">
-              {String(gens.length).padStart(3, "0")}
-            </span>
-            <Link href="/all" className="font-mono text-[9.5px] tracking-wider text-mute hover:text-lift">
-              LIBRARY →
-            </Link>
-          </>
-        }
-      >
-        {gens.length === 0 ? (
-          <div className="desk-grid grid h-full place-items-center px-6 text-center">
-            <div>
-              <p className="ptitle text-[13px] text-dim">Quiet in here.</p>
-              <p className="mt-1 font-mono text-[10px] tracking-wide text-mute">
-                Write a shot on the left, hit Render, and it lands on this strip.
+            <ChipMenu
+              open={menu === "res"} setOpen={(v) => setMenu(v ? "res" : null)}
+              label={params.resolution.toUpperCase()} width={150}
+            >
+              {modelDef.resolutions.map((r) => (
+                <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }}
+                  className={`menu-item ${params.resolution === r ? "text-lift" : ""}`}>
+                  {r.toUpperCase()}
+                </button>
+              ))}
+              <p className="px-2.5 pb-1.5 pt-1 font-mono text-[9.5px] text-mute">
+                {dims ? `${dims.w} × ${dims.h} · 24 fps` : "frame set at render"}
               </p>
-            </div>
+            </ChipMenu>
+
+            <button
+              onClick={() => modelDef.supportsAudio && patch({ generateAudio: !params.generateAudio })}
+              disabled={!modelDef.supportsAudio}
+              title={modelDef.supportsAudio ? "Native audio track" : "Seedance 2.5 only"}
+              className={`chip ${params.generateAudio ? "" : "!text-mute"}`}
+            >
+              <span className={`h-[7px] w-[7px] rounded-full ${params.generateAudio ? "bg-lift" : "bg-mute/60"}`} />
+              {params.generateAudio ? "Audio on" : "Audio off"}
+            </button>
+
+            <ChipMenu
+              open={menu === "more"} setOpen={(v) => setMenu(v ? "more" : null)}
+              label="⋯" width={230} plain
+            >
+              <div className="flex flex-col gap-2 p-2">
+                <label className="flex items-center gap-2">
+                  <span className="lbl w-[64px] shrink-0">Seed</span>
+                  <input
+                    className="ctl !h-[28px] font-mono !text-[11px]" value={params.seed}
+                    inputMode="numeric" placeholder="random"
+                    onChange={(e) => patch({ seed: e.target.value.replace(/\D/g, "") })}
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="lbl w-[64px] shrink-0">Watermark</span>
+                  <button
+                    onClick={() => patch({ watermark: !params.watermark })}
+                    className={`chip !py-1 !text-[11px] ${params.watermark ? "" : "!text-mute"}`}
+                  >
+                    {params.watermark ? "On" : "Off"}
+                  </button>
+                </label>
+              </div>
+            </ChipMenu>
+
+            <span className="ml-auto flex items-center gap-3">
+              <span className="hidden font-mono text-[9.5px] text-mute sm:block"
+                title={hasVideoInput ? `includes ${inputSeconds.toFixed(1)}s reference video · with-video rate` : undefined}>
+                {estTokens != null ? `≈ ${compactTokens(estTokens)} tok${hasVideoInput ? " ᵛ" : ""}` : "cost lands after render"}
+              </span>
+              <button
+                type="button" onClick={render} disabled={busy || !prompt.trim() || Boolean(refProblem)}
+                title="⌘ + ↵"
+                className="btn-render flex h-[38px] items-center gap-2 px-4 text-[13px]"
+              >
+                {busy ? "Sending…" : "Generate"}
+                {!busy && est && (
+                  <span className="font-mono text-[11px] font-medium opacity-85">{usd(est.net, 2)}</span>
+                )}
+              </button>
+            </span>
           </div>
-        ) : (
-          <div className="flex h-full gap-2 p-2">
-            {gens.map((g) => (
-              <StripItem key={g.id} gen={g} active={g.id === activeId} onSelect={() => setSelected(g.id)} />
-            ))}
-          </div>
-        )}
-      </Panel>
+        </div>
+      </div>
+
+      {/* ── REFERENCES — the right panel ─────────────────────────────── */}
+      <aside className="compose-refs">
+        <References refs={refs} setRefs={setRefs} onCite={cite} model={modelDef} pickerRef={picker} />
+      </aside>
     </div>
   );
 }
 
 /* ── pieces ──────────────────────────────────────────────────── */
+
+/** A settings chip that opens an upward menu, per the design. */
+function ChipMenu({ open, setOpen, label, width = 150, plain, children }: {
+  open: boolean; setOpen: (v: boolean) => void;
+  label: React.ReactNode; width?: number; plain?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="relative">
+      <button onClick={() => setOpen(!open)} className={`chip ${open ? "!border-lift/50" : ""}`}>
+        {label}
+        {!plain && (
+          <svg width="8" height="6" viewBox="0 0 8 6">
+            <path d="M1 1.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+          </svg>
+        )}
+      </button>
+      {open && (
+        <>
+          <button aria-label="Close menu" onClick={() => setOpen(false)}
+            className="fixed inset-0 z-50 cursor-default" />
+          <span className="menu-pop block" style={{ minWidth: width }}>{children}</span>
+        </>
+      )}
+    </span>
+  );
+}
 
 /** Full prompt of the selected clip — the team's shared memory, readable and
  *  reusable instead of clamped to two lines in a corner. */
@@ -266,23 +445,21 @@ function ClipPrompt({ clip, onUse }: { clip: Gen; onUse: () => void }) {
   }
 
   return (
-    <Panel
-      title="Clip prompt"
-      className="shrink-0"
-      right={
-        <>
+    <div className="shrink-0 rounded-[var(--r)] border border-line bg-panel">
+      <div className="flex items-center gap-2 px-3.5 pb-1 pt-2.5">
+        <span className="lbl">Clip prompt</span>
+        <span className="ml-auto flex items-center gap-1.5">
           <button onClick={copy}
-            className="rounded-[6px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            className="rounded-[7px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
             {copied ? "COPIED ✓" : "COPY"}
           </button>
           <button onClick={onUse} title="Load into the composer"
-            className="rounded-[6px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            className="rounded-[7px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
             USE
           </button>
-        </>
-      }
-    >
-      <p className="max-h-[110px] select-text overflow-y-auto whitespace-pre-wrap px-3.5 py-2.5 text-[12.5px] leading-relaxed text-bone/90">
+        </span>
+      </div>
+      <p className="max-h-[96px] select-text overflow-y-auto whitespace-pre-wrap px-3.5 py-1.5 text-[12.5px] leading-relaxed text-bone/90">
         {clip.prompt}
       </p>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-hair px-3.5 py-1.5 font-mono text-[9.5px] text-mute">
@@ -299,17 +476,17 @@ function ClipPrompt({ clip, onUse }: { clip: Gen; onUse: () => void }) {
         )}
         {clip.authorName && <span className="ml-auto text-dim">{clip.authorName}</span>}
       </div>
-    </Panel>
+    </div>
   );
 }
 
 function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => void }) {
   if (!clip) {
     return (
-      <div className="viewer-stage grid min-h-0 flex-1 place-items-center bg-desk p-2">
-        <div className="stage16 desk-grid relative grid place-items-center overflow-hidden rounded-[var(--r-sm)] border border-hair bg-black">
+      <div className="viewer-stage grid min-h-0 flex-1 place-items-center">
+        <div className="stage16 desk-grid relative grid place-items-center overflow-hidden rounded-[14px] border border-line bg-thumb shadow-[var(--shadow)]">
           <div className="text-center">
-            <p className="ptitle text-[13px] text-dim">The screening room</p>
+            <p className="ptitle text-[13.5px] text-dim">The screening room</p>
             <p className="mt-1 font-mono text-[10px] tracking-wide text-mute">click any clip on the strip to play it here</p>
           </div>
         </div>
@@ -329,54 +506,67 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
   }
 
   return (
-    <>
-      <div className="viewer-stage grid min-h-0 flex-1 place-items-center bg-desk p-2"
-        data-gen-id={clip.id} data-gen-prompt={clip.prompt} data-gen-label={clipId(clip.id)}>
-        {/* Fixed 16:9 slate; non-16:9 clips letterbox inside it like any NLE viewer. */}
-        <div className="stage16 relative overflow-hidden rounded-[var(--r-sm)] border border-hair bg-black">
-          {done ? (
-            <video key={clip.id} src={url!} controls loop preload="metadata"
-              className="absolute inset-0 h-full w-full object-contain" />
-          ) : (
-            <div className="desk-grid absolute inset-0 grid place-items-center px-6">
-              {clip.error ? (
-                <p className="max-w-[520px] text-center font-mono text-[11px] leading-relaxed text-lift/85">
-                  {clip.error}
-                </p>
-              ) : (
+    <div className="viewer-stage grid min-h-0 flex-1 place-items-center"
+      data-gen-id={clip.id} data-gen-prompt={clip.prompt} data-gen-label={clipId(clip.id)}>
+      {/* Fixed 16:9 slate; non-16:9 clips letterbox inside it like any NLE viewer. */}
+      <div className="stage16 relative overflow-hidden rounded-[14px] border border-line bg-black shadow-[var(--shadow)]">
+        {done ? (
+          <video key={clip.id} src={url!} controls loop preload="metadata"
+            className="absolute inset-0 h-full w-full object-contain" />
+        ) : (
+          <div className={`desk-grid absolute inset-0 grid place-items-center bg-thumb px-6 ${s.live ? "render-sweep" : ""}`}>
+            {clip.error ? (
+              <p className="max-w-[520px] text-center font-mono text-[11px] leading-relaxed text-lift/85">
+                {clip.error}
+              </p>
+            ) : (
+              <div className="flex flex-col items-center gap-2.5">
                 <span className={`font-mono text-[11px] tracking-[.24em] ${s.cls}`}>{s.label}…</span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+                {s.live && (
+                  <span className="block h-[3px] w-[180px] overflow-hidden rounded-[2px] bg-white/15">
+                    <span className="block h-full w-1/3 rounded-[2px] bg-red"
+                      style={{ animation: "stripSlide 1.6s ease-in-out infinite" }} />
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
-      <div className="shrink-0 border-t border-line bg-panel2 px-3 py-2">
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[9.5px] text-mute">
-          <span className={s.cls}>{s.label}</span>
-          {p.resolution && <span className="text-dim">{p.resolution.toUpperCase()}</span>}
-          {p.ratio && <span>{p.ratio}</span>}
-          {p.duration != null && <span>{p.duration}s</span>}
-          {clip.totalTokens != null && <span>{compactTokens(clip.totalTokens)}t</span>}
-          <span>{timeAgo(clip.createdAt)}</span>
-          {clip.authorName && <span className="text-dim">{clip.authorName}</span>}
-          {clip.projectName && <span className="border border-hair px-1.5 py-px text-dim">{clip.projectName}</span>}
-
-          <span className="ml-auto flex items-center gap-1">
+        {/* The pro chrome: shot header over a top gradient, actions at right. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start gap-2.5 bg-gradient-to-b from-black/55 to-transparent px-3.5 pb-6 pt-3 text-white">
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[13px] font-semibold [text-shadow:0_1px_8px_rgba(0,0,0,.5)]">
+              {clipId(clip.id)}
+              <span className={`ml-2 font-mono text-[9px] tracking-[.14em] ${done ? "text-white/70" : s.cls}`}>{s.label}</span>
+            </span>
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[9.5px] text-white/75">
+              <span>{clip.model.includes("2-5") ? "SD 2.5" : "SD 2.0"}</span>
+              {p.resolution && <span>{String(p.resolution).toUpperCase()}</span>}
+              {p.ratio && <span>{p.ratio}</span>}
+              {p.duration != null && <span>{p.duration}s</span>}
+              {clip.totalTokens != null && <span>{compactTokens(clip.totalTokens)}t</span>}
+              {clip.costUsd != null && <span>{usd(clip.costUsd + (clip.refineCostUsd ?? 0))}</span>}
+              <span>{timeAgo(clip.createdAt)}</span>
+              {clip.authorName && <span>{clip.authorName}</span>}
+              {clip.projectName && <span className="rounded-[4px] bg-black/40 px-1.5 py-px">{clip.projectName}</span>}
+            </span>
+          </span>
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {url && (
               <a href={url} download={`${clipId(clip.id)}.mp4`} title="Download"
-                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift">
+                className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white">
                 <IconDown />
               </a>
             )}
             <button onClick={remove} title="Delete"
-              className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift">
+              className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white">
               <IconTrash />
             </button>
           </span>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -384,41 +574,37 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
   const s = STATUS[gen.status] ?? STATUS.queued;
   const url = gen.storedUrl ?? gen.sourceUrl;
   const done = gen.status === "succeeded" && url;
+  const p = gen.params as { duration?: number };
 
   return (
     <button
       onClick={onSelect}
+      title={gen.prompt}
       data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)}
-      className={`group relative flex h-full w-[214px] shrink-0 flex-col overflow-hidden rounded-[var(--r-sm)] border text-left transition-all ${
-        active ? "border-lift bg-panel2 shadow-[0_0_0_1px_var(--color-lift)]" : "border-hair bg-panel hover:border-line hover:bg-panel2"
+      className={`relative h-[72px] w-[128px] shrink-0 overflow-hidden rounded-[9px] border bg-thumb text-left transition-all ${
+        active
+          ? "border-red shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-red)_25%,transparent)]"
+          : "border-line hover:border-white/25"
       }`}
     >
-      <span className="flex h-[19px] shrink-0 items-center gap-1.5 border-b border-hair px-1.5">
-        <span className="font-mono text-[9px] tracking-wider text-dim">{clipId(gen.id)}</span>
-        <span className={`ml-auto flex items-center gap-1 font-mono text-[8.5px] tracking-wider ${s.cls}`}>
-          <span className={`lamp ${s.live ? "lamp-live" : ""}`} style={{ width: 5, height: 5 }} />
-          {s.label}
+      {done ? (
+        <video src={posterSrc(url!)} muted preload="metadata" className="h-full w-full object-cover" />
+      ) : (
+        <span className={`desk-grid grid h-full place-items-center ${s.live ? "render-sweep" : ""}`}>
+          <span className={`font-mono text-[8.5px] tracking-[.16em] ${s.cls}`}>{s.label}</span>
         </span>
-      </span>
+      )}
 
-      <span className="relative block min-h-0 flex-1 bg-desk">
-        {done ? (
-          <video src={posterSrc(url!)} muted preload="metadata" className="h-full w-full object-cover" />
-        ) : (
-          <span className={`desk-grid grid h-full place-items-center font-mono text-[9px] tracking-[.16em] ${s.cls} ${s.live ? "render-sweep" : ""}`}>
-            {s.label}
-          </span>
+      {p.duration != null && (
+        <span className="absolute right-1.5 top-1.5 rounded-[4px] bg-black/55 px-1 py-px font-mono text-[8.5px] text-white">
+          {p.duration}s
+        </span>
+      )}
+      <span className="absolute inset-x-0 bottom-0 flex items-baseline gap-1.5 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-3.5 font-mono text-[8.5px] text-white/90">
+        <span className="truncate">{clipId(gen.id)}</span>
+        {gen.costUsd != null && (
+          <span className="ml-auto shrink-0 text-white/70">{usd(gen.costUsd + (gen.refineCostUsd ?? 0), 2)}</span>
         )}
-      </span>
-
-      <span className="block shrink-0 px-1.5 py-1">
-        <span className="line-clamp-2 text-[10.5px] leading-snug text-bone/80">{gen.prompt}</span>
-        <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[8.5px] text-mute">
-          {(gen.params as { resolution?: string }).resolution?.toUpperCase()}
-          {gen.costUsd != null && (
-            <span className="text-lift">{usd(gen.costUsd + (gen.refineCostUsd ?? 0))}</span>
-          )}
-        </span>
       </span>
     </button>
   );

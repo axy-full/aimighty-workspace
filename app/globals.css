@@ -1,209 +1,267 @@
 @import "tailwindcss";
 
 /* ── aimighty workspace ──────────────────────────────────────────────
-   Studio application chrome. Near-black desk, panel surfaces, brand red.
-   Brand red #C3161C is only 2.1:1 on near-black — it is used for FILLS.
-   Red TYPE and lamps always use --red-lift #FF4B3E.
+   Studio chrome per the approved Claude Design direction (Options 2a):
+   dark cool graphite, brand red #C91B1D, left nav rail, floating
+   frosted prompt island, pro viewer. System sans + Menlo-class mono.
+   Accent red is 2.3:1 on the desk — it is used for FILLS and marks.
+   Red TYPE and lamps use --lift #E0514D (4.7:1+), the design's own
+   lifted red.
    ------------------------------------------------------------------ */
 
 @theme {
-  --color-desk:    #0B0A09;
-  --color-chrome:  #121110;
-  --color-panel:   #161514;
-  --color-panel2:  #1D1B19;
-  --color-panel3:  #26231F;
-  --color-line:    #2C2925;
-  --color-hair:    #201E1B;
+  --color-desk:    #0B0C0E;                    /* design --bg  */
+  --color-chrome:  #0F1013;                    /* design --bg2 */
+  --color-panel:   #15161A;                    /* frost base   */
+  --color-panel2:  #1B1C21;                    /* design --menu */
+  --color-panel3:  #23242A;
+  --color-line:    rgba(255, 255, 255, 0.085);
+  --color-hair:    rgba(255, 255, 255, 0.05);
+  --color-chip:    rgba(255, 255, 255, 0.06);
+  --color-chip2:   rgba(255, 255, 255, 0.10);
+  --color-thumb:   #17181C;
 
-  --color-bone:    #F4F3F0;
-  --color-dim:     #9C9CA6;
-  --color-mute:    #63636E;
+  --color-bone:    #F2F3F5;                    /* design --text  */
+  --color-dim:     rgba(232, 236, 244, 0.64);  /* design --text2 */
+  --color-mute:    rgba(232, 236, 244, 0.40);  /* design --text3 */
 
-  --color-red:     #C3161C;
-  --color-lift:    #FF4B3E;
-  --color-ok:      #46D39A;
-  --color-run:     #4D9DFF;
-  --color-warn:    #FFB020;
+  --color-red:     #C91B1D;                    /* design --accent */
+  --color-lift:    #E0514D;
+  --color-ok:      #3FBF8F;
+  --color-run:     #4D8DFF;
+  --color-warn:    #E8A33D;
 
-  --font-display: var(--font-saira), ui-sans-serif, system-ui, sans-serif;
-  --font-sans:    var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
-  --font-mono:    var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 :root {
-  --titlebar: 40px;
-  --switcher: 52px;
-  --pool: 236px;
-  --inspector: 292px;
-  --strip: 178px;
+  --titlebar: 54px;
+  --switcher: 0px;          /* mobile bottom bar height; 52px under 860px */
+  --rail: 214px;
+  --refs: 288px;
+  --r: 12px;
+  --r-sm: 9px;
+  --frost: rgba(21, 22, 26, 0.8);
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
 }
 
 html, body {
   height: 100%;
   background: var(--color-desk);
   color: var(--color-bone);
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
 
 ::selection { background: var(--color-red); color: #fff; }
 
-/* App shell — fixed chrome top and bottom, the workspace fills between.
-   Page switcher sits at the bottom, Resolve-style. */
+/* App shell — nav rail on the left, top bar over the work area. */
 .app {
-  display: grid;
-  grid-template-rows: var(--titlebar) 1fr var(--switcher);
+  display: flex;
   height: 100dvh;
   overflow: hidden;
-}
-.app-title    { min-width: 0; }
-.app-work     { min-height: 0; min-width: 0; overflow: hidden; }
-.app-switcher { min-width: 0; }
-
-/* The workspace: composer first (the prompt is the product), viewer centre,
-   settings right, the team's filmstrip across the bottom. Panels float on
-   the desk with real gaps instead of hairline seams. */
-.bench {
-  display: grid;
-  grid-template-columns: var(--compose) minmax(0, 1fr) var(--inspector);
-  grid-template-rows: minmax(0, 1fr) var(--strip);
-  grid-template-areas:
-    "compose centre inspector"
-    "strip strip strip";
-  height: 100%;
-  gap: 10px;
-  padding: 10px;
   background: var(--color-desk);
 }
-.bench-compose   { grid-area: compose;   min-width: 0; min-height: 0; }
-.bench-centre    { grid-area: centre;    min-width: 0; min-height: 0; }
-.bench-inspector { grid-area: inspector; min-width: 0; min-height: 0; }
-.bench-strip     { grid-area: strip;     min-width: 0; min-height: 0; }
+.app-rail  { width: var(--rail); flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--color-line); }
+.app-main  { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--color-chrome); }
+.app-title { height: var(--titlebar); flex: none; min-width: 0; }
+.app-work  { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
+.app-switcher { display: none; }
 
-/* Two-column bench (no bottom strip) — used by Library. */
-.bench-flat {
-  display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
-  height: 100%;
-  gap: 10px;
-  padding: 10px;
-  background: var(--color-desk);
+/* Compose: viewer + strip + island in the middle, references on the right. */
+.compose { display: flex; height: 100%; min-height: 0; }
+.compose-main {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px 20px 14px;
+}
+.compose-refs {
+  width: var(--refs); flex: none; min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--color-line);
 }
 
-@media (max-width: 1250px) {
-  :root { --compose: 280px; --inspector: 240px; --strip: 166px; }
-}
-@media (max-width: 1050px) {
-  :root { --compose: 250px; --inspector: 224px; --strip: 152px; }
-}
+@media (max-width: 1180px) { :root { --refs: 252px; } }
+@media (max-width: 1000px) { :root { --rail: 192px; } }
 
-/* Below the dock threshold the bench stacks and the whole work area scrolls. */
+/* Phones: the rail hides (bottom bar takes over), compose stacks and scrolls. */
 @media (max-width: 860px) {
-  .app-work { overflow-y: auto; }
-  .bench, .bench-flat {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
-    grid-template-areas: "compose" "centre" "inspector" "strip";
-    height: auto;
-    min-height: 100%;
+  :root { --switcher: 52px; }
+  .app-rail { display: none; }
+  .app-switcher {
+    display: flex; height: var(--switcher); flex: none;
+    border-top: 1px solid var(--color-line); background: var(--color-desk);
   }
-  .bench-strip { min-height: var(--strip); }
+  .compose { display: block; overflow-y: auto; }
+  .compose-main { padding: 12px; }
+  .compose-refs { width: auto; border-left: 0; border-top: 1px solid var(--color-line); overflow: visible; }
+}
+
+/* The floating prompt island — the design's signature surface. */
+.island {
+  position: relative; z-index: 40;
+  flex: none; align-self: center;
+  width: min(880px, 100%);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 13px 15px 12px;
+  background: var(--frost);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  border: 1px solid var(--color-line);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
 }
 
 @layer components {
-/* Micro-label: the uppercase mono tag that names every control in a real app */
+/* Micro-label: uppercase mono tag naming a control or column */
 .lbl {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 9.5px;
   line-height: 1;
-  letter-spacing: .14em;
+  letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--color-mute);
 }
 
-/* Panel title — Saira, uppercase, tight */
+/* Titles — the design speaks in 650-weight sentence case, tight tracking */
 .ptitle {
-  font-family: var(--font-display);
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .02em;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
-/* Inputs: flat, inset, no browser chrome */
+/* Inputs: chip-styled, no browser chrome */
 input, textarea, select, button { font: inherit; color: inherit; }
-select option { background: #191920; color: #F4F3F0; }
+select option { background: #1B1C21; color: #F2F3F5; }
 
 .ctl {
   height: 32px;
   width: 100%;
-  background: var(--color-desk);
+  background: var(--color-chip);
   border: 1px solid var(--color-line);
   border-radius: var(--r-sm);
   padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--color-bone);
-  transition: border-color .12s, box-shadow .12s;
+  transition: border-color .12s, background .12s, box-shadow .12s;
 }
-.ctl:hover { border-color: #34343f; }
-.ctl:focus { border-color: var(--color-lift); outline: none; box-shadow: 0 0 0 3px rgba(255,75,62,.15); }
+.ctl::placeholder { color: var(--color-mute); }
+.ctl:hover { background: var(--color-chip2); }
+.ctl:focus { border-color: var(--color-lift); outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-lift) 15%, transparent); }
 
 select.ctl {
   appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, #63636E 50%),
-                    linear-gradient(135deg, #63636E 50%, transparent 50%);
+  background-image: linear-gradient(45deg, transparent 50%, rgba(232,236,244,.4) 50%),
+                    linear-gradient(135deg, rgba(232,236,244,.4) 50%, transparent 50%);
   background-position: calc(100% - 14px) 14px, calc(100% - 9px) 14px;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
   padding-right: 24px;
 }
+
+/* Settings chip button (island controls, toolbar buttons) */
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 11px;
+  border-radius: var(--r-sm);
+  background: var(--color-chip);
+  border: 1px solid var(--color-line);
+  font-size: 12px;
+  color: var(--color-bone);
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.chip:hover:not(:disabled) { background: var(--color-chip2); }
+.chip:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Popover menu opening upward from a chip */
+.menu-pop {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60;
+  min-width: 150px;
+  background: var(--color-panel2);
+  border: 1px solid var(--color-line);
+  border-radius: 11px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+.menu-item {
+  display: flex; width: 100%; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  text-align: left;
+  transition: background .1s;
+}
+.menu-item:hover { background: var(--color-chip); }
+
+/* Nav rail row */
+.rail-row {
+  display: flex; width: 100%; align-items: center; gap: 10px;
+  padding: 8px 11px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-dim);
+  transition: background .12s, color .12s;
+}
+.rail-row:hover { background: var(--color-chip); }
+.rail-row[data-active="true"] { background: var(--color-chip); color: var(--color-bone); }
 }
 
 *:focus-visible { outline: 1px solid var(--color-lift); outline-offset: 1px; }
+/* Text fields carry their own focus treatment (.ctl ring, island caret) —
+   the global ring reads as a stray border on them. */
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
-/* Scrollbars sized like an app, not a document */
-::-webkit-scrollbar { width: 11px; height: 11px; }
-::-webkit-scrollbar-track { background: var(--color-desk); }
+/* Scrollbars per the design — slim, track-less */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #2A2A33;
-  border: 3px solid var(--color-desk);
+  background: rgba(128, 132, 145, 0.28);
+  border: 3px solid transparent;
+  background-clip: content-box;
   border-radius: 6px;
 }
-::-webkit-scrollbar-thumb:hover { background: #3A3A46; }
-::-webkit-scrollbar-corner { background: var(--color-desk); }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(128, 132, 145, 0.45); }
+::-webkit-scrollbar-corner { background: transparent; }
 
-/* The one big button. Warm gradient, a little life on hover. */
+/* The one big button — solid accent with the design's soft red glow. */
 .btn-render {
-  font-family: var(--font-display);
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .1em;
+  font-weight: 600;
   color: #fff;
-  border-radius: var(--r-sm);
-  background: linear-gradient(120deg, #C3161C 0%, #E8432B 55%, #F06A2E 100%);
-  background-size: 150% 100%;
-  transition: background-position .25s, transform .12s, box-shadow .2s;
+  border-radius: 10px;
+  background: var(--color-red);
+  box-shadow: 0 6px 20px color-mix(in oklab, var(--color-red) 35%, transparent);
+  transition: background .15s, transform .12s, box-shadow .2s;
 }
 .btn-render:hover:not(:disabled) {
-  background-position: 90% 0;
+  background: #D62A2C;
   transform: translateY(-1px);
-  box-shadow: 0 6px 22px rgba(232, 67, 43, .35);
+  box-shadow: 0 8px 26px color-mix(in oklab, var(--color-red) 45%, transparent);
 }
 .btn-render:active:not(:disabled) { transform: translateY(0); }
 .btn-render:disabled {
   background: var(--color-panel3);
   color: var(--color-mute);
+  box-shadow: none;
   cursor: not-allowed;
 }
 
-/* Rendering slates get a slow warm sweep instead of a static grid. */
+/* Indeterminate progress runner on rendering slates */
+@keyframes stripSlide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* Rendering slates get a slow warm sweep. */
 @keyframes renderSweep {
   0%   { background-position: -60% 0; }
   100% { background-position: 160% 0; }
 }
 .render-sweep {
   background-image: linear-gradient(100deg,
-    transparent 30%, rgba(255, 75, 62, .07) 50%, transparent 70%);
+    transparent 30%, color-mix(in oklab, var(--color-lift) 9%, transparent) 50%, transparent 70%);
   background-size: 220% 100%;
   animation: renderSweep 2.6s ease-in-out infinite;
 }
@@ -215,11 +273,11 @@ select.ctl {
 .viewer-stage { container-type: size; }
 .stage16 {
   aspect-ratio: 16 / 9;
-  width: min(calc(100cqw - 16px), calc((100cqh - 16px) * 16 / 9));
+  width: min(calc(100cqw - 8px), calc((100cqh - 8px) * 16 / 9));
 }
 @media (max-width: 860px) {
   .viewer-stage { container-type: inline-size; }
-  .stage16 { width: calc(100cqw - 16px); }
+  .stage16 { width: 100cqw; }
 }
 
 /* Status lamp */
@@ -231,13 +289,10 @@ select.ctl {
 @keyframes lampPulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 .lamp-live { animation: lampPulse 1.4s ease-in-out infinite; }
 
-/* Hairline grid texture on empty desk areas */
+/* Placeholder texture — the design's diagonal stripes on empty slates */
 .desk-grid {
-  background-image:
-    linear-gradient(var(--color-hair) 1px, transparent 1px),
-    linear-gradient(90deg, var(--color-hair) 1px, transparent 1px);
-  background-size: 44px 44px;
-  background-position: -1px -1px;
+  background-image: repeating-linear-gradient(45deg,
+    rgba(255, 255, 255, 0.045) 0 6px, transparent 6px 12px);
 }
 
 @media (prefers-reduced-motion: reduce) {

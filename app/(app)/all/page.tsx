@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import GenGrid from "@/components/GenGrid";
-import { Panel } from "@/components/Panel";
 import type { Gen } from "@/components/GenCard";
 import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
@@ -41,45 +40,49 @@ export default function LibraryPage() {
     selection === "all" ? "All projects" : selection === "unfiled" ? "Unfiled" : current?.name ?? "";
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2.5 p-2.5">
-      <div className="flex shrink-0 items-center gap-2 overflow-x-auto rounded-[var(--r)] border border-line bg-panel px-2.5 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <span className="ptitle shrink-0 text-[11px] tracking-[.08em] text-dim">{scopeName}</span>
-        <span className="h-4 w-px shrink-0 bg-line" />
-        <div className="relative flex shrink-0 items-center">
-          <span className="pointer-events-none absolute left-2 text-mute"><IconSearch /></span>
+    <div className="h-full min-h-0 overflow-y-auto px-6 py-5 max-[860px]:px-3.5">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="flex flex-col gap-0.5">
+          <span className="ptitle text-[20px] leading-tight">Library</span>
+          <span className="text-[12px] text-dim">
+            {scopeName} · {gens.length} clip{gens.length === 1 ? "" : "s"} ·{" "}
+            <span className="text-lift">{usd(spend, 2)}</span>
+          </span>
+        </span>
+        <span className="ml-auto" />
+        <div className="relative flex items-center">
+          <span className="pointer-events-none absolute left-2.5 text-mute"><IconSearch /></span>
           <input value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search prompts" className="ctl w-[220px] pl-7" />
+            placeholder="Search generations" className="ctl w-[210px] pl-8" />
         </div>
+      </div>
 
-        <div className="flex shrink-0 items-center overflow-hidden rounded-[8px] border border-line">
-          {STATUSES.map((s) => (
-            <button key={s} onClick={() => setStatus(s)}
-              className={`h-[30px] border-r border-line px-2.5 font-mono text-[9.5px] uppercase tracking-wider transition-colors last:border-0 ${
-                status === s ? "bg-panel3 text-bone" : "bg-desk text-mute hover:text-dim"
-              }`}>
-              {s === "all" ? "any" : s}
-            </button>
-          ))}
-        </div>
-
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {STATUSES.map((s) => (
+          <button key={s} onClick={() => setStatus(s)}
+            className={`rounded-full border px-3 py-[5px] text-[12px] font-medium capitalize transition-colors ${
+              status === s
+                ? "border-transparent bg-red text-white"
+                : "border-line bg-chip text-dim hover:bg-chip2"
+            }`}>
+            {s === "all" ? "All" : s}
+          </button>
+        ))}
+        <span className="h-4 w-px bg-line" />
         <button onClick={() => setMine(!mine)}
-          className={`h-[30px] shrink-0 rounded-[8px] border px-2.5 font-mono text-[9.5px] uppercase tracking-wider transition-colors ${
-            mine ? "border-lift text-lift" : "border-line text-mute hover:text-dim"
+          className={`rounded-full border px-3 py-[5px] text-[12px] font-medium transition-colors ${
+            mine
+              ? "border-transparent bg-red text-white"
+              : "border-line bg-chip text-dim hover:bg-chip2"
           }`}>
           My clips
         </button>
-
-        <span className="ml-auto shrink-0 pl-3 font-mono text-[10px] tracking-wider text-mute">
-          {String(gens.length).padStart(3, "0")} CLIPS
-          <span className="mx-2 text-line">│</span>
-          <span className="text-lift">{usd(spend, 2)}</span>
-        </span>
       </div>
 
-      <Panel className="min-h-0 flex-1" bodyClass="overflow-y-auto">
+      <div className="mt-5">
         <GenGrid gens={gens} projects={projects} onChanged={refresh}
           empty="Nothing matches those filters." />
-      </Panel>
+      </div>
     </div>
   );
 }

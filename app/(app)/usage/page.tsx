@@ -49,7 +49,7 @@ export default function UsagePage() {
 
   if (!data) {
     return (
-      <div className="desk-grid grid h-full place-items-center">
+      <div className="grid h-full place-items-center">
         <p className="font-mono text-[10.5px] tracking-[.14em] text-mute">READING LEDGER…</p>
       </div>
     );
@@ -63,213 +63,199 @@ export default function UsagePage() {
   const maxMonth   = Math.max(...data.byMonth.map((m) => m.spend), 0.0001);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* Ledger toolbar */}
-      <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-chrome px-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <span className="lbl shrink-0">Record top-up</span>
-        <input
-          className="ctl w-[110px] shrink-0" value={amount} inputMode="decimal" placeholder="USD"
-          onChange={(e) => setAmount(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && addTopup()}
-        />
-        <input
-          className="ctl w-[240px] shrink-0" value={note} placeholder="Note / invoice ref"
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && addTopup()}
-        />
-        <button
-          onClick={addTopup} disabled={topupBusy}
-          className="ptitle h-[30px] shrink-0 rounded-[8px] border border-line bg-panel2 px-3 text-[10.5px] tracking-[.1em] text-dim hover:border-lift hover:text-lift disabled:opacity-40"
-        >
-          {topupBusy ? "…" : "Add"}
-        </button>
-        {topupErr && (
-          <span className="shrink-0 font-mono text-[9.5px] text-lift">{topupErr}</span>
-        )}
-        <span className="ml-auto shrink-0 pl-3 font-mono text-[9.5px] tracking-wider text-mute">
-          ACTUALS FROM RETURNED TOKENS
-          {ACCOUNT_DISCOUNT > 0 && (
-            <>
-              <span className="mx-2 text-line">│</span>
-              <span className="text-ok">ACCOUNT −{Math.round(ACCOUNT_DISCOUNT * 100)}%</span>
-            </>
-          )}
+    <div className="h-full min-h-0 overflow-y-auto px-6 py-5 max-[860px]:px-3.5">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="flex flex-col gap-0.5">
+          <span className="ptitle text-[20px] leading-tight">Usage</span>
+          <span className="text-[12px] text-dim">
+            Dollars per generation, tracked from returned tokens
+            {ACCOUNT_DISCOUNT > 0 && (
+              <span className="text-ok"> · account −{Math.round(ACCOUNT_DISCOUNT * 100)}%</span>
+            )}
+          </span>
         </span>
+        <span className="ml-auto" />
+        <div className="flex items-center gap-2">
+          <span className="lbl shrink-0">Record top-up</span>
+          <input
+            className="ctl w-[92px] font-mono !text-[11.5px]" value={amount} inputMode="decimal" placeholder="USD"
+            onChange={(e) => setAmount(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTopup()}
+          />
+          <input
+            className="ctl w-[180px] max-[860px]:hidden" value={note} placeholder="Note / invoice ref"
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTopup()}
+          />
+          <button onClick={addTopup} disabled={topupBusy} className="chip !py-[7px] font-medium">
+            {topupBusy ? "…" : "Add"}
+          </button>
+        </div>
+        {topupErr && (
+          <span className="w-full font-mono text-[9.5px] text-lift">{topupErr}</span>
+        )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {data.purchasedUsd === 0 && (
-          <div className="border-b border-line bg-panel2 px-3 py-2.5">
-            <p className="text-[12.5px] leading-relaxed text-bone/90">
-              <span className="ptitle text-[11px] tracking-[.08em] text-lift">No credit recorded yet.</span>{" "}
-              BytePlus doesn&apos;t publish your account balance over the API, so this page can&apos;t read it
-              automatically. Enter what you&apos;ve loaded — e.g. <span className="font-mono text-lift">50</span> —
-              in the bar above and it will count down from there using the real cost of every render.
-            </p>
-          </div>
-        )}
-
-        {/* Hero readouts — magnitude with no comparison, so tiles not charts */}
-        <div className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
-          <Stat
-            label="Credit remaining"
-            value={data.purchasedUsd > 0 ? usd(data.remainingUsd, 2) : "—"}
-            sub={data.purchasedUsd > 0
-              ? `of ${usd(data.purchasedUsd, 2)} recorded`
-              : "record your top-up above ↑"}
-            accent />
-          <Stat label="Spent all time" value={usd(data.spentUsd, 2)}
-                sub={`${data.succeeded} finished renders`} />
-          <Stat label="Average per clip" value={usd(data.avgCostUsd)}
-                sub={`${compactTokens(data.totalTokens)} tokens billed`} />
-          <Stat label="Renders" value={String(data.totalGenerations).padStart(2, "0")}
-                sub={`${data.pending} queued · ${data.failed} failed`} />
+      {data.purchasedUsd === 0 && (
+        <div className="mt-4 rounded-[var(--r)] border border-line bg-panel px-4 py-3">
+          <p className="text-[12.5px] leading-relaxed text-bone/90">
+            <span className="font-semibold text-lift">No credit recorded yet.</span>{" "}
+            BytePlus doesn&apos;t publish your account balance over the API, so this page can&apos;t read it
+            automatically. Enter what you&apos;ve loaded — e.g. <span className="font-mono text-lift">50</span> —
+            above and it will count down from there using the real cost of every render.
+          </p>
         </div>
+      )}
 
-        <div className="grid gap-2.5 p-2.5">
-          <Panel title="Credit drawdown" right={
-            <span className="font-mono text-[9.5px] tracking-wider text-dim">
-              {data.purchasedUsd > 0 ? `${usedPct.toFixed(1)}% USED` : "NO TOP-UP RECORDED"}
+      {/* Hero readouts — the design's stat cards */}
+      <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]">
+        <Stat
+          label="Credit remaining"
+          value={data.purchasedUsd > 0 ? usd(data.remainingUsd, 2) : "—"}
+          sub={data.purchasedUsd > 0
+            ? `${usd(data.spentUsd, 2)} of ${usd(data.purchasedUsd, 2)} used`
+            : "record your top-up above ↑"}
+          accent
+        >
+          {data.purchasedUsd > 0 && (
+            <div className="mt-2.5 h-1 overflow-hidden rounded-[2px] bg-chip">
+              <div className="h-full rounded-[2px] bg-red transition-[width] duration-700" style={{ width: `${usedPct}%` }} />
+            </div>
+          )}
+        </Stat>
+        <Stat label="Spent all time" value={usd(data.spentUsd, 2)}
+              sub={`${data.succeeded} finished renders`} />
+        <Stat label="Average per clip" value={usd(data.avgCostUsd)}
+              sub={`${compactTokens(data.totalTokens)} tokens billed`} />
+        <Stat label="Renders" value={String(data.totalGenerations).padStart(2, "0")}
+              sub={`${data.pending} queued · ${data.failed} failed`} />
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+        <Panel title="By project" right={
+          <span className="font-mono text-[9px] tracking-wider text-mute">
+            DELETED CLIPS STAY COUNTED
+          </span>
+        }>
+          <Rows rows={data.byProject.map((p) => ({
+            key: p.name, name: p.name,
+            meta: `${p.n} clip${p.n === 1 ? "" : "s"}`,
+            value: p.spend, max: maxProject,
+          }))} />
+        </Panel>
+        <Panel title="By model">
+          <Rows rows={data.byModel.map((m) => ({
+            key: m.model, name: m.label,
+            meta: `${m.n} clips · ${compactTokens(m.tokens)} tokens`,
+            value: m.spend, max: maxModel,
+          }))} />
+        </Panel>
+        <Panel title="By member">
+          <Rows rows={data.byPerson.map((p) => ({
+            key: p.name, name: p.name,
+            meta: `${p.n} clip${p.n === 1 ? "" : "s"}`,
+            value: p.spend, max: maxPerson,
+          }))} />
+        </Panel>
+        {data.refines.length > 0 && (
+          <Panel title="Prompt refinement" right={
+            <span className="font-mono text-[9px] tracking-wider text-mute">
+              FIRST 500K TOKENS PER MODEL FREE
             </span>
           }>
-            <div className="p-3">
-              <div className="h-2 w-full bg-panel3">
-                <div className="h-full bg-lift transition-[width] duration-700" style={{ width: `${usedPct}%` }} />
-              </div>
-              <p className="mt-2.5 text-[11.5px] leading-relaxed text-mute">
-                BytePlus&apos;s billing API reports spend, never remaining balance — so the
-                starting figure is entered here once and drawn down against the actual
-                token cost of every finished render.
-              </p>
-            </div>
-          </Panel>
-
-          <div className="grid gap-2.5 lg:grid-cols-2 2xl:grid-cols-3">
-            <Panel title="Credits used by project" right={
-              <span className="font-mono text-[9px] tracking-wider text-mute">
-                DELETED CLIPS STAY COUNTED
-              </span>
-            }>
-              <Rows rows={data.byProject.map((p) => ({
-                key: p.name, name: p.name,
-                meta: `${p.n} clip${p.n === 1 ? "" : "s"}`,
-                value: p.spend, max: maxProject,
-              }))} />
-            </Panel>
-            <Panel title="Spend by model">
-              <Rows rows={data.byModel.map((m) => ({
-                key: m.model, name: m.label,
-                meta: `${m.n} clips · ${compactTokens(m.tokens)} tokens`,
-                value: m.spend, max: maxModel,
-              }))} />
-            </Panel>
-            <Panel title="Spend by person">
-              <Rows rows={data.byPerson.map((p) => ({
-                key: p.name, name: p.name,
-                meta: `${p.n} clip${p.n === 1 ? "" : "s"}`,
-                value: p.spend, max: maxPerson,
-              }))} />
-            </Panel>
-            {data.refines.length > 0 && (
-            <Panel title="Prompt refinement" right={
-              <span className="font-mono text-[9px] tracking-wider text-mute">
-                FIRST 500K TOKENS PER MODEL FREE
-              </span>
-            }>
-              <ul className="flex flex-col gap-2.5 p-3">
-                {data.refines.map((r) => (
-                  <li key={r.model} className="flex flex-col gap-1.5">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-[12.5px] text-bone/90">{r.model}</span>
-                      <span className="shrink-0 font-mono text-[11px] tabular-nums text-bone">
-                        {r.spend > 0 ? usd(r.spend, 3) : "free"}
-                      </span>
-                    </div>
-                    <div className="h-[5px] w-full bg-panel3" title={`${compactTokens(r.tokens)} of 500k free tokens used`}>
-                      <div className={`h-full ${r.freeLeft === 0 ? "bg-warn" : "bg-lift"}`}
-                        style={{ width: `${Math.min(100, (r.tokens / 500000) * 100)}%` }} />
-                    </div>
-                    <span className="font-mono text-[9.5px] text-mute">
-                      {r.n} refine{r.n === 1 ? "" : "s"} · {compactTokens(r.tokens)} tokens ·{" "}
-                      {r.freeLeft > 0 ? `${compactTokens(r.freeLeft)} free left` : "free allowance used — billing at list"}
+            <ul className="flex flex-col gap-3 p-4">
+              {data.refines.map((r) => (
+                <li key={r.model} className="flex flex-col gap-1.5">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="truncate text-[12.5px] text-dim">{r.model}</span>
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-bone">
+                      {r.spend > 0 ? usd(r.spend, 3) : "free"}
                     </span>
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          )}
-          <Panel title="Spend by month">
-              <Rows rows={data.byMonth.map((m) => ({
-                key: m.month, name: m.month,
-                meta: `${m.n} clip${m.n === 1 ? "" : "s"}`,
-                value: m.spend, max: maxMonth,
-              }))} />
-            </Panel>
-          </div>
-
-
-          <Panel title="Cost per render">
-            {data.recent.length === 0 ? (
-              <p className="py-8 text-center font-mono text-[10.5px] tracking-wider text-mute">
-                NO FINISHED RENDERS
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
-                  <thead>
-                    <tr className="border-b border-line text-left">
-                      {["Prompt", "Model", "Format", "Tokens", "Cost", "When"].map((h, i) => (
-                        <th key={h} className={`lbl px-2.5 py-2 font-normal ${i > 2 ? "text-right" : ""}`}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.recent.map((r) => {
-                      const p = r.params as { resolution?: string; ratio?: string; duration?: number };
-                      return (
-                        <tr key={r.id} className="border-b border-hair last:border-0 hover:bg-panel2">
-                          <td className="max-w-[300px] truncate px-2.5 py-1.5 text-bone/85" title={r.prompt}>
-                            {r.prompt}
-                          </td>
-                          <td className="whitespace-nowrap px-2.5 py-1.5 text-dim">{r.label}</td>
-                          <td className="whitespace-nowrap px-2.5 py-1.5 font-mono text-[10.5px] text-mute">
-                            {[p.resolution, p.ratio, p.duration && `${p.duration}s`].filter(Boolean).join(" · ")}
-                          </td>
-                          <td className="px-2.5 py-1.5 text-right font-mono text-[10.5px] tabular-nums text-mute">
-                            {compactTokens(r.totalTokens)}
-                          </td>
-                          <td className="px-2.5 py-1.5 text-right font-mono text-[10.5px] tabular-nums text-bone">
-                            {usd(r.costUsd)}
-                          </td>
-                          <td className="whitespace-nowrap px-2.5 py-1.5 text-right font-mono text-[10.5px] text-mute">
-                            {timeAgo(r.createdAt)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                  </div>
+                  <div className="h-[3px] w-full overflow-hidden rounded-[2px] bg-chip" title={`${compactTokens(r.tokens)} of 500k free tokens used`}>
+                    <div className={`h-full rounded-[2px] ${r.freeLeft === 0 ? "bg-warn" : "bg-red"}`}
+                      style={{ width: `${Math.min(100, (r.tokens / 500000) * 100)}%` }} />
+                  </div>
+                  <span className="font-mono text-[9.5px] text-mute">
+                    {r.n} refine{r.n === 1 ? "" : "s"} · {compactTokens(r.tokens)} tokens ·{" "}
+                    {r.freeLeft > 0 ? `${compactTokens(r.freeLeft)} free left` : "free allowance used — billing at list"}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </Panel>
-        </div>
+        )}
+        <Panel title="By month">
+          <Rows rows={data.byMonth.map((m) => ({
+            key: m.month, name: m.month,
+            meta: `${m.n} clip${m.n === 1 ? "" : "s"}`,
+            value: m.spend, max: maxMonth,
+          }))} />
+        </Panel>
       </div>
+
+      <Panel title="Cost per render" className="mt-3">
+        {data.recent.length === 0 ? (
+          <p className="py-8 text-center font-mono text-[10.5px] tracking-wider text-mute">
+            NO FINISHED RENDERS
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
+              <thead>
+                <tr className="text-left">
+                  {["Generation", "Model", "Spec", "Tokens", "Cost", "When"].map((h, i) => (
+                    <th key={h} className={`lbl px-4 py-2.5 font-normal ${i > 2 ? "text-right" : ""}`}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.recent.map((r) => {
+                  const p = r.params as { resolution?: string; ratio?: string; duration?: number };
+                  return (
+                    <tr key={r.id} className="border-t border-hair hover:bg-chip/60">
+                      <td className="max-w-[300px] truncate px-4 py-2 font-medium text-bone/90" title={r.prompt}>
+                        {r.prompt}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2">
+                        <span className="rounded-[5px] bg-chip px-1.5 py-px font-mono text-[10px] text-dim">{r.label}</span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 font-mono text-[10.5px] text-dim">
+                        {[p.resolution, p.ratio, p.duration && `${p.duration}s`].filter(Boolean).join(" · ")}
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono text-[10.5px] tabular-nums text-mute">
+                        {compactTokens(r.totalTokens)}
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono text-[11px] tabular-nums text-bone">
+                        {usd(r.costUsd)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right font-mono text-[10.5px] text-mute">
+                        {timeAgo(r.createdAt)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }
 
-function Stat({ label, value, sub, accent }: {
-  label: string; value: string; sub?: string; accent?: boolean;
+function Stat({ label, value, sub, accent, children }: {
+  label: string; value: string; sub?: string; accent?: boolean; children?: React.ReactNode;
 }) {
   return (
-    <div className="relative bg-panel px-3.5 py-3">
-      {accent && <span className="absolute left-0 top-0 h-full w-[2px] bg-lift" />}
+    <div className="rounded-[var(--r)] border border-line bg-panel px-4 py-3.5">
       <p className="lbl">{label}</p>
-      <p className={`ptitle mt-1.5 text-[26px] leading-none tabular-nums ${accent ? "text-lift" : "text-bone"}`}>
+      <p className={`ptitle mt-1.5 text-[24px] leading-none tabular-nums tracking-[-0.02em] ${accent ? "text-lift" : "text-bone"}`}>
         {value}
       </p>
+      {children}
       {sub && <p className="mt-1.5 font-mono text-[9.5px] text-mute">{sub}</p>}
     </div>
   );
@@ -286,11 +272,11 @@ function Rows({ rows }: {
     );
   }
   return (
-    <ul className="flex flex-col gap-2.5 p-3">
+    <ul className="flex flex-col gap-3 p-4">
       {rows.map((r) => (
         <li key={r.key} className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="truncate text-[12.5px] text-bone/90">{r.name}</span>
+            <span className="truncate text-[12.5px] text-dim">{r.name}</span>
             <span className="shrink-0 font-mono text-[11px] tabular-nums text-bone">{usd(r.value, 2)}</span>
           </div>
           <Bar value={r.value} max={r.max} title={`${r.name} — ${usd(r.value, 2)}`} />

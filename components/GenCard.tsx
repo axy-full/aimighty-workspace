@@ -61,22 +61,16 @@ export default function GenCard({
   }
 
   return (
-    <article data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)} className="group flex flex-col border border-line bg-panel transition-colors hover:border-[#34343f]">
+    <article
+      data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)}
+      className="group flex flex-col overflow-hidden rounded-[var(--r)] border border-line bg-panel transition-[border-color,transform] duration-150 hover:-translate-y-px hover:border-red/60"
+    >
       {/* Slate */}
-      <div className="flex h-6 shrink-0 items-center gap-2 border-b border-line bg-panel2 px-2">
-        <span className="font-mono text-[9.5px] tracking-wider text-dim">{clipId(gen.id)}</span>
-        <span className={`ml-auto flex items-center gap-1.5 font-mono text-[9px] tracking-wider ${s.cls}`}>
-          <span className={`lamp ${s.live ? "lamp-live" : ""}`} />
-          {s.label}
-        </span>
-      </div>
-
-      {/* Viewer */}
-      <div className="relative aspect-video bg-desk">
+      <div className="relative aspect-video bg-thumb">
         {done ? (
           <video src={posterSrc(url!)} controls loop preload="metadata" className="h-full w-full object-cover" />
         ) : (
-          <div className="desk-grid grid h-full place-items-center px-4">
+          <div className={`desk-grid grid h-full place-items-center px-4 ${s.live ? "render-sweep" : ""}`}>
             {gen.error ? (
               <p className="text-center font-mono text-[9.5px] leading-relaxed text-lift/85">
                 {gen.error.slice(0, 150)}
@@ -86,10 +80,17 @@ export default function GenCard({
             )}
           </div>
         )}
+        <span className="pointer-events-none absolute right-2 top-2 rounded-[5px] bg-black/60 px-1.5 py-px font-mono text-[9px] text-white">
+          {gen.model.includes("2-5") ? "2.5" : "2.0"}
+        </span>
+        <span className="pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-[5px] bg-black/60 px-1.5 py-px font-mono text-[9px] text-white/85">
+          {s.live && <span className="lamp lamp-live" style={{ width: 5, height: 5 }} />}
+          {clipId(gen.id)}
+        </span>
       </div>
 
       {/* Metadata */}
-      <div className="flex flex-1 flex-col gap-2 p-2.5">
+      <div className="flex flex-1 flex-col gap-2 p-3">
         <p
           onClick={() => setOpen(!open)}
           title="Click to expand"
@@ -116,7 +117,7 @@ export default function GenCard({
             <span className="shrink-0 whitespace-nowrap text-dim">{gen.authorName}</span>
           )}
           {gen.projectName && (
-            <span className="min-w-0 truncate border border-hair px-1.5 py-px text-dim">
+            <span className="min-w-0 truncate rounded-[5px] bg-chip px-1.5 py-px text-dim">
               {gen.projectName}
             </span>
           )}
@@ -126,8 +127,8 @@ export default function GenCard({
               <select
                 value={gen.projectId ?? ""}
                 onChange={(e) => move(e.target.value)}
-                title="Move to bin"
-                className="h-[22px] max-w-[92px] rounded-[6px] border border-line bg-desk px-1 text-[9.5px] text-dim"
+                title="Move to project"
+                className="h-[22px] max-w-[92px] rounded-[6px] border border-line bg-chip px-1 text-[9.5px] text-dim"
               >
                 <option value="">Unfiled</option>
                 {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
