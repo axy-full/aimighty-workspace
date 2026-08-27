@@ -13,7 +13,13 @@ const CHAT_URL = () =>
   (process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
     "https://ark.ap-southeast.bytepluses.com") + "/api/v3/chat/completions";
 
-export const TEXT_MODEL = () => process.env.ARK_TEXT_MODEL ?? "seed-2-0-mini-260428";
+/**
+ * Default is PRO, not mini: a refine costs ~$0.001 either way, but the
+ * output steers a render worth a thousand times that — instruction-following
+ * fidelity (citations kept verbatim, template held, no parameter leakage)
+ * is the entire value of the feature.
+ */
+export const TEXT_MODEL = () => process.env.ARK_TEXT_MODEL ?? "seed-2-0-pro-260328";
 
 const SYSTEM = `You rewrite rough video ideas into production-grade prompts for ByteDance's Seedance 2.5 / 2.0 video models, following ByteDance's official Seedance prompt-optimization guidance.
 
