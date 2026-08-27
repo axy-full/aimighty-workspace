@@ -38,6 +38,7 @@ export default function Workspace() {
   const [err, setErr] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
   const [menu, setMenu] = useState<Menu>(null);
+  const [stripKind, setStripKind] = useState<"all" | "video" | "image">("all");
   const promptEl = useRef<HTMLTextAreaElement>(null);
   const overlayEl = useRef<HTMLDivElement>(null);
   const picker = useRef<RefPicker>(null);
@@ -213,20 +214,56 @@ export default function Workspace() {
           )}
         </section>
 
-        {/* ── FILMSTRIP ──────────────────────────────────────────────── */}
-        <section ref={stripRef as React.Ref<HTMLElement>}
-          className="pan-x flex shrink-0 gap-2.5 overflow-x-auto pb-1 max-[860px]:-mx-3 max-[860px]:px-3">
-          {gens.length === 0 ? (
-            <div className="desk-grid flex h-[72px] w-full items-center justify-center rounded-[9px] border border-line">
-              <p className="font-mono text-[10px] tracking-wide text-mute">
-                Quiet in here — write a shot below and it lands on this strip.
-              </p>
-            </div>
-          ) : (
-            gens.map((g) => (
-              <StripItem key={g.id} gen={g} active={g.id === activeId} onSelect={() => setSelected(g.id)} />
-            ))
-          )}
+        {/* ── FILMSTRIP — clips and stills get their own shelf the moment
+               both exist ─────────────────────────────────────────────── */}
+        <section ref={stripRef as React.Ref<HTMLElement>} className="shrink-0">
+          {(() => {
+            const clipCount = gens.filter((g) => g.kind !== "image").length;
+            const stillCount = gens.length - clipCount;
+            const mixed = clipCount > 0 && stillCount > 0;
+            const shown = !mixed || stripKind === "all"
+              ? gens
+              : gens.filter((g) => (stripKind === "image" ? g.kind === "image" : g.kind !== "image"));
+            return (
+              <>
+                {mixed && (
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    {([
+                      ["all", `ALL ${String(gens.length).padStart(2, "0")}`],
+                      ["video", `CLIPS ${String(clipCount).padStart(2, "0")}`],
+                      ["image", `STILLS ${String(stillCount).padStart(2, "0")}`],
+                    ] as const).map(([k, label]) => (
+                      <button key={k} onClick={() => setStripKind(k)}
+                        className={`rounded-full px-2 py-[3px] font-mono text-[9px] tracking-wider transition-colors ${
+                          stripKind === k ? "bg-chip2 text-bone" : "text-mute hover:text-dim"
+                        }`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="pan-x flex gap-2.5 overflow-x-auto pb-1 max-[860px]:-mx-3 max-[860px]:px-3">
+                  {gens.length === 0 ? (
+                    <div className="desk-grid flex h-[72px] w-full items-center justify-center rounded-[9px] border border-line">
+                      <p className="font-mono text-[10px] tracking-wide text-mute">
+                        Quiet in here — write a shot below and it lands on this strip.
+                      </p>
+                    </div>
+                  ) : shown.length === 0 ? (
+                    <div className="flex h-[72px] w-full items-center justify-center rounded-[9px] border border-line">
+                      <p className="font-mono text-[10px] tracking-wide text-mute">
+                        Nothing of this kind here yet.
+                      </p>
+                    </div>
+                  ) : (
+                    shown.map((g) => (
+                      <StripItem key={g.id} gen={g} active={g.id === activeId} onSelect={() => setSelected(g.id)} />
+                    ))
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </section>
 
         {/* ── THE ISLAND ─────────────────────────────────────────────── */}

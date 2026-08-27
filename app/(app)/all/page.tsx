@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import GenGrid from "@/components/GenGrid";
+import { LibrarySections } from "@/components/GenGrid";
 import type { Gen } from "@/components/GenCard";
 import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
@@ -45,7 +45,7 @@ export default function LibraryPage() {
         <span className="flex flex-col gap-0.5">
           <span className="ptitle text-[20px] leading-tight">Library</span>
           <span className="text-[12px] text-dim">
-            {scopeName} · {gens.length} clip{gens.length === 1 ? "" : "s"} ·{" "}
+            {scopeName} · {gens.length} render{gens.length === 1 ? "" : "s"} ·{" "}
             <span className="text-lift">{usd(spend, 2)}</span>
           </span>
         </span>
@@ -80,7 +80,7 @@ export default function LibraryPage() {
       </div>
 
       <div className="mt-5">
-        <GenGrid gens={gens} projects={projects} onChanged={refresh}
+        <LibrarySections gens={gens} projects={projects} onChanged={refresh}
           empty="Nothing matches those filters." />
       </div>
     </div>
