@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
+import { enhancePrompt } from "@/lib/enhance";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -138,6 +139,37 @@ export async function POST(req: Request) {
     });
   }
 
+  /* ── Auto-refine ─────────────────────────────────────────────────────
+   * Every prompt passes through ByteDance's own optimization recipe before
+   * it reaches Seedance — the layer aggregators charge for, on by default.
+   *  • already-structured prompts (the 【…】 form) pass through untouched,
+   *    so re-rendering a refined prompt doesn't drift it
+   *  • a "raw:" prefix sends the exact words, minus the prefix
+   *  • if the text model is unreachable, the render proceeds with the raw
+   *    prompt — a $0.001 helper must never block a paid render
+   * The stored prompt is what actually generated the video; the original
+   * idea is kept alongside it in params.rawPrompt.
+   * ------------------------------------------------------------------ */
+  let finalPrompt = prompt;
+  let rawPrompt: string | undefined;
+  if (/^raw:/i.test(prompt)) {
+    finalPrompt = prompt.replace(/^raw:\s*/i, "");
+  } else if (!prompt.includes("【")) {
+    const citations = [
+      ...references.filter((r) => r.kind === "image" && r.role === "reference_image")
+        .map((_, i) => `@Image${i + 1} (image)`),
+      ...references.filter((r) => r.role === "first_frame").map(() => "a first-frame image"),
+      ...references.filter((r) => r.role === "last_frame").map(() => "a last-frame image"),
+      ...references.filter((r) => r.kind === "video").map((_, i) => `@Video${i + 1} (video)`),
+    ];
+    try {
+      finalPrompt = await enhancePrompt({ prompt, citations });
+      rawPrompt = prompt;
+    } catch (e) {
+      console.error("auto-refine unavailable, rendering raw:", (e as Error).message);
+    }
+  }
+
   const projectId = body.projectId ? String(body.projectId) : null;
   const genId = id("gen");
   const ts = now();
@@ -147,6 +179,7 @@ export async function POST(req: Request) {
     references: references.map((r) => ({ uploadId: r.id, role: r.role, kind: r.kind })),
     hasVideoInput,
     inputSeconds: hasVideoInput ? inputSeconds : undefined,
+    rawPrompt,
   };
 
   // Row first, so a failed submit is still visible rather than silently lost.
@@ -154,12 +187,12 @@ export async function POST(req: Request) {
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at)
           VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    args: [genId, projectId, null, modelId, prompt, JSON.stringify(storedParams), "queued",
+    args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(storedParams), "queued",
            got.user.id, ts, ts],
   });
 
   try {
-    const taskId = await submitTask(modelId, prompt, params, references);
+    const taskId = await submitTask(modelId, finalPrompt, params, references);
     await db().execute({
       sql: `UPDATE generations SET ark_task_id=?, status='running', updated_at=? WHERE id=?`,
       args: [taskId, now(), genId],

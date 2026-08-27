@@ -103,6 +103,19 @@ Cloudflare Access is no longer required. It's still a reasonable second lock if
 you want the app invisible to the public internet, but the app now knows who
 people are on its own, which is what makes per-person attribution possible.
 
+## Auto-refine
+
+Every prompt is rewritten server-side by a ModelArk text model
+(dola-seed-2.1-turbo, falling back to seed-2-0-pro) using ByteDance's own
+published Seedance optimization recipe, before it reaches the video model —
+the layer prompt-aggregator platforms charge for. Rules: `@ImageN`/`@VideoN`
+citations preserved verbatim; already-structured 【…】 prompts pass through
+untouched; a `raw:` prefix sends your exact words; if no text model is
+reachable the render proceeds with the raw prompt rather than blocking.
+The stored prompt is the refined one that actually generated the clip; the
+original idea rides along in `params.rawPrompt`. Costs ~$0.001 per render,
+outside the credit ledger.
+
 ## Reference images — and why they are never compressed
 
 Drop images into the **References** rail under the prompt. Two mutually
