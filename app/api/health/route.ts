@@ -58,6 +58,7 @@ export async function GET() {
     videosSaved,
     videosAtRisk,
     arkKeyConfigured: Boolean(process.env.ARK_API_KEY),
+    geminiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
     pushConfigured: Boolean(
       process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
     ),
