@@ -27,6 +27,8 @@ export default function Workspace() {
   const [selected, setSelected] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refining, setRefining] = useState(false);
+  const [beforeRefine, setBeforeRefine] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
   const promptEl = useRef<HTMLTextAreaElement>(null);
@@ -96,6 +98,36 @@ export default function Workspace() {
     });
   }
 
+  async function refine() {
+    if (!prompt.trim() || refining) return;
+    setRefining(true); setErr(null);
+    try {
+      const citations = [
+        ...refs.filter((r) => r.kind === "image" && r.role === "reference_image")
+          .map((r, i) => `@Image${i + 1} (image)`),
+        ...refs.filter((r) => r.kind === "video")
+          .map((r, i) => `@Video${i + 1} (video${r.durationS ? `, ${r.durationS.toFixed(0)}s` : ""})`),
+      ];
+      const res = await fetch("/api/enhance", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, citations }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Refine failed");
+      setBeforeRefine(prompt);
+      setPrompt(json.prompt);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setRefining(false); }
+  }
+
+  function undoRefine() {
+    if (beforeRefine != null) {
+      setPrompt(beforeRefine);
+      setBeforeRefine(null);
+    }
+  }
+
   async function render() {
     if (!prompt.trim() || busy) return;
     setBusy(true); setErr(null);
@@ -131,7 +163,27 @@ export default function Workspace() {
           title="Write the shot"
           className="min-h-0 flex-1"
           bodyClass="flex min-h-0 flex-col"
-          right={<span className="font-mono text-[9.5px] tabular-nums text-mute">{prompt.trim().length}/10000</span>}
+          right={
+            <>
+              {beforeRefine != null && (
+                <button onClick={undoRefine}
+                  className="font-mono text-[9px] tracking-wider text-mute hover:text-lift">
+                  UNDO
+                </button>
+              )}
+              <button
+                onClick={refine} disabled={refining || !prompt.trim()}
+                title="Rewrite this idea as a dense Seedance prompt — ByteDance's own optimization recipe"
+                className={`rounded-[6px] border px-2 py-0.5 font-mono text-[9px] tracking-wider transition-colors ${
+                  refining ? "border-line text-mute"
+                  : "border-line text-dim hover:border-lift hover:text-lift"
+                } disabled:opacity-40`}
+              >
+                {refining ? "REFINING…" : "✦ REFINE"}
+              </button>
+              <span className="font-mono text-[9.5px] tabular-nums text-mute">{prompt.trim().length}/10000</span>
+            </>
+          }
         >
           <textarea
             ref={promptEl}
