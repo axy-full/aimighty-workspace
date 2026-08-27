@@ -14,7 +14,7 @@ import path from "node:path";
 
 /** Deterministic blob paths, so a row id is enough to find the object. */
 export const videoPath  = (genId: string) => `generations/${genId}.mp4`;
-export const imagePath  = (genId: string) => `generations/${genId}.png`;
+export const imagePath  = (genId: string) => `generations/${genId}.jpg`;
 export const uploadPath = (uploadId: string, ext: string) => `uploads/${uploadId}.${ext}`;
 
 const LOCAL_DIR = path.join(process.cwd(), ".data", "generations");
@@ -73,21 +73,21 @@ export async function storeImageBytes(genId: string, buf: Buffer): Promise<strin
     const { put } = await import("@vercel/blob");
     await put(imagePath(genId), buf, {
       access: "private",
-      contentType: "image/png",
+      contentType: "image/jpeg",
       addRandomSuffix: false,
       allowOverwrite: true,
     });
     return `/api/media/${genId}`;
   }
   await mkdir(LOCAL_DIR, { recursive: true });
-  await writeFile(path.join(LOCAL_DIR, `${genId}.png`), buf);
+  await writeFile(path.join(LOCAL_DIR, `${genId}.jpg`), buf);
   return `/api/media/${genId}`;
 }
 
 export async function readImageBytes(genId: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
   if (usingBlob()) return readBlob(imagePath(genId));
-  return readFile(path.join(LOCAL_DIR, `${genId}.png`));
+  return readFile(path.join(LOCAL_DIR, `${genId}.jpg`));
 }
 
 /* ── Reference image uploads ──────────────────────────────────────────────

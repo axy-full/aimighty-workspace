@@ -674,7 +674,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {url && (
-              <a href={url} download={`${clipId(clip.id)}.${still ? "png" : "mp4"}`} title="Download"
+              <a href={url} download={`${clipId(clip.id)}.${still ? "jpg" : "mp4"}`} title="Download"
                 className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white max-[860px]:h-[34px] max-[860px]:w-[34px]">
                 <IconDown />
               </a>

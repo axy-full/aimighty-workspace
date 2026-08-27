@@ -31,7 +31,7 @@ export async function GET(req: Request, { params }: Ctx) {
   }
 
   const common = {
-    "Content-Type": isImage ? "image/png" : "video/mp4",
+    "Content-Type": isImage ? "image/jpeg" : "video/mp4",
     "Accept-Ranges": "bytes",
     // private: a shared cache must never hold a signed-in user's media
     "Cache-Control": "private, max-age=31536000, immutable",

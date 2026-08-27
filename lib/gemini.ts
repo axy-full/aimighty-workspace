@@ -84,7 +84,9 @@ export async function generateImage(opts: {
     input,
     response_format: {
       type: "image",
-      mime_type: "image/png",
+      // The live API rejects image/png here — JPEG is the only supported
+      // output format for gemini-3-pro-image (400 otherwise).
+      mime_type: "image/jpeg",
       aspect_ratio: opts.ratio,
       image_size: opts.size.toUpperCase(),
     },
@@ -111,7 +113,7 @@ export async function generateImage(opts: {
   // Prefer the convenience field; otherwise the LAST image block across the
   // model_output steps is the final render.
   let data = j.output_image?.data ?? null;
-  let mime = j.output_image?.mime_type ?? "image/png";
+  let mime = j.output_image?.mime_type ?? "image/jpeg";
   const texts: string[] = [];
   for (const step of j.steps ?? []) {
     if (step.type !== "model_output") continue;
