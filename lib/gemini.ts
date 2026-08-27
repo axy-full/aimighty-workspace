@@ -84,8 +84,9 @@ export async function generateImage(opts: {
     input,
     response_format: {
       type: "image",
-      // The live API rejects image/png here — JPEG is the only supported
-      // output format for gemini-3-pro-image (400 otherwise).
+      // The live API 400s on anything but image/jpeg here — JPEG is the
+      // only wire format gemini-3-pro-image can return. The pixels are
+      // re-wrapped losslessly into PNG at store time (see /api/generate).
       mime_type: "image/jpeg",
       aspect_ratio: opts.ratio,
       image_size: opts.size.toUpperCase(),

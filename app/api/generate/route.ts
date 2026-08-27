@@ -192,7 +192,14 @@ export async function POST(req: Request) {
         const img = await generateImage({
           prompt: finalImagePrompt, ratio, size, references,
         });
-        const storedUrl = await storeImageBytes(genId, img.bytes);
+        // Google can only emit JPEG; the team wants PNG in the library.
+        // Decode once and re-encode LOSSLESSLY — pixel-identical, and no
+        // downstream tool can add generation loss to a PNG. (sharp is for
+        // THIS transcode only — reference uploads stay byte-identical and
+        // must never pass through an image codec.)
+        const sharp = (await import("sharp")).default;
+        const png = await sharp(img.bytes).png().toBuffer();
+        const storedUrl = await storeImageBytes(genId, png);
         // Google bills flat per image (+ per reference in). Their published
         // figures ARE the ledger; usage tokens are recorded when returned.
         const refImages = references.length;
