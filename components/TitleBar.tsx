@@ -8,6 +8,7 @@ import logo from "@/public/aimighty-logo.png";
 import { useProject } from "@/lib/projectContext";
 import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
+import { appAlert, appConfirm, appPrompt } from "./dialog";
 import { UserMenu } from "./NavRail";
 
 const TITLE: Record<string, string> = {
@@ -15,7 +16,7 @@ const TITLE: Record<string, string> = {
 };
 
 type U = { name: string; email: string; role: string };
-type Usage = { pending: number };
+type Usage = { pending: number; spentUsd: number; remainingUsd: number };
 
 /** The design's 54px top bar: where you are, which project you're in,
  *  and whether anything is rendering right now. */
@@ -29,7 +30,8 @@ export default function TitleBar({ user }: { user: U }) {
     selection === "all" ? "All projects" : selection === "unfiled" ? "Unfiled" : current?.name ?? "All projects";
 
   async function newProject() {
-    const name = prompt("Project name");
+    setProjOpen(false);
+    const name = await appPrompt("New project", "", "Project name");
     if (!name?.trim()) return;
     const res = await fetch("/api/projects", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -37,12 +39,13 @@ export default function TitleBar({ user }: { user: U }) {
     });
     const json = await res.json().catch(() => ({}));
     if (res.ok && json.id) { setSelection(json.id); refreshProjects(); }
-    setProjOpen(false);
+    else if (!res.ok) appAlert("Couldn't create the project", json.error);
   }
 
   async function renameCurrent() {
     if (!current) return;
-    const name = prompt("Rename project", current.name);
+    setProjOpen(false);
+    const name = await appPrompt("Rename project", current.name);
     if (!name?.trim() || name === current.name) return;
     await fetch(`/api/projects/${current.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -53,11 +56,11 @@ export default function TitleBar({ user }: { user: U }) {
 
   async function deleteCurrent() {
     if (!current) return;
-    if (!confirm(`Delete "${current.name}"? Its clips move to Unfiled — nothing is lost.`)) return;
+    setProjOpen(false);
+    if (!(await appConfirm(`Delete "${current.name}"?`, "Its clips move to Unfiled — nothing is lost.", { confirmLabel: "Delete", danger: true }))) return;
     await fetch(`/api/projects/${current.id}`, { method: "DELETE" });
     setSelection("all");
     refreshProjects();
-    setProjOpen(false);
   }
 
   return (
@@ -76,7 +79,7 @@ export default function TitleBar({ user }: { user: U }) {
       <div className="relative min-w-0">
         <button
           onClick={() => setProjOpen(!projOpen)}
-          className="chip max-w-full !gap-2 !py-1.5 !text-[12.5px] !text-dim"
+          className="chip max-w-full !gap-2 !py-1.5 !text-[12.5px] !text-dim max-[860px]:!py-2.5"
         >
           <span className="h-2 w-2 shrink-0 rounded-[3px] bg-red" />
           <span className="min-w-0 truncate">{projLabel}</span>
@@ -93,7 +96,9 @@ export default function TitleBar({ user }: { user: U }) {
                 {[{ id: "all", name: "All projects" }, { id: "unfiled", name: "Unfiled" }].map((row) => (
                   <button key={row.id}
                     onClick={() => { setSelection(row.id); setProjOpen(false); }}
-                    className={`menu-item ${selection === row.id ? "text-lift" : "text-dim"}`}>
+                    data-project-target={row.id === "unfiled" ? "unfiled" : undefined}
+                    data-project-name={row.id === "unfiled" ? row.name : undefined}
+                    className={`menu-item max-[860px]:py-[10px] ${selection === row.id ? "text-lift" : "text-dim"}`}>
                     {row.name}
                   </button>
                 ))}
@@ -101,7 +106,9 @@ export default function TitleBar({ user }: { user: U }) {
                 {projects.map((pr) => (
                   <button key={pr.id}
                     onClick={() => { setSelection(pr.id); setProjOpen(false); }}
-                    className={`menu-item ${selection === pr.id ? "text-lift" : "text-dim"}`}>
+                    data-project-target={pr.id}
+                    data-project-name={pr.name}
+                    className={`menu-item max-[860px]:py-[10px] ${selection === pr.id ? "text-lift" : "text-dim"}`}>
                     <span className="min-w-0 flex-1 truncate">{pr.name}</span>
                     <span className="shrink-0 font-mono text-[9px] text-mute">
                       {pr.genCount} · {usd(pr.spend, 2)}
@@ -110,15 +117,18 @@ export default function TitleBar({ user }: { user: U }) {
                 ))}
               </div>
               <div className="border-t border-hair p-1">
-                <button onClick={newProject} className="menu-item text-dim hover:text-bone">
+                <button onClick={newProject} className="menu-item max-[860px]:py-[10px] text-dim hover:text-bone">
                   ＋ New project
                 </button>
                 {current && (
-                  <div className="flex gap-2 px-2.5 pb-1.5 pt-0.5">
-                    <button onClick={renameCurrent} className="font-mono text-[9.5px] tracking-wider text-mute hover:text-lift">RENAME</button>
-                    <span className="text-mute/40">·</span>
-                    <button onClick={deleteCurrent} className="font-mono text-[9.5px] tracking-wider text-mute hover:text-lift">DELETE</button>
-                  </div>
+                  <>
+                    <button onClick={renameCurrent} className="menu-item max-[860px]:py-[10px] text-dim hover:text-bone">
+                      Rename {`"${current.name}"`}
+                    </button>
+                    <button onClick={deleteCurrent} className="menu-item max-[860px]:py-[10px] text-lift/80 hover:text-lift">
+                      Delete project…
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -135,7 +145,7 @@ export default function TitleBar({ user }: { user: U }) {
         )}
         {/* The rail carries the account on desktop; phones get it here. */}
         <span className="hidden max-[860px]:block">
-          <UserMenu user={user} />
+          <UserMenu user={user} usage={usage ?? undefined} />
         </span>
       </div>
     </header>

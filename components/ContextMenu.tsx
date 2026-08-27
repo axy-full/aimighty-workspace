@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useProject } from "@/lib/projectContext";
+import { appAlert, appConfirm } from "./dialog";
 
 /**
- * App-wide right-click menu, themed like the rest of the desk.
+ * App-wide right-click menu, themed like the rest of the desk. On touch
+ * screens (where iOS never fires `contextmenu`) a long-press on a clip or a
+ * project row opens the same menu.
  *
  * Context decides the verbs:
- *  • text fields    → Cut / Copy / Paste / Delete on the selection
- *  • a clip         → Copy prompt / Cut clip / Delete clip
+ *  • text fields    → Cut / Copy / Paste / Delete on the selection (mouse
+ *                     only — native selection handles fields on touch)
+ *  • a clip         → Copy prompt / Cut clip / Move to project… / Delete
  *  • a project row  → Paste clip (moves the cut clip into it)
  *  • anywhere else  → Copy for a text selection, Paste into the focused field
  */
@@ -36,18 +40,33 @@ function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: strin
   el.setSelectionRange(caret, caret);
 }
 
+async function moveClip(genId: string, projectId: string | null) {
+  await fetch(`/api/jobs/${genId}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId }),
+  });
+}
+
 export default function ContextMenu() {
   const [menu, setMenu] = useState<{ x: number; y: number; items: Item[] } | null>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
-  const pathname = usePathname();
+  const { projects } = useProject();
+  const projectsRef = useRef(projects);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+
+  // A long-press opens the menu while the finger is still down; the lift-off
+  // click that follows must not immediately dismiss it (or press an item).
+  // Consume-next-click semantics — a wall-clock window would let a slow lift
+  // through and eat a fast intentional tap.
+  const swallowNextClick = useRef(false);
 
   useEffect(() => {
-    function onContext(e: MouseEvent) {
-      const t = e.target as HTMLElement;
+    /** Build the verbs for whatever is under the pointer and show the menu.
+     *  `touch` skips the text-field and plain-selection branches — native
+     *  selection handles those better on phones. Returns whether it opened. */
+    function openFor(t: HTMLElement, x: number, y: number, touch = false): boolean {
       const items: Item[] = [];
 
-      const field = isEditable(t) ? t : null;
+      const field = !touch && isEditable(t) ? t : null;
       const clipEl = t.closest<HTMLElement>("[data-gen-id]");
       const projEl = t.closest<HTMLElement>("[data-project-target]");
 
@@ -76,7 +95,7 @@ export default function ContextMenu() {
                 const text = await navigator.clipboard.readText();
                 if (!text) return;
                 setNativeValue(field, field.value.slice(0, start) + text + field.value.slice(end), start + text.length);
-              } catch { alert("The browser blocked clipboard access — use ⌘V."); }
+              } catch { appAlert("Clipboard blocked", "The browser blocked clipboard access — use ⌘V."); }
             },
           },
           {
@@ -86,22 +105,40 @@ export default function ContextMenu() {
         );
       } else if (clipEl) {
         const id = clipEl.dataset.genId!;
-        const prompt = clipEl.dataset.genPrompt ?? "";
+        const promptText = clipEl.dataset.genPrompt ?? "";
         const label = clipEl.dataset.genLabel ?? id.slice(-6).toUpperCase();
         items.push(
           {
-            kind: "item", label: "Copy prompt", disabled: !prompt,
-            action: async () => { try { await navigator.clipboard.writeText(prompt); } catch { /* blocked */ } },
+            kind: "item", label: "Copy prompt", disabled: !promptText,
+            action: async () => { try { await navigator.clipboard.writeText(promptText); } catch { /* blocked */ } },
           },
           {
             kind: "item", label: "Cut clip",
             action: () => { armedClip = { id, label }; },
           },
+        );
+        // Direct move targets — the only clip-filing path that exists on
+        // phones (the rail's paste rows are desktop-only).
+        const projs = projectsRef.current;
+        if (projs.length) {
+          items.push({ kind: "sep" });
+          for (const p of projs.slice(0, 8)) {
+            items.push({
+              kind: "item", label: `Move to ${p.name}`,
+              action: () => moveClip(id, p.id),
+            });
+          }
+          items.push({
+            kind: "item", label: "Move to Unfiled",
+            action: () => moveClip(id, null),
+          });
+        }
+        items.push(
           { kind: "sep" },
           {
             kind: "item", label: "Delete clip", danger: true,
             action: async () => {
-              if (!confirm(`Delete clip ${label}? Its cost stays on the ledger.`)) return;
+              if (!(await appConfirm(`Delete clip ${label}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
               await fetch(`/api/jobs/${id}`, { method: "DELETE" });
             },
           },
@@ -115,14 +152,11 @@ export default function ContextMenu() {
           disabled: !armedClip,
           action: async () => {
             if (!armedClip) return;
-            await fetch(`/api/jobs/${armedClip.id}`, {
-              method: "PATCH", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ projectId: target === "unfiled" ? null : target }),
-            });
+            await moveClip(armedClip.id, target === "unfiled" ? null : target);
             armedClip = null;
           },
         });
-      } else {
+      } else if (!touch) {
         const sel = window.getSelection()?.toString() ?? "";
         items.push(
           {
@@ -139,27 +173,92 @@ export default function ContextMenu() {
         }
       }
 
-      e.preventDefault();
-      // Keep the menu on screen.
+      if (!items.length) return false;
+
+      // Keep the menu on screen (it also scrolls if taller than the screen).
       const W = 260, H = items.length * 34 + 12;
       setMenu({
-        x: Math.min(e.clientX, window.innerWidth - W - 8),
-        y: Math.min(e.clientY, window.innerHeight - H - 8),
+        x: Math.max(8, Math.min(x, window.innerWidth - W - 8)),
+        y: Math.max(8, Math.min(y, window.innerHeight - H - 8)),
         items,
       });
+      return true;
+    }
+
+    function onContext(e: MouseEvent) {
+      cancelPress(); // Android long-press fires contextmenu — one path only.
+      // Android's contextmenu carries pointerType "touch": there, only clips
+      // and project rows get our menu — if nothing opened, leave the event
+      // alone so native long-press text selection keeps working.
+      const touch = (e as PointerEvent).pointerType === "touch";
+      const opened = openFor(e.target as HTMLElement, e.clientX, e.clientY, touch);
+      if (opened || !touch) e.preventDefault();
+    }
+
+    // Long-press recognizer for iOS (and any browser without touch
+    // contextmenu). Movement or lift cancels; only clips and project rows
+    // respond, so scrolling and native text selection stay untouched.
+    let pressTimer: number | null = null;
+    let pressX = 0, pressY = 0;
+    function cancelPress() {
+      if (pressTimer != null) { clearTimeout(pressTimer); pressTimer = null; }
+    }
+    function onPointerDown(e: PointerEvent) {
+      // A fresh press means any armed swallow belonged to a click that never
+      // arrived — clear it so it can't eat this tap.
+      swallowNextClick.current = false;
+      if (e.pointerType !== "touch") return;
+      const t = e.target as HTMLElement;
+      if (isEditable(t)) return;
+      if (!t.closest("[data-gen-id],[data-project-target]")) return;
+      pressX = e.clientX; pressY = e.clientY;
+      cancelPress();
+      pressTimer = window.setTimeout(() => {
+        pressTimer = null;
+        swallowNextClick.current = true;
+        try { navigator.vibrate?.(10); } catch { /* not everywhere */ }
+        openFor(t, pressX, pressY, true);
+      }, 550);
+    }
+    function onPointerMove(e: PointerEvent) {
+      if (pressTimer != null &&
+          (Math.abs(e.clientX - pressX) > 10 || Math.abs(e.clientY - pressY) > 10)) {
+        cancelPress();
+      }
+    }
+
+    // The tap that ends a long-press produces a click — swallow it once so
+    // the freshly opened menu survives, however long the finger lingered.
+    function onDocClick(e: MouseEvent) {
+      if (swallowNextClick.current) {
+        swallowNextClick.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }
     }
 
     function onClose() { setMenu(null); }
 
     document.addEventListener("contextmenu", onContext);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointermove", onPointerMove, true);
+    document.addEventListener("pointerup", cancelPress, true);
+    document.addEventListener("pointercancel", cancelPress, true);
+    document.addEventListener("click", onDocClick, true);
     window.addEventListener("resize", onClose);
     document.addEventListener("scroll", onClose, true);
     return () => {
       document.removeEventListener("contextmenu", onContext);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointermove", onPointerMove, true);
+      document.removeEventListener("pointerup", cancelPress, true);
+      document.removeEventListener("pointercancel", cancelPress, true);
+      document.removeEventListener("click", onDocClick, true);
       window.removeEventListener("resize", onClose);
       document.removeEventListener("scroll", onClose, true);
+      cancelPress();
     };
-  }, [router, pathname]);
+  }, []);
 
   if (!menu) return null;
 
@@ -171,9 +270,8 @@ export default function ContextMenu() {
         onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}
       />
       <div
-        ref={boxRef}
         style={{ left: menu.x, top: menu.y }}
-        className="fixed z-[91] w-[240px] overflow-hidden rounded-[11px] border border-line bg-panel2 p-1 shadow-[var(--shadow)]"
+        className="fixed z-[91] max-h-[calc(100dvh-16px)] w-[240px] overflow-y-auto overscroll-contain rounded-[11px] border border-line bg-panel2 p-1 shadow-[var(--shadow)]"
       >
         {menu.items.map((it, i) =>
           it.kind === "sep" ? (
@@ -183,7 +281,7 @@ export default function ContextMenu() {
               key={i}
               disabled={it.disabled}
               onClick={async () => { setMenu(null); await it.action(); }}
-              className={`block w-full rounded-[8px] px-2.5 py-[7px] text-left text-[12.5px] transition-colors ${
+              className={`block w-full rounded-[8px] px-2.5 py-[7px] text-left text-[12.5px] transition-colors max-[860px]:py-[10px] ${
                 it.disabled ? "cursor-default text-mute/50"
                 : it.danger ? "text-lift hover:bg-lift/10"
                 : "text-bone/90 hover:bg-chip"

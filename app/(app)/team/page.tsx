@@ -123,11 +123,11 @@ export default function TeamPage() {
                 </span>
                 <span className="ml-auto flex items-center gap-1.5">
                   <button onClick={() => copyLink(iv.code)}
-                    className="rounded-[7px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-dim hover:border-lift hover:text-lift">
+                    className="rounded-[7px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-dim hover:border-lift hover:text-lift max-[860px]:px-3 max-[860px]:py-2">
                     {copied === iv.code ? "COPIED ✓" : "COPY LINK"}
                   </button>
                   <button onClick={() => revoke(iv.code)}
-                    className="rounded-[7px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-mute hover:border-lift hover:text-lift">
+                    className="rounded-[7px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-mute hover:border-lift hover:text-lift max-[860px]:px-3 max-[860px]:py-2">
                     REVOKE
                   </button>
                 </span>
@@ -138,7 +138,59 @@ export default function TeamPage() {
       )}
 
       <Panel title="Members" className="mt-3">
-        <div className="overflow-x-auto">
+        {/* Phones: one card per member — no sideways table-dragging. */}
+        <ul className="hidden divide-y divide-hair max-[860px]:block">
+          {users.map((u) => (
+            <li key={u.id} className={`px-4 py-3 ${u.disabled ? "opacity-45" : ""}`}>
+              <div className="flex items-center gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[12px] font-semibold text-white"
+                  style={{ background: avatarHue(u.name) }}>
+                  {initialsOf(u.name)}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[13px] font-semibold text-bone">
+                    {u.name}
+                    {u.locked && (
+                      <span className="ml-2 font-mono text-[9px] tracking-wider text-warn">LOCKED</span>
+                    )}
+                  </span>
+                  <span className="truncate font-mono text-[10px] text-mute">{u.email}</span>
+                </span>
+                <span className="shrink-0 text-right font-mono text-[11px] tabular-nums">
+                  <span className="block text-bone">{usd(u.spend, 2)}</span>
+                  <span className="block text-mute">{u.clips} clips</span>
+                </span>
+              </div>
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <select value={u.role} onChange={(e) => patch(u.id, { role: e.target.value })}
+                  className={`h-[32px] rounded-full border px-2.5 font-medium ${
+                    u.role === "admin"
+                      ? "border-red/35 bg-red/15 text-lift"
+                      : "border-line bg-chip text-dim"
+                  }`}>
+                  <option value="member">member</option>
+                  <option value="admin">admin</option>
+                </select>
+                <span className="font-mono text-[10px] text-mute">
+                  {u.lastSeen ? timeAgo(u.lastSeen) : "never seen"}
+                </span>
+                <span className="ml-auto flex items-center gap-1.5">
+                  {u.locked && (
+                    <button onClick={() => patch(u.id, { unlock: true })}
+                      className="rounded-[8px] border border-line px-3 py-2 font-mono text-[10px] tracking-wider text-warn">
+                      UNLOCK
+                    </button>
+                  )}
+                  <button onClick={() => patch(u.id, { disabled: !u.disabled })}
+                    className="rounded-[8px] border border-line px-3 py-2 font-mono text-[10px] tracking-wider text-mute">
+                    {u.disabled ? "ENABLE" : "DISABLE"}
+                  </button>
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="overflow-x-auto max-[860px]:hidden">
           <table className="w-full min-w-[720px] border-collapse text-[12px]">
             <thead>
               <tr className="text-left">

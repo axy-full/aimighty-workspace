@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import References, { referenceProblem, type RefItem, type RefPicker } from "./References";
+import { appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
@@ -24,7 +25,7 @@ const STATUS: Record<string, { cls: string; label: string; live?: boolean }> = {
   cancelled: { cls: "text-mute", label: "CANCELLED" },
 };
 
-type Menu = null | "model" | "dur" | "ratio" | "res" | "more";
+type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "refine";
 
 export default function Workspace() {
   const { selection: bin, refreshProjects } = useProject();
@@ -70,19 +71,23 @@ export default function Workspace() {
   const clip = gens.find((g) => g.id === activeId) ?? null;
 
   // Clicking anywhere OUTSIDE the clip dismisses it. "The clip" is the viewer
-  // plus its prompt panel (so Copy/Use don't dismiss what they act on) and
-  // the filmstrip (so choosing another clip, or dragging the strip's
-  // scrollbar, never blanks the view).
+  // plus its prompt panel (so Copy/Use don't dismiss what they act on), the
+  // filmstrip (so choosing another clip never blanks the view), and the
+  // island (typing a follow-up shouldn't blank the clip you just USEd).
+  // Listening for click — not pointerdown — means a touch that starts a
+  // scroll never blanks the viewer mid-gesture.
   const viewerRef = useRef<HTMLElement>(null);
   const stripRef = useRef<HTMLElement>(null);
+  const islandRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    function onDown(e: PointerEvent) {
+    function onTap(e: MouseEvent) {
       const t = e.target as Node;
-      if (viewerRef.current?.contains(t) || stripRef.current?.contains(t)) return;
+      if (viewerRef.current?.contains(t) || stripRef.current?.contains(t) ||
+          islandRef.current?.contains(t)) return;
       setSelected(null);
     }
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
+    document.addEventListener("click", onTap);
+    return () => document.removeEventListener("click", onTap);
   }, []);
 
   // The composer grows with the prompt (to a lid), and the highlight layer
@@ -180,8 +185,9 @@ export default function Workspace() {
           {clip && (
             <ClipPrompt
               clip={clip}
-              onUse={() => {
-                if (prompt.trim() && !confirm("Replace what's in the composer with this clip's prompt?")) return;
+              onUse={async () => {
+                if (prompt.trim() &&
+                    !(await appConfirm("Replace the composer?", "This clip's prompt will replace what you've typed.", { confirmLabel: "Replace" }))) return;
                 setPrompt(clip.prompt);
                 promptEl.current?.focus();
               }}
@@ -191,7 +197,7 @@ export default function Workspace() {
 
         {/* ── FILMSTRIP ──────────────────────────────────────────────── */}
         <section ref={stripRef as React.Ref<HTMLElement>}
-          className="flex shrink-0 gap-2.5 overflow-x-auto pb-1">
+          className="pan-x flex shrink-0 gap-2.5 overflow-x-auto pb-1 max-[860px]:-mx-3 max-[860px]:px-3">
           {gens.length === 0 ? (
             <div className="desk-grid flex h-[72px] w-full items-center justify-center rounded-[9px] border border-line">
               <p className="font-mono text-[10px] tracking-wide text-mute">
@@ -206,7 +212,7 @@ export default function Workspace() {
         </section>
 
         {/* ── THE ISLAND ─────────────────────────────────────────────── */}
-        <div className="island">
+        <div ref={islandRef} className="island">
           <div className="flex flex-wrap items-center gap-2">
             {refs.map((r) => {
               const token = citeTokenFor(r);
@@ -237,16 +243,35 @@ export default function Workspace() {
               + Reference
             </button>
             <span className="ml-auto flex items-center gap-2.5 font-mono text-[9.5px] text-mute">
-              <span title="Every prompt is auto-refined with ByteDance's Seedance recipe before rendering. Start with raw: to send your exact words.">
-                ✦ AUTO-REFINE
+              <span className="relative">
+                <button
+                  onClick={() => setMenu(menu === "refine" ? null : "refine")}
+                  className="font-mono text-[9.5px] tracking-wide text-mute transition-colors hover:text-dim"
+                >
+                  ✦ AUTO-REFINE
+                </button>
+                {menu === "refine" && (
+                  <>
+                    <button aria-label="Close" onClick={() => setMenu(null)}
+                      className="fixed inset-0 z-50 cursor-default" />
+                    <span className="menu-pop block w-[250px] !left-auto !right-0 px-2.5 py-2 font-sans text-[11.5px] normal-case leading-relaxed tracking-normal text-dim">
+                      Every prompt is auto-refined with ByteDance&apos;s Seedance recipe
+                      before rendering. Start with{" "}
+                      <span className="font-mono text-lift">raw:</span> to send your
+                      exact words instead.
+                    </span>
+                  </>
+                )}
               </span>
               <span className="tabular-nums">{prompt.trim().length}/10000</span>
             </span>
           </div>
 
           <div className="relative">
+            {/* Must mirror the textarea's font metrics exactly — including the
+                phone-size bump the global 16px input rule applies. */}
             <div ref={overlayEl} aria-hidden
-              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-0.5 pt-0.5 text-[14px] leading-[1.5]">
+              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-0.5 pt-0.5 text-[14px] leading-[1.5] max-[860px]:text-[16px]">
               {segments.map((s, i) =>
                 s.tag ? (
                   <span key={i} className="rounded-[4px] text-lift"
@@ -343,7 +368,7 @@ export default function Workspace() {
               className={`chip ${params.generateAudio ? "" : "!text-mute"}`}
             >
               <span className={`h-[7px] w-[7px] rounded-full ${params.generateAudio ? "bg-lift" : "bg-mute/60"}`} />
-              {params.generateAudio ? "Audio on" : "Audio off"}
+              {!modelDef.supportsAudio ? "Audio · 2.5 only" : params.generateAudio ? "Audio on" : "Audio off"}
             </button>
 
             <ChipMenu
@@ -354,7 +379,7 @@ export default function Workspace() {
                 <label className="flex items-center gap-2">
                   <span className="lbl w-[64px] shrink-0">Seed</span>
                   <input
-                    className="ctl !h-[28px] font-mono !text-[11px]" value={params.seed}
+                    className="ctl !h-[28px] font-mono text-[11px]" value={params.seed}
                     inputMode="numeric" placeholder="random"
                     onChange={(e) => patch({ seed: e.target.value.replace(/\D/g, "") })}
                   />
@@ -401,14 +426,24 @@ export default function Workspace() {
 
 /* ── pieces ──────────────────────────────────────────────────── */
 
-/** A settings chip that opens an upward menu, per the design. */
+/** A settings chip that opens an upward menu, per the design. The popover
+ *  flips to right-aligned when left-anchoring would push it past the
+ *  viewport edge — phone screens wrap the chips near the right margin. */
 function ChipMenu({ open, setOpen, label, width = 150, plain, children }: {
   open: boolean; setOpen: (v: boolean) => void;
   label: React.ReactNode; width?: number; plain?: boolean;
   children: React.ReactNode;
 }) {
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const [alignRight, setAlignRight] = useState(false);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) setAlignRight(r.left + width > window.innerWidth - 16);
+  }, [open, width]);
+
   return (
-    <span className="relative">
+    <span ref={wrapRef} className="relative">
       <button onClick={() => setOpen(!open)} className={`chip ${open ? "!border-lift/50" : ""}`}>
         {label}
         {!plain && (
@@ -421,7 +456,10 @@ function ChipMenu({ open, setOpen, label, width = 150, plain, children }: {
         <>
           <button aria-label="Close menu" onClick={() => setOpen(false)}
             className="fixed inset-0 z-50 cursor-default" />
-          <span className="menu-pop block" style={{ minWidth: width }}>{children}</span>
+          <span className="menu-pop block"
+            style={{ minWidth: width, ...(alignRight ? { left: "auto", right: 0 } : {}) }}>
+            {children}
+          </span>
         </>
       )}
     </span>
@@ -450,11 +488,11 @@ function ClipPrompt({ clip, onUse }: { clip: Gen; onUse: () => void }) {
         <span className="lbl">Clip prompt</span>
         <span className="ml-auto flex items-center gap-1.5">
           <button onClick={copy}
-            className="rounded-[7px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            className="rounded-[7px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift max-[860px]:px-3 max-[860px]:py-2 max-[860px]:text-[10.5px]">
             {copied ? "COPIED ✓" : "COPY"}
           </button>
           <button onClick={onUse} title="Load into the composer"
-            className="rounded-[7px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift">
+            className="rounded-[7px] border border-line px-2 py-0.5 font-mono text-[9px] tracking-wider text-dim hover:border-lift hover:text-lift max-[860px]:px-3 max-[860px]:py-2 max-[860px]:text-[10.5px]">
             USE
           </button>
         </span>
@@ -500,7 +538,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
   const done = clip.status === "succeeded" && url;
 
   async function remove() {
-    if (!confirm(`Delete clip ${clipId(clip!.id)}?`)) return;
+    if (!(await appConfirm(`Delete clip ${clipId(clip!.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
     await fetch(`/api/jobs/${clip!.id}`, { method: "DELETE" });
     onChanged();
   }
@@ -511,7 +549,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
       {/* Fixed 16:9 slate; non-16:9 clips letterbox inside it like any NLE viewer. */}
       <div className="stage16 relative overflow-hidden rounded-[14px] border border-line bg-black shadow-[var(--shadow)]">
         {done ? (
-          <video key={clip.id} src={url!} controls loop preload="metadata"
+          <video key={clip.id} src={url!} controls loop preload="metadata" playsInline
             className="absolute inset-0 h-full w-full object-contain" />
         ) : (
           <div className={`desk-grid absolute inset-0 grid place-items-center bg-thumb px-6 ${s.live ? "render-sweep" : ""}`}>
@@ -555,12 +593,12 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {url && (
               <a href={url} download={`${clipId(clip.id)}.mp4`} title="Download"
-                className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white">
+                className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white max-[860px]:h-[34px] max-[860px]:w-[34px]">
                 <IconDown />
               </a>
             )}
             <button onClick={remove} title="Delete"
-              className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white">
+              className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white max-[860px]:h-[34px] max-[860px]:w-[34px]">
               <IconTrash />
             </button>
           </span>
@@ -588,7 +626,7 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
       }`}
     >
       {done ? (
-        <video src={posterSrc(url!)} muted preload="metadata" className="h-full w-full object-cover" />
+        <video src={posterSrc(url!)} muted preload="metadata" playsInline className="h-full w-full object-cover" />
       ) : (
         <span className={`desk-grid grid h-full place-items-center ${s.live ? "render-sweep" : ""}`}>
           <span className={`font-mono text-[8.5px] tracking-[.16em] ${s.cls}`}>{s.label}</span>

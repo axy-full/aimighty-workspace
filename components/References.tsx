@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { appAlert } from "./dialog";
 import { IconPlus, IconClose } from "./Icons";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
 import { uploadFile, sha256OfFile } from "@/lib/uploadClient";
@@ -194,9 +195,10 @@ export default function References({
                 : 0;
             const citeToken = r.kind === "video" ? `@Video${citeIndex}` : `@Image${citeIndex}`;
             return (
-              <div key={r.id} className="group relative h-[84px] overflow-hidden rounded-[10px] border border-line bg-thumb">
+              <div key={r.id} className="min-w-0">
+              <div className="group relative h-[84px] overflow-hidden rounded-[10px] border border-line bg-thumb">
                 {r.kind === "video" ? (
-                  <video src={`${r.url}#t=0.1`} muted preload="metadata"
+                  <video src={`${r.url}#t=0.1`} muted preload="metadata" playsInline
                     className="h-full w-full object-cover"
                     title={`${r.filename}\n${r.durationS?.toFixed(1) ?? "?"}s · ${kb(r.bytes)}\nsha256 ${r.sha256.slice(0, 16)}…`} />
                 ) : (
@@ -219,17 +221,21 @@ export default function References({
                 )}
 
                 {!r.verified && (
-                  <span className="absolute bottom-0 left-0 bg-red px-1 font-mono text-[8px] text-white" title="Stored bytes do not match the original">
+                  <button type="button"
+                    onClick={() => appAlert("Hashes don't match",
+                      "The stored copy's bytes do not hash-match the original file. Remove it and upload again before spending a render on it.")}
+                    className="absolute bottom-0 left-0 bg-red px-1 font-mono text-[8px] text-white"
+                    title="Stored bytes do not match the original — tap for details">
                     HASH?
-                  </span>
+                  </button>
                 )}
 
-                <div className="absolute inset-x-0 bottom-0 flex opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="reveal absolute inset-x-0 bottom-0 flex">
                   {r.kind === "image" && (
                     <select
                       value={r.role}
                       onChange={(e) => setRole(r.id, e.target.value as ImageRole)}
-                      className="h-[18px] min-w-0 flex-1 border-0 bg-black/80 px-0.5 font-mono text-[8px] text-white/80"
+                      className="h-[18px] min-w-0 flex-1 border-0 bg-black/80 px-0.5 font-mono text-[8px] text-white/80 max-[860px]:h-[26px]"
                       title="Role"
                     >
                       <option value="reference_image">ref</option>
@@ -239,13 +245,17 @@ export default function References({
                   )}
                   {citeIndex > 0 && (
                     <button type="button" onClick={() => onCite(citeToken)} title="Cite in prompt"
-                      className="h-[18px] flex-1 bg-black/80 px-1 font-mono text-[8px] text-white/80 hover:text-lift">@</button>
+                      className="h-[18px] flex-1 bg-black/80 px-1 font-mono text-[8px] text-white/80 hover:text-lift max-[860px]:h-[26px] max-[860px]:text-[11px]">@</button>
                   )}
                   <button type="button" onClick={() => remove(r.id)} title="Remove"
-                    className="grid h-[18px] w-[18px] shrink-0 place-items-center bg-black/80 text-white/80 hover:text-lift">
+                    className="grid h-[18px] w-[18px] shrink-0 place-items-center bg-black/80 text-white/80 hover:text-lift max-[860px]:h-[26px] max-[860px]:w-[26px]">
                     <IconClose />
                   </button>
                 </div>
+              </div>
+              <p className="mt-1 truncate font-mono text-[9px] text-mute" title={r.filename}>
+                {r.filename}
+              </p>
               </div>
             );
           })}

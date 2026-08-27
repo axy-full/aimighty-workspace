@@ -4,6 +4,8 @@ import PageSwitcher from "@/components/PageSwitcher";
 import NavRail from "@/components/NavRail";
 import ChatDock from "@/components/ChatDock";
 import ContextMenu from "@/components/ContextMenu";
+import DialogHost from "@/components/dialog";
+import ViewportGuard from "@/components/ViewportGuard";
 import { ProjectProvider } from "@/lib/projectContext";
 import { currentUser, userCount } from "@/lib/auth";
 
@@ -28,6 +30,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <PageSwitcher />
         </div>
         <ContextMenu />
+        <DialogHost />
+        <ViewportGuard />
       </div>
     </ProjectProvider>
   );

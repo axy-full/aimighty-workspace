@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { useApi } from "@/lib/useApi";
 import { timeAgo } from "@/lib/format";
 import { uploadFile } from "@/lib/uploadClient";
+import { appAlert } from "./dialog";
 import { IconClose, IconPlus } from "./Icons";
 
 type Member = { id: string; name: string };
@@ -69,6 +70,14 @@ export default function ChatDock() {
     lastCount.current = n;
   }, [feed, open]);
 
+  const badge = unread > 0 && (
+    <span className={`absolute grid h-[16px] min-w-[16px] place-items-center rounded-full px-0.5 font-mono text-[9px] ring-2 ring-desk ${
+      mentioned > 0 ? "bg-red text-white" : "bg-panel3 text-dim"
+    }`}>
+      {unread > 99 ? "99+" : unread}
+    </span>
+  );
+
   return (
     <div className="flex h-full shrink-0">
       {open && (
@@ -77,19 +86,28 @@ export default function ChatDock() {
         />
       )}
       {!open && (
-        <button
-          onClick={() => toggle(true)}
-          title="Team chat"
-          className="relative flex h-full w-[30px] flex-col items-center gap-2 border-l border-line bg-chrome pt-3 text-mute transition-colors hover:text-lift"
-        >
-          <ChatGlyph />
-          <span className="lbl rotate-180 [writing-mode:vertical-rl]">CHAT</span>
-          {unread > 0 && (
-            <span className={`absolute top-1 grid h-[16px] min-w-[16px] place-items-center rounded-full px-0.5 font-mono text-[9px] text-white ${mentioned > 0 ? "bg-red" : "bg-panel3 text-dim"}`}>
-              {unread > 99 ? "99+" : unread}
-            </span>
-          )}
-        </button>
+        <>
+          {/* Desktop: the slim right-edge rail. */}
+          <button
+            onClick={() => toggle(true)}
+            title="Team chat"
+            className="relative flex h-full w-[30px] flex-col items-center gap-2 border-l border-line bg-chrome pt-3 text-mute transition-colors hover:text-lift max-[860px]:hidden"
+          >
+            <ChatGlyph />
+            <span className="lbl rotate-180 [writing-mode:vertical-rl]">CHAT</span>
+            <span className="absolute top-1">{badge}</span>
+          </button>
+          {/* Phones: a floating bubble above the bottom bar. */}
+          <button
+            onClick={() => toggle(true)}
+            title="Team chat"
+            className="fixed right-3.5 z-40 hidden h-[48px] w-[48px] place-items-center rounded-full border border-line bg-panel2 text-dim shadow-[var(--shadow)] max-[860px]:grid"
+            style={{ bottom: "calc(var(--switcher) + 14px)" }}
+          >
+            <ChatGlyph />
+            <span className="absolute -right-1 -top-1">{badge}</span>
+          </button>
+        </>
       )}
     </div>
   );
@@ -119,10 +137,17 @@ function urlB64ToUint8Array(base64: string) {
 const PUSH_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 function PushBell() {
-  const [state, setState] = useState<"unsupported" | "unconfigured" | "off" | "on" | "busy" | "denied">("off");
+  const [state, setState] = useState<"unsupported" | "install" | "unconfigured" | "off" | "on" | "busy" | "denied">("off");
 
   useEffect(() => {
-    if (!pushSupported()) { setTimeout(() => setState("unsupported"), 0); return; }
+    if (!pushSupported()) {
+      // iOS Safari outside the installed app is the one audience that CAN
+      // get push — after Add to Home Screen. Tell them, don't vanish.
+      const ios = /iP(hone|ad|od)/.test(navigator.userAgent) &&
+        !matchMedia("(display-mode: standalone)").matches;
+      setTimeout(() => setState(ios ? "install" : "unsupported"), 0);
+      return;
+    }
     if (!PUSH_KEY) { setTimeout(() => setState("unconfigured"), 0); return; }
     if (Notification.permission === "denied") { setTimeout(() => setState("denied"), 0); return; }
     navigator.serviceWorker.getRegistration().then(async (reg) => {
@@ -157,7 +182,7 @@ function PushBell() {
       setState("on");
     } catch (e) {
       // Silence was the worst possible behavior here — say what went wrong.
-      alert(`Couldn't turn on notifications:\n\n${(e as Error).message}`);
+      appAlert("Couldn't turn on notifications", (e as Error).message);
       setState(PUSH_KEY ? "off" : "unconfigured");
     }
   }
@@ -182,16 +207,32 @@ function PushBell() {
     state === "on" ? "Notifications on — click to turn off"
     : state === "denied" ? "Notifications are blocked for this site in the browser — allow them in site settings, then click again"
     : state === "unconfigured" ? "Push keys not configured — add the VAPID env vars in Vercel and redeploy"
+    : state === "install" ? "On iPhone, notifications need the installed app — Share → Add to Home Screen"
     : "Notify me of new messages";
+
+  // Tooltips don't exist on touch — dead-end states explain themselves on tap.
+  const explain =
+    state === "denied" ? () => {
+      // The user may have unblocked the site since — re-check live and just
+      // enable if so, rather than lecturing them.
+      if (Notification.permission !== "denied") { void enable(); return; }
+      appAlert("Notifications are blocked",
+        "The browser has notifications blocked for this site. Allow them in the browser's site settings, then tap the bell again.");
+    }
+    : state === "install" ? () => appAlert("Install the app first",
+      "iPhones only deliver notifications to the installed app: Share → Add to Home Screen, open it from the icon, then tap the bell there.")
+    : state === "unconfigured" ? () => appAlert("Push isn't configured yet",
+      "The VAPID keys aren't in this build. Add the three variables in Vercel and redeploy.")
+    : null;
 
   return (
     <button
-      onClick={state === "on" ? disable : state === "busy" ? undefined : enable}
+      onClick={explain ?? (state === "on" ? disable : state === "busy" ? undefined : enable)}
       title={title}
-      className={`grid h-[20px] w-[20px] place-items-center rounded-[6px] transition-colors ${
+      className={`grid h-[20px] w-[20px] place-items-center rounded-[6px] transition-colors max-[860px]:h-[32px] max-[860px]:w-[32px] ${
         state === "on" ? "text-lift"
         : state === "unconfigured" ? "text-warn/70 hover:text-warn"
-        : state === "denied" ? "text-mute/40 hover:text-mute"
+        : state === "denied" || state === "install" ? "text-mute/40 hover:text-mute"
         : "text-mute hover:text-lift"
       }`}
     >
@@ -223,6 +264,9 @@ function ChatPanel({ feed, members, refresh, onClose }: {
   // @mention autocomplete
   const [menu, setMenu] = useState<{ q: string; at: number } | null>(null);
   const [sel, setSel] = useState(0);
+  // Highlight a row only once arrow keys are in play — a phantom keyboard
+  // cursor on touch just spotlights a random row.
+  const [kbNav, setKbNav] = useState(false);
   const matches = useMemo(() => {
     if (!menu) return [];
     const q = menu.q.toLowerCase();
@@ -250,7 +294,13 @@ function ChatPanel({ feed, members, refresh, onClose }: {
     const caret = el?.selectionStart ?? v.length;
     const upto = v.slice(0, caret);
     const m = upto.match(/@([\w ]{0,30})$/);
-    if (m && members.length) { setMenu({ q: m[1], at: caret - m[1].length - 1 }); setSel(0); }
+    if (m && members.length) {
+      setMenu({ q: m[1], at: caret - m[1].length - 1 });
+      setSel(0);
+      // Desktop keeps its instant first-row highlight (Enter picks it); touch
+      // stays unhighlighted until a hardware arrow key proves a keyboard.
+      setKbNav(!matchMedia("(hover: none) and (pointer: coarse)").matches);
+    }
     else setMenu(null);
   }
 
@@ -329,11 +379,15 @@ function ChatPanel({ feed, members, refresh, onClose }: {
   }
 
   return (
-    <aside
+    <>
+      {/* Tap-outside-to-close scrim while the panel overlays the page.
+          z-40 ties the island; painting later in the DOM wins the tie. */}
+      <div className="hidden max-[1100px]:block fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      <aside
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files[0]) attach(e.dataTransfer.files[0]); }}
-      className={`flex h-full w-[320px] shrink-0 flex-col border-l border-line bg-chrome ${drag ? "bg-lift/8" : ""} max-[1100px]:fixed max-[1100px]:bottom-[var(--switcher)] max-[1100px]:right-0 max-[1100px]:top-[var(--titlebar)] max-[1100px]:z-40 max-[1100px]:h-auto max-[1100px]:shadow-[-12px_0_32px_rgba(0,0,0,.5)]`}
+      className={`chat-panel flex h-full w-[320px] shrink-0 flex-col border-l border-line bg-chrome ${drag ? "bg-lift/8" : ""} max-[1100px]:fixed max-[1100px]:bottom-[var(--switcher)] max-[1100px]:right-0 max-[1100px]:top-[var(--titlebar)] max-[1100px]:z-40 max-[1100px]:h-auto max-[1100px]:shadow-[-12px_0_32px_rgba(0,0,0,.5)]`}
     >
       <header className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel2 px-2.5">
         <h2 className="ptitle text-[10.5px] tracking-[.1em] text-dim">TEAM CHAT</h2>
@@ -400,13 +454,13 @@ function ChatPanel({ feed, members, refresh, onClose }: {
         </div>
       )}
 
-      <div className="relative shrink-0 border-t border-line bg-panel p-2">
+      <div className="relative shrink-0 border-t border-line bg-panel p-2 pb-[max(8px,env(safe-area-inset-bottom))]">
         {menu && matches.length > 0 && (
           <div className="absolute bottom-full left-2 right-2 mb-1 overflow-hidden rounded-[8px] border border-line bg-panel2 shadow-xl">
             {matches.map((mm, i) => (
               <button key={mm.id}
                 onMouseDown={(e) => { e.preventDefault(); pick(mm); }}
-                className={`block w-full px-2.5 py-1.5 text-left text-[12px] ${i === sel ? "bg-panel3 text-lift" : "text-dim"}`}>
+                className={`block w-full px-2.5 py-1.5 text-left text-[12px] max-[860px]:py-3 max-[860px]:text-[14px] ${kbNav && i === sel ? "bg-panel3 text-lift" : "text-dim"}`}>
                 @{mm.name}
               </button>
             ))}
@@ -415,32 +469,42 @@ function ChatPanel({ feed, members, refresh, onClose }: {
         <div className="flex items-end gap-1.5">
           <button onClick={() => fileRef.current?.click()} disabled={uploadPct != null}
             title="Attach a file (up to 2 GB, byte-identical)"
-            className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border border-line text-mute hover:border-lift hover:text-lift disabled:opacity-40">
+            className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border border-line text-mute hover:border-lift hover:text-lift disabled:opacity-40 max-[860px]:h-[42px] max-[860px]:w-[42px]">
             <IconPlus />
           </button>
           <input ref={fileRef} type="file" hidden onChange={(e) => e.target.files?.[0] && attach(e.target.files[0])} />
           <textarea
             ref={taRef} value={text} rows={1}
+            autoCapitalize="sentences"
             onChange={(e) => onType(e.target.value)}
             onKeyDown={(e) => {
               if (menu && matches.length) {
-                if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => (s + 1) % matches.length); return; }
-                if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => (s - 1 + matches.length) % matches.length); return; }
-                if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pick(matches[sel]); return; }
+                if (e.key === "ArrowDown") { e.preventDefault(); setKbNav(true); setSel((s) => (s + 1) % matches.length); return; }
+                if (e.key === "ArrowUp") { e.preventDefault(); setKbNav(true); setSel((s) => (s - 1 + matches.length) % matches.length); return; }
+                if ((e.key === "Enter" || e.key === "Tab") &&
+                    (kbNav || !matchMedia("(hover: none) and (pointer: coarse)").matches)) {
+                  e.preventDefault(); pick(matches[sel]); return;
+                }
                 if (e.key === "Escape") { setMenu(null); return; }
               }
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+              // Touch keyboards have no Shift+Enter — there, Return makes a
+              // newline and the Send button sends.
+              if (e.key === "Enter" && !e.shiftKey &&
+                  !matchMedia("(hover: none) and (pointer: coarse)").matches) {
+                e.preventDefault(); send();
+              }
             }}
             placeholder="Message the team — @ to mention"
-            className="max-h-[96px] min-h-[30px] w-full resize-none rounded-[8px] border border-line bg-desk px-2.5 py-1.5 text-[12.5px] leading-relaxed text-bone placeholder:text-mute/60 focus:outline-none"
+            className="autosize max-h-[96px] min-h-[30px] w-full resize-none rounded-[8px] border border-line bg-desk px-2.5 py-1.5 text-[12.5px] leading-relaxed text-bone placeholder:text-mute/60 focus:outline-none max-[860px]:min-h-[42px] max-[860px]:max-h-[120px]"
           />
           <button onClick={() => send()} disabled={sending || (!text.trim())}
-            className="ptitle h-[30px] shrink-0 rounded-[8px] bg-red px-2.5 text-[10px] tracking-[.08em] text-white hover:bg-lift disabled:bg-panel3 disabled:text-mute">
+            className="ptitle h-[30px] shrink-0 rounded-[8px] bg-red px-2.5 text-[10px] tracking-[.08em] text-white hover:bg-lift disabled:bg-panel3 disabled:text-mute max-[860px]:h-[42px] max-[860px]:px-4 max-[860px]:text-[11px]">
             SEND
           </button>
         </div>
       </div>
     </aside>
+    </>
   );
 }
 
@@ -456,7 +520,7 @@ function AttachmentTile({ a }: { a: Attachment }) {
   }
   if (a.kind === "video") {
     return (
-      <video src={`${a.url}#t=0.1`} controls preload="metadata"
+      <video src={`${a.url}#t=0.1`} controls preload="metadata" playsInline
         className="mt-1 max-h-[180px] w-full rounded-[8px] border border-line bg-black" />
     );
   }

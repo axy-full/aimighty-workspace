@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
+import { appConfirm } from "./dialog";
 import { IconDown, IconTrash } from "./Icons";
 
 export type Gen = {
@@ -55,7 +56,7 @@ export default function GenCard({
   }
 
   async function remove() {
-    if (!confirm(`Delete clip ${clipId(gen.id)} from the workspace?`)) return;
+    if (!(await appConfirm(`Delete clip ${clipId(gen.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
     await fetch(`/api/jobs/${gen.id}`, { method: "DELETE" });
     onChanged?.();
   }
@@ -68,7 +69,7 @@ export default function GenCard({
       {/* Slate */}
       <div className="relative aspect-video bg-thumb">
         {done ? (
-          <video src={posterSrc(url!)} controls loop preload="metadata" className="h-full w-full object-cover" />
+          <video src={posterSrc(url!)} controls loop preload="metadata" playsInline className="h-full w-full object-cover" />
         ) : (
           <div className={`desk-grid grid h-full place-items-center px-4 ${s.live ? "render-sweep" : ""}`}>
             {gen.error ? (
@@ -122,13 +123,13 @@ export default function GenCard({
             </span>
           )}
 
-          <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <div className="reveal ml-auto flex shrink-0 items-center gap-1">
             {projects.length > 0 && (
               <select
                 value={gen.projectId ?? ""}
                 onChange={(e) => move(e.target.value)}
                 title="Move to project"
-                className="h-[22px] max-w-[92px] rounded-[6px] border border-line bg-chip px-1 text-[9.5px] text-dim"
+                className="h-[22px] max-w-[92px] rounded-[6px] border border-line bg-chip px-1 text-[9.5px] text-dim max-[860px]:h-[28px]"
               >
                 <option value="">Unfiled</option>
                 {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
@@ -137,14 +138,14 @@ export default function GenCard({
             {url && (
               <a
                 href={url} download={`${clipId(gen.id)}.mp4`} title="Download"
-                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift"
+                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift max-[860px]:h-[28px] max-[860px]:w-[28px]"
               >
                 <IconDown />
               </a>
             )}
             <button
               onClick={remove} title="Delete"
-              className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift"
+              className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift max-[860px]:h-[28px] max-[860px]:w-[28px]"
             >
               <IconTrash />
             </button>

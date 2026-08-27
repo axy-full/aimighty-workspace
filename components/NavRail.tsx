@@ -8,6 +8,7 @@ import logo from "@/public/aimighty-logo.png";
 import { useProject } from "@/lib/projectContext";
 import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
+import { appPrompt } from "./dialog";
 import { IconCompose, IconLibrary, IconMeter, IconBins, IconFilm, IconPlus } from "./Icons";
 
 type U = { name: string; email: string; role: string };
@@ -44,7 +45,7 @@ export default function NavRail({ user }: { user: U }) {
   }
 
   async function newProject() {
-    const name = prompt("Project name");
+    const name = await appPrompt("New project", "", "Project name");
     if (!name?.trim()) return;
     const res = await fetch("/api/projects", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -147,8 +148,12 @@ function RailProject({ icon, label, meta, active, onClick, pasteTarget }: {
 }
 
 /** Avatar + name; opens the account menu. Shared by the rail (opens upward)
- *  and the mobile top bar (opens downward). */
-export function UserMenu({ user, up = false }: { user: U; up?: boolean }) {
+ *  and the mobile top bar (opens downward, where it also carries the spend
+ *  readout the hidden rail would have shown). */
+export function UserMenu({ user, up = false, usage }: {
+  user: U; up?: boolean;
+  usage?: { spentUsd: number; remainingUsd: number };
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const router = useRouter();
@@ -188,15 +193,23 @@ export function UserMenu({ user, up = false }: { user: U; up?: boolean }) {
             <div className="px-2.5 pb-2 pt-1.5">
               <p className="truncate text-[12.5px] font-semibold text-bone">{user.name}</p>
               <p className="truncate font-mono text-[9.5px] text-mute">{user.email}</p>
+              {usage && (
+                <p className="mt-1.5 flex justify-between font-mono text-[9.5px] text-mute">
+                  <span>SPENT <span className="tabular-nums text-dim">{usd(usage.spentUsd, 2)}</span></span>
+                  <span>CREDIT <span className={`tabular-nums ${usage.remainingUsd < 0 ? "text-lift" : "text-dim"}`}>
+                    {usd(usage.remainingUsd, 2)}
+                  </span></span>
+                </p>
+              )}
             </div>
             <div className="mx-1 mb-1 h-px bg-hair" />
             {user.role === "admin" && (
               <button onClick={() => { setOpen(false); router.push("/team"); }}
-                className="menu-item text-dim hover:text-bone">
+                className="menu-item max-[860px]:py-[10px] text-dim hover:text-bone">
                 Team &amp; invites
               </button>
             )}
-            <button onClick={signOut} disabled={busy} className="menu-item text-dim hover:text-bone">
+            <button onClick={signOut} disabled={busy} className="menu-item max-[860px]:py-[10px] text-dim hover:text-bone">
               {busy ? "Signing out…" : "Sign out"}
             </button>
           </div>

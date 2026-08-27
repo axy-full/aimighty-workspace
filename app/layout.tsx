@@ -5,10 +5,18 @@ export const metadata: Metadata = {
   title: "aimighty workspace",
   description: "Internal video generation workspace — Seedance on BytePlus ModelArk",
   manifest: "/manifest.json",
+  // iOS ignores the manifest for home-screen icons — declare one explicitly.
+  icons: { apple: "/icon-192.png" },
   appleWebApp: { capable: true, title: "aimighty", statusBarStyle: "black-translucent" },
 };
 
-export const viewport = { themeColor: "#0B0C0E" };
+export const viewport = {
+  themeColor: "#0B0C0E",
+  viewportFit: "cover" as const,
+  // Android: shrink the layout viewport when the keyboard opens instead of
+  // covering the fixed shell.
+  interactiveWidget: "resizes-content" as const,
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

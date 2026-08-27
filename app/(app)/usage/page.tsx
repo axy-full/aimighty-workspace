@@ -26,6 +26,7 @@ export default function UsagePage() {
   const [note, setNote] = useState("");
   const [topupBusy, setTopupBusy] = useState(false);
   const [topupErr, setTopupErr] = useState<string | null>(null);
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   async function addTopup() {
     const v = Number(amount);
@@ -75,15 +76,15 @@ export default function UsagePage() {
           </span>
         </span>
         <span className="ml-auto" />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 max-[860px]:w-full">
           <span className="lbl shrink-0">Record top-up</span>
           <input
-            className="ctl w-[92px] font-mono !text-[11.5px]" value={amount} inputMode="decimal" placeholder="USD"
+            className="ctl w-[92px] font-mono text-[11.5px]" value={amount} inputMode="decimal" placeholder="USD"
             onChange={(e) => setAmount(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addTopup()}
           />
           <input
-            className="ctl w-[180px] max-[860px]:hidden" value={note} placeholder="Note / invoice ref"
+            className="ctl w-[180px] max-[860px]:order-last max-[860px]:w-full" value={note} placeholder="Note / invoice ref"
             onChange={(e) => setNote(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addTopup()}
           />
@@ -200,7 +201,37 @@ export default function UsagePage() {
             NO FINISHED RENDERS
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Phones: two-line cards instead of a sideways-scrolling ledger.
+              Tapping a row unfurls the full prompt. */}
+          <ul className="hidden divide-y divide-hair max-[860px]:block">
+            {data.recent.map((r) => {
+              const p = r.params as { resolution?: string; ratio?: string; duration?: number };
+              const open = openRow === r.id;
+              return (
+                <li key={r.id}>
+                  <button
+                    onClick={() => setOpenRow(open ? null : r.id)}
+                    className="block w-full px-4 py-2.5 text-left"
+                  >
+                    <span className="flex items-baseline gap-3">
+                      <span className={`min-w-0 flex-1 text-[12px] leading-snug text-bone/90 ${open ? "" : "truncate"}`}>
+                        {r.prompt}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] tabular-nums text-bone">{usd(r.costUsd)}</span>
+                    </span>
+                    <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-mute">
+                      <span className="rounded-[5px] bg-chip px-1.5 py-px text-dim">{r.label}</span>
+                      <span>{[p.resolution, p.ratio, p.duration && `${p.duration}s`].filter(Boolean).join(" · ")}</span>
+                      <span>{compactTokens(r.totalTokens)}t</span>
+                      <span className="ml-auto">{timeAgo(r.createdAt)}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="overflow-x-auto max-[860px]:hidden">
             <table className="w-full min-w-[640px] border-collapse text-[11.5px]">
               <thead>
                 <tr className="text-left">
@@ -240,6 +271,7 @@ export default function UsagePage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Panel>
     </div>

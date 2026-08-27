@@ -36,8 +36,10 @@
 }
 
 :root {
-  --titlebar: 54px;
-  --switcher: 0px;          /* mobile bottom bar height; 52px under 860px */
+  /* Safe-area aware: the PWA runs edge-to-edge under the notch and home
+     indicator (statusBarStyle black-translucent + viewport-fit cover). */
+  --titlebar: calc(54px + env(safe-area-inset-top, 0px));
+  --switcher: 0px;          /* mobile bottom bar height; set under 860px */
   --rail: 214px;
   --refs: 288px;
   --r: 12px;
@@ -52,8 +54,57 @@ html, body {
   color: var(--color-bone);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
   overscroll-behavior: none;
 }
+
+/* Kill double-tap zoom lag on controls; scrolling containers keep panning.
+   Long-pressing a control should never start a text selection either.
+   (user-select inherits — form fields opt back in below, and `label` is
+   excluded so wrapped inputs stay selectable.) */
+button, a, select, label, summary { touch-action: manipulation; }
+button, a, summary {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* iOS zooms the whole page when focusing text smaller than 16px — oblige it
+   on phones (selects included: iOS zooms on their focus too). */
+@media (max-width: 860px) {
+  input:where([type="text"], [type="email"], [type="password"], [type="search"], :not([type])),
+  textarea, select {
+    font-size: 16px;
+  }
+}
+
+/* Hover-gated affordances must simply be there on touch screens — and while
+   hidden they must not be invisibly tappable. */
+.reveal { opacity: 0; pointer-events: none; transition: opacity .15s; }
+.group:hover .reveal, .group:focus-within .reveal { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .reveal { opacity: 1; pointer-events: auto; } }
+
+/* A horizontal shelf: pans on its own axis without chaining to the page or
+   the OS back-swipe. */
+.pan-x { overscroll-behavior-x: contain; touch-action: pan-x pan-y; }
+
+/* Chat composer grows with its content (Chrome/Android; harmless elsewhere). */
+.autosize { field-sizing: content; }
+
+/* Phones: chat is a full-screen room, lifted above the on-screen keyboard. */
+@media (max-width: 860px) {
+  .chat-panel {
+    left: 0;
+    width: auto;
+    bottom: var(--kb, 0px);
+  }
+}
+
+/* Long-pressing a clip opens OUR menu — suppress iOS's own callout there. */
+[data-gen-id], [data-project-target] { -webkit-touch-callout: none; }
 
 ::selection { background: var(--color-red); color: #fff; }
 
@@ -64,9 +115,9 @@ html, body {
   overflow: hidden;
   background: var(--color-desk);
 }
-.app-rail  { width: var(--rail); flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--color-line); }
+.app-rail  { width: var(--rail); flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--color-line); padding-top: env(safe-area-inset-top, 0px); }
 .app-main  { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--color-chrome); }
-.app-title { height: var(--titlebar); flex: none; min-width: 0; }
+.app-title { height: var(--titlebar); flex: none; min-width: 0; padding-top: env(safe-area-inset-top, 0px); }
 .app-work  { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
 .app-switcher { display: none; }
 
@@ -88,13 +139,14 @@ html, body {
 
 /* Phones: the rail hides (bottom bar takes over), compose stacks and scrolls. */
 @media (max-width: 860px) {
-  :root { --switcher: 52px; }
+  :root { --switcher: calc(52px + env(safe-area-inset-bottom, 0px)); }
   .app-rail { display: none; }
   .app-switcher {
     display: flex; height: var(--switcher); flex: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     border-top: 1px solid var(--color-line); background: var(--color-desk);
   }
-  .compose { display: block; overflow-y: auto; }
+  .compose { display: block; overflow-y: auto; overflow-x: clip; padding-bottom: var(--kb, 0px); }
   .compose-main { padding: 12px; }
   .compose-refs { width: auto; border-left: 0; border-top: 1px solid var(--color-line); overflow: visible; }
 }
@@ -112,6 +164,16 @@ html, body {
   border: 1px solid var(--color-line);
   border-radius: 20px;
   box-shadow: var(--shadow);
+}
+/* Re-blurring a 28px backdrop every scrolled frame janks phone GPUs — the
+   island scrolls with the page there, so go near-opaque instead. (Must sit
+   AFTER the base rule: same specificity, source order decides.) */
+@media (max-width: 860px) {
+  .island {
+    background: rgba(21, 22, 26, 0.96);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 @layer components {
@@ -147,7 +209,9 @@ select option { background: #1B1C21; color: #F2F3F5; }
   transition: border-color .12s, background .12s, box-shadow .12s;
 }
 .ctl::placeholder { color: var(--color-mute); }
-.ctl:hover { background: var(--color-chip2); }
+@media (hover: hover) {
+  .ctl:hover { background: var(--color-chip2); }
+}
 .ctl:focus { border-color: var(--color-lift); outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-lift) 15%, transparent); }
 
 select.ctl {
@@ -172,13 +236,16 @@ select.ctl {
   white-space: nowrap;
   transition: background .12s, border-color .12s, color .12s;
 }
-.chip:hover:not(:disabled) { background: var(--color-chip2); }
+@media (hover: hover) {
+  .chip:hover:not(:disabled) { background: var(--color-chip2); }
+}
 .chip:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Popover menu opening upward from a chip */
 .menu-pop {
   position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60;
   min-width: 150px;
+  max-width: calc(100vw - 24px);
   background: var(--color-panel2);
   border: 1px solid var(--color-line);
   border-radius: 11px;
@@ -193,7 +260,10 @@ select.ctl {
   text-align: left;
   transition: background .1s;
 }
-.menu-item:hover { background: var(--color-chip); }
+@media (hover: hover) {
+  .menu-item:hover { background: var(--color-chip); }
+}
+.menu-item:active { background: var(--color-chip); }
 
 /* Nav rail row */
 .rail-row {
@@ -205,7 +275,9 @@ select.ctl {
   color: var(--color-dim);
   transition: background .12s, color .12s;
 }
-.rail-row:hover { background: var(--color-chip); }
+@media (hover: hover) {
+  .rail-row:hover { background: var(--color-chip); }
+}
 .rail-row[data-active="true"] { background: var(--color-chip); color: var(--color-bone); }
 }
 
@@ -235,12 +307,14 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   box-shadow: 0 6px 20px color-mix(in oklab, var(--color-red) 35%, transparent);
   transition: background .15s, transform .12s, box-shadow .2s;
 }
-.btn-render:hover:not(:disabled) {
-  background: #D62A2C;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 26px color-mix(in oklab, var(--color-red) 45%, transparent);
+@media (hover: hover) {
+  .btn-render:hover:not(:disabled) {
+    background: #D62A2C;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 26px color-mix(in oklab, var(--color-red) 45%, transparent);
+  }
 }
-.btn-render:active:not(:disabled) { transform: translateY(0); }
+.btn-render:active:not(:disabled) { transform: translateY(0); background: #D62A2C; }
 .btn-render:disabled {
   background: var(--color-panel3);
   color: var(--color-mute);
