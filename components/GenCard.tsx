@@ -16,6 +16,7 @@ export type Gen = {
   sourceUrl: string | null;
   totalTokens: number | null;
   costUsd: number | null;
+  refineCostUsd?: number | null;
   error: string | null;
   authorName?: string | null;
   createdAt: number;
@@ -102,7 +103,11 @@ export default function GenCard({
           {p.ratio && <span>{p.ratio}</span>}
           {p.duration != null && <span>{p.duration}s</span>}
           {gen.totalTokens != null && <span>{compactTokens(gen.totalTokens)}t</span>}
-          {gen.costUsd != null && <span className="text-lift">{usd(gen.costUsd)}</span>}
+          {gen.costUsd != null && (
+            <span className="text-lift" title={gen.refineCostUsd ? "includes prompt refinement" : undefined}>
+              {usd(gen.costUsd + (gen.refineCostUsd ?? 0))}
+            </span>
+          )}
         </div>
 
         <div className="mt-auto flex items-center gap-2 border-t border-hair pt-2 font-mono text-[9.5px] text-mute">

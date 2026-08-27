@@ -130,6 +130,13 @@ export async function ready(): Promise<void> {
       try {
         await db().execute(`ALTER TABLE uploads ADD COLUMN duration_s REAL`);
       } catch { /* column already exists */ }
+      for (const col of [
+        `refine_model TEXT`, `refine_in_tokens INTEGER`,
+        `refine_out_tokens INTEGER`, `refine_cost_usd REAL`,
+      ]) {
+        try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
+        catch { /* column already exists */ }
+      }
     })();
   }
   return _ready;

@@ -292,7 +292,11 @@ function ClipPrompt({ clip, onUse }: { clip: Gen; onUse: () => void }) {
         {p.duration != null && <span>{p.duration}s</span>}
         {p.seed != null && p.seed !== "" && <span>seed {p.seed}</span>}
         {clip.totalTokens != null && <span>{compactTokens(clip.totalTokens)}t</span>}
-        {clip.costUsd != null && <span className="text-lift">{usd(clip.costUsd)}</span>}
+        {clip.costUsd != null && (
+          <span className="text-lift" title={clip.refineCostUsd ? "includes prompt refinement" : undefined}>
+            {usd(clip.costUsd + (clip.refineCostUsd ?? 0))}
+          </span>
+        )}
         {clip.authorName && <span className="ml-auto text-dim">{clip.authorName}</span>}
       </div>
     </Panel>
@@ -354,7 +358,6 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
           {p.ratio && <span>{p.ratio}</span>}
           {p.duration != null && <span>{p.duration}s</span>}
           {clip.totalTokens != null && <span>{compactTokens(clip.totalTokens)}t</span>}
-          {clip.costUsd != null && <span className="text-lift">{usd(clip.costUsd)}</span>}
           <span>{timeAgo(clip.createdAt)}</span>
           {clip.authorName && <span className="text-dim">{clip.authorName}</span>}
           {clip.projectName && <span className="border border-hair px-1.5 py-px text-dim">{clip.projectName}</span>}
@@ -412,7 +415,9 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
         <span className="line-clamp-2 text-[10.5px] leading-snug text-bone/80">{gen.prompt}</span>
         <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[8.5px] text-mute">
           {(gen.params as { resolution?: string }).resolution?.toUpperCase()}
-          {gen.costUsd != null && <span className="text-lift">{usd(gen.costUsd)}</span>}
+          {gen.costUsd != null && (
+            <span className="text-lift">{usd(gen.costUsd + (gen.refineCostUsd ?? 0))}</span>
+          )}
         </span>
       </span>
     </button>

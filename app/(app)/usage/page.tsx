@@ -14,6 +14,7 @@ type Usage = {
   byModel: { model: string; label: string; n: number; spend: number; tokens: number }[];
   byProject: { name: string; n: number; spend: number }[];
   byPerson: { name: string; n: number; spend: number }[];
+  refines: { model: string; n: number; tokens: number; spend: number; freeLeft: number }[];
   byMonth: { month: string; n: number; spend: number }[];
   recent: { id: string; label: string; prompt: string; costUsd: number;
             totalTokens: number; params: Record<string, unknown>; createdAt: number }[];
@@ -169,7 +170,35 @@ export default function UsagePage() {
                 value: p.spend, max: maxPerson,
               }))} />
             </Panel>
-            <Panel title="Spend by month">
+            {data.refines.length > 0 && (
+            <Panel title="Prompt refinement" right={
+              <span className="font-mono text-[9px] tracking-wider text-mute">
+                FIRST 500K TOKENS PER MODEL FREE
+              </span>
+            }>
+              <ul className="flex flex-col gap-2.5 p-3">
+                {data.refines.map((r) => (
+                  <li key={r.model} className="flex flex-col gap-1.5">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="truncate text-[12.5px] text-bone/90">{r.model}</span>
+                      <span className="shrink-0 font-mono text-[11px] tabular-nums text-bone">
+                        {r.spend > 0 ? usd(r.spend, 3) : "free"}
+                      </span>
+                    </div>
+                    <div className="h-[5px] w-full bg-panel3" title={`${compactTokens(r.tokens)} of 500k free tokens used`}>
+                      <div className={`h-full ${r.freeLeft === 0 ? "bg-warn" : "bg-lift"}`}
+                        style={{ width: `${Math.min(100, (r.tokens / 500000) * 100)}%` }} />
+                    </div>
+                    <span className="font-mono text-[9.5px] text-mute">
+                      {r.n} refine{r.n === 1 ? "" : "s"} · {compactTokens(r.tokens)} tokens ·{" "}
+                      {r.freeLeft > 0 ? `${compactTokens(r.freeLeft)} free left` : "free allowance used — billing at list"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+          <Panel title="Spend by month">
               <Rows rows={data.byMonth.map((m) => ({
                 key: m.month, name: m.month,
                 meta: `${m.n} clip${m.n === 1 ? "" : "s"}`,

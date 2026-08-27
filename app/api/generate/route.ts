@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
-import { enhancePrompt } from "@/lib/enhance";
+import { enhancePrompt, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from "@/lib/enhance";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -152,6 +152,9 @@ export async function POST(req: Request) {
    * ------------------------------------------------------------------ */
   let finalPrompt = prompt;
   let rawPrompt: string | undefined;
+  let refineModel: string | null = null;
+  let refineIn = 0, refineOut = 0;
+  let refineCost: number | null = null;
   if (/^raw:/i.test(prompt)) {
     finalPrompt = prompt.replace(/^raw:\s*/i, "");
   } else if (!prompt.includes("【")) {
@@ -163,8 +166,30 @@ export async function POST(req: Request) {
       ...references.filter((r) => r.kind === "video").map((_, i) => `@Video${i + 1} (video)`),
     ];
     try {
-      finalPrompt = await enhancePrompt({ prompt, citations });
+      const r = await enhancePrompt({ prompt, citations });
+      finalPrompt = r.text;
       rawPrompt = prompt;
+      refineModel = r.model;
+      refineIn = r.inTokens;
+      refineOut = r.outTokens;
+
+      // The first 500k tokens per text model are free; past that, list rates.
+      // Cumulative usage comes from what previous renders recorded. Two
+      // concurrent renders can both read the same cumulative figure — at
+      // worst one row at the 500k boundary is charged a fraction wrongly.
+      const usedRs = await db().execute({
+        sql: `SELECT COALESCE(SUM(COALESCE(refine_in_tokens,0)+COALESCE(refine_out_tokens,0)),0) AS n
+              FROM generations WHERE refine_model = ?`,
+        args: [refineModel],
+      });
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const usedBefore = Number((usedRs.rows[0] as any)?.n ?? 0);
+      const rowTokens = refineIn + refineOut;
+      const freeLeft = Math.max(0, TEXT_FREE_TOKENS - usedBefore);
+      const billable = Math.max(0, rowTokens - freeLeft);
+      const frac = rowTokens > 0 ? billable / rowTokens : 0;
+      const rate = TEXT_RATES[refineModel] ?? TEXT_RATE_FALLBACK;
+      refineCost = frac * (refineIn * rate.input + refineOut * rate.output) / 1_000_000;
     } catch (e) {
       console.error("auto-refine unavailable, rendering raw:", (e as Error).message);
     }
@@ -185,10 +210,12 @@ export async function POST(req: Request) {
   // Row first, so a failed submit is still visible rather than silently lost.
   await db().execute({
     sql: `INSERT INTO generations
-          (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
+           refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(storedParams), "queued",
-           got.user.id, ts, ts],
+           got.user.id, ts, ts,
+           refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost],
   });
 
   try {

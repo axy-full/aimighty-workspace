@@ -27,6 +27,25 @@ export const TEXT_MODELS = (): string[] => {
 };
 export const TEXT_MODEL = () => TEXT_MODELS()[0];
 
+/** USD per million tokens, from the ModelArk pricing page. Unknown models
+ *  bill at pro's rates — conservative beats silently free. */
+export const TEXT_RATES: Record<string, { input: number; output: number }> = {
+  "dola-seed-2-1-turbo-260628": { input: 0.5, output: 2.5 },
+  "seed-2-0-pro-260328": { input: 0.5, output: 3.0 },
+};
+export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
+
+/** Each text model's first 500k tokens are free on this account; charges
+ *  begin past that. Tracked against the tokens recorded on generations. */
+export const TEXT_FREE_TOKENS = 500_000;
+
+export type RefineResult = {
+  text: string;
+  model: string;
+  inTokens: number;
+  outTokens: number;
+};
+
 const SYSTEM = `You rewrite rough video ideas into production-grade prompts for ByteDance's Seedance 2.5 / 2.0 video models, following ByteDance's official Seedance prompt-optimization guidance.
 
 NON-NEGOTIABLE RULES
@@ -57,7 +76,7 @@ Aim for 60–180 words for text-only prompts; the structured form may run longer
 export async function enhancePrompt(opts: {
   prompt: string;
   citations: string[]; // e.g. ["@Image1 (image)", "@Video1 (video, 8s)"]
-}): Promise<string> {
+}): Promise<RefineResult> {
   const key = process.env.ARK_API_KEY;
   if (!key) throw new Error("ARK_API_KEY is not set");
 
@@ -86,7 +105,12 @@ export async function enhancePrompt(opts: {
       const j = JSON.parse(text);
       const out = j.choices?.[0]?.message?.content?.trim();
       if (!out) throw new Error("The model returned nothing.");
-      return out;
+      return {
+        text: out,
+        model,
+        inTokens: Number(j.usage?.prompt_tokens ?? 0),
+        outTokens: Number(j.usage?.completion_tokens ?? 0),
+      };
     }
     let code = "";
     try { code = JSON.parse(text)?.error?.code ?? ""; } catch { /* raw */ }

@@ -16,6 +16,7 @@ export type Generation = {
   storedUrl: string | null;
   totalTokens: number | null;
   costUsd: number | null;
+  refineCostUsd: number | null;
   error: string | null;
   createdBy: string;
   authorName: string | null;
@@ -38,6 +39,7 @@ export function rowToGeneration(r: any): Generation {
     storedUrl: r.stored_url ?? null,
     totalTokens: r.total_tokens ?? null,
     costUsd: r.cost_usd ?? null,
+    refineCostUsd: r.refine_cost_usd ?? null,
     error: r.error ?? null,
     createdBy: r.created_by ?? "",
     authorName: r.author_name ?? null,
