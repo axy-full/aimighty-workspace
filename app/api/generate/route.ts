@@ -1,12 +1,7 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
-import { generateImage } from "@/lib/gemini";
-import {
-  getModel, DEFAULT_MODEL_ID,
-  IMAGE_OUT_USD, IMAGE_REF_IN_USD, imageTokens,
-} from "@/lib/models";
-import { storeImageBytes } from "@/lib/storage";
+import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
 import { enhancePrompt, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from "@/lib/enhance";
 import { requireUser } from "@/lib/auth";
 
@@ -157,70 +152,6 @@ export async function POST(req: Request) {
         role: w.role, kind: w.kind as "image" | "video",
       };
     });
-  }
-
-  /* ── Image engines (Nano Banana Pro) ─────────────────────────────────
-   * No task id to poll — Gemini renders synchronously (the model thinks
-   * first, so tens of seconds). The row goes in as `running`, the response
-   * returns immediately, and the actual call finishes in after(): the
-   * client's normal polling picks up the result. No auto-refine: the model
-   * reasons about the prompt itself; a raw: prefix is still honored.
-   * ------------------------------------------------------------------ */
-  if (model.kind === "image") {
-    const ratio = model.ratios.includes(body.ratio) ? String(body.ratio) : model.ratios[0];
-    const size = model.resolutions.includes(body.resolution)
-      ? String(body.resolution) : model.resolutions[0];
-    const finalImagePrompt = prompt.replace(/^raw:\s*/i, "");
-    const genId = id("gen");
-    const ts = now();
-    const projectId = body.projectId ? String(body.projectId) : null;
-    const storedParams = {
-      ratio, resolution: size,
-      references: references.map((r) => ({ uploadId: r.id, role: r.role, kind: r.kind })),
-    };
-
-    await db().execute({
-      sql: `INSERT INTO generations
-            (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [genId, projectId, null, "image", modelId, finalImagePrompt,
-             JSON.stringify(storedParams), "running", got.user.id, ts, ts],
-    });
-
-    after(async () => {
-      try {
-        const img = await generateImage({
-          prompt: finalImagePrompt, ratio, size, references,
-        });
-        // Google can only emit JPEG; the team wants PNG in the library.
-        // Decode once and re-encode LOSSLESSLY — pixel-identical, and no
-        // downstream tool can add generation loss to a PNG. (sharp is for
-        // THIS transcode only — reference uploads stay byte-identical and
-        // must never pass through an image codec.)
-        const sharp = (await import("sharp")).default;
-        const png = await sharp(img.bytes).png().toBuffer();
-        const storedUrl = await storeImageBytes(genId, png);
-        // Google bills flat per image (+ per reference in). Their published
-        // figures ARE the ledger; usage tokens are recorded when returned.
-        const refImages = references.length;
-        const cost = (IMAGE_OUT_USD[size] ?? 0) + refImages * IMAGE_REF_IN_USD;
-        const tokens = img.totalTokens ?? imageTokens(size, refImages);
-        await db().execute({
-          sql: `UPDATE generations
-                SET status='succeeded', stored_url=?, total_tokens=?,
-                    cost_usd=?, rate_usd_per_m=?, error=NULL, updated_at=?
-                WHERE id=?`,
-          args: [storedUrl, tokens, cost, 120, now(), genId],
-        });
-      } catch (e) {
-        await db().execute({
-          sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-          args: [(e as Error).message.slice(0, 600), now(), genId],
-        }).catch(() => {});
-      }
-    });
-
-    return NextResponse.json({ id: genId, status: "running" });
   }
 
   /* ── Auto-refine ─────────────────────────────────────────────────────

@@ -107,29 +107,6 @@ export const MODELS: ModelDef[] = [
     maxVideoSecondsTotal: 15,
     note: "Cheaper per token. 4K tier is listed but untested — verify before relying on it.",
   },
-  {
-    // Google's Nano Banana Pro — stills, via the Gemini API (separate key).
-    // Pricing read off ai.google.dev/gemini-api/docs/pricing on 2026-08-27:
-    // image out $120/M tokens (1K & 2K = 1120 tok = $0.134, 4K = 2000 tok =
-    // $0.24), each reference image in = 560 tok = $0.0011. SynthID watermark
-    // is always embedded; the model "thinks" before drawing (built in).
-    id: "gemini-3-pro-image",
-    label: "Nano Banana Pro",
-    short: "NB PRO",
-    family: "nano-banana",
-    kind: "image",
-    paramStyle: "fields",
-    tiers: [],
-    resolutions: ["1K", "2K", "4K"],
-    ratios: ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"],
-    durations: [],
-    supportsAudio: false,
-    supportsCameraFixed: false,
-    maxReferenceImages: 14,
-    maxReferenceVideos: 0,
-    maxVideoSecondsTotal: 0,
-    note: "Google's premium still-image model — stills up to 4K, legible text, up to 14 refs.",
-  },
 ];
 
 export const DEFAULT_MODEL_ID = MODELS[0].id;
