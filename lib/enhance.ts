@@ -14,12 +14,18 @@ const CHAT_URL = () =>
     "https://ark.ap-southeast.bytepluses.com") + "/api/v3/chat/completions";
 
 /**
- * Default is PRO, not mini: a refine costs ~$0.001 either way, but the
- * output steers a render worth a thousand times that — instruction-following
- * fidelity (citations kept verbatim, template held, no parameter leakage)
- * is the entire value of the feature.
+ * Candidates in preference order: newest turbo first, pro as the fallback.
+ * A refine costs ~$0.001 on any of them, but its output steers renders worth
+ * a thousand times more — instruction-following fidelity is the feature.
+ * A model that isn't activated or permissioned yet is skipped, so fixing
+ * console permissions upgrades the default with no redeploy.
  */
-export const TEXT_MODEL = () => process.env.ARK_TEXT_MODEL ?? "seed-2-0-pro-260328";
+export const TEXT_MODELS = (): string[] => {
+  const chain = ["dola-seed-2-1-turbo-260628", "seed-2-0-pro-260328"];
+  const env = process.env.ARK_TEXT_MODEL;
+  return env ? [env, ...chain.filter((m) => m !== env)] : chain;
+};
+export const TEXT_MODEL = () => TEXT_MODELS()[0];
 
 const SYSTEM = `You rewrite rough video ideas into production-grade prompts for ByteDance's Seedance 2.5 / 2.0 video models, following ByteDance's official Seedance prompt-optimization guidance.
 
@@ -60,35 +66,39 @@ export async function enhancePrompt(opts: {
       ? `Attached reference assets: ${opts.citations.join(", ")}.\n\n`
       : "") + `Rewrite this idea as a Seedance prompt:\n\n${opts.prompt}`;
 
-  const res = await fetch(CHAT_URL(), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: TEXT_MODEL(),
-      temperature: 0.6,
-      max_tokens: 900,
-      messages: [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: userMsg },
-      ],
-    }),
-  });
-
-  const text = await res.text();
-  if (!res.ok) {
+  let lastErr = "";
+  for (const model of TEXT_MODELS()) {
+    const res = await fetch(CHAT_URL(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        temperature: 0.6,
+        max_tokens: 900,
+        messages: [
+          { role: "system", content: SYSTEM },
+          { role: "user", content: userMsg },
+        ],
+      }),
+    });
+    const text = await res.text();
+    if (res.ok) {
+      const j = JSON.parse(text);
+      const out = j.choices?.[0]?.message?.content?.trim();
+      if (!out) throw new Error("The model returned nothing.");
+      return out;
+    }
     let code = "";
     try { code = JSON.parse(text)?.error?.code ?? ""; } catch { /* raw */ }
-    if (res.status === 404 && /ModelNotOpen|NotFound/i.test(code)) {
-      throw new Error(
-        `The text model ${TEXT_MODEL()} isn't activated on this ModelArk account. ` +
-        `Console → Model activation → activate it (same as the video models), then try again.`
-      );
+    // Not activated / not permissioned → try the next candidate.
+    if ((res.status === 404 || res.status === 403) && /ModelNotOpen|NotFound|AccessDenied/i.test(code)) {
+      lastErr = `${model}: ${code}`;
+      continue;
     }
     throw new Error(`Refine failed (${res.status}): ${text.slice(0, 200)}`);
   }
-
-  const j = JSON.parse(text);
-  const out = j.choices?.[0]?.message?.content?.trim();
-  if (!out) throw new Error("The model returned nothing.");
-  return out;
+  throw new Error(
+    `No text model is reachable (${lastErr}). Console → Model activation: activate ` +
+    `dola-seed-2-1-turbo-260628 or seed-2-0-pro-260328, and allow it on this API key.`
+  );
 }
