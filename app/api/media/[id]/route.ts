@@ -1,4 +1,5 @@
-import { readVideoBytes } from "@/lib/storage";
+import { readVideoBytes, readImageBytes } from "@/lib/storage";
+import { getGeneration } from "@/lib/jobs";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +8,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * Serves renders from private storage — behind the login in every environment.
+ * The generation row says whether the media is a video or a still.
  *
  * Honors HTTP Range requests: Safari (iOS especially) probes with
  * `Range: bytes=0-1` and refuses to play <video> from a server that answers
@@ -18,17 +20,20 @@ export async function GET(req: Request, { params }: Ctx) {
   if (got.response) return got.response;
   const { id } = await params;
 
+  const gen = await getGeneration(id).catch(() => null);
+  const isImage = gen?.kind === "image";
+
   let buf: Buffer;
   try {
-    buf = await readVideoBytes(id);
+    buf = isImage ? await readImageBytes(id) : await readVideoBytes(id);
   } catch {
     return new Response("Not found", { status: 404 });
   }
 
   const common = {
-    "Content-Type": "video/mp4",
+    "Content-Type": isImage ? "image/png" : "video/mp4",
     "Accept-Ranges": "bytes",
-    // private: a shared cache must never hold a signed-in user's video
+    // private: a shared cache must never hold a signed-in user's media
     "Cache-Control": "private, max-age=31536000, immutable",
   };
 

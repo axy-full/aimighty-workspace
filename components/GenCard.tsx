@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
+import { shortLabel } from "@/lib/models";
 import { appConfirm } from "./dialog";
 import { IconDown, IconTrash } from "./Icons";
 
@@ -9,6 +10,7 @@ export type Gen = {
   id: string;
   projectId: string | null;
   projectName: string | null;
+  kind?: "video" | "image";
   model: string;
   prompt: string;
   params: Record<string, unknown>;
@@ -46,6 +48,7 @@ export default function GenCard({
   const url = gen.storedUrl ?? gen.sourceUrl;
   const p = gen.params as { resolution?: string; ratio?: string; duration?: number };
   const done = gen.status === "succeeded" && url;
+  const still = gen.kind === "image";
 
   async function move(projectId: string) {
     await fetch(`/api/jobs/${gen.id}`, {
@@ -69,7 +72,12 @@ export default function GenCard({
       {/* Slate */}
       <div className="relative aspect-video bg-thumb">
         {done ? (
-          <video src={posterSrc(url!)} controls loop preload="metadata" playsInline className="h-full w-full object-cover" />
+          still ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={url!} alt={gen.prompt.slice(0, 120)} className="h-full w-full object-cover" />
+          ) : (
+            <video src={posterSrc(url!)} controls loop preload="metadata" playsInline className="h-full w-full object-cover" />
+          )
         ) : (
           <div className={`desk-grid grid h-full place-items-center px-4 ${s.live ? "render-sweep" : ""}`}>
             {gen.error ? (
@@ -82,7 +90,7 @@ export default function GenCard({
           </div>
         )}
         <span className="pointer-events-none absolute right-2 top-2 rounded-[5px] bg-black/60 px-1.5 py-px font-mono text-[9px] text-white">
-          {gen.model.includes("2-5") ? "2.5" : "2.0"}
+          {shortLabel(gen.model)}
         </span>
         <span className="pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-[5px] bg-black/60 px-1.5 py-px font-mono text-[9px] text-white/85">
           {s.live && <span className="lamp lamp-live" style={{ width: 5, height: 5 }} />}
@@ -137,7 +145,7 @@ export default function GenCard({
             )}
             {url && (
               <a
-                href={url} download={`${clipId(gen.id)}.mp4`} title="Download"
+                href={url} download={`${clipId(gen.id)}.${still ? "png" : "mp4"}`} title="Download"
                 className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift max-[860px]:h-[28px] max-[860px]:w-[28px]"
               >
                 <IconDown />

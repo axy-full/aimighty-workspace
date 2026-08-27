@@ -35,6 +35,27 @@ const kb = (n: number) =>
 export function referenceProblem(
   refs: RefItem[], model: ModelDef, prompt = ""
 ): string | null {
+  // Image engines (Nano Banana Pro): stills in, one still out. No videos,
+  // no first/last-frame mode — every image is simply a reference.
+  if (model.kind === "image") {
+    const vids = refs.filter((r) => r.kind === "video");
+    if (vids.length) return `${model.label} takes image references only — remove the video.`;
+    const imgs = refs.filter((r) => r.kind === "image");
+    for (const m of prompt.matchAll(/@Image(\d+)/gi)) {
+      const n = Number(m[1]);
+      if (n < 1 || n > imgs.length) {
+        return `The prompt cites @Image${m[1]} but only ${imgs.length} reference image${imgs.length === 1 ? " is" : "s are"} attached.`;
+      }
+    }
+    if (/@Video\d+/i.test(prompt)) {
+      return `${model.label} has no video references — remove the @Video citation.`;
+    }
+    if (imgs.length > model.maxReferenceImages) {
+      return `${model.label} accepts at most ${model.maxReferenceImages} reference images.`;
+    }
+    return null;
+  }
+
   const images = refs.filter((r) => r.kind === "image" && r.role === "reference_image");
   const videos = refs.filter((r) => r.kind === "video");
 
@@ -231,7 +252,7 @@ export default function References({
                 )}
 
                 <div className="reveal absolute inset-x-0 bottom-0 flex">
-                  {r.kind === "image" && (
+                  {r.kind === "image" && model.kind !== "image" && (
                     <select
                       value={r.role}
                       onChange={(e) => setRole(r.id, e.target.value as ImageRole)}
@@ -278,9 +299,12 @@ export default function References({
       )}
 
       <div className="mt-auto border-t border-line pt-3 font-mono text-[10px] leading-relaxed text-mute">
-        {model.label} — up to {model.maxReferenceImages} images ·{" "}
-        {model.maxReferenceVideos} videos, {model.maxVideoSecondsTotal}s combined.
-        Never recompressed: what you drop is byte-for-byte what the model sees.
+        {model.kind === "image"
+          ? <>{model.label} — up to {model.maxReferenceImages} reference images, no videos.
+              Never recompressed: what you drop is byte-for-byte what the model sees.</>
+          : <>{model.label} — up to {model.maxReferenceImages} images ·{" "}
+              {model.maxReferenceVideos} videos, {model.maxVideoSecondsTotal}s combined.
+              Never recompressed: what you drop is byte-for-byte what the model sees.</>}
       </div>
     </div>
   );

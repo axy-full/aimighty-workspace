@@ -8,6 +8,7 @@ export type Generation = {
   projectId: string | null;
   projectName: string | null;
   arkTaskId: string | null;
+  kind: "video" | "image";
   model: string;
   prompt: string;
   params: Record<string, unknown>;
@@ -31,6 +32,7 @@ export function rowToGeneration(r: any): Generation {
     projectId: r.project_id ?? null,
     projectName: r.project_name ?? null,
     arkTaskId: r.ark_task_id ?? null,
+    kind: r.kind === "image" ? "image" : "video",
     model: r.model,
     prompt: r.prompt,
     params: JSON.parse(r.params || "{}"),
@@ -185,6 +187,19 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
 /** Sync every job that isn't finished yet. Called by list views. */
 export async function syncPending(limit = 12): Promise<void> {
   await ready();
+
+  // Image renders run synchronously inside their own request — there is no
+  // task to poll. A row still "running" long past any plausible call means
+  // the function died mid-generation; fail it so it isn't stuck forever.
+  await db().execute({
+    sql: `UPDATE generations
+          SET status='failed',
+              error='The image call was interrupted before it finished — render again.',
+              updated_at=?
+          WHERE kind='image' AND status IN ('queued','running') AND created_at < ?`,
+    args: [now(), now() - 15 * 60_000],
+  });
+
   // Repair clauses only look back 3 days: past that, Ark's task and URL are
   // long gone (48h expiry) and re-polling a dead task forever is just noise.
   const horizon = now() - 3 * 86400_000;

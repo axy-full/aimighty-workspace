@@ -14,6 +14,7 @@ import path from "node:path";
 
 /** Deterministic blob paths, so a row id is enough to find the object. */
 export const videoPath  = (genId: string) => `generations/${genId}.mp4`;
+export const imagePath  = (genId: string) => `generations/${genId}.png`;
 export const uploadPath = (uploadId: string, ext: string) => `uploads/${uploadId}.${ext}`;
 
 const LOCAL_DIR = path.join(process.cwd(), ".data", "generations");
@@ -62,6 +63,31 @@ export async function readVideoBytes(genId: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
   if (usingBlob()) return readBlob(videoPath(genId));
   return readFile(path.join(LOCAL_DIR, `${genId}.mp4`));
+}
+
+/* ── Image renders (Nano Banana) — bytes arrive in the API response, not at
+ * a downloadable URL, so they're stored directly. Same privacy rules. ── */
+
+export async function storeImageBytes(genId: string, buf: Buffer): Promise<string> {
+  if (usingBlob()) {
+    const { put } = await import("@vercel/blob");
+    await put(imagePath(genId), buf, {
+      access: "private",
+      contentType: "image/png",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    return `/api/media/${genId}`;
+  }
+  await mkdir(LOCAL_DIR, { recursive: true });
+  await writeFile(path.join(LOCAL_DIR, `${genId}.png`), buf);
+  return `/api/media/${genId}`;
+}
+
+export async function readImageBytes(genId: string): Promise<Buffer> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
+  if (usingBlob()) return readBlob(imagePath(genId));
+  return readFile(path.join(LOCAL_DIR, `${genId}.png`));
 }
 
 /* ── Reference image uploads ──────────────────────────────────────────────
@@ -115,18 +141,20 @@ export async function readUploadBytes(uploadId: string, ext: string, storedUrl: 
   return readFile(path.join(UPLOAD_DIR, `${uploadId}.${ext}`));
 }
 
-/** Best-effort removal of a render's stored file (blob or local). */
+/** Best-effort removal of a render's stored file — video or image. */
 export async function deleteVideo(genId: string): Promise<void> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) return;
-  try {
-    if (usingBlob()) {
-      const { del } = await import("@vercel/blob");
-      await del(videoPath(genId));
-    } else {
-      const { rm } = await import("node:fs/promises");
-      await rm(path.join(LOCAL_DIR, `${genId}.mp4`), { force: true });
-    }
-  } catch { /* orphan cleanup is best-effort */ }
+  for (const target of [videoPath(genId), imagePath(genId)]) {
+    try {
+      if (usingBlob()) {
+        const { del } = await import("@vercel/blob");
+        await del(target);
+      } else {
+        const { rm } = await import("node:fs/promises");
+        await rm(path.join(LOCAL_DIR, path.basename(target)), { force: true });
+      }
+    } catch { /* orphan cleanup is best-effort */ }
+  }
 }
 
 /** Best-effort removal of an upload's stored file (blob URL, pathname, or local). */

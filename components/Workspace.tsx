@@ -6,7 +6,10 @@ import { appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
-import { MODELS, DEFAULT_MODEL_ID, getModel, dimensionsFor, estimateCostUsd, estimateTokens } from "@/lib/models";
+import {
+  MODELS, DEFAULT_MODEL_ID, getModel, shortLabel, dimensionsFor,
+  estimateCostUsd, estimateTokens, estimateImageCostUsd,
+} from "@/lib/models";
 import { useProject } from "@/lib/projectContext";
 import { IconDown, IconTrash } from "./Icons";
 
@@ -49,11 +52,20 @@ export default function Workspace() {
     const m = getModel(next);
     patch({
       modelId: next,
-      ratio: m.ratios.includes(params.ratio) ? params.ratio : m.ratios[0],
-      resolution: m.resolutions.includes(params.resolution) ? params.resolution : m.resolutions[0],
-      duration: m.durations.includes(params.duration) ? params.duration : m.durations[0],
+      ratio: m.ratios.includes(params.ratio) ? params.ratio : m.ratios.includes("16:9") ? "16:9" : m.ratios[0],
+      // Image engines: 2K costs the same as 1K — default to the pixels.
+      resolution: m.resolutions.includes(params.resolution)
+        ? params.resolution
+        : m.kind === "image" ? "2K" : m.resolutions[0],
+      duration: m.durations.includes(params.duration) ? params.duration : m.durations[0] ?? params.duration,
       generateAudio: m.supportsAudio ? params.generateAudio : false,
     });
+    // Stills have no first/last-frame mode — every image is a plain reference.
+    if (m.kind === "image") {
+      setRefs((prev) => prev.map((r) =>
+        r.kind === "image" && r.role !== "reference_image" ? { ...r, role: "reference_image" } : r
+      ));
+    }
   }
 
   const query =
@@ -101,17 +113,23 @@ export default function Workspace() {
   }, [prompt]);
 
   const modelDef = getModel(params.modelId);
+  const isImage = modelDef.kind === "image";
   const refProblem = referenceProblem(refs, modelDef, prompt);
   const hasVideoInput = refs.some((r) => r.kind === "video");
   const inputSeconds = refs
     .filter((r) => r.kind === "video")
     .reduce((a, r) => a + (r.durationS ?? 0), 0);
-  const est = estimateCostUsd(
-    params.modelId, params.resolution, params.ratio, params.duration,
-    inputSeconds, hasVideoInput
-  );
-  const estTokens = estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
-  const dims = dimensionsFor(params.resolution, params.ratio);
+  const imageRefCount = refs.filter((r) => r.kind === "image").length;
+  const est = isImage
+    ? estimateImageCostUsd(params.resolution, imageRefCount)
+    : estimateCostUsd(
+        params.modelId, params.resolution, params.ratio, params.duration,
+        inputSeconds, hasVideoInput
+      );
+  const estTokens = isImage
+    ? null
+    : estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
+  const dims = isImage ? null : dimensionsFor(params.resolution, params.ratio);
 
   const referenceImages = refs.filter((r) => r.kind === "image" && r.role === "reference_image");
   const referenceVideos = refs.filter((r) => r.kind === "video");
@@ -248,17 +266,23 @@ export default function Workspace() {
                   onClick={() => setMenu(menu === "refine" ? null : "refine")}
                   className="font-mono text-[9.5px] tracking-wide text-mute transition-colors hover:text-dim"
                 >
-                  ✦ AUTO-REFINE
+                  {isImage ? "✦ THINKS FIRST" : "✦ AUTO-REFINE"}
                 </button>
                 {menu === "refine" && (
                   <>
                     <button aria-label="Close" onClick={() => setMenu(null)}
                       className="fixed inset-0 z-50 cursor-default" />
                     <span className="menu-pop block w-[250px] !left-auto !right-0 px-2.5 py-2 font-sans text-[11.5px] normal-case leading-relaxed tracking-normal text-dim">
-                      Every prompt is auto-refined with ByteDance&apos;s Seedance recipe
-                      before rendering. Start with{" "}
-                      <span className="font-mono text-lift">raw:</span> to send your
-                      exact words instead.
+                      {isImage ? (
+                        <>Nano Banana Pro reasons about your prompt itself before
+                        drawing — your words go to Google exactly as typed. Every
+                        still carries Google&apos;s invisible SynthID watermark.</>
+                      ) : (
+                        <>Every prompt is auto-refined with ByteDance&apos;s Seedance recipe
+                        before rendering. Start with{" "}
+                        <span className="font-mono text-lift">raw:</span> to send your
+                        exact words instead.</>
+                      )}
                     </span>
                   </>
                 )}
@@ -319,6 +343,7 @@ export default function Workspace() {
               ))}
             </ChipMenu>
 
+            {!isImage && (
             <ChipMenu
               open={menu === "dur"} setOpen={(v) => setMenu(v ? "dur" : null)}
               label={`${params.duration}s`}
@@ -333,6 +358,7 @@ export default function Workspace() {
                 );
               })}
             </ChipMenu>
+            )}
 
             <ChipMenu
               open={menu === "ratio"} setOpen={(v) => setMenu(v ? "ratio" : null)}
@@ -350,17 +376,24 @@ export default function Workspace() {
               open={menu === "res"} setOpen={(v) => setMenu(v ? "res" : null)}
               label={params.resolution.toUpperCase()} width={150}
             >
-              {modelDef.resolutions.map((r) => (
-                <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }}
-                  className={`menu-item ${params.resolution === r ? "text-lift" : ""}`}>
-                  {r.toUpperCase()}
-                </button>
-              ))}
-              <p className="px-2.5 pb-1.5 pt-1 font-mono text-[9.5px] text-mute">
-                {dims ? `${dims.w} × ${dims.h} · 24 fps` : "frame set at render"}
-              </p>
+              {modelDef.resolutions.map((r) => {
+                const c = isImage ? estimateImageCostUsd(r, imageRefCount) : null;
+                return (
+                  <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }}
+                    className="menu-item">
+                    <span className={`flex-1 ${params.resolution === r ? "text-lift" : ""}`}>{r.toUpperCase()}</span>
+                    {c && <span className="font-mono text-[10.5px] text-mute">≈ {usd(c.net, 2)}</span>}
+                  </button>
+                );
+              })}
+              {!isImage && (
+                <p className="px-2.5 pb-1.5 pt-1 font-mono text-[9.5px] text-mute">
+                  {dims ? `${dims.w} × ${dims.h} · 24 fps` : "frame set at render"}
+                </p>
+              )}
             </ChipMenu>
 
+            {!isImage && (
             <button
               onClick={() => modelDef.supportsAudio && patch({ generateAudio: !params.generateAudio })}
               disabled={!modelDef.supportsAudio}
@@ -370,7 +403,9 @@ export default function Workspace() {
               <span className={`h-[7px] w-[7px] rounded-full ${params.generateAudio ? "bg-lift" : "bg-mute/60"}`} />
               {!modelDef.supportsAudio ? "Audio · 2.5 only" : params.generateAudio ? "Audio on" : "Audio off"}
             </button>
+            )}
 
+            {!isImage && (
             <ChipMenu
               open={menu === "more"} setOpen={(v) => setMenu(v ? "more" : null)}
               label="⋯" width={230} plain
@@ -395,11 +430,14 @@ export default function Workspace() {
                 </label>
               </div>
             </ChipMenu>
+            )}
 
             <span className="ml-auto flex items-center gap-3">
               <span className="hidden font-mono text-[9.5px] text-mute sm:block"
                 title={hasVideoInput ? `includes ${inputSeconds.toFixed(1)}s reference video · with-video rate` : undefined}>
-                {estTokens != null ? `≈ ${compactTokens(estTokens)} tok${hasVideoInput ? " ᵛ" : ""}` : "cost lands after render"}
+                {isImage
+                  ? `flat per still${imageRefCount ? ` · ${imageRefCount} ref${imageRefCount === 1 ? "" : "s"}` : ""}`
+                  : estTokens != null ? `≈ ${compactTokens(estTokens)} tok${hasVideoInput ? " ᵛ" : ""}` : "cost lands after render"}
               </span>
               <button
                 type="button" onClick={render} disabled={busy || !prompt.trim() || Boolean(refProblem)}
@@ -501,7 +539,7 @@ function ClipPrompt({ clip, onUse }: { clip: Gen; onUse: () => void }) {
         {clip.prompt}
       </p>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-hair px-3.5 py-1.5 font-mono text-[9.5px] text-mute">
-        <span className="text-dim">{clip.model.includes("2-5") ? "SD 2.5" : "SD 2.0"}</span>
+        <span className="text-dim">{shortLabel(clip.model)}</span>
         {p.resolution && <span>{String(p.resolution).toUpperCase()}</span>}
         {p.ratio && <span>{p.ratio}</span>}
         {p.duration != null && <span>{p.duration}s</span>}
@@ -536,6 +574,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
   const url = clip.storedUrl ?? clip.sourceUrl;
   const p = clip.params as { resolution?: string; ratio?: string; duration?: number };
   const done = clip.status === "succeeded" && url;
+  const still = clip.kind === "image";
 
   async function remove() {
     if (!(await appConfirm(`Delete clip ${clipId(clip!.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
@@ -549,8 +588,14 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
       {/* Fixed 16:9 slate; non-16:9 clips letterbox inside it like any NLE viewer. */}
       <div className="stage16 relative overflow-hidden rounded-[14px] border border-line bg-black shadow-[var(--shadow)]">
         {done ? (
-          <video key={clip.id} src={url!} controls loop preload="metadata" playsInline
-            className="absolute inset-0 h-full w-full object-contain" />
+          still ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img key={clip.id} src={url!} alt={clip.prompt.slice(0, 120)}
+              className="absolute inset-0 h-full w-full object-contain" />
+          ) : (
+            <video key={clip.id} src={url!} controls loop preload="metadata" playsInline
+              className="absolute inset-0 h-full w-full object-contain" />
+          )
         ) : (
           <div className={`desk-grid absolute inset-0 grid place-items-center bg-thumb px-6 ${s.live ? "render-sweep" : ""}`}>
             {clip.error ? (
@@ -579,7 +624,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
               <span className={`ml-2 font-mono text-[9px] tracking-[.14em] ${done ? "text-white/70" : s.cls}`}>{s.label}</span>
             </span>
             <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[9.5px] text-white/75">
-              <span>{clip.model.includes("2-5") ? "SD 2.5" : "SD 2.0"}</span>
+              <span>{shortLabel(clip.model)}</span>
               {p.resolution && <span>{String(p.resolution).toUpperCase()}</span>}
               {p.ratio && <span>{p.ratio}</span>}
               {p.duration != null && <span>{p.duration}s</span>}
@@ -592,7 +637,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {url && (
-              <a href={url} download={`${clipId(clip.id)}.mp4`} title="Download"
+              <a href={url} download={`${clipId(clip.id)}.${still ? "png" : "mp4"}`} title="Download"
                 className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white max-[860px]:h-[34px] max-[860px]:w-[34px]">
                 <IconDown />
               </a>
@@ -612,7 +657,8 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
   const s = STATUS[gen.status] ?? STATUS.queued;
   const url = gen.storedUrl ?? gen.sourceUrl;
   const done = gen.status === "succeeded" && url;
-  const p = gen.params as { duration?: number };
+  const still = gen.kind === "image";
+  const p = gen.params as { duration?: number; resolution?: string };
 
   return (
     <button
@@ -626,16 +672,21 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
       }`}
     >
       {done ? (
-        <video src={posterSrc(url!)} muted preload="metadata" playsInline className="h-full w-full object-cover" />
+        still ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={url!} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <video src={posterSrc(url!)} muted preload="metadata" playsInline className="h-full w-full object-cover" />
+        )
       ) : (
         <span className={`desk-grid grid h-full place-items-center ${s.live ? "render-sweep" : ""}`}>
           <span className={`font-mono text-[8.5px] tracking-[.16em] ${s.cls}`}>{s.label}</span>
         </span>
       )}
 
-      {p.duration != null && (
+      {(still ? p.resolution : p.duration != null) && (
         <span className="absolute right-1.5 top-1.5 rounded-[4px] bg-black/55 px-1 py-px font-mono text-[8.5px] text-white">
-          {p.duration}s
+          {still ? String(p.resolution).toUpperCase() : `${p.duration}s`}
         </span>
       )}
       <span className="absolute inset-x-0 bottom-0 flex items-baseline gap-1.5 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-3.5 font-mono text-[8.5px] text-white/90">

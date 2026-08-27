@@ -133,6 +133,7 @@ export async function ready(): Promise<void> {
       for (const col of [
         `refine_model TEXT`, `refine_in_tokens INTEGER`,
         `refine_out_tokens INTEGER`, `refine_cost_usd REAL`,
+        `kind TEXT NOT NULL DEFAULT 'video'`,
       ]) {
         try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
         catch { /* column already exists */ }

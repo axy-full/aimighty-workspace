@@ -46,6 +46,8 @@ export type ModelDef = {
   label: string;
   short: string;
   family: string;
+  /** What the engine produces. Image engines skip duration/audio/refine. */
+  kind: "video" | "image";
   paramStyle: ParamStyle;
   tiers: RateTier[];
   resolutions: string[];
@@ -67,6 +69,7 @@ export const MODELS: ModelDef[] = [
     label: "Seedance 2.5",
     short: "SD 2.5",
     family: "seedance-2",
+    kind: "video",
     paramStyle: "fields",
     tiers: [
       { resolutions: ["480p", "720p"], withoutVideo: 10.7, withVideo: 6.4 },
@@ -87,6 +90,7 @@ export const MODELS: ModelDef[] = [
     label: "Seedance 2.0",
     short: "SD 2.0",
     family: "seedance-2",
+    kind: "video",
     paramStyle: "fields",
     tiers: [
       { resolutions: ["480p", "720p"], withoutVideo: 7.0, withVideo: 4.3 },
@@ -103,6 +107,29 @@ export const MODELS: ModelDef[] = [
     maxVideoSecondsTotal: 15,
     note: "Cheaper per token. 4K tier is listed but untested — verify before relying on it.",
   },
+  {
+    // Google's Nano Banana Pro — stills, via the Gemini API (separate key).
+    // Pricing read off ai.google.dev/gemini-api/docs/pricing on 2026-08-27:
+    // image out $120/M tokens (1K & 2K = 1120 tok = $0.134, 4K = 2000 tok =
+    // $0.24), each reference image in = 560 tok = $0.0011. SynthID watermark
+    // is always embedded; the model "thinks" before drawing (built in).
+    id: "gemini-3-pro-image",
+    label: "Nano Banana Pro",
+    short: "NB PRO",
+    family: "nano-banana",
+    kind: "image",
+    paramStyle: "fields",
+    tiers: [],
+    resolutions: ["1K", "2K", "4K"],
+    ratios: ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 14,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "Google's premium still-image model — stills up to 4K, legible text, up to 14 refs.",
+  },
 ];
 
 export const DEFAULT_MODEL_ID = MODELS[0].id;
@@ -111,6 +138,12 @@ export function getModel(id: string): ModelDef {
   const m = MODELS.find((x) => x.id === id);
   if (!m) throw new Error(`Unknown model: ${id}`);
   return m;
+}
+
+/** Short badge label for any model id — safe on retired/unknown ids. */
+export function shortLabel(modelId: string): string {
+  return MODELS.find((m) => m.id === modelId)?.short
+    ?? (modelId.includes("2-5") ? "SD 2.5" : modelId.includes("2-0") ? "SD 2.0" : modelId);
 }
 
 /** Undiscounted published rate, USD per million tokens. */
@@ -186,4 +219,29 @@ export function estimateCostUsd(
     list: costUsd(tokens, list),
     net: costUsd(tokens, list * (1 - ACCOUNT_DISCOUNT)),
   };
+}
+
+/* ---------------------------------------------------------------------------
+ * Image engines (Gemini / Nano Banana Pro) bill flat per image, not by
+ * frame-tokens. Google's ledger figures, not ours:
+ *   output 1K/2K = 1120 tokens ($0.134) · 4K = 2000 tokens ($0.24)
+ *   each reference image in = 560 tokens ($0.0011)
+ * ------------------------------------------------------------------------- */
+
+export const IMAGE_OUT_USD: Record<string, number> = { "1K": 0.134, "2K": 0.134, "4K": 0.24 };
+export const IMAGE_OUT_TOKENS: Record<string, number> = { "1K": 1120, "2K": 1120, "4K": 2000 };
+export const IMAGE_REF_IN_USD = 0.0011;
+export const IMAGE_REF_IN_TOKENS = 560;
+
+export function estimateImageCostUsd(size: string, refImages = 0): { list: number; net: number } | null {
+  const out = IMAGE_OUT_USD[size.toUpperCase()];
+  if (out == null) return null;
+  const total = out + refImages * IMAGE_REF_IN_USD;
+  return { list: total, net: total };
+}
+
+export function imageTokens(size: string, refImages = 0): number | null {
+  const out = IMAGE_OUT_TOKENS[size.toUpperCase()];
+  if (out == null) return null;
+  return out + refImages * IMAGE_REF_IN_TOKENS;
 }
