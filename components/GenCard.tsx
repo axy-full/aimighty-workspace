@@ -12,6 +12,8 @@ export type Gen = {
   projectId: string | null;
   projectName: string | null;
   kind?: "video" | "image";
+  reviewState?: "" | "approved" | "changes";
+  reviewBy?: string | null;
   model: string;
   prompt: string;
   params: Record<string, unknown>;
@@ -88,6 +90,16 @@ export default function GenCard({
           </div>
         )}
 
+        {gen.reviewState === "approved" && (
+          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-ok px-2 py-0.5 text-[10.5px] font-semibold text-white">
+            ✓ Approved
+          </span>
+        )}
+        {gen.reviewState === "changes" && (
+          <span className="absolute left-2 top-2 rounded-full bg-warn px-2 py-0.5 text-[10.5px] font-semibold text-white">
+            Changes
+          </span>
+        )}
         {done && (
           <span className="absolute right-2 top-2 rounded-full bg-black/45 px-2 py-0.5 text-[10.5px] font-medium text-white backdrop-blur-sm">
             {still ? String(p.resolution ?? "").toUpperCase() : `${p.duration ?? "—"}s`}

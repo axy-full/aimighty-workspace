@@ -9,6 +9,8 @@ export type Generation = {
   projectName: string | null;
   arkTaskId: string | null;
   kind: "video" | "image";
+  reviewState: "" | "approved" | "changes";
+  reviewBy: string | null;
   model: string;
   prompt: string;
   params: Record<string, unknown>;
@@ -33,6 +35,8 @@ export function rowToGeneration(r: any): Generation {
     projectName: r.project_name ?? null,
     arkTaskId: r.ark_task_id ?? null,
     kind: r.kind === "image" ? "image" : "video",
+    reviewState: r.review_state === "approved" ? "approved" : r.review_state === "changes" ? "changes" : "",
+    reviewBy: r.review_by ?? null,
     model: r.model,
     prompt: r.prompt,
     params: JSON.parse(r.params || "{}"),

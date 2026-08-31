@@ -30,6 +30,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
       args: [body.projectId || null, Date.now(), id],
     });
   }
+  // Signing off on a shot, or asking for changes. The name is recorded so a
+  // review is answerable to someone rather than appearing from nowhere.
+  if (body.reviewState !== undefined) {
+    const state = ["approved", "changes", ""].includes(String(body.reviewState))
+      ? String(body.reviewState) : "";
+    await db().execute({
+      sql: `UPDATE generations SET review_state=?, review_by=?, reviewed_at=?, updated_at=? WHERE id=?`,
+      args: [state, state ? got.user.name : null, state ? Date.now() : null, Date.now(), id],
+    });
+  }
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
 }

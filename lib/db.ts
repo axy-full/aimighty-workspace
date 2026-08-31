@@ -108,6 +108,29 @@ const SCHEMA = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_push_user ON push_subs(user_id)`,
+  /* The cast: characters, locations and looks that recur across shots.
+     Naming one once and citing it as @Name is what keeps a face or a street
+     the same from scene to scene. */
+  `CREATE TABLE IF NOT EXISTS cast_members (
+     id          TEXT PRIMARY KEY,
+     project_id  TEXT REFERENCES projects(id) ON DELETE CASCADE,
+     name        TEXT NOT NULL,
+     kind        TEXT NOT NULL DEFAULT 'character',
+     description TEXT NOT NULL DEFAULT '',
+     upload_id   TEXT,
+     created_by  TEXT NOT NULL DEFAULT '',
+     created_at  INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_cast_project ON cast_members(project_id)`,
+  /* Notes on a specific shot, as opposed to the workspace-wide chat. */
+  `CREATE TABLE IF NOT EXISTS notes (
+     id         TEXT PRIMARY KEY,
+     gen_id     TEXT NOT NULL,
+     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     text       TEXT NOT NULL,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_notes_gen ON notes(gen_id, created_at)`,
   `CREATE TABLE IF NOT EXISTS api_tokens (
      id          TEXT PRIMARY KEY,
      token_hash  TEXT NOT NULL UNIQUE,
@@ -148,6 +171,10 @@ export async function ready(): Promise<void> {
         `kind TEXT NOT NULL DEFAULT 'video'`,
         // Which API token made this render, when it wasn't a person in a browser.
         `token_id TEXT`,
+        // Review state: '' (unreviewed) | 'approved' | 'changes'
+        `review_state TEXT NOT NULL DEFAULT ''`,
+        `review_by TEXT`,
+        `reviewed_at INTEGER`,
       ]) {
         try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
         catch { /* column already exists */ }

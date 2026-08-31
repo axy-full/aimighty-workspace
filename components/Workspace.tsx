@@ -8,6 +8,8 @@ import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo, downloadHref } from "@/lib/format";
 import LazyMedia from "./LazyMedia";
+import Cast from "./Cast";
+import Review from "./Review";
 import {
   MODELS, DEFAULT_MODEL_ID, getModel, shortLabel, dimensionsFor,
   estimateCostUsd, estimateTokens, estimateImageCostUsd,
@@ -224,10 +226,13 @@ export default function Workspace() {
           {clip && (
             <ClipDetail
               clip={clip}
+              onChanged={afterChange}
               onUse={async () => {
                 if (prompt.trim() &&
                     !(await appConfirm("Replace the composer?", "This clip's prompt will replace what you've typed.", { confirmLabel: "Replace" }))) return;
-                setPrompt(clip.prompt);
+                // Hand back what was typed — cast names, not the @ImageN they became.
+                const typed = (clip.params as { rawPrompt?: string }).rawPrompt;
+                setPrompt(typed || clip.prompt);
                 promptEl.current?.focus();
               }}
             />
@@ -481,6 +486,10 @@ export default function Workspace() {
         </div>
 
         <div className="mt-4">
+          <Cast projectId={bin} onCite={cite} />
+        </div>
+
+        <div className="mt-4">
           <References refs={refs} setRefs={setRefs} onCite={cite} model={modelDef} pickerRef={picker} />
         </div>
 
@@ -540,15 +549,20 @@ function MenuRow({ label, value, hint, open, setOpen, children }: {
 }
 
 /** What the selected clip is, what it cost, and what to do with it. */
-function ClipDetail({ clip, onUse }: { clip: Gen; onUse: () => void }) {
+function ClipDetail({ clip, onUse, onChanged }: {
+  clip: Gen; onUse: () => void; onChanged: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   const p = clip.params as {
     resolution?: string; ratio?: string; duration?: number; seed?: number | string | null;
+    rawPrompt?: string; cast?: string[];
   };
+  // What a person wrote, when it differs from what was sent to the engine.
+  const shown = p.rawPrompt || clip.prompt;
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(clip.prompt);
+      await navigator.clipboard.writeText(shown);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch { /* clipboard blocked — nothing sensible to do */ }
@@ -557,8 +571,17 @@ function ClipDetail({ clip, onUse }: { clip: Gen; onUse: () => void }) {
   return (
     <div className="card shrink-0 px-4 py-3">
       <p className="max-h-[84px] select-text overflow-y-auto whitespace-pre-wrap text-[14px] leading-relaxed text-bone/90">
-        {clip.prompt}
+        {shown}
       </p>
+      {p.cast && p.cast.length > 0 && (
+        <p className="mt-1.5 flex flex-wrap gap-1.5">
+          {p.cast.map((n) => (
+            <span key={n} className="rounded-full bg-blue/10 px-2 py-0.5 text-[12px] font-medium text-blue">
+              @{n}
+            </span>
+          ))}
+        </p>
+      )}
       <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-mute">
         <span className="font-medium text-dim">{shortLabel(clip.model)}</span>
         {p.resolution && <span>{String(p.resolution).toUpperCase()}</span>}
@@ -581,6 +604,13 @@ function ClipDetail({ clip, onUse }: { clip: Gen; onUse: () => void }) {
           </button>
         </span>
       </div>
+
+      <Review
+        genId={clip.id}
+        state={clip.reviewState ?? ""}
+        reviewBy={clip.reviewBy ?? null}
+        onChanged={onChanged}
+      />
     </div>
   );
 }
@@ -687,6 +717,14 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
         </span>
       )}
 
+      {gen.reviewState === "approved" && (
+        <span className="absolute left-1.5 top-1.5 grid h-4 w-4 place-items-center rounded-full bg-ok text-[10px] font-bold text-white"
+          title="Approved">✓</span>
+      )}
+      {gen.reviewState === "changes" && (
+        <span className="absolute left-1.5 top-1.5 h-4 w-4 rounded-full bg-warn"
+          title="Changes wanted" />
+      )}
       {(still ? p.resolution : p.duration != null) && done && (
         <span className="absolute right-1.5 top-1.5 rounded-full bg-black/45 px-1.5 py-px text-[10px] font-medium text-white backdrop-blur-sm">
           {still ? String(p.resolution).toUpperCase() : `${p.duration}s`}

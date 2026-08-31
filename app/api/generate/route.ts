@@ -4,6 +4,7 @@ import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/
 import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
 import { enhancePrompt, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from "@/lib/enhance";
 import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
+import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
@@ -102,6 +103,7 @@ export async function POST(req: Request) {
         .filter((r: { uploadId: string }) => r.uploadId)
     : [];
 
+  const projectIdForCast = body.projectId ? String(body.projectId) : null;
   let references: Reference[] = [];
   let inputSeconds = 0;
   if (wanted.length) {
@@ -169,6 +171,44 @@ export async function POST(req: Request) {
     });
   }
 
+  /* ── The cast ────────────────────────────────────────────────────────
+   * @Maya means something specific in this workspace. Resolve those names
+   * into the @ImageN citations the engines understand, attaching each one's
+   * still after whatever references the request already carried, so a face
+   * or a street stays the same shot after shot without being re-described.
+   * ------------------------------------------------------------------ */
+  let castPrompt = prompt;
+  let castUsed: string[] = [];
+  if (/@[A-Za-z]/.test(prompt)) {
+    const roster = await listCast(projectIdForCast);
+    const startIndex = references.filter(
+      (r) => r.kind === "image" && r.role === "reference_image"
+    ).length;
+    const expanded = expandCast(prompt, roster, startIndex);
+
+    if (expanded.attach.length) {
+      const rs = await db().execute({
+        sql: `SELECT id, mime, ext, stored_url, kind FROM uploads WHERE id IN (${expanded.attach.map(() => "?").join(",")})`,
+        args: expanded.attach,
+      });
+      const byId = new Map(rs.rows.map((r) => {
+        const row = r as unknown as { id: string; mime: string; ext: string; stored_url: string; kind: string };
+        return [row.id, row];
+      }));
+      // Keep the order expandCast assigned — it decided the @ImageN numbers.
+      for (const uploadId of expanded.attach) {
+        const row = byId.get(uploadId);
+        if (!row) continue;
+        references.push({
+          id: row.id, mime: row.mime, ext: row.ext, storedUrl: row.stored_url,
+          role: "reference_image", kind: "image",
+        });
+      }
+    }
+    castPrompt = expanded.prompt;
+    castUsed = expanded.used.map((m) => m.name);
+  }
+
   /* ── Auto-refine ─────────────────────────────────────────────────────
    * Every prompt passes through ByteDance's own optimization recipe before
    * it reaches Seedance — the layer aggregators charge for, on by default.
@@ -180,14 +220,14 @@ export async function POST(req: Request) {
    * The stored prompt is what actually generated the video; the original
    * idea is kept alongside it in params.rawPrompt.
    * ------------------------------------------------------------------ */
-  let finalPrompt = prompt;
-  let rawPrompt: string | undefined;
+  let finalPrompt = castPrompt;
+  let rawPrompt: string | undefined = castPrompt !== prompt ? prompt : undefined;
   let refineModel: string | null = null;
   let refineIn = 0, refineOut = 0;
   let refineCost: number | null = null;
-  if (/^raw:/i.test(prompt)) {
-    finalPrompt = prompt.replace(/^raw:\s*/i, "");
-  } else if (!prompt.includes("【")) {
+  if (/^raw:/i.test(castPrompt)) {
+    finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
+  } else if (!castPrompt.includes("【")) {
     const citations = [
       ...references.filter((r) => r.kind === "image" && r.role === "reference_image")
         .map((_, i) => `@Image${i + 1} (image)`),
@@ -196,9 +236,9 @@ export async function POST(req: Request) {
       ...references.filter((r) => r.kind === "video").map((_, i) => `@Video${i + 1} (video)`),
     ];
     try {
-      const r = await enhancePrompt({ prompt, citations });
+      const r = await enhancePrompt({ prompt: castPrompt, citations });
       finalPrompt = r.text;
-      rawPrompt = prompt;
+      rawPrompt = prompt;   // the words a person actually typed
       refineModel = r.model;
       refineIn = r.inTokens;
       refineOut = r.outTokens;
@@ -235,6 +275,7 @@ export async function POST(req: Request) {
     hasVideoInput,
     inputSeconds: hasVideoInput ? inputSeconds : undefined,
     rawPrompt,
+    cast: castUsed.length ? castUsed : undefined,
   };
 
   // Row first, so a failed submit is still visible rather than silently lost.
