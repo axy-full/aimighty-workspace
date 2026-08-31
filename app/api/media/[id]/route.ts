@@ -1,4 +1,7 @@
-import { readVideoBytes, readImageBytes } from "@/lib/storage";
+import {
+  readVideoBytes, readImageBytes, openMediaStream,
+  presignedReadUrl, videoPath, imagePath, usingBlob,
+} from "@/lib/storage";
 import { getGeneration } from "@/lib/jobs";
 import { requireUser } from "@/lib/auth";
 
@@ -6,14 +9,24 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 type Ctx = { params: Promise<{ id: string }> };
 
+/** Short handle, matching what the UI shows on the clip. */
+const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
+
 /**
- * Serves renders from private storage — behind the login in every environment.
- * The generation row says whether the media is a video or a still.
+ * Renders live in private storage and are only ever reachable behind the
+ * login. What changes here is HOW the bytes travel.
  *
- * Honors HTTP Range requests: Safari (iOS especially) probes with
- * `Range: bytes=0-1` and refuses to play <video> from a server that answers
- * 200 without range semantics, and seeking anywhere needs 206 responses.
- * For a film team reviewing on phones, that's the primary path.
+ * Playback used to read an entire file into this function to answer each
+ * request — including the two-byte probe iOS Safari opens every video with.
+ * A grid of thumbnails could therefore pull gigabytes through compute and
+ * spike memory by the size of whatever was being watched. Now we check the
+ * caller, then hand them a short-lived signed link and get out of the way:
+ * the bytes stream from storage's own CDN, which serves Range properly
+ * (verified in production: `206 bytes 0-1/10, accept-ranges: bytes`).
+ *
+ * Downloads still come through us, because a cross-origin redirect ignores
+ * the `download` attribute and would lose the filename — but they stream
+ * rather than buffer, so nothing is ever held whole in memory.
  */
 export async function GET(req: Request, { params }: Ctx) {
   const got = await requireUser();
@@ -21,8 +34,46 @@ export async function GET(req: Request, { params }: Ctx) {
   const { id } = await params;
 
   const gen = await getGeneration(id).catch(() => null);
-  const isImage = gen?.kind === "image";
+  const kind: "video" | "image" = gen?.kind === "image" ? "image" : "video";
+  const isImage = kind === "image";
+  const contentType = isImage ? "image/png" : "video/mp4";
+  const wantsDownload = new URL(req.url).searchParams.get("download") === "1";
 
+  if (wantsDownload) {
+    try {
+      const stream = await openMediaStream(id, kind);
+      return new Response(stream, {
+        headers: {
+          "Content-Type": contentType,
+          "Content-Disposition":
+            `attachment; filename="${clipId(id)}.${isImage ? "png" : "mp4"}"`,
+          "Cache-Control": "private, no-store",
+        },
+      });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  }
+
+  if (usingBlob()) {
+    try {
+      const signed = await presignedReadUrl(isImage ? imagePath(id) : videoPath(id), 6);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: signed,
+          // The redirect must never outlive the signature it points at, so it
+          // is re-authorised on every playback rather than cached.
+          "Cache-Control": "private, no-store",
+        },
+      });
+    } catch {
+      // Fall through to serving the bytes ourselves rather than failing.
+    }
+  }
+
+  /* Local development (and the belt-and-braces path in production): serve the
+     bytes directly, Range and all. */
   let buf: Buffer;
   try {
     buf = isImage ? await readImageBytes(id) : await readVideoBytes(id);
@@ -31,7 +82,7 @@ export async function GET(req: Request, { params }: Ctx) {
   }
 
   const common = {
-    "Content-Type": isImage ? "image/png" : "video/mp4",
+    "Content-Type": contentType,
     "Accept-Ranges": "bytes",
     // private: a shared cache must never hold a signed-in user's media
     "Cache-Control": "private, max-age=31536000, immutable",

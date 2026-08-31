@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usd, compactTokens, timeAgo } from "@/lib/format";
+import { usd, compactTokens, timeAgo, downloadHref } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { appConfirm } from "./dialog";
 import LazyMedia from "./LazyMedia";
@@ -143,7 +143,7 @@ export default function GenCard({
             )}
             {url && (
               <a
-                href={url} download={`${clipId(gen.id)}.${still ? "png" : "mp4"}`} title="Download"
+                href={downloadHref(url)} download={`${clipId(gen.id)}.${still ? "png" : "mp4"}`} title="Download"
                 className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift max-[860px]:h-[28px] max-[860px]:w-[28px]"
               >
                 <IconDown />

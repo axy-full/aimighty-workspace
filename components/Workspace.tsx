@@ -5,7 +5,7 @@ import References, { referenceProblem, type RefItem, type RefPicker } from "./Re
 import { appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
-import { usd, compactTokens, timeAgo } from "@/lib/format";
+import { usd, compactTokens, timeAgo, downloadHref } from "@/lib/format";
 import LazyMedia from "./LazyMedia";
 import {
   MODELS, DEFAULT_MODEL_ID, getModel, shortLabel, dimensionsFor,
@@ -678,7 +678,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {url && (
-              <a href={url} download={`${clipId(clip.id)}.${still ? "png" : "mp4"}`} title="Download"
+              <a href={downloadHref(url)} download={`${clipId(clip.id)}.${still ? "png" : "mp4"}`} title="Download"
                 className="pointer-events-auto grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-white/20 bg-black/40 text-white/85 transition-colors hover:text-white max-[860px]:h-[34px] max-[860px]:w-[34px]">
                 <IconDown />
               </a>

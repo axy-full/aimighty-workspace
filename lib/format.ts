@@ -29,3 +29,12 @@ export function timeAgo(ts: number): string {
 export function posterSrc(url: string): string {
   return url.includes("#") ? url : `${url}#t=0.1`;
 }
+
+/**
+ * Downloads go through our own route so the file keeps its name — a
+ * cross-origin redirect would drop the `download` attribute on the floor.
+ * External or legacy URLs are handed back untouched.
+ */
+export function downloadHref(url: string): string {
+  return url.startsWith("/api/media/") ? `${url}?download=1` : url;
+}

@@ -90,6 +90,37 @@ export async function readImageBytes(genId: string): Promise<Buffer> {
   return readFile(path.join(LOCAL_DIR, `${genId}.png`));
 }
 
+/**
+ * A render's bytes as a stream, for handing straight to a Response.
+ *
+ * Downloads used to load the whole file into the function first — fine for a
+ * few megabytes, a memory cliff for a 30-second 1080p clip, and pure waste
+ * when the bytes are only passing through.
+ */
+export async function openMediaStream(
+  genId: string, kind: "video" | "image"
+): Promise<ReadableStream<Uint8Array>> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
+  const pathname = kind === "image" ? imagePath(genId) : videoPath(genId);
+  if (usingBlob()) {
+    const { get } = await import("@vercel/blob");
+    const found = await get(pathname, { access: "private" });
+    if (!found?.stream) throw new Error("blob not found");
+    return found.stream as ReadableStream<Uint8Array>;
+  }
+  const { createReadStream } = await import("node:fs");
+  const local = path.join(LOCAL_DIR, `${genId}.${kind === "image" ? "png" : "mp4"}`);
+  const node = createReadStream(local);
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      node.on("data", (c) => controller.enqueue(new Uint8Array(c as Buffer)));
+      node.on("end", () => controller.close());
+      node.on("error", (e) => controller.error(e));
+    },
+    cancel() { node.destroy(); },
+  });
+}
+
 /* ── Reference image uploads ──────────────────────────────────────────────
  * Bytes are written EXACTLY as received. Nothing here decodes, resizes,
  * strips metadata or re-encodes. `storeUpload` returns the sha256 of what it
