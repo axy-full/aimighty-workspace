@@ -108,6 +108,18 @@ const SCHEMA = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_push_user ON push_subs(user_id)`,
+  `CREATE TABLE IF NOT EXISTS api_tokens (
+     id          TEXT PRIMARY KEY,
+     token_hash  TEXT NOT NULL UNIQUE,
+     name        TEXT NOT NULL,
+     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     scope       TEXT NOT NULL DEFAULT 'render',
+     cap_usd     REAL,
+     last_used   INTEGER,
+     created_at  INTEGER NOT NULL,
+     revoked_at  INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_tokens_user ON api_tokens(user_id)`,
   `CREATE TABLE IF NOT EXISTS topups (
      id         TEXT PRIMARY KEY,
      amount_usd REAL NOT NULL,
@@ -134,6 +146,8 @@ export async function ready(): Promise<void> {
         `refine_model TEXT`, `refine_in_tokens INTEGER`,
         `refine_out_tokens INTEGER`, `refine_cost_usd REAL`,
         `kind TEXT NOT NULL DEFAULT 'video'`,
+        // Which API token made this render, when it wasn't a person in a browser.
+        `token_id TEXT`,
       ]) {
         try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
         catch { /* column already exists */ }

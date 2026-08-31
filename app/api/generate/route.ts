@@ -3,7 +3,7 @@ import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
 import { enhancePrompt, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from "@/lib/enhance";
-import { requireUser } from "@/lib/auth";
+import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
@@ -52,9 +52,23 @@ function validateReferences(
 }
 
 export async function POST(req: Request) {
-  const got = await requireUser();
+  // Spending money needs a session or a render-scoped token, never a
+  // read-only one.
+  const got = await requireRender();
   if (got.response) return got.response;
   await ready();
+
+  // A token may carry a monthly ceiling. Checked before submit, so an agent
+  // in a loop stops at the wall instead of discovering it on the invoice.
+  if (got.token?.capUsd != null) {
+    const spent = await tokenSpendThisMonth(got.token.id);
+    if (spent >= got.token.capUsd) {
+      return NextResponse.json({
+        error: `The token "${got.token.name}" has reached its ${got.token.capUsd.toFixed(2)} USD monthly ceiling ` +
+               `(${spent.toFixed(2)} spent). Raise or remove the cap in Settings.`,
+      }, { status: 429 });
+    }
+  }
   const body = await req.json().catch(() => ({}));
 
   const prompt = String(body.prompt ?? "").trim();
@@ -227,11 +241,12 @@ export async function POST(req: Request) {
   await db().execute({
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
-           refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(storedParams), "queued",
            got.user.id, ts, ts,
-           refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost],
+           refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost,
+           got.token?.id ?? null],
   });
 
   invalidate(PROJECTS_KEY);

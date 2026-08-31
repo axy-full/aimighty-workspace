@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { db, ready, now, id } from "./db";
 
 /**
@@ -115,14 +115,110 @@ export async function currentUser(): Promise<User | null> {
 }
 
 /** For API routes: the user, or a 401 to return. */
-export async function requireUser(): Promise<
-  { user: User; response?: never } | { user?: never; response: Response }
-> {
+/* ── API tokens ───────────────────────────────────────────────────────────
+ * A second way in, for things that aren't a browser: the CLI, and the MCP
+ * server that lets Claude drive the workspace. Same rules as sessions — only
+ * a SHA-256 is stored, revocation is a row update, and a disabled account
+ * takes its tokens with it.
+ *
+ * A token always acts AS the person who made it, so attribution, the ledger
+ * and "spend by member" stay honest no matter what did the asking.
+ * ---------------------------------------------------------------------- */
+
+export type TokenScope = "read" | "render";
+
+export type Caller = {
+  user: User;
+  /** Set when the caller authenticated with a token rather than a session. */
+  token?: { id: string; name: string; scope: TokenScope; capUsd: number | null };
+};
+
+export function mintTokenSecret(): string {
+  // Prefixed so a leaked string is recognisable in logs and greppable in a repo.
+  return `aw_${randomBytes(24).toString("hex")}`;
+}
+
+export const tokenHash = (t: string) => hashToken(t);
+
+async function callerFromBearer(): Promise<Caller | null> {
+  const header = (await headers()).get("authorization");
+  const raw = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
+  if (!raw) return null;
+
+  const rs = await db().execute({
+    sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.last_used, u.*
+          FROM api_tokens t JOIN users u ON u.id = t.user_id
+          WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled = 0
+          LIMIT 1`,
+    args: [hashToken(raw)],
+  });
+  const row = rs.rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+
+  // Cheap "when was this last used", written only when meaningfully stale.
+  const last = Number(row.last_used ?? 0);
+  if (now() - last > 300_000) {
+    await db().execute({ sql: `UPDATE api_tokens SET last_used=? WHERE id=?`, args: [now(), String(row.tid)] });
+  }
+
+  return {
+    user: rowToUser(row),
+    token: {
+      id: String(row.tid),
+      name: String(row.tname),
+      scope: row.scope === "read" ? "read" : "render",
+      capUsd: row.cap_usd == null ? null : Number(row.cap_usd),
+    },
+  };
+}
+
+/** Who is asking — a signed-in browser, or a token. */
+export async function currentCaller(): Promise<Caller | null> {
   const user = await currentUser();
-  if (!user) {
+  if (user) return { user };
+  return callerFromBearer();
+}
+
+export async function requireUser(): Promise<
+  { user: User; token?: Caller["token"]; response?: never } | { user?: never; token?: never; response: Response }
+> {
+  const caller = await currentCaller();
+  if (!caller) {
     return { response: Response.json({ error: "Not signed in" }, { status: 401 }) };
   }
-  return { user };
+  return { user: caller.user, token: caller.token };
+}
+
+/**
+ * For anything that spends money. A read-only token is refused here rather
+ * than at the model, so a leaked read token can never bill the account.
+ */
+export async function requireRender(): Promise<
+  { user: User; token?: Caller["token"]; response?: never } | { user?: never; token?: never; response: Response }
+> {
+  const got = await requireUser();
+  if (got.response) return got;
+  if (got.token && got.token.scope !== "render") {
+    return {
+      response: Response.json(
+        { error: `The token "${got.token.name}" is read-only — it can list and fetch renders, but not start one.` },
+        { status: 403 }
+      ),
+    };
+  }
+  return got;
+}
+
+/** Month-to-date spend charged to one token, for its optional ceiling. */
+export async function tokenSpendThisMonth(tokenId: string): Promise<number> {
+  const start = new Date();
+  start.setDate(1); start.setHours(0, 0, 0, 0);
+  const rs = await db().execute({
+    sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
+          FROM generations WHERE token_id = ? AND created_at >= ?`,
+    args: [tokenId, start.getTime()],
+  });
+  return Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
 }
 
 export async function requireAdmin(): Promise<
