@@ -3,6 +3,7 @@ import { getGeneration, syncGeneration } from "@/lib/jobs";
 import { db, ready } from "@/lib/db";
 import { deleteVideo } from "@/lib/storage";
 import { requireUser } from "@/lib/auth";
+import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -29,6 +30,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       args: [body.projectId || null, Date.now(), id],
     });
   }
+  invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
 }
 
@@ -48,5 +50,6 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     sql: `UPDATE generations SET deleted=1, stored_url=NULL, source_url=NULL, updated_at=? WHERE id=?`,
     args: [Date.now(), id],
   });
+  invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
 }

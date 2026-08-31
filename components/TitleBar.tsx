@@ -16,6 +16,7 @@ const TITLE: Record<string, string> = {
 };
 
 type U = { name: string; email: string; role: string };
+/** The cheap summary — two indexed queries, not the eight-aggregate ledger. */
 type Usage = { pending: number; spentUsd: number; remainingUsd: number };
 
 /** The design's 54px top bar: where you are, which project you're in,
@@ -24,7 +25,7 @@ export default function TitleBar({ user }: { user: U }) {
   const path = usePathname();
   const [projOpen, setProjOpen] = useState(false);
   const { selection, setSelection, projects, current, refreshProjects } = useProject();
-  const { data: usage } = useApi<Usage>("/api/usage", 20000);
+  const { data: usage } = useApi<Usage>("/api/usage/summary", 20000);
 
   const projLabel =
     selection === "all" ? "All projects" : selection === "unfiled" ? "Unfiled" : current?.name ?? "All projects";

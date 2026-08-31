@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
+import { presignedReadUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -12,7 +13,8 @@ export const maxDuration = 30;
  * a hand-pasted token turned out to be the likeliest cause of upload
  * failures: presence of a credential proves nothing about its validity.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  const deep = new URL(req.url).searchParams.get("deep") === "1";
   let database = "unreachable";
   let videosSaved = 0;
   let videosAtRisk = 0; // succeeded renders whose file never landed in our storage
@@ -50,11 +52,35 @@ export async function GET() {
     }
   }
 
+  /* Deep probe (?deep=1): the playback path itself. Media is served by
+     redirecting to a presigned private-blob URL, so what actually matters is
+     whether THAT url answers a Range request the way iOS Safari demands —
+     a 206 with a Content-Range. Presign, ask for two bytes, report, clean up. */
+  let presignRange: string | null = null;
+  if (deep && process.env.BLOB_READ_WRITE_TOKEN) {
+    const probePath = "health/range-probe.bin";
+    try {
+      const { put, del } = await import("@vercel/blob");
+      const probe = await put(probePath, Buffer.from("0123456789"), {
+        access: "private", contentType: "application/octet-stream",
+        addRandomSuffix: false, allowOverwrite: true,
+      });
+      const signed = await presignedReadUrl(probePath, 1);
+      const r = await fetch(signed, { headers: { Range: "bytes=0-1" }, cache: "no-store" });
+      presignRange = `${r.status} ${r.headers.get("content-range") ?? "no-content-range"} ` +
+                     `accept-ranges=${r.headers.get("accept-ranges") ?? "-"}`;
+      await del(probe.url);
+    } catch (e) {
+      presignRange = `ERROR ${(e as Error).message.slice(0, 160)}`;
+    }
+  }
+
   return NextResponse.json({
     ok: database !== "unreachable" && storage !== "blob-BROKEN",
     database,
     storage,
     ...(storageError ? { storageError } : {}),
+    ...(presignRange ? { presignRange } : {}),
     videosSaved,
     videosAtRisk,
     arkKeyConfigured: Boolean(process.env.ARK_API_KEY),

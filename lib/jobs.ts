@@ -62,6 +62,10 @@ export async function listGenerations(opts: {
   createdBy?: string | null;
   limit?: number;
   search?: string;
+  status?: string;
+  kind?: string;
+  /** Cursor: return only rows OLDER than this created_at (keyset pagination). */
+  before?: number | null;
 } = {}): Promise<Generation[]> {
   await ready();
   const where: string[] = [];
@@ -75,9 +79,23 @@ export async function listGenerations(opts: {
     where.push("g.created_by = ?");
     args.push(opts.createdBy);
   }
+  // Searching and filtering happen HERE, not in the browser: the client only
+  // ever holds a page or two, so a client-side filter would quietly search
+  // just the newest slice and swear the rest of the library doesn't exist.
   if (opts.search) {
     where.push("LOWER(g.prompt) LIKE ?");
     args.push(`%${opts.search.toLowerCase()}%`);
+  }
+  if (opts.status && opts.status !== "all") {
+    where.push("g.status = ?");
+    args.push(opts.status);
+  }
+  if (opts.kind === "image" || opts.kind === "video") {
+    where.push(opts.kind === "image" ? "g.kind = 'image'" : "g.kind != 'image'");
+  }
+  if (opts.before) {
+    where.push("g.created_at < ?");
+    args.push(opts.before);
   }
 
   where.push("g.deleted = 0");
@@ -85,7 +103,7 @@ export async function listGenerations(opts: {
     WHERE ${where.join(" AND ")}
     ORDER BY g.created_at DESC
     LIMIT ?`;
-  args.push(opts.limit ?? 200);
+  args.push(Math.min(Math.max(opts.limit ?? 60, 1), 500));
 
   const rs = await db().execute({ sql, args });
   return rs.rows.map(rowToGeneration);
@@ -184,13 +202,37 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   };
 }
 
-/** Sync every job that isn't finished yet. Called by list views. */
-export async function syncPending(limit = 12): Promise<void> {
+/**
+ * The cheap sync for READ paths.
+ *
+ * Asks one indexed question — is anything actually in flight? — and does
+ * nothing at all when the answer is no, which is almost always. Repairs and
+ * janitorial work belong to the cron below, not to every list request: the
+ * old version ran a write plus a wide scan on every poll from every open tab,
+ * so a workspace that was merely *open* paid for reconciliation forever.
+ */
+export async function syncActive(limit = 12): Promise<void> {
+  await ready();
+  const rs = await db().execute({
+    sql: `${SELECT} WHERE g.status IN ('queued','running') AND g.deleted = 0
+          ORDER BY g.created_at DESC LIMIT ?`,
+    args: [limit],
+  });
+  if (!rs.rows.length) return;
+  await Promise.allSettled(rs.rows.map((r) => syncGeneration(rowToGeneration(r))));
+}
+
+/**
+ * The thorough sync, for the 10-minute cron: in-flight jobs, plus repairs for
+ * anything that finished but never landed in our storage or never recorded a
+ * cost, plus the stuck-image janitor.
+ */
+export async function syncPending(limit = 30): Promise<void> {
   await ready();
 
-  // Image renders run synchronously inside their own request — there is no
-  // task to poll. A row still "running" long past any plausible call means
-  // the function died mid-generation; fail it so it isn't stuck forever.
+  // An image render ran synchronously inside its own request — there was no
+  // task to poll. A row still "running" long past any plausible call means the
+  // function died mid-generation; fail it so it isn't stuck forever.
   await db().execute({
     sql: `UPDATE generations
           SET status='failed',

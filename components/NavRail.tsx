@@ -36,7 +36,7 @@ export default function NavRail({ user }: { user: U }) {
   const path = usePathname();
   const { selection, setSelection, projects, refreshProjects } = useProject();
   const router = useRouter();
-  const { data: usage } = useApi<Usage>("/api/usage", 30000);
+  const { data: usage } = useApi<Usage>("/api/usage/summary", 30000);
 
   /** Select the project and land in its media pool. */
   function openPool(id: string) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
-import { syncPending } from "@/lib/jobs";
+import { syncActive } from "@/lib/jobs";
 import { MODELS } from "@/lib/models";
 import { requireUser } from "@/lib/auth";
 
@@ -8,11 +8,13 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+/** The full ledger — eight aggregates over the table. Only the Usage page
+ *  asks for this; the always-on chrome polls /api/usage/summary instead. */
 export async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
-  try { await syncPending(); } catch { /* report on what we have */ }
+  try { await syncActive(); } catch { /* report on what we have */ }
 
   const label = (m: string) => MODELS.find((x) => x.id === m)?.label ?? m;
 

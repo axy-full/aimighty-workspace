@@ -5,7 +5,8 @@ import References, { referenceProblem, type RefItem, type RefPicker } from "./Re
 import { appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
-import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
+import { usd, compactTokens, timeAgo } from "@/lib/format";
+import LazyMedia from "./LazyMedia";
 import {
   MODELS, DEFAULT_MODEL_ID, getModel, shortLabel, dimensionsFor,
   estimateCostUsd, estimateTokens, estimateImageCostUsd,
@@ -71,7 +72,10 @@ export default function Workspace() {
 
   const query =
     bin === "all" || bin === "unfiled" ? "" : `&projectId=${encodeURIComponent(bin)}`;
-  const { data, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=300${query}`, 5000);
+  // The strip is a working shelf, not an archive — the Library is where the
+  // whole history lives, paginated. Loading hundreds of clips here bought
+  // nothing but render cost.
+  const { data, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=40${query}`, 5000);
   const gens = useMemo(() => {
     const all = data?.generations ?? [];
     return bin === "unfiled" ? all.filter((g) => !g.projectId) : all;
@@ -709,12 +713,7 @@ function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSel
       }`}
     >
       {done ? (
-        still ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={url!} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <video src={posterSrc(url!)} muted preload="metadata" playsInline className="h-full w-full object-cover" />
-        )
+        <LazyMedia url={url!} kind={still ? "image" : "video"} />
       ) : (
         <span className={`desk-grid grid h-full place-items-center ${s.live ? "render-sweep" : ""}`}>
           <span className={`font-mono text-[8.5px] tracking-[.16em] ${s.cls}`}>{s.label}</span>

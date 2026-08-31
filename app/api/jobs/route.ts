@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { listGenerations, syncPending } from "@/lib/jobs";
+import { listGenerations, syncActive } from "@/lib/jobs";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 60;
+
+const PAGE = 60;
 
 export async function GET(req: Request) {
   const got = await requireUser();
@@ -11,17 +13,30 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const projectId = url.searchParams.get("projectId");
   const search = url.searchParams.get("q") ?? undefined;
+  const before = Number(url.searchParams.get("before") ?? 0) || null;
+  const limit = Math.min(Number(url.searchParams.get("limit") ?? PAGE), 500);
 
-  // Reconcile anything still in flight before answering.
+  // Reconcile anything actually in flight before answering. This is a no-op —
+  // one indexed lookup — whenever nothing is rendering, which is most of the
+  // time; the cron owns repairs and janitorial work.
   if (url.searchParams.get("sync") !== "0") {
-    try { await syncPending(); } catch { /* listing still works */ }
+    try { await syncActive(); } catch { /* listing still works */ }
   }
 
   const generations = await listGenerations({
     projectId: projectId && projectId !== "all" ? projectId : undefined,
     createdBy: url.searchParams.get("mine") === "1" ? got.user.id : undefined,
+    status: url.searchParams.get("status") ?? undefined,
+    kind: url.searchParams.get("kind") ?? undefined,
     search,
-    limit: Number(url.searchParams.get("limit") ?? 200),
+    before,
+    limit,
   });
-  return NextResponse.json({ generations });
+
+  // Keyset cursor: the oldest row we just returned. Null once a page comes
+  // back short, which is how the client knows it has reached the end.
+  const nextCursor =
+    generations.length === limit ? generations[generations.length - 1].createdAt : null;
+
+  return NextResponse.json({ generations, nextCursor });
 }

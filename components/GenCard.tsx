@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { usd, compactTokens, timeAgo, posterSrc } from "@/lib/format";
+import { usd, compactTokens, timeAgo } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { appConfirm } from "./dialog";
+import LazyMedia from "./LazyMedia";
 import { IconDown, IconTrash } from "./Icons";
 
 export type Gen = {
@@ -72,12 +73,9 @@ export default function GenCard({
       {/* Slate */}
       <div className="relative aspect-video bg-thumb">
         {done ? (
-          still ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={url!} alt={gen.prompt.slice(0, 120)} className="h-full w-full object-cover" />
-          ) : (
-            <video src={posterSrc(url!)} controls loop preload="metadata" playsInline className="h-full w-full object-cover" />
-          )
+          // Grid cards show a poster, not a live player: the viewer is where
+          // clips are watched, and 500 mounted players is what used to hurt.
+          <LazyMedia url={url!} kind={still ? "image" : "video"} alt={gen.prompt.slice(0, 120)} />
         ) : (
           <div className={`desk-grid grid h-full place-items-center px-4 ${s.live ? "render-sweep" : ""}`}>
             {gen.error ? (

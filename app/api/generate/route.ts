@@ -4,6 +4,7 @@ import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/
 import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
 import { enhancePrompt, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from "@/lib/enhance";
 import { requireUser } from "@/lib/auth";
+import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -233,6 +234,7 @@ export async function POST(req: Request) {
            refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost],
   });
 
+  invalidate(PROJECTS_KEY);
   try {
     const taskId = await submitTask(modelId, finalPrompt, params, references);
     await db().execute({

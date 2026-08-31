@@ -47,10 +47,27 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
     return () => { alive.current = false; };
   }, [refresh]);
 
+  /**
+   * Polling stops while the tab is hidden and catches up the moment it comes
+   * back. A workspace left open in a background tab used to keep asking the
+   * database questions all night; now a backgrounded tab costs nothing, which
+   * is most of the saving in a team that lives with the app open.
+   */
   useEffect(() => {
     if (!intervalMs || !url) return;
-    const t = setInterval(refresh, intervalMs);
-    return () => clearInterval(t);
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => { timer ??= setInterval(refresh, intervalMs); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else { refresh(); start(); }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
   }, [intervalMs, refresh, url]);
 
   return { data, error, loading, refresh };
