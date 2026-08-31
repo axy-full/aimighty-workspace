@@ -271,20 +271,19 @@ export default function ContextMenu() {
       />
       <div
         style={{ left: menu.x, top: menu.y }}
-        className="fixed z-[91] max-h-[calc(100dvh-16px)] w-[240px] overflow-y-auto overscroll-contain rounded-[11px] border border-line bg-panel2 p-1 shadow-[var(--shadow)]"
+        className="menu-pop fixed z-[91] max-h-[calc(100dvh-16px)] w-[248px] !bottom-auto overflow-y-auto overscroll-contain"
       >
         {menu.items.map((it, i) =>
           it.kind === "sep" ? (
-            <div key={i} className="mx-2 my-1 h-px bg-hair" />
+            <div key={i} className="mx-3 my-1 h-px bg-hair" />
           ) : (
             <button
               key={i}
               disabled={it.disabled}
               onClick={async () => { setMenu(null); await it.action(); }}
-              className={`block w-full rounded-[8px] px-2.5 py-[7px] text-left text-[12.5px] transition-colors max-[860px]:py-[10px] ${
-                it.disabled ? "cursor-default text-mute/50"
-                : it.danger ? "text-lift hover:bg-lift/10"
-                : "text-bone/90 hover:bg-chip"
+              className={`menu-item ${
+                it.disabled ? "cursor-default !text-mute"
+                : it.danger ? "!text-lift" : ""
               }`}
             >
               {it.label}

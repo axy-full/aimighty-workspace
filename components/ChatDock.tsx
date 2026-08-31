@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { useApi } from "@/lib/useApi";
 import { timeAgo } from "@/lib/format";
 import { uploadFile } from "@/lib/uploadClient";
-import { appAlert } from "./dialog";
 import { IconClose, IconPlus } from "./Icons";
 
 type Member = { id: string; name: string };
@@ -71,8 +70,8 @@ export default function ChatDock() {
   }, [feed, open]);
 
   const badge = unread > 0 && (
-    <span className={`absolute grid h-[16px] min-w-[16px] place-items-center rounded-full px-0.5 font-mono text-[9px] ring-2 ring-desk ${
-      mentioned > 0 ? "bg-red text-white" : "bg-panel3 text-dim"
+    <span className={`absolute grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10.5px] font-semibold ring-2 ring-white ${
+      mentioned > 0 ? "bg-lift text-white" : "bg-panel3 text-dim"
     }`}>
       {unread > 99 ? "99+" : unread}
     </span>
@@ -87,25 +86,14 @@ export default function ChatDock() {
       )}
       {!open && (
         <>
-          {/* Desktop: the slim right-edge rail. */}
           <button
             onClick={() => toggle(true)}
             title="Team chat"
-            className="relative flex h-full w-[30px] flex-col items-center gap-2 border-l border-line bg-chrome pt-3 text-mute transition-colors hover:text-lift max-[860px]:hidden"
+            className="fixed right-5 z-40 grid h-[52px] w-[52px] place-items-center rounded-full bg-white text-dim shadow-[var(--shadow-pop)] transition-transform hover:scale-105 max-[860px]:right-3.5"
+            style={{ bottom: "calc(var(--tabbar) + 6px)" }}
           >
             <ChatGlyph />
-            <span className="lbl rotate-180 [writing-mode:vertical-rl]">CHAT</span>
-            <span className="absolute top-1">{badge}</span>
-          </button>
-          {/* Phones: a floating bubble above the bottom bar. */}
-          <button
-            onClick={() => toggle(true)}
-            title="Team chat"
-            className="fixed right-3.5 z-40 hidden h-[48px] w-[48px] place-items-center rounded-full border border-line bg-panel2 text-dim shadow-[var(--shadow)] max-[860px]:grid"
-            style={{ bottom: "calc(var(--switcher) + 14px)" }}
-          >
-            <ChatGlyph />
-            <span className="absolute -right-1 -top-1">{badge}</span>
+            <span className="absolute -right-0.5 -top-0.5">{badge}</span>
           </button>
         </>
       )}
@@ -118,130 +106,6 @@ function ChatGlyph() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z" />
     </svg>
-  );
-}
-
-/* ── push notifications ─────────────────────────────────────────────── */
-
-function pushSupported() {
-  return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
-}
-
-function urlB64ToUint8Array(base64: string) {
-  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
-  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(b64);
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
-}
-
-const PUSH_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
-function PushBell() {
-  const [state, setState] = useState<"unsupported" | "install" | "unconfigured" | "off" | "on" | "busy" | "denied">("off");
-
-  useEffect(() => {
-    if (!pushSupported()) {
-      // iOS Safari outside the installed app is the one audience that CAN
-      // get push — after Add to Home Screen. Tell them, don't vanish.
-      const ios = /iP(hone|ad|od)/.test(navigator.userAgent) &&
-        !matchMedia("(display-mode: standalone)").matches;
-      setTimeout(() => setState(ios ? "install" : "unsupported"), 0);
-      return;
-    }
-    if (!PUSH_KEY) { setTimeout(() => setState("unconfigured"), 0); return; }
-    if (Notification.permission === "denied") { setTimeout(() => setState("denied"), 0); return; }
-    navigator.serviceWorker.getRegistration().then(async (reg) => {
-      const sub = reg && (await reg.pushManager.getSubscription());
-      setState(sub ? "on" : "off");
-    }).catch(() => setState("off"));
-  }, []);
-
-  async function enable() {
-    setState("busy");
-    try {
-      if (!PUSH_KEY) {
-        throw new Error(
-          "Push keys aren't in this build yet. Add the three VAPID variables in Vercel and REDEPLOY — the public key is baked in at build time."
-        );
-      }
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") { setState(perm === "denied" ? "denied" : "off"); return; }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlB64ToUint8Array(PUSH_KEY),
-      });
-      const res = await fetch("/api/push/subscribe", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON() }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? "The server rejected the subscription.");
-      }
-      setState("on");
-    } catch (e) {
-      // Silence was the worst possible behavior here — say what went wrong.
-      appAlert("Couldn't turn on notifications", (e as Error).message);
-      setState(PUSH_KEY ? "off" : "unconfigured");
-    }
-  }
-
-  async function disable() {
-    setState("busy");
-    try {
-      const reg = await navigator.serviceWorker.getRegistration();
-      const sub = reg && (await reg.pushManager.getSubscription());
-      if (sub) {
-        await fetch("/api/push/unsubscribe", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: sub.endpoint }),
-        });
-        await sub.unsubscribe();
-      }
-    } finally { setState("off"); }
-  }
-
-  if (state === "unsupported") return null;
-  const title =
-    state === "on" ? "Notifications on — click to turn off"
-    : state === "denied" ? "Notifications are blocked for this site in the browser — allow them in site settings, then click again"
-    : state === "unconfigured" ? "Push keys not configured — add the VAPID env vars in Vercel and redeploy"
-    : state === "install" ? "On iPhone, notifications need the installed app — Share → Add to Home Screen"
-    : "Notify me of new messages";
-
-  // Tooltips don't exist on touch — dead-end states explain themselves on tap.
-  const explain =
-    state === "denied" ? () => {
-      // The user may have unblocked the site since — re-check live and just
-      // enable if so, rather than lecturing them.
-      if (Notification.permission !== "denied") { void enable(); return; }
-      appAlert("Notifications are blocked",
-        "The browser has notifications blocked for this site. Allow them in the browser's site settings, then tap the bell again.");
-    }
-    : state === "install" ? () => appAlert("Install the app first",
-      "iPhones only deliver notifications to the installed app: Share → Add to Home Screen, open it from the icon, then tap the bell there.")
-    : state === "unconfigured" ? () => appAlert("Push isn't configured yet",
-      "The VAPID keys aren't in this build. Add the three variables in Vercel and redeploy.")
-    : null;
-
-  return (
-    <button
-      onClick={explain ?? (state === "on" ? disable : state === "busy" ? undefined : enable)}
-      title={title}
-      className={`grid h-[20px] w-[20px] place-items-center rounded-[6px] transition-colors max-[860px]:h-[32px] max-[860px]:w-[32px] ${
-        state === "on" ? "text-lift"
-        : state === "unconfigured" ? "text-warn/70 hover:text-warn"
-        : state === "denied" || state === "install" ? "text-mute/40 hover:text-mute"
-        : "text-mute hover:text-lift"
-      }`}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6" />
-        <path d="M10 20a2 2 0 0 0 4 0" />
-        {state !== "on" && <path d="M4 4l16 16" opacity=".55" />}
-      </svg>
-    </button>
   );
 }
 
@@ -367,7 +231,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
           out.push(b);
           if (i < bits.length - 1) out.push(
             <span key={`${m.id}-${mem.id}-${i}`}
-              className={mem.id === me ? "rounded-[6px] bg-red/25 px-0.5 text-lift" : "text-run"}>
+              className={mem.id === me ? "rounded-[5px] bg-blue/15 px-0.5 font-medium text-blue" : "text-blue"}>
               {token}
             </span>
           );
@@ -382,28 +246,25 @@ function ChatPanel({ feed, members, refresh, onClose }: {
     <>
       {/* Tap-outside-to-close scrim while the panel overlays the page.
           z-40 ties the island; painting later in the DOM wins the tie. */}
-      <div className="hidden max-[1100px]:block fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
       <aside
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files[0]) attach(e.dataTransfer.files[0]); }}
-      className={`chat-panel flex h-full w-[320px] shrink-0 flex-col border-l border-line bg-chrome ${drag ? "bg-lift/8" : ""} max-[1100px]:fixed max-[1100px]:bottom-[var(--switcher)] max-[1100px]:right-0 max-[1100px]:top-[var(--titlebar)] max-[1100px]:z-40 max-[1100px]:h-auto max-[1100px]:shadow-[-12px_0_32px_rgba(0,0,0,.5)]`}
+      className={`chat-panel fixed bottom-5 right-5 top-[calc(var(--topbar)+12px)] z-40 flex w-[360px] flex-col overflow-hidden rounded-[20px] bg-white shadow-[var(--shadow-pop)] ${drag ? "!bg-blue/5" : ""} max-[860px]:inset-x-3 max-[860px]:bottom-3 max-[860px]:w-auto`}
     >
-      <header className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel2 px-2.5">
-        <h2 className="ptitle text-[10.5px] tracking-[.1em] text-dim">TEAM CHAT</h2>
-        <span className="font-mono text-[9px] text-mute">#general</span>
-        <PushBell />
+      <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-hair px-4">
+        <h2 className="text-[16px] font-semibold tracking-[-0.015em]">Team chat</h2>
+        <span className="text-[13px] text-mute">#general</span>
         <button onClick={onClose} title="Collapse"
-          className="ml-auto grid h-[20px] w-[20px] place-items-center rounded-[6px] text-mute hover:text-lift">
+          className="ml-auto grid h-8 w-8 place-items-center rounded-full text-mute transition-colors hover:bg-chip hover:text-bone">
           <IconClose />
         </button>
       </header>
 
-      <div ref={listRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+      <div ref={listRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {msgs.length === 0 && (
-          <p className="py-10 text-center font-mono text-[10px] tracking-[.14em] text-mute">
-            NOTHING YET — SAY HELLO
-          </p>
+          <p className="py-10 text-center text-[14px] text-mute">Nothing yet — say hello.</p>
         )}
         {msgs.map((m, i) => {
           const day = new Date(m.createdAt).toDateString();
@@ -413,7 +274,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
               {divider && (
                 <div className="my-2 flex items-center gap-2">
                   <span className="h-px flex-1 bg-line" />
-                  <span className="font-mono text-[9px] tracking-wider text-mute">
+                  <span className="text-[12px] text-mute">
                     {new Date(m.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
                   </span>
                   <span className="h-px flex-1 bg-line" />
@@ -421,13 +282,13 @@ function ChatPanel({ feed, members, refresh, onClose }: {
               )}
               <div className="group mb-2.5">
                 <div className="flex items-baseline gap-2">
-                  <span className={`text-[12px] font-semibold ${m.userId === me ? "text-lift" : "text-bone"}`}>
+                  <span className={`text-[14px] font-semibold ${m.userId === me ? "text-blue" : "text-bone"}`}>
                     {m.author}
                   </span>
-                  <span className="font-mono text-[9px] text-mute">{timeAgo(m.createdAt)}</span>
+                  <span className="text-[12px] text-mute">{timeAgo(m.createdAt)}</span>
                 </div>
                 {m.text && (
-                  <p className="whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-bone/90">
+                  <p className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed text-bone">
                     {renderText(m)}
                   </p>
                 )}
@@ -445,22 +306,22 @@ function ChatPanel({ feed, members, refresh, onClose }: {
               <p className="mb-1 flex justify-between font-mono text-[9px] text-dim">
                 <span className="min-w-0 truncate">{uploadName}</span><span>{uploadPct}%</span>
               </p>
-              <div className="h-[3px] w-full bg-panel3">
-                <div className="h-full bg-lift transition-[width]" style={{ width: `${uploadPct}%` }} />
+              <div className="h-[3px] w-full rounded-full bg-panel2">
+                <div className="h-full rounded-full bg-blue transition-[width]" style={{ width: `${uploadPct}%` }} />
               </div>
             </div>
           )}
-          {err && <p className="font-mono text-[10px] text-lift">{err}</p>}
+          {err && <p className="text-[13px] text-lift">{err}</p>}
         </div>
       )}
 
-      <div className="relative shrink-0 border-t border-line bg-panel p-2 pb-[max(8px,env(safe-area-inset-bottom))]">
+      <div className="relative shrink-0 border-t border-hair p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
         {menu && matches.length > 0 && (
-          <div className="absolute bottom-full left-2 right-2 mb-1 overflow-hidden rounded-[8px] border border-line bg-panel2 shadow-xl">
+          <div className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-[14px] bg-white p-1 shadow-[var(--shadow-pop)]">
             {matches.map((mm, i) => (
               <button key={mm.id}
                 onMouseDown={(e) => { e.preventDefault(); pick(mm); }}
-                className={`block w-full px-2.5 py-1.5 text-left text-[12px] max-[860px]:py-3 max-[860px]:text-[14px] ${kbNav && i === sel ? "bg-panel3 text-lift" : "text-dim"}`}>
+                className={`menu-item !rounded-none ${kbNav && i === sel ? "bg-chip font-medium text-blue" : "text-dim"}`}>
                 @{mm.name}
               </button>
             ))}
@@ -469,7 +330,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
         <div className="flex items-end gap-1.5">
           <button onClick={() => fileRef.current?.click()} disabled={uploadPct != null}
             title="Attach a file (up to 2 GB, byte-identical)"
-            className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border border-line text-mute hover:border-lift hover:text-lift disabled:opacity-40 max-[860px]:h-[42px] max-[860px]:w-[42px]">
+            className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-panel2 text-dim transition-colors hover:bg-chip2 disabled:opacity-40">
             <IconPlus />
           </button>
           <input ref={fileRef} type="file" hidden onChange={(e) => e.target.files?.[0] && attach(e.target.files[0])} />
@@ -495,11 +356,11 @@ function ChatPanel({ feed, members, refresh, onClose }: {
               }
             }}
             placeholder="Message the team — @ to mention"
-            className="autosize max-h-[96px] min-h-[30px] w-full resize-none rounded-[8px] border border-line bg-desk px-2.5 py-1.5 text-[12.5px] leading-relaxed text-bone placeholder:text-mute/60 focus:outline-none max-[860px]:min-h-[42px] max-[860px]:max-h-[120px]"
+            className="autosize max-h-[120px] min-h-[38px] w-full resize-none rounded-[19px] bg-panel2 px-3.5 py-2 text-[15px] leading-relaxed text-bone placeholder:text-mute focus:bg-panel3 focus:outline-none"
           />
           <button onClick={() => send()} disabled={sending || (!text.trim())}
-            className="ptitle h-[30px] shrink-0 rounded-[8px] bg-red px-2.5 text-[10px] tracking-[.08em] text-white hover:bg-lift disabled:bg-panel3 disabled:text-mute max-[860px]:h-[42px] max-[860px]:px-4 max-[860px]:text-[11px]">
-            SEND
+            className="btn-render h-[38px] shrink-0 px-4 text-[14px]">
+            Send
           </button>
         </div>
       </div>
@@ -521,17 +382,17 @@ function AttachmentTile({ a }: { a: Attachment }) {
   if (a.kind === "video") {
     return (
       <video src={`${a.url}#t=0.1`} controls preload="metadata" playsInline
-        className="mt-1 max-h-[180px] w-full rounded-[8px] border border-line bg-black" />
+        className="mt-1.5 max-h-[200px] w-full rounded-[12px] bg-black" />
     );
   }
   return (
     <a href={a.url} download={a.name}
       title={`sha256 ${a.sha256.slice(0, 16)}… — stored byte-identical`}
-      className="mt-1 flex w-fit max-w-full items-center gap-2 rounded-[8px] border border-line bg-panel2 px-2.5 py-1.5 hover:border-lift">
-      <span className="font-mono text-[13px] text-lift">▼</span>
+      className="mt-1.5 flex w-fit max-w-full items-center gap-2 rounded-[12px] bg-panel2 px-3 py-2 transition-colors hover:bg-chip2">
+      <span className="text-[14px] text-blue">↓</span>
       <span className="min-w-0">
-        <span className="block truncate text-[11.5px] text-bone">{a.name}</span>
-        <span className="font-mono text-[9px] text-mute">{fmtBytes(a.bytes)} · original bytes</span>
+        <span className="block truncate text-[13.5px] text-bone">{a.name}</span>
+        <span className="text-[12px] text-mute">{fmtBytes(a.bytes)} · original bytes</span>
       </span>
     </a>
   );

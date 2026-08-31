@@ -173,30 +173,30 @@ export default function References({
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) add(e.dataTransfer.files); }}
-      className={`flex min-h-full flex-col gap-3 p-4 transition-colors ${drag ? "bg-lift/8" : ""}`}
+      className={`card flex flex-col gap-3 p-4 transition-colors ${drag ? "!bg-blue/5" : ""}`}
     >
       <div className="flex items-baseline gap-2">
-        <span className="ptitle text-[13.5px]">References</span>
-        <span className="ml-auto font-mono text-[10.5px] text-mute">
+        <span className="text-[16px] font-semibold tracking-[-0.015em]">References</span>
+        <span className="ml-auto text-[13px] text-mute">
           {refs.length > 0
             ? `${refs.length}${referenceVideos.length > 0 ? ` · ${totalVideoS.toFixed(1)}s / ${model.maxVideoSecondsTotal}s` : ""}`
             : ""}
         </span>
       </div>
-      <p className="text-[11.5px] leading-relaxed text-dim">
+      <p className="text-[13.5px] leading-relaxed text-dim">
         Show the model instead of describing. Attach stills and clips, then call
-        them in the prompt as <span className="font-mono text-lift">@Image1</span> or{" "}
-        <span className="font-mono text-lift">@Video1</span>.
+        them in the prompt as <span className="font-medium text-blue">@Image1</span> or{" "}
+        <span className="font-medium text-blue">@Video1</span>.
       </p>
 
       <button
         type="button" onClick={() => input.current?.click()} disabled={busy}
-        className="desk-grid grid h-[84px] w-full place-items-center rounded-[10px] border border-dashed border-line text-mute transition-colors hover:border-lift/60 hover:text-dim disabled:opacity-40"
+        className="grid h-[84px] w-full place-items-center rounded-[12px] border-2 border-dashed border-line bg-panel2/60 text-mute transition-colors hover:border-blue/50 hover:text-blue disabled:opacity-40"
         title="Add reference images or videos"
       >
         {busy
-          ? <span className="font-mono text-[10px]">{progress ?? "…"}</span>
-          : <span className="flex items-center gap-2 font-mono text-[10px] tracking-wide">
+          ? <span className="text-[13px]">{progress ?? "…"}</span>
+          : <span className="flex items-center gap-2 text-[13px]">
               <IconPlus /> drop stills or clips
             </span>}
       </button>
@@ -217,7 +217,7 @@ export default function References({
             const citeToken = r.kind === "video" ? `@Video${citeIndex}` : `@Image${citeIndex}`;
             return (
               <div key={r.id} className="min-w-0">
-              <div className="group relative h-[84px] overflow-hidden rounded-[10px] border border-line bg-thumb">
+              <div className="group relative h-[84px] overflow-hidden rounded-[12px] bg-thumb">
                 {r.kind === "video" ? (
                   <video src={`${r.url}#t=0.1`} muted preload="metadata" playsInline
                     className="h-full w-full object-cover"
@@ -231,7 +231,7 @@ export default function References({
 
                 <span className={`absolute left-0 top-0 rounded-br-[6px] px-1.5 py-px font-mono text-[8px] tracking-wide ${
                   r.role === "reference_image" || r.role === "reference_video"
-                    ? "bg-black/70 text-lift" : "bg-red text-white"
+                    ? "bg-black/60 text-white" : "bg-blue text-white"
                 }`}>
                   {citeIndex > 0 ? citeToken : ROLE_LABEL[r.role]}
                 </span>
@@ -245,7 +245,7 @@ export default function References({
                   <button type="button"
                     onClick={() => appAlert("Hashes don't match",
                       "The stored copy's bytes do not hash-match the original file. Remove it and upload again before spending a render on it.")}
-                    className="absolute bottom-0 left-0 bg-red px-1 font-mono text-[8px] text-white"
+                    className="absolute bottom-0 left-0 rounded-tr-[6px] bg-lift px-1.5 text-[9px] text-white"
                     title="Stored bytes do not match the original — tap for details">
                     HASH?
                   </button>
@@ -274,7 +274,7 @@ export default function References({
                   </button>
                 </div>
               </div>
-              <p className="mt-1 truncate font-mono text-[9px] text-mute" title={r.filename}>
+              <p className="mt-1 truncate text-[11.5px] text-mute" title={r.filename}>
                 {r.filename}
               </p>
               </div>
@@ -286,19 +286,19 @@ export default function References({
       <div className="flex items-center gap-2">
         {progress && !busy && <span className="font-mono text-[9px] text-run">{progress}</span>}
         {refs.length > 0 && !unverified && !progress && (
-          <span className="font-mono text-[9px] tracking-wider text-ok" title="Stored bytes hash-match the originals">
+          <span className="text-[12px] font-medium text-ok" title="Stored bytes hash-match the originals">
             ✓ BYTE-IDENTICAL
           </span>
         )}
       </div>
 
       {err && (
-        <p className="rounded-[8px] bg-lift/8 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed text-lift">
+        <p className="rounded-[10px] bg-lift/8 px-3 py-2 text-[13px] leading-relaxed text-lift">
           {err}
         </p>
       )}
 
-      <div className="mt-auto border-t border-line pt-3 font-mono text-[10px] leading-relaxed text-mute">
+      <div className="border-t border-hair pt-3 text-[12px] leading-relaxed text-mute">
         {model.kind === "image"
           ? <>{model.label} — up to {model.maxReferenceImages} reference images, no videos.
               Never recompressed: what you drop is byte-for-byte what the model sees.</>

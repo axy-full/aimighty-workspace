@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import TitleBar from "@/components/TitleBar";
-import PageSwitcher from "@/components/PageSwitcher";
-import NavRail from "@/components/NavRail";
+import TopBar from "@/components/TopBar";
+import TabBar from "@/components/TabBar";
 import ChatDock from "@/components/ChatDock";
 import ContextMenu from "@/components/ContextMenu";
 import DialogHost from "@/components/dialog";
@@ -20,15 +19,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <ProjectProvider>
       <div className="app">
-        <NavRail user={user} />
-        <div className="app-main">
-          <TitleBar user={user} />
-          <div className="app-work">
-            <div className="min-h-0 min-w-0 flex-1">{children}</div>
-            <ChatDock />
-          </div>
-          <PageSwitcher />
+        <TopBar />
+        <div className="app-work">
+          <div className="min-h-0 min-w-0 flex-1">{children}</div>
+          <ChatDock />
         </div>
+        <TabBar />
         <ContextMenu />
         <DialogHost />
         <ViewportGuard />

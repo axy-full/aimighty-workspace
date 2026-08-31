@@ -13,13 +13,13 @@ export default function GenGrid({
 }) {
   if (!gens.length) {
     return (
-      <div className="desk-grid grid h-full min-h-[200px] place-items-center rounded-[var(--r)] border border-line p-6">
-        <p className="font-mono text-[10.5px] tracking-[.14em] text-mute">{empty}</p>
+      <div className="grid h-full min-h-[200px] place-items-center rounded-[var(--r)] bg-panel2 p-6">
+        <p className="text-[14px] text-mute">{empty}</p>
       </div>
     );
   }
   return (
-    <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(248px,1fr))]">
+    <div className="grid gap-x-5 gap-y-7 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
       {gens.map((g) => (
         <GenCard key={g.id} gen={g} projects={projects} onChanged={onChanged} />
       ))}
@@ -66,11 +66,10 @@ function Section({ title, items, projects, onChanged }: {
   return (
     <section>
       <div className="mb-3 flex items-baseline gap-2.5">
-        <h2 className="ptitle text-[14.5px]">{title}</h2>
-        <span className="font-mono text-[10.5px] tabular-nums text-mute">
-          {String(items.length).padStart(2, "0")} · {usd(spend, 2)}
+        <h2 className="text-[19px] font-semibold tracking-[-0.015em]">{title}</h2>
+        <span className="text-[13.5px] tabular-nums text-mute">
+          {items.length} · {usd(spend, 2)}
         </span>
-        <span className="h-px min-w-0 flex-1 self-center bg-hair" />
       </div>
       <GenGrid gens={items} projects={projects} onChanged={onChanged} />
     </section>

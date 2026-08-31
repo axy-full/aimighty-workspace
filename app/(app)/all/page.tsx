@@ -99,11 +99,11 @@ export default function LibraryPage() {
   const shown = selection === "unfiled" ? gens.filter((g) => !g.projectId) : gens;
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto px-6 py-5 max-[860px]:px-3.5">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="screen"><div className="mx-auto w-full max-w-[1120px]">
+      <div className="flex flex-wrap items-end gap-3 pt-6">
         <span className="flex flex-col gap-0.5">
-          <span className="ptitle text-[20px] leading-tight">Library</span>
-          <span className="text-[12px] text-dim">
+          <span className="h1">Library</span>
+          <span className="mt-1 text-[15px] text-dim">
             {scopeName} · showing {shown.length}
             {canLoadMore ? "+" : ""} render{shown.length === 1 ? "" : "s"} ·{" "}
             <span className="text-lift">{usd(spend, 2)}</span>
@@ -111,29 +111,29 @@ export default function LibraryPage() {
         </span>
         <span className="ml-auto" />
         <div className="relative flex items-center">
-          <span className="pointer-events-none absolute left-2.5 text-mute"><IconSearch /></span>
+          <span className="pointer-events-none absolute left-3.5 text-mute"><IconSearch /></span>
           <input value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search every prompt" className="ctl w-[210px] pl-8" />
+            placeholder="Search every prompt" className="h-[42px] w-[240px] rounded-[12px] bg-panel2 pl-10 pr-4 text-[15px] text-bone placeholder:text-mute focus:bg-white focus:outline-none" />
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {STATUSES.map((s) => (
           <button key={s} onClick={() => setStatus(s)}
-            className={`rounded-full border px-3 py-[5px] text-[12px] font-medium capitalize transition-colors ${
+            className={`rounded-full border px-3.5 py-[6px] text-[13.5px] font-medium capitalize transition-colors ${
               status === s
-                ? "border-transparent bg-red text-white"
-                : "border-line bg-chip text-dim hover:bg-chip2"
+                ? "border-transparent bg-blue text-white"
+                : "border-transparent bg-chip text-dim hover:bg-chip2"
             }`}>
             {s === "all" ? "All" : s}
           </button>
         ))}
         <span className="h-4 w-px bg-line" />
         <button onClick={() => setMine(!mine)}
-          className={`rounded-full border px-3 py-[5px] text-[12px] font-medium transition-colors ${
+          className={`rounded-full border px-3.5 py-[6px] text-[13.5px] font-medium transition-colors ${
             mine
-              ? "border-transparent bg-red text-white"
-              : "border-line bg-chip text-dim hover:bg-chip2"
+              ? "border-transparent bg-blue text-white"
+              : "border-transparent bg-chip text-dim hover:bg-chip2"
           }`}>
           My clips
         </button>
@@ -145,13 +145,14 @@ export default function LibraryPage() {
       </div>
 
       {canLoadMore && (
-        <div className="mt-6 flex justify-center">
+        <div className="mt-8 flex justify-center">
           <button onClick={loadMore} disabled={loadingMore}
             className="chip !py-2.5 px-5 font-medium disabled:opacity-50">
             {loadingMore ? "Loading…" : "Load older renders"}
           </button>
         </div>
       )}
+    </div>
     </div>
   );
 }

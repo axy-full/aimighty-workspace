@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { usd, timeAgo } from "@/lib/format";
 import { Panel } from "@/components/Panel";
-import { avatarHue, initialsOf } from "@/components/NavRail";
+import { avatarHue, initialsOf } from "@/lib/avatar";
 
 type Member = {
   id: string; email: string; name: string; role: string;

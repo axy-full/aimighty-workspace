@@ -103,7 +103,7 @@ export default function DialogHost() {
 
   return (
     <div
-      className="fixed inset-0 z-[95] grid place-items-center bg-black/55 p-5"
+      className="fixed inset-0 z-[95] grid place-items-center bg-black/25 p-5 backdrop-blur-[2px]"
       // Dismiss only a true backdrop click — not a drag that ends outside the
       // card — and never let it reach the page's own click-away listeners.
       onPointerDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
@@ -116,11 +116,11 @@ export default function DialogHost() {
         key={current.id}
         role="dialog" aria-modal="true" aria-label={current.title}
         onClick={(e) => e.stopPropagation()}
-        className="w-[min(92vw,360px)] rounded-[14px] border border-line bg-panel2 p-4 shadow-[var(--shadow)]"
+        className="w-[min(92vw,340px)] rounded-[18px] bg-white p-5 shadow-[var(--shadow-pop)]"
       >
-        <p className="ptitle text-[14px] text-bone">{current.title}</p>
+        <p className="text-center text-[17px] font-semibold tracking-[-0.01em]">{current.title}</p>
         {current.message && (
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-dim">{current.message}</p>
+          <p className="mt-1.5 text-center text-[14px] leading-relaxed text-dim">{current.message}</p>
         )}
         {current.kind === "prompt" && (
           <input
@@ -132,14 +132,14 @@ export default function DialogHost() {
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirm(); } }}
           />
         )}
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-5 flex gap-2">
           {current.kind !== "alert" && (
-            <button onClick={cancel} className="chip !py-2 px-4 !text-dim">Cancel</button>
+            <button onClick={cancel} className="chip flex-1 justify-center !py-2.5 !text-[15px] !text-dim">Cancel</button>
           )}
           <button
             onClick={confirm} autoFocus={current.kind !== "prompt"}
-            className={`h-[34px] rounded-[10px] px-4 text-[12.5px] font-semibold text-white ${
-              current.danger ? "bg-red" : current.kind === "alert" ? "bg-chip2 !text-bone" : "bg-red"
+            className={`flex-1 rounded-full py-2.5 text-[15px] font-semibold text-white ${
+              current.danger ? "bg-lift" : current.kind === "alert" ? "bg-blue" : "bg-blue"
             }`}
           >
             {current.confirmLabel ?? "OK"}

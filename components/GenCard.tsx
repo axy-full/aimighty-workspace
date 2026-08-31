@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usd, compactTokens, timeAgo, downloadHref } from "@/lib/format";
+import { usd, timeAgo, downloadHref } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { appConfirm } from "./dialog";
 import LazyMedia from "./LazyMedia";
@@ -27,11 +27,11 @@ export type Gen = {
 };
 
 const STATUS: Record<string, { cls: string; label: string; live?: boolean }> = {
-  queued:    { cls: "text-mute", label: "QUEUED",  live: true },
-  running:   { cls: "text-run",  label: "RENDER",  live: true },
-  succeeded: { cls: "text-ok",   label: "OK" },
-  failed:    { cls: "text-lift", label: "FAILED" },
-  cancelled: { cls: "text-mute", label: "CANCELLED" },
+  queued:    { cls: "text-mute", label: "Queued",   live: true },
+  running:   { cls: "text-blue", label: "Rendering", live: true },
+  succeeded: { cls: "text-ok",   label: "Ready" },
+  failed:    { cls: "text-lift", label: "Failed" },
+  cancelled: { cls: "text-mute", label: "Cancelled" },
 };
 
 /** Short clip handle, the way a bin shows a shot name. */
@@ -60,7 +60,7 @@ export default function GenCard({
   }
 
   async function remove() {
-    if (!(await appConfirm(`Delete clip ${clipId(gen.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
+    if (!(await appConfirm(`Delete ${clipId(gen.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
     await fetch(`/api/jobs/${gen.id}`, { method: "DELETE" });
     onChanged?.();
   }
@@ -68,96 +68,78 @@ export default function GenCard({
   return (
     <article
       data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)}
-      className="group flex flex-col overflow-hidden rounded-[var(--r)] border border-line bg-panel transition-[border-color,transform] duration-150 hover:-translate-y-px hover:border-red/60"
+      className="group flex flex-col"
     >
-      {/* Slate */}
-      <div className="relative aspect-video bg-thumb">
+      {/* The frame */}
+      <div className="relative aspect-video overflow-hidden rounded-[var(--r)] bg-thumb shadow-[var(--shadow-card)] transition-transform duration-200 group-hover:-translate-y-1">
         {done ? (
-          // Grid cards show a poster, not a live player: the viewer is where
-          // clips are watched, and 500 mounted players is what used to hurt.
           <LazyMedia url={url!} kind={still ? "image" : "video"} alt={gen.prompt.slice(0, 120)} />
         ) : (
-          <div className={`desk-grid grid h-full place-items-center px-4 ${s.live ? "render-sweep" : ""}`}>
+          <div className="grid h-full place-items-center px-4">
             {gen.error ? (
-              <p className="text-center font-mono text-[9.5px] leading-relaxed text-lift/85">
+              <p className="text-center text-[12px] leading-relaxed text-lift">
                 {gen.error.slice(0, 150)}
               </p>
             ) : (
-              <span className={`font-mono text-[10px] tracking-[.2em] ${s.cls}`}>{s.label}</span>
+              <span className={`text-[13px] font-medium ${s.cls} ${s.live ? "render-sweep" : ""}`}>
+                {s.label}…
+              </span>
             )}
           </div>
         )}
-        <span className="pointer-events-none absolute right-2 top-2 rounded-[5px] bg-black/60 px-1.5 py-px font-mono text-[9px] text-white">
-          {shortLabel(gen.model)}
-        </span>
-        <span className="pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-[5px] bg-black/60 px-1.5 py-px font-mono text-[9px] text-white/85">
-          {s.live && <span className="lamp lamp-live" style={{ width: 5, height: 5 }} />}
-          {clipId(gen.id)}
+
+        {done && (
+          <span className="absolute right-2 top-2 rounded-full bg-black/45 px-2 py-0.5 text-[10.5px] font-medium text-white backdrop-blur-sm">
+            {still ? String(p.resolution ?? "").toUpperCase() : `${p.duration ?? "—"}s`}
+          </span>
+        )}
+
+        <span className="reveal absolute bottom-2 right-2 flex items-center gap-1.5">
+          {url && (
+            <a href={downloadHref(url)} download={`${clipId(gen.id)}.${still ? "png" : "mp4"}`} title="Download"
+              className="grid h-8 w-8 place-items-center rounded-full bg-white/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-white">
+              <IconDown />
+            </a>
+          )}
+          <button onClick={remove} title="Delete"
+            className="grid h-8 w-8 place-items-center rounded-full bg-white/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-white hover:text-lift">
+            <IconTrash />
+          </button>
         </span>
       </div>
 
-      {/* Metadata */}
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <p
-          onClick={() => setOpen(!open)}
-          title="Click to expand"
-          className={`cursor-pointer text-[12px] leading-[1.5] text-bone/85 ${open ? "" : "line-clamp-2"}`}
+      {/* What it is */}
+      <p
+        onClick={() => setOpen(!open)}
+        title="Click to expand"
+        className={`mt-2.5 cursor-pointer text-[14px] leading-snug text-bone ${open ? "" : "line-clamp-2"}`}
+      >
+        {gen.prompt}
+      </p>
+
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-mute">
+        <span>{shortLabel(gen.model)}</span>
+        {p.resolution && <span>· {String(p.resolution).toUpperCase()}</span>}
+        {gen.costUsd != null && (
+          <span className="font-medium text-dim" title={gen.refineCostUsd ? "includes prompt refinement" : undefined}>
+            · {usd(gen.costUsd + (gen.refineCostUsd ?? 0), 2)}
+          </span>
+        )}
+        <span>· {timeAgo(gen.createdAt)}</span>
+        {gen.authorName && <span>· {gen.authorName}</span>}
+      </div>
+
+      {projects.length > 0 && (
+        <select
+          value={gen.projectId ?? ""}
+          onChange={(e) => move(e.target.value)}
+          title="Move to project"
+          className="reveal mt-1.5 h-7 w-fit max-w-full rounded-full bg-panel2 px-2 text-[12px] text-dim"
         >
-          {gen.prompt}
-        </p>
-
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[9.5px] text-mute">
-          {p.resolution && <span className="text-dim">{p.resolution}</span>}
-          {p.ratio && <span>{p.ratio}</span>}
-          {p.duration != null && <span>{p.duration}s</span>}
-          {gen.totalTokens != null && <span>{compactTokens(gen.totalTokens)}t</span>}
-          {gen.costUsd != null && (
-            <span className="text-lift" title={gen.refineCostUsd ? "includes prompt refinement" : undefined}>
-              {usd(gen.costUsd + (gen.refineCostUsd ?? 0))}
-            </span>
-          )}
-        </div>
-
-        <div className="mt-auto flex items-center gap-2 border-t border-hair pt-2 font-mono text-[9.5px] text-mute">
-          <span className="whitespace-nowrap">{timeAgo(gen.createdAt)}</span>
-          {gen.authorName && (
-            <span className="shrink-0 whitespace-nowrap text-dim">{gen.authorName}</span>
-          )}
-          {gen.projectName && (
-            <span className="min-w-0 truncate rounded-[5px] bg-chip px-1.5 py-px text-dim">
-              {gen.projectName}
-            </span>
-          )}
-
-          <div className="reveal ml-auto flex shrink-0 items-center gap-1">
-            {projects.length > 0 && (
-              <select
-                value={gen.projectId ?? ""}
-                onChange={(e) => move(e.target.value)}
-                title="Move to project"
-                className="h-[22px] max-w-[92px] rounded-[6px] border border-line bg-chip px-1 text-[9.5px] text-dim max-[860px]:h-[28px]"
-              >
-                <option value="">Unfiled</option>
-                {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-              </select>
-            )}
-            {url && (
-              <a
-                href={downloadHref(url)} download={`${clipId(gen.id)}.${still ? "png" : "mp4"}`} title="Download"
-                className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift max-[860px]:h-[28px] max-[860px]:w-[28px]"
-              >
-                <IconDown />
-              </a>
-            )}
-            <button
-              onClick={remove} title="Delete"
-              className="grid h-[22px] w-[22px] place-items-center rounded-[6px] border border-line text-dim hover:border-lift hover:text-lift max-[860px]:h-[28px] max-[860px]:w-[28px]"
-            >
-              <IconTrash />
-            </button>
-          </div>
-        </div>
-      </div>
+          <option value="">Unfiled</option>
+          {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+        </select>
+      )}
     </article>
   );
 }
