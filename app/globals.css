@@ -293,6 +293,19 @@ button.row:active, a.row:active { background: var(--color-chip); }
 @media (hover: hover) { .chip-blue:hover:not(:disabled) { background: #0A6FE0; } }
 
 /* Popover menu — floats on shadow, never a border. */
+/* The frosted surface on its own, with NO positioning. Anything that wants
+   the look without being a popover uses this — `.menu-pop` carries
+   `bottom: calc(100% + 10px)`, and an element given both that and a `top`
+   is constrained between the two and collapses to nothing, which is exactly
+   what happened to the canvas toolbar. */
+.pop-surface {
+  background: rgba(255, 255, 255, .82);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+  padding: 6px;
+}
 .menu-pop {
   position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 60;
   min-width: 180px;

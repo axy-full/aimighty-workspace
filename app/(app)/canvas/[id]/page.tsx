@@ -63,23 +63,37 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
         <Canvas projectId={id} items={items} onChanged={refresh} onUse={use_} />
       </div>
 
-      {/* The rail of things not yet on the wall */}
-      <aside className={`${railOpen ? "w-[240px]" : "w-[44px]"} flex flex-col border-l border-hair bg-panel transition-[width]`}>
+      {/* The rail of things not yet on the wall.
+          On a phone a 240px column would eat two thirds of the screen, so
+          below 860px it becomes a sheet over the board instead of beside it,
+          and the board keeps the whole width when it's closed. */}
+      <aside className={`flex flex-col border-hair bg-panel transition-[width]
+        ${railOpen ? "w-[240px]" : "w-[44px]"} border-l
+        max-[860px]:fixed max-[860px]:inset-x-0 max-[860px]:z-30 max-[860px]:w-auto
+        max-[860px]:border-l-0 max-[860px]:border-t max-[860px]:rounded-t-[18px]
+        max-[860px]:shadow-[var(--shadow-pop)]
+        ${railOpen
+          ? "max-[860px]:h-[46vh]"
+          : "max-[860px]:h-[46px]"}`}
+        style={{ bottom: "calc(var(--tabbar) - 8px)" }}>
         <button onClick={() => setRailOpen((v) => !v)}
-          className="flex h-11 shrink-0 items-center gap-2 px-3 text-[13px] text-dim">
-          {railOpen ? <>Renders <span className="ml-auto">›</span></> : "‹"}
+          className="flex h-11 shrink-0 items-center gap-2 px-3 text-[13px] text-dim max-[860px]:h-[46px] max-[860px]:justify-center">
+          <span className="max-[860px]:hidden">{railOpen ? <>Renders <span className="ml-auto">›</span></> : "‹"}</span>
+          <span className="hidden max-[860px]:inline">
+            {railOpen ? "Hide renders" : `Renders${available.length ? ` · ${available.length}` : ""}`}
+          </span>
         </button>
         {railOpen && (
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-            <p className="mb-2 text-[12px] text-mute">
-              {project?.name ?? "This project"} · click to pin
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 max-[860px]:grid max-[860px]:grid-cols-2 max-[860px]:content-start max-[860px]:gap-2">
+            <p className="mb-2 text-[12px] text-mute max-[860px]:col-span-2 max-[860px]:mb-0">
+              {project?.name ?? "This project"} · tap to pin
             </p>
             {available.length === 0 ? (
-              <p className="py-6 text-center text-[13px] text-mute">
+              <p className="py-6 text-center text-[13px] text-mute max-[860px]:col-span-2">
                 Everything delivered is already on the board.
               </p>
             ) : (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 max-[860px]:contents">
                 {available.map((j) => (
                   <button key={j.id} onClick={() => add(j.id)}
                     className="overflow-hidden rounded-[var(--r-sm)] bg-thumb text-left">
@@ -94,7 +108,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                 ))}
               </div>
             )}
-            <p className="mt-4 text-center text-[12px] text-mute">
+            <p className="mt-4 text-center text-[12px] text-mute max-[860px]:col-span-2">
               <Link href={`/projects/${id}`} className="text-blue">Project overview</Link>
             </p>
           </div>

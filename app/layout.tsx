@@ -6,7 +6,12 @@ export const metadata: Metadata = {
   description: "Particl — the studio's own video generation workspace, on Seedance via BytePlus ModelArk",
   manifest: "/manifest.json",
   // iOS ignores the manifest for home-screen icons — declare one explicitly.
-  icons: { apple: "/apple-touch-icon.png" },
+  // Versioned so a browser that has cached the old aimighty mark — or a
+  // home screen that installed it — is forced to fetch the new one.
+  icons: {
+    icon: [{ url: "/favicon.ico?v=2" }, { url: "/icon.png?v=2", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png?v=2" }],
+  },
   appleWebApp: { capable: true, title: "Particl", statusBarStyle: "black-translucent" },
 };
 

@@ -154,7 +154,9 @@ export default function Canvas({ projectId, items, onChanged, onUse }: Props) {
   return (
     <div className="relative h-full w-full overflow-hidden bg-panel2">
       {/* Board controls */}
-      <div className="menu-pop absolute left-4 top-4 z-20 flex items-center gap-1 px-2 py-1.5">
+      <div className="pop-surface absolute left-3 right-3 top-3 z-20 flex items-center gap-1
+                      overflow-x-auto px-2 py-1.5 sm:right-auto sm:left-4 sm:top-4
+                      [&>*]:shrink-0">
         <button onClick={() => addNote("note")} className="chip">+ Note</button>
         <button onClick={() => addNote("heading")} className="chip">+ Section</button>
         <button onClick={tidy} className="chip">Tidy by shot</button>
@@ -171,7 +173,7 @@ export default function Canvas({ projectId, items, onChanged, onUse }: Props) {
         ref={surface}
         onPointerDown={onSurfaceDown}
         onWheel={onWheel}
-        className="h-full w-full cursor-grab active:cursor-grabbing"
+        className="h-full w-full touch-none cursor-grab active:cursor-grabbing"
         style={{
           backgroundImage:
             "radial-gradient(circle at 1px 1px, var(--color-hair) 1px, transparent 0)",

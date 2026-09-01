@@ -38,12 +38,12 @@ export type Analytics = {
 
 export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="card px-5 py-4">
+    <div className="card px-4 py-4 sm:px-5">
       <p className="grouplabel">{label}</p>
-      <p className="mt-1 text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-black">
+      <p className="mt-1 text-[clamp(22px,6vw,28px)] font-semibold leading-none tracking-[-0.02em] tabular-nums text-black">
         {value}
       </p>
-      {sub && <p className="mt-1.5 text-[13px] text-mute">{sub}</p>}
+      {sub && <p className="mt-1.5 text-[12.5px] leading-snug text-mute sm:text-[13px]">{sub}</p>}
     </div>
   );
 }
@@ -84,7 +84,7 @@ export function Headline({ a, title }: { a: Analytics; title: string }) {
           <span className="chip">{t.pending} rendering</span>
         )}
       </div>
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Cost" value={usd(t.spend, 2)}
               sub={`${compactTokens(t.tokens)} tokens · all-in, refinement included`} />
         <Stat label="Generations" value={String(t.generations)}
