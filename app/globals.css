@@ -141,9 +141,19 @@ input, textarea {
 @media (max-width: 860px) {
   .generate {
     flex-direction: column;
-    height: auto; min-height: 100%;
+    /* MUST be a fixed height, not auto.
+       `height: auto` lets this box grow to its content — 1651px on a phone —
+       so nothing ever overflows IT and `overflow-y: auto` never engages. The
+       overflow lands on .app-work instead, which is `overflow: hidden`, and
+       the bottom 900px of the screen is silently clipped: settings, Shot,
+       Studio, Cast, References and the cost line all unreachable. Taking the
+       shell's height and scrolling inside it is what .screen already does. */
+    height: 100%; min-height: 0;
     overflow-y: auto;
-    padding: 8px 14px var(--tabbar);
+    -webkit-overflow-scrolling: touch;
+    /* Room for the floating tab pill at the end of the scroll, plus the
+       home-indicator inset. */
+    padding: 8px 14px calc(var(--tabbar) + env(safe-area-inset-bottom, 0px));
   }
   .generate-main { min-height: 0; }
   .generate-side { width: auto; overflow: visible; }
