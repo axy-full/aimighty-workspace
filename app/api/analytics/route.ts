@@ -40,7 +40,7 @@ export async function GET(req: Request) {
 
   const SPEND = `COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0)`;
 
-  const [totals, byProject, byPerson, byModel, byShot, byStatus, byDay, stuck, iteration] =
+  const [totals, byProject, byPerson, byModel, byShot, byStatus, byDay, stuck, byCategory, iteration] =
     await Promise.all([
       // Headline: volume, outcome, spend, and how much wall-clock the
       // machines actually burned on this work.
@@ -116,6 +116,19 @@ export async function GET(req: Request) {
         GROUP BY g.model, resolution
         HAVING n >= 1 ORDER BY avg_ms DESC LIMIT 30`, args }),
 
+      // Genre / category performance — whether a music video behaves like a
+      // TVC, which is the axis a producer quotes from.
+      db().execute({ sql: `
+        SELECT CASE WHEN p.category IS NULL OR p.category = '' THEN 'Uncategorised'
+                    ELSE p.category END AS category,
+               COUNT(*) AS n, ${SPEND} AS spend,
+               SUM(g.status='failed') AS failed,
+               AVG(NULLIF(g.duration_ms,0)) AS avg_ms,
+               COUNT(DISTINCT g.project_id) AS projects,
+               COUNT(DISTINCT g.shot_id) AS shots
+        FROM generations g LEFT JOIN projects p ON p.id = g.project_id ${W}
+        GROUP BY category ORDER BY spend DESC`, args }),
+
       // Prompting and iteration patterns: how long prompts run, how often the
       // refine layer is bypassed, and how many takes a shot really needs.
       db().execute({ sql: `
@@ -187,6 +200,11 @@ export async function GET(req: Request) {
       model: label(r.model), resolution: r.resolution ?? "—", n: num(r.n),
       avgMs: r.avg_ms == null ? null : num(r.avg_ms), maxMs: num(r.max_ms),
       failed: num(r.failed), retried: num(r.retried),
+    })),
+    byCategory: byCategory.rows.map((r: any) => ({
+      category: r.category, n: num(r.n), spend: num(r.spend), failed: num(r.failed),
+      avgMs: r.avg_ms == null ? null : num(r.avg_ms),
+      projects: num(r.projects), shots: num(r.shots),
     })),
     patterns: {
       avgPromptLength: Math.round(num(it?.avg_prompt_len)),

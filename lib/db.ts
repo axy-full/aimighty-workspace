@@ -222,7 +222,10 @@ export async function ready(): Promise<void> {
         try { await db().execute(`ALTER TABLE uploads ADD COLUMN ${col}`); }
         catch { /* column already exists */ }
       }
-      for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`]) {
+      for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`,
+                         // What kind of job this is — the axis R2 calls
+                         // genre/category-level performance.
+                         `category TEXT NOT NULL DEFAULT ''`]) {
         try { await db().execute(`ALTER TABLE projects ADD COLUMN ${col}`); }
         catch { /* column already exists */ }
       }

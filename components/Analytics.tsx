@@ -27,6 +27,8 @@ export type Analytics = {
   byDay: { day: number; n: number; spend: number }[];
   stuck: { model: string; resolution: string; n: number; avgMs: number | null;
            maxMs: number; failed: number; retried: number }[];
+  byCategory: { category: string; n: number; spend: number; failed: number;
+                avgMs: number | null; projects: number; shots: number }[];
   patterns: {
     avgPromptLength: number; refined: number; withCast: number;
     withReferences: number; filedToShots: number; unfiled: number;

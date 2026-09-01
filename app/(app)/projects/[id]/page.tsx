@@ -16,7 +16,7 @@ import { usd, hours, pct, timeAgo } from "@/lib/format";
 import { type Analytics, Headline, BarList, ShotTable, Patterns } from "@/components/Analytics";
 import { appPrompt, appAlert } from "@/components/dialog";
 
-type Project = { id: string; name: string; description: string; code?: string };
+type Project = { id: string; name: string; description: string; code?: string; category?: string };
 type ShotRow = {
   id: string; code: string; scene: string; title: string; status: string;
   takes: number; ok: number; failed: number; spend: number;
@@ -68,6 +68,18 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
     else refreshProjects();
   }
 
+  async function setCategory() {
+    const category = await appPrompt("Category", project?.category ?? "",
+      "TVC · music video · social · title sequence");
+    if (category === null) return;
+    const res = await fetch(`/api/projects/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category }),
+    });
+    if (!res.ok) await appAlert("Could not save the category");
+    else refreshProjects();
+  }
+
   if (!data) {
     return (
       <div className="screen grid place-items-center">
@@ -94,7 +106,11 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
           <button onClick={setCode} className="font-mono text-blue">
             {project?.code || "set one"}
           </button>{" "}
-          — the short form that appears in filenames.
+          — the short form that appears in filenames. Category{" "}
+          <button onClick={setCategory} className="text-blue">
+            {project?.category || "set one"}
+          </button>{" "}
+          — how this job is grouped on the production dashboard.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-2">

@@ -38,6 +38,7 @@ export async function GET() {
       id: r.id,
       name: r.name,
       code: r.code ?? "",
+      category: r.category ?? "",
       description: r.description,
       createdAt: Number(r.created_at),
       genCount: Number(r.gen_count),

@@ -15,10 +15,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const code = typeof body.code === "string"
     ? body.code.trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16)
     : null;
+  const category = typeof body.category === "string" ? body.category.trim().slice(0, 40) : null;
   await db().execute({
     sql: `UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description),
-                              code = COALESCE(?, code) WHERE id = ?`,
-    args: [body.name ?? null, body.description ?? null, code, id],
+                              code = COALESCE(?, code), category = COALESCE(?, category) WHERE id = ?`,
+    args: [body.name ?? null, body.description ?? null, code, category, id],
   });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });

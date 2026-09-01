@@ -107,6 +107,21 @@ export default function DashboardPage() {
         </section>
 
         <section className="card mt-6 px-5 py-5">
+          <p className="grouplabel">By category</p>
+          <p className="mt-1 text-[13px] text-mute">
+            Whether a music video behaves like a TVC — the axis a producer
+            quotes from. Set a project&rsquo;s category on its overview.
+          </p>
+          <div className="mt-4">
+            <BarList empty="No categories set yet."
+              rows={data.byCategory.map((c) => ({
+                key: c.category, label: c.category, value: c.spend,
+                note: `${c.n} · ${c.projects} project${c.projects === 1 ? "" : "s"}`,
+              }))} />
+          </div>
+        </section>
+
+        <section className="card mt-6 px-5 py-5">
           <p className="grouplabel">Where renders get stuck</p>
           <p className="mt-1 text-[13px] text-mute">
             Wall-clock from submit to delivery, by model and output size.
