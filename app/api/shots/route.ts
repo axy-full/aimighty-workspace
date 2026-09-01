@@ -14,23 +14,33 @@ export async function GET(req: Request) {
   const projectId = scope(new URL(req.url).searchParams.get("projectId"));
   const shots = await listShots(projectId);
 
-  // Counts per shot in one pass — the shot list is also the revision report.
+  /* Counts per shot in one pass — the shot list doubles as the revision
+   * report. Scoped to the shots we just listed: this runs every time the
+   * composer opens, and an unscoped GROUP BY over generations would become a
+   * full scan of the whole table as the library grows (R5). */
   await ready();
-  const rs = await db().execute(`
-    SELECT shot_id,
-           COUNT(*)                                        AS takes,
-           SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) AS ok,
-           SUM(CASE WHEN status='failed'    THEN 1 ELSE 0 END) AS failed,
-           COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
-    FROM generations WHERE shot_id IS NOT NULL GROUP BY shot_id`);
   const stats = new Map<string, { takes: number; ok: number; failed: number; spend: number }>();
-  for (const r of rs.rows) {
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    const row = r as any;
-    stats.set(row.shot_id, {
-      takes: Number(row.takes ?? 0), ok: Number(row.ok ?? 0),
-      failed: Number(row.failed ?? 0), spend: Number(row.spend ?? 0),
+  if (shots.length) {
+    const ids = shots.map((s) => s.id);
+    const rs = await db().execute({
+      sql: `SELECT shot_id,
+                   COUNT(*)                                            AS takes,
+                   SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) AS ok,
+                   SUM(CASE WHEN status='failed'    THEN 1 ELSE 0 END) AS failed,
+                   COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
+            FROM generations
+            WHERE shot_id IN (${ids.map(() => "?").join(",")})
+            GROUP BY shot_id`,
+      args: ids,
     });
+    for (const r of rs.rows) {
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const row = r as any;
+      stats.set(row.shot_id, {
+        takes: Number(row.takes ?? 0), ok: Number(row.ok ?? 0),
+        failed: Number(row.failed ?? 0), spend: Number(row.spend ?? 0),
+      });
+    }
   }
   return NextResponse.json({
     shots: shots.map((s) => ({

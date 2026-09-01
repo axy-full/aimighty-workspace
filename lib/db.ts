@@ -249,6 +249,17 @@ export async function ready(): Promise<void> {
         try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
         catch { /* column already exists */ }
       }
+      /* Indexes for columns added above — created AFTER the ALTERs, since on
+         an existing database the column doesn't exist until they've run.
+         Every shot query (take counts, next version, revisions per shot)
+         filters on shot_id, so without this they scan the whole table. */
+      for (const stmt of [
+        `CREATE INDEX IF NOT EXISTS idx_gen_shot ON generations(shot_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_gen_kind ON generations(kind)`,
+      ]) {
+        try { await db().execute(stmt); }
+        catch { /* index already exists, or the column predates it */ }
+      }
     })();
   }
   return _ready;
