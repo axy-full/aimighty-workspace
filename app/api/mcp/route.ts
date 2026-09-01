@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     return ok(id, {
       protocolVersion: (params?.protocolVersion as string) ?? PROTOCOL_FALLBACK,
       capabilities: { tools: {} },
-      serverInfo: { name: "aimighty-workspace", version: "1.1.0" },
+      serverInfo: { name: "particl", version: "1.2.0" },
     });
   }
 
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
 /** A plain GET makes the endpoint self-describing when someone opens it. */
 export async function GET() {
   return Response.json({
-    name: "aimighty-workspace",
+    name: "particl",
     transport: "mcp/streamable-http",
     usage: "POST JSON-RPC here with an 'Authorization: Bearer aw_…' header.",
     tools: TOOLS.map((t) => t.name),

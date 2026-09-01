@@ -1,18 +1,15 @@
 "use client";
 
-import Image from "next/image";
-import logo from "@/public/aimighty-logo.png";
+import { ParticlMark } from "./ParticlMark";
 
 export function AuthCard({
   title, sub, children,
 }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
     <div className="w-full max-w-[380px] rounded-[20px] bg-white shadow-[var(--shadow-pop)]">
-      <div className="flex items-center gap-2.5 px-6 pt-6">
-        <Image src={logo} alt="aimighty" priority
-          className="h-[13px] w-auto select-none"
-          style={{ filter: "brightness(1.28) saturate(1.04)" }} />
-        <span className="pb-px text-[11px] font-semibold tracking-[.12em] text-mute">WORKSPACE</span>
+      <div className="flex items-center gap-2 px-6 pt-6">
+        <ParticlMark size={20} className="text-black" />
+        <span className="text-[16px] font-semibold tracking-[-0.02em] text-black">Particl</span>
       </div>
 
       <div className="p-6">

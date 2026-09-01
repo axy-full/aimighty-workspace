@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ── aimighty workspace ──────────────────────────────────────────────
+/* ── Particl ─────────────────────────────────────────────────────────
    Apple-grade light chrome: a warm paper desk, white cards that float on
    soft shadow instead of borders, system type at full weight for titles,
    and one floating pill of navigation. Colour is used sparingly — an
@@ -178,6 +178,31 @@ input, textarea {
 }
 
 @layer components {
+  /* ── The opening ──────────────────────────────────────────────────
+     Eight particles fly in from outside the frame and settle onto the
+     ring, the accent arriving last. Each circle carries its own --dx/--dy
+     and delay, so one keyframe drives all of them.
+
+     Custom classes must live in this layer or Tailwind's utilities lose
+     to them — the same trap `.ctl` fell into. */
+  .intro-dot {
+    animation: particl-in 900ms cubic-bezier(.16, 1, .3, 1) both;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .intro-word {
+    animation: particl-word 700ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+  .intro-veil {
+    animation: particl-veil 620ms ease 2100ms both;
+  }
+  /* A brand animation is not worth making anybody ill. */
+  @media (prefers-reduced-motion: reduce) {
+    .intro-dot, .intro-word { animation: none; opacity: 1; transform: none; }
+    .intro-veil { animation: particl-veil 1ms linear 200ms both; }
+  }
+
+
 /* The mono micro-label survives from the studio build for data readouts. */
 .lbl {
   font-family: var(--font-mono);
@@ -400,4 +425,18 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
     animation-duration: .01ms !important;
     transition-duration: .01ms !important;
   }
+}
+
+@keyframes particl-in {
+  0%   { transform: translate(var(--dx), var(--dy)) scale(.35); opacity: 0; }
+  55%  { opacity: 1; }
+  100% { transform: translate(0, 0) scale(1); opacity: 1; }
+}
+@keyframes particl-word {
+  0%   { opacity: 0; transform: translateY(9px); letter-spacing: .04em; }
+  100% { opacity: 1; transform: translateY(0); letter-spacing: -.035em; }
+}
+@keyframes particl-veil {
+  0%   { opacity: 1; visibility: visible; }
+  100% { opacity: 0; visibility: hidden; }
 }

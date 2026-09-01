@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "aimighty workspace",
-  description: "Internal video generation workspace — Seedance on BytePlus ModelArk",
+  title: "Particl",
+  description: "Particl — the studio's own video generation workspace, on Seedance via BytePlus ModelArk",
   manifest: "/manifest.json",
   // iOS ignores the manifest for home-screen icons — declare one explicitly.
-  icons: { apple: "/icon-192.png" },
-  appleWebApp: { capable: true, title: "aimighty", statusBarStyle: "black-translucent" },
+  icons: { apple: "/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Particl", statusBarStyle: "black-translucent" },
 };
 
 export const viewport = {

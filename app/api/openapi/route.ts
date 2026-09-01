@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   return Response.json({
     openapi: "3.1.0",
     info: {
-      title: "aimighty workspace",
+      title: "Particl",
       description:
         "Generate video with Seedance, and read what it cost. Every call spends or reads " +
         "the workspace's own BytePlus credit.",

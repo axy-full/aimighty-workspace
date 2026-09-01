@@ -1,7 +1,7 @@
-/* aimighty workspace — push service worker */
+/* Particl — push service worker */
 
 self.addEventListener("push", (event) => {
-  let data = { title: "aimighty workspace", body: "", url: "/" };
+  let data = { title: "Particl", body: "", url: "/" };
   try { data = { ...data, ...event.data.json() }; } catch { /* keep defaults */ }
   event.waitUntil(
     self.registration.showNotification(data.title, {

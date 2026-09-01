@@ -144,7 +144,7 @@ export default function SettingsPage() {
         </div>
 
         <p className="mt-10 text-center text-[12px] text-mute">
-          aimighty workspace · Seedance on BytePlus ModelArk
+          Particl · Seedance on BytePlus ModelArk
         </p>
       </div>
     </div>

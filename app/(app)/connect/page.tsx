@@ -34,7 +34,7 @@ export default function ConnectPage() {
 
   // Whatever they just minted gets pasted into the snippets automatically.
   const key = token || "aw_your_token_here";
-  const bridge = `${origin}/aimighty-mcp.mjs`;
+  const bridge = `${origin}/particl-mcp.mjs`;
 
   return (
     <div className="screen">
@@ -73,15 +73,15 @@ export default function ConnectPage() {
           <Guide
             note="One command. Claude Code runs the little connector for you."
             steps={[
-              { text: "Download the connector (once):", code: `curl -o ~/aimighty-mcp.mjs ${bridge}` },
+              { text: "Download the connector (once):", code: `curl -o ~/particl-mcp.mjs ${bridge}` },
               { text: "Register it with Claude Code:", code:
-`claude mcp add aimighty \\
-  --env AIMIGHTY_URL=${origin} \\
-  --env AIMIGHTY_TOKEN=${key} \\
-  -- node ~/aimighty-mcp.mjs` },
+`claude mcp add particl \\
+  --env PARTICL_URL=${origin} \\
+  --env PARTICL_TOKEN=${key} \\
+  -- node ~/particl-mcp.mjs` },
               { text: "Check it before relying on it:", code:
-`AIMIGHTY_URL=${origin} AIMIGHTY_TOKEN=${key} \\
-  node ~/aimighty-mcp.mjs --check` },
+`PARTICL_URL=${origin} PARTICL_TOKEN=${key} \\
+  node ~/particl-mcp.mjs --check` },
             ]}
           />
         )}
@@ -90,16 +90,16 @@ export default function ConnectPage() {
           <Guide
             note="Settings → Developer → Edit Config, then restart Claude Desktop."
             steps={[
-              { text: "Download the connector (once):", code: `curl -o ~/aimighty-mcp.mjs ${bridge}` },
+              { text: "Download the connector (once):", code: `curl -o ~/particl-mcp.mjs ${bridge}` },
               { text: "Add this to claude_desktop_config.json:", code:
 `{
   "mcpServers": {
-    "aimighty": {
+    "particl": {
       "command": "node",
-      "args": ["${"$HOME"}/aimighty-mcp.mjs"],
+      "args": ["${"$HOME"}/particl-mcp.mjs"],
       "env": {
-        "AIMIGHTY_URL": "${origin}",
-        "AIMIGHTY_TOKEN": "${key}"
+        "PARTICL_URL": "${origin}",
+        "PARTICL_TOKEN": "${key}"
       }
     }
   }
@@ -135,16 +135,16 @@ export default function ConnectPage() {
             note="The same connector works by hand — useful for batching a shot list."
             steps={[
               { text: "Download it once, and keep the two variables in your shell:", code:
-`curl -o ~/aimighty-mcp.mjs ${bridge}
-export AIMIGHTY_URL=${origin}
-export AIMIGHTY_TOKEN=${key}` },
+`curl -o ~/particl-mcp.mjs ${bridge}
+export PARTICL_URL=${origin}
+export PARTICL_TOKEN=${key}` },
               { text: "Then:", code:
-`node ~/aimighty-mcp.mjs --check
-node ~/aimighty-mcp.mjs projects
-node ~/aimighty-mcp.mjs usage
-node ~/aimighty-mcp.mjs ls --project "Monsoon Film"
-node ~/aimighty-mcp.mjs render "slow dolly through monsoon rain" --wait
-node ~/aimighty-mcp.mjs get gen_abc123 --save ./shot.mp4` },
+`node ~/particl-mcp.mjs --check
+node ~/particl-mcp.mjs projects
+node ~/particl-mcp.mjs usage
+node ~/particl-mcp.mjs ls --project "Monsoon Film"
+node ~/particl-mcp.mjs render "slow dolly through monsoon rain" --wait
+node ~/particl-mcp.mjs get gen_abc123 --save ./shot.mp4` },
             ]}
           />
         )}

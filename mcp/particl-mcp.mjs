@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * aimighty workspace — local connector, and a small CLI.
+ * Particl — local connector, and a small CLI.
  *
  * Most of this file is a bridge: it speaks MCP over stdio to a client such as
  * Claude Code or Claude Desktop, and forwards every call to the workspace's
@@ -8,31 +8,34 @@
  * this file never goes stale when they change, and there is nothing to
  * install — one file, no dependencies.
  *
- *   AIMIGHTY_URL=https://workspace.aimighty.studio \
- *   AIMIGHTY_TOKEN=aw_… \
- *   node aimighty-mcp.mjs
+ *   PARTICL_URL=https://workspace.aimighty.studio \
+ *   PARTICL_TOKEN=aw_… \
+ *   node particl-mcp.mjs
  *
  * It is also usable by hand:
  *
- *   node aimighty-mcp.mjs --check
- *   node aimighty-mcp.mjs projects
- *   node aimighty-mcp.mjs usage
- *   node aimighty-mcp.mjs ls [--project "Monsoon Film"] [--search rain]
- *   node aimighty-mcp.mjs render "a slow dolly through monsoon rain" [--project X] [--duration 5] [--res 1080p] [--wait]
- *   node aimighty-mcp.mjs get <id> [--save ./shot.mp4]
+ *   node particl-mcp.mjs --check
+ *   node particl-mcp.mjs projects
+ *   node particl-mcp.mjs usage
+ *   node particl-mcp.mjs ls [--project "Monsoon Film"] [--search rain]
+ *   node particl-mcp.mjs render "a slow dolly through monsoon rain" [--project X] [--duration 5] [--res 1080p] [--wait]
+ *   node particl-mcp.mjs get <id> [--save ./shot.mp4]
  */
 
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const BASE = (process.env.AIMIGHTY_URL ?? "https://workspace.aimighty.studio").replace(/\/$/, "");
-const TOKEN = process.env.AIMIGHTY_TOKEN ?? "";
+// PARTICL_* are the names now; AIMIGHTY_* are still read so a connector
+// somebody already installed doesn't break the day the product is renamed.
+const BASE = (process.env.PARTICL_URL ?? process.env.AIMIGHTY_URL ??
+              "https://workspace.aimighty.studio").replace(/\/$/, "");
+const TOKEN = process.env.PARTICL_TOKEN ?? process.env.AIMIGHTY_TOKEN ?? "";
 const ENDPOINT = `${BASE}/api/mcp`;
 
 function requireToken() {
   if (!TOKEN) {
     throw new Error(
-      "AIMIGHTY_TOKEN is not set. Make one in the workspace under Settings → Connect."
+      "PARTICL_TOKEN is not set. Make one in Particl under Settings → Connect."
     );
   }
 }
@@ -49,7 +52,7 @@ async function forward(payload) {
   const text = await res.text();
   if (res.status === 401) {
     throw new Error(
-      "The token was refused. It may have been revoked, or AIMIGHTY_URL may point at the wrong workspace."
+      "The token was refused. It may have been revoked, or PARTICL_URL may point at the wrong workspace."
     );
   }
   try { return JSON.parse(text); }
@@ -170,7 +173,7 @@ async function cli(argv) {
 
   if (verb === "render") {
     const prompt = rest.find((a) => !a.startsWith("--") && rest[rest.indexOf(a) - 1]?.startsWith("--") !== true);
-    if (!prompt) throw new Error(`Give me a prompt: aimighty-mcp.mjs render "a slow dolly …"`);
+    if (!prompt) throw new Error(`Give me a prompt: particl-mcp.mjs render "a slow dolly …"`);
     const out = await tool("render_shot", {
       prompt,
       project: flag(rest, "project"),
@@ -189,7 +192,7 @@ async function cli(argv) {
 
   if (verb === "get") {
     const id = rest[0];
-    if (!id) throw new Error("Which render? aimighty-mcp.mjs get <id> [--save ./shot.mp4]");
+    if (!id) throw new Error("Which render? particl-mcp.mjs get <id> [--save ./shot.mp4]");
     console.log(await tool("get_render", { id }));
     const save = flag(rest, "save");
     if (save) {

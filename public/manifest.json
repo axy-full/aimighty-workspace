@@ -1,11 +1,11 @@
 {
-  "name": "aimighty workspace",
-  "short_name": "aimighty",
-  "description": "Internal video generation workspace",
+  "name": "Particl",
+  "short_name": "Particl",
+  "description": "The studio's own video generation workspace",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0B0A09",
-  "theme_color": "#0B0A09",
+  "background_color": "#16171A",
+  "theme_color": "#16171A",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }

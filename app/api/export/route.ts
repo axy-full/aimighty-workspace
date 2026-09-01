@@ -28,7 +28,7 @@ export async function GET() {
   const rows = (rs: { rows: unknown[] }) => rs.rows.map((r) => ({ ...(r as any) }));
 
   const payload = {
-    workspace: "aimighty workspace",
+    workspace: "Particl",
     exportedAt: new Date(now()).toISOString(),
     exportedBy: got.user.email,
     note:
@@ -50,7 +50,7 @@ export async function GET() {
   return new Response(JSON.stringify(payload, null, 2), {
     headers: {
       "Content-Type": "application/json",
-      "Content-Disposition": `attachment; filename="aimighty-workspace-${stamp}.json"`,
+      "Content-Disposition": `attachment; filename="particl-${stamp}.json"`,
       "Cache-Control": "no-store",
     },
   });

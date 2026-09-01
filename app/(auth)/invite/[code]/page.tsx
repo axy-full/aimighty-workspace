@@ -34,7 +34,7 @@ export default function InvitePage({ params }: { params: Promise<{ code: string 
 
   return (
     <AuthCard title="Set your password"
-      sub="You've been invited to the aimighty workspace. Choose a password and you're in.">
+      sub="You've been invited to Particl. Choose a password and you're in.">
       <form onSubmit={submit}>
         <Field label="Password">
           <input className="ctl" type="password" autoComplete="new-password" required

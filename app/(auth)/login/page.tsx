@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
 
 export default function LoginPage() {
@@ -30,7 +31,7 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthCard title="Sign in" sub="aimighty team only.">
+    <AuthCard title="Sign in" sub="Particl is for the studio team.">
       <form onSubmit={submit}>
         <Field label="Email">
           <input className="ctl" type="email" autoComplete="username" required
@@ -43,6 +44,9 @@ export default function LoginPage() {
         <Submit busy={busy}>Sign in</Submit>
         {err && <ErrorLine>{err}</ErrorLine>}
       </form>
+      <p className="mt-4 text-[13px] text-mute">
+        <Link href="/welcome" className="text-blue">What is Particl?</Link>
+      </p>
     </AuthCard>
   );
 }

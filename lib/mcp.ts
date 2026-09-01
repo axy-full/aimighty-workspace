@@ -19,7 +19,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "render_shot",
     description:
-      "Start a video render in the aimighty workspace. Returns an id immediately — renders take " +
+      "Start a video render in Particl. Returns an id immediately — renders take " +
       "roughly one to three minutes — then use wait_for_render to collect it. Every prompt is " +
       "rewritten with ByteDance's Seedance recipe before rendering; prefix with 'raw:' to send " +
       "exact words. This spends real money from the workspace's credit.",

@@ -1,6 +1,6 @@
 # Connect the workspace to Claude
 
-This turns the aimighty workspace into something Claude can operate: write a
+This turns Particl into something Claude can operate: write a
 shot, wait for it, pull the file down, check what the month has cost — all
 from a conversation.
 
@@ -23,7 +23,7 @@ project you asked for, and on the ledger like any other render.
 **Claude Code** — one command:
 
 ```bash
-claude mcp add aimighty --env AIMIGHTY_URL=https://workspace.aimighty.studio --env AIMIGHTY_TOKEN=aw_your_token_here -- node /Users/axy/Downloads/ark-video/mcp/aimighty-mcp.mjs
+claude mcp add aimighty --env PARTICL_URL=https://workspace.aimighty.studio --env PARTICL_TOKEN=aw_your_token_here -- node /Users/axy/Downloads/ark-video/mcp/particl-mcp.mjs
 ```
 
 **Claude Desktop** — add this to `claude_desktop_config.json`
@@ -32,12 +32,12 @@ claude mcp add aimighty --env AIMIGHTY_URL=https://workspace.aimighty.studio --e
 ```json
 {
   "mcpServers": {
-    "aimighty": {
+    "particl": {
       "command": "node",
-      "args": ["/Users/axy/Downloads/ark-video/mcp/aimighty-mcp.mjs"],
+      "args": ["/Users/axy/Downloads/ark-video/mcp/particl-mcp.mjs"],
       "env": {
-        "AIMIGHTY_URL": "https://workspace.aimighty.studio",
-        "AIMIGHTY_TOKEN": "aw_your_token_here"
+        "PARTICL_URL": "https://workspace.aimighty.studio",
+        "PARTICL_TOKEN": "aw_your_token_here"
       }
     }
   }
@@ -49,9 +49,9 @@ Restart Claude Desktop afterwards.
 ## 3. Check it before you rely on it
 
 ```bash
-AIMIGHTY_URL=https://workspace.aimighty.studio \
-AIMIGHTY_TOKEN=aw_your_token_here \
-node mcp/aimighty-mcp.mjs --check
+PARTICL_URL=https://workspace.aimighty.studio \
+PARTICL_TOKEN=aw_your_token_here \
+node mcp/particl-mcp.mjs --check
 ```
 
 It prints what it can see — spend, credit, projects — or says exactly what is
