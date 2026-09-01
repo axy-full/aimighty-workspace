@@ -66,14 +66,23 @@ export default function Workspace() {
   useEffect(() => {
     if (seeded.current) return;
     seeded.current = true;
-    // A card sent over from the canvas arrives as a seed prompt. Read after
-    // mount, never in a useState initializer — the server has no localStorage,
-    // so seeding at first render hydrates wrong.
+    // Work handed over from elsewhere — a card from the canvas, or a prompt
+    // and shot spec built in the Studio. Read after mount, never in a
+    // useState initializer: the server has no localStorage, so seeding at
+    // first render hydrates wrong.
     try {
       const carried = window.localStorage.getItem("aw_compose_seed");
-      if (carried) {
-        window.localStorage.removeItem("aw_compose_seed");
-        Promise.resolve().then(() => setPrompt(carried));
+      const carriedSpec = window.localStorage.getItem("aw_compose_spec");
+      if (carried) window.localStorage.removeItem("aw_compose_seed");
+      if (carriedSpec) window.localStorage.removeItem("aw_compose_spec");
+      if (carried || carriedSpec) {
+        Promise.resolve().then(() => {
+          if (carried) setPrompt(carried);
+          if (carriedSpec) {
+            try { setSpec(JSON.parse(carriedSpec) as ShotSpec); }
+            catch { /* a spec we can't read is one we don't apply */ }
+          }
+        });
       }
     } catch { /* private mode — nothing carried, nothing lost */ }
     const m = getModel(prefs.modelId);

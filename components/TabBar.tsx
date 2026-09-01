@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  IconProjects, IconGenerate, IconMeter, IconGear,
+  IconProjects, IconGenerate, IconStudio, IconMeter, IconGear,
 } from "./Icons";
 
 /**
@@ -12,9 +12,13 @@ import {
  * a screen (the project list is now the Projects tab, spend is in the top
  * bar, the account is in Settings), and on a phone it simply wasn't there.
  */
+/* Order follows the work, not the filesystem: you come here to make a shot,
+   so Generate leads. Projects is where the made things live, Studio is where
+   the vocabulary they're made from is kept, and the rest is housekeeping. */
 const TABS = [
-  { href: "/",         label: "Projects", Icon: IconProjects },
   { href: "/generate", label: "Generate", Icon: IconGenerate },
+  { href: "/",         label: "Projects", Icon: IconProjects },
+  { href: "/studio",   label: "Studio",   Icon: IconStudio },
   { href: "/usage",    label: "Usage",    Icon: IconMeter },
   { href: "/settings", label: "Settings", Icon: IconGear },
 ];

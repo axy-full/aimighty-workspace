@@ -182,6 +182,18 @@ const SCHEMA = [
      updated_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_canvas_project ON canvas_items(project_id, z)`,
+  /* A saved shot spec — "our house look" as one click instead of six.
+     Kept apart from cast_members because a look here is a set of CHOICES
+     (85mm, golden hour, handheld), not an asset with a still. */
+  `CREATE TABLE IF NOT EXISTS shot_presets (
+     id         TEXT PRIMARY KEY,
+     project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+     name       TEXT NOT NULL,
+     spec       TEXT NOT NULL DEFAULT '{}',
+     created_by TEXT NOT NULL DEFAULT '',
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_presets_project ON shot_presets(project_id)`,
   /* Workspace-level settings that outlive any one browser: the filename
      protocol, retention policy, provider preferences. localStorage prefs
      stay in lib/prefs.ts — these are the ones the whole team shares. */

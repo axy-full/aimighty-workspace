@@ -17,6 +17,14 @@ export const IconGenerate = (p: P) => (
     <path d="M18.5 14.6l.8 1.8 1.8.8-1.8.8-.8 1.8-.8-1.8-1.8-.8 1.8-.8z" />
   </svg>
 );
+/* Studio — a clapper board: the place a shot is specified before it's shot. */
+export const IconStudio = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3.5 9.5h17v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" />
+    <path d="M3.9 6.2l15.6-1.7.6 3.4-15.6 1.7z" />
+    <path d="M8.6 5.7l1.1 3.3M13.4 5.2l1.1 3.3" />
+  </svg>
+);
 export const IconMeter = (p: P) => (
   <svg {...base} {...p}>
     <path d="M5 19v-6M12 19V6M19 19v-9" />
