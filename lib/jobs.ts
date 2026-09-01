@@ -23,6 +23,16 @@ export type Generation = {
   error: string | null;
   createdBy: string;
   authorName: string | null;
+  /** Which shot this is a take of, and which take. */
+  shotId: string | null;
+  shotCode: string | null;
+  shotScene: string | null;
+  shotTitle: string | null;
+  version: number;
+  /** Wall-clock time from submit to delivery — the basis for "where do we get stuck". */
+  durationMs: number | null;
+  provider: string;
+  attempts: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -49,16 +59,26 @@ export function rowToGeneration(r: any): Generation {
     error: r.error ?? null,
     createdBy: r.created_by ?? "",
     authorName: r.author_name ?? null,
+    shotId: r.shot_id ?? null,
+    shotCode: r.shot_code ?? null,
+    shotScene: r.shot_scene ?? null,
+    shotTitle: r.shot_title ?? null,
+    version: Number(r.version ?? 1),
+    durationMs: r.duration_ms == null ? null : Number(r.duration_ms),
+    provider: r.provider ?? "byteplus",
+    attempts: Number(r.attempts ?? 1),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
 }
 
 const SELECT = `
-  SELECT g.*, p.name AS project_name, u.name AS author_name
+  SELECT g.*, p.name AS project_name, u.name AS author_name,
+         s.code AS shot_code, s.scene AS shot_scene, s.title AS shot_title
   FROM generations g
   LEFT JOIN projects p ON p.id = g.project_id
   LEFT JOIN users    u ON u.id = g.created_by
+  LEFT JOIN shots    s ON s.id = g.shot_id
 `;
 
 export async function listGenerations(opts: {
@@ -174,11 +194,16 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   }
 
   const ts = now();
+  // How long the render actually took, recorded once when it reaches a
+  // terminal state. Analytics reads this to answer "where do shots get
+  // stuck" without having to guess from timestamps that keep moving.
+  const durationMs = TERMINAL.has(task.status) ? Math.max(0, ts - gen.createdAt) : null;
   await db().execute({
     sql: `UPDATE generations
           SET status=?, source_url=?, stored_url=?, total_tokens=?,
               cost_usd=COALESCE(?, cost_usd),
               rate_usd_per_m=COALESCE(?, rate_usd_per_m),
+              duration_ms=COALESCE(duration_ms, ?),
               error=?, updated_at=?
           WHERE id=?`,
     args: [
@@ -188,6 +213,7 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
       task.totalTokens,
       cost,
       rate,
+      durationMs,
       task.error,
       ts,
       gen.id,

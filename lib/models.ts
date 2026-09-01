@@ -46,6 +46,8 @@ export type ModelDef = {
   label: string;
   short: string;
   family: string;
+  /** Which third-party API serves it. See lib/providers.ts. */
+  provider: string;
   /** What the engine produces. Image engines skip duration/audio/refine. */
   kind: "video" | "image";
   paramStyle: ParamStyle;
@@ -69,6 +71,7 @@ export const MODELS: ModelDef[] = [
     label: "Seedance 2.5",
     short: "SD 2.5",
     family: "seedance-2",
+    provider: "byteplus",
     kind: "video",
     paramStyle: "fields",
     tiers: [
@@ -90,6 +93,7 @@ export const MODELS: ModelDef[] = [
     label: "Seedance 2.0",
     short: "SD 2.0",
     family: "seedance-2",
+    provider: "byteplus",
     kind: "video",
     paramStyle: "fields",
     tiers: [

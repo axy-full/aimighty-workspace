@@ -1,0 +1,59 @@
+/**
+ * Workspace settings — the ones the whole team shares.
+ *
+ * localStorage prefs (lib/prefs.ts) seed one person's composer. These outlive
+ * the browser: the filename protocol, the retention policy, how many times a
+ * failed render is retried. Read on nearly every download, so they're memoed
+ * for a few seconds rather than fetched per request.
+ */
+import { db, ready, now } from "@/lib/db";
+
+export const DEFAULTS = {
+  /** R9 — the platform names the file, never the API. */
+  namingTemplate: "{project}_{scene}_{shot}_{model}_v{version}_{user}",
+  /** Days a soft-deleted render's media is kept before the janitor may remove it. */
+  retentionDays: "0",
+  /** How many times a transient provider failure is retried before the row fails. */
+  maxRetries: "2",
+  /** Whether oversized masters may be sent to an API as a derived copy. */
+  deriveForApi: "1",
+} as const;
+
+export type SettingKey = keyof typeof DEFAULTS;
+
+let cache: Record<string, string> | null = null;
+let cachedAt = 0;
+const TTL = 10_000;
+
+export function invalidateSettings(): void {
+  cache = null;
+}
+
+export async function allSettings(): Promise<Record<string, string>> {
+  if (cache && Date.now() - cachedAt < TTL) return cache;
+  await ready();
+  const rs = await db().execute(`SELECT key, value FROM settings`);
+  const out: Record<string, string> = { ...DEFAULTS };
+  for (const r of rs.rows) {
+    const row = r as unknown as { key: string; value: string };
+    out[row.key] = row.value;
+  }
+  cache = out;
+  cachedAt = Date.now();
+  return out;
+}
+
+export async function getSetting(key: SettingKey): Promise<string> {
+  return (await allSettings())[key] ?? DEFAULTS[key];
+}
+
+export async function setSetting(key: string, value: string, userId: string): Promise<void> {
+  await ready();
+  await db().execute({
+    sql: `INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?,?,?,?)
+          ON CONFLICT(key) DO UPDATE SET value=excluded.value,
+            updated_by=excluded.updated_by, updated_at=excluded.updated_at`,
+    args: [key, value, userId, now()],
+  });
+  invalidateSettings();
+}

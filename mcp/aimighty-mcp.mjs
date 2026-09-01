@@ -74,8 +74,16 @@ async function saveMedia(id, dest) {
   });
   if (!res.ok) throw new Error(`${res.status} downloading ${id}`);
   const buf = Buffer.from(await res.arrayBuffer());
+  // The workspace decides the filename (PROJECT_SCENE_SHOT_MODEL_VERSION_USER
+  // by default) and sends it in Content-Disposition. Saving into a directory
+  // honours that rather than falling back to the render id.
+  const cd = res.headers.get("content-disposition") ?? "";
+  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+  const served = m ? decodeURIComponent(m[1]).replace(/[/\\]/g, "-").trim() : "";
+  const type = res.headers.get("content-type") ?? "";
+  const fallback = `${id}.${type.includes("png") ? "png" : "mp4"}`;
   let target = path.resolve(dest);
-  if (!path.extname(target)) target = path.join(target, `${id}.mp4`);
+  if (!path.extname(target)) target = path.join(target, served || fallback);
   await writeFile(target, buf);
   return { target, mb: (buf.length / 1048576).toFixed(1) };
 }

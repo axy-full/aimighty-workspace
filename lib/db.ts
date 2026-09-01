@@ -143,6 +143,54 @@ const SCHEMA = [
      revoked_at  INTEGER
    )`,
   `CREATE INDEX IF NOT EXISTS idx_tokens_user ON api_tokens(user_id)`,
+  /* Shots — the production unit a project is actually organised by.
+     A shot is asked for once and rendered many times; every render is a
+     VERSION of it. This is what makes "revisions per shot" a real number,
+     what the canvas groups by, and what gives a download a meaningful name
+     instead of a Seedance id. */
+  `CREATE TABLE IF NOT EXISTS shots (
+     id          TEXT PRIMARY KEY,
+     project_id  TEXT REFERENCES projects(id) ON DELETE CASCADE,
+     scene       TEXT NOT NULL DEFAULT '',
+     code        TEXT NOT NULL DEFAULT '',
+     title       TEXT NOT NULL DEFAULT '',
+     description TEXT NOT NULL DEFAULT '',
+     status      TEXT NOT NULL DEFAULT 'open',
+     position    INTEGER NOT NULL DEFAULT 0,
+     created_by  TEXT NOT NULL DEFAULT '',
+     created_at  INTEGER NOT NULL,
+     updated_at  INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_shots_project ON shots(project_id, position)`,
+  /* Where a card sits on a project's canvas. Kept apart from the generation
+     row so laying out a board never rewrites production data, and so a
+     reference asset or a note can share the same surface as a render. */
+  `CREATE TABLE IF NOT EXISTS canvas_items (
+     id         TEXT PRIMARY KEY,
+     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+     kind       TEXT NOT NULL DEFAULT 'generation',
+     ref_id     TEXT,
+     text       TEXT NOT NULL DEFAULT '',
+     x          REAL NOT NULL DEFAULT 0,
+     y          REAL NOT NULL DEFAULT 0,
+     w          REAL NOT NULL DEFAULT 260,
+     h          REAL NOT NULL DEFAULT 170,
+     z          INTEGER NOT NULL DEFAULT 0,
+     colour     TEXT NOT NULL DEFAULT '',
+     created_by TEXT NOT NULL DEFAULT '',
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_canvas_project ON canvas_items(project_id, z)`,
+  /* Workspace-level settings that outlive any one browser: the filename
+     protocol, retention policy, provider preferences. localStorage prefs
+     stay in lib/prefs.ts — these are the ones the whole team shares. */
+  `CREATE TABLE IF NOT EXISTS settings (
+     key        TEXT PRIMARY KEY,
+     value      TEXT NOT NULL,
+     updated_by TEXT NOT NULL DEFAULT '',
+     updated_at INTEGER NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS topups (
      id         TEXT PRIMARY KEY,
      amount_usd REAL NOT NULL,
@@ -166,6 +214,19 @@ export async function ready(): Promise<void> {
         await db().execute(`ALTER TABLE uploads ADD COLUMN duration_s REAL`);
       } catch { /* column already exists */ }
       for (const col of [
+        // Reference uploads keep their master untouched; when a downstream
+        // API can't accept the master, the derivative lives alongside it.
+        `derivative_url TEXT`, `derivative_bytes INTEGER`,
+        `derivative_note TEXT`, `sha256 TEXT`,
+      ]) {
+        try { await db().execute(`ALTER TABLE uploads ADD COLUMN ${col}`); }
+        catch { /* column already exists */ }
+      }
+      for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`]) {
+        try { await db().execute(`ALTER TABLE projects ADD COLUMN ${col}`); }
+        catch { /* column already exists */ }
+      }
+      for (const col of [
         `refine_model TEXT`, `refine_in_tokens INTEGER`,
         `refine_out_tokens INTEGER`, `refine_cost_usd REAL`,
         `kind TEXT NOT NULL DEFAULT 'video'`,
@@ -175,6 +236,15 @@ export async function ready(): Promise<void> {
         `review_state TEXT NOT NULL DEFAULT ''`,
         `review_by TEXT`,
         `reviewed_at INTEGER`,
+        // Which shot this render is a take of, and which take it is.
+        `shot_id TEXT`,
+        `version INTEGER NOT NULL DEFAULT 1`,
+        // How long the render actually took, wall-clock, in ms — the basis
+        // for "where do projects get stuck" and for hours spent.
+        `duration_ms INTEGER`,
+        // Which provider served it, so the ledger survives a second vendor.
+        `provider TEXT NOT NULL DEFAULT 'byteplus'`,
+        `attempts INTEGER NOT NULL DEFAULT 1`,
       ]) {
         try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
         catch { /* column already exists */ }

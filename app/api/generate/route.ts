@@ -6,6 +6,9 @@ import { enhancePrompt, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from 
 import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
+import { getShot, nextVersion } from "@/lib/shots";
+import { withRetry, classifyFailure } from "@/lib/providers";
+import { getSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -266,6 +269,20 @@ export async function POST(req: Request) {
   }
 
   const projectId = body.projectId ? String(body.projectId) : null;
+
+  /* ── Which shot is this a take of? ───────────────────────────────────
+   * Filing the render against a shot is what makes it version 3 of SH110
+   * rather than another anonymous mp4 — it drives the revision count, the
+   * canvas grouping and the download's name.
+   * ------------------------------------------------------------------ */
+  const shotId = body.shotId ? String(body.shotId) : null;
+  let version = 1;
+  if (shotId) {
+    const shot = await getShot(shotId);
+    if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 400 });
+    version = await nextVersion(shotId);
+  }
+
   const genId = id("gen");
   const ts = now();
   const hasVideoInput = references.some((r) => r.kind === "video");
@@ -282,28 +299,47 @@ export async function POST(req: Request) {
   await db().execute({
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
-           refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
+           shot_id, version, provider)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(storedParams), "queued",
            got.user.id, ts, ts,
            refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost,
-           got.token?.id ?? null],
+           got.token?.id ?? null,
+           shotId, version, model.provider ?? "byteplus"],
   });
 
   invalidate(PROJECTS_KEY);
+
+  /* Submitting is the one call that can fail for reasons that aren't ours.
+   * A timeout or a 429 is weather and gets tried again with backoff; a
+   * rejected prompt is a decision and fails immediately with the vendor's
+   * own words. Either way the row already exists, so nothing disappears. */
+  const maxRetries = Math.max(0, Math.min(5, Number(await getSetting("maxRetries")) || 0));
   try {
-    const taskId = await submitTask(modelId, finalPrompt, params, references);
+    const { value: taskId, attempts } = await withRetry(
+      () => submitTask(modelId, finalPrompt, params, references),
+      {
+        max: maxRetries,
+        onRetry: (n, cls, err) =>
+          console.warn(`generate ${genId}: attempt ${n} ${cls} — ${err.message}`),
+      }
+    );
     await db().execute({
-      sql: `UPDATE generations SET ark_task_id=?, status='running', updated_at=? WHERE id=?`,
-      args: [taskId, now(), genId],
+      sql: `UPDATE generations SET ark_task_id=?, status='running', attempts=?, updated_at=? WHERE id=?`,
+      args: [taskId, attempts, now(), genId],
     });
-    return NextResponse.json({ id: genId, arkTaskId: taskId, status: "running" });
+    return NextResponse.json({ id: genId, arkTaskId: taskId, status: "running", attempts });
   } catch (e) {
     const msg = (e as Error).message;
+    const cls = classifyFailure(e);
+    const shown = cls === "rate-limited"
+      ? `The provider is rate-limiting us — try again shortly. (${msg})`
+      : msg;
     await db().execute({
-      sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`,
-      args: [msg, now(), genId],
+      sql: `UPDATE generations SET status='failed', error=?, attempts=?, updated_at=? WHERE id=?`,
+      args: [shown, maxRetries + 1, now(), genId],
     });
-    return NextResponse.json({ id: genId, status: "failed", error: msg }, { status: 502 });
+    return NextResponse.json({ id: genId, status: "failed", error: shown }, { status: 502 });
   }
 }

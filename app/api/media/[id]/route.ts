@@ -3,6 +3,7 @@ import {
   presignedReadUrl, videoPath, imagePath, usingBlob,
 } from "@/lib/storage";
 import { getGeneration } from "@/lib/jobs";
+import { downloadFilename } from "@/lib/downloadName";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,6 @@ export const maxDuration = 60;
 type Ctx = { params: Promise<{ id: string }> };
 
 /** Short handle, matching what the UI shows on the clip. */
-const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
 /**
  * Renders live in private storage and are only ever reachable behind the
@@ -42,11 +42,13 @@ export async function GET(req: Request, { params }: Ctx) {
   if (wantsDownload) {
     try {
       const stream = await openMediaStream(id, kind);
+      // The platform names the file, never the API (R9).
+      const filename = await downloadFilename(id, isImage ? "png" : "mp4");
       return new Response(stream, {
         headers: {
           "Content-Type": contentType,
           "Content-Disposition":
-            `attachment; filename="${clipId(id)}.${isImage ? "png" : "mp4"}"`,
+            `attachment; filename="${filename.replace(/"/g, "")}"`,
           "Cache-Control": "private, no-store",
         },
       });
