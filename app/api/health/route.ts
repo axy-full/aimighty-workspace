@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { PROVIDERS, providerConfigured } from "@/lib/providers";
 import { db, ready } from "@/lib/db";
 import { presignedReadUrl } from "@/lib/storage";
 
@@ -83,6 +84,7 @@ export async function GET(req: Request) {
     ...(presignRange ? { presignRange } : {}),
     videosSaved,
     videosAtRisk,
+    providers: PROVIDERS.map((p) => ({ id: p.id, configured: providerConfigured(p) })),
     arkKeyConfigured: Boolean(process.env.ARK_API_KEY),
     pushConfigured: Boolean(
       process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY

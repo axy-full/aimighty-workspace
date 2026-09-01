@@ -9,6 +9,7 @@ import { usd } from "@/lib/format";
 import { appAlert } from "@/components/dialog";
 import { Switch } from "@/components/Panel";
 import { IconChevron } from "@/components/Icons";
+import WorkspaceSettings from "@/components/WorkspaceSettings";
 
 type Me = { name: string; email: string; role: string };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number };
@@ -104,6 +105,8 @@ export default function SettingsPage() {
           <PushRow />
         </div>
 
+        <WorkspaceSettings isAdmin={me?.role === "admin"} />
+
         <p className="grouplabel mt-10">Workspace</p>
         <div className="rows">
           <div className="row">
@@ -123,6 +126,13 @@ export default function SettingsPage() {
               <span className="row-value"><IconChevron className="!text-mute" /></span>
             </button>
           )}
+          <button className="row" onClick={() => router.push("/platform")}>
+            Platform
+            <span className="row-value">
+              Assets · APIs · security · IP
+              <IconChevron className="!text-mute" />
+            </span>
+          </button>
           <a className="row" href="/api/export" download
              title="Every prompt, cost and account record as JSON">
             Export data

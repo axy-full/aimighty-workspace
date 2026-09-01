@@ -37,6 +37,7 @@ export async function GET() {
     projects: rs.rows.map((r: any) => ({
       id: r.id,
       name: r.name,
+      code: r.code ?? "",
       description: r.description,
       createdAt: Number(r.created_at),
       genCount: Number(r.gen_count),
@@ -57,8 +58,10 @@ export async function POST(req: Request) {
 
   const pid = id("prj");
   await db().execute({
-    sql: `INSERT INTO projects (id, name, description, created_at) VALUES (?,?,?,?)`,
-    args: [pid, name.slice(0, 120), String(body.description ?? "").slice(0, 500), now()],
+    sql: `INSERT INTO projects (id, name, description, created_at, code) VALUES (?,?,?,?,?)`,
+    args: [pid, name.slice(0, 120), String(body.description ?? "").slice(0, 500), now(),
+           // A short code is what makes {projectcode} usable in a filename.
+           String(body.code ?? "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16)],
   });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ id: pid, name });

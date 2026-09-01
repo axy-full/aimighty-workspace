@@ -25,7 +25,8 @@ type ShotRow = {
 export default function ProjectOverview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data } = useApi<Analytics>(`/api/analytics?projectId=${encodeURIComponent(id)}`, 30000);
-  const { data: projects } = useApi<{ projects: Project[] }>("/api/projects", 60000);
+  const { data: projects, refresh: refreshProjects } =
+    useApi<{ projects: Project[] }>("/api/projects", 60000);
   const { data: shotData, refresh: refreshShots } =
     useApi<{ shots: ShotRow[] }>(`/api/shots?projectId=${encodeURIComponent(id)}`, 30000);
   const [busy, setBusy] = useState(false);
@@ -56,6 +57,17 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
     }
   }
 
+  async function setCode() {
+    const code = await appPrompt("Project code", project?.code ?? "", "NKA26");
+    if (code === null) return;
+    const res = await fetch(`/api/projects/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) await appAlert("Could not save the code");
+    else refreshProjects();
+  }
+
   if (!data) {
     return (
       <div className="screen grid place-items-center">
@@ -76,6 +88,14 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
         {project?.description && (
           <p className="mt-4 max-w-[70ch] text-[15px] text-dim">{project.description}</p>
         )}
+
+        <p className="mt-3 text-[14px] text-mute">
+          Code{" "}
+          <button onClick={setCode} className="font-mono text-blue">
+            {project?.code || "set one"}
+          </button>{" "}
+          — the short form that appears in filenames.
+        </p>
 
         <div className="mt-6 flex flex-wrap gap-2">
           <Link href="/generate" className="chip bg-blue text-white">Open in Generate</Link>

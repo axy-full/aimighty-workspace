@@ -12,9 +12,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  const code = typeof body.code === "string"
+    ? body.code.trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16)
+    : null;
   await db().execute({
-    sql: `UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description) WHERE id = ?`,
-    args: [body.name ?? null, body.description ?? null, id],
+    sql: `UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description),
+                              code = COALESCE(?, code) WHERE id = ?`,
+    args: [body.name ?? null, body.description ?? null, code, id],
   });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
