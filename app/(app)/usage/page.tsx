@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
+import SectionNav from "@/components/SectionNav";
 
 type Usage = {
   purchasedUsd: number; spentUsd: number; remainingUsd: number;
@@ -76,9 +77,10 @@ export default function UsagePage() {
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px]">
-        <div className="flex items-start gap-4 pt-6">
+        <div className="flex flex-wrap items-center gap-4 pt-6">
           <h1 className="h1">Usage</h1>
-          <span className="ml-auto pt-3 text-[15px] text-dim">{monthLabel}</span>
+          <SectionNav />
+          <span className="ml-auto text-[15px] text-dim">{monthLabel}</span>
         </div>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_320px]">

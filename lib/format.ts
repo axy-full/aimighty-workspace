@@ -38,3 +38,25 @@ export function posterSrc(url: string): string {
 export function downloadHref(url: string): string {
   return url.startsWith("/api/media/") ? `${url}?download=1` : url;
 }
+
+/** Machine time, spoken the way a producer would say it. */
+export function dur(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) return "—";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+export function hours(ms: number | null | undefined): string {
+  if (!ms) return "0h";
+  const h = ms / 3_600_000;
+  return h < 1 ? `${Math.round(ms / 60000)}m` : `${h.toFixed(1)}h`;
+}
+
+export function pct(n: number): string {
+  return `${Math.round(n * 100)}%`;
+}

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
@@ -75,7 +77,8 @@ export default function ProjectsPage() {
           {shown.map((p) => {
             const cover = coverFor.get(p.id);
             return (
-              <button key={p.id} onClick={() => open(p.id)} className="group text-left"
+              <div key={p.id}>
+                <button onClick={() => open(p.id)} className="group w-full text-left"
                 data-project-target={p.id} data-project-name={p.name}>
                 <div className="aspect-square overflow-hidden rounded-[var(--r-lg)] bg-thumb shadow-[var(--shadow-media)] transition-transform duration-200 group-hover:-translate-y-1">
                   {cover?.storedUrl ? (
@@ -90,7 +93,14 @@ export default function ProjectsPage() {
                     ? `${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${usd(p.spend, 2)}`
                     : "Empty"}
                 </p>
-              </button>
+                </button>
+                {/* Tapping the card opens the work; the overview is where the
+                    job's shots, cost and people live. */}
+                <Link href={`/projects/${p.id}`}
+                  className="mt-0.5 inline-block text-[13px] text-blue">
+                  Overview
+                </Link>
+                </div>
             );
           })}
 
