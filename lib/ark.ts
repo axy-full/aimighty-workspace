@@ -36,6 +36,9 @@ export type Reference = {
   storedUrl: string;
   role: ImageRole;
   kind: "image" | "video";
+  /** Set when the master was too large or too extreme for this vendor and a
+   *  delivery copy was derived at upload time. The master is never sent. */
+  deliveryUrl?: string | null;
 };
 
 export type ArkStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -100,16 +103,23 @@ async function toRefContent(ref: Reference) {
     return { type: "video_url", video_url: { url }, role: "reference_video" };
   }
 
+  /* R4: if a delivery copy exists, that is what travels. The master stays
+   * where it is — the vendor's ceiling decides what we SEND, never what we
+   * keep. Derivatives are always JPEG (see lib/derive.ts). */
+  const useDelivery = Boolean(ref.deliveryUrl);
+  const sendId = useDelivery ? `${ref.id}-api` : ref.id;
+  const sendExt = useDelivery ? "jpg" : ref.ext;
+  const sendMime = useDelivery ? "image/jpeg" : ref.mime.toLowerCase();
+
   if (usingBlob()) {
-    const url = await presignedReadUrl(uploadPath(ref.id, ref.ext));
+    const url = await presignedReadUrl(uploadPath(sendId, sendExt));
     return { type: "image_url", image_url: { url }, role: ref.role };
   }
-  const bytes = await readUploadBytes(ref.id, ref.ext, ref.storedUrl);
+  const bytes = await readUploadBytes(sendId, sendExt, ref.deliveryUrl ?? ref.storedUrl);
   // Format token must be lowercase, e.g. data:image/png;base64,...
-  const mime = ref.mime.toLowerCase();
   return {
     type: "image_url",
-    image_url: { url: `data:${mime};base64,${bytes.toString("base64")}` },
+    image_url: { url: `data:${sendMime};base64,${bytes.toString("base64")}` },
     role: ref.role,
   };
 }

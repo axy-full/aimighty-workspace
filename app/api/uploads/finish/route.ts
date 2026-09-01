@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { identifyImage, validateImage, validateVideo } from "@/lib/imagemeta";
+import { identifyImage, validateVideo } from "@/lib/imagemeta";
+import { getProvider, DEFAULT_PROVIDER } from "@/lib/providers";
+import { assess, deriveForProvider } from "@/lib/derive";
+import { getSetting } from "@/lib/settings";
 import { assembleChunks, deleteChunks, storeUpload, streamAssembleUpload } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -86,19 +89,58 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    const problem = meta.kind === "video"
-      ? validateVideo(meta, buf.length)
-      : validateImage(meta, buf.length);
-    if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+    const provider = getProvider(DEFAULT_PROVIDER);
+    if (meta.kind === "video") {
+      const problem = validateVideo(meta, buf.length);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+    }
+
+    /* R4 — same contract as the direct route: the master is kept exactly as
+     * it arrived, and anything the vendor won't take travels as a derived
+     * delivery copy instead. This is the path big files actually use, so it
+     * is the path where the guarantee matters most. */
+    const verdict = meta.kind === "image"
+      ? assess(meta, buf.length, provider)
+      : { ok: true, reasons: [] as string[], derivable: false };
+    const mayDerive = (await getSetting("deriveForApi")) !== "0";
+
+    if (!verdict.ok && (!verdict.derivable || !mayDerive)) {
+      return NextResponse.json({
+        error: `This asset can't be sent to ${provider.label}: ${verdict.reasons.join("; ")}.` +
+               (verdict.derivable
+                 ? " Delivery copies are switched off in Settings, so it was not stored."
+                 : " Nothing was compressed — send a larger original."),
+      }, { status: 400 });
+    }
 
     const uploadId = id(meta.kind === "video" ? "vid" : "img");
     const { url, sha256 } = await storeUpload(uploadId, meta.ext, buf, meta.mime);
 
+    let derivativeUrl: string | null = null;
+    let derivativeBytes: number | null = null;
+    let derivativeNote: string | null = null;
+    if (!verdict.ok && verdict.derivable && mayDerive) {
+      try {
+        const d = await deriveForProvider(buf, provider);
+        const stored = await storeUpload(`${uploadId}-api`, d.ext, d.bytes, d.mime);
+        derivativeUrl = stored.url;
+        derivativeBytes = d.bytes.length;
+        derivativeNote = d.note;
+      } catch (e) {
+        return NextResponse.json({
+          error: `${provider.label} won't accept this asset and a delivery copy could not be made: ` +
+                 `${(e as Error).message}`,
+        }, { status: 400 });
+      }
+    }
+
     await db().execute({
-      sql: `INSERT INTO uploads (id, filename, mime, ext, bytes, sha256, width, height, stored_url, kind, duration_s, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      sql: `INSERT INTO uploads (id, filename, mime, ext, bytes, sha256, width, height, stored_url, kind, duration_s, created_at,
+                                 derivative_url, derivative_bytes, derivative_note)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       args: [uploadId, filename, meta.mime, meta.ext, buf.length, sha256,
-             meta.width, meta.height, url, meta.kind, meta.durationS, now()],
+             meta.width, meta.height, url, meta.kind, meta.durationS, now(),
+             derivativeUrl, derivativeBytes, derivativeNote],
     });
 
     // Belt and braces: the response hash is of what the STORE holds.
@@ -108,6 +150,7 @@ export async function POST(req: Request) {
       bytes: buf.length, width: meta.width, height: meta.height,
       durationS: meta.durationS, sha256: check,
       url: `/api/uploads/${uploadId}`,
+      delivery: derivativeNote ? { note: derivativeNote, bytes: derivativeBytes } : null,
       base64Bytes: meta.kind === "video" ? 0 : Math.ceil(buf.length / 3) * 4,
     });
   } finally {

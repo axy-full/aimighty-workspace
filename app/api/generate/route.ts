@@ -112,14 +112,15 @@ export async function POST(req: Request) {
   if (wanted.length) {
     const placeholders = wanted.map(() => "?").join(",");
     const rs = await db().execute({
-      sql: `SELECT id, mime, ext, stored_url, kind, duration_s FROM uploads WHERE id IN (${placeholders})`,
+      sql: `SELECT id, mime, ext, stored_url, kind, duration_s, derivative_url
+            FROM uploads WHERE id IN (${placeholders})`,
       args: wanted.map((w) => w.uploadId),
     });
     const byId = new Map(
       rs.rows.map((r) => {
         const row = r as unknown as {
           id: string; mime: string; ext: string; stored_url: string;
-          kind: string; duration_s: number | null;
+          kind: string; duration_s: number | null; derivative_url: string | null;
         };
         return [row.id, row];
       })
@@ -170,6 +171,7 @@ export async function POST(req: Request) {
       return {
         id: row.id, mime: row.mime, ext: row.ext, storedUrl: row.stored_url,
         role: w.role, kind: w.kind as "image" | "video",
+        deliveryUrl: row.derivative_url ?? null,
       };
     });
   }
@@ -191,11 +193,13 @@ export async function POST(req: Request) {
 
     if (expanded.attach.length) {
       const rs = await db().execute({
-        sql: `SELECT id, mime, ext, stored_url, kind FROM uploads WHERE id IN (${expanded.attach.map(() => "?").join(",")})`,
+        sql: `SELECT id, mime, ext, stored_url, kind, derivative_url
+              FROM uploads WHERE id IN (${expanded.attach.map(() => "?").join(",")})`,
         args: expanded.attach,
       });
       const byId = new Map(rs.rows.map((r) => {
-        const row = r as unknown as { id: string; mime: string; ext: string; stored_url: string; kind: string };
+        const row = r as unknown as { id: string; mime: string; ext: string;
+                                      stored_url: string; kind: string; derivative_url: string | null };
         return [row.id, row];
       }));
       // Keep the order expandCast assigned — it decided the @ImageN numbers.
@@ -205,6 +209,7 @@ export async function POST(req: Request) {
         references.push({
           id: row.id, mime: row.mime, ext: row.ext, storedUrl: row.stored_url,
           role: "reference_image", kind: "image",
+          deliveryUrl: row.derivative_url ?? null,
         });
       }
     }
