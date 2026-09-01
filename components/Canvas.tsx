@@ -42,11 +42,12 @@ export default function Canvas({ projectId, items, onChanged, onUse }: Props) {
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 40, y: 40 });
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  /** Where a board pan started. STATE, not a ref — see the pan effect below. */
+  const [panFrom, setPanFrom] = useState<{ x: number; y: number; px: number; py: number } | null>(null);
   /** Local overrides while a card is under the pointer — a poll must not yank it. */
   const [local, setLocal] = useState<Record<string, { x: number; y: number }>>({});
   const [selected, setSelected] = useState<string | null>(null);
   const surface = useRef<HTMLDivElement>(null);
-  const panning = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
   const shown = useMemo(
     () => items.map((it) => (local[it.id] ? { ...it, ...local[it.id] } : it)),
@@ -78,33 +79,53 @@ export default function Canvas({ projectId, items, onChanged, onUse }: Props) {
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    // Same reason as the pan effect: a cancelled pointer sends no pointerup,
+    // and a drag that never releases keeps following the cursor.
+    window.addEventListener("pointercancel", up);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
     };
   }, [drag, pan, scale, local, save]);
 
-  /* ── Panning the board ───────────────────────────────────────────── */
+  /* ── Panning the board ─────────────────────────────────────────────
+   * This used to arm a REF and rely on an effect with no dependency array to
+   * notice. It never did on a fresh board: the only state call in the handler
+   * was setSelected(null), which is a no-op when nothing is selected, so React
+   * bailed out, no render happened, and the effect never ran to attach the
+   * listeners. Measured: dragging the surface moved the board 0px until some
+   * unrelated render — selecting a card, a poll — happened to attach them.
+   * That matters more than it sounds: the board has no scrollbar and no native
+   * pan, so on a phone dragging IS the only way to reach a card outside the
+   * viewport.
+   *
+   * Panning is state now, exactly like the card drag above, so the effect has
+   * real dependencies and attaches the moment a pan begins.
+   * ---------------------------------------------------------------- */
   useEffect(() => {
-    if (!panning.current) return;
+    if (!panFrom) return;
     const move = (e: PointerEvent) => {
-      const p = panning.current;
-      if (!p) return;
-      setPan({ x: p.px + (e.clientX - p.x), y: p.py + (e.clientY - p.y) });
+      setPan({ x: panFrom.px + (e.clientX - panFrom.x), y: panFrom.py + (e.clientY - panFrom.y) });
     };
-    const up = () => { panning.current = null; };
+    const end = () => setPanFrom(null);
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    window.addEventListener("pointerup", end);
+    // A native drag or an iOS long-press callout ends the pointer stream with
+    // pointercancel and never sends pointerup. Without this the gesture never
+    // releases and the board follows the bare cursor.
+    window.addEventListener("pointercancel", end);
     return () => {
       window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
     };
-  });
+  }, [panFrom]);
 
   function onSurfaceDown(e: React.PointerEvent) {
     if (e.target !== e.currentTarget) return;
     setSelected(null);
-    panning.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
+    setPanFrom({ x: e.clientX, y: e.clientY, px: pan.x, py: pan.y });
   }
 
   function onWheel(e: React.WheelEvent) {
@@ -116,11 +137,15 @@ export default function Canvas({ projectId, items, onChanged, onUse }: Props) {
   async function addNote(kind: "note" | "heading") {
     const text = await appPrompt(kind === "note" ? "Note" : "Section heading", "");
     if (!text) return;
+    // Cascade, or every note lands on the identical cell and buries the last
+    // one — the render cards already do this in the page's add().
+    const n = items.filter((i) => i.kind === "note" || i.kind === "heading").length;
     await fetch("/api/canvas", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         projectId, kind, text,
-        x: snap(-pan.x / scale + 80), y: snap(-pan.y / scale + 80),
+        x: snap(-pan.x / scale + 80 + (n % 6) * 40),
+        y: snap(-pan.y / scale + 80 + (n % 6) * 32),
       }),
     });
     onChanged();
@@ -225,7 +250,7 @@ function Card({ item, selected, onSelect, onDragStart, onRemove, onEdit, onUse }
     onDragStart((e.clientX - rect.left) / scale, (e.clientY - rect.top) / scale);
   };
 
-  const common = "absolute select-none touch-none";
+  const common = "absolute select-none touch-none [-webkit-touch-callout:none]";
   const ring = selected ? "outline outline-2 outline-blue" : "";
 
   if (item.kind === "heading") {

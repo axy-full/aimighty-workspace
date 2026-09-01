@@ -72,10 +72,10 @@ export default function LazyMedia({
       {show ? (
         kind === "image" ? (
           /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={url} alt={alt ?? ""} className="h-full w-full object-cover" />
+          <img src={url} alt={alt ?? ""} draggable={false} className="h-full w-full object-cover" />
         ) : (
           <video
-            src={posterSrc(url)} muted preload="metadata" playsInline
+            src={posterSrc(url)} muted preload="metadata" playsInline draggable={false}
             className="h-full w-full object-cover"
           />
         )
