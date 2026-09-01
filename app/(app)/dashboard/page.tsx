@@ -153,7 +153,7 @@ export default function DashboardPage() {
 
         <p className="mt-8 text-center text-[13px] text-mute">
           Per-project detail lives on each project&rsquo;s overview.{" "}
-          <Link href="/" className="text-blue">Projects</Link>
+          <Link href="/projects" className="text-blue">Projects</Link>
         </p>
       </div>
     </div>

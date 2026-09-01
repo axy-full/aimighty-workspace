@@ -13,11 +13,12 @@ import {
  * bar, the account is in Settings), and on a phone it simply wasn't there.
  */
 /* Order follows the work, not the filesystem: you come here to make a shot,
-   so Generate leads. Projects is where the made things live, Studio is where
-   the vocabulary they're made from is kept, and the rest is housekeeping. */
+   so Generate leads — and it is the landing page. Projects is where the made
+   things live, Studio is where the vocabulary they're made from is kept, and
+   the rest is housekeeping. */
 const TABS = [
-  { href: "/generate", label: "Generate", Icon: IconGenerate },
-  { href: "/",         label: "Projects", Icon: IconProjects },
+  { href: "/",         label: "Generate", Icon: IconGenerate },
+  { href: "/projects", label: "Projects", Icon: IconProjects },
   { href: "/studio",   label: "Studio",   Icon: IconStudio },
   { href: "/usage",    label: "Usage",    Icon: IconMeter },
   { href: "/settings", label: "Settings", Icon: IconGear },

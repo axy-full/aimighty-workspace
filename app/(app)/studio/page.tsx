@@ -24,6 +24,7 @@ import { uploadFile } from "@/lib/uploadClient";
 import { CATEGORIES, specToPhrase, specCount, composePrompt, type ShotSpec } from "@/lib/studio";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { IconPlus, IconClose, IconSparkle } from "@/components/Icons";
+import ParticlLockup from "@/components/ParticlMark";
 import type { CastMember } from "@/lib/cast";
 
 type Preset = { id: string; name: string; projectId: string | null; spec: ShotSpec };
@@ -125,14 +126,14 @@ export default function StudioPage() {
       if (prose.trim()) window.localStorage.setItem("aw_compose_seed", prose.trim());
       window.localStorage.setItem("aw_compose_spec", JSON.stringify(spec));
     } catch { /* private mode — the composer just opens empty */ }
-    router.push("/generate");
+    router.push("/");
   }, [prose, spec, router]);
 
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pt-6">
-          <h1 className="h1">Studio</h1>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
+          <h1><ParticlLockup /></h1>
           <span className="text-[15px] text-dim">
             {scoped ? "this project" : "the whole workspace"}
           </span>

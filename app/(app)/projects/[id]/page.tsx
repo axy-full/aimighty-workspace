@@ -94,7 +94,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <Link href="/" className="mt-6 inline-block text-[14px] text-blue">← Projects</Link>
+        <Link href="/projects" className="mt-6 inline-block text-[14px] text-blue">← Projects</Link>
         <Headline a={data} title={project?.name ?? "Project"} />
 
         {project?.description && (
@@ -114,7 +114,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
         </p>
 
         <div className="mt-6 flex flex-wrap gap-2">
-          <Link href="/generate" className="chip bg-blue text-white">Open in Generate</Link>
+          <Link href="/" className="chip bg-blue text-white">Open in Generate</Link>
           <Link href={`/canvas/${id}`} className="chip">Canvas</Link>
           <Link href="/all" className="chip">Library</Link>
           <Link href="/dashboard" className="chip">Production dashboard</Link>

@@ -50,7 +50,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
   /** "Use assets directly from the canvas for subsequent generations." */
   const use_ = useCallback((genId: string, prompt: string) => {
     try { window.localStorage.setItem("aw_compose_seed", prompt); } catch { /* private mode */ }
-    router.push("/generate");
+    router.push("/");
   }, [router]);
 
   const available = (jobs?.generations ?? []).filter(

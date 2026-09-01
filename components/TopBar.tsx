@@ -19,7 +19,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
   const { current, selection } = useProject();
   const { data: usage } = useApi<Usage>("/api/usage/summary", 20000);
 
-  const onGenerate = path.startsWith("/generate");
+  const onGenerate = path === "/" || path.startsWith("/generate");
   const title = onGenerate
     ? (selection === "all" ? "All projects" : selection === "unfiled" ? "Unfiled" : current?.name ?? "")
     : "";
@@ -28,7 +28,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
     <header className="app-title flex items-center gap-3 px-6 max-[860px]:px-3.5">
       {title && (
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/projects")}
           className="chip !bg-transparent !px-0 !text-[15px] font-semibold hover:!bg-transparent"
           title="Back to projects"
         >
