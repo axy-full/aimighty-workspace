@@ -9,6 +9,9 @@ import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo, downloadHref } from "@/lib/format";
 import LazyMedia from "./LazyMedia";
 import Cast from "./Cast";
+import Studio from "./Studio";
+import ShotRow from "./ShotRow";
+import { composePrompt, type ShotSpec } from "@/lib/studio";
 import Review from "./Review";
 import {
   MODELS, DEFAULT_MODEL_ID, getModel, shortLabel, dimensionsFor,
@@ -40,6 +43,10 @@ export default function Workspace() {
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  /** Artlist-style shot control: one choice per category, appended at submit. */
+  const [spec, setSpec] = useState<ShotSpec>({});
+  /** Which shot this take belongs to — what makes it v3 of SH110. */
+  const [shotId, setShotId] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
@@ -59,6 +66,16 @@ export default function Workspace() {
   useEffect(() => {
     if (seeded.current) return;
     seeded.current = true;
+    // A card sent over from the canvas arrives as a seed prompt. Read after
+    // mount, never in a useState initializer — the server has no localStorage,
+    // so seeding at first render hydrates wrong.
+    try {
+      const carried = window.localStorage.getItem("aw_compose_seed");
+      if (carried) {
+        window.localStorage.removeItem("aw_compose_seed");
+        Promise.resolve().then(() => setPrompt(carried));
+      }
+    } catch { /* private mode — nothing carried, nothing lost */ }
     const m = getModel(prefs.modelId);
     setParams((s) => ({
       ...s,
@@ -180,11 +197,14 @@ export default function Workspace() {
       const res = await fetch("/api/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt, model: params.modelId, ratio: params.ratio,
+          prompt: composePrompt(prompt, spec),
+          model: params.modelId, ratio: params.ratio,
           resolution: params.resolution, duration: params.duration,
           watermark: params.watermark, generateAudio: params.generateAudio,
           seed: params.seed || null,
           projectId: bin !== "all" && bin !== "unfiled" ? bin : null,
+          shotId: shotId || null,
+          shotSpec: spec,
           references: refs.map((r) => ({ uploadId: r.id, role: r.role })),
         }),
       });
@@ -192,6 +212,8 @@ export default function Workspace() {
       if (!res.ok) throw new Error(json.error ?? "Submit failed");
       setPrompt("");
       setRefs([]);
+      // The spec and the shot deliberately survive: the reason to have shot
+      // control at all is changing one chip and running the take again.
       if (!json?.id) throw new Error("Submit failed");
       afterChange();
     } catch (e) {
@@ -483,6 +505,14 @@ export default function Workspace() {
               </span>
             </div>
           )}
+        </div>
+
+        <div className="mt-4">
+          <ShotRow projectId={bin} shotId={shotId} setShotId={setShotId} />
+        </div>
+
+        <div className="mt-4">
+          <Studio spec={spec} setSpec={setSpec} />
         </div>
 
         <div className="mt-4">

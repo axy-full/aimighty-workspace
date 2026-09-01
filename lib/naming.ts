@@ -30,14 +30,22 @@ export const TOKENS = [
   "model", "version", "user", "date", "time", "status", "id",
 ] as const;
 
-/** Filesystem-safe, and safe inside a Content-Disposition header. */
+/**
+ * Filesystem-safe, and safe inside a Content-Disposition header.
+ *
+ * Dots are stripped from VALUES even though they're legal in a filename:
+ * "Seedance 2.5" would otherwise land as `SD2.5` mid-name, which reads like a
+ * second extension and disagrees with the sample the settings screen shows.
+ * Dots typed into the template survive — those are separators the workspace
+ * chose on purpose.
+ */
 function clean(v: string): string {
   return v
     .normalize("NFKD")
-    .replace(/[^\w\s.-]/g, "")   // drop punctuation, keep word chars/space/dot/dash
+    .replace(/[^\w\s-]/g, "")    // drop punctuation, keep word chars/space/dash
     .trim()
     .replace(/\s+/g, "")         // "Sunset Beach" → "SunsetBeach"
-    .replace(/^[.-]+|[.-]+$/g, "");
+    .replace(/^-+|-+$/g, "");
 }
 
 function two(n: number): string {

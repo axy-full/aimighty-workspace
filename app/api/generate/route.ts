@@ -286,6 +286,17 @@ export async function POST(req: Request) {
   const genId = id("gen");
   const ts = now();
   const hasVideoInput = references.some((r) => r.kind === "video");
+  // The shot-control chips are kept as data, not just baked into the prose,
+  // so re-opening a take brings them back set — changing one control and
+  // running it again is the entire reason to have them.
+  const shotSpec = body.shotSpec && typeof body.shotSpec === "object"
+    ? Object.fromEntries(
+        Object.entries(body.shotSpec as Record<string, unknown>)
+          .filter(([, v]) => typeof v === "string" && v)
+          .slice(0, 20)
+          .map(([k, v]) => [k.slice(0, 24), String(v).slice(0, 40)]))
+    : null;
+
   const storedParams = {
     ...params,
     references: references.map((r) => ({ uploadId: r.id, role: r.role, kind: r.kind })),
@@ -293,6 +304,7 @@ export async function POST(req: Request) {
     inputSeconds: hasVideoInput ? inputSeconds : undefined,
     rawPrompt,
     cast: castUsed.length ? castUsed : undefined,
+    shotSpec: shotSpec && Object.keys(shotSpec).length ? shotSpec : undefined,
   };
 
   // Row first, so a failed submit is still visible rather than silently lost.
