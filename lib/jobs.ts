@@ -33,6 +33,10 @@ export type Generation = {
   durationMs: number | null;
   provider: string;
   attempts: number;
+  /** generate | edit | extend. */
+  task: string;
+  /** The render this one edits or extends. */
+  sourceGenId: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -67,6 +71,8 @@ export function rowToGeneration(r: any): Generation {
     durationMs: r.duration_ms == null ? null : Number(r.duration_ms),
     provider: r.provider ?? "byteplus",
     attempts: Number(r.attempts ?? 1),
+    task: r.task ?? "generate",
+    sourceGenId: r.source_gen_id ?? null,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };

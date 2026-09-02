@@ -9,6 +9,7 @@ import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { withRetry, classifyFailure } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
+import { getTask, hasTrigger, sourceAdvice } from "@/lib/tasks";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -85,6 +86,63 @@ export async function POST(req: Request) {
   try { model = getModel(modelId); }
   catch { return NextResponse.json({ error: `Unknown model: ${modelId}` }, { status: 400 }); }
 
+  /* ── Task ────────────────────────────────────────────────────────────
+   * generate | edit | extend. Editing and extension are LOCKED tasks: the
+   * source video dictates the output's shape, so the API must be told
+   * ratio "adaptive" (both) and duration -1 (edit). lib/ark.ts applies those;
+   * what happens here is deciding which source we're working on and making
+   * sure the prompt actually says so — the vendor reads the intent from the
+   * words, and with several videos attached the words are also how it picks
+   * which one to work on.
+   * ------------------------------------------------------------------ */
+  const notices: string[] = [];
+  const task = getTask(String(body.task ?? "generate"));
+  const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
+
+  let sourceRef: Reference | null = null;
+  if (task.locked) {
+    if (!sourceGenId) {
+      return NextResponse.json(
+        { error: `${task.label} needs a source render to work on.` }, { status: 400 });
+    }
+    const rs = await db().execute({
+      sql: `SELECT id, status, stored_url, kind, params FROM generations
+            WHERE id = ? AND deleted = 0 LIMIT 1`,
+      args: [sourceGenId],
+    });
+    if (!rs.rows.length) {
+      return NextResponse.json({ error: "That source render no longer exists." }, { status: 400 });
+    }
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const src = rs.rows[0] as any;
+    if (src.status !== "succeeded" || !src.stored_url) {
+      return NextResponse.json(
+        { error: "That render hasn't finished — there is nothing to work on yet." }, { status: 400 });
+    }
+    if (src.kind === "image") {
+      return NextResponse.json(
+        { error: `${task.label} works on video, and that render is a still.` }, { status: 400 });
+    }
+    sourceRef = {
+      id: src.id, mime: "video/mp4", ext: "mp4", storedUrl: src.stored_url,
+      role: "reference_video", kind: "video", fromGeneration: true,
+    };
+    // The guide's stability advice: edits get shaky past 20s. Worth saying
+    // before the money goes, not after.
+    try {
+      const sp = JSON.parse(src.params || "{}") as { duration?: number };
+      const advice = sourceAdvice(task, typeof sp.duration === "number" ? sp.duration : null);
+      if (advice) notices.push(advice);
+    } catch { /* unparseable params — no advice to give */ }
+    if (!hasTrigger(task, prompt)) {
+      return NextResponse.json({
+        error: `${task.label} has to say so in words — the model reads the intent from ` +
+               `the prompt. Start with something like "${task.defaultTrigger}…", or use one of: ` +
+               `${task.triggers.slice(0, 5).join(", ")}.`,
+      }, { status: 400 });
+    }
+  }
+
   const params: VideoParams = {
     ratio: model.ratios.includes(body.ratio) ? body.ratio : model.ratios[0],
     resolution: model.resolutions.includes(body.resolution) ? body.resolution : model.resolutions[0],
@@ -94,6 +152,8 @@ export async function POST(req: Request) {
     seed: body.seed === "" || body.seed == null ? null : Number(body.seed),
     cameraFixed: Boolean(body.cameraFixed ?? false),
     generateAudio: model.supportsAudio ? Boolean(body.generateAudio ?? false) : false,
+    task: task.id,
+    outputFormat: task.preferMov && (await getSetting("editOutputFormat")) === "mov" ? "mov" : "mp4",
   };
 
   /* ── Reference images ────────────────────────────────────────────── */
@@ -176,6 +236,11 @@ export async function POST(req: Request) {
     });
   }
 
+  /* The source goes first: with several videos attached the model decides
+   * which one to work on from the prompt, and leading with it matches the
+   * guide's own examples ("@video1" as the thing being edited). */
+  if (sourceRef) references.unshift(sourceRef);
+
   /* ── The cast ────────────────────────────────────────────────────────
    * @Maya means something specific in this workspace. Resolve those names
    * into the @ImageN citations the engines understand, attaching each one's
@@ -249,7 +314,7 @@ export async function POST(req: Request) {
       // duration actually being paid for.
       const r = await enhancePrompt({
         prompt: castPrompt, citations,
-        model: modelId, durationS: params.duration,
+        model: modelId, durationS: params.duration, task: task.id,
       });
       finalPrompt = r.text;
       rawPrompt = prompt;   // the words a person actually typed
@@ -277,6 +342,15 @@ export async function POST(req: Request) {
     } catch (e) {
       console.error("auto-refine unavailable, rendering raw:", (e as Error).message);
     }
+  }
+
+  /* The vendor reads the intent from the prompt it actually receives, which
+   * is the REFINED one. The refine layer is instructed to keep the verb, but
+   * if it ever drops it the request silently stops being an edit — so check
+   * the final text and put the verb back rather than trusting the rewrite. */
+  if (task.locked && !hasTrigger(task, finalPrompt)) {
+    finalPrompt = `${task.defaultTrigger} @Video1: ${finalPrompt}`;
+    console.warn(`generate: refined prompt lost its ${task.id} trigger; restored it`);
   }
 
   const projectId = body.projectId ? String(body.projectId) : null;
@@ -316,6 +390,11 @@ export async function POST(req: Request) {
     rawPrompt,
     cast: castUsed.length ? castUsed : undefined,
     shotSpec: shotSpec && Object.keys(shotSpec).length ? shotSpec : undefined,
+    task: task.id !== "generate" ? task.id : undefined,
+    sourceGenId: sourceGenId ?? undefined,
+    // What the vendor locked for us, so the record explains its own shape.
+    locked: task.locked
+      ? { ratio: task.forceRatio, duration: task.forceDuration } : undefined,
   };
 
   // Row first, so a failed submit is still visible rather than silently lost.
@@ -323,13 +402,13 @@ export async function POST(req: Request) {
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
-           shot_id, version, provider)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           shot_id, version, provider, task, source_gen_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(storedParams), "queued",
            got.user.id, ts, ts,
            refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost,
            got.token?.id ?? null,
-           shotId, version, model.provider ?? "byteplus"],
+           shotId, version, model.provider ?? "byteplus", task.id, sourceGenId],
   });
 
   invalidate(PROJECTS_KEY);
@@ -352,7 +431,10 @@ export async function POST(req: Request) {
       sql: `UPDATE generations SET ark_task_id=?, status='running', attempts=?, updated_at=? WHERE id=?`,
       args: [taskId, attempts, now(), genId],
     });
-    return NextResponse.json({ id: genId, arkTaskId: taskId, status: "running", attempts });
+    return NextResponse.json({
+      id: genId, arkTaskId: taskId, status: "running", attempts,
+      notices: notices.length ? notices : undefined,
+    });
   } catch (e) {
     const msg = (e as Error).message;
     const cls = classifyFailure(e);

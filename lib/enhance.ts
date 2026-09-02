@@ -114,7 +114,33 @@ LENGTH
  * What changes per request. The engine split is the guide's, not ours: 2.5
  * reads integer-second timestamps, 2.0 reads only shot numbers.
  */
-function targetBlock(modelId: string | undefined, durationS: number | undefined): string {
+function targetBlock(
+  modelId: string | undefined, durationS: number | undefined, task: string | undefined
+): string {
+  /* An edit or an extension is an INSTRUCTION, not a scene. Running it
+   * through the scene-writing rules would bury the instruction in cinematic
+   * prose and lose the trigger word the vendor reads the intent from — the
+   * guide's own examples are terse and surgical ("Only edit the man's
+   * dialogue in @Video1: change it to …"). So those tasks get their own
+   * rules and skip the shape entirely. */
+  if (task === "edit") {
+    return `TARGET
+This is a VIDEO EDIT of an existing video, cited as @Video1. Rewrite it as a surgical edit instruction, NOT as a scene description.
+- Keep an editing verb in the first clause (edit, add, insert, remove, delete, modify, replace, change to). The engine reads the intent from these words; without one this is not an edit.
+- Name exactly what changes and, where you can, from what to what — "change the man's action from drinking coffee to mopping the floor".
+- Say explicitly that everything else is unchanged.
+- Scope it with a timestamp range when the user implied one — "from 4-6 seconds in @Video1".
+- Do NOT describe the shot's existing look, camera, lighting or mood. Do NOT invent new content. Do NOT restate the whole scene. Two or three sentences is usually right.`;
+  }
+  if (task === "extend") {
+    return `TARGET
+This CONTINUES an existing video, cited as @Video1. Rewrite it as a continuation instruction, NOT as a standalone scene.
+- Keep a continuation verb in the first clause (extend, extend forward, extend backward, continue, continue from).
+- Begin by aligning to the boundary frame: state that the new footage picks up from the source's final frame, matching its framing, lighting, palette and motion, before describing what happens next.
+- Then describe only the NEW action, in order.
+- Do NOT re-describe what already happened in the source.${durationS ? ` The new footage runs ${Math.round(durationS)} seconds.` : ""}`;
+  }
+
   const is25 = !modelId || /2-5|2\.5/.test(modelId);
   const dur = durationS && Number.isFinite(durationS) ? Math.round(durationS) : null;
 
@@ -135,15 +161,17 @@ export async function enhancePrompt(opts: {
   model?: string;
   /** Requested output length, so the script is paced to fill it. */
   durationS?: number;
+  /** generate | edit | extend — an edit is an instruction, not a scene. */
+  task?: string;
 }): Promise<RefineResult> {
   const key = process.env.ARK_API_KEY;
   if (!key) throw new Error("ARK_API_KEY is not set");
 
   const userMsg =
-    `${targetBlock(opts.model, opts.durationS)}\n\n` +
+    `${targetBlock(opts.model, opts.durationS, opts.task)}\n\n` +
     (opts.citations.length
       ? `Attached reference assets, in upload order: ${opts.citations.join(", ")}.\n\n`
-      : "") + `Rewrite this idea as a Seedance prompt:\n\n${opts.prompt}`;
+      : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a Seedance prompt:\n\n${opts.prompt}`;
 
   let lastErr = "";
   for (const model of TEXT_MODELS()) {

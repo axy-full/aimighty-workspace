@@ -260,6 +260,9 @@ export async function ready(): Promise<void> {
         // Which provider served it, so the ledger survives a second vendor.
         `provider TEXT NOT NULL DEFAULT 'byteplus'`,
         `attempts INTEGER NOT NULL DEFAULT 1`,
+        // generate | edit | extend, and the render this one works on.
+        `task TEXT NOT NULL DEFAULT 'generate'`,
+        `source_gen_id TEXT`,
       ]) {
         try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
         catch { /* column already exists */ }

@@ -9,7 +9,8 @@
  */
 
 import { getModel, type ModelDef } from "./models";
-import { readUploadBytes, presignedReadUrl, uploadPath, usingBlob } from "./storage";
+import { getTask, type TaskId } from "./tasks";
+import { readUploadBytes, presignedReadUrl, uploadPath, videoPath, usingBlob } from "./storage";
 import { IMAGE_LIMITS } from "./imagemeta";
 
 const HOST =
@@ -25,6 +26,10 @@ export type VideoParams = {
   seed?: number | null;
   cameraFixed?: boolean;
   generateAudio?: boolean;
+  /** generate | edit | extend — decides which parameters we're allowed to set. */
+  task?: TaskId;
+  /** Container to ask the vendor for. See the note in buildRequestBody. */
+  outputFormat?: "mp4" | "mov";
 };
 
 export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
@@ -39,6 +44,10 @@ export type Reference = {
   /** Set when the master was too large or too extreme for this vendor and a
    *  delivery copy was derived at upload time. The master is never sent. */
   deliveryUrl?: string | null;
+  /** True when this is one of OUR renders being edited or extended: the bytes
+   *  live under generations/, not uploads/, so it presigns from a different
+   *  path. */
+  fromGeneration?: boolean;
 };
 
 export type ArkStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -96,10 +105,15 @@ async function toRefContent(ref: Reference) {
   if (ref.kind === "video") {
     if (!usingBlob()) {
       throw new Error(
-        "Reference videos need the deployed workspace — ModelArk fetches them by URL, which local storage can't provide."
+        ref.fromGeneration
+          ? "Editing and extension need the deployed workspace — ModelArk fetches the source video by URL, which local storage can't provide."
+          : "Reference videos need the deployed workspace — ModelArk fetches them by URL, which local storage can't provide."
       );
     }
-    const url = await presignedReadUrl(uploadPath(ref.id, ref.ext));
+    // Editing and extension point at a render we already hold, which lives
+    // under generations/ rather than uploads/.
+    const path = ref.fromGeneration ? videoPath(ref.id) : uploadPath(ref.id, ref.ext);
+    const url = await presignedReadUrl(path);
     return { type: "video_url", video_url: { url }, role: "reference_video" };
   }
 
@@ -145,15 +159,32 @@ export async function buildRequestBody(
   for (const ref of references.filter((r) => r.kind === "image")) content.push(await toRefContent(ref));
   for (const ref of references.filter((r) => r.kind === "video")) content.push(await toRefContent(ref));
 
-  // Seedance 2.x — real JSON fields.
+  /* Seedance 2.x — real JSON fields.
+   *
+   * A LOCKED task (edit, extend) hands the output's shape to the source
+   * video, and the API expects to be TOLD that: ratio "adaptive" for both,
+   * and duration -1 for an edit, whose length follows the source. Sending a
+   * concrete ratio or duration on a locked task is a rejected or wrongly
+   * shaped render, so these overrides are applied here rather than trusted
+   * to the caller. See lib/tasks.ts for the rules and their source. */
+  const task = getTask(p.task ?? "generate");
   const body: Record<string, unknown> = {
     model: m.id,
     content,
-    ratio: p.ratio,
+    ratio: task.forceRatio ?? p.ratio,
     resolution: p.resolution,
-    duration: p.duration,
+    duration: task.forceDuration ?? p.duration,
     watermark: p.watermark,
   };
+  /* ByteDance recommend mov for edits and extensions — it preserves colour
+   * and audio-visual continuity that an mp4 re-encode degrades. We do NOT
+   * default to it, deliberately: a QuickTime container does not play
+   * reliably in Chrome, and every render in this workspace is watched in a
+   * browser, so defaulting to mov would trade a visible library for an
+   * invisible improvement. It is a workspace setting; when it is on, the
+   * storage and media layers serve the right container. */
+  if (p.outputFormat === "mov") body.output_format = "mov";
+  void task.preferMov;   // the vendor's advice, recorded in lib/tasks.ts
   if (p.seed != null) body.seed = p.seed;
   if (m.supportsAudio) body.generate_audio = Boolean(p.generateAudio);
   return body;

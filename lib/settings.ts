@@ -17,6 +17,16 @@ export const DEFAULTS = {
   maxRetries: "2",
   /** Whether oversized masters may be sent to an API as a derived copy. */
   deriveForApi: "1",
+  /**
+   * Container for edits and extensions: "mp4" or "mov".
+   *
+   * ByteDance recommend mov — it preserves colour and audio-visual continuity
+   * that an mp4 re-encode degrades. It is NOT the default because a QuickTime
+   * container does not play reliably in Chrome, and every render here is
+   * watched in a browser. Turning it on trades a playable library for that
+   * continuity.
+   */
+  editOutputFormat: "mp4",
 } as const;
 
 export type SettingKey = keyof typeof DEFAULTS;

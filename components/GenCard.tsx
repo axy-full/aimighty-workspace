@@ -25,6 +25,11 @@ export type Gen = {
   refineCostUsd?: number | null;
   error: string | null;
   authorName?: string | null;
+  /** Shot filing, as returned by /api/jobs. */
+  shotCode?: string | null;
+  version?: number;
+  task?: string;
+  sourceGenId?: string | null;
   createdAt: number;
 };
 

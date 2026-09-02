@@ -91,6 +91,26 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
         </div>
         <div className="row">
           <span className="min-w-0 flex-1">
+            Edit &amp; extend output
+            <span className="mt-0.5 block text-[12px] leading-snug text-mute">
+              ByteDance recommend mov for edits — it holds colour and audio
+              continuity an mp4 re-encode loses. mp4 is the default because
+              QuickTime doesn&rsquo;t play reliably in Chrome.
+            </span>
+          </span>
+          <span className="row-value">
+            {isAdmin ? (
+              <select value={data.settings.editOutputFormat ?? "mp4"} disabled={busy}
+                onChange={(e) => save({ editOutputFormat: e.target.value })}
+                className="rounded-[8px] bg-chip px-2 py-1 text-[14px]">
+                <option value="mp4">mp4</option>
+                <option value="mov">mov</option>
+              </select>
+            ) : (data.settings.editOutputFormat ?? "mp4")}
+          </span>
+        </div>
+        <div className="row">
+          <span className="min-w-0 flex-1">
             Retry failed submits
             <span className="mt-0.5 block text-[12px] leading-snug text-mute">
               Timeouts and rate limits only. A rejected prompt never retries.

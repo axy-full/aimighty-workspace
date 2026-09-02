@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import References, { referenceProblem, type RefItem, type RefPicker } from "./References";
-import { appConfirm } from "./dialog";
+import { appAlert, appConfirm } from "./dialog";
 import { Switch } from "./Panel";
 import type { Gen } from "./GenCard";
 import { useApi } from "@/lib/useApi";
@@ -47,6 +47,9 @@ export default function Workspace() {
   const [spec, setSpec] = useState<ShotSpec>({});
   /** Which shot this take belongs to — what makes it v3 of SH110. */
   const [shotId, setShotId] = useState<string>("");
+  /** Editing or extending an existing render, rather than making a new one.
+   *  Both are LOCKED tasks: the source decides the output's shape. */
+  const [taskOn, setTaskOn] = useState<{ id: "edit" | "extend"; gen: Gen } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
@@ -232,6 +235,8 @@ export default function Workspace() {
           watermark: params.watermark, generateAudio: params.generateAudio,
           seed: params.seed || null,
           projectId: bin !== "all" && bin !== "unfiled" ? bin : null,
+          task: taskOn?.id ?? "generate",
+          sourceGenId: taskOn?.gen.id ?? null,
           shotId: shotId || null,
           shotSpec: spec,
           references: refs.map((r) => ({ uploadId: r.id, role: r.role })),
@@ -241,6 +246,10 @@ export default function Workspace() {
       if (!res.ok) throw new Error(json.error ?? "Submit failed");
       setPrompt("");
       setRefs([]);
+      setTaskOn(null);
+      if (Array.isArray(json?.notices) && json.notices.length) {
+        await appAlert("Sent", json.notices.join("\n\n"));
+      }
       // The spec and the shot deliberately survive: the reason to have shot
       // control at all is changing one chip and running the take again.
       if (!json?.id) throw new Error("Submit failed");
@@ -278,6 +287,13 @@ export default function Workspace() {
             <ClipDetail
               clip={clip}
               onChanged={afterChange}
+              onEditExtend={(id) => {
+                setTaskOn({ id, gen: clip });
+                setPrompt(id === "edit"
+                  ? "Replace "
+                  : "Continue from the final frame: ");
+                promptEl.current?.focus();
+              }}
               onUse={async () => {
                 if (prompt.trim() &&
                     !(await appConfirm("Replace the composer?", "This clip's prompt will replace what you've typed.", { confirmLabel: "Replace" }))) return;
@@ -315,6 +331,24 @@ export default function Workspace() {
                   </span>
                 );
               })}
+            </div>
+          )}
+
+          {taskOn && (
+            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-[12px] bg-blue/8 px-3.5 py-2 text-[13.5px] text-blue">
+              <span className="font-medium">
+                {taskOn.id === "edit" ? "Editing" : "Continuing"}
+              </span>
+              <span className="truncate text-dim">
+                {taskOn.gen.shotCode ? `${taskOn.gen.shotCode} v${taskOn.gen.version}` : "this render"}
+              </span>
+              <span className="text-[12px] text-mute">
+                {taskOn.id === "edit"
+                  ? "aspect and length follow the source"
+                  : "aspect follows the source"}
+              </span>
+              <button onClick={() => setTaskOn(null)}
+                className="ml-auto text-[12px] text-lift">Cancel</button>
             </div>
           )}
 
@@ -621,8 +655,9 @@ function MenuRow({ label, value, hint, open, setOpen, children }: {
 }
 
 /** What the selected clip is, what it cost, and what to do with it. */
-function ClipDetail({ clip, onUse, onChanged }: {
+function ClipDetail({ clip, onUse, onChanged, onEditExtend }: {
   clip: Gen; onUse: () => void; onChanged: () => void;
+  onEditExtend: (task: "edit" | "extend") => void;
 }) {
   const [copied, setCopied] = useState(false);
   const p = clip.params as {
@@ -674,6 +709,22 @@ function ClipDetail({ clip, onUse, onChanged }: {
           <button onClick={onUse} className="chip !py-1.5 !text-[12.5px]" title="Load into the composer">
             Use
           </button>
+          {/* Editing and extension work on a finished video, so they only
+              exist once there is one. */}
+          {clip.status === "succeeded" && clip.storedUrl && clip.kind !== "image" && (
+            <>
+              <button onClick={() => onEditExtend("edit")}
+                className="chip !py-1.5 !text-[12.5px]"
+                title="Change something inside this shot; everything else stays">
+                Edit
+              </button>
+              <button onClick={() => onEditExtend("extend")}
+                className="chip !py-1.5 !text-[12.5px]"
+                title="Continue this shot from its final frame">
+                Extend
+              </button>
+            </>
+          )}
         </span>
       </div>
 
