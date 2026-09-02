@@ -43,12 +43,28 @@ export const TEXT_MODEL = () => TEXT_MODELS()[0];
 export const TEXT_RATES: Record<string, { input: number; output: number }> = {
   "dola-seed-2-1-turbo-260628": { input: 0.5, output: 2.5 },
   "seed-2-0-pro-260328": { input: 0.5, output: 3.0 },
+  // Anthropic first-party rates. A refine costs ~$0.04 against a 1080p render
+  // at $3.67 — around 1% of the thing it steers.
+  "claude-opus-5": { input: 5.0, output: 25.0 },
+  "claude-sonnet-5": { input: 2.0, output: 10.0 },
+  "claude-haiku-4-5": { input: 1.0, output: 5.0 },
 };
+
+/** Which model writes the prompt. Claude when a key is present, else ByteDance. */
+export function refineProvider(): "anthropic" | "byteplus" {
+  return process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN
+    ? "anthropic" : "byteplus";
+}
+
+/** Overridable, but Opus 5 is the default — this is the judgement step. */
+export const CLAUDE_MODEL = () => process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
 export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
 
-/** Each text model's first 500k tokens are free on this account; charges
- *  begin past that. Tracked against the tokens recorded on generations. */
+/** Each ByteDance text model's first 500k tokens are free on this account;
+ *  charges begin past that. Anthropic models have no such allowance, and
+ *  lib/generate prices them from token one. */
 export const TEXT_FREE_TOKENS = 500_000;
+export const hasFreeTier = (model: string) => !model.startsWith("claude-");
 
 export type RefineResult = {
   text: string;
@@ -248,6 +264,59 @@ export function stripScaffolding(text: string): string {
     .trim();
 }
 
+/**
+ * The Claude path.
+ *
+ * Three things earn their place here:
+ *  • the system prompt is CACHED. It is ~1,600 of the ~1,800 input tokens and
+ *    never varies, so caching it cuts the input bill by roughly 90% on a hit
+ *    and takes latency out of the submit path.
+ *  • effort is LOW by default. This is a short, tightly specified rewriting
+ *    task, not a reasoning problem; low effort is what it is for, and it is
+ *    the difference between a two-second wait and a twenty-second one.
+ *  • refusal fallbacks are on. A policy decline on a film prompt would
+ *    otherwise stop the rewrite dead; instead the API re-runs it on a
+ *    fallback model inside the same call. If the whole chain still declines
+ *    we throw, and the caller renders the author's raw words — a refine has
+ *    never been allowed to block a paid render.
+ */
+async function refineWithClaude(
+  system: string, userMsg: string
+): Promise<RefineResult & { cachedIn: number }> {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic();
+  const model = CLAUDE_MODEL();
+
+  const res = await client.beta.messages.create({
+    model,
+    max_tokens: 8000,
+    betas: ["server-side-fallback-2026-07-01"],
+    // Route by refusal category rather than maintaining a model list.
+    fallbacks: "default",
+    output_config: { effort: (process.env.ANTHROPIC_PROMPT_EFFORT ?? "low") as "low" },
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: userMsg }],
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  } as any);
+
+  if (res.stop_reason === "refusal") {
+    throw new Error("The prompt writer declined this request; rendering the raw prompt.");
+  }
+  const text = res.content
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    .filter((b: any) => b.type === "text")
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    .map((b: any) => b.text).join("").trim();
+
+  return {
+    text,
+    model,
+    inTokens: Number(res.usage?.input_tokens ?? 0),
+    outTokens: Number(res.usage?.output_tokens ?? 0),
+    cachedIn: Number(res.usage?.cache_read_input_tokens ?? 0),
+  };
+}
+
 export async function enhancePrompt(opts: {
   prompt: string;
   citations: string[]; // e.g. ["@Image1 (image)", "@Video1 (video, 8s)"]
@@ -266,6 +335,19 @@ export async function enhancePrompt(opts: {
     (opts.citations.length
       ? `Attached reference assets, in upload order: ${opts.citations.join(", ")}.\n\n`
       : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a Seedance prompt:\n\n${opts.prompt}`;
+
+  if (refineProvider() === "anthropic") {
+    const r = await refineWithClaude(SYSTEM, userMsg);
+    const raw = stripScaffolding(r.text);
+    const pick = /(^|\n)\s*CAMERA\s*[:：]\s*([a-z]+)\s*$/i.exec(raw);
+    const out = pick ? raw.slice(0, pick.index).trim() : raw;
+    if (!out) throw new Error("The model returned nothing.");
+    if (r.cachedIn) {
+      console.log(`refine: ${r.cachedIn} input tokens served from cache`);
+    }
+    return { text: out, model: r.model, inTokens: r.inTokens, outTokens: r.outTokens,
+             move: pick ? pick[2].toLowerCase() : null };
+  }
 
   let lastErr = "";
   for (const model of TEXT_MODELS()) {

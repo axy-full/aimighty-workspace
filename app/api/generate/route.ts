@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
-import { enhancePrompt, shouldRefine, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from "@/lib/enhance";
+import {
+  enhancePrompt, shouldRefine, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS, hasFreeTier,
+} from "@/lib/enhance";
 import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
@@ -352,7 +354,10 @@ export async function POST(req: Request) {
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
       const usedBefore = Number((usedRs.rows[0] as any)?.n ?? 0);
       const rowTokens = refineIn + refineOut;
-      const freeLeft = Math.max(0, TEXT_FREE_TOKENS - usedBefore);
+      // The 500k allowance is a ByteDance arrangement. Anthropic bills from
+      // token one, so a Claude refine is never discounted here.
+      const freeLeft = hasFreeTier(refineModel)
+        ? Math.max(0, TEXT_FREE_TOKENS - usedBefore) : 0;
       const billable = Math.max(0, rowTokens - freeLeft);
       const frac = rowTokens > 0 ? billable / rowTokens : 0;
       const rate = TEXT_RATES[refineModel] ?? TEXT_RATE_FALLBACK;

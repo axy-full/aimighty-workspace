@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { PROVIDERS, providerConfigured, providerBaseUrl } from "@/lib/providers";
 import { MODELS } from "@/lib/models";
 import { allSettings } from "@/lib/settings";
+import { refineProvider, CLAUDE_MODEL, TEXT_MODEL } from "@/lib/enhance";
 import { usingBlob } from "@/lib/storage";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
 
@@ -44,6 +45,13 @@ export async function GET() {
         id: m.id, label: m.label, kind: m.kind,
       })),
     })),
+    promptWriter: {
+      provider: refineProvider(),
+      model: refineProvider() === "anthropic" ? CLAUDE_MODEL() : TEXT_MODEL(),
+      configured: refineProvider() === "anthropic"
+        ? Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
+        : Boolean(process.env.ARK_API_KEY),
+    },
     reliability: {
       maxRetries: Number(settings.maxRetries ?? 2),
       cron: "/api/cron/sync every 10 minutes",
