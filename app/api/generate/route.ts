@@ -244,7 +244,13 @@ export async function POST(req: Request) {
       ...references.filter((r) => r.kind === "video").map((_, i) => `@Video${i + 1} (video)`),
     ];
     try {
-      const r = await enhancePrompt({ prompt: castPrompt, citations });
+      // The engine and the length steer the form: 2.5 takes integer-second
+      // timestamps, 2.0 only shot numbers, and the script should fill the
+      // duration actually being paid for.
+      const r = await enhancePrompt({
+        prompt: castPrompt, citations,
+        model: modelId, durationS: params.duration,
+      });
       finalPrompt = r.text;
       rawPrompt = prompt;   // the words a person actually typed
       refineModel = r.model;

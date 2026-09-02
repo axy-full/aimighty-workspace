@@ -2,11 +2,22 @@
  * Prompt refinement — the layer platforms like Higgsfield run between the
  * user and the model. The raw idea goes to a small ModelArk text model with
  * a system prompt distilled from ByteDance's OFFICIAL Seedance 2.5 prompt
- * optimizer (their published `sd25-pe` skill), and comes back as the dense,
- * structured prompt the video model actually responds to.
+ * guidance, and comes back as the dense, structured prompt the video model
+ * actually responds to.
  *
- * Costs a fraction of a cent per call on seed-2-0-mini; the text model must
- * be activated in the ModelArk console like the video models were.
+ * Sources, re-read 2026-09-02:
+ *   docs.byteplus.com/en/docs/ModelArk/2607689  (official prompt guide)
+ *   their `sd25-pe` skill, which that guide recommends installing
+ *
+ * The rewrite is TARGET-AWARE, and it has to be: the guide's own
+ * "Differences from Seedance 2.0" section says 2.0 does NOT respond to
+ * timestamps and answers only to shot numbers, while 2.5 understands
+ * integer-second timestamps. Writing one shape for both engines wastes the
+ * feature on 2.5 and confuses 2.0, so the model id and the requested
+ * duration are passed in and steer the form.
+ *
+ * Costs a fraction of a cent per call; the text model must be activated in
+ * the ModelArk console like the video models were.
  */
 
 const CHAT_URL = () =>
@@ -46,43 +57,92 @@ export type RefineResult = {
   outTokens: number;
 };
 
-const SYSTEM = `You rewrite rough video ideas into production-grade prompts for ByteDance's Seedance 2.5 / 2.0 video models, following ByteDance's official Seedance prompt-optimization guidance.
+/**
+ * Distilled from the official guide. Every rule below is one the guide
+ * actually states — where it says something narrower than "don't do X", this
+ * says the narrower thing (negative control, for instance, IS supported, but
+ * only for subtitles and audio).
+ */
+const SYSTEM = `You rewrite rough video ideas into production-grade prompts for ByteDance's Seedance video models, following ByteDance's official Seedance 2.5 prompt guidance. Treat the engine as a visual content producer and write with a visual-storytelling mindset.
 
 NON-NEGOTIABLE RULES
 - Preserve the user's intent exactly: subjects and their counts, actions, causality, props, setting, and any dialogue. Never change what happens.
-- Preserve every asset citation (@Image1, @Video1, …) exactly as written. Never renumber, remove, or invent citations.
+- Preserve every asset citation (@Image1, @Video1, @Audio1, …) exactly as written. Never renumber, remove, or invent citations.
 - Never write aspect ratio, duration, resolution, frame rate, or watermark into the prompt — those are API parameters.
-- No negative-constraint boilerplate, no quality-word stuffing ("masterpiece, 8k"), no analysis or notes. Output ONLY the finished prompt text.
+- No quality-word stuffing ("masterpiece, 8k, best quality"), no analysis, no notes, no preamble. Output ONLY the finished prompt text.
 - Write in English unless the user's prompt is in another language; then keep their language.
 
-HOW TO EXPAND A THIN PROMPT
-Enrich sparse ideas into concrete, filmable specifics — one coherent scene, not a list of adjectives. Follow this structure (merge lines naturally; drop a line only if the user's intent makes it irrelevant):
-1. Subject and main action in a specific environment — concrete details of appearance, movement, and place.
-2. Visuals: style or mood, light source and quality, palette, texture.
-3. Camera: shot size, position, and ONE clear movement or cut pattern (e.g. "begins in a medium shot observing the hands, then slowly pushes in").
-4. Sound: ambience, effects, music, or dialogue — only if audio fits the request.
+THE SHAPE
+1. ONE-SENTENCE SUMMARY — subject + location + event + genre/style + camera movement.
+2. DETAILED PLOT — divide the video into segments and describe each one's visuals, camera movement, action, dialogue and sound. Use the segment form named in TARGET below.
+3. ADDITIONAL NOTES — what stays constant throughout: camera angle and movement, environment, palette, lighting, atmosphere, recurring elements.
 
-WHEN CITATIONS ARE PRESENT
-Use ByteDance's structured form with these bracketed sections, only the ones needed:
-【Generation Goal】 one or two sentences: video type, core subject, principal event.
-【Reference Asset Roles】 one line per citation: what to take from it (appearance / structure / material / action / camera movement / pacing / voice) AND what NOT to carry over (identity, clothing, background, scene).
-【Subjects and Relationships】 map each subject to its citation; state features that must stay fixed.
+PACING
+Allocate plot across the whole requested duration. Too little plot in a span and the engine improvises freely; too much and it either cuts excessively or drops parts of the story. Keep segments continuous with no gaps.
+
+POSITIVE DESCRIPTION, WITH TWO EXCEPTIONS
+Describe what IS in frame, not what isn't. The only negative constraints the engine honours are subtitles and audio — "no subtitles", "no BGM; environmental and action sound only", "no audio" — so use those when the user's intent implies them, and never invent other negatives.
+
+CAMERA LANGUAGE
+- Write standard terms plainly: shot size (extreme wide / wide / medium / medium close-up / close-up), movement (push in, pull out, pan, tilt, track, follow, orbit, crane, handheld), angle (low, overhead, eye level, first-person).
+- Named techniques may be used directly: one-shot / long take, dolly zoom, aerial, FPV, bullet time, speed ramp.
+- A niche or technical term must be written as the term PLUS a plain description of what happens — e.g. "rack focus: the foreground trees fall out of focus as the figure behind them sharpens".
+- A transition needs both its trigger point and its method — e.g. "at the 5-second mark, a fast left wipe into a natural dissolve".
+
+ACTION AND EXPRESSION
+- Prefer general action descriptions ("trades close-quarters blows", "runs through several sets of drills"). Give specific detail only to the one or two actions that must land, and never repeat the same action.
+- Write expressions as plain descriptive sentences. Avoid idioms and stock phrases.
+
+WHEN REFERENCE ASSETS ARE CITED
+- Bind every asset explicitly in the text, by its upload number. Never rely on a name written inside the image itself.
+- List mappings one by one when there are several subjects, and give each asset a stated ROLE — what to take from it (appearance, identity, voice, action, camera movement, lighting, style, pacing) and, where it matters, what NOT to carry over (background, clothing, lighting, identity).
+- Name the PART of an asset to use when only part of it applies ("refer to the spell-casting action in @Video1 and the orbiting camera in @Video2").
+- When a reference is already accurate, say to refer to it and stop. Do not re-describe in prose what the asset already shows.
+- For a subject with no reference asset, describe its appearance and key features in full.
+
+For multi-asset requests, the guide's bracketed form is the clearest vehicle — use it when it helps, with only the sections that earn their place:
+【Generation Goal】 video type, core subject, principal event.
+【Reference Asset Roles】 one line per citation: what to take, what not to carry over.
+【Subjects and Relationships】 each subject mapped to its citation, with the features that must stay fixed.
 【Event Script】 start state → principal continuous event → end state.
-【Maintain Consistency】 identities, counts, clothing, prop ownership, spatial directions to keep stable.
+【Maintain Consistency】 identities, counts, clothing, prop ownership, spatial directions.
 
 LENGTH
-Aim for 60–180 words for text-only prompts; the structured form may run longer but stays tight. Every sentence must add filmable information.`;
+60–180 words for a short text-only prompt; longer for a multi-segment or multi-asset piece, but every sentence must carry filmable information.`;
+
+/**
+ * What changes per request. The engine split is the guide's, not ours: 2.5
+ * reads integer-second timestamps, 2.0 reads only shot numbers.
+ */
+function targetBlock(modelId: string | undefined, durationS: number | undefined): string {
+  const is25 = !modelId || /2-5|2\.5/.test(modelId);
+  const dur = durationS && Number.isFinite(durationS) ? Math.round(durationS) : null;
+
+  const segments = is25
+    ? `Segment the plot with INTEGER-SECOND TIMESTAMPS in whole-second units, continuous and without gaps — "0-3s: …", "3-8s: …". Do not use timestamps to choreograph high-frequency action ("shakes their head three times a second"); a timestamp marks a beat, not a metronome. A single moment may be pinned instead ("at the 4-second mark, …") or expressed relatively ("after three seconds of stillness, …").`
+    : `This engine does NOT respond to timestamps. Segment the plot as "Shot 1: …", "Shot 2: …" instead, and never write times or seconds into the prompt.`;
+
+  return `TARGET
+Engine: ${modelId ?? "Seedance 2.5"}.
+${dur ? `Output duration: ${dur} seconds — pace the whole script to fill exactly that long, no more.` : ""}
+${segments}`;
+}
 
 export async function enhancePrompt(opts: {
   prompt: string;
   citations: string[]; // e.g. ["@Image1 (image)", "@Video1 (video, 8s)"]
+  /** The engine this prompt is for — decides timestamps vs shot numbers. */
+  model?: string;
+  /** Requested output length, so the script is paced to fill it. */
+  durationS?: number;
 }): Promise<RefineResult> {
   const key = process.env.ARK_API_KEY;
   if (!key) throw new Error("ARK_API_KEY is not set");
 
   const userMsg =
+    `${targetBlock(opts.model, opts.durationS)}\n\n` +
     (opts.citations.length
-      ? `Attached reference assets: ${opts.citations.join(", ")}.\n\n`
+      ? `Attached reference assets, in upload order: ${opts.citations.join(", ")}.\n\n`
       : "") + `Rewrite this idea as a Seedance prompt:\n\n${opts.prompt}`;
 
   let lastErr = "";

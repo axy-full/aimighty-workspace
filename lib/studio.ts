@@ -59,7 +59,7 @@ export const CATEGORIES: Category[] = [
   {
     key: "move",
     label: "Camera move",
-    hint: "One move per shot — engines blur when asked for two.",
+    hint: "One move per shot — engines blur when asked for two. A technique that travels overrides this row.",
     options: [
       { value: "static", label: "Locked off", phrase: "the camera locked off" },
       { value: "push", label: "Push in", phrase: "the camera pushing slowly in" },
@@ -136,6 +136,21 @@ export const CATEGORIES: Category[] = [
     ],
   },
   {
+    key: "technique",
+    label: "Technique",
+    hint: "Named moves the engine knows by name. The niche ones carry their own explanation, because ByteDance's guide says an unusual term only lands as [term + what actually happens].",
+    options: [
+      { value: "oner", label: "One-shot", phrase: "shot as a single continuous take, no cuts" },
+      { value: "dollyzoom", label: "Dolly zoom", phrase: "a dolly zoom: the camera tracks back while the lens zooms in, so the subject holds its size and the background swells behind it" },
+      { value: "rackfocus", label: "Rack focus", phrase: "a rack focus: the foreground falls out of focus as the subject behind it sharpens" },
+      { value: "aerial", label: "Aerial", phrase: "an aerial view descending over the scene" },
+      { value: "fpv", label: "FPV", phrase: "an FPV drone shot flying continuously through the space" },
+      { value: "bullettime", label: "Bullet time", phrase: "bullet time: the action holds nearly frozen while the camera orbits around it" },
+      { value: "whippan", label: "Whip pan", phrase: "a whip pan: the camera snaps sideways, the frame smearing into motion blur" },
+      { value: "crash", label: "Crash zoom", phrase: "a crash zoom punching suddenly in on the subject" },
+    ],
+  },
+  {
     key: "mood",
     label: "Mood",
     hint: "",
@@ -160,7 +175,31 @@ export const CATEGORIES: Category[] = [
       { value: "timelapse", label: "Timelapse", phrase: "as a timelapse" },
     ],
   },
+  {
+    key: "sound",
+    label: "Sound",
+    hint: "",
+    options: [
+      { value: "ambient", label: "Ambient only", phrase: "no BGM; environmental and action sound only" },
+      { value: "music", label: "Music-led", phrase: "carried by music" },
+      { value: "dialogue", label: "Dialogue-led", phrase: "carried by dialogue, with the room's own sound under it" },
+      { value: "silent", label: "Silent", phrase: "no audio" },
+    ],
+  },
+  {
+    key: "titles",
+    label: "Titles",
+    hint: "Subtitles and audio are the only things the engine reliably takes a NO for — everything else should be described positively.",
+    options: [
+      { value: "none", label: "No subtitles", phrase: "no subtitles" },
+    ],
+  },
 ];
+
+/** Techniques that already specify how the camera travels. */
+export const MOVEMENT_TECHNIQUES = new Set([
+  "dollyzoom", "aerial", "fpv", "bullettime", "whippan", "crash",
+]);
 
 /** One selection per category. Empty string = not chosen. */
 export type ShotSpec = Record<string, string>;
@@ -179,11 +218,23 @@ export function specToPhrase(spec: ShotSpec): string {
   };
 
   const framing = [pick("shot"), pick("angle")].filter(Boolean).join(", ");
-  const camera = [pick("move"), pick("lens")].filter(Boolean).join(", ");
+
+  /* One camera move per shot — the guide is explicit that engines blur when
+     asked for two, and most named techniques ARE a move. "Push in" plus
+     "dolly zoom" asks the camera to travel in and out at once, so where a
+     technique carries its own movement it wins and the Move row is dropped.
+     One-shot and rack focus describe take length and focus, not travel, so
+     they sit happily beside a move. */
+  const movingTechnique = MOVEMENT_TECHNIQUES.has(spec.technique ?? "");
+  const camera = [movingTechnique ? "" : pick("move"), pick("lens"), pick("technique")]
+    .filter(Boolean).join(", ");
   const world = [pick("time"), pick("light"), pick("look")].filter(Boolean).join(", ");
   const feel = [pick("mood"), pick("pace")].filter(Boolean).join(", ");
+  // Sound and subtitles are constraints, not description — they go last, the
+  // way the guide's own examples close on them.
+  const constraints = [pick("sound"), pick("titles")].filter(Boolean).join(". ");
 
-  return [framing, camera, world, feel].filter(Boolean).join(". ");
+  return [framing, camera, world, feel, constraints].filter(Boolean).join(". ");
 }
 
 /** How many controls are set — drives the "3 set" badge on the panel. */
