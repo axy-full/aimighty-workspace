@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured } from "@/lib/providers";
+import { allSettings } from "@/lib/settings";
 import { db, ready } from "@/lib/db";
 import { presignedReadUrl } from "@/lib/storage";
 
@@ -85,6 +86,7 @@ export async function GET(req: Request) {
     videosSaved,
     videosAtRisk,
     providers: PROVIDERS.map((p) => ({ id: p.id, configured: providerConfigured(p) })),
+    cron: await cronStatus(),
     arkKeyConfigured: Boolean(process.env.ARK_API_KEY),
     pushConfigured: Boolean(
       process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
@@ -92,4 +94,21 @@ export async function GET(req: Request) {
     region: process.env.VERCEL_REGION ?? "local",
     commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7),
   });
+}
+
+
+/**
+ * When the cron last ran, who ran it, and whether that is recent enough.
+ * The schedule is every 10 minutes; anything past 15 means a tick was missed.
+ */
+async function cronStatus() {
+  const st = await allSettings();
+  const at = Number(st.lastCronAt ?? 0);
+  if (!at) return { lastRunAt: null, by: null, agoMinutes: null, healthy: null,
+                    note: "no run recorded yet — instrumentation is new" };
+  const ago = Math.round((Date.now() - at) / 60000);
+  let result: unknown = null;
+  try { result = JSON.parse(st.lastCronResult ?? "null"); } catch { /* ignore */ }
+  return { lastRunAt: new Date(at).toISOString(), by: st.lastCronBy ?? null,
+           agoMinutes: ago, healthy: ago <= 15, result };
 }

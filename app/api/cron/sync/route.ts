@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncPending } from "@/lib/jobs";
+import { setSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -33,6 +34,24 @@ export async function GET(req: Request) {
     console.error("cron sync failed:", (e as Error).message);
   }
   const after = await counts();
+
+  // Leave a mark. Nothing anywhere recorded when this last ran, which is how
+  // "is the cron firing?" became a question nobody could answer from the
+  // outside. Vercel stamps its scheduled calls with x-vercel-cron: 1, so the
+  // record also says WHO ran it — a manual curl and a real tick look
+  // identical otherwise.
+  const by = req.headers.get("x-vercel-cron") ? "vercel" : "manual";
+  try {
+    await setSetting("lastCronAt", String(Date.now()), "cron");
+    await setSetting("lastCronBy", by, "cron");
+    await setSetting("lastCronResult", JSON.stringify({
+      pending: after.pending, atRisk: after.atRisk,
+      rescued: Math.max(0, before.atRisk - after.atRisk),
+      completed: Math.max(0, before.pending - after.pending),
+    }), "cron");
+  } catch (e) {
+    console.error("cron: could not record the run:", (e as Error).message);
+  }
 
   return NextResponse.json({
     ok: true,
