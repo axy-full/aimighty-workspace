@@ -234,6 +234,80 @@ export const CATEGORIES: Category[] = [
   },
 ];
 
+/**
+ * The camera modules, addressable by id, and a reader that spots which move a
+ * written prompt is already asking for.
+ *
+ * This is what makes the treatment universal rather than a Studio feature.
+ * If someone types "handheld" we are not inventing a camera by expanding it
+ * into the full module — they chose the move, we supply the sixty words that
+ * stop the engine reading it as something else. That is exactly the division
+ * Higgsfield draws: the operator picks, the system is rigorous about it.
+ */
+export function moduleFor(kind: "move" | "technique", value: string): string {
+  const cat = CATEGORIES.find((c) => c.key === kind);
+  return cat?.options.find((o) => o.value === value)?.module ?? "";
+}
+
+/**
+ * Does this text already carry one of our camera modules?
+ *
+ * Checked against the module texts themselves rather than by grepping for
+ * "no pan, no tilt" — the static module's exclusions are "no push, no drift,
+ * no reframing", so a keyword guard misses it and a second module gets
+ * stapled on underneath the first.
+ */
+export function hasCameraModule(text: string): boolean {
+  const t = text.toLowerCase();
+  for (const key of ["move", "technique"] as const) {
+    const cat = CATEGORIES.find((c) => c.key === key);
+    for (const o of cat?.options ?? []) {
+      const m = o.module;
+      // A distinctive opening fragment is enough, and survives light editing.
+      if (m && t.includes(m.slice(0, 48).toLowerCase())) return true;
+    }
+  }
+  return false;
+}
+
+export const MOVE_IDS = [
+  "static", "push", "pull", "pan", "tilt", "track", "crane", "handheld", "orbit", "steadicam",
+] as const;
+
+/** Words that mean a given move, checked longest-first so "push in" wins over "pan". */
+const MOVE_WORDS: [string, RegExp][] = [
+  ["dollyzoom", /\bdolly[- ]?zoom|vertigo (?:shot|effect)\b/i],
+  ["bullettime", /\bbullet[- ]?time\b/i],
+  ["rackfocus",  /\brack focus|pull focus\b/i],
+  ["whippan",    /\bwhip[- ]?pan\b/i],
+  ["crash",      /\bcrash zoom\b/i],
+  ["fpv",        /\bfpv\b/i],
+  ["aerial",     /\baerial|drone shot\b/i],
+  ["oner",       /\bone[- ]?shot|long take|oner\b/i],
+  ["steadicam",  /\bsteadicam|gimbal\b/i],
+  ["handheld",   /\bhand[- ]?held\b/i],
+  ["orbit",      /\borbit|circles? (?:around|the subject)\b/i],
+  ["crane",      /\bcrane|jib\b/i],
+  ["push",       /\bpush(?:es|ing)? in|dolly in|moves? in on\b/i],
+  ["pull",       /\bpull(?:s|ing)? (?:out|back)|dolly out|pulls? away\b/i],
+  ["track",      /\btrack(?:s|ing)?|follows? alongside|truck\b/i],
+  ["tilt",       /\btilt(?:s|ing)? (?:up|down)\b/i],
+  ["pan",        /\bpan(?:s|ning)?\b/i],
+  ["static",     /\blocked[- ]?off|static shot|fixed camera|tripod\b/i],
+];
+
+const TECHNIQUE_IDS = new Set(["dollyzoom","bullettime","rackfocus","whippan","crash","fpv","aerial","oner"]);
+
+/** Which move is this text already asking for, if any? */
+export function detectMove(text: string): { kind: "move" | "technique"; value: string } | null {
+  for (const [value, re] of MOVE_WORDS) {
+    if (re.test(text)) {
+      return { kind: TECHNIQUE_IDS.has(value) ? "technique" : "move", value };
+    }
+  }
+  return null;
+}
+
 /** Techniques that already specify how the camera travels. */
 export const MOVEMENT_TECHNIQUES = new Set([
   "dollyzoom", "aerial", "fpv", "bullettime", "whippan", "crash",

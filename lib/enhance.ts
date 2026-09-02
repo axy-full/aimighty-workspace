@@ -55,6 +55,8 @@ export type RefineResult = {
   model: string;
   inTokens: number;
   outTokens: number;
+  /** The move the model chose, for the caller to attach as a module. */
+  move?: string | null;
 };
 
 /**
@@ -136,7 +138,13 @@ POSITIVE DESCRIPTION, WITH TWO EXCEPTIONS
 Describe what is in frame. The only negatives the engine honours are subtitles and audio — "no subtitles", "no BGM; environmental and action sound only", "no audio" — so carry those when the user asked for them, and never invent other negatives.
 
 CAMERA LANGUAGE
-Standard terms plainly: shot size, movement (push in, pull out, pan, tilt, track, follow, orbit, crane, handheld), angle. Named techniques may be used directly. A niche term must carry a plain description of what happens — "rack focus: the foreground falls out of focus as the figure behind sharpens". A transition needs its trigger point and its method.
+Standard terms plainly: shot size, movement, angle. A niche term must carry a plain description of what happens. A transition needs its trigger point and its method.
+
+Do NOT write a long paragraph about how the camera moves — that is supplied separately and precisely. Instead, after your prompt, on a final line of its own, name the single move that best serves the action:
+
+CAMERA: <one of: static, push, pull, pan, tilt, track, crane, handheld, orbit, steadicam, dollyzoom, rackfocus, aerial, fpv, bullettime, whippan, crash, oner>
+
+Choose the plainest move that serves what the user described; when in doubt choose static or push. If the user already named a camera move, name that same one. This line is stripped before the prompt is used — it is how you tell us which move to attach, not part of the prompt.
 
 ACTION AND EXPRESSION
 Prefer general action descriptions; spend specific detail only on the one or two beats that must land, and never repeat an action. Write expressions as plain descriptive sentences, not idioms.
@@ -267,10 +275,14 @@ export async function enhancePrompt(opts: {
     const text = await res.text();
     if (res.ok) {
       const j = JSON.parse(text);
-      const out = stripScaffolding(j.choices?.[0]?.message?.content ?? "");
+      const raw = stripScaffolding(j.choices?.[0]?.message?.content ?? "");
+      // Pull the move off the end and take it out of the prompt itself.
+      const pick = /(^|\n)\s*CAMERA\s*[:：]\s*([a-z]+)\s*$/i.exec(raw);
+      const out = pick ? raw.slice(0, pick.index).trim() : raw;
       if (!out) throw new Error("The model returned nothing.");
       return {
         text: out,
+        move: pick ? pick[2].toLowerCase() : null,
         model,
         inTokens: Number(j.usage?.prompt_tokens ?? 0),
         outTokens: Number(j.usage?.completion_tokens ?? 0),

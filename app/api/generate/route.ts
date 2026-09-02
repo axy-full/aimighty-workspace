@@ -10,6 +10,7 @@ import { getShot, nextVersion } from "@/lib/shots";
 import { withRetry, classifyFailure } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice } from "@/lib/tasks";
+import { detectMove, moduleFor, hasCameraModule } from "@/lib/studio";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -298,6 +299,7 @@ export async function POST(req: Request) {
   let refineModel: string | null = null;
   let refineIn = 0, refineOut = 0;
   let refineCost: number | null = null;
+  let chosenMove: string | null = null;
   const refineCall = shouldRefine(castPrompt);
   if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
@@ -323,6 +325,7 @@ export async function POST(req: Request) {
         model: modelId, durationS: params.duration, task: task.id,
       });
       finalPrompt = r.text;
+      chosenMove = r.move ?? null;
       rawPrompt = prompt;   // the words a person actually typed
       refineModel = r.model;
       refineIn = r.inTokens;
@@ -347,6 +350,30 @@ export async function POST(req: Request) {
       refineCost = frac * (refineIn * rate.input + refineOut * rate.output) / 1_000_000;
     } catch (e) {
       console.error("auto-refine unavailable, rendering raw:", (e as Error).message);
+    }
+  }
+
+  /* ── The camera module ───────────────────────────────────────────────
+   * Higgsfield's move: the camera is a self-contained, scene-independent
+   * block, written precisely enough that the engine cannot read it as a
+   * neighbouring move. This attaches one to EVERY render, not just the ones
+   * composed in the Studio.
+   *
+   * It is not inventing a camera. Either the author named a move — in which
+   * case expanding "handheld" into its sixty rigorous words is honouring
+   * their choice, not overriding it — or the refine layer picked the plainest
+   * move that serves the action. A prompt that already carries a full module
+   * (composed in the Studio) is left alone.
+   * ------------------------------------------------------------------ */
+  if (!task.locked) {
+    if (!hasCameraModule(finalPrompt)) {
+      const named = detectMove(finalPrompt) ?? detectMove(prompt);
+      const fromModel = chosenMove
+        ? (detectMove(chosenMove) ?? { kind: "move" as const, value: chosenMove })
+        : null;
+      const choice = named ?? fromModel;
+      const mod = choice ? moduleFor(choice.kind, choice.value) : "";
+      if (mod) finalPrompt = `${finalPrompt.trim()}\n\n${mod}`;
     }
   }
 
