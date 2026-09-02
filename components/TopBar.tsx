@@ -31,8 +31,8 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
       {/* The brand is on every screen, never loud: the mark, the name, and
           on Generate the project you're in as a tappable breadcrumb. */}
       <Link href="/" className="flex shrink-0 items-center gap-2" title="Particl">
-        <ParticlMark size={20} className="text-black" />
-        <span className="text-[15px] font-semibold tracking-[-0.02em] text-black max-[430px]:hidden">
+        <ParticlMark size={20} className="text-ink" />
+        <span className="text-[15px] font-semibold tracking-[-0.02em] text-ink max-[430px]:hidden">
           Particl
         </span>
       </Link>
@@ -41,7 +41,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
           <span className="text-[15px] text-mute" aria-hidden="true">/</span>
           <button
             onClick={() => router.push("/projects")}
-            className="min-w-0 truncate text-[15px] font-medium text-dim transition-colors hover:text-black"
+            className="min-w-0 truncate text-[15px] font-medium text-dim transition-colors hover:text-ink"
             title="Back to projects"
           >
             {title}

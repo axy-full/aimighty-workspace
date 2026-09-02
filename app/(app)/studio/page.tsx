@@ -179,7 +179,7 @@ export default function StudioPage() {
                   </div>
                   <div className="px-3 py-2">
                     <p className="flex items-baseline gap-2">
-                      <span className="truncate font-mono text-[13px] font-medium text-black">@{m.name}</span>
+                      <span className="truncate font-mono text-[13px] font-medium text-ink">@{m.name}</span>
                       <span className="text-[11px] uppercase tracking-wide text-mute">
                         {m.kind === "style" ? "look" : m.kind}
                       </span>
@@ -247,7 +247,7 @@ export default function StudioPage() {
             value={prose} onChange={(e) => setProse(e.target.value)}
             placeholder="What happens in the shot? Subject and action — the chips above handle how it looks."
             rows={3}
-            className="mt-3 w-full resize-none rounded-[12px] bg-chip px-3.5 py-3 text-[15px] text-bone placeholder:text-mute focus:bg-white focus:outline-none"
+            className="mt-3 w-full resize-none rounded-[12px] bg-chip px-3.5 py-3 text-[15px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none"
           />
           {(prose.trim() || phrase) && (
             <div className="mt-3 rounded-[var(--r)] bg-panel2 px-4 py-3">

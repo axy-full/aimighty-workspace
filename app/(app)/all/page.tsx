@@ -113,7 +113,7 @@ export default function LibraryPage() {
         <div className="relative flex items-center">
           <span className="pointer-events-none absolute left-3.5 text-mute"><IconSearch /></span>
           <input value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search every prompt" className="h-[42px] w-[240px] rounded-[12px] bg-panel2 pl-10 pr-4 text-[15px] text-bone placeholder:text-mute focus:bg-white focus:outline-none" />
+            placeholder="Search every prompt" className="h-[42px] w-[240px] rounded-[12px] bg-panel2 pl-10 pr-4 text-[15px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none" />
         </div>
       </div>
 

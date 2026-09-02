@@ -48,7 +48,7 @@ export default function ParticlIntro() {
           <circle cx={ACCENT[0]} cy={ACCENT[1]} r={ACCENT[2]} fill="var(--color-blue)"
             className="intro-dot" style={{ ...dot(7), animationDelay: "470ms" }} />
         </svg>
-        <p className="intro-word text-[34px] font-semibold text-black"
+        <p className="intro-word text-[34px] font-semibold text-ink"
            style={{ animationDelay: "620ms" }}>
           Particl
         </p>

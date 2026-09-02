@@ -6,10 +6,10 @@ export function AuthCard({
   title, sub, children,
 }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="w-full max-w-[380px] rounded-[20px] bg-white shadow-[var(--shadow-pop)]">
+    <div className="w-full max-w-[380px] rounded-[20px] bg-panel shadow-[var(--shadow-pop)]">
       <div className="flex items-center gap-2 px-6 pt-6">
-        <ParticlMark size={20} className="text-black" />
-        <span className="text-[16px] font-semibold tracking-[-0.02em] text-black">Particl</span>
+        <ParticlMark size={20} className="text-ink" />
+        <span className="text-[16px] font-semibold tracking-[-0.02em] text-ink">Particl</span>
       </div>
 
       <div className="p-6">

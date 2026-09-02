@@ -58,7 +58,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
           <p className="mt-1 text-[13.5px] leading-relaxed text-dim">
             This is the only time it is shown. Lose it and you revoke it and make another.
           </p>
-          <p className="mt-3 select-all break-all rounded-[10px] bg-white px-3 py-2.5 font-mono text-[12.5px]">
+          <p className="mt-3 select-all break-all rounded-[10px] bg-panel px-3 py-2.5 font-mono text-[12.5px]">
             {fresh.token}
           </p>
           <div className="mt-3 flex gap-2">

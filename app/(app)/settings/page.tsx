@@ -11,6 +11,7 @@ import { Switch } from "@/components/Panel";
 import { IconChevron } from "@/components/Icons";
 import WorkspaceSettings from "@/components/WorkspaceSettings";
 import { usePageTitle } from "@/lib/usePageTitle";
+import ThemeRow from "@/components/ThemeRow";
 
 type Me = { name: string; email: string; role: string };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number };
@@ -101,6 +102,11 @@ export default function SettingsPage() {
           BytePlus doesn&apos;t publish a balance over the API, so credit is what you record
           on the Usage page, drawn down by the real cost of every render.
         </p>
+
+        <p className="grouplabel mt-10">Appearance</p>
+        <div className="rows">
+          <ThemeRow />
+        </div>
 
         <p className="grouplabel mt-10">Notifications</p>
         <div className="rows">

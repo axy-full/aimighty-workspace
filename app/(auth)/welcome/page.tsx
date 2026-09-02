@@ -42,8 +42,8 @@ export default function WelcomePage() {
       <main className="w-full max-w-[880px]">
         {/* ── The mark, and the claim ─────────────────────────── */}
         <header className="flex flex-col items-center text-center">
-          <ParticlMark size={54} className="text-black" />
-          <h1 className="mt-7 text-[clamp(40px,7vw,68px)] font-semibold leading-[0.98] tracking-[-0.04em] text-black">
+          <ParticlMark size={54} className="text-ink" />
+          <h1 className="mt-7 text-[clamp(40px,7vw,68px)] font-semibold leading-[0.98] tracking-[-0.04em] text-ink">
             Particl
           </h1>
           <p className="mt-5 max-w-[34ch] text-[clamp(17px,2.4vw,21px)] leading-snug text-dim">
@@ -76,7 +76,7 @@ export default function WelcomePage() {
         <section className="mt-16 grid gap-x-10 gap-y-9 sm:grid-cols-2">
           {PILLARS.map((p) => (
             <div key={p.name}>
-              <h2 className="text-[19px] font-semibold tracking-[-0.02em] text-black">
+              <h2 className="text-[19px] font-semibold tracking-[-0.02em] text-ink">
                 {p.name}
               </h2>
               <p className="mt-1.5 max-w-[38ch] text-[15px] leading-relaxed text-dim">

@@ -83,7 +83,7 @@ export default function UsagePage() {
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_320px]">
           {/* The number, and the month it belongs to */}
           <div>
-            <p className="text-[clamp(52px,7vw,88px)] font-bold leading-none tracking-[-0.04em] text-black tabular-nums">
+            <p className="text-[clamp(52px,7vw,88px)] font-bold leading-none tracking-[-0.04em] text-ink tabular-nums">
               {usd(data.spentUsd, 2)}
             </p>
             <p className="mt-3 text-[16px] text-dim">

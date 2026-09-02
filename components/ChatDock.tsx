@@ -74,7 +74,7 @@ export default function ChatDock() {
   // outward — on a phone the FAB is 14px from the edge, so a two-digit or
   // "99+" count was cut off by the screen.
   const badge = unread > 0 && (
-    <span className={`absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10.5px] font-semibold ring-2 ring-white ${
+    <span className={`absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10.5px] font-semibold ring-2 ring-panel ${
       mentioned > 0 ? "bg-lift text-white" : "bg-panel3 text-dim"
     }`}>
       {unread > 99 ? "99+" : unread}
@@ -93,7 +93,7 @@ export default function ChatDock() {
           <button
             onClick={() => toggle(true)}
             title="Team chat"
-            className="fixed right-5 z-40 grid h-[52px] w-[52px] place-items-center rounded-full bg-white text-dim shadow-[var(--shadow-pop)] transition-transform hover:scale-105 max-[860px]:right-3.5"
+            className="fixed right-5 z-40 grid h-[52px] w-[52px] place-items-center rounded-full bg-panel text-dim shadow-[var(--shadow-pop)] transition-transform hover:scale-105 max-[860px]:right-3.5"
             style={{ bottom: "calc(var(--tabbar) + 6px)" }}
           >
             <ChatGlyph />
@@ -250,12 +250,12 @@ function ChatPanel({ feed, members, refresh, onClose }: {
     <>
       {/* Tap-outside-to-close scrim while the panel overlays the page.
           z-40 ties the island; painting later in the DOM wins the tie. */}
-      <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-scrim backdrop-blur-[2px]" onClick={onClose} />
       <aside
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files[0]) attach(e.dataTransfer.files[0]); }}
-      className={`chat-panel fixed bottom-5 right-5 top-[calc(var(--topbar)+12px)] z-40 flex w-[360px] flex-col overflow-hidden rounded-[20px] bg-white shadow-[var(--shadow-pop)] ${drag ? "!bg-blue/5" : ""} max-[860px]:inset-x-3 max-[860px]:bottom-3 max-[860px]:w-auto`}
+      className={`chat-panel fixed bottom-5 right-5 top-[calc(var(--topbar)+12px)] z-40 flex w-[360px] flex-col overflow-hidden rounded-[20px] bg-panel shadow-[var(--shadow-pop)] ${drag ? "!bg-blue/5" : ""} max-[860px]:inset-x-3 max-[860px]:bottom-3 max-[860px]:w-auto`}
     >
       <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-hair px-4">
         <h2 className="text-[16px] font-semibold tracking-[-0.015em]">Team chat</h2>
@@ -321,7 +321,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
 
       <div className="relative shrink-0 border-t border-hair p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
         {menu && matches.length > 0 && (
-          <div className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-[14px] bg-white p-1 shadow-[var(--shadow-pop)]">
+          <div className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-[14px] bg-panel p-1 shadow-[var(--shadow-pop)]">
             {matches.map((mm, i) => (
               <button key={mm.id}
                 onMouseDown={(e) => { e.preventDefault(); pick(mm); }}

@@ -36,7 +36,7 @@ const mb = (n: number) => `${(n / 1048576).toFixed(0)} MB`;
 function QA({ q, children }: { q: string; children: React.ReactNode }) {
   return (
     <div className="border-t border-hair py-3 first:border-0">
-      <p className="text-[14px] font-medium text-black">{q}</p>
+      <p className="text-[14px] font-medium text-ink">{q}</p>
       <div className="mt-1 text-[14px] leading-relaxed text-dim">{children}</div>
     </div>
   );
@@ -128,7 +128,7 @@ export default function PlatformPage() {
           <div className="mt-3">
             {data.providers.map((p) => (
               <div key={p.id} className="border-t border-hair py-3">
-                <p className="flex flex-wrap items-center gap-2 text-[15px] font-medium text-black">
+                <p className="flex flex-wrap items-center gap-2 text-[15px] font-medium text-ink">
                   {p.label}
                   <span className={`chip ${p.configured ? "" : "!text-lift"}`}>
                     {p.configured ? "key configured" : "no key"}

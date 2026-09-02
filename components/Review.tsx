@@ -89,7 +89,7 @@ export default function Review({ genId, state, reviewBy, onChanged }: {
           value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addNote(); } }}
           placeholder="Leave a note on this shot…"
-          className="h-9 min-w-0 flex-1 rounded-full bg-panel2 px-3.5 text-[14px] text-bone placeholder:text-mute focus:bg-white focus:outline-none"
+          className="h-9 min-w-0 flex-1 rounded-full bg-panel2 px-3.5 text-[14px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none"
         />
         <button onClick={addNote} disabled={busy || !text.trim()}
           className="btn-render h-9 shrink-0 px-3.5 text-[13px]">Post</button>

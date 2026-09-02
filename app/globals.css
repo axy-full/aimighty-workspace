@@ -35,6 +35,12 @@
   --color-run:     #007AFF;
   --color-warn:    #FF9500;
 
+  --color-ink:        #000000;                 /* strongest text: titles, wordmark */
+  --color-blue-hover: #0A6FE0;
+  --color-note:       #FFF8C5;                 /* a canvas sticky */
+  --color-switch-off: #E9E9EA;
+  --color-scrim:      rgba(0, 0, 0, 0.25);     /* behind dialogs and sheets */
+
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
                "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
@@ -54,10 +60,99 @@
   /* Cards don't use borders — they sit on light. */
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 6px 20px rgba(0, 0, 0, .05);
   --shadow-card-hover: 0 2px 6px rgba(0, 0, 0, .06), 0 14px 36px rgba(0, 0, 0, .10);
+  --shadow-bar:  0 2px 8px rgba(0, 0, 0, .06), 0 12px 40px rgba(0, 0, 0, .12);
+  /* Frosted surfaces: popovers, and the navigation pill. */
+  --glass:     rgba(255, 255, 255, .82);
+  --glass-bar: rgba(255, 255, 255, .78);
+  --scroll-thumb:       rgba(0, 0, 0, .16);
+  --scroll-thumb-hover: rgba(0, 0, 0, .28);
+  color-scheme: light;
   /* One easing for every press and lift — the spring Apple's controls have. */
   --ease-spring: cubic-bezier(.2, .8, .2, 1);
   --shadow-pop:  0 4px 12px rgba(0, 0, 0, .08), 0 20px 48px rgba(0, 0, 0, .12);
   --shadow-media:0 2px 8px rgba(0, 0, 0, .06), 0 18px 48px rgba(0, 0, 0, .10);
+}
+
+/* ── Dark ──────────────────────────────────────────────────────────────
+   Apple's dark, not a negative of the light: near-black desk (not pure —
+   the glass pill has to float on something), elevated charcoal cards, and
+   shadows replaced by a hairline ring plus a deeper ambient. Only the
+   tokens change; every component reads the same names.
+
+   Two selectors, one palette, generated from a single table so they can't
+   drift: the system's preference governs unless a person has chosen, and
+   a chosen theme is stamped on <html> before first paint. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --color-desk: #0E0E10;
+  --color-chrome: #141416;
+  --color-panel: #1C1C1E;
+  --color-panel2: #242426;
+  --color-panel3: #2E2E31;
+  --color-line: rgba(255, 255, 255, 0.12);
+  --color-hair: rgba(255, 255, 255, 0.08);
+  --color-chip: rgba(255, 255, 255, 0.08);
+  --color-chip2: rgba(255, 255, 255, 0.14);
+  --color-thumb: #232326;
+  --color-bone: #F5F5F7;
+  --color-dim: #A1A1A6;
+  --color-mute: #86868B;
+  --color-blue: #0A84FF;
+  --color-run: #0A84FF;
+  --color-blue-hover: #3396FF;
+  --color-lift: #FF453A;
+  --color-ok: #30D158;
+  --color-warn: #FF9F0A;
+  --color-ink: #FFFFFF;
+  --color-note: #3A3420;
+  --color-switch-off: #39393D;
+  --color-scrim: rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, .06);
+  --shadow-card-hover: 0 0 0 1px rgba(255, 255, 255, .10), 0 14px 36px rgba(0, 0, 0, .5);
+  --shadow-pop: 0 0 0 1px rgba(255, 255, 255, .08), 0 20px 48px rgba(0, 0, 0, .6);
+  --shadow-media: 0 0 0 1px rgba(255, 255, 255, .06), 0 18px 48px rgba(0, 0, 0, .5);
+  --shadow-bar: 0 0 0 1px rgba(255, 255, 255, .08), 0 12px 40px rgba(0, 0, 0, .55);
+  --glass: rgba(28, 28, 30, .74);
+  --glass-bar: rgba(28, 28, 30, .70);
+  --scroll-thumb: rgba(255, 255, 255, .22);
+  --scroll-thumb-hover: rgba(255, 255, 255, .34);
+  color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --color-desk: #0E0E10;
+  --color-chrome: #141416;
+  --color-panel: #1C1C1E;
+  --color-panel2: #242426;
+  --color-panel3: #2E2E31;
+  --color-line: rgba(255, 255, 255, 0.12);
+  --color-hair: rgba(255, 255, 255, 0.08);
+  --color-chip: rgba(255, 255, 255, 0.08);
+  --color-chip2: rgba(255, 255, 255, 0.14);
+  --color-thumb: #232326;
+  --color-bone: #F5F5F7;
+  --color-dim: #A1A1A6;
+  --color-mute: #86868B;
+  --color-blue: #0A84FF;
+  --color-run: #0A84FF;
+  --color-blue-hover: #3396FF;
+  --color-lift: #FF453A;
+  --color-ok: #30D158;
+  --color-warn: #FF9F0A;
+  --color-ink: #FFFFFF;
+  --color-note: #3A3420;
+  --color-switch-off: #39393D;
+  --color-scrim: rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, .06);
+  --shadow-card-hover: 0 0 0 1px rgba(255, 255, 255, .10), 0 14px 36px rgba(0, 0, 0, .5);
+  --shadow-pop: 0 0 0 1px rgba(255, 255, 255, .08), 0 20px 48px rgba(0, 0, 0, .6);
+  --shadow-media: 0 0 0 1px rgba(255, 255, 255, .06), 0 18px 48px rgba(0, 0, 0, .5);
+  --shadow-bar: 0 0 0 1px rgba(255, 255, 255, .08), 0 12px 40px rgba(0, 0, 0, .55);
+  --glass: rgba(28, 28, 30, .74);
+  --glass-bar: rgba(28, 28, 30, .70);
+  --scroll-thumb: rgba(255, 255, 255, .22);
+  --scroll-thumb-hover: rgba(255, 255, 255, .34);
+  color-scheme: dark;
 }
 
 html, body {
@@ -211,7 +306,7 @@ input, textarea {
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.05;
-  color: #000;
+  color: var(--color-ink);
   text-wrap: balance;
 }
 
@@ -272,7 +367,7 @@ input, textarea {
   }
 
   /* Media wells get a hairline inner ring so white-on-white edges read. */
-  .media-well { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); }
+  .media-well { box-shadow: inset 0 0 0 1px var(--color-hair); }
 
   @media (prefers-reduced-motion: reduce) {
     .screen > * { animation: none; }
@@ -294,7 +389,7 @@ input, textarea {
 .ptitle { font-weight: 600; letter-spacing: -0.015em; }
 
 input, textarea, select, button { font: inherit; color: inherit; }
-select option { background: #fff; color: #1D1D1F; }
+select option { background: var(--color-panel); color: var(--color-bone); }
 
 /* A field, iOS-style: a soft inset fill, no border until focus. */
 .ctl {
@@ -311,7 +406,7 @@ select option { background: #fff; color: #1D1D1F; }
 .ctl::placeholder { color: var(--color-mute); }
 @media (hover: hover) { .ctl:hover { background: var(--color-panel3); } }
 .ctl:focus {
-  background: #fff;
+  background: var(--color-panel);
   border-color: color-mix(in oklab, var(--color-blue) 55%, transparent);
   outline: none;
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-blue) 12%, transparent);
@@ -384,7 +479,7 @@ button.row:active, a.row:active { background: var(--color-chip2); }
 .chip:active:not(:disabled) { transform: scale(.96); }
 .chip:disabled { opacity: .4; cursor: not-allowed; }
 .chip-blue { background: var(--color-blue); color: #fff; }
-@media (hover: hover) { .chip-blue:hover:not(:disabled) { background: #0A6FE0; } }
+@media (hover: hover) { .chip-blue:hover:not(:disabled) { background: var(--color-blue-hover); } }
 
 /* Popover menu — floats on shadow, never a border. */
 /* The frosted surface on its own, with NO positioning. Anything that wants
@@ -393,7 +488,7 @@ button.row:active, a.row:active { background: var(--color-chip2); }
    is constrained between the two and collapses to nothing, which is exactly
    what happened to the canvas toolbar. */
 .pop-surface {
-  background: rgba(255, 255, 255, .82);
+  background: var(--glass);
   backdrop-filter: blur(24px) saturate(1.8);
   -webkit-backdrop-filter: blur(24px) saturate(1.8);
   border-radius: 14px;
@@ -409,7 +504,7 @@ button.row:active, a.row:active { background: var(--color-chip2); }
   max-height: min(60vh, 420px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(255, 255, 255, .82);
+  background: var(--glass);
   backdrop-filter: blur(24px) saturate(1.8);
   -webkit-backdrop-filter: blur(24px) saturate(1.8);
   border-radius: 14px;
@@ -435,10 +530,10 @@ button.row:active, a.row:active { background: var(--color-chip2); }
   display: flex; align-items: center; gap: 2px;
   padding: 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, .78);
+  background: var(--glass-bar);
   backdrop-filter: blur(28px) saturate(1.8);
   -webkit-backdrop-filter: blur(28px) saturate(1.8);
-  box-shadow: 0 2px 8px rgba(0,0,0,.06), 0 12px 40px rgba(0,0,0,.12);
+  box-shadow: var(--shadow-bar);
   max-width: calc(100vw - 24px);
 }
 .tab {
@@ -472,12 +567,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, .16);
+  background: var(--scroll-thumb);
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 6px;
 }
-::-webkit-scrollbar-thumb:hover { background-color: rgba(0, 0, 0, .28); }
+::-webkit-scrollbar-thumb:hover { background-color: var(--scroll-thumb-hover); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
 /* The one big action: a blue pill that presses like a button should. */
@@ -490,7 +585,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   transition: background .15s, transform .18s var(--ease-spring), box-shadow .2s, opacity .15s;
 }
 @media (hover: hover) {
-  .btn-render:hover:not(:disabled) { background: #0A6FE0; box-shadow: 0 4px 16px color-mix(in oklab, var(--color-blue) 38%, transparent); }
+  .btn-render:hover:not(:disabled) { background: var(--color-blue-hover); box-shadow: 0 4px 16px color-mix(in oklab, var(--color-blue) 38%, transparent); }
 }
 .btn-render:active:not(:disabled) { transform: scale(.96); }
 .btn-render:disabled {

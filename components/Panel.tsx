@@ -53,7 +53,7 @@ export function Switch({ checked, onChange, disabled }: {
       onClick={() => onChange(!checked)}
       className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors duration-200 ${
         disabled ? "cursor-not-allowed bg-panel3 opacity-50"
-        : checked ? "bg-ok" : "bg-[#E9E9EA]"
+        : checked ? "bg-ok" : "bg-switch-off"
       }`}
     >
       <span

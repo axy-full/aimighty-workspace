@@ -22,7 +22,7 @@ export default function SectionNav() {
         return (
           <Link key={v.href} href={v.href}
             className={`rounded-[8px] px-3.5 py-1.5 text-[14px] font-medium transition-colors ${
-              active ? "bg-panel text-black shadow-[var(--shadow-card)]" : "text-dim"
+              active ? "bg-panel text-ink shadow-[var(--shadow-card)]" : "text-dim"
             }`}>
             {v.label}
           </Link>

@@ -40,7 +40,7 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
   return (
     <div className="card px-4 py-4 sm:px-5">
       <p className="grouplabel">{label}</p>
-      <p className="mt-1 text-[clamp(22px,6vw,28px)] font-semibold leading-none tracking-[-0.02em] tabular-nums text-black">
+      <p className="mt-1 text-[clamp(22px,6vw,28px)] font-semibold leading-none tracking-[-0.02em] tabular-nums text-ink">
         {value}
       </p>
       {sub && <p className="mt-1.5 text-[12.5px] leading-snug text-mute sm:text-[13px]">{sub}</p>}
@@ -60,7 +60,7 @@ export function BarList({ rows, empty }: {
       {rows.map((r) => (
         <div key={r.key}>
           <div className="flex items-baseline gap-3 text-[14px]">
-            <span className="min-w-0 flex-1 truncate text-black">{r.label}</span>
+            <span className="min-w-0 flex-1 truncate text-ink">{r.label}</span>
             {r.note && <span className="text-[12px] tabular-nums text-mute">{r.note}</span>}
             <span className="tabular-nums text-dim">{usd(r.value, 2)}</span>
           </div>
@@ -123,7 +123,7 @@ export function StuckTable({ rows }: { rows: Analytics["stuck"] }) {
                 {r.model} <span className="text-mute">{r.resolution}</span>
               </td>
               <td className="py-2.5 text-right tabular-nums text-dim">{r.n}</td>
-              <td className="py-2.5 text-right tabular-nums text-black">{dur(r.avgMs)}</td>
+              <td className="py-2.5 text-right tabular-nums text-ink">{dur(r.avgMs)}</td>
               <td className="py-2.5 text-right tabular-nums text-dim">{dur(r.maxMs)}</td>
               <td className={`py-2.5 text-right tabular-nums ${r.failed ? "text-lift" : "text-mute"}`}>
                 {r.failed || "—"}
@@ -165,10 +165,10 @@ export function ShotTable({ rows }: { rows: Analytics["byShot"] }) {
           {rows.map((r) => (
             <tr key={r.id} className="border-t border-hair">
               <td className="py-2.5 pr-3">
-                <span className="font-medium text-black">{r.scene ? `${r.scene} · ` : ""}{r.code}</span>
+                <span className="font-medium text-ink">{r.scene ? `${r.scene} · ` : ""}{r.code}</span>
                 {r.title && <span className="ml-2 text-mute">{r.title}</span>}
               </td>
-              <td className="py-2.5 text-right tabular-nums text-black">{r.takes}</td>
+              <td className="py-2.5 text-right tabular-nums text-ink">{r.takes}</td>
               <td className="py-2.5 text-right tabular-nums text-dim">{r.ok}</td>
               <td className={`py-2.5 text-right tabular-nums ${r.failed ? "text-lift" : "text-mute"}`}>
                 {r.failed || "—"}

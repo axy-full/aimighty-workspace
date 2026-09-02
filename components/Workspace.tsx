@@ -799,12 +799,12 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
         <span className="reveal absolute right-3 top-3 flex items-center gap-1.5">
           {url && (
             <a href={downloadHref(url)} download={`${clipId(clip.id)}.${still ? "png" : "mp4"}`} title="Download"
-              className="grid h-8 w-8 place-items-center rounded-full bg-white/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-white">
+              className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel">
               <IconDown />
             </a>
           )}
           <button onClick={remove} title="Delete"
-            className="grid h-8 w-8 place-items-center rounded-full bg-white/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-white hover:text-lift">
+            className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel hover:text-lift">
             <IconTrash />
           </button>
         </span>

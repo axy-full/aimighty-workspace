@@ -103,7 +103,7 @@ export default function DialogHost() {
 
   return (
     <div
-      className="fixed inset-0 z-[95] grid place-items-center bg-black/25 p-5 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[95] grid place-items-center bg-scrim p-5 backdrop-blur-[2px]"
       // Dismiss only a true backdrop click — not a drag that ends outside the
       // card — and never let it reach the page's own click-away listeners.
       onPointerDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
@@ -116,7 +116,7 @@ export default function DialogHost() {
         key={current.id}
         role="dialog" aria-modal="true" aria-label={current.title}
         onClick={(e) => e.stopPropagation()}
-        className="w-[min(92vw,340px)] rounded-[18px] bg-white p-5 shadow-[var(--shadow-pop)]"
+        className="w-[min(92vw,340px)] rounded-[18px] bg-panel p-5 shadow-[var(--shadow-pop)]"
       >
         <p className="text-center text-[17px] font-semibold tracking-[-0.01em]">{current.title}</p>
         {current.message && (

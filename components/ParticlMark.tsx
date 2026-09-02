@@ -88,8 +88,8 @@ export function Empty({ title, line, action, compact = false }: {
 export default function ParticlLockup({ className = "" }: { className?: string }) {
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`}>
-      <ParticlMark size={30} className="text-black" />
-      <span className="text-[26px] font-semibold leading-none tracking-[-0.035em] text-black">
+      <ParticlMark size={30} className="text-ink" />
+      <span className="text-[26px] font-semibold leading-none tracking-[-0.035em] text-ink">
         Particl<span className="ml-1.5 font-normal text-dim">Studio</span>
       </span>
     </span>

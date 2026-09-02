@@ -72,7 +72,7 @@ export default function ProjectsPage() {
           <span className="pointer-events-none absolute left-4 text-mute"><IconSearch /></span>
           <input
             value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search"
-            className="h-[46px] w-full rounded-[14px] bg-panel2 pl-11 pr-4 text-[16px] text-bone placeholder:text-mute focus:bg-white focus:outline-none"
+            className="h-[46px] w-full rounded-[14px] bg-panel2 pl-11 pr-4 text-[16px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none"
           />
         </div>
 

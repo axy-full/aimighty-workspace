@@ -257,7 +257,7 @@ function Card({ item, selected, onSelect, onDragStart, onRemove, onEdit, onUse }
       <div className={`${common} ${ring} cursor-move`} onPointerDown={start}
         onDoubleClick={onEdit}
         style={{ left: item.x, top: item.y, width: item.w }}>
-        <p className="text-[20px] font-semibold tracking-[-0.02em] text-black">{item.text}</p>
+        <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">{item.text}</p>
         {selected && <button onClick={onRemove}
           className="mt-1 text-[12px] text-lift">Remove</button>}
       </div>
@@ -266,10 +266,10 @@ function Card({ item, selected, onSelect, onDragStart, onRemove, onEdit, onUse }
 
   if (item.kind === "note") {
     return (
-      <div className={`${common} ${ring} cursor-move rounded-[var(--r)] bg-[#FFF8C5] p-3 shadow-[var(--shadow-card)]`}
+      <div className={`${common} ${ring} cursor-move rounded-[var(--r)] bg-note p-3 shadow-[var(--shadow-card)]`}
         onPointerDown={start} onDoubleClick={onEdit}
         style={{ left: item.x, top: item.y, width: item.w, minHeight: item.h }}>
-        <p className="whitespace-pre-wrap text-[14px] leading-snug text-black">{item.text}</p>
+        <p className="whitespace-pre-wrap text-[14px] leading-snug text-ink">{item.text}</p>
         {item.authorName && <p className="mt-2 text-[11px] text-mute">{item.authorName}</p>}
         {selected && <button onClick={onRemove}
           className="mt-1 text-[12px] text-lift">Remove</button>}
@@ -296,7 +296,7 @@ function Card({ item, selected, onSelect, onDragStart, onRemove, onEdit, onUse }
       </div>
       <div className="px-3 py-2">
         <p className="flex items-center gap-2 text-[12px] text-dim">
-          {item.gen?.shot && <span className="font-medium text-black">{item.gen.shot}</span>}
+          {item.gen?.shot && <span className="font-medium text-ink">{item.gen.shot}</span>}
           {item.gen && <span className="text-mute">v{item.gen.version}</span>}
         </p>
         <p className="mt-0.5 line-clamp-2 text-[12px] text-mute">
