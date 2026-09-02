@@ -93,15 +93,25 @@ export function promptRichness(prompt: string): Richness {
  * that prompted this: a 24-word handheld/35mm/no-music prompt scores 3 and is
  * passed through; "a woman walks into a bar" scores 0 and is refined.
  */
-export function shouldRefine(prompt: string): { refine: boolean; why: string } {
+export function shouldRefine(prompt: string, detectedAxes = 0): { refine: boolean; why: string } {
   const p = prompt.trim();
   if (/^raw:/i.test(p)) return { refine: false, why: "raw: prefix" };
   if (p.includes("【")) return { refine: false, why: "already structured" };
+
   const r = promptRichness(p);
-  if (r.score >= 3 && r.words >= 18) {
-    return { refine: false, why: `already specific (${r.signals.join("+")})` };
+  // LIBRARY-FIRST. The bank supplies the craft and the author's words stay
+  // the author's words, so a model is only worth calling when there is not
+  // enough prompt to film at all — a bare sketch with nothing for detection
+  // to work with. Everything else composes deterministically, instantly and
+  // for nothing.
+  const tooThinToFilm = r.words <= 10 && detectedAxes === 0 && r.score === 0;
+  if (!tooThinToFilm) {
+    return {
+      refine: false,
+      why: r.words > 10 ? `enough to film (${r.words} words)` : `library covers it (${detectedAxes} axes)`,
+    };
   }
-  return { refine: true, why: "" };
+  return { refine: true, why: "too thin to film" };
 }
 
 /**

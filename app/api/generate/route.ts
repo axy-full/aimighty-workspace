@@ -10,7 +10,9 @@ import { getShot, nextVersion } from "@/lib/shots";
 import { withRetry, classifyFailure } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice } from "@/lib/tasks";
-import { detectMove, moduleFor, hasCameraModule } from "@/lib/studio";
+import {
+  detectMove, moduleFor, hasCameraModule, detectSpec, inferMove, sceneLine,
+} from "@/lib/studio";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -299,8 +301,15 @@ export async function POST(req: Request) {
   let refineModel: string | null = null;
   let refineIn = 0, refineOut = 0;
   let refineCost: number | null = null;
+  /* ── Library-first composition ───────────────────────────────────────
+   * The bank supplies the craft; the author's words stay the author's words.
+   * We read what they already specified, fill the rest from the library, and
+   * only call a model when there is too little prompt to film at all.
+   * ------------------------------------------------------------------ */
   let chosenMove: string | null = null;
-  const refineCall = shouldRefine(castPrompt);
+  const detected = detectSpec(castPrompt);
+  const detectedAxes = Object.values(detected).filter(Boolean).length;
+  const refineCall = shouldRefine(castPrompt, detectedAxes);
   if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
   } else if (!refineCall.refine) {
@@ -365,14 +374,30 @@ export async function POST(req: Request) {
    * move that serves the action. A prompt that already carries a full module
    * (composed in the Studio) is left alone.
    * ------------------------------------------------------------------ */
-  if (!task.locked) {
+  if (!task.locked && !/^raw:/i.test(castPrompt)) {
+    /* Expand only where the library's wording is materially more precise
+     * than the author's. Detection found these terms BY reading them, so
+     * restating "35mm" as "shot on a 35mm lens" adds a duplicate and no
+     * information. Sound and subtitles are the exception: those are the two
+     * negatives the engine actually honours, and it honours the specific
+     * phrasing — "no BGM; environmental and action sound only" lands where a
+     * bare "no music" does not. */
+    const spec = detectSpec(finalPrompt);
+    const extras = sceneLine({ sound: spec.sound ?? "", titles: spec.titles ?? "" });
+    if (extras && !finalPrompt.toLowerCase().includes(extras.slice(0, 24).toLowerCase())) {
+      finalPrompt = `${finalPrompt.trim()}\n\n${extras}.`;
+    }
+
     if (!hasCameraModule(finalPrompt)) {
       const named = detectMove(finalPrompt) ?? detectMove(prompt);
       const fromModel = chosenMove
         ? (detectMove(chosenMove) ?? { kind: "move" as const, value: chosenMove })
         : null;
-      const choice = named ?? fromModel;
-      const mod = choice ? moduleFor(choice.kind, choice.value) : "";
+      // Nobody named one and no model was called: read it off the action
+      // rather than leaving the engine to invent a move.
+      const inferred = { kind: "move" as const, value: inferMove(finalPrompt) };
+      const choice = named ?? fromModel ?? inferred;
+      const mod = moduleFor(choice.kind, choice.value);
       if (mod) finalPrompt = `${finalPrompt.trim()}\n\n${mod}`;
     }
   }

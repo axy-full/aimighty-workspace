@@ -308,6 +308,118 @@ export function detectMove(text: string): { kind: "move" | "technique"; value: s
   return null;
 }
 
+/**
+ * Read a written prompt and work out which library entries it is already
+ * asking for.
+ *
+ * This is what makes the engine library-first. Higgsfield never rewrite the
+ * scene — their bank supplies craft and the author's words stay the author's
+ * words. To do the same we have to recognise the craft someone has already
+ * named, so "handheld, 35mm, no music" resolves to three library entries and
+ * needs no model at all.
+ *
+ * Only unambiguous words count. When a term is missing we leave the axis
+ * empty rather than guessing — an unfilled axis is the engine's choice to
+ * make, and inventing one here would be the same fault we removed.
+ */
+const AXIS_WORDS: Record<string, [string, RegExp][]> = {
+  shot: [
+    ["ecu",   /\bextreme close[- ]?up\b/i],
+    ["mcu",   /\bmedium close[- ]?up\b/i],
+    ["cu",    /\bclose[- ]?up\b/i],
+    ["mls",   /\bmedium wide\b/i],
+    ["ms",    /\bmedium shot\b/i],
+    ["evs",   /\bestablishing\b/i],
+    ["ws",    /\bwide shot|wide angle\b/i],
+    ["ots",   /\bover[- ]the[- ]shoulder\b/i],
+    ["pov",   /\bpov|point[- ]of[- ]view|first[- ]person\b/i],
+    ["insert",/\binsert shot\b/i],
+  ],
+  angle: [
+    ["dutch",  /\bdutch (?:tilt|angle)\b/i],
+    ["top",    /\btop[- ]down|overhead|bird'?s[- ]eye\b/i],
+    ["ground", /\bground level\b/i],
+    ["low",    /\blow angle\b/i],
+    ["high",   /\bhigh angle\b/i],
+    ["eye",    /\beye[- ]level\b/i],
+  ],
+  lens: [
+    ["anamorphic", /\banamorphic\b/i],
+    ["macro",      /\bmacro\b/i],
+    ["14",  /\b14\s?mm\b/i], ["24", /\b24\s?mm\b/i], ["35", /\b35\s?mm\b/i],
+    ["50",  /\b50\s?mm\b/i], ["85", /\b85\s?mm\b/i], ["135", /\b135\s?mm\b/i],
+  ],
+  time: [
+    ["golden", /\bgolden hour\b/i],
+    ["blue",   /\bblue hour\b/i],
+    ["dawn",   /\bdawn|sunrise|first light\b/i],
+    ["dusk",   /\bdusk|sunset\b/i],
+    ["night",  /\bnight|after dark\b/i],
+    ["midday", /\bmidday|noon\b/i],
+    ["morning",/\bmorning\b/i],
+    ["afternoon", /\bafternoon\b/i],
+  ],
+  light: [
+    ["chiaro",   /\bchiaroscuro\b/i],
+    ["rim",      /\brim[- ]?lit|rim light|backlit\b/i],
+    ["neon",     /\bneon\b/i],
+    ["practical",/\bpracticals?\b/i],
+    ["candle",   /\bfirelight|candlelit|candlelight\b/i],
+    ["hard",     /\bhard (?:light|sun)|harsh sun\b/i],
+    ["soft",     /\bsoft light|diffused|overcast\b/i],
+    ["natural",  /\bnatural light\b/i],
+  ],
+  look: [
+    ["bw",     /\bblack and white|monochrome\b/i],
+    ["16mm",   /\b16\s?mm\b/i],
+    ["35mm",   /\b35\s?mm film\b/i],
+    ["vhs",    /\bvhs\b/i],
+    ["bleach", /\bbleach bypass\b/i],
+    ["teal",   /\bteal and orange\b/i],
+    ["muted",  /\bmuted|desaturated\b/i],
+  ],
+  pace: [
+    ["slowmo",    /\bslow[- ]?mo(?:tion)?\b/i],
+    ["timelapse", /\btime[- ]?lapse\b/i],
+    ["ramp",      /\bspeed ramp\b/i],
+  ],
+  sound: [
+    ["silent",   /\bno audio|silent\b/i],
+    ["ambient",  /\bno (?:music|bgm|score)|ambient (?:only|sound)|diegetic\b/i],
+    ["dialogue", /\bdialogue|speaks|says\b/i],
+    ["music",    /\bmusic[- ]led|scored\b/i],
+  ],
+  titles: [
+    ["none", /\bno subtitles?\b/i],
+  ],
+};
+
+/** Everything the prompt already specifies, as a ShotSpec. */
+export function detectSpec(text: string): ShotSpec {
+  const spec: ShotSpec = {};
+  for (const [axis, table] of Object.entries(AXIS_WORDS)) {
+    for (const [value, re] of table) {
+      if (re.test(text)) { spec[axis] = value; break; }
+    }
+  }
+  const move = detectMove(text);
+  if (move) spec[move.kind] = move.value;
+  return spec;
+}
+
+/**
+ * When nobody named a camera, pick one from what the subject is doing rather
+ * than leaving the engine to invent a move. Travel for travel, stillness for
+ * stillness — and static when it is genuinely unclear, because a locked
+ * camera adds no motion the author did not ask for.
+ */
+export function inferMove(text: string): string {
+  if (/\b(walk|walks|walking|run|runs|running|rides?|riding|drives?|driving|cycles?|bikes?|moves? through|crosses|chases?)\b/i.test(text)) return "track";
+  if (/\b(reveals?|opens? (?:out|up)|emerges?|arrives?|approach(?:es)?)\b/i.test(text)) return "push";
+  if (/\b(looks?|stares?|waits?|stands?|sits?|watch(?:es)?|holds?|pauses?)\b/i.test(text)) return "static";
+  return "static";
+}
+
 /** Techniques that already specify how the camera travels. */
 export const MOVEMENT_TECHNIQUES = new Set([
   "dollyzoom", "aerial", "fpv", "bullettime", "whippan", "crash",
