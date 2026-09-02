@@ -11,7 +11,7 @@ import { withRetry, classifyFailure } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice } from "@/lib/tasks";
 import {
-  detectMove, moduleFor, hasCameraModule, detectSpec, inferMove, sceneLine,
+  detectMove, hasCameraModule, detectSpec, inferMove, sceneLine, craftModules,
 } from "@/lib/studio";
 
 export const dynamic = "force-dynamic";
@@ -397,8 +397,15 @@ export async function POST(req: Request) {
       // rather than leaving the engine to invent a move.
       const inferred = { kind: "move" as const, value: inferMove(finalPrompt) };
       const choice = named ?? fromModel ?? inferred;
-      const mod = moduleFor(choice.kind, choice.value);
-      if (mod) finalPrompt = `${finalPrompt.trim()}\n\n${mod}`;
+
+      // Camera, plus the light and look the author already named — each from
+      // the bank, so the wording is identical on every render that uses it.
+      const craft = craftModules({
+        [choice.kind]: choice.value,
+        light: spec.light ?? "",
+        look: spec.look ?? "",
+      });
+      if (craft) finalPrompt = `${finalPrompt.trim()}\n\n${craft}`;
     }
   }
 

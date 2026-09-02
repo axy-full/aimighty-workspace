@@ -101,6 +101,42 @@ export const CATEGORIES: Category[] = [
         module: "The camera arcs laterally around the subject on a constant radius at a constant lens height, keeping them centred while the background rotates continuously behind them. Arc travel only: no push in, no pull out, no zoom, no tilt, no change of radius. The move runs at one smooth speed and eases to rest on a clean final angle."  },
       { value: "steadicam", label: "Steadicam", phrase: "a smooth steadicam follow",
         module: "The camera follows the subject on a stabilised rig: continuous fluid travel with no jitter and no track, floating at a constant lens height and holding a constant distance behind or beside them, absorbing their changes of direction a beat late. No zoom, no tilt, no handheld shake; the glide is unbroken from first frame to last."  },
+      { value: "panleft", label: "Pan left", phrase: "the camera panning left",
+        module: "The camera rotates horizontally to the left from a single fixed position, sweeping across the scene at one constant speed and easing to rest on its final composition. The camera body does not travel: no dolly, no truck, no arc, no slide, no zoom, no tilt. The horizon stays level and new space enters from the left edge purely through rotation." },
+      { value: "tiltdown", label: "Tilt down", phrase: "the camera tilting down",
+        module: "The camera rotates vertically downward from a fixed position at one constant speed, starting on its upper anchor and finishing framed on the subject below, decelerating into a static hold. Rotation only: no crane descent, no pedestal, no dolly, no zoom, no horizontal drift. The camera's position in space never changes; only its angle does." },
+      { value: "truckleft", label: "Truck left", phrase: "the camera trucking left",
+        module: "The camera travels bodily to the left at a constant lens height, parallel to the scene, so the whole frame slides sideways and near objects sweep past faster than far ones. Lateral travel only: no rotation, no pan, no arc, no zoom, no tilt. One constant speed, easing to a stop on the final composition." },
+      { value: "truckright", label: "Truck right", phrase: "the camera trucking right",
+        module: "The camera travels bodily to the right at a constant lens height, parallel to the scene, so the whole frame slides sideways with near objects sweeping past faster than far ones. Lateral travel only: no rotation, no pan, no arc, no zoom, no tilt. One constant speed, easing to a stop on the final composition." },
+      { value: "pedup", label: "Pedestal up", phrase: "the camera rising on the pedestal",
+        module: "The camera rises vertically at a constant speed while its angle stays exactly level \u2014 the lens height changes, the framing direction does not. Pure vertical travel: no tilt, no crane arc, no zoom, no lateral drift. The move eases to a stop and holds the new height." },
+      { value: "peddown", label: "Pedestal down", phrase: "the camera lowering on the pedestal",
+        module: "The camera descends vertically at a constant speed while its angle stays exactly level \u2014 only the lens height changes. Pure vertical travel: no tilt, no crane arc, no zoom, no lateral drift. The move eases to a stop and holds the lower height." },
+      { value: "zoomin", label: "Zoom in", phrase: "the lens zooming in",
+        module: "The camera body is locked and does not travel; the entire move is optical, a focal-length change only, tightening smoothly and evenly across the shot with no steps and no wobble. Because the camera never moves there is no parallax: the background holds the same apparent size relative to the subject while the framing closes in. No dolly, no pan, no tilt." },
+      { value: "zoomout", label: "Zoom out", phrase: "the lens zooming out",
+        module: "The camera body is locked and does not travel; the entire move is optical, a focal-length change only, widening smoothly and evenly across the shot. Because the camera never moves there is no parallax: the background holds the same apparent size relative to the subject while more of the scene enters frame. No dolly, no pan, no tilt." },
+      { value: "cranedown", label: "Crane down", phrase: "the camera craning down",
+        module: "The camera descends on a jib from a high position toward the subject in one continuous move, with a gentle continuous upward tilt that keeps them framed as the surrounding space closes in above. One unbroken descent: no lateral orbit, no truck, no zoom, no speed changes, easing into a low held final frame." },
+      { value: "lead", label: "Leading", phrase: "the camera leading the subject",
+        module: "The camera travels backward ahead of the subject as they advance, holding a constant distance and lens height so they stay the same size in frame while the world opens up behind the camera and streams past on both sides. Backward travel only, matched exactly to their pace: no zoom, no orbit, no tilt, no drift in distance." },
+      { value: "followbehind", label: "Following", phrase: "the camera following behind",
+        module: "The camera travels forward behind the subject at their own pace, holding a constant distance and lens height so their back stays fixed in frame while the space ahead reveals itself over their shoulders. Forward travel only: no zoom, no orbit, no sudden distance changes; the camera absorbs their direction changes a beat late." },
+      { value: "chase", label: "Chase", phrase: "the camera chasing the subject",
+        module: "The camera pursues the subject at speed, close behind and slightly low, its path bending late through their turns so the framing is always catching up rather than anticipating. Urgent and continuous, carrying real momentum: no cuts, no zoom, no static holds; the distance closes and opens with the chase rather than staying locked." },
+      { value: "lowtrack", label: "Low tracking", phrase: "a low tracking shot",
+        module: "The camera travels alongside the subject at ground level, the lens only slightly above the surface so the foreground streaks past in the near field and the subject towers against the space beyond. Lateral travel at one constant speed and one constant low height: no rise, no tilt, no zoom, no orbit." },
+      { value: "topdown", label: "Top down", phrase: "a top-down shot",
+        module: "The camera looks straight down at the scene from directly overhead, the lens axis perpendicular to the ground so the frame reads as a flat plan of the space. It holds that vertical angle throughout \u2014 no tilt off the vertical, no roll, no zoom \u2014 travelling only if it travels level, parallel to the ground." },
+      { value: "snorricam", label: "Snorricam", phrase: "a snorricam shot",
+        module: "The camera is rigged to the subject and moves exactly with them, so their head and torso stay locked and near-motionless in the centre of frame while the entire world behind them pitches, swings and rushes past. The subject never drifts in frame: every bit of instability belongs to the background." },
+      { value: "motioncontrol", label: "Motion control", phrase: "a motion-control move",
+        module: "The camera flies one fast, perfectly repeatable machined path through the scene, gliding between framings with soft ease-in and ease-out and brief readable holds at each. Rig-precise throughout: no handheld shake, no whip, no speed ramps, no drift; the same path could be run again identically." },
+      { value: "arc", label: "Arc", phrase: "the camera arcing around",
+        module: "The camera travels a partial curve around the subject at a constant radius and constant lens height, revealing them from a new angle without completing a circle. Arc travel only: no push in, no pull out, no zoom, no radius drift; one smooth speed easing to rest on the new angle." },
+      { value: "flythrough", label: "Fly through", phrase: "the camera flying through the space",
+        module: "The camera travels continuously forward through the space, passing gaps, doorways and obstacles without stopping, the geometry sweeping past close on both sides. One unbroken forward path: no cuts, no hovering, no zoom, no reversal; speed stays smooth through the whole traverse." },
     ],
   },
   {
@@ -123,16 +159,26 @@ export const CATEGORIES: Category[] = [
     label: "Lighting",
     hint: "The quality and source of the light — not the hour, which is its own row.",
     options: [
-      { value: "natural", label: "Natural", phrase: "lit naturally" },
-      { value: "soft", label: "Soft", phrase: "under soft diffused light" },
-      { value: "hard", label: "Hard", phrase: "in hard direct light with deep shadows" },
-      { value: "practical", label: "Practicals", phrase: "lit by practical lights in frame" },
-      { value: "neon", label: "Neon", phrase: "lit by coloured neon" },
-      { value: "rim", label: "Rim light", phrase: "rim-lit against a dark background" },
-      { value: "back", label: "Backlit", phrase: "backlit, the subject in silhouette against the source" },
-      { value: "chiaro", label: "Chiaroscuro", phrase: "chiaroscuro lighting, one hard source" },
-      { value: "candle", label: "Firelight", phrase: "lit by firelight" },
-      { value: "mixed", label: "Mixed colour", phrase: "under mixed colour temperatures" },
+      { value: "natural", label: "Natural", phrase: "lit naturally",
+        module: "Lit by available light only, with no visible fixtures and no added fill; contrast falls where the real source puts it." },
+      { value: "soft", label: "Soft", phrase: "under soft diffused light",
+        module: "Lit by a large diffused source: soft-edged shadows, a gentle falloff across the subject, and no hard specular highlights." },
+      { value: "hard", label: "Hard", phrase: "in hard direct light with deep shadows",
+        module: "Lit by a small hard source: crisp shadow edges, bright speculars, and deep unfilled shadow on the unlit side." },
+      { value: "practical", label: "Practicals", phrase: "lit by practical lights in frame",
+        module: "Lit by fixtures visible inside the frame, so the light has a source the audience can see and falls off with distance from it." },
+      { value: "neon", label: "Neon", phrase: "lit by coloured neon",
+        module: "Lit by coloured signage in frame, throwing saturated colour across the subject and reflecting in wet or glossy surfaces." },
+      { value: "rim", label: "Rim light", phrase: "rim-lit against a dark background",
+        module: "Lit from behind so the subject's edge separates as a bright outline against a darker background, with the front left in shadow." },
+      { value: "back", label: "Backlit", phrase: "backlit, the subject in silhouette against the source",
+        module: "Lit from directly behind the subject, reducing them toward silhouette while the source flares around their outline." },
+      { value: "chiaro", label: "Chiaroscuro", phrase: "chiaroscuro lighting, one hard source",
+        module: "One hard source and no fill: the lit side reads fully, the unlit side falls to near black, and the division across the face is the composition." },
+      { value: "candle", label: "Firelight", phrase: "lit by firelight",
+        module: "Lit by low warm flame at close range, flickering slightly, falling off fast into darkness beyond the subject." },
+      { value: "mixed", label: "Mixed colour", phrase: "under mixed colour temperatures",
+        module: "Lit by sources of different colour temperature at once, so warm and cool fall on different planes of the same frame." },
     ],
   },
   {
@@ -155,14 +201,22 @@ export const CATEGORIES: Category[] = [
     label: "Look",
     hint: "Stock and grade — how the image is finished.",
     options: [
-      { value: "clean", label: "Clean digital", phrase: "clean digital capture" },
-      { value: "16mm", label: "16mm", phrase: "on 16mm film with visible grain" },
-      { value: "35mm", label: "35mm film", phrase: "on 35mm film" },
-      { value: "vhs", label: "VHS", phrase: "on degraded VHS tape" },
-      { value: "bleach", label: "Bleach bypass", phrase: "graded with a bleach-bypass look" },
-      { value: "teal", label: "Teal & orange", phrase: "graded teal and orange" },
-      { value: "bw", label: "Black & white", phrase: "in black and white" },
-      { value: "muted", label: "Muted", phrase: "in a desaturated, muted grade" },
+      { value: "clean", label: "Clean digital", phrase: "clean digital capture",
+        module: "Clean modern digital capture: neutral colour, full detail retained in both highlight and shadow, no grain and no stylisation." },
+      { value: "16mm", label: "16mm", phrase: "on 16mm film with visible grain",
+        module: "Shot on 16mm: visible grain structure, slightly soft resolution, gentle halation on highlights and a modest contrast range." },
+      { value: "35mm", label: "35mm film", phrase: "on 35mm film",
+        module: "Shot on 35mm film: fine grain, smooth highlight rolloff, rich but not over-saturated colour, and organic contrast rather than digital." },
+      { value: "vhs", label: "VHS", phrase: "on degraded VHS tape",
+        module: "Degraded analogue tape: soft resolution, colour bleeding at edges, tracking noise and slightly unstable horizontal sync." },
+      { value: "bleach", label: "Bleach bypass", phrase: "graded with a bleach-bypass look",
+        module: "Bleach-bypass treatment: silver retained, so contrast is raised hard, colour is heavily desaturated and blacks are dense." },
+      { value: "teal", label: "Teal & orange", phrase: "graded teal and orange",
+        module: "Graded teal and orange: skin pushed warm against cooled shadows and background, contrast in the colour rather than the exposure." },
+      { value: "bw", label: "Black & white", phrase: "in black and white",
+        module: "Black and white: no colour information at all, the image carried entirely by tonal separation and contrast." },
+      { value: "muted", label: "Muted", phrase: "in a desaturated, muted grade",
+        module: "Desaturated grade: colour pulled well back toward neutral, contrast kept low and flat, nothing in the frame reading as vivid." },
     ],
   },
   {
@@ -284,6 +338,24 @@ const MOVE_WORDS: [string, RegExp][] = [
   ["fpv",        /\bfpv\b/i],
   ["aerial",     /\baerial|drone shot\b/i],
   ["oner",       /\bone[- ]?shot|long take|oner\b/i],
+  ["snorricam",  /\bsnorricam\b/i],
+  ["motioncontrol", /\bmotion[- ]control\b/i],
+  ["topdown",    /\btop[- ]down|straight down|directly overhead\b/i],
+  ["flythrough", /\bfly[- ]?through\b/i],
+  ["lowtrack",   /\blow tracking|ground[- ]level tracking\b/i],
+  ["chase",      /\bchase (?:shot|cam)|chasing|\bchases\b/i],
+  ["lead",       /\bleading (?:shot|the subject)|walk(?:s|ing)? backward(?:s)? ahead|ahead of the subject\b/i],
+  ["followbehind", /\bfollow(?:s|ing)? behind|from behind|\btrails? behind\b/i],
+  ["pedup",      /\bpedestal up\b/i],
+  ["peddown",    /\bpedestal down\b/i],
+  ["truckleft",  /\btruck(?:s|ing)? left\b/i],
+  ["truckright", /\btruck(?:s|ing)? right\b/i],
+  ["panleft",    /\bpan(?:s|ning)? left\b/i],
+  ["tiltdown",   /\btilt(?:s|ing)? down\b/i],
+  ["cranedown",  /\bcrane(?:s|ing)? down\b/i],
+  ["zoomin",     /\bzoom(?:s|ing)? in\b/i],
+  ["zoomout",    /\bzoom(?:s|ing)? out\b/i],
+  ["arc",        /\barc(?:s|ing)? (?:around|round)|\barcing\b/i],
   ["steadicam",  /\bsteadicam|gimbal\b/i],
   ["handheld",   /\bhand[- ]?held\b/i],
   ["orbit",      /\borbit|circles? (?:around|the subject)\b/i],
@@ -471,6 +543,24 @@ export function cameraModule(spec: ShotSpec): string {
     .filter(Boolean).join(" ");
 }
 
+/**
+ * Camera, light and look as one craft block.
+ *
+ * Light and look modules are deliberately shorter than the camera's. A camera
+ * instruction has to refuse the moves it gets confused with, which is what
+ * costs the words; light needs a source, a quality and a direction and should
+ * then stop. Each is its own sentence group so the engine reads them as
+ * separate specifications rather than one run-on.
+ */
+export function craftModules(spec: ShotSpec): string {
+  const mod = (key: string) => {
+    const cat = CATEGORIES.find((c) => c.key === key);
+    return cat?.options.find((o) => o.value === spec[key])?.module ?? "";
+  };
+  return [cameraModule(spec), mod("light"), mod("look")]
+    .filter(Boolean).join("\n\n");
+}
+
 /** The short line — framing, light, look, feel — without the camera block. */
 export function sceneLine(spec: ShotSpec): string {
   const pick = (key: string) => {
@@ -478,7 +568,9 @@ export function sceneLine(spec: ShotSpec): string {
     return cat?.options.find((o) => o.value === spec[key])?.phrase ?? "";
   };
   const framing = [pick("shot"), pick("angle")].filter(Boolean).join(", ");
-  const world = [pick("time"), pick("light"), pick("look")].filter(Boolean).join(", ");
+  // Light and look are carried by their own modules now — restating the short
+  // phrase here would say the same thing twice, worse.
+  const world = pick("time");
   const feel = [pick("mood"), pick("pace")].filter(Boolean).join(", ");
   const lens = pick("lens");
   // Each of these becomes its own sentence, so each one is capitalised —
@@ -502,7 +594,7 @@ export function specCount(spec: ShotSpec): number {
 export function composePrompt(prose: string, spec: ShotSpec): string {
   const body = prose.trim().replace(/[.\s]+$/, "");
   const scene = sceneLine(spec);
-  const camera = cameraModule(spec);
+  const camera = craftModules(spec);
 
   const parts: string[] = [];
   if (body) parts.push(scene ? `${body}. ${scene}.` : `${body}.`);
