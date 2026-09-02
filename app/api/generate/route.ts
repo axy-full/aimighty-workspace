@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
-import { enhancePrompt, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from "@/lib/enhance";
+import { enhancePrompt, shouldRefine, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS } from "@/lib/enhance";
 import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
@@ -298,9 +298,15 @@ export async function POST(req: Request) {
   let refineModel: string | null = null;
   let refineIn = 0, refineOut = 0;
   let refineCost: number | null = null;
+  const refineCall = shouldRefine(castPrompt);
   if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
-  } else if (!castPrompt.includes("【")) {
+  } else if (!refineCall.refine) {
+    // Already specific enough to film. Rewriting it would cost money and up
+    // to a minute of latency to replace the author's restraint with invented
+    // detail, so it goes as written.
+    console.log(`generate: skipping refine — ${refineCall.why}`);
+  } else {
     const citations = [
       ...references.filter((r) => r.kind === "image" && r.role === "reference_image")
         .map((_, i) => `@Image${i + 1} (image)`),

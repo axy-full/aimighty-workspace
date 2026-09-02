@@ -22,7 +22,27 @@ export type Category = {
   label: string;
   /** One-line explanation shown under the group. */
   hint: string;
-  options: { value: string; label: string; phrase: string }[];
+  options: {
+    value: string; label: string;
+    /** Short form, for the chip summary shown in the UI. */
+    phrase: string;
+    /**
+     * Long form — a self-contained camera module.
+     *
+     * Higgsfield publish their prompt bank openly, and the thing worth taking
+     * from it is not their wording but their METHOD, stated on the page
+     * itself: "the move stays separate from the scene, so the prompt works
+     * even when you swap the frame." Their camera prompts average ~76 words
+     * where ours were six, and the extra words are all doing one job —
+     * foreclosing the wrong reading. Each module is: the physical motion in
+     * real units, the framing rule that follows from it, an explicit refusal
+     * of the neighbouring moves it gets confused with, then speed and end
+     * state.
+     *
+     * These are written here, in that shape. None is copied.
+     */
+    module?: string;
+  }[];
 };
 
 export const CATEGORIES: Category[] = [
@@ -61,16 +81,26 @@ export const CATEGORIES: Category[] = [
     label: "Camera move",
     hint: "One move per shot — engines blur when asked for two. A technique that travels overrides this row.",
     options: [
-      { value: "static", label: "Locked off", phrase: "the camera locked off" },
-      { value: "push", label: "Push in", phrase: "the camera pushing slowly in" },
-      { value: "pull", label: "Pull out", phrase: "the camera pulling slowly out" },
-      { value: "pan", label: "Pan", phrase: "the camera panning across" },
-      { value: "tilt", label: "Tilt", phrase: "the camera tilting up" },
-      { value: "track", label: "Tracking", phrase: "the camera tracking alongside" },
-      { value: "crane", label: "Crane", phrase: "the camera craning up and back" },
-      { value: "handheld", label: "Handheld", phrase: "handheld, breathing slightly" },
-      { value: "orbit", label: "Orbit", phrase: "the camera orbiting the subject" },
-      { value: "steadicam", label: "Steadicam", phrase: "a smooth steadicam follow" },
+      { value: "static", label: "Locked off", phrase: "the camera locked off",
+        module: "The camera is locked on a tripod and does not move at any point: no push, no drift, no handheld breath, no stabiliser float, no reframing. Angle, height and distance to the subject are fixed from first frame to last, so every bit of movement in the shot belongs to the subject and none to the camera. The final framing is identical to the opening framing."  },
+      { value: "push", label: "Push in", phrase: "the camera pushing slowly in",
+        module: "The camera travels forward along its axis toward the subject in one continuous move, closing roughly a third of the distance across the shot and easing to a stop at the end. This is physical travel, not a zoom: the field of view never changes, so foreground edges sweep out past the frame with real parallax. No pan, no tilt, no zoom, no handheld drift; lens height stays constant throughout."  },
+      { value: "pull", label: "Pull out", phrase: "the camera pulling slowly out",
+        module: "The camera travels backward along its axis away from the subject in one continuous move, opening the frame to reveal the space around them, and decelerates into a held final composition. Physical travel only: the field of view is fixed, so the surroundings enter by parallax rather than by zooming. No pan, no tilt, no zoom, no crane; lens height stays constant."  },
+      { value: "pan", label: "Pan", phrase: "the camera panning across",
+        module: "The camera rotates horizontally from a single fixed position, like a head turning, sweeping across the scene at one smooth constant speed and easing gently to rest on its final composition. The camera body does not travel: no dolly, no truck, no arc, no slide, no zoom, no tilt. The horizon stays level and new space enters from the leading edge of frame purely through rotation."  },
+      { value: "tilt", label: "Tilt", phrase: "the camera tilting up",
+        module: "The camera rotates vertically upward from a fixed position at constant speed, starting on its lower anchor and finishing with the subject framed in the upper third, decelerating into a static hold. Rotation only: no crane, no pedestal rise, no dolly, no zoom, no horizontal drift. The camera's position in space never changes; only its angle does."  },
+      { value: "track", label: "Tracking", phrase: "the camera tracking alongside",
+        module: "The camera travels laterally alongside the subject, holding a constant distance and a constant lens height so the subject stays in the same part of frame while the background slides past behind them. Sideways travel only: no orbit, no arc, no zoom, no tilt, no handheld wobble. The move runs at the subject's own pace and settles when they settle."  },
+      { value: "crane", label: "Crane", phrase: "the camera craning up and back",
+        module: "The camera rises vertically on a jib through the shot, with a continuous gentle downward tilt that keeps the subject anchored low in frame as the space opens out above and around them. One unbroken vertical reveal: no lateral orbit, no truck, no zoom, no speed changes, easing into a high held final frame."  },
+      { value: "handheld", label: "Handheld", phrase: "handheld, breathing slightly",
+        module: "The camera is hand-held: it breathes with small, irregular, organic corrections in weight and angle, never mechanical and never a repeating loop. The operator keeps the subject in frame with slight late reframes that follow the action rather than anticipating it. No dolly track, no gimbal glide, no zoom; the unsteadiness stays subtle enough to read as presence, not as shake."  },
+      { value: "orbit", label: "Orbit", phrase: "the camera orbiting the subject",
+        module: "The camera arcs laterally around the subject on a constant radius at a constant lens height, keeping them centred while the background rotates continuously behind them. Arc travel only: no push in, no pull out, no zoom, no tilt, no change of radius. The move runs at one smooth speed and eases to rest on a clean final angle."  },
+      { value: "steadicam", label: "Steadicam", phrase: "a smooth steadicam follow",
+        module: "The camera follows the subject on a stabilised rig: continuous fluid travel with no jitter and no track, floating at a constant lens height and holding a constant distance behind or beside them, absorbing their changes of direction a beat late. No zoom, no tilt, no handheld shake; the glide is unbroken from first frame to last."  },
     ],
   },
   {
@@ -140,14 +170,22 @@ export const CATEGORIES: Category[] = [
     label: "Technique",
     hint: "Named moves the engine knows by name. The niche ones carry their own explanation, because ByteDance's guide says an unusual term only lands as [term + what actually happens].",
     options: [
-      { value: "oner", label: "One-shot", phrase: "shot as a single continuous take, no cuts" },
-      { value: "dollyzoom", label: "Dolly zoom", phrase: "a dolly zoom: the camera tracks back while the lens zooms in, so the subject holds its size and the background swells behind it" },
-      { value: "rackfocus", label: "Rack focus", phrase: "a rack focus: the foreground falls out of focus as the subject behind it sharpens" },
-      { value: "aerial", label: "Aerial", phrase: "an aerial view descending over the scene" },
-      { value: "fpv", label: "FPV", phrase: "an FPV drone shot flying continuously through the space" },
-      { value: "bullettime", label: "Bullet time", phrase: "bullet time: the action holds nearly frozen while the camera orbits around it" },
-      { value: "whippan", label: "Whip pan", phrase: "a whip pan: the camera snaps sideways, the frame smearing into motion blur" },
-      { value: "crash", label: "Crash zoom", phrase: "a crash zoom punching suddenly in on the subject" },
+      { value: "oner", label: "One-shot", phrase: "shot as a single continuous take, no cuts",
+        module: "The entire shot is one continuous take: no cuts, no hidden transitions, no jump in time or position at any point. The camera and the action run unbroken from first frame to last."  },
+      { value: "dollyzoom", label: "Dolly zoom", phrase: "a dolly zoom: the camera tracks back while the lens zooms in, so the subject holds its size and the background swells behind it",
+        module: "The camera physically travels toward the subject while the lens simultaneously widens, the two motions perfectly synchronised and starting and ending together. The subject's size in frame stays exactly constant throughout; the background behind them visibly stretches and recedes into depth. Constant lens height, no pan, no tilt, no handheld drift."  },
+      { value: "rackfocus", label: "Rack focus", phrase: "a rack focus: the foreground falls out of focus as the subject behind it sharpens",
+        module: "The camera is locked off and the only change in the shot is focus. It holds sharp on the far plane, then racks once, smoothly and continuously with no hunting and no overshoot, to the near subject. Exactly one plane is sharp at any moment and the other falls to clean bokeh. The composition itself never changes."  },
+      { value: "aerial", label: "Aerial", phrase: "an aerial view descending over the scene",
+        module: "The camera flies high above the scene and descends steadily toward it in one continuous move, the horizon dropping through frame as altitude is lost. Smooth powered flight throughout: no handheld shake, no zoom, no abrupt corrections, easing into its final altitude and framing."  },
+      { value: "fpv", label: "FPV", phrase: "an FPV drone shot flying continuously through the space",
+        module: "The camera flies continuously through the space in a single unbroken first-person move, banking into its turns and carrying real momentum through gaps and around obstacles. Aggressive, fluid and always travelling: no cuts, no hovering, no zoom, no static holds."  },
+      { value: "bullettime", label: "Bullet time", phrase: "bullet time: the action holds nearly frozen while the camera orbits around it",
+        module: "The action holds very nearly frozen \u2014 motion continues at a small fraction of real speed \u2014 while the camera arcs around the subject at full speed on a constant radius. The subject stays centred throughout; the surroundings sweep past behind them. No zoom and no change of radius during the arc."  },
+      { value: "whippan", label: "Whip pan", phrase: "a whip pan: the camera snaps sideways, the frame smearing into motion blur",
+        module: "The camera snaps sideways at high speed in a single hard rotation, the frame smearing into directional motion blur through the middle of the move, then arrests abruptly on its new composition and holds it steady. Rotation only: no travel, no zoom."  },
+      { value: "crash", label: "Crash zoom", phrase: "a crash zoom punching suddenly in on the subject",
+        module: "The camera rushes in on the subject in one fast, decisive move that starts immediately at full speed and stops hard on a tight final framing. Sudden and aggressive throughout, with no easing at the start, no drift, no pan and no tilt."  },
     ],
   },
   {
@@ -218,23 +256,50 @@ export function specToPhrase(spec: ShotSpec): string {
   };
 
   const framing = [pick("shot"), pick("angle")].filter(Boolean).join(", ");
-
-  /* One camera move per shot — the guide is explicit that engines blur when
-     asked for two, and most named techniques ARE a move. "Push in" plus
-     "dolly zoom" asks the camera to travel in and out at once, so where a
-     technique carries its own movement it wins and the Move row is dropped.
-     One-shot and rack focus describe take length and focus, not travel, so
-     they sit happily beside a move. */
   const movingTechnique = MOVEMENT_TECHNIQUES.has(spec.technique ?? "");
   const camera = [movingTechnique ? "" : pick("move"), pick("lens"), pick("technique")]
     .filter(Boolean).join(", ");
   const world = [pick("time"), pick("light"), pick("look")].filter(Boolean).join(", ");
   const feel = [pick("mood"), pick("pace")].filter(Boolean).join(", ");
-  // Sound and subtitles are constraints, not description — they go last, the
-  // way the guide's own examples close on them.
   const constraints = [pick("sound"), pick("titles")].filter(Boolean).join(". ");
 
   return [framing, camera, world, feel, constraints].filter(Boolean).join(". ");
+}
+
+/**
+ * The camera as a self-contained block.
+ *
+ * A move written properly runs sixty to eighty words — most of them refusing
+ * the moves it would otherwise be confused with — so it cannot be folded into
+ * a comma list beside "golden hour" and "tense". It goes after the scene as
+ * its own paragraph, which is also what keeps it portable: the same block is
+ * correct whatever the shot in front of it happens to be.
+ */
+export function cameraModule(spec: ShotSpec): string {
+  const mod = (key: string) => {
+    const cat = CATEGORIES.find((c) => c.key === key);
+    return cat?.options.find((o) => o.value === spec[key])?.module ?? "";
+  };
+  const movingTechnique = MOVEMENT_TECHNIQUES.has(spec.technique ?? "");
+  return [movingTechnique ? "" : mod("move"), mod("technique")]
+    .filter(Boolean).join(" ");
+}
+
+/** The short line — framing, light, look, feel — without the camera block. */
+export function sceneLine(spec: ShotSpec): string {
+  const pick = (key: string) => {
+    const cat = CATEGORIES.find((c) => c.key === key);
+    return cat?.options.find((o) => o.value === spec[key])?.phrase ?? "";
+  };
+  const framing = [pick("shot"), pick("angle")].filter(Boolean).join(", ");
+  const world = [pick("time"), pick("light"), pick("look")].filter(Boolean).join(", ");
+  const feel = [pick("mood"), pick("pace")].filter(Boolean).join(", ");
+  const lens = pick("lens");
+  // Each of these becomes its own sentence, so each one is capitalised —
+  // including the two constraints, which are separate sentences themselves.
+  const cap = (t: string) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+  return [framing, lens, world, feel, pick("sound"), pick("titles")]
+    .filter(Boolean).map(cap).join(". ");
 }
 
 /** How many controls are set — drives the "3 set" badge on the panel. */
@@ -249,9 +314,14 @@ export function specCount(spec: ShotSpec): number {
  * wall of camera language is how you get a beautiful shot of nothing.
  */
 export function composePrompt(prose: string, spec: ShotSpec): string {
-  const phrase = specToPhrase(spec);
-  const body = prose.trim();
-  if (!phrase) return body;
-  if (!body) return phrase;
-  return `${body.replace(/[.\s]+$/, "")}. ${phrase}.`;
+  const body = prose.trim().replace(/[.\s]+$/, "");
+  const scene = sceneLine(spec);
+  const camera = cameraModule(spec);
+
+  const parts: string[] = [];
+  if (body) parts.push(scene ? `${body}. ${scene}.` : `${body}.`);
+  else if (scene) parts.push(`${scene}.`);
+  // The camera block sits on its own, after the scene it applies to.
+  if (camera) parts.push(camera);
+  return parts.join("\n\n");
 }

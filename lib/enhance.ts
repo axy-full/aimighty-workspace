@@ -58,64 +58,99 @@ export type RefineResult = {
 };
 
 /**
+ * Is this prompt already doing the job?
+ *
+ * The refine layer exists to rescue "a woman walks into a bar". It has no
+ * business rewriting a prompt that already names its camera, its light and
+ * its sound — doing so costs money, costs up to a minute and a half of
+ * latency, and mostly replaces the author's deliberate restraint with
+ * invented detail. So we look for the marks of a prompt that was written
+ * rather than typed, and leave those alone.
+ */
+const SIGNALS: Record<string, RegExp> = {
+  camera: /\b(wide|close[- ]?up|medium shot|establishing|over[- ]the[- ]shoulder|pov|insert shot|push(?:es|ing)? in|pull(?:s|ing)? out|pan(?:s|ning)?|tilt(?:s|ing)?|track(?:s|ing)?|dolly|crane|handheld|orbit(?:s|ing)?|steadicam|locked[- ]off|eye level|low angle|overhead)\b/i,
+  light:  /\b(golden hour|blue hour|dawn|dusk|sunset|sunrise|night|noon|midday|backlit|rim[- ]lit|rim light|overcast|neon|practicals?|chiaroscuro|firelight|moonlight|sunlight|hard light|soft light|silhouette)\b/i,
+  look:   /\b(\d{2}mm|anamorphic|film grain|black and white|monochrome|desaturated|muted|bleach bypass|teal and orange|vhs|super ?8|cinematic|documentary)\b/i,
+  audio:  /\b(no music|no bgm|no audio|no subtitles|ambient|diegetic|dialogue|voice ?over|sound design|score|silence)\b/i,
+  beats:  /(\b\d+\s*[-–]\s*\d+\s*s\b|\bshot\s*\d|\bat the \d+[- ]second)/i,
+};
+
+export type Richness = { score: number; signals: string[]; words: number };
+
+export function promptRichness(prompt: string): Richness {
+  const words = prompt.trim().split(/\s+/).filter(Boolean).length;
+  const signals = Object.entries(SIGNALS)
+    .filter(([, re]) => re.test(prompt))
+    .map(([k]) => k);
+  return { score: signals.length, signals, words };
+}
+
+/**
+ * A prompt that already carries three of the five marks AND enough words to
+ * have said something is left exactly as written. Measured against the cases
+ * that prompted this: a 24-word handheld/35mm/no-music prompt scores 3 and is
+ * passed through; "a woman walks into a bar" scores 0 and is refined.
+ */
+export function shouldRefine(prompt: string): { refine: boolean; why: string } {
+  const p = prompt.trim();
+  if (/^raw:/i.test(p)) return { refine: false, why: "raw: prefix" };
+  if (p.includes("【")) return { refine: false, why: "already structured" };
+  const r = promptRichness(p);
+  if (r.score >= 3 && r.words >= 18) {
+    return { refine: false, why: `already specific (${r.signals.join("+")})` };
+  }
+  return { refine: true, why: "" };
+}
+
+/**
  * Distilled from the official guide. Every rule below is one the guide
  * actually states — where it says something narrower than "don't do X", this
  * says the narrower thing (negative control, for instance, IS supported, but
  * only for subtitles and audio).
  */
-const SYSTEM = `You rewrite rough video ideas into production-grade prompts for ByteDance's Seedance video models, following ByteDance's official Seedance 2.5 prompt guidance. Treat the engine as a visual content producer and write with a visual-storytelling mindset.
+const SYSTEM = `You COMPLETE rough video ideas into prompts ByteDance's Seedance models can film, following ByteDance's official Seedance 2.5 prompt guidance.
 
-NON-NEGOTIABLE RULES
-- Preserve the user's intent exactly: subjects and their counts, actions, causality, props, setting, and any dialogue. Never change what happens.
-- Preserve every asset citation (@Image1, @Video1, @Audio1, …) exactly as written. Never renumber, remove, or invent citations.
-- Never write aspect ratio, duration, resolution, frame rate, or watermark into the prompt — those are API parameters.
-- No quality-word stuffing ("masterpiece, 8k, best quality"), no analysis, no notes, no preamble. Output ONLY the finished prompt text.
-- Write in English unless the user's prompt is in another language; then keep their language.
+Your job is to finish the user's thought, NOT to have one of your own. The idea, the film, and the taste are theirs. You supply only what a camera crew would need in order to shoot exactly what they described, and nothing beyond it.
 
-THE SHAPE
-1. ONE-SENTENCE SUMMARY — subject + location + event + genre/style + camera movement.
-2. DETAILED PLOT — divide the video into segments and describe each one's visuals, camera movement, action, dialogue and sound. Use the segment form named in TARGET below.
-3. ADDITIONAL NOTES — what stays constant throughout: camera angle and movement, environment, palette, lighting, atmosphere, recurring elements.
+WHAT YOU MUST NOT INVENT
+Never introduce a specific the user did not state or unmistakably imply — in particular: wardrobe, hair, age or build; props; brand names; a named location or venue type; a colour palette; weather; time of day; music, songs or sound effects; a mood or genre; or a character's motive. "A woman walks into a bar" is a woman and a bar. It is NOT a leather jacket, a dive bar, a neon sign, a jukebox, or an amber palette. Adding those is writing a different film and billing them for it.
+Where the shot genuinely cannot be filmed without a decision you were not given, choose the plainest option available and spend as few words as possible on it.
 
-PACING
-Allocate plot across the whole requested duration. Too little plot in a span and the engine improvises freely; too much and it either cuts excessively or drops parts of the story. Keep segments continuous with no gaps.
+PRESERVE
+- Intent exactly: subjects and their counts, actions, causality, props, setting, dialogue.
+- The user's own words and phrasing wherever they already work. If a sentence is filmable as written, keep it as written.
+- Their restraint. Sparseness is often deliberate; a short deliberate prompt should come back barely changed.
+- Every asset citation (@Image1, @Video1, @Audio1, …) exactly. Never renumber, remove or invent one.
+
+NEVER
+- Never write aspect ratio, duration, resolution, frame rate or watermark — those are API parameters.
+- Never stuff quality words ("masterpiece, 8k, best quality, highly detailed").
+- Never output section labels, headings or scaffolding of any kind. Do NOT write "One-sentence summary:", "Detailed plot:", "Additional notes:", "Summary:", or similar. Those are how you think, not what you write. Output ONLY the finished prompt.
+- No preamble, no commentary, no explanation of your changes.
+- Write in English unless the user wrote in another language; then answer entirely in theirs.
+
+WHAT A FINISHED PROMPT CONTAINS
+Lead with subject and action in their setting — that must come first. Then, only where the user left it open and the shot needs it: how it is framed and how the camera moves (ONE move), the light, and the sound. Segment the action only when there is enough of it to segment, using the form named in TARGET.
 
 POSITIVE DESCRIPTION, WITH TWO EXCEPTIONS
-Describe what IS in frame, not what isn't. The only negative constraints the engine honours are subtitles and audio — "no subtitles", "no BGM; environmental and action sound only", "no audio" — so use those when the user's intent implies them, and never invent other negatives.
+Describe what is in frame. The only negatives the engine honours are subtitles and audio — "no subtitles", "no BGM; environmental and action sound only", "no audio" — so carry those when the user asked for them, and never invent other negatives.
 
 CAMERA LANGUAGE
-- Write standard terms plainly: shot size (extreme wide / wide / medium / medium close-up / close-up), movement (push in, pull out, pan, tilt, track, follow, orbit, crane, handheld), angle (low, overhead, eye level, first-person).
-- Named techniques may be used directly: one-shot / long take, dolly zoom, aerial, FPV, bullet time, speed ramp.
-- A niche or technical term must be written as the term PLUS a plain description of what happens — e.g. "rack focus: the foreground trees fall out of focus as the figure behind them sharpens".
-- A transition needs both its trigger point and its method — e.g. "at the 5-second mark, a fast left wipe into a natural dissolve".
+Standard terms plainly: shot size, movement (push in, pull out, pan, tilt, track, follow, orbit, crane, handheld), angle. Named techniques may be used directly. A niche term must carry a plain description of what happens — "rack focus: the foreground falls out of focus as the figure behind sharpens". A transition needs its trigger point and its method.
 
 ACTION AND EXPRESSION
-- Prefer general action descriptions ("trades close-quarters blows", "runs through several sets of drills"). Give specific detail only to the one or two actions that must land, and never repeat the same action.
-- Write expressions as plain descriptive sentences. Avoid idioms and stock phrases.
+Prefer general action descriptions; spend specific detail only on the one or two beats that must land, and never repeat an action. Write expressions as plain descriptive sentences, not idioms.
 
 WHEN REFERENCE ASSETS ARE CITED
-- Bind every asset explicitly in the text, by its upload number. Never rely on a name written inside the image itself.
-- List mappings one by one when there are several subjects, and give each asset a stated ROLE — what to take from it (appearance, identity, voice, action, camera movement, lighting, style, pacing) and, where it matters, what NOT to carry over (background, clothing, lighting, identity).
-- Name the PART of an asset to use when only part of it applies ("refer to the spell-casting action in @Video1 and the orbiting camera in @Video2").
-- When a reference is already accurate, say to refer to it and stop. Do not re-describe in prose what the asset already shows.
-- For a subject with no reference asset, describe its appearance and key features in full.
-
-For multi-asset requests, the guide's bracketed form is the clearest vehicle — use it when it helps, with only the sections that earn their place:
-【Generation Goal】 video type, core subject, principal event.
-【Reference Asset Roles】 one line per citation: what to take, what not to carry over.
-【Subjects and Relationships】 each subject mapped to its citation, with the features that must stay fixed.
-【Event Script】 start state → principal continuous event → end state.
-【Maintain Consistency】 identities, counts, clothing, prop ownership, spatial directions.
-
-LENGTH
-60–180 words for a short text-only prompt; longer for a multi-segment or multi-asset piece, but every sentence must carry filmable information.`;
+Bind each asset explicitly by its upload number and give it a ROLE — what to take from it, and where it matters, what not to carry over. Name the PART of an asset when only part applies. When a reference is already accurate, say to refer to it and stop; do not re-describe in prose what the asset already shows. Describe in full only a subject that has no reference.`;
 
 /**
  * What changes per request. The engine split is the guide's, not ours: 2.5
  * reads integer-second timestamps, 2.0 reads only shot numbers.
  */
 function targetBlock(
-  modelId: string | undefined, durationS: number | undefined, task: string | undefined
+  modelId: string | undefined, durationS: number | undefined, task: string | undefined,
+  words = 0
 ): string {
   /* An edit or an extension is an INSTRUCTION, not a scene. Running it
    * through the scene-writing rules would bury the instruction in cinematic
@@ -150,8 +185,49 @@ This CONTINUES an existing video, cited as @Video1. Rewrite it as a continuation
 
   return `TARGET
 Engine: ${modelId ?? "Seedance 2.5"}.
-${dur ? `Output duration: ${dur} seconds — pace the whole script to fill exactly that long, no more.` : ""}
-${segments}`;
+${dur ? `Output duration: ${dur} seconds — pace the action to fill it, no more.` : ""}
+${segments}
+${budgetLine(words)}`;
+}
+
+/**
+ * How much the answer is allowed to grow.
+ *
+ * Length was previously unbounded and the model treated it as the goal: six
+ * words became a hundred and ninety-five, most of it invented. The ceiling
+ * scales with how much the author already said, because the more they said,
+ * the less there is left to supply.
+ */
+function budgetLine(words: number): string {
+  if (!words) return "";
+  if (words <= 8) {
+    // A sketch this short genuinely needs finishing: with no framing, no
+    // camera and no light the engine picks all three at random. Name them —
+    // plainly, from what the setting already implies. That is completion, not
+    // invention: a bar has light, and "low warm interior light" films THEIR
+    // bar, whereas "pink neon over a jukebox" films ours.
+    return `LENGTH: the idea is only ${words} words, so it does need finishing — aim for 45-80 words. Supply the framing, ONE camera move, the light and the sound, because the shot cannot be filmed without them. Choose each plainly from what the setting already implies, and still invent no wardrobe, props, venue type, brand, palette or mood.`;
+  }
+  if (words <= 20) {
+    return `LENGTH: the idea is ${words} words — stay under about 100 words. Most of the answer should be their content, not new content.`;
+  }
+  return `LENGTH: the author already wrote ${words} words and knows what they want. Return AT MOST about ${Math.round(words * 1.6)} words, keeping their sentences where they are already filmable. If it is nearly right as it stands, return it nearly unchanged.`;
+}
+
+/**
+ * The model sometimes echoes the shape it was taught as literal labels —
+ * "One-sentence summary:", "Detailed plot:", "Additional notes:" — which then
+ * travel to the video engine as if they were part of the shot. Instructing it
+ * not to helps but does not guarantee; this makes sure.
+ */
+const SCAFFOLD =
+  /^\s*(?:\*\*)?(?:one[- ]sentence summary|summary|detailed plot(?: description)?|plot|additional notes?|notes?|overall|shape|prompt)(?:\*\*)?\s*[:：]\s*/gim;
+
+export function stripScaffolding(text: string): string {
+  return text
+    .replace(SCAFFOLD, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export async function enhancePrompt(opts: {
@@ -168,7 +244,7 @@ export async function enhancePrompt(opts: {
   if (!key) throw new Error("ARK_API_KEY is not set");
 
   const userMsg =
-    `${targetBlock(opts.model, opts.durationS, opts.task)}\n\n` +
+    `${targetBlock(opts.model, opts.durationS, opts.task, opts.prompt.trim().split(/\s+/).filter(Boolean).length)}\n\n` +
     (opts.citations.length
       ? `Attached reference assets, in upload order: ${opts.citations.join(", ")}.\n\n`
       : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a Seedance prompt:\n\n${opts.prompt}`;
@@ -181,7 +257,7 @@ export async function enhancePrompt(opts: {
       body: JSON.stringify({
         model,
         temperature: 0.6,
-        max_tokens: 900,
+        max_tokens: 700,
         messages: [
           { role: "system", content: SYSTEM },
           { role: "user", content: userMsg },
@@ -191,7 +267,7 @@ export async function enhancePrompt(opts: {
     const text = await res.text();
     if (res.ok) {
       const j = JSON.parse(text);
-      const out = j.choices?.[0]?.message?.content?.trim();
+      const out = stripScaffolding(j.choices?.[0]?.message?.content ?? "");
       if (!out) throw new Error("The model returned nothing.");
       return {
         text: out,
