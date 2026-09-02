@@ -69,8 +69,12 @@ export default function ChatDock() {
     lastCount.current = n;
   }, [feed, open]);
 
+  // The offsets belong ON the badge. They used to live on a zero-width
+  // wrapper span, so the badge started at the FAB's right edge and grew
+  // outward — on a phone the FAB is 14px from the edge, so a two-digit or
+  // "99+" count was cut off by the screen.
   const badge = unread > 0 && (
-    <span className={`absolute grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10.5px] font-semibold ring-2 ring-white ${
+    <span className={`absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10.5px] font-semibold ring-2 ring-white ${
       mentioned > 0 ? "bg-lift text-white" : "bg-panel3 text-dim"
     }`}>
       {unread > 99 ? "99+" : unread}
@@ -93,7 +97,7 @@ export default function ChatDock() {
             style={{ bottom: "calc(var(--tabbar) + 6px)" }}
           >
             <ChatGlyph />
-            <span className="absolute -right-0.5 -top-0.5">{badge}</span>
+            {badge}
           </button>
         </>
       )}

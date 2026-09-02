@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import References, { referenceProblem, type RefItem, type RefPicker } from "./References";
 import { appConfirm } from "./dialog";
 import { Switch } from "./Panel";
@@ -97,6 +97,7 @@ export default function Workspace() {
   const patch = (p: Partial<Params>) => setParams((s) => ({ ...s, ...p }));
 
   function switchModel(next: string) {
+    setErr(null);          // the old failure was about the old engine
     const m = getModel(next);
     patch({
       modelId: next,
@@ -146,13 +147,28 @@ export default function Workspace() {
 
   // The composer grows with the prompt, and the highlight layer must track
   // the textarea's scroll exactly or the coloured @cites drift.
-  useEffect(() => {
+  const fitComposer = useCallback(() => {
     const el = promptEl.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     if (overlayEl.current) overlayEl.current.scrollTop = el.scrollTop;
-  }, [prompt]);
+  }, []);
+
+  useEffect(() => { fitComposer(); }, [prompt, fitComposer]);
+
+  /* A height in px computed for one width is wrong at the next one: the same
+     text needs more lines when the box narrows, and the tail scrolled out of
+     a fixed-height textarea with no scrollbar until the next keystroke. The
+     box changes width on window resize, on crossing 860px, and whenever the
+     reference chips or the error banner reflow the card — so observe it. */
+  useEffect(() => {
+    const el = promptEl.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => fitComposer());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitComposer]);
 
   const modelDef = getModel(params.modelId);
   const isImage = modelDef.kind === "image";
@@ -200,7 +216,11 @@ export default function Workspace() {
   }
 
   async function render() {
-    if (!prompt.trim() || busy) return;
+    // The same conditions that disable the send button. The guard lives HERE
+    // rather than only on the button, because Cmd/Ctrl+Enter calls render()
+    // directly — it was posting reference payloads the UI had already
+    // declared invalid, producing a failed render from a blocked control.
+    if (!prompt.trim() || busy || refProblem) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetch("/api/generate", {
@@ -298,9 +318,12 @@ export default function Workspace() {
             </div>
           )}
 
+          {/* The blocking reason wins over a stale submit error — that error
+              used to sit on top of it, so the send button went dead with no
+              visible cause. */}
           {(err || refProblem) && (
             <p className="mb-2 rounded-[12px] bg-lift/8 px-3.5 py-2 text-[13.5px] leading-relaxed text-lift">
-              {err ?? refProblem}
+              {refProblem ?? err}
             </p>
           )}
 
@@ -320,13 +343,23 @@ export default function Workspace() {
               </div>
               <textarea
                 ref={promptEl} rows={1}
-                value={prompt} onChange={(e) => setPrompt(e.target.value)}
+                value={prompt}
+                onChange={(e) => {
+                  setPrompt(e.target.value);
+                  // A submit error describes a submit that already happened.
+                  if (err) setErr(null);
+                }}
                 onScroll={(e) => { if (overlayEl.current) overlayEl.current.scrollTop = e.currentTarget.scrollTop; }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); render(); }
                 }}
                 placeholder="Describe the shot…"
                 spellCheck={false}
+                /* Stable gutter: past 160px the textarea scrolls, and on
+                   platforms with classic scrollbars that gutter comes out of
+                   its content box only — the transparent text then wrapped
+                   earlier than the painted highlight underneath it. */
+                style={{ scrollbarGutter: "stable" }}
                 className="relative block max-h-[160px] w-full resize-none bg-transparent py-2 text-[16px] leading-[1.45] text-transparent caret-bone placeholder:text-mute focus:outline-none"
               />
             </div>

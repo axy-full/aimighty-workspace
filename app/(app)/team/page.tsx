@@ -66,7 +66,10 @@ export default function TeamPage() {
   const active = users.filter((u) => !u.disabled).length;
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto px-6 py-5 max-[860px]:px-3.5">
+    // pb reserves the floating tab pill's space, the way .screen does — with a
+    // flat py-5 the last member row and the role legend sat behind it, with no
+    // scroll left to reveal them.
+    <div className="h-full min-h-0 overflow-y-auto px-6 pt-5 pb-[var(--tabbar)] max-[860px]:px-3.5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex flex-col gap-0.5">
           <span className="ptitle text-[20px] leading-tight">Team</span>
