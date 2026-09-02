@@ -110,5 +110,6 @@ async function cronStatus() {
   let result: unknown = null;
   try { result = JSON.parse(st.lastCronResult ?? "null"); } catch { /* ignore */ }
   return { lastRunAt: new Date(at).toISOString(), by: st.lastCronBy ?? null,
+           agent: st.lastCronAgent ?? null,
            agoMinutes: ago, healthy: ago <= 15, result };
 }

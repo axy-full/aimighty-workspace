@@ -40,10 +40,16 @@ export async function GET(req: Request) {
   // outside. Vercel stamps its scheduled calls with x-vercel-cron: 1, so the
   // record also says WHO ran it — a manual curl and a real tick look
   // identical otherwise.
-  const by = req.headers.get("x-vercel-cron") ? "vercel" : "manual";
+  // Vercel's documented signature for a scheduled call is the user-agent
+  // "vercel-cron/1.0"; the x-vercel-cron header was a guess and misfiled a
+  // real tick as "manual". Check both, and keep the raw agent so the record
+  // can never be wrong silently again.
+  const ua = req.headers.get("user-agent") ?? "";
+  const by = req.headers.get("x-vercel-cron") || /vercel-cron/i.test(ua) ? "vercel" : "manual";
   try {
     await setSetting("lastCronAt", String(Date.now()), "cron");
     await setSetting("lastCronBy", by, "cron");
+    await setSetting("lastCronAgent", ua.slice(0, 120), "cron");
     await setSetting("lastCronResult", JSON.stringify({
       pending: after.pending, atRisk: after.atRisk,
       rescued: Math.max(0, before.atRisk - after.atRisk),
