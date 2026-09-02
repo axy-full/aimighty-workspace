@@ -281,7 +281,7 @@ export function stripScaffolding(text: string): string {
  *    never been allowed to block a paid render.
  */
 async function refineWithClaude(
-  system: string, userMsg: string
+  system: string, userMsg: string, style: string
 ): Promise<RefineResult & { cachedIn: number }> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic();
@@ -294,7 +294,16 @@ async function refineWithClaude(
     // Route by refusal category rather than maintaining a model list.
     fallbacks: "default",
     output_config: { effort: (process.env.ANTHROPIC_PROMPT_EFFORT ?? "low") as "low" },
-    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    /* Two cache blocks, stable-first. The frozen system prompt never changes,
+     * so it stays cached indefinitely. The house-style examples change only
+     * when somebody approves a shot, and sit in their own block so that when
+     * they do change they invalidate themselves and not the rest. */
+    system: [
+      { type: "text", text: system, cache_control: { type: "ephemeral" } },
+      ...(style
+        ? [{ type: "text", text: style, cache_control: { type: "ephemeral" } }]
+        : []),
+    ],
     messages: [{ role: "user", content: userMsg }],
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   } as any);
@@ -326,6 +335,8 @@ export async function enhancePrompt(opts: {
   durationS?: number;
   /** generate | edit | extend — an edit is an instruction, not a scene. */
   task?: string;
+  /** Approved work from this workspace, used as the style to match. */
+  style?: string;
 }): Promise<RefineResult> {
   const key = process.env.ARK_API_KEY;
   if (!key) throw new Error("ARK_API_KEY is not set");
@@ -337,7 +348,7 @@ export async function enhancePrompt(opts: {
       : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a Seedance prompt:\n\n${opts.prompt}`;
 
   if (refineProvider() === "anthropic") {
-    const r = await refineWithClaude(SYSTEM, userMsg);
+    const r = await refineWithClaude(SYSTEM, userMsg, opts.style ?? "");
     const raw = stripScaffolding(r.text);
     const pick = /(^|\n)\s*CAMERA\s*[:：]\s*([a-z]+)\s*$/i.exec(raw);
     const out = pick ? raw.slice(0, pick.index).trim() : raw;
@@ -359,7 +370,7 @@ export async function enhancePrompt(opts: {
         temperature: 0.6,
         max_tokens: 700,
         messages: [
-          { role: "system", content: SYSTEM },
+          { role: "system", content: opts.style ? `${SYSTEM}\n\n${opts.style}` : SYSTEM },
           { role: "user", content: userMsg },
         ],
       }),

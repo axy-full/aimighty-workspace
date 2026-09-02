@@ -9,6 +9,7 @@ import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
+import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
 import { withRetry, classifyFailure } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice } from "@/lib/tasks";
@@ -331,9 +332,12 @@ export async function POST(req: Request) {
       // The engine and the length steer the form: 2.5 takes integer-second
       // timestamps, 2.0 only shot numbers, and the script should fill the
       // duration actually being paid for.
+      // Show it the work this studio has actually approved, so the writing
+      // converges on their taste rather than on a generic one.
+      const style = houseStyleBlock(await houseStyle(projectIdForCast));
       const r = await enhancePrompt({
         prompt: castPrompt, citations,
-        model: modelId, durationS: params.duration, task: task.id,
+        model: modelId, durationS: params.duration, task: task.id, style,
       });
       finalPrompt = r.text;
       chosenMove = r.move ?? null;
