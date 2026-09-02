@@ -8,7 +8,7 @@
  * this file never goes stale when they change, and there is nothing to
  * install — one file, no dependencies.
  *
- *   PARTICL_URL=https://workspace.aimighty.studio \
+ *   PARTICL_URL=https://www.particlstudio.com \
  *   PARTICL_TOKEN=aw_… \
  *   node particl-mcp.mjs
  *
@@ -28,7 +28,7 @@ import path from "node:path";
 // PARTICL_* are the names now; AIMIGHTY_* are still read so a connector
 // somebody already installed doesn't break the day the product is renamed.
 const BASE = (process.env.PARTICL_URL ?? process.env.AIMIGHTY_URL ??
-              "https://workspace.aimighty.studio").replace(/\/$/, "");
+              "https://www.particlstudio.com").replace(/\/$/, "");
 const TOKEN = process.env.PARTICL_TOKEN ?? process.env.AIMIGHTY_TOKEN ?? "";
 const ENDPOINT = `${BASE}/api/mcp`;
 

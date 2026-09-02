@@ -25,7 +25,7 @@ type ClientId = typeof CLIENTS[number]["id"];
  *  corrects it after hydration. */
 const subscribeOrigin = () => () => {};
 const readOrigin = () => window.location.origin;
-const serverOrigin = () => "https://workspace.aimighty.studio";
+const serverOrigin = () => "https://www.particlstudio.com";
 
 export default function ConnectPage() {
   const origin = useSyncExternalStore(subscribeOrigin, readOrigin, serverOrigin);
