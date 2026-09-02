@@ -13,6 +13,8 @@
  */
 import { useApi } from "@/lib/useApi";
 import Link from "next/link";
+import { Waiting } from "@/components/ParticlMark";
+import { usePageTitle } from "@/lib/usePageTitle";
 
 type Platform = {
   storage: {
@@ -42,11 +44,8 @@ function QA({ q, children }: { q: string; children: React.ReactNode }) {
 
 export default function PlatformPage() {
   const { data } = useApi<Platform>("/api/platform");
-  if (!data) {
-    return <div className="screen grid place-items-center">
-      <p className="text-[15px] text-mute">Reading the system…</p>
-    </div>;
-  }
+  usePageTitle("Platform");
+  if (!data) return <Waiting label="Reading the system" />;
   const s = data.storage;
 
   return (

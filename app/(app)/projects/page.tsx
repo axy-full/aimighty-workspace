@@ -11,12 +11,15 @@ import { appPrompt, appAlert } from "@/components/dialog";
 import LazyMedia from "@/components/LazyMedia";
 import type { Gen } from "@/components/GenCard";
 import { IconSearch, IconPlus } from "@/components/Icons";
+import { ParticlMark } from "@/components/ParticlMark";
+import { usePageTitle } from "@/lib/usePageTitle";
 
 /**
  * The way in. Projects are shown as work, not as rows in a menu — each one
  * wearing its most recent render, so the shelf is recognisable at a glance.
  */
 export default function ProjectsPage() {
+  usePageTitle("Projects");
   const [q, setQ] = useState("");
   const router = useRouter();
   const { projects, setSelection, refreshProjects } = useProject();
@@ -80,11 +83,13 @@ export default function ProjectsPage() {
               <div key={p.id}>
                 <button onClick={() => open(p.id)} className="group w-full text-left"
                 data-project-target={p.id} data-project-name={p.name}>
-                <div className="aspect-square overflow-hidden rounded-[var(--r-lg)] bg-thumb shadow-[var(--shadow-media)] transition-transform duration-200 group-hover:-translate-y-1">
+                <div className="card-link media-well aspect-square overflow-hidden rounded-[var(--r-lg)] bg-thumb shadow-[var(--shadow-media)]">
                   {cover?.storedUrl ? (
                     <LazyMedia url={cover.storedUrl} kind={cover.kind === "image" ? "image" : "video"} alt={p.name} />
                   ) : (
-                    <span className="grid h-full place-items-center text-[13px] text-mute">No renders yet</span>
+                    <span className="grid h-full place-items-center">
+                      <ParticlMark size={28} className="text-mute/60" />
+                    </span>
                   )}
                 </div>
                 <p className="mt-3 text-[17px] font-semibold tracking-[-0.01em]">{p.name}</p>

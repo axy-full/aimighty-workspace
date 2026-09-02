@@ -17,6 +17,8 @@ import {
   type Analytics, Headline, BarList, StuckTable, ShotTable, Patterns,
 } from "@/components/Analytics";
 import SectionNav from "@/components/SectionNav";
+import { Waiting } from "@/components/ParticlMark";
+import { usePageTitle } from "@/lib/usePageTitle";
 
 const WINDOWS = [
   { days: 0, label: "All time" },
@@ -29,13 +31,8 @@ export default function DashboardPage() {
   const [days, setDays] = useState(0);
   const { data } = useApi<Analytics>(`/api/analytics?days=${days}`, 30000);
 
-  if (!data) {
-    return (
-      <div className="screen grid place-items-center">
-        <p className="text-[15px] text-mute">Reading production…</p>
-      </div>
-    );
-  }
+  usePageTitle("Production");
+  if (!data) return <Waiting label="Reading production" />;
 
   const maxDay = Math.max(...data.byDay.map((d) => d.spend), 0.000001);
 

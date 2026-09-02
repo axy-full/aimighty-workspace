@@ -34,6 +34,56 @@ export function ParticlMark({ size = 28, className = "" }: { size?: number; clas
   );
 }
 
+/**
+ * The loader. The same eight particles, pulsing in sequence around the ring —
+ * so a wait looks like the brand thinking rather than a generic spinner
+ * bolted on. Pure CSS; respects reduced motion.
+ */
+export function ParticlSpinner({ size = 28, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none"
+      className={`particl-spin ${className}`} role="status" aria-label="Loading">
+      {[...PARTICLES, ACCENT].map(([cx, cy, r], i) => (
+        <circle key={i} cx={cx} cy={cy} r={r}
+          fill={i === 7 ? "var(--color-blue)" : "currentColor"}
+          style={{ animationDelay: `${i * 110}ms` }} />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * A wait that's worth a sentence. Centred, quiet, branded — replaces the
+ * four different "Reading the…" strings that used to stand in for a loader.
+ */
+export function Waiting({ label = "Loading" }: { label?: string }) {
+  return (
+    <div className="screen grid place-items-center">
+      <div className="flex flex-col items-center gap-3 text-dim">
+        <ParticlSpinner size={30} />
+        <p className="text-[14px]">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * An empty state that looks designed rather than absent: the mark at rest,
+ * a title, one line, and optionally one thing to do about it.
+ */
+export function Empty({ title, line, action, compact = false }: {
+  title: string; line?: string; action?: React.ReactNode; compact?: boolean;
+}) {
+  return (
+    <div className={`flex flex-col items-center text-center ${compact ? "py-6" : "py-10"}`}>
+      <ParticlMark size={compact ? 22 : 30} className="text-mute/70" />
+      <p className={`mt-3 font-medium text-dim ${compact ? "text-[14px]" : "text-[15px]"}`}>{title}</p>
+      {line && <p className="mt-1 max-w-[40ch] text-[13px] leading-relaxed text-mute">{line}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
 /** Mark plus wordmark, for a screen header. */
 export default function ParticlLockup({ className = "" }: { className?: string }) {
   return (

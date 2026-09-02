@@ -24,7 +24,8 @@ import { uploadFile } from "@/lib/uploadClient";
 import { CATEGORIES, specToPhrase, specCount, composePrompt, type ShotSpec } from "@/lib/studio";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { IconPlus, IconClose, IconSparkle } from "@/components/Icons";
-import ParticlLockup from "@/components/ParticlMark";
+import ParticlLockup, { Empty } from "@/components/ParticlMark";
+import { usePageTitle } from "@/lib/usePageTitle";
 import type { CastMember } from "@/lib/cast";
 
 type Preset = { id: string; name: string; projectId: string | null; spec: ShotSpec };
@@ -36,6 +37,7 @@ const KINDS = [
 ] as const;
 
 export default function StudioPage() {
+  usePageTitle("Studio");
   const { selection: bin } = useProject();
   const router = useRouter();
   const scoped = bin !== "all" && bin !== "unfiled";
@@ -162,10 +164,8 @@ export default function StudioPage() {
             onChange={(e) => { if (e.target.files) addFrom(e.target.files); e.target.value = ""; }} />
 
           {cast.length === 0 ? (
-            <p className="py-8 text-center text-[14px] text-mute">
-              Nobody cast yet. Add a character with a still and a line of
-              description, then write <code>@TheirName</code> in a prompt.
-            </p>
+            <Empty title="Nobody cast yet"
+              line="Add a character with a still and a line of description, then write @TheirName in any prompt." />
           ) : (
             <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(190px,1fr))]">
               {cast.map((m) => (

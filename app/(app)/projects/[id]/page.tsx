@@ -15,6 +15,8 @@ import { useApi } from "@/lib/useApi";
 import { usd, hours, pct, timeAgo } from "@/lib/format";
 import { type Analytics, Headline, BarList, ShotTable, Patterns } from "@/components/Analytics";
 import { appPrompt, appAlert } from "@/components/dialog";
+import { Waiting } from "@/components/ParticlMark";
+import { usePageTitle } from "@/lib/usePageTitle";
 
 type Project = { id: string; name: string; description: string; code?: string; category?: string };
 type ShotRow = {
@@ -80,13 +82,8 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
     else refreshProjects();
   }
 
-  if (!data) {
-    return (
-      <div className="screen grid place-items-center">
-        <p className="text-[15px] text-mute">Reading the project…</p>
-      </div>
-    );
-  }
+  usePageTitle(project?.name ?? "Project");
+  if (!data) return <Waiting label="Reading the project" />;
 
   const t = data.totals;
   const shots = shotData?.shots ?? [];

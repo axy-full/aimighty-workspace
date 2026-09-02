@@ -4,6 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
 import { useProject } from "@/lib/projectContext";
+import Link from "next/link";
+import { ParticlMark } from "./ParticlMark";
 
 type Usage = { pending: number; spentUsd: number; remainingUsd: number };
 
@@ -26,14 +28,25 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
 
   return (
     <header className="app-title flex items-center gap-3 px-6 max-[860px]:px-3.5">
+      {/* The brand is on every screen, never loud: the mark, the name, and
+          on Generate the project you're in as a tappable breadcrumb. */}
+      <Link href="/" className="flex shrink-0 items-center gap-2" title="Particl">
+        <ParticlMark size={20} className="text-black" />
+        <span className="text-[15px] font-semibold tracking-[-0.02em] text-black max-[430px]:hidden">
+          Particl
+        </span>
+      </Link>
       {title && (
-        <button
-          onClick={() => router.push("/projects")}
-          className="chip !bg-transparent !px-0 !text-[15px] font-semibold hover:!bg-transparent"
-          title="Back to projects"
-        >
-          {title}
-        </button>
+        <>
+          <span className="text-[15px] text-mute" aria-hidden="true">/</span>
+          <button
+            onClick={() => router.push("/projects")}
+            className="min-w-0 truncate text-[15px] font-medium text-dim transition-colors hover:text-black"
+            title="Back to projects"
+          >
+            {title}
+          </button>
+        </>
       )}
 
       <div className="ml-auto flex items-center gap-2.5">

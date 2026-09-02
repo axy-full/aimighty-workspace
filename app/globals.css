@@ -53,6 +53,9 @@
 
   /* Cards don't use borders — they sit on light. */
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 6px 20px rgba(0, 0, 0, .05);
+  --shadow-card-hover: 0 2px 6px rgba(0, 0, 0, .06), 0 14px 36px rgba(0, 0, 0, .10);
+  /* One easing for every press and lift — the spring Apple's controls have. */
+  --ease-spring: cubic-bezier(.2, .8, .2, 1);
   --shadow-pop:  0 4px 12px rgba(0, 0, 0, .08), 0 20px 48px rgba(0, 0, 0, .12);
   --shadow-media:0 2px 8px rgba(0, 0, 0, .06), 0 18px 48px rgba(0, 0, 0, .10);
 }
@@ -126,6 +129,10 @@ input, textarea {
 }
 .app-title {
   height: var(--topbar); flex: none; min-width: 0;
+  /* In-flow, not overlaid: nothing scrolls beneath it, so glass would be a
+     no-op. A chrome tint and one hairline are all the definition it needs. */
+  background: var(--color-chrome);
+  box-shadow: inset 0 -1px 0 var(--color-hair);
   padding-top: env(safe-area-inset-top, 0px);
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
@@ -205,6 +212,7 @@ input, textarea {
   letter-spacing: -0.03em;
   line-height: 1.05;
   color: #000;
+  text-wrap: balance;
 }
 
 /* Small uppercase group label above an inset list. */
@@ -240,6 +248,36 @@ input, textarea {
   @media (prefers-reduced-motion: reduce) {
     .intro-dot, .intro-word { animation: none; opacity: 1; transform: none; }
     .intro-veil { animation: particl-veil 1ms linear 200ms both; }
+  }
+
+  /* ── Finishing touches ────────────────────────────────────────────── */
+
+  /* Every screen arrives rather than appears: a short rise-and-fade on the
+     scroller's content. Short enough to never be waited for. */
+  .screen > * { animation: screen-in .26s var(--ease-spring) both; }
+
+  /* Cards you can open lift toward you and settle back. */
+  .card-link {
+    transition: transform .22s var(--ease-spring), box-shadow .22s var(--ease-spring);
+  }
+  @media (hover: hover) {
+    .card-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-card-hover); }
+  }
+  .card-link:active { transform: translateY(0) scale(.99); }
+
+  /* The loader: particles pulse around the ring in sequence. */
+  .particl-spin circle {
+    animation: particl-pulse 1.1s ease-in-out infinite;
+    transform-box: fill-box; transform-origin: center;
+  }
+
+  /* Media wells get a hairline inner ring so white-on-white edges read. */
+  .media-well { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .screen > * { animation: none; }
+    .card-link, .chip, .tab, .btn-render { transition: none; }
+    .particl-spin circle { animation: particl-pulse 2.2s ease-in-out infinite; }
   }
 
 
@@ -325,9 +363,10 @@ select.ctl {
   content: ""; position: absolute; left: 18px; right: 0; top: 0;
   height: 1px; background: var(--color-hair);
 }
-.row-value { margin-left: auto; color: var(--color-dim); display: flex; align-items: center; gap: 6px; }
+.row-value { margin-left: auto; color: var(--color-dim); display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 @media (hover: hover) { button.row:hover, a.row:hover { background: var(--color-chip); } }
-button.row:active, a.row:active { background: var(--color-chip); }
+button.row, a.row { transition: background .12s; }
+button.row:active, a.row:active { background: var(--color-chip2); }
 
 /* Pill button, the app's default action shape. */
 .chip {
@@ -338,10 +377,11 @@ button.row:active, a.row:active { background: var(--color-chip); }
   font-size: 14px;
   color: var(--color-bone);
   white-space: nowrap;
-  transition: background .15s, color .15s, transform .1s;
+  font-variant-numeric: tabular-nums;
+  transition: background .15s, color .15s, transform .18s var(--ease-spring);
 }
 @media (hover: hover) { .chip:hover:not(:disabled) { background: var(--color-chip2); } }
-.chip:active:not(:disabled) { transform: scale(.97); }
+.chip:active:not(:disabled) { transform: scale(.96); }
 .chip:disabled { opacity: .4; cursor: not-allowed; }
 .chip-blue { background: var(--color-blue); color: #fff; }
 @media (hover: hover) { .chip-blue:hover:not(:disabled) { background: #0A6FE0; } }
@@ -408,9 +448,10 @@ button.row:active, a.row:active { background: var(--color-chip); }
   border-radius: 999px;
   font-size: 12px;
   color: var(--color-dim);
-  transition: background .15s, color .15s;
+  transition: background .15s, color .15s, transform .18s var(--ease-spring);
 }
 @media (hover: hover) { .tab:hover { color: var(--color-bone); } }
+.tab:active { transform: scale(.94); }
 .tab[data-active="true"] {
   color: var(--color-blue);
   background: color-mix(in oklab, var(--color-blue) 11%, transparent);
@@ -420,7 +461,11 @@ button.row:active, a.row:active { background: var(--color-chip); }
   @media (max-width: 430px) { .tab { padding: 8px 7px; font-size: 11px; } }
 }
 
-*:focus-visible { outline: 2px solid var(--color-blue); outline-offset: 2px; }
+*:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-blue) 75%, transparent);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
 /* Scrollbars, barely there. */
@@ -442,12 +487,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   border-radius: 999px;
   background: var(--color-blue);
   box-shadow: 0 2px 10px color-mix(in oklab, var(--color-blue) 30%, transparent);
-  transition: background .15s, transform .1s, box-shadow .2s, opacity .15s;
+  transition: background .15s, transform .18s var(--ease-spring), box-shadow .2s, opacity .15s;
 }
 @media (hover: hover) {
-  .btn-render:hover:not(:disabled) { background: #0A6FE0; }
+  .btn-render:hover:not(:disabled) { background: #0A6FE0; box-shadow: 0 4px 16px color-mix(in oklab, var(--color-blue) 38%, transparent); }
 }
-.btn-render:active:not(:disabled) { transform: scale(.97); }
+.btn-render:active:not(:disabled) { transform: scale(.96); }
 .btn-render:disabled {
   background: var(--color-panel3);
   color: var(--color-mute);
@@ -511,4 +556,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 @keyframes particl-veil {
   0%   { opacity: 1; visibility: visible; }
   100% { opacity: 0; visibility: hidden; }
+}
+
+@keyframes screen-in {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes particl-pulse {
+  0%, 100% { opacity: .28; transform: scale(.85); }
+  35%      { opacity: 1;   transform: scale(1.12); }
 }

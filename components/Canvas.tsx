@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { appConfirm, appPrompt } from "@/components/dialog";
+import { Empty } from "@/components/ParticlMark";
 
 export type CanvasItem = {
   id: string; kind: "generation" | "upload" | "note" | "heading";
@@ -226,10 +227,8 @@ export default function Canvas({ projectId, items, onChanged, onUse }: Props) {
 
       {!items.length && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <p className="max-w-[38ch] text-center text-[15px] text-mute">
-            An empty wall. Add renders from the rail, drop in a section heading,
-            and lay the sequence out the way you&rsquo;d pin cards to a board.
-          </p>
+          <Empty title="An empty wall"
+            line="Add renders from the rail, drop in a section heading, and lay the sequence out the way you'd pin cards to a board." />
         </div>
       )}
     </div>

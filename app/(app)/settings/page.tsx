@@ -10,11 +10,13 @@ import { appAlert } from "@/components/dialog";
 import { Switch } from "@/components/Panel";
 import { IconChevron } from "@/components/Icons";
 import WorkspaceSettings from "@/components/WorkspaceSettings";
+import { usePageTitle } from "@/lib/usePageTitle";
 
 type Me = { name: string; email: string; role: string };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number };
 
 export default function SettingsPage() {
+  usePageTitle("Settings");
   const prefs = usePrefs();
   const model = getModel(prefs.modelId);
   const router = useRouter();

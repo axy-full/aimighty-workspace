@@ -5,6 +5,8 @@ import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import SectionNav from "@/components/SectionNav";
+import { Waiting } from "@/components/ParticlMark";
+import { usePageTitle } from "@/lib/usePageTitle";
 
 type Usage = {
   purchasedUsd: number; spentUsd: number; remainingUsd: number;
@@ -63,13 +65,8 @@ export default function UsagePage() {
 
   const monthLabel = new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
-  if (!data) {
-    return (
-      <div className="screen grid place-items-center">
-        <p className="text-[15px] text-mute">Reading the ledger…</p>
-      </div>
-    );
-  }
+  usePageTitle("Usage");
+  if (!data) return <Waiting label="Reading the ledger" />;
 
   const maxDay = Math.max(...days.map(([, v]) => v), 0.0001);
   const monthSpend = days.reduce((a, [, v]) => a + v, 0);

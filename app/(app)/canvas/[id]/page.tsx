@@ -12,6 +12,7 @@ import { useApi } from "@/lib/useApi";
 import Canvas, { type CanvasItem } from "@/components/Canvas";
 import LazyMedia from "@/components/LazyMedia";
 import { useRouter } from "next/navigation";
+import { usePageTitle } from "@/lib/usePageTitle";
 
 type Job = {
   id: string; status: string; storedUrl: string | null; kind: "video" | "image";
@@ -21,6 +22,7 @@ type Project = { id: string; name: string };
 
 export default function CanvasPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  usePageTitle("Canvas");
   const router = useRouter();
   const [railOpen, setRailOpen] = useState(true);
 

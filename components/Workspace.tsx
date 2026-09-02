@@ -11,6 +11,8 @@ import LazyMedia from "./LazyMedia";
 import Cast from "./Cast";
 import Studio from "./Studio";
 import ShotRow from "./ShotRow";
+import { Empty, ParticlSpinner } from "./ParticlMark";
+import { usePageTitle } from "@/lib/usePageTitle";
 import { composePrompt, type ShotSpec } from "@/lib/studio";
 import Review from "./Review";
 import {
@@ -39,6 +41,7 @@ const STATUS: Record<string, { cls: string; label: string; live?: boolean }> = {
 type Menu = null | "model" | "dur" | "ratio" | "res" | "refine";
 
 export default function Workspace() {
+  usePageTitle("Generate");
   const { selection: bin, refreshProjects } = useProject();
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
@@ -742,11 +745,8 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
   if (!clip) {
     return (
       <div className="viewer-stage grid min-h-0 flex-1 place-items-center">
-        <div className="stage16 grid place-items-center overflow-hidden rounded-[var(--r-lg)] bg-thumb">
-          <div className="text-center">
-            <p className="text-[15px] font-medium text-dim">Nothing playing</p>
-            <p className="mt-1 text-[13px] text-mute">Pick a render from the shelf below.</p>
-          </div>
+        <div className="stage16 media-well grid place-items-center overflow-hidden rounded-[var(--r-lg)] bg-thumb">
+          <Empty compact title="Nothing playing" line="Pick a render from the shelf below." />
         </div>
       </div>
     );
@@ -766,7 +766,7 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
   return (
     <div className="viewer-stage grid min-h-0 flex-1 place-items-center"
       data-gen-id={clip.id} data-gen-prompt={clip.prompt} data-gen-label={clipId(clip.id)}>
-      <div className={`stage16 group relative overflow-hidden rounded-[var(--r-lg)] shadow-[var(--shadow-media)] ${done ? "bg-black" : "bg-thumb"}`}>
+      <div className={`stage16 media-well group relative overflow-hidden rounded-[var(--r-lg)] shadow-[var(--shadow-media)] ${done ? "bg-black" : "bg-thumb"}`}>
         {done ? (
           still ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -783,14 +783,13 @@ function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => vo
                 {clip.error}
               </p>
             ) : (
-              <div className={`flex flex-col items-center gap-3 ${s.live ? "render-sweep" : ""}`}>
-                <span className={`text-[15px] font-medium ${s.cls}`}>{s.label}…</span>
-                {s.live && (
-                  <span className="block h-[3px] w-[180px] overflow-hidden rounded-full bg-black/10">
-                    <span className="block h-full w-1/3 rounded-full bg-blue"
-                      style={{ animation: "stripSlide 1.6s ease-in-out infinite" }} />
-                  </span>
-                )}
+              <div className="flex flex-col items-center gap-3">
+                {/* A render in flight looks like the brand thinking, not a
+                    progress bar borrowed from somewhere else. */}
+                {s.live
+                  ? <ParticlSpinner size={34} className="text-dim" />
+                  : null}
+                <span className={`text-[14px] font-medium ${s.cls}`}>{s.label}{s.live ? "…" : ""}</span>
               </div>
             )}
           </div>
