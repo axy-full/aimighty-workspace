@@ -10,6 +10,7 @@ import { IconPlus, IconClose } from "./Icons";
 const KINDS = [
   { id: "character", label: "Character" },
   { id: "location", label: "Location" },
+  { id: "prop", label: "Prop" },
   { id: "style", label: "Look" },
 ] as const;
 
@@ -40,8 +41,8 @@ export default function Cast({ projectId, onCite }: {
     const f = files[0];
     if (!f) return;
     const name = await appPrompt(
-      `Name this ${pendingKind}`, "",
-      pendingKind === "character" ? "e.g. Maya" : pendingKind === "location" ? "e.g. HarbourSet" : "e.g. NoirLook"
+      `Name this ${pendingKind === "style" ? "look" : pendingKind}`, "",
+      pendingKind === "character" ? "e.g. Maya" : pendingKind === "location" ? "e.g. HarbourSet" : pendingKind === "prop" ? "e.g. RedHelmet" : "e.g. NoirLook"
     );
     if (!name?.trim()) return;
     const description = await appPrompt(
@@ -49,7 +50,9 @@ export default function Cast({ projectId, onCite }: {
       "",
       pendingKind === "character"
         ? "e.g. late 30s, close-cropped hair, navy field jacket"
-        : "e.g. rain-soaked stone quay at dusk, sodium lamps"
+        : pendingKind === "prop"
+          ? "e.g. scuffed red motorcycle helmet, matte finish"
+          : "e.g. rain-soaked stone quay at dusk, sodium lamps"
     );
 
     setBusy(true);

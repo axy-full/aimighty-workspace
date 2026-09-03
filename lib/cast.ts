@@ -1,7 +1,7 @@
 import { db, ready } from "./db";
 
 /**
- * The cast — the people, places and looks a production keeps coming back to.
+ * The cast — the people, places, props and looks a production keeps coming back to.
  *
  * The hardest thing in AI video isn't making one good shot, it's making the
  * second one match. Describing a face again in every prompt gets you a
@@ -18,7 +18,7 @@ export type CastMember = {
   id: string;
   projectId: string | null;   // null = available to the whole workspace
   name: string;
-  kind: "character" | "location" | "style";
+  kind: "character" | "location" | "prop" | "style";
   description: string;
   uploadId: string | null;
   createdAt: number;
@@ -30,7 +30,7 @@ export function rowToCast(r: any): CastMember {
     id: r.id,
     projectId: r.project_id ?? null,
     name: r.name,
-    kind: r.kind === "location" ? "location" : r.kind === "style" ? "style" : "character",
+    kind: r.kind === "location" ? "location" : r.kind === "prop" ? "prop" : r.kind === "style" ? "style" : "character",
     description: r.description ?? "",
     uploadId: r.upload_id ?? null,
     createdAt: Number(r.created_at),

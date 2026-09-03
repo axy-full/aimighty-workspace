@@ -36,6 +36,7 @@ export const TOOLS: ToolDef[] = [
         ratio: { type: "string", description: "16:9 (default), 9:16, 1:1, 4:3, 3:4, 21:9." },
         audio: { type: "boolean", description: "Native audio track. Seedance 2.5 only. Default false." },
         seed: { type: "number", description: "Fix the seed to make a shot reproducible." },
+        look: { type: "string", description: "The name of a Look from the studio's library (e.g. 'Tungsten Night') — its style block and reference stills ride along." },
       },
       required: ["prompt"],
     },
@@ -181,10 +182,22 @@ export async function runTool(
       if (!def.ratios.includes(ratio)) {
         throw new Error(`Aspect ratio must be one of ${def.ratios.join(", ")} for ${def.label}.`);
       }
+      // A Look by name → its id, from what this project can see.
+      let lookId: string | null = null;
+      if (typeof args.look === "string" && args.look.trim()) {
+        const wanted = args.look.trim().toLowerCase();
+        const lib = (await call(`/api/presets${project ? `?projectId=${encodeURIComponent(project.id)}` : ""}`)) as
+          { presets: { id: string; name: string }[] };
+        const hit = lib.presets.find((p) => p.name.toLowerCase() === wanted)
+          ?? lib.presets.find((p) => p.name.toLowerCase().includes(wanted));
+        if (!hit) throw new Error(`No look called "${args.look}". Looks available: ${lib.presets.map((p) => p.name).join(", ")}.`);
+        lookId = hit.id;
+      }
       const out = (await call("/api/generate", {
         method: "POST",
         body: {
           prompt: args.prompt,
+          lookId,
           model,
           ratio,
           resolution,

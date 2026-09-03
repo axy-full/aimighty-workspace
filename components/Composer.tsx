@@ -38,8 +38,12 @@ import { usd, compactTokens } from "@/lib/format";
 import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef } from "@/lib/models";
 import { IconArrowUp, IconCaret, IconAttach, IconSliders } from "./Icons";
 import type { Params } from "./Workspace";
+import { useApi } from "@/lib/useApi";
+import type { ShotSpec } from "@/lib/studio";
 
-type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost";
+type LookLite = { id: string; name: string; category: string; spec: ShotSpec; swatch: [string, string]; builtin: boolean; refs: string[] };
+
+type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost" | "look";
 
 export type Engine = { id: string; label: string; configured: boolean };
 export type WriterInfo = { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean };
@@ -61,6 +65,10 @@ export type ComposerProps = {
   inputSeconds: number; hasVideoInput: boolean; imageRefCount: number;
   busy: boolean; onRender: () => void;
   setupCount: number; setupOpen: boolean; toggleSetup: () => void;
+  /** The Look this render is made in, and how to change it. */
+  look: { id: string; name: string } | null;
+  onLook: (l: { id: string; name: string; spec: ShotSpec } | null) => void;
+  projectId: string;
 };
 
 export default function Composer(p: ComposerProps) {
@@ -68,8 +76,16 @@ export default function Composer(p: ComposerProps) {
     prompt, setPrompt, promptRef, params, patch, switchModel, model, engines, writer,
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked,
     est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
-    busy, onRender, setupCount, setupOpen, toggleSetup,
+    busy, onRender, setupCount, setupOpen, toggleSetup, look, onLook, projectId,
   } = p;
+  const scopedQ = projectId !== "all" && projectId !== "unfiled" ? `?projectId=${encodeURIComponent(projectId)}` : "";
+  const { data: lookData } = useApi<{ presets: LookLite[] }>(`/api/presets${scopedQ}`, 0);
+  const looks = useMemo(() => lookData?.presets ?? [], [lookData]);
+  const lookGroups = useMemo(() => {
+    const g = new Map<string, LookLite[]>();
+    for (const l of looks) g.set(l.category, [...(g.get(l.category) ?? []), l]);
+    return [...g.entries()];
+  }, [looks]);
   const [menu, setMenu] = useState<Menu>(null);
   const [drag, setDrag] = useState(false);
   const overlayEl = useRef<HTMLDivElement>(null);
@@ -249,6 +265,31 @@ export default function Composer(p: ComposerProps) {
           </ChipMenu>
         )}
 
+        <ChipMenu label={look ? look.name : "Look"} open={menu === "look"} onOpen={() => setMenu("look")} onClose={() => setMenu(null)} wide
+          on={Boolean(look)}>
+          {look && (
+            <button onClick={() => { onLook(null); setMenu(null); }} className="menu-item text-lift">
+              No look — chips as they are
+            </button>
+          )}
+          {lookGroups.length === 0 && <span className="block px-3 py-2 text-[13px] text-mute">No looks yet — make one in the Studio.</span>}
+          {lookGroups.map(([cat, items]) => (
+            <span key={cat} className="block">
+              <span className="block px-3 pb-1 pt-2 text-[10.5px] font-medium uppercase tracking-[.14em] text-mute" style={{ fontFamily: "var(--font-kode)" }}>{cat}</span>
+              {items.map((l) => (
+                <button key={l.id} onClick={() => { onLook({ id: l.id, name: l.name, spec: l.spec }); setMenu(null); }} className="menu-item">
+                  <span className="look-dot" style={{ background: `linear-gradient(135deg, ${l.swatch[0]}, ${l.swatch[1]})` }} />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className={look?.id === l.id ? "font-medium text-blue" : "font-medium"}>{l.name}</span>
+                    {l.refs.length > 0 && <span className="text-[11.5px] text-mute">{l.refs.length} reference{l.refs.length === 1 ? "" : "s"} ride along</span>}
+                  </span>
+                  <span className={look?.id === l.id ? "text-blue" : "text-transparent"}>✓</span>
+                </button>
+              ))}
+            </span>
+          ))}
+        </ChipMenu>
+
         <button type="button" onClick={toggleSetup}
           className={`chip-ctl ${setupOpen ? "is-on" : ""}`}
           title="Shot filing, shot control and the cast — carried into every render">
@@ -294,9 +335,9 @@ export default function Composer(p: ComposerProps) {
 }
 
 /** A control chip that opens its options above itself. */
-function ChipMenu({ label, hint, open, onOpen, onClose, children, disabled, wide }: {
+function ChipMenu({ label, hint, open, onOpen, onClose, children, disabled, wide, on }: {
   label: string; hint?: string; open: boolean; onOpen: () => void; onClose: () => void;
-  children: React.ReactNode; disabled?: boolean; wide?: boolean;
+  children: React.ReactNode; disabled?: boolean; wide?: boolean; on?: boolean;
 }) {
   const wrap = useRef<HTMLSpanElement>(null);
   const [alignRight, setAlignRight] = useState(false);
@@ -310,7 +351,7 @@ function ChipMenu({ label, hint, open, onOpen, onClose, children, disabled, wide
   return (
     <span ref={wrap} className="relative">
       <button type="button" disabled={disabled} onClick={open ? onClose : onOpen}
-        className={`chip-ctl ${open ? "is-open" : ""}`}>
+        className={`chip-ctl ${open ? "is-open" : ""} ${on ? "is-on" : ""}`}>
         {hint && <span className="chip-hint">{hint}</span>}
         {label}
         <IconCaret className="chip-caret" />

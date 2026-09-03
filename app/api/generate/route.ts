@@ -14,6 +14,7 @@ import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
+import { getLook, lookBlock } from "@/lib/looks";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
 import { withRetry, classifyFailure, getProvider, providerConfigured } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
@@ -259,6 +260,33 @@ export async function POST(req: Request) {
    * guide's own examples ("@video1" as the thing being edited). */
   if (sourceRef) references.unshift(sourceRef);
 
+  /* ── The Look ────────────────────────────────────────────────────────
+   * A Look's references come AFTER the person's own (so their @Image1 is
+   * still their first image) and BEFORE the cast (which numbers itself
+   * from whatever is already attached). Its style block joins the prompt
+   * at the very end, after the craft modules, on every path but raw:.
+   * ------------------------------------------------------------------ */
+  const lookId = body.lookId ? String(body.lookId) : null;
+  const look = lookId ? await getLook(lookId) : null;
+  if (lookId && !look) return NextResponse.json({ error: "That look no longer exists." }, { status: 400 });
+  if (look && look.refs.length) {
+    const rs = await db().execute({
+      sql: `SELECT id, mime, ext, stored_url, derivative_url FROM uploads
+            WHERE id IN (${look.refs.map(() => "?").join(",")}) AND kind='image'`,
+      args: look.refs,
+    });
+    const rows = new Map((rs.rows as unknown as { id: string; mime: string; ext: string; stored_url: string; derivative_url: string | null }[]).map((r) => [r.id, r]));
+    for (const rid of look.refs) {
+      const r = rows.get(rid);
+      if (!r) continue;
+      references.push({
+        id: r.id, mime: r.mime, ext: r.ext, storedUrl: r.stored_url,
+        role: "reference_image", kind: "image", deliveryUrl: r.derivative_url ?? null,
+      });
+    }
+  }
+  const lookProse = look ? lookBlock(look) : "";
+
   /* ── The cast ────────────────────────────────────────────────────────
    * @Maya means something specific in this workspace. Resolve those names
    * into the @ImageN citations the engines understand, attaching each one's
@@ -312,7 +340,10 @@ export async function POST(req: Request) {
     const ratio = model.ratios.includes(body.ratio) ? String(body.ratio) : model.ratios[0];
     const size = model.resolutions.includes(body.resolution)
       ? String(body.resolution) : model.resolutions[0];
-    const stillPrompt = castPrompt.replace(/^raw:\s*/i, "");
+    const isRaw = /^raw:/i.test(castPrompt);
+    const stillPrompt = isRaw
+      ? castPrompt.replace(/^raw:\s*/i, "")
+      : (lookProse ? `${castPrompt.trim()}\n\n${lookProse}` : castPrompt);
     const stillProject = body.projectId ? String(body.projectId) : null;
     const stillShot = body.shotId ? String(body.shotId) : null;
     let stillVersion = 1;
@@ -335,6 +366,7 @@ export async function POST(req: Request) {
       references: stillRefs.map((r) => ({ uploadId: r.id, role: r.role, kind: r.kind })),
       rawPrompt: castPrompt !== prompt ? prompt : undefined,
       cast: castUsed.length ? castUsed : undefined,
+      look: look ? { id: look.id, name: look.name } : undefined,
     };
 
     await db().execute({
@@ -525,6 +557,12 @@ export async function POST(req: Request) {
     }
   }
 
+  // The Look's words, last: after the craft so detection never reads them
+  // as the author's own light or look and doubles a module.
+  if (lookProse && !/^raw:/i.test(castPrompt)) {
+    finalPrompt = `${finalPrompt.trim()}\n\n${lookProse}`;
+  }
+
   /* The vendor reads the intent from the prompt it actually receives, which
    * is the REFINED one. The refine layer is instructed to keep the verb, but
    * if it ever drops it the request silently stops being an edit — so check
@@ -571,6 +609,7 @@ export async function POST(req: Request) {
     rawPrompt,
     cast: castUsed.length ? castUsed : undefined,
     shotSpec: shotSpec && Object.keys(shotSpec).length ? shotSpec : undefined,
+    look: look ? { id: look.id, name: look.name } : undefined,
     task: task.id !== "generate" ? task.id : undefined,
     sourceGenId: sourceGenId ?? undefined,
     // What the vendor locked for us, so the record explains its own shape.

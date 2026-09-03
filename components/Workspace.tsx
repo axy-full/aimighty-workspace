@@ -43,6 +43,9 @@ export default function Workspace() {
   const [spec, setSpec] = useState<ShotSpec>({});
   /** Which shot this take belongs to — what makes it v3 of SH110. */
   const [shotId, setShotId] = useState<string>("");
+  /** The Look this render is made in: its chips are merged into `spec`,
+   *  its style block and references are applied by the server. */
+  const [look, setLook] = useState<{ id: string; name: string } | null>(null);
   /** Editing or extending an existing render, rather than making a new one.
    *  Both are LOCKED tasks: the source decides the output's shape. */
   const [taskOn, setTaskOn] = useState<{ id: "edit" | "extend"; gen: Gen } | null>(null);
@@ -97,14 +100,20 @@ export default function Workspace() {
       try {
         const carried = window.localStorage.getItem("aw_compose_seed");
         const carriedSpec = window.localStorage.getItem("aw_compose_spec");
+        const carriedLook = window.localStorage.getItem("aw_compose_look");
         const setup = window.localStorage.getItem(SETUP_KEY);
         if (carried) window.localStorage.removeItem("aw_compose_seed");
         if (carriedSpec) window.localStorage.removeItem("aw_compose_spec");
+        if (carriedLook) window.localStorage.removeItem("aw_compose_look");
         Promise.resolve().then(() => {
           if (carried) setPrompt(carried);
           if (carriedSpec) {
             try { setSpec(JSON.parse(carriedSpec) as ShotSpec); }
             catch { /* a spec we can't read is one we don't apply */ }
+          }
+          if (carriedLook) {
+            try { setLook(JSON.parse(carriedLook) as { id: string; name: string }); }
+            catch { /* no look, then */ }
           }
           if (setup === "0") setSetupOpen(false);
         });
@@ -235,6 +244,7 @@ export default function Workspace() {
           sourceGenId: taskOn?.gen.id ?? null,
           shotId: shotId || null,
           shotSpec: spec,
+          lookId: look?.id ?? null,
           references: refs.map((r) => ({ uploadId: r.id, role: r.role })),
         }),
       });
@@ -276,6 +286,13 @@ export default function Workspace() {
   const scopeName = bin === "all" ? "All projects" : bin === "unfiled" ? "Unfiled" : current?.name ?? "";
   const setupCount = specCount(spec) + (shotId ? 1 : 0);
 
+  /** Put a Look on: its chips join the spec, the Look itself rides along. */
+  function applyLook(l: { id: string; name: string; spec: ShotSpec } | null) {
+    if (!l) { setLook(null); return; }
+    setLook({ id: l.id, name: l.name });
+    setSpec((s) => ({ ...s, ...l.spec }));
+  }
+
   return (
     <div className={`generate ${setupOpen ? "" : "generate-solo"}`}>
       <Feed
@@ -296,6 +313,7 @@ export default function Workspace() {
           inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
           busy={busy} onRender={render}
           setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
+          look={look} onLook={applyLook} projectId={bin}
         />
       </div>
 
@@ -304,6 +322,7 @@ export default function Workspace() {
           projectId={bin} shotId={shotId} setShotId={setShotId}
           spec={spec} setSpec={setSpec} onCite={cite}
           onClose={toggleSetup}
+          look={look} onClearLook={() => setLook(null)}
         />
       </aside>
 

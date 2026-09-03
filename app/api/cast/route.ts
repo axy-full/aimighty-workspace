@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     sql: `INSERT INTO cast_members (id, project_id, name, kind, description, upload_id, created_by, created_at)
           VALUES (?,?,?,?,?,?,?,?)`,
     args: [cid, projectId, name,
-           ["character", "location", "style"].includes(body.kind) ? body.kind : "character",
+           ["character", "location", "prop", "style"].includes(body.kind) ? body.kind : "character",
            String(body.description ?? "").slice(0, 600),
            body.uploadId ? String(body.uploadId) : null,
            got.user.id, now()],

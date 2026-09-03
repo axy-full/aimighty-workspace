@@ -238,6 +238,17 @@ export async function ready(): Promise<void> {
       // their name on the ledger, while access and listings treat them as gone.
       try { await db().execute(`ALTER TABLE users ADD COLUMN deleted_at INTEGER`); }
       catch { /* column already exists */ }
+      // Looks: a category, a cover, a blurb, a style block, references,
+      // and whether the product shipped it.
+      for (const col of [
+        `slug TEXT`, `category TEXT NOT NULL DEFAULT ''`, `blurb TEXT NOT NULL DEFAULT ''`,
+        `prose TEXT NOT NULL DEFAULT ''`, `refs TEXT NOT NULL DEFAULT '[]'`,
+        `cover_gen_id TEXT`, `cover_upload_id TEXT`, `swatch TEXT`,
+        `builtin INTEGER NOT NULL DEFAULT 0`, `updated_at INTEGER`,
+      ]) {
+        try { await db().execute(`ALTER TABLE shot_presets ADD COLUMN ${col}`); }
+        catch { /* column already exists */ }
+      }
       // Invites remember whether and when they were emailed.
       for (const col of [`sent_at INTEGER`, `send_count INTEGER NOT NULL DEFAULT 0`]) {
         try { await db().execute(`ALTER TABLE invites ADD COLUMN ${col}`); }

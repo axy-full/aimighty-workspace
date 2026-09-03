@@ -11,7 +11,9 @@ import { createPortal } from "react-dom";
 import type { Gen } from "./GenCard";
 import Review from "./Review";
 import { ParticlSpinner } from "./ParticlMark";
-import { appConfirm } from "./dialog";
+import { appConfirm, appPrompt, appAlert } from "./dialog";
+import { uploadFile } from "@/lib/uploadClient";
+import { useProject } from "@/lib/projectContext";
 import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { prettyModel } from "@/lib/enhance";
@@ -37,6 +39,10 @@ export default function Theatre({
   const prev = idx > 0 ? gens[idx - 1] : null;
   const next = idx >= 0 && idx < gens.length - 1 ? gens[idx + 1] : null;
   const [copied, setCopied] = useState(false);
+  const [saveMenu, setSaveMenu] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
+  const { selection } = useProject();
+  const projectScope = selection !== "all" && selection !== "unfiled" ? selection : null;
 
   useEffect(() => {
     if (!gen) return;
@@ -83,6 +89,85 @@ export default function Theatre({
     await fetch(`/api/jobs/${gen!.id}`, { method: "DELETE" });
     onChanged();
     onClose();
+  }
+
+  /**
+   * A still of this render, as a File: the PNG itself for a still, or the
+   * frame the player is on for a video — drawn from a same-origin copy the
+   * way the wall's posters are, so the canvas may read it.
+   */
+  async function frameFile(): Promise<File> {
+    const base = url!;
+    const src = `${base}${base.includes("?") ? "&" : "?"}stream=1`;
+    if (still) {
+      const blob = await (await fetch(src)).blob();
+      return new File([blob], `${clipId(gen!.id)}.png`, { type: "image/png" });
+    }
+    const at = document.querySelector<HTMLVideoElement>(".theatre-media")?.currentTime ?? 0.1;
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      const v = document.createElement("video");
+      v.muted = true; v.playsInline = true; v.preload = "auto";
+      const timer = setTimeout(() => reject(new Error("Couldn't read a frame from this render.")), 15_000);
+      v.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Couldn't read this render.")); }, { once: true });
+      v.addEventListener("loadedmetadata", () => { v.currentTime = Math.min(Math.max(at, 0.05), Math.max(0.05, v.duration - 0.05)); }, { once: true });
+      v.addEventListener("seeked", () => {
+        clearTimeout(timer);
+        try {
+          const c = document.createElement("canvas");
+          c.width = v.videoWidth; c.height = v.videoHeight;
+          c.getContext("2d")!.drawImage(v, 0, 0);
+          c.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't encode the frame."))), "image/png");
+        } catch (e) { reject(e as Error); }
+        finally { v.removeAttribute("src"); v.load(); }
+      }, { once: true });
+      v.src = src; v.load();
+    });
+    return new File([blob], `${clipId(gen!.id)}-frame.png`, { type: "image/png" });
+  }
+
+  /** This render becomes a character, a location, a prop or a look in the cast. */
+  async function saveToCast(kind: "character" | "location" | "prop" | "style") {
+    setSaveMenu(false);
+    const what = kind === "style" ? "look" : kind;
+    const name = await appPrompt(`Name this ${what}`, "", kind === "character" ? "e.g. Maya" : kind === "location" ? "e.g. HarbourSet" : kind === "prop" ? "e.g. RedHelmet" : "e.g. NoirLook");
+    if (!name?.trim()) return;
+    const description = await appPrompt("Describe it in a line", "", "what must stay the same, in a breath");
+    if (description === null) return;
+    setSaving("Capturing…");
+    try {
+      const f = await frameFile();
+      setSaving("Uploading…");
+      const up = await uploadFile(f, "reference", (pct) => setSaving(`Uploading ${pct}%`));
+      const res = await fetch("/api/cast", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), kind, description, uploadId: up.id, projectId: gen!.projectId ?? projectScope }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Couldn't add it");
+      await appAlert(`@${name.trim()} is in the cast`, "Write the name in any prompt and this frame comes with it.");
+    } catch (e) {
+      await appAlert("Couldn't save it", (e as Error).message);
+    } finally { setSaving(null); }
+  }
+
+  /** This render's chips and frame become a Look in the library. */
+  async function saveAsLook() {
+    setSaveMenu(false);
+    const name = await appPrompt("Name this look", "", "e.g. Rooftop golden");
+    if (!name?.trim()) return;
+    const sp = (gen!.params as { shotSpec?: Record<string, string> }).shotSpec ?? {};
+    setSaving("Saving…");
+    try {
+      const res = await fetch("/api/presets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), category: "Custom", spec: sp, coverGenId: gen!.id, projectId: gen!.projectId ?? projectScope }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Couldn't save it");
+      await appAlert(`"${name.trim()}" is in the library`, "This render is its cover. Open it in the Studio to add a style block or references.");
+    } catch (e) {
+      await appAlert("Couldn't save it", (e as Error).message);
+    } finally { setSaving(null); }
   }
 
   return createPortal(
@@ -152,6 +237,11 @@ export default function Theatre({
             {p.ratio && <span>{p.ratio === "adaptive" ? "Auto" : p.ratio}</span>}
             {p.duration != null && <span>{p.duration}s</span>}
             {p.seed != null && p.seed !== "" && <span>seed {p.seed}</span>}
+            {(gen.params as { look?: { name?: string } }).look?.name && (
+              <span className="rounded-full bg-chip px-2 py-0.5 text-[11.5px] font-medium text-dim">
+                {(gen.params as { look: { name: string } }).look.name}
+              </span>
+            )}
             {gen.costUsd != null && (
               <span className="font-semibold text-bone" title="Render plus prompt">
                 {usd(gen.costUsd + (gen.refineCostUsd ?? 0))}
@@ -191,6 +281,22 @@ export default function Theatre({
                 <button type="button" onClick={() => onEditExtend("extend", gen)} className="chip !py-1.5 !text-[13px]"
                   title="Continue this shot from its final frame">Extend</button>
               </>
+            )}
+            {done && (
+              <span className="relative">
+                <button type="button" onClick={() => setSaveMenu((v) => !v)} disabled={Boolean(saving)}
+                  className="chip !py-1.5 !text-[13px] disabled:opacity-50" title="Keep this as a character, a location, a prop or a look">
+                  {saving ?? "Save as…"}
+                </button>
+                {saveMenu && (
+                  <span className="pop-surface absolute left-0 top-[calc(100%+6px)] z-10 block w-[220px]">
+                    {([["character", "Character"], ["location", "Location"], ["prop", "Prop"], ["style", "Cast look"]] as const).map(([k, l]) => (
+                      <button key={k} type="button" onClick={() => saveToCast(k)} className="menu-item">{l}</button>
+                    ))}
+                    <button type="button" onClick={saveAsLook} className="menu-item border-t border-hair">Library look <span className="text-mute">· cover + chips</span></button>
+                  </span>
+                )}
+              </span>
             )}
             <span className="ml-auto flex items-center gap-1">
               {url && (
