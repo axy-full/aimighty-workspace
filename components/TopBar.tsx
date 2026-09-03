@@ -7,7 +7,7 @@ import { useProject } from "@/lib/projectContext";
 import Link from "next/link";
 import ParticlLockup from "./ParticlMark";
 
-type Usage = { pending: number; spentUsd: number; remainingUsd: number };
+type Usage = { pending: number; spentUsd: number; remainingUsd: number; vendors?: { label: string; remaining: number; added: number }[] };
 
 /**
  * A thin strip, mostly empty on purpose: what screen you're on is said by the
@@ -21,7 +21,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
   const { current, selection } = useProject();
   const { data: usage } = useApi<Usage>("/api/usage/summary", 20000);
 
-  const onGenerate = path === "/" || path.startsWith("/generate");
+  const onGenerate = path === "/" || path.startsWith("/generate") || path.startsWith("/images");
   const title = onGenerate
     ? (selection === "all" ? "All projects" : selection === "unfiled" ? "Unfiled" : current?.name ?? "")
     : "";
@@ -57,9 +57,11 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
         {usage != null && (
           <span
             className="chip !cursor-default !text-[13px] !text-dim"
-            title={usage.remainingUsd >= 0
-              ? `${usd(usage.remainingUsd, 2)} of recorded credit left`
-              : "Spend has passed the credit recorded on the Usage page"}
+            title={usage.vendors?.length
+              ? usage.vendors.filter((v) => v.added > 0 || v.remaining < 0).map((v) => `${v.label}: ${usd(v.remaining, 2)} left`).join(" · ") || "No credit recorded yet — see Usage"
+              : usage.remainingUsd >= 0
+                ? `${usd(usage.remainingUsd, 2)} of recorded credit left`
+                : "Spend has passed the credit recorded on the Usage page"}
           >
             {usd(usage.spentUsd, 2)} used
           </span>

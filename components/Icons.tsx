@@ -35,6 +35,13 @@ export const IconAudio = (p: P) => (
     <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
   </svg>
 );
+export const IconImage = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="M20.5 15.5l-4.6-4.6a1 1 0 0 0-1.4 0L8 17.5" />
+  </svg>
+);
 export const IconGear = (p: P) => (
   <svg {...base} {...p}>
     <circle cx="12" cy="12" r="3.1" />

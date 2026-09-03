@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncActive } from "@/lib/jobs";
 import { modelLabel } from "@/lib/models";
-import { prettyModel, hasFreeTier } from "@/lib/enhance";
+import { prettyModel, hasFreeTier, gatewayCredits } from "@/lib/enhance";
+import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
+import { elevenConfigured, subscription } from "@/lib/elevenlabs";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +21,12 @@ export async function GET() {
 
   const label = (m: string) => modelLabel(m);
 
-  const [totals, topups, byModel, byProject, byPerson, byMonth, recent, refines] = await Promise.all([
+  /* Prompt writing bills to whichever door wrote it: the gateway (Claude,
+     on the same credit as Google's stills) or ByteDance's own writer. */
+  const LEDGER = `CASE WHEN refine_model LIKE 'anthropic/%' OR refine_model LIKE 'google/%' THEN 'google' ELSE 'byteplus' END`;
+
+  const [totals, topups, byModel, byProject, byPerson, byMonth, recent, refines,
+         byVendor, promptByLedger, topupsByVendor, topupList] = await Promise.all([
     db().execute(`
       SELECT COUNT(*) AS n,
              SUM(status='succeeded') AS ok,
@@ -35,12 +42,12 @@ export async function GET() {
        filter on status: the sums are unchanged for renders, and a prompt that
        was written for a render that then failed is still money spent. */
     db().execute(`
-      SELECT model, SUM(status='succeeded') AS n,
+      SELECT model, provider, SUM(status='succeeded') AS n,
              COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS prompt_spend,
              COALESCE(SUM(total_tokens),0) AS tokens
       FROM generations
-      GROUP BY model HAVING spend > 0 OR n > 0 ORDER BY spend DESC`),
+      GROUP BY model, provider HAVING spend > 0 OR n > 0 ORDER BY spend DESC`),
     db().execute(`
       SELECT COALESCE(p.name,'Unfiled') AS name, SUM(g.status='succeeded') AS n,
              COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0) AS spend
@@ -58,10 +65,10 @@ export async function GET() {
       FROM generations
       GROUP BY month HAVING spend > 0 OR n > 0 ORDER BY month DESC LIMIT 12`),
     db().execute(`
-      SELECT id, model, prompt, cost_usd, refine_cost_usd, refine_model,
+      SELECT id, model, provider, kind, title, prompt, cost_usd, refine_cost_usd, refine_model,
              refine_in_tokens, refine_out_tokens, total_tokens, params, created_at
       FROM generations WHERE status='succeeded' AND cost_usd IS NOT NULL
-      ORDER BY created_at DESC LIMIT 40`),
+      ORDER BY created_at DESC LIMIT 60`),
     db().execute(`
       SELECT refine_model AS model, COUNT(*) AS n,
              COALESCE(SUM(COALESCE(refine_in_tokens,0)),0)  AS in_tokens,
@@ -69,7 +76,61 @@ export async function GET() {
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS spend
       FROM generations WHERE refine_model IS NOT NULL
       GROUP BY refine_model ORDER BY spend DESC, in_tokens DESC`),
+    db().execute(`
+      SELECT provider, COUNT(*) AS n_all, SUM(status='succeeded') AS n,
+             COALESCE(SUM(COALESCE(cost_usd,0)),0) AS render_spend,
+             COALESCE(SUM(total_tokens),0) AS tokens
+      FROM generations GROUP BY provider`),
+    db().execute(`
+      SELECT ${LEDGER} AS ledger, COUNT(*) AS prompts,
+             COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS prompt_spend
+      FROM generations WHERE refine_model IS NOT NULL GROUP BY ledger`),
+    db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total FROM topups GROUP BY provider`),
+    db().execute(`SELECT id, provider, amount_usd, note, created_at FROM topups ORDER BY created_at DESC LIMIT 100`),
   ]);
+
+  /* What each vendor says for itself, where it says anything. */
+  const [gateway, eleven] = await Promise.all([
+    gatewayCredits().catch(() => null),
+    elevenConfigured() ? subscription().catch(() => null) : Promise.resolve(null),
+  ]);
+  const renderBy = new Map(byVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), r]));
+  const promptBy = new Map(promptByLedger.rows.map((r: any) => [String(r.ledger), r]));
+  const addedBy = new Map(topupsByVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.total)]));
+  const vendors = PROVIDERS.map((p) => {
+    const r: any = renderBy.get(p.id) ?? {};
+    const pr: any = promptBy.get(p.id) ?? {};
+    const renderSpend = Number(r.render_spend ?? 0);
+    const promptSpend = Number(pr.prompt_spend ?? 0);
+    const added = addedBy.get(p.id) ?? 0;
+    const spent = renderSpend + promptSpend;
+    return {
+      id: p.id,
+      label: p.id === "google" ? "Google Gemini" : p.label,
+      via: providerVia(p),
+      configured: providerConfigured(p),
+      envKey: p.envKey,
+      added, spent, renderSpend, promptSpend, remaining: added - spent,
+      renders: Number(r.n ?? 0), attempts: Number(r.n_all ?? 0), prompts: Number(pr.prompts ?? 0),
+      tokens: Number(r.tokens ?? 0),
+      live: p.id === "google" && gateway
+        ? { kind: "gateway" as const, balanceUsd: gateway.balanceUsd, usedUsd: gateway.usedUsd }
+        : p.id === "elevenlabs" && eleven
+          ? { kind: "credits" as const, used: eleven.used, limit: eleven.limit, tier: eleven.tier, resetAt: eleven.resetAt }
+          : null,
+      note: p.id === "google"
+        ? "Stills through Vercel AI Gateway; the Claude prompt writer bills to the same credit."
+        : p.id === "byteplus" ? "Seedance video and ByteDance's own prompt writer."
+        : p.id === "fal" ? "Identity training and identity stills. fal publishes no balance over the API."
+        : "Voice, sound effects and music. Billed in the plan's credits; the plan's own counter is the authority.",
+      models: byModel.rows.filter((m: any) => String(m.provider ?? "byteplus") === p.id).map((m: any) => ({
+        model: m.model, label: label(m.model), n: Number(m.n), spend: Number(m.spend), tokens: Number(m.tokens),
+      })),
+      topups: topupList.rows.filter((t: any) => String(t.provider ?? "byteplus") === p.id).map((t: any) => ({
+        id: t.id, amountUsd: Number(t.amount_usd), note: t.note ?? "", createdAt: Number(t.created_at),
+      })),
+    };
+  });
 
   const t: any = totals.rows[0];
   const spend = Number(t.spend);
@@ -80,6 +141,8 @@ export async function GET() {
     purchasedUsd: purchased,
     spentUsd: spend,
     remainingUsd: purchased - spend,
+    /* One ledger per vendor: what was added, what it has cost, what's left. */
+    vendors,
     totalGenerations: Number(t.n),
     succeeded: okCount,
     failed: Number(t.failed),
@@ -105,6 +168,7 @@ export async function GET() {
     })),
     recent: recent.rows.map((r: any) => ({
       id: r.id, model: r.model, label: label(r.model),
+      provider: r.provider ?? "byteplus", kind: r.kind ?? "video", title: r.title ?? null,
       prompt: r.prompt,
       costUsd: Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0),
       renderCostUsd: Number(r.cost_usd),

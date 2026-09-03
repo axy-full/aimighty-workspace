@@ -61,6 +61,8 @@ export type ComposerProps = {
   inputSeconds: number; hasVideoInput: boolean; imageRefCount: number;
   busy: boolean; onRender: () => void;
   setupCount: number; setupOpen: boolean; toggleSetup: () => void;
+  /** Which kind of thing this composer makes — the model menu shows only those. */
+  kind: "video" | "image";
 };
 
 export default function Composer(p: ComposerProps) {
@@ -68,7 +70,7 @@ export default function Composer(p: ComposerProps) {
     prompt, setPrompt, promptRef, params, patch, switchModel, model, engines, writer,
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked,
     est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
-    busy, onRender, setupCount, setupOpen, toggleSetup,
+    busy, onRender, setupCount, setupOpen, toggleSetup, kind,
   } = p;
   const [menu, setMenu] = useState<Menu>(null);
   const [drag, setDrag] = useState(false);
@@ -171,7 +173,7 @@ export default function Composer(p: ComposerProps) {
         </button>
 
         <ChipMenu label={model.label} open={menu === "model"} onOpen={() => setMenu("model")} onClose={() => setMenu(null)} wide>
-          {MODELS.filter((m) => !m.hidden).map((m) => {
+          {MODELS.filter((m) => !m.hidden && m.kind === kind).map((m) => {
             const on = configured(m.provider);
             return (
               <button key={m.id} disabled={!on} onClick={() => { switchModel(m.id); setMenu(null); }} className="menu-item disabled:opacity-50">

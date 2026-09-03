@@ -624,9 +624,15 @@ button.row:active, a.row:active { background: var(--color-chip2); }
   color: var(--color-blue);
   background: color-mix(in oklab, var(--color-blue) 11%, transparent);
 }
-@media (max-width: 560px) { .tab { min-width: 0; padding: 8px 11px; } }
-  /* Five tabs have to clear a 375px phone inside max-width: 100vw - 24px. */
-  @media (max-width: 430px) { .tab { padding: 8px 7px; font-size: 11px; } }
+@media (max-width: 640px) { .tab { min-width: 0; padding: 8px 11px; } }
+  /* Seven tabs have to clear a 375px phone inside max-width: 100vw - 24px:
+     below 560px the icons carry the row and only the active tab keeps its
+     word, so the pill never overflows or wraps. */
+  @media (max-width: 560px) {
+    .tab { padding: 8px 9px; font-size: 11px; }
+    .tab:not([data-active="true"]) span { display: none; }
+  }
+  @media (max-width: 380px) { .tab { padding: 8px 7px; } }
 
   /* ── The island ───────────────────────────────────────────────────
      One frosted surface: references on top, the prompt, then a row of

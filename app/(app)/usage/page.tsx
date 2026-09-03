@@ -3,24 +3,45 @@
 import { useMemo, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo } from "@/lib/format";
-import { shortLabel } from "@/lib/models";
 import SectionNav from "@/components/SectionNav";
 import { Waiting } from "@/components/ParticlMark";
+import { IconClose } from "@/components/Icons";
 import { usePageTitle } from "@/lib/usePageTitle";
+
+/**
+ * Usage — four ledgers, one per vendor.
+ *
+ * Money is loaded with each vendor separately, so it is counted separately:
+ * what was added, what the renders (and prompts) have cost, and what is
+ * left. Where a vendor states its own position over the API, that sits
+ * beside our count; where it doesn't, our count is the only one there is.
+ */
+
+type Vendor = {
+  id: string; label: string; via: string | null; configured: boolean; envKey: string;
+  added: number; spent: number; renderSpend: number; promptSpend: number; remaining: number;
+  renders: number; attempts: number; prompts: number; tokens: number;
+  live: { kind: "gateway"; balanceUsd: number; usedUsd: number }
+      | { kind: "credits"; used: number; limit: number; tier: string; resetAt: number | null }
+      | null;
+  note: string;
+  models: { model: string; label: string; n: number; spend: number; tokens: number }[];
+  topups: { id: string; amountUsd: number; note: string; createdAt: number }[];
+};
 
 type Usage = {
   purchasedUsd: number; spentUsd: number; remainingUsd: number;
   totalGenerations: number; succeeded: number; failed: number; pending: number;
   totalTokens: number; avgCostUsd: number;
-  /** The prompt writer's share of spentUsd, and how many prompts it wrote. */
   promptSpendUsd: number; promptCount: number;
-  byModel: { model: string; label: string; n: number; spend: number; promptSpend: number; tokens: number }[];
+  vendors: Vendor[];
   byProject: { name: string; n: number; spend: number }[];
   byPerson: { name: string; n: number; spend: number }[];
   refines: { model: string; label: string; n: number; inTokens: number; outTokens: number;
              tokens: number; spend: number; free: boolean; freeLeft: number }[];
   byMonth: { month: string; n: number; spend: number }[];
-  recent: { id: string; label: string; prompt: string; costUsd: number; renderCostUsd: number;
+  recent: { id: string; label: string; provider: string; kind: string; title: string | null;
+            prompt: string; costUsd: number; renderCostUsd: number;
             refineCostUsd: number | null; refineModel: string | null; refineLabel: string | null;
             refineInTokens: number | null; refineOutTokens: number | null;
             totalTokens: number; params: Record<string, unknown>; createdAt: number }[];
@@ -28,31 +49,8 @@ type Usage = {
 
 export default function UsagePage() {
   const { data, refresh } = useApi<Usage>("/api/usage", 20000);
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [topupBusy, setTopupBusy] = useState(false);
-  const [topupErr, setTopupErr] = useState<string | null>(null);
   const [openRow, setOpenRow] = useState<string | null>(null);
-
-  async function addTopup() {
-    const v = Number(amount);
-    if (!Number.isFinite(v) || v === 0 || topupBusy) return;
-    setTopupBusy(true); setTopupErr(null);
-    try {
-      const res = await fetch("/api/topups", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountUsd: v, note }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Could not record the top-up");
-      setAmount(""); setNote("");
-      refresh();
-    } catch (e) {
-      setTopupErr((e as Error).message);
-    } finally {
-      setTopupBusy(false);
-    }
-  }
+  const [vendorFilter, setVendorFilter] = useState<string>("all");
 
   /* Daily spend for the current month, from the finished renders we have. */
   const days = useMemo(() => {
@@ -71,10 +69,12 @@ export default function UsagePage() {
   const monthLabel = new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
   usePageTitle("Usage");
-  if (!data) return <Waiting label="Reading the ledger" />;
+  if (!data) return <Waiting label="Reading the ledgers" />;
 
   const maxDay = Math.max(...days.map(([, v]) => v), 0.0001);
   const monthSpend = days.reduce((a, [, v]) => a + v, 0);
+  const vendorName = (id: string) => data.vendors.find((v) => v.id === id)?.label ?? id;
+  const recent = vendorFilter === "all" ? data.recent : data.recent.filter((r) => r.provider === vendorFilter);
 
   return (
     <div className="screen">
@@ -85,98 +85,49 @@ export default function UsagePage() {
           <span className="ml-auto text-[15px] text-dim">{monthLabel}</span>
         </div>
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_320px]">
-          {/* The number, and the month it belongs to */}
-          <div>
-            <p className="text-[clamp(52px,7vw,88px)] font-bold leading-none tracking-[-0.04em] text-ink tabular-nums">
-              {usd(data.spentUsd, 2)}
-            </p>
-            <p className="mt-3 text-[16px] text-dim">
-              spent all time
-              {data.purchasedUsd > 0 && <> · credit {usd(data.purchasedUsd, 2)}</>}
-              {data.promptSpendUsd > 0 && <> · prompts {usd(data.promptSpendUsd, 3)}</>}
-            </p>
+        {/* The number, and the month it belongs to */}
+        <div className="mt-8">
+          <p className="text-[clamp(52px,7vw,88px)] font-bold leading-none tracking-[-0.04em] text-ink tabular-nums">
+            {usd(data.spentUsd, 2)}
+          </p>
+          <p className="mt-3 text-[16px] text-dim">
+            spent all time, across every vendor
+            {data.promptSpendUsd > 0 && <> · of which prompts {usd(data.promptSpendUsd, 3)}</>}
+            {" "}· each vendor&rsquo;s credit counts down on its own below
+          </p>
 
-            {days.length > 0 ? (
-              <>
-                <div className="mt-10 flex h-[180px] items-end gap-[6px]">
-                  {days.map(([day, v]) => (
-                    <span key={day} className="flex min-w-0 flex-1 flex-col items-center gap-2"
-                      title={`${day} — ${usd(v, 2)}`}>
-                      <span className="w-full rounded-full bg-blue transition-all"
-                        style={{ height: `${Math.max(4, (v / maxDay) * 150)}px`, maxWidth: 10 }} />
-                    </span>
-                  ))}
-                </div>
-                <div className="mt-3 flex gap-[6px] border-t border-hair pt-2">
-                  {days.map(([day]) => (
-                    <span key={day} className="min-w-0 flex-1 text-center text-[12px] tabular-nums text-mute">
-                      {day}
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-3 text-[13px] text-mute">
-                  {monthLabel} · {usd(monthSpend, 2)} across {days.length} day{days.length === 1 ? "" : "s"}
-                  <span className="ml-1">(from the most recent renders)</span>
-                </p>
-              </>
-            ) : (
-              <p className="mt-10 rounded-[var(--r)] bg-panel2 px-4 py-6 text-center text-[14px] text-mute">
-                No finished renders this month yet.
+          {days.length > 0 ? (
+            <div className="max-w-[720px]">
+              <div className="mt-8 flex h-[150px] items-end gap-[6px]">
+                {days.map(([day, v]) => (
+                  <span key={day} className="flex min-w-0 flex-1 flex-col items-center gap-2"
+                    title={`${day} — ${usd(v, 2)}`}>
+                    <span className="w-full rounded-full bg-blue transition-all"
+                      style={{ height: `${Math.max(4, (v / maxDay) * 120)}px`, maxWidth: 10 }} />
+                  </span>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-[6px] border-t border-hair pt-2">
+                {days.map(([day]) => (
+                  <span key={day} className="min-w-0 flex-1 text-center text-[12px] tabular-nums text-mute">{day}</span>
+                ))}
+              </div>
+              <p className="mt-3 text-[13px] text-mute">
+                {monthLabel} · {usd(monthSpend, 2)} across {days.length} day{days.length === 1 ? "" : "s"}
+                <span className="ml-1">(from the most recent renders)</span>
               </p>
-            )}
-          </div>
-
-          {/* Where it went */}
-          <div className="flex flex-col gap-4">
-            <div className="rows">
-              {data.byModel.map((m) => (
-                <div key={m.model} className="row">
-                  <span className="truncate">{m.label}</span>
-                  <span className="row-value tabular-nums">{usd(m.spend, 2)}</span>
-                </div>
-              ))}
-              {data.byModel.length === 0 && (
-                <div className="row text-dim">No spend recorded yet</div>
-              )}
-              <div className="row">
-                <span className="font-medium text-blue">Remaining</span>
-                <span className={`row-value font-semibold tabular-nums ${
-                  data.remainingUsd < 0 ? "!text-lift" : "!text-blue"}`}>
-                  {data.purchasedUsd > 0 ? usd(data.remainingUsd, 2) : "—"}
-                </span>
-              </div>
             </div>
+          ) : (
+            <p className="mt-8 max-w-[720px] rounded-[var(--r)] bg-panel2 px-4 py-6 text-center text-[14px] text-mute">
+              No finished renders this month yet.
+            </p>
+          )}
+        </div>
 
-            <p className="grouplabel">Record a top-up</p>
-            <div className="rows">
-              <div className="row">
-                <input
-                  className="ctl !bg-transparent !px-0" value={amount} inputMode="decimal"
-                  placeholder="Amount in USD"
-                  onChange={(e) => setAmount(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addTopup()}
-                />
-              </div>
-              <div className="row">
-                <input
-                  className="ctl !bg-transparent !px-0" value={note} placeholder="Note or invoice reference"
-                  onChange={(e) => setNote(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addTopup()}
-                />
-              </div>
-              <button className="row justify-center !text-blue" onClick={addTopup} disabled={topupBusy}>
-                {topupBusy ? "Recording…" : "Add to credit"}
-              </button>
-            </div>
-            {topupErr && <p className="px-[18px] text-[13px] text-lift">{topupErr}</p>}
-            {data.purchasedUsd === 0 && (
-              <p className="px-[18px] text-[13px] leading-relaxed text-mute">
-                BytePlus doesn&apos;t publish a balance over the API. Enter what you&apos;ve
-                loaded and it counts down using the real cost of every render.
-              </p>
-            )}
-          </div>
+        {/* ── The ledgers ── */}
+        <p className="grouplabel mt-12">Ledgers</p>
+        <div className="grid gap-5 md:grid-cols-2">
+          {data.vendors.map((v) => <VendorCard key={v.id} v={v} onChanged={refresh} />)}
         </div>
 
         {/* Breakdowns */}
@@ -214,26 +165,36 @@ export default function UsagePage() {
               </div>
             </div>
             <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
-              Every prompt&rsquo;s cost is part of its render&rsquo;s total wherever a total is shown.
-              A prompt written for a render that then failed still counts.
+              Every prompt&rsquo;s cost is part of its render&rsquo;s total wherever a total is shown, and
+              is counted against the ledger of whoever wrote it: Claude on the Google Gemini credit,
+              ByteDance&rsquo;s writer on ModelArk.
             </p>
           </>
         )}
 
-        <p className="grouplabel mt-12">Cost per render</p>
-        <div className="rows">
-          {data.recent.length === 0 && <div className="row text-dim">No finished renders yet</div>}
-          {data.recent.map((r) => {
-            const p = r.params as { resolution?: string; ratio?: string; duration?: number };
+        <div className="mt-12 flex flex-wrap items-center gap-2">
+          <p className="grouplabel !pb-0">Cost per render</p>
+          <span className="ml-auto flex flex-wrap gap-1.5">
+            {[["all", "All"], ...data.vendors.map((v) => [v.id, v.label] as const)].map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setVendorFilter(k)}
+                className={`chip !py-1 !text-[12.5px] ${vendorFilter === k ? "bg-blue text-white" : ""}`}>{l}</button>
+            ))}
+          </span>
+        </div>
+        <div className="rows mt-3">
+          {recent.length === 0 && <div className="row text-dim">No finished renders here yet</div>}
+          {recent.map((r) => {
+            const p = r.params as { resolution?: string; ratio?: string; duration?: number; credits?: number; steps?: number };
             const open = openRow === r.id;
             return (
               <button key={r.id} className="row !items-start" onClick={() => setOpenRow(open ? null : r.id)}>
                 <span className="flex min-w-0 flex-col">
-                  <span className={`text-[15px] ${open ? "" : "truncate"}`}>{r.prompt}</span>
+                  <span className={`text-[15px] ${open ? "" : "truncate"}`}>{r.title || r.prompt}</span>
                   <span className="mt-0.5 text-[13px] text-mute">
-                    {shortLabel(r.label) === r.label ? r.label : r.label} ·{" "}
-                    {[p.resolution, p.ratio, p.duration && `${p.duration}s`].filter(Boolean).join(" · ")} ·{" "}
-                    {compactTokens(r.totalTokens)}t · {timeAgo(r.createdAt)}
+                    {r.label} · {vendorName(r.provider)} ·{" "}
+                    {[p.resolution, p.ratio, p.duration && `${p.duration}s`].filter(Boolean).join(" · ")}
+                    {r.kind === "audio" && p.credits ? ` · ${p.credits.toLocaleString()} credits` : r.totalTokens ? ` · ${compactTokens(r.totalTokens)}t` : ""}
+                    {" "}· {timeAgo(r.createdAt)}
                   </span>
                   <span className="mt-0.5 text-[12.5px] tabular-nums text-mute">
                     render {usd(r.renderCostUsd)}
@@ -249,9 +210,134 @@ export default function UsagePage() {
         </div>
 
         <p className="mt-8 text-center text-[12px] text-mute">
-          Every figure comes from the tokens ByteDance actually billed. Deleted renders stay counted.
+          ModelArk and gateway figures are what those vendors billed; fal and ElevenLabs figures
+          follow their published rates. Deleted renders stay counted.
         </p>
       </div>
+    </div>
+  );
+}
+
+/** One vendor's ledger: added, spent, left — and its own word where it gives one. */
+function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  async function add() {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n === 0 || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch("/api/topups", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountUsd: n, note, provider: v.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not record it");
+      setAmount(""); setNote(""); setAdding(false);
+      onChanged();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function remove(id: string) {
+    const res = await fetch(`/api/topups?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.ok) onChanged();
+  }
+
+  const over = v.remaining < 0;
+  return (
+    <section className="card flex flex-col gap-4 px-5 py-5">
+      <div>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 className="text-[19px] font-semibold tracking-[-0.015em]">{v.label}</h2>
+          <span className={`text-[12.5px] ${v.configured ? "text-ok" : "text-mute"}`}>
+            {v.configured ? (v.via === "gateway" ? "connected · gateway" : "connected") : `not connected · ${v.envKey}`}
+          </span>
+        </div>
+        <p className="mt-1 text-[13px] leading-snug text-mute">{v.note}</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <Figure label="Added" value={usd(v.added, 2)} />
+        <Figure label="Spent" value={usd(v.spent, 2)} sub={v.promptSpend > 0 ? `prompts ${usd(v.promptSpend, 2)}` : undefined} />
+        <Figure label="Left" value={v.added > 0 || over ? usd(v.remaining, 2) : "—"} tone={over ? "bad" : v.added > 0 ? "good" : undefined} />
+      </div>
+
+      {v.live?.kind === "gateway" && (
+        <p className="text-[13px] text-dim">
+          The gateway itself says <span className="font-medium text-ink">{usd(v.live.balanceUsd, 2)}</span> left
+          ({usd(v.live.usedUsd, 2)} used). {Math.abs(v.live.balanceUsd - v.remaining) > 0.5
+            ? "Where that differs from our count, the gateway is right — top-ups or spend outside this app."
+            : "Our count agrees."}
+        </p>
+      )}
+      {v.live?.kind === "credits" && (
+        <p className="text-[13px] text-dim">
+          The account says <span className="font-medium text-ink">{Math.max(0, v.live.limit - v.live.used).toLocaleString()}</span> of{" "}
+          {v.live.limit.toLocaleString()} credits left this cycle on the {v.live.tier} plan
+          {v.live.resetAt ? `, resetting ${timeAgo(v.live.resetAt)}` : ""}.
+        </p>
+      )}
+
+      {v.models.length > 0 && (
+        <div className="rows">
+          {v.models.map((m) => (
+            <div key={m.model} className="row !min-h-[40px] !py-2">
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-[14px]">{m.label}</span>
+                <span className="text-[12px] text-mute">{m.n} render{m.n === 1 ? "" : "s"}{m.tokens ? ` · ${compactTokens(m.tokens)}t` : ""}</span>
+              </span>
+              <span className="row-value tabular-nums">{usd(m.spend, 2)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {v.models.length === 0 && <p className="text-[13px] text-mute">Nothing rendered here yet.</p>}
+
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-medium uppercase tracking-wide text-mute">Top-ups</span>
+          {!adding && <button type="button" onClick={() => setAdding(true)} className="ml-auto text-[13px] text-blue">Record a top-up</button>}
+        </div>
+        {v.topups.length > 0 && (
+          <ul className="mt-2 flex flex-col gap-1">
+            {v.topups.map((t) => (
+              <li key={t.id} className="group flex items-center gap-2 text-[13px]">
+                <span className="tabular-nums font-medium">{usd(t.amountUsd, 2)}</span>
+                <span className="truncate text-mute">{t.note || "—"} · {timeAgo(t.createdAt)}</span>
+                <button type="button" onClick={() => remove(t.id)} title="Remove this entry"
+                  className="reveal ml-auto grid h-6 w-6 place-items-center rounded-full text-mute hover:text-lift"><IconClose className="!h-3 !w-3" /></button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {v.topups.length === 0 && !adding && <p className="mt-1 text-[13px] text-mute">Nothing added yet — {usd(0, 2)} on this ledger.</p>}
+        {adding && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <input className="ctl !h-[34px] w-[120px] !text-[14px]" value={amount} inputMode="decimal" placeholder="USD"
+              onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} autoFocus />
+            <input className="ctl !h-[34px] min-w-[160px] flex-1 !text-[14px]" value={note} placeholder="Note or invoice reference"
+              onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+            <button type="button" onClick={add} disabled={busy} className="chip !text-blue disabled:opacity-50">{busy ? "Recording…" : "Add"}</button>
+            <button type="button" onClick={() => { setAdding(false); setErr(null); }} className="chip">Cancel</button>
+          </div>
+        )}
+        {err && <p className="mt-1 text-[13px] text-lift">{err}</p>}
+      </div>
+    </section>
+  );
+}
+
+function Figure({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "bad" }) {
+  return (
+    <div className="rounded-[12px] bg-panel2 px-3 py-2.5">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-mute">{label}</p>
+      <p className={`mt-0.5 text-[20px] font-semibold tabular-nums tracking-[-0.02em] ${tone === "bad" ? "text-lift" : tone === "good" ? "text-blue" : ""}`}>{value}</p>
+      {sub && <p className="text-[11.5px] text-mute">{sub}</p>}
     </div>
   );
 }

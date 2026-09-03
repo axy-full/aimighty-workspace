@@ -21,7 +21,7 @@ import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { composePrompt, specCount, type ShotSpec } from "@/lib/studio";
 import {
-  DEFAULT_MODEL_ID, getModel, dimensionsFor,
+  DEFAULT_MODEL_ID, MODELS, getModel, dimensionsFor,
   estimateCostUsd, estimateTokens, estimateImageCostUsd,
 } from "@/lib/models";
 import { usePrefs } from "@/lib/prefs";
@@ -34,8 +34,14 @@ export type Params = {
 
 const SETUP_KEY = "aw_setup_open";
 
-export default function Workspace() {
-  usePageTitle("Generate");
+/** The kind's own default engine: Seedance for video, Nano Banana Pro for stills. */
+function defaultModelFor(kind: "video" | "image"): string {
+  if (kind === "video") return DEFAULT_MODEL_ID;
+  return MODELS.find((m) => m.kind === "image" && !m.hidden)?.id ?? DEFAULT_MODEL_ID;
+}
+
+export default function Workspace({ kind = "video" }: { kind?: "video" | "image" }) {
+  usePageTitle(kind === "image" ? "Images" : "Video");
   const { selection: bin, current, refreshProjects } = useProject();
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
@@ -115,14 +121,17 @@ export default function Workspace() {
     // browser's saved defaults in a later pass, so this has to follow `prefs`
     // rather than run once — until the person touches a control.
     if (touched.current) return;
-    const m = getModel(prefs.modelId);
+    // Settings' default applies only when it is this kind of engine;
+    // otherwise the kind's own default.
+    const preferred = getModel(prefs.modelId);
+    const m = preferred.kind === kind && !preferred.hidden ? preferred : getModel(defaultModelFor(kind));
     setParams((s) => ({
       ...s,
       modelId: m.id,
       resolution: m.resolutions.includes(prefs.resolution) ? prefs.resolution : s.resolution,
       duration: m.durations.includes(prefs.duration) ? prefs.duration : s.duration,
     }));
-  }, [prefs]);
+  }, [prefs, kind]);
 
   const patch = (p: Partial<Params>) => { touched.current = true; setParams((s) => ({ ...s, ...p })); };
 
@@ -161,7 +170,7 @@ export default function Workspace() {
 
   const query =
     bin === "all" || bin === "unfiled" ? "" : `&projectId=${encodeURIComponent(bin)}`;
-  const { data, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=60${query}`, 5000);
+  const { data, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=60&kind=${kind}${query}`, 5000);
   const gens = useMemo(() => {
     const all = data?.generations ?? [];
     return bin === "unfiled" ? all.filter((g) => !g.projectId) : all;
@@ -300,6 +309,7 @@ export default function Workspace() {
           inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
           busy={busy} onRender={render}
           setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
+          kind={kind}
         />
       </div>
 

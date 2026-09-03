@@ -320,6 +320,25 @@ export async function ready(): Promise<void> {
          an existing database the column doesn't exist until they've run.
          Every shot query (take counts, next version, revisions per shot)
          filters on shot_id, so without this they scan the whole table. */
+      /* Top-ups belong to a vendor. Everything recorded before there was more
+         than one vendor was ModelArk money, which the default preserves. */
+      try { await db().execute(`ALTER TABLE topups ADD COLUMN provider TEXT NOT NULL DEFAULT 'byteplus'`); }
+      catch { /* column already exists */ }
+      /* The balances the team reported on 3 Sep 2026, written once into the
+         ledger so each vendor's credit counts down from what was actually
+         loaded. Fixed ids: a redeploy never records them twice, and deleting
+         one on the Usage page stays deleted. */
+      for (const [tid, provider, usd, note] of [
+        ["top_seed_fal_20260903", "fal", 50, "Added at fal.ai, 3 Sep 2026"],
+        ["top_seed_google_20260903", "google", 25, "Vercel AI Gateway credit, 3 Sep 2026"],
+      ] as const) {
+        try {
+          await db().execute({
+            sql: `INSERT OR IGNORE INTO topups (id, provider, amount_usd, note, created_at) VALUES (?,?,?,?,?)`,
+            args: [tid, provider, usd, note, Date.parse("2026-09-03T12:00:00Z")],
+          });
+        } catch { /* recorded already, or the table is read-only right now */ }
+      }
       for (const stmt of [
         `CREATE INDEX IF NOT EXISTS idx_gen_shot ON generations(shot_id)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_kind ON generations(kind)`,

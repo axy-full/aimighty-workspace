@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { PROVIDERS } from "@/lib/providers";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -24,6 +25,8 @@ type Summary = {
   pending: number; spentUsd: number; purchasedUsd: number; remainingUsd: number;
   /** The writer's share of spentUsd. */
   promptSpendUsd: number;
+  /** Each vendor's own credit position. */
+  vendors: { id: string; label: string; spent: number; added: number; remaining: number }[];
 };
 
 let cache: { at: number; value: Summary } | null = null;
@@ -38,24 +41,39 @@ export async function GET() {
     return NextResponse.json({ ...cache.value, cached: true });
   }
 
-  const [gen, top] = await Promise.all([
+  const [gen, top, byVendor, promptBy] = await Promise.all([
     db().execute(`
       SELECT COALESCE(SUM(status IN ('queued','running')), 0) AS pending,
              COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)), 0) AS spend,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)), 0) AS prompt_spend
       FROM generations WHERE deleted = 0`),
     db().execute(`SELECT COALESCE(SUM(amount_usd),0) AS total FROM topups`),
+    db().execute(`SELECT provider, COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend FROM generations GROUP BY provider`),
+    db().execute(`
+      SELECT CASE WHEN refine_model LIKE 'anthropic/%' OR refine_model LIKE 'google/%' THEN 'google' ELSE 'byteplus' END AS ledger,
+             COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS spend
+      FROM generations WHERE refine_model IS NOT NULL GROUP BY ledger`),
   ]);
+  const added = await db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total FROM topups GROUP BY provider`);
 
   const g: any = gen.rows[0];
   const spentUsd = Number(g?.spend ?? 0);
   const purchasedUsd = Number((top.rows[0] as any)?.total ?? 0);
+  const spendBy = new Map(byVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.spend)]));
+  const promptSpendBy = new Map(promptBy.rows.map((r: any) => [String(r.ledger), Number(r.spend)]));
+  const addedBy = new Map(added.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.total)]));
+  const vendors = PROVIDERS.map((p) => {
+    const spent = (spendBy.get(p.id) ?? 0) + (promptSpendBy.get(p.id) ?? 0);
+    const a = addedBy.get(p.id) ?? 0;
+    return { id: p.id, label: p.id === "google" ? "Google Gemini" : p.label, spent, added: a, remaining: a - spent };
+  });
   const value: Summary = {
     pending: Number(g?.pending ?? 0),
     spentUsd,
     purchasedUsd,
     remainingUsd: purchasedUsd - spentUsd,
     promptSpendUsd: Number(g?.prompt_spend ?? 0),
+    vendors,
   };
 
   cache = { at: now(), value };

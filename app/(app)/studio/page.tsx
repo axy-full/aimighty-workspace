@@ -344,7 +344,7 @@ export default function StudioPage() {
             <button onClick={sendToGenerate}
               disabled={!prose.trim() && !n}
               className="inline-flex items-center gap-2 rounded-full bg-blue px-5 py-2.5 text-[15px] font-medium text-white disabled:opacity-40">
-              <IconSparkle className="!h-4 !w-4" /> Take it to Generate
+              <IconSparkle className="!h-4 !w-4" /> Take it to Video
             </button>
             <span className="text-[13px] text-mute">
               Nothing is rendered here — the composer keeps the model, duration

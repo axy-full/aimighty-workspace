@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  IconProjects, IconGenerate, IconStudio, IconMeter, IconGear, IconAudio,
+  IconProjects, IconGenerate, IconStudio, IconMeter, IconGear, IconAudio, IconImage,
 } from "./Icons";
 
 /**
@@ -17,7 +17,8 @@ import {
    things live, Studio is where the vocabulary they're made from is kept, and
    the rest is housekeeping. */
 const TABS = [
-  { href: "/",         label: "Generate", Icon: IconGenerate },
+  { href: "/",         label: "Video",    Icon: IconGenerate },
+  { href: "/images",   label: "Images",   Icon: IconImage },
   { href: "/audio",    label: "Audio",    Icon: IconAudio },
   { href: "/projects", label: "Projects", Icon: IconProjects },
   { href: "/studio",   label: "Studio",   Icon: IconStudio },
