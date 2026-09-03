@@ -242,8 +242,17 @@ input, textarea {
   background: var(--color-chrome);
   box-shadow: inset 0 -1px 0 var(--color-hair);
   padding-top: env(safe-area-inset-top, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
+  /* The gutter AND the notch, not one instead of the other. These are
+     unlayered rules, so they beat any padding utility on the element — the
+     bar was flush to both edges and the mark sat on the screen's border. */
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+}
+@media (max-width: 860px) {
+  .app-title {
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+  }
 }
 .app-work { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
 

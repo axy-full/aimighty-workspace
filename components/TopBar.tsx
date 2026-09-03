@@ -27,7 +27,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
     : "";
 
   return (
-    <header className="app-title flex items-center gap-3 px-6 max-[860px]:px-3.5">
+    <header className="app-title flex items-center gap-3">
       {/* The brand is on every screen, never loud: the mark, the name, and
           on Generate the project you're in as a tappable breadcrumb. */}
       <Link href="/" className="flex shrink-0 items-center" title="particl studio">
