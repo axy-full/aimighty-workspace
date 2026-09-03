@@ -13,20 +13,22 @@
    ------------------------------------------------------------------ */
 
 @theme {
-  --color-desk:    #F2F1ED;   /* the paper everything rests on */
-  --color-chrome:  #FAFAF8;   /* bars and rails, a shade lighter */
-  --color-panel:   #FFFFFF;   /* cards */
-  --color-panel2:  #F5F5F3;   /* inset fills: search, segmented tracks */
-  --color-panel3:  #E9E9E5;   /* pressed / heavier fill */
+  /* The brand's light ground: page #ECEDEF, panel #FCFCFD, ink #15171C,
+     muted #666A72 — cool and precise where the paper desk was warm. */
+  --color-desk:    #ECEDEF;   /* the page */
+  --color-chrome:  #F4F4F6;   /* bars and rails, a shade lighter */
+  --color-panel:   #FCFCFD;   /* cards */
+  --color-panel2:  #F1F2F4;   /* inset fills: search, segmented tracks */
+  --color-panel3:  #E4E5E8;   /* pressed / heavier fill */
   --color-line:    rgba(0, 0, 0, 0.085);
   --color-hair:    rgba(0, 0, 0, 0.055);
   --color-chip:    rgba(0, 0, 0, 0.045);
   --color-chip2:   rgba(0, 0, 0, 0.085);
-  --color-thumb:   #E7E7E3;   /* empty media wells */
+  --color-thumb:   #E1E2E5;   /* empty media wells */
 
-  --color-bone:    #1D1D1F;   /* primary text — Apple's near-black */
-  --color-dim:     #6E6E73;   /* secondary */
-  --color-mute:    #A1A1A6;   /* tertiary */
+  --color-bone:    #15171C;   /* primary text — the brand's ink */
+  --color-dim:     #666A72;   /* secondary — the brand's muted */
+  --color-mute:    #9A9EA6;   /* tertiary */
 
   --color-blue:    #007AFF;   /* the interactive colour */
   --color-red:     #C91B1D;   /* the brand mark, not a UI colour */
@@ -35,7 +37,7 @@
   --color-run:     #007AFF;
   --color-warn:    #FF9500;
 
-  --color-ink:        #000000;                 /* strongest text: titles, wordmark */
+  --color-ink:        #15171C;                 /* strongest text: titles, wordmark */
   --color-blue-hover: #0A6FE0;
   --color-note:       #FFF8C5;                 /* a canvas sticky */
   --color-switch-off: #E9E9EA;
@@ -44,6 +46,9 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
                "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* The brand's faces, loaded by the root layout. */
+  --font-display: var(--font-outfit), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-kode: var(--font-kode-mono), ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 :root {
@@ -84,72 +89,72 @@
    a chosen theme is stamped on <html> before first paint. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-  --color-desk: #0E0E10;
-  --color-chrome: #141416;
-  --color-panel: #1C1C1E;
-  --color-panel2: #242426;
-  --color-panel3: #2E2E31;
+  --color-desk: #1D1F24;
+  --color-chrome: #16181D;
+  --color-panel: #0B0D11;
+  --color-panel2: #13151A;
+  --color-panel3: #1B1E24;
   --color-line: rgba(255, 255, 255, 0.12);
   --color-hair: rgba(255, 255, 255, 0.08);
-  --color-chip: rgba(255, 255, 255, 0.08);
-  --color-chip2: rgba(255, 255, 255, 0.14);
-  --color-thumb: #232326;
-  --color-bone: #F5F5F7;
-  --color-dim: #A1A1A6;
-  --color-mute: #86868B;
+  --color-chip: rgba(255, 255, 255, 0.07);
+  --color-chip2: rgba(255, 255, 255, 0.13);
+  --color-thumb: #101217;
+  --color-bone: #F5F6F8;
+  --color-dim: #8A8E96;
+  --color-mute: #666A72;
   --color-blue: #0A84FF;
   --color-run: #0A84FF;
   --color-blue-hover: #3396FF;
   --color-lift: #FF453A;
   --color-ok: #30D158;
   --color-warn: #FF9F0A;
-  --color-ink: #FFFFFF;
+  --color-ink: #F5F6F8;
   --color-note: #3A3420;
-  --color-switch-off: #39393D;
+  --color-switch-off: #2A2D34;
   --color-scrim: rgba(0, 0, 0, 0.55);
   --shadow-card: 0 0 0 1px rgba(255, 255, 255, .06);
   --shadow-card-hover: 0 0 0 1px rgba(255, 255, 255, .10), 0 14px 36px rgba(0, 0, 0, .5);
   --shadow-pop: 0 0 0 1px rgba(255, 255, 255, .08), 0 20px 48px rgba(0, 0, 0, .6);
   --shadow-media: 0 0 0 1px rgba(255, 255, 255, .06), 0 18px 48px rgba(0, 0, 0, .5);
   --shadow-bar: 0 0 0 1px rgba(255, 255, 255, .08), 0 12px 40px rgba(0, 0, 0, .55);
-  --glass: rgba(28, 28, 30, .74);
-  --glass-bar: rgba(28, 28, 30, .70);
+  --glass: rgba(11, 13, 17, .78);
+  --glass-bar: rgba(11, 13, 17, .74);
   --scroll-thumb: rgba(255, 255, 255, .22);
   --scroll-thumb-hover: rgba(255, 255, 255, .34);
   color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --color-desk: #0E0E10;
-  --color-chrome: #141416;
-  --color-panel: #1C1C1E;
-  --color-panel2: #242426;
-  --color-panel3: #2E2E31;
+  --color-desk: #1D1F24;
+  --color-chrome: #16181D;
+  --color-panel: #0B0D11;
+  --color-panel2: #13151A;
+  --color-panel3: #1B1E24;
   --color-line: rgba(255, 255, 255, 0.12);
   --color-hair: rgba(255, 255, 255, 0.08);
-  --color-chip: rgba(255, 255, 255, 0.08);
-  --color-chip2: rgba(255, 255, 255, 0.14);
-  --color-thumb: #232326;
-  --color-bone: #F5F5F7;
-  --color-dim: #A1A1A6;
-  --color-mute: #86868B;
+  --color-chip: rgba(255, 255, 255, 0.07);
+  --color-chip2: rgba(255, 255, 255, 0.13);
+  --color-thumb: #101217;
+  --color-bone: #F5F6F8;
+  --color-dim: #8A8E96;
+  --color-mute: #666A72;
   --color-blue: #0A84FF;
   --color-run: #0A84FF;
   --color-blue-hover: #3396FF;
   --color-lift: #FF453A;
   --color-ok: #30D158;
   --color-warn: #FF9F0A;
-  --color-ink: #FFFFFF;
+  --color-ink: #F5F6F8;
   --color-note: #3A3420;
-  --color-switch-off: #39393D;
+  --color-switch-off: #2A2D34;
   --color-scrim: rgba(0, 0, 0, 0.55);
   --shadow-card: 0 0 0 1px rgba(255, 255, 255, .06);
   --shadow-card-hover: 0 0 0 1px rgba(255, 255, 255, .10), 0 14px 36px rgba(0, 0, 0, .5);
   --shadow-pop: 0 0 0 1px rgba(255, 255, 255, .08), 0 20px 48px rgba(0, 0, 0, .6);
   --shadow-media: 0 0 0 1px rgba(255, 255, 255, .06), 0 18px 48px rgba(0, 0, 0, .5);
   --shadow-bar: 0 0 0 1px rgba(255, 255, 255, .08), 0 12px 40px rgba(0, 0, 0, .55);
-  --glass: rgba(28, 28, 30, .74);
-  --glass-bar: rgba(28, 28, 30, .70);
+  --glass: rgba(11, 13, 17, .78);
+  --glass-bar: rgba(11, 13, 17, .74);
   --scroll-thumb: rgba(255, 255, 255, .22);
   --scroll-thumb-hover: rgba(255, 255, 255, .34);
   color-scheme: dark;
@@ -325,8 +330,9 @@ input, textarea {
 
 /* The one big title per screen. */
 .h1 {
+  font-family: var(--font-display);
   font-size: clamp(38px, 5vw, 56px);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1.05;
   color: var(--color-ink);
@@ -335,15 +341,43 @@ input, textarea {
 
 /* Small uppercase group label above an inset list. */
 .grouplabel {
-  font-size: 12px;
+  font-family: var(--font-kode);
+  font-size: 11px;
   font-weight: 500;
-  letter-spacing: .05em;
+  letter-spacing: .18em;
   text-transform: uppercase;
   color: var(--color-mute);
   padding: 0 0 8px 18px;
 }
 
 @layer components {
+  /* ── The wordmark ─────────────────────────────────────────────────
+     "partıcl" in Outfit 600 at -0.03em; the ı carries a ring tittle 0.17em
+     across with a 0.04em stroke, 0.09em down from the em-box top; STUDIO in
+     Kode Mono 500, uppercase, 0.36em tracking, right-aligned under the last
+     letter at 0.21× the wordmark. All of it is `currentColor`. */
+  .wordmark {
+    display: inline-flex; flex-direction: column; align-items: flex-end;
+    line-height: 1; color: inherit; white-space: nowrap;
+  }
+  .wordmark-word {
+    font-family: var(--font-display); font-weight: 600; letter-spacing: -0.03em;
+    line-height: 1; display: inline-block;
+  }
+  .wordmark-i { position: relative; display: inline-block; }
+  .wordmark-ring {
+    position: absolute; left: 50%; top: 0.09em;
+    width: 0.17em; height: 0.17em; box-sizing: border-box;
+    border: 0.04em solid currentColor; border-radius: 50%;
+    transform: translateX(calc(-50% + 0.015em));
+  }
+  .wordmark-studio {
+    font-family: var(--font-kode); font-weight: 500; text-transform: uppercase;
+    font-size: 0.21em; letter-spacing: 0.36em; line-height: 1;
+    margin-top: 0.55em; margin-right: -0.36em;
+    color: var(--color-dim);
+  }
+
   /* ── The opening ──────────────────────────────────────────────────
      Eight particles fly in from outside the frame and settle onto the
      ring, the accent arriving last. Each circle carries its own --dx/--dy
@@ -408,10 +442,10 @@ input, textarea {
 
 /* The mono micro-label survives from the studio build for data readouts. */
 .lbl {
-  font-family: var(--font-mono);
+  font-family: var(--font-kode);
   font-size: 10px;
   line-height: 1;
-  letter-spacing: .06em;
+  letter-spacing: .16em;
   text-transform: uppercase;
   color: var(--color-mute);
 }
@@ -710,7 +744,7 @@ button.row:active, a.row:active { background: var(--color-chip2); }
 
   /* ── The wall ─────────────────────────────────────────────────────── */
   .feed-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 2px 12px; min-height: 40px; }
-  .feed-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--color-ink); }
+  .feed-title { font-family: var(--font-display); font-size: 21px; font-weight: 600; letter-spacing: -0.03em; color: var(--color-ink); }
   .feed-live {
     display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px;
     background: color-mix(in oklab, var(--color-blue) 10%, transparent);

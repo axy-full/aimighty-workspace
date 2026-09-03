@@ -5,7 +5,7 @@ import { useApi } from "@/lib/useApi";
 import { usd } from "@/lib/format";
 import { useProject } from "@/lib/projectContext";
 import Link from "next/link";
-import { ParticlMark } from "./ParticlMark";
+import ParticlLockup from "./ParticlMark";
 
 type Usage = { pending: number; spentUsd: number; remainingUsd: number };
 
@@ -30,11 +30,9 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
     <header className="app-title flex items-center gap-3 px-6 max-[860px]:px-3.5">
       {/* The brand is on every screen, never loud: the mark, the name, and
           on Generate the project you're in as a tappable breadcrumb. */}
-      <Link href="/" className="flex shrink-0 items-center gap-2" title="Particl">
-        <ParticlMark size={20} className="text-ink" />
-        <span className="text-[15px] font-semibold tracking-[-0.02em] text-ink max-[430px]:hidden">
-          Particl
-        </span>
+      <Link href="/" className="flex shrink-0 items-center" title="particl studio">
+        <ParticlLockup size={19} studio={false} className="max-[430px]:hidden" />
+        <ParticlLockup size={19} studio={false} className="min-[431px]:hidden [&_.wordmark]:hidden" />
       </Link>
       {title && (
         <>

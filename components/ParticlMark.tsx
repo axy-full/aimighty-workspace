@@ -1,97 +1,122 @@
 "use client";
 
 /**
- * Particl Studio — temporary mark.
+ * particl studio — the logo system, in code.
  *
- * Eight particles on a ring, graduating from a speck to a solid dot, with the
- * largest carrying the accent. Two readings, both wanted: a lens iris seen
- * head-on, and loose particles resolving into a form — which is the thing the
- * Studio is for, a shot going from scattered intent to something specified.
+ * The mark is seven dots on a 62-radius arc, 22° apart, radii 1.8 → 12: an
+ * accelerating particle trail. It is monochrome and takes the ink of its
+ * ground through `currentColor`. Never rotated, never recoloured per dot,
+ * never stroked — the brand's own rules, and this file keeps them.
  *
- * The centre is deliberately empty so the mark stays legible at 16px, where a
- * filled middle turns the whole thing into a blob.
- *
- * TEMPORARY: this is a placeholder identity, not a commissioned one. It is
- * one component and one SVG file, so replacing it is a two-file job.
+ * The wordmark is live type rebuilt from the brand recipe rather than a
+ * picture: "partıcl" in Outfit 600 at -0.03em, the ı dotless with a ring
+ * tittle (0.17em across, 0.04em stroke, 0.09em down from the em-box top),
+ * and "STUDIO" in Kode Mono 500, uppercase, 0.36em tracking, right-aligned
+ * under the last letter at 0.21× the wordmark. Because it is type, it is
+ * crisp at every size and correct on every ground.
  */
-const PARTICLES: [number, number, number][] = [
-  [16.0, 5.5, 1.05], [23.42, 8.58, 1.35], [26.5, 16.0, 1.65], [23.42, 23.42, 1.95],
-  [16.0, 26.5, 2.25], [8.58, 23.42, 2.55], [5.5, 16.0, 2.85],
+
+/** [cx, cy, r] on the brand's 200-unit grid. */
+export const TRAIL: [number, number, number][] = [
+  [38.7, 120.8, 1.8], [50.9, 100.5, 2.8], [69.8, 86.3, 4], [92.7, 80.1, 5.5],
+  [116.2, 83, 7.2], [136.9, 94.5, 9.2], [151.7, 112.9, 12],
 ];
-/** The one that has arrived. */
-const ACCENT: [number, number, number] = [8.58, 8.58, 3.15];
+/** The trail's box plus the brand's clear space (the largest dot's height). */
+const VIEW = "34 72 132 56";
+const RATIO = 132 / 56;
 
-export function ParticlMark({ size = 28, className = "" }: { size?: number; className?: string }) {
+/** The mark alone. `size` is its HEIGHT; it is about 2.4× as wide. */
+export function ParticlMark({ size = 24, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none"
+    <svg width={Math.round(size * RATIO)} height={size} viewBox={VIEW} fill="currentColor"
       className={className} aria-hidden="true">
-      {PARTICLES.map(([cx, cy, r], i) => (
-        <circle key={i} cx={cx} cy={cy} r={r} fill="currentColor"
-          opacity={0.28 + i * 0.09} />
-      ))}
-      <circle cx={ACCENT[0]} cy={ACCENT[1]} r={ACCENT[2]} fill="var(--color-blue)" />
+      {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
     </svg>
   );
 }
 
 /**
- * The loader. The same eight particles, pulsing in sequence around the ring —
- * so a wait looks like the brand thinking rather than a generic spinner
- * bolted on. Pure CSS; respects reduced motion.
+ * The wordmark, from the recipe. `size` is the font size of "partıcl" in px.
+ * `studio` adds the STUDIO tag under the last letter.
  */
-export function ParticlSpinner({ size = 28, className = "" }: { size?: number; className?: string }) {
+export function ParticlWordmark({ size = 24, studio = false, className = "" }: {
+  size?: number; studio?: boolean; className?: string;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none"
+    <span className={`wordmark ${className}`} style={{ fontSize: size }} aria-label={studio ? "particl studio" : "particl"}>
+      <span className="wordmark-word" aria-hidden="true">
+        part<span className="wordmark-i">ı<span className="wordmark-ring" /></span>cl
+      </span>
+      {studio && <span className="wordmark-studio" aria-hidden="true">studio</span>}
+    </span>
+  );
+}
+
+/**
+ * The horizontal lockup: mark, a mark-height of air, the wordmark. `size`
+ * is the wordmark's font size; the mark stands half as tall, as in the
+ * brand sheet.
+ */
+export default function ParticlLockup({ size = 26, studio = true, className = "" }: {
+  size?: number; studio?: boolean; className?: string;
+}) {
+  const markH = Math.round(size * 0.5);
+  return (
+    <span className={`inline-flex items-center text-ink ${className}`} style={{ gap: markH }}>
+      <ParticlMark size={markH} />
+      <ParticlWordmark size={size} studio={studio} />
+    </span>
+  );
+}
+
+/** The stacked lockup, for a front door: the mark over the wordmark. */
+export function ParticlStacked({ size = 56, className = "" }: { size?: number; className?: string }) {
+  return (
+    <span className={`inline-flex flex-col items-center text-ink ${className}`} style={{ gap: Math.round(size * 0.55) }}>
+      <ParticlMark size={Math.round(size * 0.95)} />
+      <ParticlWordmark size={size} studio />
+    </span>
+  );
+}
+
+/**
+ * The loader: the trail's own motion. Each dot breathes in turn along the
+ * arc, so a wait looks like the brand thinking rather than a generic
+ * spinner. Pure CSS; respects reduced motion.
+ */
+export function ParticlSpinner({ size = 24, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={Math.round(size * RATIO)} height={size} viewBox={VIEW} fill="currentColor"
       className={`particl-spin ${className}`} role="status" aria-label="Loading">
-      {[...PARTICLES, ACCENT].map(([cx, cy, r], i) => (
-        <circle key={i} cx={cx} cy={cy} r={r}
-          fill={i === 7 ? "var(--color-blue)" : "currentColor"}
-          style={{ animationDelay: `${i * 110}ms` }} />
+      {TRAIL.map(([cx, cy, r], i) => (
+        <circle key={i} cx={cx} cy={cy} r={r} style={{ animationDelay: `${i * 90}ms` }} />
       ))}
     </svg>
   );
 }
 
-/**
- * A wait that's worth a sentence. Centred, quiet, branded — replaces the
- * four different "Reading the…" strings that used to stand in for a loader.
- */
+/** A wait that's worth a sentence. Centred, quiet, branded. */
 export function Waiting({ label = "Loading" }: { label?: string }) {
   return (
     <div className="screen grid place-items-center">
       <div className="flex flex-col items-center gap-3 text-dim">
-        <ParticlSpinner size={30} />
+        <ParticlSpinner size={26} />
         <p className="text-[14px]">{label}</p>
       </div>
     </div>
   );
 }
 
-/**
- * An empty state that looks designed rather than absent: the mark at rest,
- * a title, one line, and optionally one thing to do about it.
- */
+/** An empty state that looks designed rather than absent: the mark at rest. */
 export function Empty({ title, line, action, compact = false }: {
   title: string; line?: string; action?: React.ReactNode; compact?: boolean;
 }) {
   return (
     <div className={`flex flex-col items-center text-center ${compact ? "py-6" : "py-10"}`}>
-      <ParticlMark size={compact ? 22 : 30} className="text-mute/70" />
+      <ParticlMark size={compact ? 18 : 26} className="text-mute/70" />
       <p className={`mt-3 font-medium text-dim ${compact ? "text-[14px]" : "text-[15px]"}`}>{title}</p>
       {line && <p className="mt-1 max-w-[40ch] text-[13px] leading-relaxed text-mute">{line}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
-  );
-}
-
-/** Mark plus wordmark, for a screen header. */
-export default function ParticlLockup({ className = "" }: { className?: string }) {
-  return (
-    <span className={`inline-flex items-center gap-2.5 ${className}`}>
-      <ParticlMark size={30} className="text-ink" />
-      <span className="text-[26px] font-semibold leading-none tracking-[-0.035em] text-ink">
-        Particl<span className="ml-1.5 font-normal text-dim">Studio</span>
-      </span>
-    </span>
   );
 }

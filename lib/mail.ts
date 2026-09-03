@@ -56,16 +56,19 @@ const esc = (s: string) =>
 /** The invitation, in plain words: who, what, the link, and when it expires. */
 export function inviteEmail(opts: {
   name: string; inviter: string; link: string; role: string; expiresAt: number;
+  /** Where the hosted lockup lives, e.g. https://particlstudio.com */
+  origin?: string;
 }): { subject: string; text: string; html: string } {
+  const lockup = opts.origin ? `${opts.origin}/brand/particl-lockup-horizontal-on-light@4x.png` : null;
   const until = new Date(opts.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const roleLine = opts.role === "admin"
     ? "You're joining as an admin, so you can manage the team and the ledger as well as render."
     : "You're joining as a member: you can generate, edit and review shots.";
-  const subject = `${opts.inviter} invited you to Particl`;
+  const subject = `${opts.inviter} invited you to particl studio`;
   const text =
 `Hi ${opts.name},
 
-${opts.inviter} has invited you to Particl, the studio's room for making shots.
+${opts.inviter} has invited you to particl studio, the studio's room for making shots.
 
 Accept the invitation here:
 ${opts.link}
@@ -73,16 +76,18 @@ ${opts.link}
 ${roleLine}
 The link is yours alone and works until ${until}.
 
-— Particl`;
+— particl studio`;
   const html =
-`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;color:#1d1d1f;line-height:1.5">
-  <p style="font-size:15px;font-weight:600;margin:0 0 20px">Particl</p>
+`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;color:#15171C;line-height:1.5;background:#FCFCFD">
+  ${lockup
+    ? `<img src="${esc(lockup)}" width="164" height="64" alt="particl studio" style="display:block;width:164px;height:auto;margin:0 0 22px">`
+    : `<p style="font-size:15px;font-weight:600;margin:0 0 20px;letter-spacing:-0.02em">particl studio</p>`}
   <p style="font-size:17px;margin:0 0 12px">Hi ${esc(opts.name)},</p>
-  <p style="font-size:15px;color:#3a3a3c;margin:0 0 20px"><strong>${esc(opts.inviter)}</strong> has invited you to Particl, the studio's room for making shots.</p>
+  <p style="font-size:15px;color:#666A72;margin:0 0 20px"><strong style="color:#15171C">${esc(opts.inviter)}</strong> has invited you to particl studio, the studio's room for making shots.</p>
   <p style="margin:0 0 22px"><a href="${esc(opts.link)}" style="display:inline-block;background:#007aff;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:999px">Accept the invitation</a></p>
-  <p style="font-size:13.5px;color:#6e6e73;margin:0 0 6px">${esc(roleLine)}</p>
-  <p style="font-size:13.5px;color:#6e6e73;margin:0 0 18px">The link is yours alone and works until ${esc(until)}.</p>
-  <p style="font-size:12px;color:#a1a1a6;margin:0;word-break:break-all">If the button doesn't work: ${esc(opts.link)}</p>
+  <p style="font-size:13.5px;color:#666A72;margin:0 0 6px">${esc(roleLine)}</p>
+  <p style="font-size:13.5px;color:#666A72;margin:0 0 18px">The link is yours alone and works until ${esc(until)}.</p>
+  <p style="font-size:12px;color:#8A8E96;margin:0;word-break:break-all">If the button doesn't work: ${esc(opts.link)}</p>
 </div>`;
   return { subject, text, html };
 }
@@ -100,8 +105,9 @@ export function inviteOrigin(req: Request): string {
 export async function emailInvite(opts: {
   code: string; email: string; name: string; role: string; expiresAt: number; inviter: string; req: Request;
 }): Promise<void> {
-  const link = `${inviteOrigin(opts.req)}/invite/${opts.code}`;
-  const mail = inviteEmail({ name: opts.name, inviter: opts.inviter, link, role: opts.role, expiresAt: opts.expiresAt });
+  const origin = inviteOrigin(opts.req);
+  const link = `${origin}/invite/${opts.code}`;
+  const mail = inviteEmail({ name: opts.name, inviter: opts.inviter, link, role: opts.role, expiresAt: opts.expiresAt, origin });
   await sendMail({ to: opts.email, ...mail });
   await db().execute({
     sql: `UPDATE invites SET sent_at=?, send_count=COALESCE(send_count,0)+1 WHERE code=?`,

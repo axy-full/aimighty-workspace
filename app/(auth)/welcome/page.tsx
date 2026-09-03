@@ -13,7 +13,7 @@
  */
 import Link from "next/link";
 import ParticlIntro from "@/components/ParticlIntro";
-import { ParticlMark } from "@/components/ParticlMark";
+import { ParticlMark, ParticlStacked } from "@/components/ParticlMark";
 
 const PILLARS = [
   {
@@ -42,11 +42,8 @@ export default function WelcomePage() {
       <main className="w-full max-w-[880px]">
         {/* ── The mark, and the claim ─────────────────────────── */}
         <header className="flex flex-col items-center text-center">
-          <ParticlMark size={54} className="text-ink" />
-          <h1 className="mt-7 text-[clamp(40px,7vw,68px)] font-semibold leading-[0.98] tracking-[-0.04em] text-ink">
-            Particl
-          </h1>
-          <p className="mt-5 max-w-[34ch] text-[clamp(17px,2.4vw,21px)] leading-snug text-dim">
+          <h1 className="m-0"><ParticlStacked size={64} /></h1>
+          <p className="mt-8 max-w-[34ch] text-[clamp(17px,2.4vw,21px)] leading-snug text-dim">
             The studio&rsquo;s own room for making shots — and for knowing what
             they cost.
           </p>
@@ -60,16 +57,9 @@ export default function WelcomePage() {
           </div>
         </header>
 
-        {/* ── A hairline of particles, doubling as a rule ──────── */}
-        <div className="mt-16 flex items-center justify-center gap-2" aria-hidden="true">
-          {[2, 3, 4, 5, 6, 5, 4, 3, 2].map((r, i) => (
-            <span key={i} className="rounded-full"
-              style={{
-                width: r, height: r,
-                background: i === 4 ? "var(--color-blue)" : "var(--color-bone)",
-                opacity: i === 4 ? 1 : 0.18 + r * 0.06,
-              }} />
-          ))}
+        {/* ── The mark, small, as a rule between the claim and the rooms ── */}
+        <div className="mt-16 flex items-center justify-center" aria-hidden="true">
+          <ParticlMark size={14} className="text-mute/70" />
         </div>
 
         {/* ── What is in it ───────────────────────────────────── */}
@@ -89,8 +79,9 @@ export default function WelcomePage() {
         {/* ── The honest footnote ─────────────────────────────── */}
         <footer className="mt-20 border-t border-hair pt-6 text-center">
           <p className="text-[13.5px] leading-relaxed text-mute">
-            Seedance 2.x on BytePlus ModelArk. Masters are stored byte-for-byte
-            and never compressed to suit an API.{" "}
+            particl studio runs Seedance on BytePlus ModelArk and Google&rsquo;s Nano Banana
+            through Vercel AI Gateway. Masters are stored byte-for-byte and never compressed
+            to suit an API.{" "}
             <Link href="/login" className="text-blue">Sign in</Link> to see the
             rest.
           </p>

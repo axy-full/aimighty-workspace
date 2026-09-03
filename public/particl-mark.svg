@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <title>Particl Studio</title>
-  <circle cx="16.0" cy="5.5" r="1.05" fill="#1D1D1F" opacity="0.28"/>
-  <circle cx="23.42" cy="8.58" r="1.35" fill="#1D1D1F" opacity="0.37"/>
-  <circle cx="26.5" cy="16.0" r="1.65" fill="#1D1D1F" opacity="0.46"/>
-  <circle cx="23.42" cy="23.42" r="1.95" fill="#1D1D1F" opacity="0.55"/>
-  <circle cx="16.0" cy="26.5" r="2.25" fill="#1D1D1F" opacity="0.64"/>
-  <circle cx="8.58" cy="23.42" r="2.55" fill="#1D1D1F" opacity="0.73"/>
-  <circle cx="5.5" cy="16.0" r="2.85" fill="#1D1D1F" opacity="0.82"/>
-  <circle cx="8.58" cy="8.58" r="3.15" fill="#007AFF"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="34 72 132 56" fill="currentColor"><circle cx="38.7" cy="120.8" r="1.8"/><circle cx="50.9" cy="100.5" r="2.8"/><circle cx="69.8" cy="86.3" r="4"/><circle cx="92.7" cy="80.1" r="5.5"/><circle cx="116.2" cy="83" r="7.2"/><circle cx="136.9" cy="94.5" r="9.2"/><circle cx="151.7" cy="112.9" r="12"/></svg>

@@ -12,6 +12,7 @@ import { IconChevron } from "@/components/Icons";
 import WorkspaceSettings from "@/components/WorkspaceSettings";
 import { usePageTitle } from "@/lib/usePageTitle";
 import ThemeRow from "@/components/ThemeRow";
+import { ParticlMark } from "@/components/ParticlMark";
 
 type Me = { name: string; email: string; role: string };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; promptSpendUsd?: number };
@@ -219,9 +220,10 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        <p className="mt-10 text-center text-[12px] text-mute">
-          Particl · Seedance on BytePlus ModelArk · Nano Banana Pro on Google Gemini
-        </p>
+        <div className="mt-10 flex flex-col items-center gap-2 text-center text-[12px] text-mute">
+          <ParticlMark size={12} className="text-mute/70" />
+          <span>particl studio · Seedance on BytePlus ModelArk · Nano Banana on Google, through Vercel AI Gateway</span>
+        </div>
       </div>
     </div>
   );
