@@ -26,7 +26,7 @@ type Summary = {
   /** The writer's share of spentUsd. */
   promptSpendUsd: number;
   /** Each vendor's own credit position. */
-  vendors: { id: string; label: string; spent: number; added: number; remaining: number; unit: "usd" | "credits"; remainingCredits?: number }[];
+  vendors: { id: string; label: string; spent: number; added: number; remaining: number; unit: "usd" | "credits"; remainingCredits?: number; addedCredits?: number; spentCredits?: number }[];
 };
 
 let cache: { at: number; value: Summary } | null = null;
@@ -71,7 +71,7 @@ export async function GET() {
     const unit = p.id === "elevenlabs" ? "credits" as const : "usd" as const;
     return {
       id: p.id, label: p.id === "google" ? "Google Gemini" : p.label, spent, added: a, remaining: a - spent, unit,
-      ...(unit === "credits" ? { remainingCredits: (creditsBy.get(p.id) ?? 0) - audioCredits } : {}),
+      ...(unit === "credits" ? { addedCredits: creditsBy.get(p.id) ?? 0, spentCredits: audioCredits, remainingCredits: (creditsBy.get(p.id) ?? 0) - audioCredits } : {}),
     };
   });
   const value: Summary = {

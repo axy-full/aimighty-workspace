@@ -28,7 +28,7 @@ export function aspectOf(g: Gen): string {
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 export default function Feed({
-  gens, visible, activeId, onOpen, filter, setFilter, scopeName, className = "",
+  gens, visible, activeId, onOpen, filter, setFilter, scopeName, className = "", aside,
 }: {
   /** Everything in scope — what the counts describe. */
   gens: Gen[];
@@ -40,6 +40,8 @@ export default function Feed({
   filter: FeedFilter;
   setFilter: (f: FeedFilter) => void;
   scopeName: string;
+  /** Something to sit at the head's right, before the Library link — the credit strip. */
+  aside?: React.ReactNode;
   className?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -96,6 +98,7 @@ export default function Feed({
           </span>
         )}
         <span className="ml-auto" />
+        {aside}
         <Link href="/all" className="feed-link">Library</Link>
       </div>
 

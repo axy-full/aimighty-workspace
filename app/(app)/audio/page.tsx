@@ -16,6 +16,7 @@ import { shortLabel } from "@/lib/models";
 import { appConfirm } from "@/components/dialog";
 import { IconDown, IconTrash, IconSparkle, IconAudio, IconSearch } from "@/components/Icons";
 import ParticlLockup, { Empty, ParticlSpinner, Waiting } from "@/components/ParticlMark";
+import CreditStrip from "@/components/CreditStrip";
 import type { Gen } from "@/components/GenCard";
 
 type Voice = { id: string; name: string; category: string; labels: Record<string, string>; previewUrl: string | null; description: string };
@@ -132,11 +133,14 @@ export default function AudioPage() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
           <h1><ParticlLockup /></h1>
           <span className="text-[15px] text-dim">audio · {scoped ? current?.name ?? "this project" : "the whole workspace"}</span>
-          {acct && (
-            <span className="ml-auto text-[13px] text-mute" title={`ElevenLabs ${acct.tier} plan · resets ${acct.resetAt ? timeAgo(acct.resetAt) : "monthly"}`}>
-              <span className="font-medium text-dim">{left!.toLocaleString()}</span> of {acct.limit.toLocaleString()} credits left · {acct.tier}
-            </span>
-          )}
+          <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+            <CreditStrip vendor="elevenlabs" />
+            {acct && (
+              <span className="text-[12.5px] text-mute" title={`ElevenLabs ${acct.tier} plan · resets ${acct.resetAt ? timeAgo(acct.resetAt) : "monthly"}`}>
+                plan says <span className="font-medium text-dim">{left!.toLocaleString()}</span> of {acct.limit.toLocaleString()} · {acct.tier}
+              </span>
+            )}
+          </span>
         </div>
 
         {!setup.configured && (

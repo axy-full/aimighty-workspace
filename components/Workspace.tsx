@@ -13,6 +13,7 @@ import { referenceProblem, type RefItem, type RefPicker } from "./References";
 import { appAlert, appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
 import Feed, { type FeedFilter } from "./Feed";
+import CreditStrip from "./CreditStrip";
 import Composer, { type Engine, type WriterInfo } from "./Composer";
 import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
@@ -294,6 +295,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       <Feed
         gens={gens} visible={visible} activeId={activeId} onOpen={setSelected}
         filter={filter} setFilter={setFilter} scopeName={scopeName}
+        aside={<CreditStrip vendor={modelDef.provider} />}
       />
 
       <div className="island" ref={islandRef}>

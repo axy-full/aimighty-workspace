@@ -25,6 +25,7 @@ import { IconPlus, IconClose, IconSparkle } from "@/components/Icons";
 import ParticlLockup, { Empty, ParticlSpinner } from "@/components/ParticlMark";
 import LazyMedia from "@/components/LazyMedia";
 import IdentitySheet, { type IdentityView, type IdentityTerms } from "@/components/IdentitySheet";
+import CreditStrip from "@/components/CreditStrip";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo } from "@/lib/format";
 import type { CastMember } from "@/lib/cast";
@@ -170,7 +171,8 @@ export default function StudioPage() {
                 ? `${identities.length} face${identities.length === 1 ? "" : "s"}${anyTraining ? " · one is training" : ""}`
                 : "a real face, learned from photos"}
             </span>
-            <span className="ml-auto">
+            <span className="ml-auto flex flex-wrap items-center gap-2">
+              <CreditStrip vendor="fal" />
               <button onClick={() => setOpenId("new")} className="chip !text-blue"><IconPlus /> New identity</button>
             </span>
           </div>
