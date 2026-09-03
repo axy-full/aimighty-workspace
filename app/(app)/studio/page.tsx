@@ -4,17 +4,17 @@
  * The Studio — where a project's visual vocabulary is kept.
  *
  * Artlist's insight is that the hard part of AI film isn't making one good
- * shot, it's making the second one match; Higgsfield's is that a look you
- * can SEE and name gets used, and a look you have to describe does not.
- * Both are problems of recall, and both are solved by writing the answer
- * down once, with a picture:
+ * shot, it's making the second one match; Higgsfield's is that a face you
+ * have TRAINED comes back as itself, where a face you describe comes back
+ * as a stranger. Both are problems of recall, and both are solved by
+ * writing the answer down once:
  *
- *   • Looks — a named style: chips, a style block, references, a cover
+ *   • Identities — a real face, learned from photos, rendered as itself
  *   • the Camera — the craft bank, browsable, with the shots that used it
  *   • the Cast — who, where and what this production keeps returning to
  *   • the shot controls — framing, camera, light, look, told as chips
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
@@ -24,8 +24,9 @@ import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { IconPlus, IconClose, IconSparkle } from "@/components/Icons";
 import ParticlLockup, { Empty, ParticlSpinner } from "@/components/ParticlMark";
 import LazyMedia from "@/components/LazyMedia";
-import LookSheet, { type LookItem, type LookCover } from "@/components/LookSheet";
+import IdentitySheet, { type IdentityView, type IdentityTerms } from "@/components/IdentitySheet";
 import { usePageTitle } from "@/lib/usePageTitle";
+import { timeAgo } from "@/lib/format";
 import type { CastMember } from "@/lib/cast";
 import type { Gen } from "@/components/GenCard";
 
@@ -36,6 +37,11 @@ const KINDS = [
   { id: "style", label: "Look", blurb: "A treatment you keep reaching for." },
 ] as const;
 
+const NO_TERMS: IdentityTerms = {
+  configured: false, trainer: "", minPhotos: 5, maxPhotos: 40, recommended: "10 to 20",
+  steps: 1500, trainCostUsd: 3.6, renderUsdPerMp: 0.035,
+};
+
 export default function StudioPage() {
   usePageTitle("Studio");
   const { selection: bin } = useProject();
@@ -45,8 +51,8 @@ export default function StudioPage() {
 
   const { data: castData, refresh: refreshCast } =
     useApi<{ cast: CastMember[] }>(`/api/cast${q}`, 0);
-  const { data: lookData, refresh: refreshLooks } =
-    useApi<{ presets: LookItem[]; categories: string[] }>(`/api/presets${q}`, 0);
+  const { data: idData, refresh: refreshIds } =
+    useApi<{ identities: IdentityView[]; terms: IdentityTerms }>(`/api/identities${q}`, 0);
   // The bank's shop window borrows its previews from the library: the
   // newest render made with each move.
   const { data: recent } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=120&sync=0${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}`, 0);
@@ -55,27 +61,23 @@ export default function StudioPage() {
   const [prose, setProse] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingKind, setPendingKind] = useState<CastMember["kind"]>("character");
-  const [lookFilter, setLookFilter] = useState<string>("All");
-  const [lookQuery, setLookQuery] = useState("");
-  const [openLook, setOpenLook] = useState<LookItem | null>(null);
-  const [editing, setEditing] = useState<LookItem | "new" | null>(null);
+  const [openId, setOpenId] = useState<string | "new" | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
   const cast = castData?.cast ?? [];
-  const looks = useMemo(() => lookData?.presets ?? [], [lookData]);
-  const categories = useMemo(() => {
-    const present = new Set(looks.map((l) => l.category));
-    return ["All", ...(lookData?.categories ?? []).filter((c) => present.has(c))];
-  }, [looks, lookData]);
-  const shownLooks = useMemo(() => {
-    const needle = lookQuery.trim().toLowerCase();
-    return looks.filter((l) =>
-      (lookFilter === "All" || l.category === lookFilter) &&
-      (!needle || `${l.name} ${l.blurb} ${l.category}`.toLowerCase().includes(needle)));
-  }, [looks, lookFilter, lookQuery]);
+  const identities = useMemo(() => idData?.identities ?? [], [idData]);
+  const terms = idData?.terms ?? NO_TERMS;
   const n = specCount(spec);
   const phrase = specToPhrase(spec);
   const preview = useMemo(() => composePrompt(prose, spec), [prose, spec]);
+
+  // A face mid-training changes state without anyone touching the page.
+  const anyTraining = identities.some((i) => i.status === "training");
+  useEffect(() => {
+    if (!anyTraining) return;
+    const t = setInterval(refreshIds, 15000);
+    return () => clearInterval(t);
+  }, [anyTraining, refreshIds]);
 
   const toggle = (cat: string, value: string) =>
     setSpec((s) => ({ ...s, [cat]: s[cat] === value ? "" : value }));
@@ -132,46 +134,6 @@ export default function StudioPage() {
     refreshCast();
   }
 
-  /* ── Looks ────────────────────────────────────────────────────────── */
-  async function saveCurrentAsLook() {
-    if (!n && !prose.trim()) { await appAlert("Set at least one control first, or write a style block."); return; }
-    setEditing("new");
-  }
-
-  /** Carry a Look into the composer: its chips, and the Look itself. */
-  const carryLook = useCallback((l: LookItem) => {
-    try {
-      window.localStorage.setItem("aw_compose_spec", JSON.stringify(l.spec));
-      window.localStorage.setItem("aw_compose_look", JSON.stringify({ id: l.id, name: l.name }));
-      if (prose.trim()) window.localStorage.setItem("aw_compose_seed", prose.trim());
-    } catch { /* private mode — the composer just opens empty */ }
-    router.push("/");
-  }, [prose, router]);
-
-  async function duplicateLook(l: LookItem) {
-    const name = await appPrompt("Name your copy", `${l.name} (mine)`, "");
-    if (!name?.trim()) return;
-    const res = await fetch("/api/presets", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name.trim(), category: l.category, blurb: l.blurb, spec: l.spec, prose: l.prose,
-        refs: l.refs, swatch: l.swatch, projectId: scoped ? bin : null,
-      }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) { await appAlert("Could not copy", json.error); return; }
-    setOpenLook(null); refreshLooks();
-  }
-
-  async function deleteLook(l: LookItem) {
-    if (!(await appConfirm(`Delete "${l.name}"?`, "Renders made in it keep their prompts.",
-      { confirmLabel: "Delete", danger: true }))) return;
-    const res = await fetch(`/api/presets/${l.id}`, { method: "DELETE" });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) { await appAlert("Could not delete", json.error); return; }
-    setOpenLook(null); refreshLooks();
-  }
-
   /* ── Hand off to the composer ─────────────────────────────────────── */
   const sendToGenerate = useCallback(() => {
     try {
@@ -180,6 +142,8 @@ export default function StudioPage() {
     } catch { /* private mode — the composer just opens empty */ }
     router.push("/");
   }, [prose, spec, router]);
+
+  const openIdentity = openId === "new" ? null : identities.find((i) => i.id === openId) ?? null;
 
   return (
     <div className="screen">
@@ -192,45 +156,58 @@ export default function StudioPage() {
         </div>
         <p className="mt-3 max-w-[64ch] text-[15px] text-dim">
           The hard part isn&rsquo;t making one good shot, it&rsquo;s making the
-          second one match. Name a look, a face, a place or a prop once here, and it
-          comes back exactly in every prompt afterwards.
+          second one match. Train a face from photos and it comes back as itself;
+          name a face, a place or a prop once and it comes back exactly in every
+          prompt afterwards.
         </p>
 
-        {/* ── Looks ─────────────────────────────────────────────── */}
+        {/* ── Identities ────────────────────────────────────────── */}
         <section className="mt-8">
           <div className="flex flex-wrap items-center gap-3">
-            <p className="grouplabel !pb-0">Looks</p>
-            <span className="text-[13px] text-mute">{looks.length} in the library</span>
-            <span className="ml-auto flex items-center gap-2">
-              <input value={lookQuery} onChange={(e) => setLookQuery(e.target.value)} placeholder="Search looks"
-                className="ctl !h-[34px] w-[180px] !text-[14px]" />
-              <button onClick={() => setEditing("new")} className="chip !text-blue"><IconPlus /> New look</button>
+            <p className="grouplabel !pb-0">Identities</p>
+            <span className="text-[13px] text-mute">
+              {identities.length
+                ? `${identities.length} face${identities.length === 1 ? "" : "s"}${anyTraining ? " · one is training" : ""}`
+                : "a real face, learned from photos"}
+            </span>
+            <span className="ml-auto">
+              <button onClick={() => setOpenId("new")} className="chip !text-blue"><IconPlus /> New identity</button>
             </span>
           </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {categories.map((c) => (
-              <button key={c} onClick={() => setLookFilter(c)}
-                className={`chip !py-1.5 !text-[13px] ${lookFilter === c ? "bg-blue text-white" : ""}`}>
-                {c}
-              </button>
-            ))}
-          </div>
+          <p className="mt-2 max-w-[72ch] text-[13.5px] text-dim">
+            Ten to twenty photos of one person teach a small model that face. Stills made
+            with it carry the face itself, not a description of it, and @Name in any
+            prompt carries a still of it into video.
+            {!terms.configured && (
+              <> Training runs on fal.ai, which isn&rsquo;t connected yet — an admin sets{" "}
+                <code className="font-mono text-[12px]">FAL_KEY</code> in Vercel. Photos can be gathered meanwhile.</>
+            )}
+          </p>
 
-          {shownLooks.length === 0 ? (
-            <div className="card mt-4"><Empty title="No looks here" line="Try another category, or make one from the controls below." /></div>
+          {identities.length === 0 ? (
+            <div className="card mt-4">
+              <Empty title="Nobody trained yet" line="Add an identity with a set of photos of one person, then train it." />
+            </div>
           ) : (
-            <div className="look-grid mt-4">
-              {shownLooks.map((l) => (
-                <button key={l.id} type="button" onClick={() => setOpenLook(l)} className="look-card card-link">
-                  <span className="look-cover" style={{ background: `linear-gradient(135deg, ${l.swatch[0]}, ${l.swatch[1]})` }}>
-                    {l.cover && <LazyMedia url={l.cover.url} kind={l.cover.kind} hoverPlay alt={l.name} className="!absolute inset-0" />}
-                    {l.builtin && <span className="look-tag">Particl</span>}
-                    {l.refs.length > 0 && <span className="look-tag look-tag-right">{l.refs.length} ref{l.refs.length === 1 ? "" : "s"}</span>}
+            <div className="gal-grid mt-4">
+              {identities.map((i) => (
+                <button key={i.id} type="button" onClick={() => setOpenId(i.id)} className="gal-card card-link">
+                  <span className="gal-cover bg-thumb">
+                    {i.coverUploadId
+                      ? /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={`/api/uploads/${i.coverUploadId}`} alt={i.name} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+                      : <span className="absolute inset-0 grid place-items-center font-mono text-[22px] text-mute">@</span>}
+                    <span className={`gal-tag ${i.status === "ready" ? "!bg-ok !text-white" : i.status === "training" ? "!bg-blue !text-white" : i.status === "failed" ? "!bg-lift !text-white" : ""}`}>
+                      {i.status === "ready" ? "Ready" : i.status === "training" ? "Training" : i.status === "failed" ? "Failed" : "Draft"}
+                    </span>
+                    <span className="gal-tag gal-tag-right">{i.photos.length} photo{i.photos.length === 1 ? "" : "s"}</span>
                   </span>
-                  <span className="look-body">
-                    <span className="look-name">{l.name}</span>
-                    <span className="look-blurb">{l.blurb || specToPhrase(l.spec) || "—"}</span>
-                    <span className="look-cat">{l.category}</span>
+                  <span className="gal-body">
+                    <span className="gal-name">@{i.name}</span>
+                    <span className="gal-blurb">{i.description || "—"}</span>
+                    <span className="gal-cat">
+                      {i.status === "ready" && i.trainedAt ? `trained ${timeAgo(i.trainedAt)}` : i.status === "training" ? "at the trainer" : i.status === "failed" ? "try again" : "not trained"}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -326,10 +303,7 @@ export default function StudioPage() {
           <div className="flex flex-wrap items-center gap-2">
             <p className="grouplabel !pb-0">The shot</p>
             {n > 0 && <span className="chip bg-blue text-white">{n} set</span>}
-            <span className="ml-auto flex gap-1.5">
-              <button onClick={saveCurrentAsLook} className="chip">Save as look</button>
-              {n > 0 && <button onClick={() => setSpec({})} className="chip !text-lift">Clear</button>}
-            </span>
+            {n > 0 && <span className="ml-auto"><button onClick={() => setSpec({})} className="chip !text-lift">Clear</button></span>}
           </div>
           {phrase && <p className="mt-2 text-[13px] text-dim"><span className="text-mute">Reads as: </span>{phrase}.</p>}
 
@@ -380,25 +354,14 @@ export default function StudioPage() {
         </section>
       </div>
 
-      {openLook && !editing && (
-        <LookSheet
-          look={openLook}
-          onClose={() => setOpenLook(null)}
-          onUse={() => carryLook(openLook)}
-          onEdit={openLook.builtin ? undefined : () => setEditing(openLook)}
-          onDuplicate={() => duplicateLook(openLook)}
-          onDelete={openLook.builtin ? undefined : () => deleteLook(openLook)}
-        />
-      )}
-      {editing && (
-        <LookEditor
-          look={editing === "new" ? null : editing}
-          seedSpec={editing === "new" ? spec : undefined}
-          seedProse={editing === "new" ? "" : undefined}
+      {openId && (
+        <IdentitySheet
+          key={openId}
+          identity={openIdentity}
           projectId={scoped ? bin : null}
-          categories={lookData?.categories ?? []}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); setOpenLook(null); refreshLooks(); }}
+          terms={terms}
+          onClose={() => setOpenId(null)}
+          onChanged={refreshIds}
         />
       )}
       {busy && (
@@ -409,163 +372,3 @@ export default function StudioPage() {
     </div>
   );
 }
-
-/* ── The Look editor ─────────────────────────────────────────────────── */
-
-function LookEditor({ look, seedSpec, seedProse, projectId, categories, onClose, onSaved }: {
-  look: LookItem | null;
-  seedSpec?: ShotSpec; seedProse?: string;
-  projectId: string | null;
-  categories: string[];
-  onClose: () => void; onSaved: () => void;
-}) {
-  const [name, setName] = useState(look?.name ?? "");
-  const [category, setCategory] = useState(look?.category ?? "Custom");
-  const [blurb, setBlurb] = useState(look?.blurb ?? "");
-  const [prose, setProse] = useState(look?.prose ?? seedProse ?? "");
-  const [spec, setSpec] = useState<ShotSpec>(look?.spec ?? seedSpec ?? {});
-  const [refs, setRefs] = useState<{ id: string; url: string }[]>(
-    (look?.refs ?? []).map((id) => ({ id, url: `/api/uploads/${id}` })));
-  const [busy, setBusy] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [cost, setCost] = useState<number | null>(null);
-  const file = useRef<HTMLInputElement>(null);
-  const n = specCount(spec);
-
-  async function addRefs(files: FileList) {
-    setBusy("Uploading…"); setErr(null);
-    try {
-      const next: { id: string; url: string }[] = [];
-      for (const f of Array.from(files).slice(0, 6 - refs.length)) {
-        const up = await uploadFile(f, "reference", (pct) => setBusy(`${f.name} — ${pct}%`));
-        if (up.kind !== "image") throw new Error("A look's references are stills.");
-        next.push({ id: up.id, url: up.url });
-      }
-      setRefs((r) => [...r, ...next]);
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(null); if (file.current) file.current.value = ""; }
-  }
-
-  async function describe() {
-    if (!look) { setErr("Save the look first, then let Claude describe its references."); return; }
-    setBusy("Looking at the references…"); setErr(null);
-    try {
-      const res = await fetch(`/api/presets/${look.id}/describe`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Couldn't describe it");
-      setProse(json.prose); setCost(json.costUsd ?? null);
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(null); }
-  }
-
-  async function save() {
-    if (!name.trim()) { setErr("Give the look a name."); return; }
-    setBusy("Saving…"); setErr(null);
-    try {
-      const body = { name: name.trim(), category, blurb: blurb.trim(), prose: prose.trim(), spec, refs: refs.map((r) => r.id), projectId };
-      const res = look
-        ? await fetch(`/api/presets/${look.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-        : await fetch("/api/presets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Couldn't save");
-      onSaved();
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(null); }
-  }
-
-  const toggle = (cat: string, value: string) =>
-    setSpec((s) => ({ ...s, [cat]: s[cat] === value ? "" : value }));
-
-  return (
-    <div className="sheet-veil" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={look ? `Edit ${look.name}` : "New look"}>
-        <header className="sheet-head">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">{look ? "Edit look" : "New look"}</span>
-          <button type="button" onClick={onClose} className="theatre-close" title="Close"><IconClose /></button>
-        </header>
-        <div className="sheet-body">
-          <label className="block">
-            <span className="mb-1.5 block text-[13px] font-medium text-dim">Name</span>
-            <input className="ctl" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rooftop golden" />
-          </label>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="mb-1.5 block text-[13px] font-medium text-dim">Category</span>
-              <select className="ctl" value={category} onChange={(e) => setCategory(e.target.value)}>
-                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-[13px] font-medium text-dim">One line</span>
-              <input className="ctl" value={blurb} onChange={(e) => setBlurb(e.target.value)} placeholder="What it does, in a breath" maxLength={140} />
-            </label>
-          </div>
-
-          <p className="mt-4 text-[13px] font-medium text-dim">Reference stills <span className="font-normal text-mute">· up to six, attached to every render made in this look</span></p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {refs.map((r) => (
-              <span key={r.id} className="ref-thumb group">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={r.url} alt="" className="h-full w-full object-cover" />
-                <button type="button" onClick={() => setRefs((x) => x.filter((y) => y.id !== r.id))} className="ref-x reveal" title="Remove"><IconClose className="!h-3 !w-3" /></button>
-              </span>
-            ))}
-            {refs.length < 6 && (
-              <button type="button" onClick={() => file.current?.click()} className="ref-thumb ref-add" title="Add stills"><IconPlus /></button>
-            )}
-            <input ref={file} type="file" multiple hidden accept="image/jpeg,image/png,image/webp"
-              onChange={(e) => e.target.files && addRefs(e.target.files)} />
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-[13px] font-medium text-dim">Style block</span>
-            <span className="text-[12px] text-mute">light, lens, grade, texture — never the subject</span>
-            {refs.length > 0 && look && (
-              <button type="button" onClick={describe} disabled={Boolean(busy)} className="chip ml-auto !py-1 !text-[12.5px] !text-blue disabled:opacity-50">
-                <IconSparkle className="!h-3.5 !w-3.5" /> Describe from the stills
-              </button>
-            )}
-          </div>
-          <textarea value={prose} onChange={(e) => setProse(e.target.value)} rows={4}
-            placeholder="e.g. A single soft daylight source from a window to one side, dust visible in the beam, warm bounce off pale walls. Gentle contrast, shadows open."
-            className="mt-2 w-full resize-none rounded-[12px] bg-chip px-3.5 py-3 text-[14px] leading-relaxed text-bone placeholder:text-mute focus:bg-panel focus:outline-none" />
-          {cost != null && <p className="mt-1 text-[12px] text-mute">Described for {cost < 0.01 ? "under a cent" : `$${cost.toFixed(2)}`}. Edit it as you like before saving.</p>}
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-[13px] font-medium text-dim">Chips</span>
-            {n > 0 && <span className="text-[12px] text-mute">{specToPhrase(spec)}</span>}
-            {n > 0 && <button type="button" onClick={() => setSpec({})} className="ml-auto text-[12px] text-lift">Clear</button>}
-          </div>
-          <div className="mt-2 grid gap-x-6 gap-y-3 md:grid-cols-2">
-            {CATEGORIES.map((c) => (
-              <div key={c.key}>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-mute">{c.label}</p>
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {c.options.map((o) => (
-                    <button key={o.value} type="button" onClick={() => toggle(c.key, o.value)} title={o.phrase}
-                      className={`chip !py-1 !text-[12.5px] ${spec[c.key] === o.value ? "bg-blue text-white" : ""}`}>
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {err && <p className="mt-4 rounded-[10px] bg-lift/8 px-3 py-2 text-[13.5px] text-lift">{err}</p>}
-        </div>
-        <footer className="sheet-foot">
-          <span className="text-[12.5px] text-mute">{busy ?? (look ? "" : "Saved to " + (projectId ? "this project" : "the whole workspace"))}</span>
-          <span className="ml-auto flex gap-2">
-            <button type="button" onClick={onClose} className="chip">Cancel</button>
-            <button type="button" onClick={save} disabled={Boolean(busy)} className="btn-render h-[36px] px-5 text-[14px]">
-              {look ? "Save changes" : "Save look"}
-            </button>
-          </span>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
-export type { LookCover };

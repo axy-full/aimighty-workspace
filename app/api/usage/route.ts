@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncActive } from "@/lib/jobs";
-import { MODELS } from "@/lib/models";
+import { modelLabel } from "@/lib/models";
 import { prettyModel, hasFreeTier } from "@/lib/enhance";
 import { requireUser } from "@/lib/auth";
 
@@ -17,7 +17,7 @@ export async function GET() {
   await ready();
   try { await syncActive(); } catch { /* report on what we have */ }
 
-  const label = (m: string) => MODELS.find((x) => x.id === m)?.label ?? m;
+  const label = (m: string) => modelLabel(m);
 
   const [totals, topups, byModel, byProject, byPerson, byMonth, recent, refines] = await Promise.all([
     db().execute(`

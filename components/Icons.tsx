@@ -30,6 +30,11 @@ export const IconMeter = (p: P) => (
     <path d="M5 19v-6M12 19V6M19 19v-9" />
   </svg>
 );
+export const IconAudio = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
+  </svg>
+);
 export const IconGear = (p: P) => (
   <svg {...base} {...p}>
     <circle cx="12" cy="12" r="3.1" />

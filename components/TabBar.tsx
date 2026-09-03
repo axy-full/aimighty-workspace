@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  IconProjects, IconGenerate, IconStudio, IconMeter, IconGear,
+  IconProjects, IconGenerate, IconStudio, IconMeter, IconGear, IconAudio,
 } from "./Icons";
 
 /**
@@ -18,6 +18,7 @@ import {
    the rest is housekeeping. */
 const TABS = [
   { href: "/",         label: "Generate", Icon: IconGenerate },
+  { href: "/audio",    label: "Audio",    Icon: IconAudio },
   { href: "/projects", label: "Projects", Icon: IconProjects },
   { href: "/studio",   label: "Studio",   Icon: IconStudio },
   { href: "/usage",    label: "Usage",    Icon: IconMeter },

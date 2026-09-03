@@ -64,17 +64,19 @@ export function LibrarySections({
   onChanged?: () => void;
   empty?: string;
 }) {
-  const clips = gens.filter((g) => g.kind !== "image");
+  const clips = gens.filter((g) => g.kind !== "image" && g.kind !== "audio");
   const stills = gens.filter((g) => g.kind === "image");
+  const sounds = gens.filter((g) => g.kind === "audio");
 
-  if (!clips.length || !stills.length) {
+  if ([clips, stills, sounds].filter((l) => l.length).length < 2) {
     return <GenGrid gens={gens} projects={projects} onChanged={onChanged} empty={empty} />;
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <Section title="Clips" items={clips} projects={projects} onChanged={onChanged} />
-      <Section title="Stills" items={stills} projects={projects} onChanged={onChanged} />
+      {clips.length > 0 && <Section title="Clips" items={clips} projects={projects} onChanged={onChanged} />}
+      {stills.length > 0 && <Section title="Stills" items={stills} projects={projects} onChanged={onChanged} />}
+      {sounds.length > 0 && <Section title="Audio" items={sounds} projects={projects} onChanged={onChanged} />}
     </div>
   );
 }

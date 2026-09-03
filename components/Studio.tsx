@@ -12,11 +12,9 @@
 import { useState } from "react";
 import { CATEGORIES, specToPhrase, specCount, type ShotSpec } from "@/lib/studio";
 
-export default function Studio({ spec, setSpec, look, onClearLook }: {
+export default function Studio({ spec, setSpec }: {
   spec: ShotSpec;
   setSpec: (next: ShotSpec) => void;
-  look?: { id: string; name: string } | null;
-  onClearLook?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const n = specCount(spec);
@@ -34,13 +32,6 @@ export default function Studio({ spec, setSpec, look, onClearLook }: {
         <span className="ml-auto text-[13px] text-mute">{open ? "Hide" : "Show"}</span>
       </button>
 
-      {look && (
-        <div className="flex items-center gap-2 border-t border-hair px-4 py-2.5 text-[13px]">
-          <span className="text-mute">Look</span>
-          <span className="font-medium text-blue">{look.name}</span>
-          {onClearLook && <button onClick={onClearLook} className="ml-auto text-[12px] text-lift">Take off</button>}
-        </div>
-      )}
       {n > 0 && (
         <div className="border-t border-hair px-4 py-3">
           <p className="text-[13px] leading-snug text-dim">

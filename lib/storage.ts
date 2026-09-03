@@ -15,6 +15,9 @@ import path from "node:path";
 /** Deterministic blob paths, so a row id is enough to find the object. */
 export const videoPath  = (genId: string) => `generations/${genId}.mp4`;
 export const imagePath  = (genId: string) => `generations/${genId}.png`;
+export const audioPath  = (genId: string) => `generations/${genId}.mp3`;
+/** The photo set an identity was trained from, zipped for the trainer. */
+export const identityZipPath = (identityId: string) => `identities/${identityId}.zip`;
 export const uploadPath = (uploadId: string, ext: string) => `uploads/${uploadId}.${ext}`;
 
 const LOCAL_DIR = path.join(process.cwd(), ".data", "generations");
@@ -90,6 +93,53 @@ export async function readImageBytes(genId: string): Promise<Buffer> {
   return readFile(path.join(LOCAL_DIR, `${genId}.png`));
 }
 
+/* ── Audio renders (ElevenLabs) — MP3 bytes arrive in the response body. ── */
+
+export async function storeAudioBytes(genId: string, buf: Buffer): Promise<string> {
+  if (usingBlob()) {
+    const { put } = await import("@vercel/blob");
+    await put(audioPath(genId), buf, {
+      access: "private",
+      contentType: "audio/mpeg",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    return `/api/media/${genId}`;
+  }
+  await mkdir(LOCAL_DIR, { recursive: true });
+  await writeFile(path.join(LOCAL_DIR, `${genId}.mp3`), buf);
+  return `/api/media/${genId}`;
+}
+
+export async function readAudioBytes(genId: string): Promise<Buffer> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
+  if (usingBlob()) return readBlob(audioPath(genId));
+  return readFile(path.join(LOCAL_DIR, `${genId}.mp3`));
+}
+
+/**
+ * The zip a trainer learns a face from. Private like everything else; the
+ * trainer receives a signed link that expires, never the store. Returns the
+ * store pathname (or the local file path in development).
+ */
+export async function storeIdentityZip(identityId: string, buf: Buffer): Promise<string> {
+  if (!/^[A-Za-z0-9_-]+$/.test(identityId)) throw new Error("bad id");
+  if (usingBlob()) {
+    const { put } = await import("@vercel/blob");
+    await put(identityZipPath(identityId), buf, {
+      access: "private",
+      contentType: "application/zip",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    return identityZipPath(identityId);
+  }
+  await mkdir(LOCAL_DIR, { recursive: true });
+  const local = path.join(LOCAL_DIR, `${identityId}.zip`);
+  await writeFile(local, buf);
+  return local;
+}
+
 /**
  * A render's bytes as a stream, for handing straight to a Response.
  *
@@ -98,10 +148,10 @@ export async function readImageBytes(genId: string): Promise<Buffer> {
  * when the bytes are only passing through.
  */
 export async function openMediaStream(
-  genId: string, kind: "video" | "image"
+  genId: string, kind: "video" | "image" | "audio"
 ): Promise<ReadableStream<Uint8Array>> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
-  const pathname = kind === "image" ? imagePath(genId) : videoPath(genId);
+  const pathname = kind === "image" ? imagePath(genId) : kind === "audio" ? audioPath(genId) : videoPath(genId);
   if (usingBlob()) {
     const { get } = await import("@vercel/blob");
     const found = await get(pathname, { access: "private" });
@@ -109,7 +159,7 @@ export async function openMediaStream(
     return found.stream as ReadableStream<Uint8Array>;
   }
   const { createReadStream } = await import("node:fs");
-  const local = path.join(LOCAL_DIR, `${genId}.${kind === "image" ? "png" : "mp4"}`);
+  const local = path.join(LOCAL_DIR, `${genId}.${kind === "image" ? "png" : kind === "audio" ? "mp3" : "mp4"}`);
   const node = createReadStream(local);
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -175,7 +225,7 @@ export async function readUploadBytes(uploadId: string, ext: string, storedUrl: 
 /** Best-effort removal of a render's stored file — video or image. */
 export async function deleteVideo(genId: string): Promise<void> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) return;
-  for (const target of [videoPath(genId), imagePath(genId)]) {
+  for (const target of [videoPath(genId), imagePath(genId), audioPath(genId)]) {
     try {
       if (usingBlob()) {
         const { del } = await import("@vercel/blob");

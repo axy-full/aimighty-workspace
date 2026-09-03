@@ -28,6 +28,7 @@ export async function GET(req: Request) {
     createdBy: url.searchParams.get("mine") === "1" ? got.user.id : undefined,
     status: url.searchParams.get("status") ?? undefined,
     kind: url.searchParams.get("kind") ?? undefined,
+    identityId: url.searchParams.get("identityId") ?? undefined,
     search,
     before,
     limit,

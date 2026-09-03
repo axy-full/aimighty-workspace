@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncPending } from "@/lib/jobs";
+import { syncTrainingIdentities } from "@/lib/identities";
 import { setSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,9 @@ export async function GET(req: Request) {
   const before = await counts();
   try {
     await syncPending(30);
+    // Faces mid-training get asked about too, so a finished model is found
+    // even if nobody opens the Studio for a while.
+    await syncTrainingIdentities(10).catch(() => {});
   } catch (e) {
     console.error("cron sync failed:", (e as Error).message);
   }

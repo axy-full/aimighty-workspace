@@ -1,6 +1,6 @@
 import {
-  readVideoBytes, readImageBytes, openMediaStream,
-  presignedReadUrl, videoPath, imagePath, usingBlob,
+  readVideoBytes, readImageBytes, readAudioBytes, openMediaStream,
+  presignedReadUrl, videoPath, imagePath, audioPath, usingBlob,
 } from "@/lib/storage";
 import { getGeneration } from "@/lib/jobs";
 import { downloadFilename } from "@/lib/downloadName";
@@ -34,16 +34,19 @@ export async function GET(req: Request, { params }: Ctx) {
   const { id } = await params;
 
   const gen = await getGeneration(id).catch(() => null);
-  const kind: "video" | "image" = gen?.kind === "image" ? "image" : "video";
+  const kind: "video" | "image" | "audio" =
+    gen?.kind === "image" ? "image" : gen?.kind === "audio" ? "audio" : "video";
   const isImage = kind === "image";
-  const contentType = isImage ? "image/png" : "video/mp4";
+  const isAudio = kind === "audio";
+  const contentType = isImage ? "image/png" : isAudio ? "audio/mpeg" : "video/mp4";
+  const ext = isImage ? "png" : isAudio ? "mp3" : "mp4";
   const wantsDownload = new URL(req.url).searchParams.get("download") === "1";
 
   if (wantsDownload) {
     try {
       const stream = await openMediaStream(id, kind);
       // The platform names the file, never the API (R9).
-      const filename = await downloadFilename(id, isImage ? "png" : "mp4");
+      const filename = await downloadFilename(id, ext);
       return new Response(stream, {
         headers: {
           "Content-Type": contentType,
@@ -66,7 +69,7 @@ export async function GET(req: Request, { params }: Ctx) {
 
   if (usingBlob()) {
     try {
-      const signed = await presignedReadUrl(isImage ? imagePath(id) : videoPath(id), 6);
+      const signed = await presignedReadUrl(isImage ? imagePath(id) : isAudio ? audioPath(id) : videoPath(id), 6);
       if (wantsStream) {
         const range = req.headers.get("range");
         const upstream = await fetch(signed, {
@@ -99,7 +102,7 @@ export async function GET(req: Request, { params }: Ctx) {
      bytes directly, Range and all. */
   let buf: Buffer;
   try {
-    buf = isImage ? await readImageBytes(id) : await readVideoBytes(id);
+    buf = isImage ? await readImageBytes(id) : isAudio ? await readAudioBytes(id) : await readVideoBytes(id);
   } catch {
     return new Response("Not found", { status: 404 });
   }

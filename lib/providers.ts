@@ -17,7 +17,7 @@
  * models.ts. Nothing else in the app should learn its name.
  */
 
-export type ProviderId = "byteplus" | "google";
+export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal";
 
 export type ProviderDef = {
   id: ProviderId;
@@ -90,6 +90,50 @@ export const PROVIDERS: ProviderDef[] = [
     },
     rateLimit: "Per-project RPM and daily quotas set in Google AI Studio; a 429 " +
                "or RESOURCE_EXHAUSTED is retried with backoff rather than failed.",
+    billsFailures: false,
+  },
+  {
+    id: "elevenlabs",
+    label: "ElevenLabs",
+    envKey: "ELEVENLABS_API_KEY",
+    baseUrlEnv: "ELEVENLABS_BASE_URL",
+    defaultBaseUrl: "https://api.elevenlabs.io",
+    docs: "https://elevenlabs.io/docs/api-reference/introduction",
+    // Audio in, audio out: nothing here is an image, so the image limits are
+    // zero and the upload layer never consults them.
+    limits: {
+      maxImageBytes: 0,
+      maxVideoBytes: 0,
+      maxRequestBytes: 10 * 1024 * 1024,
+      minImagePx: 0,
+      maxImagePx: 0,
+      minAspect: 0,
+      maxAspect: 0,
+      imageFormats: [],
+    },
+    rateLimit: "Concurrent requests are capped per plan (a handful on the small " +
+               "plans, more on Scale); a 429 is retried with backoff rather than failed.",
+    billsFailures: false,
+  },
+  {
+    id: "fal",
+    label: "fal.ai",
+    envKey: "FAL_KEY",
+    baseUrlEnv: "FAL_BASE_URL",
+    defaultBaseUrl: "https://queue.fal.run",
+    docs: "https://docs.fal.ai/model-apis/model-endpoints/queue",
+    limits: {
+      maxImageBytes: 20 * 1024 * 1024,
+      maxVideoBytes: 0,
+      maxRequestBytes: 100 * 1024 * 1024,
+      minImagePx: 256,
+      maxImagePx: 4096,
+      minAspect: 0.25,
+      maxAspect: 4,
+      imageFormats: ["jpeg", "jpg", "png", "webp"],
+    },
+    rateLimit: "Queue-based — a busy moment waits rather than fails. A 429 is " +
+               "retried with backoff.",
     billsFailures: false,
   },
 ];

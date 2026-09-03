@@ -18,7 +18,7 @@ import { useProject } from "@/lib/projectContext";
 import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { prettyModel } from "@/lib/enhance";
-import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy } from "./Icons";
+import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
@@ -157,26 +157,6 @@ export default function Theatre({
     } finally { setSaving(null); }
   }
 
-  /** This render's chips and frame become a Look in the library. */
-  async function saveAsLook() {
-    setSaveMenu(false);
-    const name = await appPrompt("Name this look", "", "e.g. Rooftop golden");
-    if (!name?.trim()) return;
-    const sp = (gen!.params as { shotSpec?: Record<string, string> }).shotSpec ?? {};
-    setSaving("Saving…");
-    try {
-      const res = await fetch("/api/presets", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), category: "Custom", spec: sp, coverGenId: gen!.id, projectId: gen!.projectId ?? projectScope }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Couldn't save it");
-      await appAlert(`"${name.trim()}" is in the library`, "This render is its cover. Open it in the Studio to add a style block or references.");
-    } catch (e) {
-      await appAlert("Couldn't save it", (e as Error).message);
-    } finally { setSaving(null); }
-  }
-
   return createPortal(
     <div className="theatre" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
       <div className="theatre-stage" onClick={(e) => e.stopPropagation()}
@@ -186,6 +166,12 @@ export default function Theatre({
           still ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img key={gen.id} src={url!} alt={gen.prompt.slice(0, 120)} className="theatre-media" />
+          ) : gen.kind === "audio" ? (
+            <div className="theatre-face">
+              <IconAudio className="!h-10 !w-10 text-white/70" />
+              <p className="mt-3 max-w-[52ch] text-center text-[15px] text-white/90">{gen.title || gen.prompt.slice(0, 160)}</p>
+              <audio key={gen.id} src={url!} controls autoPlay className="mt-4 w-[min(520px,90%)]" />
+            </div>
           ) : (
             <video key={gen.id} src={url!} controls autoPlay loop playsInline className="theatre-media" />
           )
@@ -304,7 +290,6 @@ export default function Theatre({
                     {([["character", "Character"], ["location", "Location"], ["prop", "Prop"], ["style", "Cast look"]] as const).map(([k, l]) => (
                       <button key={k} type="button" onClick={() => saveToCast(k)} className="menu-item">{l}</button>
                     ))}
-                    <button type="button" onClick={saveAsLook} className="menu-item border-t border-hair">Library look <span className="text-mute">· cover + chips</span></button>
                   </span>
                 )}
               </span>

@@ -50,6 +50,8 @@ export type ModelDef = {
   provider: string;
   /** What the engine produces. Image engines skip duration/audio/refine. */
   kind: "video" | "image";
+  /** Not offered in the composer's model menu — reached from its own screen. */
+  hidden?: boolean;
   /** The model's id on Vercel AI Gateway, when it is also served there. */
   gatewayId?: string;
   /** Still engines bill per image by size (USD), plus a little per reference in. */
@@ -170,6 +172,32 @@ export const MODELS: ModelDef[] = [
     maxVideoSecondsTotal: 0,
     note: "Google's quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
   },
+  {
+    // Flux with a trained identity's LoRA — what an Identity renders through.
+    // Reached from the Studio's identity screen, never the composer: the
+    // prompt has to carry the identity's trigger, which that screen adds.
+    // Price per megapixel from fal's listing; a 1K frame is ~1 MP.
+    id: "fal-ai/flux-lora",
+    label: "Flux · Identity",
+    short: "FLUX ID",
+    family: "flux",
+    provider: "fal",
+    kind: "image",
+    hidden: true,
+    paramStyle: "fields",
+    tiers: [],
+    imagePricing: { "1K": 0.035 },
+    imageRefInUsd: 0,
+    resolutions: ["1K"],
+    ratios: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 0,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "A trained identity, rendered by Flux. Made from the Studio.",
+  },
 ];
 
 export const DEFAULT_MODEL_ID = MODELS[0].id;
@@ -180,9 +208,26 @@ export function getModel(id: string): ModelDef {
   return m;
 }
 
+/** Engines that render sound rather than pictures live outside the video
+ *  catalogue but still need names on the ledger. */
+export const AUDIO_LABELS: Record<string, { label: string; short: string }> = {
+  eleven_v3:              { label: "Eleven v3",              short: "11 v3" },
+  eleven_multilingual_v2: { label: "Eleven Multilingual v2", short: "11 ML" },
+  eleven_flash_v2_5:      { label: "Eleven Flash v2.5",      short: "11 FLASH" },
+  eleven_turbo_v2_5:      { label: "Eleven Turbo v2.5",      short: "11 TURBO" },
+  eleven_sfx:             { label: "Eleven Sound Effects",   short: "11 SFX" },
+  eleven_music:           { label: "Eleven Music",           short: "11 MUSIC" },
+};
+
+/** A readable name for any model id, catalogue or not. */
+export function modelLabel(modelId: string): string {
+  return MODELS.find((m) => m.id === modelId)?.label ?? AUDIO_LABELS[modelId]?.label ?? modelId;
+}
+
 /** Short badge label for any model id — safe on retired/unknown ids. */
 export function shortLabel(modelId: string): string {
   return MODELS.find((m) => m.id === modelId)?.short
+    ?? AUDIO_LABELS[modelId]?.short
     ?? (modelId.includes("2-5") ? "SD 2.5" : modelId.includes("2-0") ? "SD 2.0"
       : modelId.includes("flash-image") ? "NB 2" : modelId.includes("image") ? "NB PRO" : modelId);
 }

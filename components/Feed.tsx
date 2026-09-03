@@ -6,6 +6,7 @@
  * in the grid the moment it is submitted — a breathing card with the brand
  * thinking and the clock running — rather than a status word in a strip.
  */
+import { IconAudio } from "./Icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Gen } from "./GenCard";
@@ -13,7 +14,7 @@ import LazyMedia from "./LazyMedia";
 import { Empty, ParticlSpinner } from "./ParticlMark";
 import { shortLabel } from "@/lib/models";
 
-export type FeedFilter = "all" | "video" | "image";
+export type FeedFilter = "all" | "video" | "image" | "audio";
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
@@ -68,9 +69,10 @@ export default function Feed({
     return () => clearInterval(t);
   }, [anyLive]);
 
-  const clips = gens.filter((g) => g.kind !== "image").length;
-  const stills = gens.length - clips;
-  const mixed = clips > 0 && stills > 0;
+  const clips = gens.filter((g) => g.kind !== "image" && g.kind !== "audio").length;
+  const stills = gens.filter((g) => g.kind === "image").length;
+  const sounds = gens.length - clips - stills;
+  const mixed = [clips, stills, sounds].filter((n) => n > 0).length > 1;
   const shown = visible;
 
   const columns: Gen[][] = Array.from({ length: cols }, () => []);
@@ -86,7 +88,9 @@ export default function Feed({
         )}
         {mixed && (
           <span className="feed-filter">
-            {([["all", `All ${gens.length}`], ["video", `Clips ${clips}`], ["image", `Stills ${stills}`]] as const).map(([k, label]) => (
+            {([["all", `All ${gens.length}`], ["video", `Clips ${clips}`], ["image", `Stills ${stills}`], ["audio", `Audio ${sounds}`]] as const)
+              .filter(([k]) => k === "all" || (k === "video" ? clips : k === "image" ? stills : sounds) > 0)
+              .map(([k, label]) => (
               <button key={k} type="button" onClick={() => setFilter(k)} data-active={filter === k}>{label}</button>
             ))}
           </span>
@@ -124,7 +128,8 @@ function Tile({ gen, active, now, onOpen }: { gen: Gen; active: boolean; now: nu
   const done = gen.status === "succeeded" && Boolean(url);
   const live = gen.status === "queued" || gen.status === "running";
   const still = gen.kind === "image";
-  const p = gen.params as { duration?: number; resolution?: string };
+  const audio = gen.kind === "audio";
+  const p = gen.params as { duration?: number; resolution?: string; voiceName?: string; durationSeconds?: number | null; lengthMs?: number };
   const elapsed = Math.max(0, Math.floor((now - gen.createdAt) / 1000));
 
   return (
@@ -133,9 +138,15 @@ function Tile({ gen, active, now, onOpen }: { gen: Gen; active: boolean; now: nu
       data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)}
       data-gen-title={gen.title ?? ""}
       className={`tile ${active ? "is-active" : ""} ${live ? "tile-live" : ""} ${gen.status === "failed" ? "tile-failed" : ""}`}
-      style={{ aspectRatio: aspectOf(gen) }}
+      style={{ aspectRatio: audio ? "16 / 6" : aspectOf(gen) }}
     >
-      {done ? (
+      {done && audio ? (
+        <span className="tile-face tile-audio">
+          <IconAudio className="!h-6 !w-6 text-dim" />
+          <span className="tile-face-label">{gen.title || (p.voiceName ? `${p.voiceName} · ` : "") + gen.prompt.slice(0, 60)}</span>
+          <span className="tile-face-sub">{shortLabel(gen.model)}{p.durationSeconds ? ` · ${p.durationSeconds}s` : p.lengthMs ? ` · ${Math.round(p.lengthMs / 1000)}s` : ""}</span>
+        </span>
+      ) : done ? (
         <LazyMedia url={url!} kind={still ? "image" : "video"} hoverPlay alt={gen.prompt.slice(0, 120)} className="!absolute inset-0" />
       ) : live ? (
         <span className="tile-face">
@@ -150,7 +161,7 @@ function Tile({ gen, active, now, onOpen }: { gen: Gen; active: boolean; now: nu
         </span>
       )}
 
-      {done && (
+      {done && !audio && (
         <>
           <span className="tile-scrim" />
           <span className="tile-meta">

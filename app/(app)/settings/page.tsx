@@ -59,7 +59,7 @@ export default function SettingsPage() {
               // Only engines this deployment can actually reach — a default
               // that fails on submit is worse than no default.
               const keyed = new Set((engineData?.engines ?? []).filter((e) => e.configured).map((e) => e.id));
-              const list = MODELS.filter((m) => keyed.size === 0 || keyed.has(m.provider));
+              const list = MODELS.filter((m) => !m.hidden && (keyed.size === 0 || keyed.has(m.provider)));
               const i = list.findIndex((m) => m.id === prefs.modelId);
               const next = list[(i + 1) % list.length] ?? MODELS[0];
               setPrefs({

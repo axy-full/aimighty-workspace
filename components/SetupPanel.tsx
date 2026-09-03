@@ -13,15 +13,13 @@ import { IconClose } from "./Icons";
 import type { ShotSpec } from "@/lib/studio";
 
 export default function SetupPanel({
-  projectId, shotId, setShotId, spec, setSpec, onCite, onClose, look, onClearLook,
+  projectId, shotId, setShotId, spec, setSpec, onCite, onClose,
 }: {
   projectId: string;
   shotId: string; setShotId: (id: string) => void;
   spec: ShotSpec; setSpec: (s: ShotSpec) => void;
   onCite: (token: string) => void;
   onClose?: () => void;
-  look?: { id: string; name: string } | null;
-  onClearLook?: () => void;
 }) {
   return (
     <div className="setup-inner">
@@ -35,7 +33,7 @@ export default function SetupPanel({
         )}
       </div>
       <ShotRow projectId={projectId} shotId={shotId} setShotId={setShotId} />
-      <div className="mt-3"><Studio spec={spec} setSpec={setSpec} look={look} onClearLook={onClearLook} /></div>
+      <div className="mt-3"><Studio spec={spec} setSpec={setSpec} /></div>
       <div className="mt-3"><Cast projectId={projectId} onCite={onCite} /></div>
     </div>
   );

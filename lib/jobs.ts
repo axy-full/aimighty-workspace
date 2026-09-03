@@ -8,7 +8,7 @@ export type Generation = {
   projectId: string | null;
   projectName: string | null;
   arkTaskId: string | null;
-  kind: "video" | "image";
+  kind: "video" | "image" | "audio";
   reviewState: "" | "approved" | "changes";
   reviewBy: string | null;
   model: string;
@@ -54,7 +54,7 @@ export function rowToGeneration(r: any): Generation {
     projectId: r.project_id ?? null,
     projectName: r.project_name ?? null,
     arkTaskId: r.ark_task_id ?? null,
-    kind: r.kind === "image" ? "image" : "video",
+    kind: r.kind === "image" ? "image" : r.kind === "audio" ? "audio" : "video",
     reviewState: r.review_state === "approved" ? "approved" : r.review_state === "changes" ? "changes" : "",
     reviewBy: r.review_by ?? null,
     model: r.model,
@@ -104,6 +104,8 @@ export async function listGenerations(opts: {
   search?: string;
   status?: string;
   kind?: string;
+  /** Only renders made with this identity. */
+  identityId?: string | null;
   /** Cursor: return only rows OLDER than this created_at (keyset pagination). */
   before?: number | null;
 } = {}): Promise<Generation[]> {
@@ -131,8 +133,12 @@ export async function listGenerations(opts: {
     where.push("g.status = ?");
     args.push(opts.status);
   }
-  if (opts.kind === "image" || opts.kind === "video") {
-    where.push(opts.kind === "image" ? "g.kind = 'image'" : "g.kind != 'image'");
+  if (opts.kind === "image" || opts.kind === "video" || opts.kind === "audio") {
+    where.push(opts.kind === "image" ? "g.kind = 'image'" : opts.kind === "audio" ? "g.kind = 'audio'" : "g.kind NOT IN ('image','audio')");
+  }
+  if (opts.identityId) {
+    where.push("json_extract(g.params, '$.identity.id') = ?");
+    args.push(opts.identityId);
   }
   if (opts.before) {
     where.push("g.created_at < ?");

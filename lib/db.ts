@@ -122,6 +122,33 @@ const SCHEMA = [
      created_at  INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_cast_project ON cast_members(project_id)`,
+  /* An identity — a real face the trainer has learned from a set of photos,
+     the way Higgsfield's Soul ID works. The photos stay uploads; the model
+     the trainer returns is a file at the vendor, referenced by URL. */
+  `CREATE TABLE IF NOT EXISTS identities (
+     id            TEXT PRIMARY KEY,
+     project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
+     name          TEXT NOT NULL,
+     description   TEXT NOT NULL DEFAULT '',
+     photos        TEXT NOT NULL DEFAULT '[]',
+     status        TEXT NOT NULL DEFAULT 'draft',
+     provider      TEXT NOT NULL DEFAULT 'fal',
+     trainer       TEXT,
+     request_id    TEXT,
+     trigger       TEXT,
+     steps         INTEGER,
+     lora_url      TEXT,
+     config_url    TEXT,
+     cost_usd      REAL,
+     error         TEXT,
+     cover_upload_id TEXT,
+     cast_id       TEXT,
+     created_by    TEXT NOT NULL DEFAULT '',
+     created_at    INTEGER NOT NULL,
+     updated_at    INTEGER NOT NULL,
+     trained_at    INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_identities_project ON identities(project_id)`,
   /* Notes on a specific shot, as opposed to the workspace-wide chat. */
   `CREATE TABLE IF NOT EXISTS notes (
      id         TEXT PRIMARY KEY,

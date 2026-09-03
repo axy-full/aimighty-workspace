@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
-import { MODELS } from "@/lib/models";
+import { modelLabel } from "@/lib/models";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -147,7 +147,7 @@ export async function GET(req: Request) {
   const num = (v: any) => Number(v ?? 0);
   const t = totals.rows[0] as any;
   const it = iteration.rows[0] as any;
-  const label = (m: string) => MODELS.find((x) => x.id === m)?.label ?? m;
+  const label = (m: string) => modelLabel(m);
 
   // Credit is workspace-wide, so it ignores the project filter.
   const topups = await db().execute(`SELECT COALESCE(SUM(amount_usd),0) AS total FROM topups`);

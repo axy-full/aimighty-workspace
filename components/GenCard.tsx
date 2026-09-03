@@ -5,13 +5,13 @@ import { shortLabel } from "@/lib/models";
 import { appConfirm } from "./dialog";
 import LazyMedia from "./LazyMedia";
 import { ParticlSpinner } from "./ParticlMark";
-import { IconDown, IconTrash } from "./Icons";
+import { IconDown, IconTrash, IconAudio } from "./Icons";
 
 export type Gen = {
   id: string;
   projectId: string | null;
   projectName: string | null;
-  kind?: "video" | "image";
+  kind?: "video" | "image" | "audio";
   reviewState?: "" | "approved" | "changes";
   reviewBy?: string | null;
   model: string;
@@ -59,6 +59,7 @@ export default function GenCard({
   const done = gen.status === "succeeded" && Boolean(url);
   const live = gen.status === "queued" || gen.status === "running";
   const still = gen.kind === "image";
+  const audio = gen.kind === "audio";
 
   async function move(projectId: string) {
     await fetch(`/api/jobs/${gen.id}`, {
@@ -92,7 +93,12 @@ export default function GenCard({
         }}
         className={`tile aspect-video ${live ? "tile-live" : ""} ${gen.status === "failed" ? "tile-failed" : ""} ${onOpen ? "cursor-pointer" : ""}`}
       >
-        {done ? (
+        {done && audio ? (
+          <span className="tile-face tile-audio">
+            <IconAudio className="!h-6 !w-6 text-dim" />
+            <audio controls preload="none" src={url!} className="mt-2 h-9 w-[88%]" onClick={(e) => e.stopPropagation()} />
+          </span>
+        ) : done ? (
           <LazyMedia url={url!} kind={still ? "image" : "video"} hoverPlay alt={gen.prompt.slice(0, 120)} className="!absolute inset-0" />
         ) : (
           <span className="tile-face">
@@ -116,13 +122,13 @@ export default function GenCard({
         )}
         {done && (
           <span className="absolute right-2 top-2 rounded-full bg-black/45 px-2 py-0.5 text-[10.5px] font-medium text-white backdrop-blur-sm">
-            {still ? String(p.resolution ?? "").toUpperCase() : `${p.duration ?? "—"}s`}
+            {audio ? shortLabel(gen.model) : still ? String(p.resolution ?? "").toUpperCase() : `${p.duration ?? "—"}s`}
           </span>
         )}
 
         <span className="reveal absolute bottom-2 right-2 flex items-center gap-1.5">
           {url && (
-            <a href={downloadHref(url)} download={`${clipId(gen.id)}.${still ? "png" : "mp4"}`} title="Download"
+            <a href={downloadHref(url)} download={`${clipId(gen.id)}.${still ? "png" : audio ? "mp3" : "mp4"}`} title="Download"
               onClick={(e) => e.stopPropagation()}
               className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel">
               <IconDown />

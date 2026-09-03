@@ -883,32 +883,27 @@ button.row:active, a.row:active { background: var(--color-chip2); }
   }
 
   /* ── Looks: the library as a wall of covers ───────────────────────── */
-  .look-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
-  .look-card {
+  .tile-audio { padding: 14px 16px; gap: 6px; }
+  .tile-audio .tile-face-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gal-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .gal-card {
     display: flex; flex-direction: column; overflow: hidden; text-align: left;
     border-radius: var(--r); background: var(--color-panel); box-shadow: var(--shadow-card);
   }
-  .look-cover { position: relative; display: block; aspect-ratio: 4 / 3; width: 100%; overflow: hidden; }
-  .look-tag {
+  .gal-cover { position: relative; display: block; aspect-ratio: 4 / 3; width: 100%; overflow: hidden; }
+  .gal-tag {
     position: absolute; left: 8px; top: 8px; padding: 2px 8px; border-radius: 999px;
     background: rgba(0, 0, 0, .5); color: #fff; font-size: 10.5px; font-weight: 600;
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   }
-  .look-tag-right { left: auto; right: 8px; }
-  .look-body { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 12px; }
-  .look-name { font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--color-ink); }
-  .look-blurb {
+  .gal-tag-right { left: auto; right: 8px; }
+  .gal-body { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 12px; }
+  .gal-name { font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--color-ink); }
+  .gal-blurb {
     font-size: 12.5px; line-height: 1.35; color: var(--color-dim);
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  .look-cat { margin-top: 4px; font-family: var(--font-kode); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--color-mute); }
-  .look-dot { display: inline-block; width: 14px; height: 14px; flex: none; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); }
-  .look-hero { position: relative; aspect-ratio: 16 / 9; width: 100%; overflow: hidden; border-radius: 20px 20px 0 0; }
-  .look-hero-close {
-    position: absolute; right: 10px; top: 10px; display: grid; place-items: center;
-    width: 32px; height: 32px; border-radius: 999px; background: rgba(0, 0, 0, .5); color: #fff;
-    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-  }
+  .gal-cat { margin-top: 4px; font-family: var(--font-kode); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--color-mute); }
 
   /* The camera bank, as a shop window. */
   .camera-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
