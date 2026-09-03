@@ -10,6 +10,7 @@ import { usd, timeAgo } from "@/lib/format";
 import { avatarHue, initialsOf } from "@/lib/avatar";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { Empty } from "@/components/ParticlMark";
+import { appConfirm } from "@/components/dialog";
 
 type Member = {
   id: string; email: string; name: string; role: string;
@@ -19,11 +20,16 @@ type Member = {
 type Invite = {
   code: string; email: string; name: string; role: string;
   createdAt: number; expiresAt: number;
+  sentAt?: number | null; sendCount?: number;
 };
+type Mail = { configured: boolean; from: string | null };
 
 export default function TeamPage() {
   usePageTitle("Team");
-  const { data, refresh } = useApi<{ users: Member[]; invites: Invite[] }>("/api/team", 30000);
+  const { data, refresh } = useApi<{ users: Member[]; invites: Invite[]; mail?: Mail }>("/api/team", 30000);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [sending, setSending] = useState<string | null>(null);
+  const { data: me } = useApi<{ id?: string; email: string }>("/api/me");
   const [form, setForm] = useState({ name: "", email: "", role: "member" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -40,6 +46,11 @@ export default function TeamPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Couldn't create the invite");
       setForm({ name: "", email: "", role: "member" });
+      setNotice(json.sent
+        ? `Invitation emailed to ${json.email}.`
+        : json.mailError
+          ? `Invitation created, but the email didn't go: ${json.mailError} Copy the link below instead.`
+          : null);
       refresh();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
@@ -53,6 +64,32 @@ export default function TeamPage() {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) setErr(json.error ?? "That didn't work"); else setErr(null);
     refresh();
+  }
+
+  async function remove(u: Member) {
+    const ok = await appConfirm(
+      `Delete ${u.name}?`,
+      "They lose access immediately: sessions and API tokens are revoked and they leave the team. " +
+      "Their renders and spend stay on the ledger under their name. This can't be undone.",
+      { confirmLabel: "Delete", danger: true },
+    );
+    if (!ok) return;
+    const res = await fetch(`/api/team/${u.id}`, { method: "DELETE" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) setErr(json.error ?? "That didn't work"); else setErr(null);
+    refresh();
+  }
+
+  async function resend(iv: Invite) {
+    setSending(iv.code); setErr(null); setNotice(null);
+    try {
+      const res = await fetch(`/api/team/invites/${iv.code}/send`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Couldn't send it");
+      setNotice(`Invitation emailed again to ${iv.email}.`);
+      refresh();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setSending(null); }
   }
 
   async function revoke(code: string) {
@@ -70,6 +107,7 @@ export default function TeamPage() {
   const users = data?.users ?? [];
   const invites = data?.invites ?? [];
   const active = users.filter((u) => !u.disabled).length;
+  const mail = data?.mail?.configured ?? false;
 
   return (
     <div className="screen">
@@ -104,12 +142,17 @@ export default function TeamPage() {
             </select>
             <button onClick={invite} disabled={busy || !form.name.trim() || !form.email.trim()}
               className="btn-render h-[38px] shrink-0 px-4 text-[14px]">
-              Create invite
+              {busy ? "Sending…" : mail ? "Send invite" : "Create invite"}
             </button>
           </div>
           <p className="mt-2.5 text-[12.5px] text-mute">
-            No email is sent. Copy the link and share it yourself; it expires on its own.
+            {mail
+              ? <>The invitation is emailed from {data?.mail?.from} with a link that expires on its own; you can also copy the link.</>
+              : <>No email is set up, so copy the link and share it yourself; it expires on its own. To email invitations, add RESEND_API_KEY and MAIL_FROM in Vercel.</>}
           </p>
+          {notice && (
+            <p className="mt-3 rounded-[10px] bg-blue/8 px-3 py-2 text-[13.5px] text-blue">{notice}</p>
+          )}
           {err && (
             <p className="mt-3 rounded-[10px] bg-lift/8 px-3 py-2 text-[13.5px] text-lift">{err}</p>
           )}
@@ -128,9 +171,15 @@ export default function TeamPage() {
                     <span className="truncate text-[15px]">{iv.name}</span>
                     <span className="truncate text-[12.5px] text-mute">
                       {iv.email} · {iv.role} · expires {new Date(iv.expiresAt).toLocaleDateString()}
+                      {iv.sentAt ? ` · emailed ${timeAgo(iv.sentAt)}${(iv.sendCount ?? 0) > 1 ? ` (${iv.sendCount}×)` : ""}` : mail ? " · not emailed yet" : ""}
                     </span>
                   </span>
                   <span className="row-value !gap-1.5">
+                    {mail && (
+                      <button onClick={() => resend(iv)} disabled={sending === iv.code} className="chip !py-1.5 !text-[13px] !text-blue disabled:opacity-50">
+                        {sending === iv.code ? "Sending…" : iv.sentAt ? "Resend" : "Email it"}
+                      </button>
+                    )}
                     <button onClick={() => copyLink(iv.code)} className="chip !py-1.5 !text-[13px]">
                       {copied === iv.code ? "Copied ✓" : "Copy link"}
                     </button>
@@ -183,9 +232,15 @@ export default function TeamPage() {
                     </button>
                   )}
                   <button onClick={() => patch(u.id, { disabled: !u.disabled })}
-                    className={`chip !py-1 !text-[12.5px] ${u.disabled ? "" : "!text-lift"}`}>
+                    className="chip !py-1 !text-[12.5px]">
                     {u.disabled ? "Enable" : "Disable"}
                   </button>
+                  {(me?.id ? me.id !== u.id : me?.email !== u.email) && (
+                    <button onClick={() => remove(u)} className="chip !py-1 !text-[12.5px] !text-lift"
+                      title="Revoke access and remove from the team; their work stays on the ledger">
+                      Delete
+                    </button>
+                  )}
                 </span>
               </span>
             </div>
@@ -193,6 +248,7 @@ export default function TeamPage() {
         </div>
         <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
           Admins manage the team, invites and the ledger. Members generate and edit.
+          Disable is reversible; Delete revokes access for good and keeps their renders and spend on the ledger under their name.
         </p>
       </div>
     </div>

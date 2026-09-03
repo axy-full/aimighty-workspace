@@ -234,6 +234,15 @@ export async function ready(): Promise<void> {
         try { await db().execute(`ALTER TABLE uploads ADD COLUMN ${col}`); }
         catch { /* column already exists */ }
       }
+      // A deleted member is retired, not erased: their renders and spend keep
+      // their name on the ledger, while access and listings treat them as gone.
+      try { await db().execute(`ALTER TABLE users ADD COLUMN deleted_at INTEGER`); }
+      catch { /* column already exists */ }
+      // Invites remember whether and when they were emailed.
+      for (const col of [`sent_at INTEGER`, `send_count INTEGER NOT NULL DEFAULT 0`]) {
+        try { await db().execute(`ALTER TABLE invites ADD COLUMN ${col}`); }
+        catch { /* column already exists */ }
+      }
       for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`,
                          // What kind of job this is — the axis R2 calls
                          // genre/category-level performance.

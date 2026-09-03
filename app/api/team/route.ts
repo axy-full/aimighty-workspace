@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { mailConfigured, mailFrom, emailInvite } from "@/lib/mail";
 import { randomBytes } from "node:crypto";
 import { db, ready, now } from "@/lib/db";
 import { requireAdmin, findByEmail } from "@/lib/auth";
@@ -18,15 +19,16 @@ export async function GET() {
              (SELECT COUNT(*) FROM generations g WHERE g.created_by = u.id) AS clips,
              (SELECT COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0)
                 FROM generations g WHERE g.created_by = u.id) AS spend
-      FROM users u ORDER BY u.created_at ASC`),
+      FROM users u WHERE u.deleted_at IS NULL ORDER BY u.created_at ASC`),
     db().execute({
-      sql: `SELECT code, email, name, role, created_at, expires_at FROM invites
+      sql: `SELECT code, email, name, role, created_at, expires_at, sent_at, send_count FROM invites
             WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at DESC`,
       args: [now()],
     }),
   ]);
 
   return NextResponse.json({
+    mail: { configured: mailConfigured(), from: mailFrom() },
     users: users.rows.map((r: any) => ({
       id: r.id, email: r.email, name: r.name, role: r.role,
       disabled: Boolean(Number(r.disabled)),
@@ -38,6 +40,7 @@ export async function GET() {
     invites: invites.rows.map((r: any) => ({
       code: r.code, email: r.email, name: r.name, role: r.role,
       createdAt: Number(r.created_at), expiresAt: Number(r.expires_at),
+      sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0),
     })),
   });
 }
@@ -63,11 +66,25 @@ export async function POST(req: Request) {
 
   const code = randomBytes(24).toString("base64url");
   const ts = now();
+  const expiresAt = ts + INVITE_DAYS * 86400_000;
   await db().execute({
     sql: `INSERT INTO invites (code,email,name,role,created_by,created_at,expires_at)
           VALUES (?,?,?,?,?,?,?)`,
-    args: [code, email, name.slice(0, 80), role, got.user.id, ts, ts + INVITE_DAYS * 86400_000],
+    args: [code, email, name.slice(0, 80), role, got.user.id, ts, expiresAt],
   });
 
-  return NextResponse.json({ code, email, name, role, expiresInDays: INVITE_DAYS });
+  // When mail is set up the link goes out at once. A failed send is reported
+  // and the invite stands — the admin can still copy the link.
+  let sent = false;
+  let mailError: string | null = null;
+  if (mailConfigured() && body.send !== false) {
+    try {
+      await emailInvite({ code, email, name, role, expiresAt, inviter: got.user.name, req });
+      sent = true;
+    } catch (e) {
+      mailError = (e as Error).message;
+    }
+  }
+
+  return NextResponse.json({ code, email, name, role, expiresInDays: INVITE_DAYS, sent, mailError });
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db, ready } from "@/lib/db";
+import { db, ready, now } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   const rs = await db().execute({ sql: `SELECT * FROM users WHERE id=? LIMIT 1`, args: [id] });
   const target = rs.rows[0] as any;
-  if (!target) return NextResponse.json({ error: "No such user" }, { status: 404 });
+  if (!target || target.deleted_at) return NextResponse.json({ error: "No such user" }, { status: 404 });
 
   if (id === got.user.id && body.disabled === true) {
     return NextResponse.json({ error: "You can't disable your own account." }, { status: 400 });
@@ -67,4 +67,50 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
 
   return NextResponse.json({ ok: true });
+}
+
+/**
+ * Delete a member.
+ *
+ * What a studio needs from "delete" is that the person is gone: no sign-in,
+ * no API tokens, no notifications, no unused invites they sent, and no
+ * entry on any list. What it must NOT lose is the ledger — every render
+ * and every dollar stays attributed to them by name. So the account is
+ * retired rather than erased: disabled, stamped with the time, its email
+ * rewritten so the address can be invited again. The last-admin guard is
+ * the same one the demotion path uses, and lives in the SQL for the same
+ * reason.
+ */
+export async function DELETE(_req: Request, { params }: Ctx) {
+  const got = await requireAdmin();
+  if (got.response) return got.response;
+  await ready();
+
+  const { id } = await params;
+  if (id === got.user.id) {
+    return NextResponse.json({ error: "You can't delete your own account." }, { status: 400 });
+  }
+  const rs = await db().execute({ sql: `SELECT * FROM users WHERE id=? LIMIT 1`, args: [id] });
+  const target = rs.rows[0] as any;
+  if (!target || target.deleted_at) return NextResponse.json({ error: "No such user" }, { status: 404 });
+
+  const ts = now();
+  const upd = await db().execute({
+    sql: `UPDATE users
+          SET disabled=1, deleted_at=?, email=?, failed_count=0, locked_until=NULL
+          WHERE id=? AND deleted_at IS NULL AND (role='member' OR ${KEEP_ADMIN})`,
+    args: [ts, `${target.email}#deleted-${ts}`, id, id],
+  });
+  if (Number(upd.rowsAffected) === 0) {
+    return NextResponse.json(LAST_ADMIN, { status: 400 });
+  }
+
+  await Promise.all([
+    db().execute({ sql: `DELETE FROM sessions WHERE user_id=?`, args: [id] }),
+    db().execute({ sql: `UPDATE api_tokens SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL`, args: [ts, id] }),
+    db().execute({ sql: `DELETE FROM push_subs WHERE user_id=?`, args: [id] }),
+    db().execute({ sql: `DELETE FROM invites WHERE created_by=? AND used_at IS NULL`, args: [id] }),
+  ]);
+
+  return NextResponse.json({ ok: true, name: target.name });
 }
