@@ -465,7 +465,11 @@ export async function POST(req: Request) {
       const billable = Math.max(0, rowTokens - freeLeft);
       const frac = rowTokens > 0 ? billable / rowTokens : 0;
       const rate = TEXT_RATES[refineModel] ?? TEXT_RATE_FALLBACK;
-      refineCost = frac * (refineIn * rate.input + refineOut * rate.output) / 1_000_000;
+      // The gateway states the exact charge, cache discounts included; that
+      // beats pricing tokens at list. Anyone else is priced from the table.
+      refineCost = typeof r.costUsd === "number"
+        ? r.costUsd
+        : frac * (refineIn * rate.input + refineOut * rate.output) / 1_000_000;
     } catch (e) {
       console.error("auto-refine unavailable, rendering raw:", (e as Error).message);
     }

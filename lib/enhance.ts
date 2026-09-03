@@ -163,6 +163,9 @@ export type RefineResult = {
   outTokens: number;
   /** The move the model chose, for the caller to attach as a module. */
   move?: string | null;
+  /** What the call actually cost, when the vendor says so (the gateway
+   *  does, cache discounts included). Otherwise the caller prices tokens. */
+  costUsd?: number | null;
 };
 
 /**
@@ -499,12 +502,14 @@ async function refineWithGateway(
         throw new Error("The prompt writer declined this request; rendering the raw prompt.");
       }
       const u = j.usage ?? {};
+      const cost = typeof u.cost === "number" ? u.cost : null;
       return {
         text: out.trim(),
         model,
         inTokens: Number(u.prompt_tokens ?? 0),
         outTokens: Number(u.completion_tokens ?? 0),
         cachedIn: Number(u.prompt_tokens_details?.cached_tokens ?? u.cached_tokens ?? 0),
+        costUsd: cost,
       };
     }
     if (res.status === 403 && /free tier|RestrictedModels/i.test(text)) {
@@ -536,7 +541,7 @@ function finishRefine(r: RefineResult & { cachedIn: number }): RefineResult {
   if (!out) throw new Error("The model returned nothing.");
   if (r.cachedIn) console.log(`refine: ${r.cachedIn} input tokens served from cache`);
   return { text: out, model: r.model, inTokens: r.inTokens, outTokens: r.outTokens,
-           move: pick ? pick[2].toLowerCase() : null };
+           move: pick ? pick[2].toLowerCase() : null, costUsd: r.costUsd ?? null };
 }
 
 export async function enhancePrompt(opts: {
