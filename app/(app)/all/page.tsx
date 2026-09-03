@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { LibrarySections } from "@/components/GenGrid";
 import type { Gen } from "@/components/GenCard";
 import { useApi } from "@/lib/useApi";
+import { useOnChange } from "@/lib/changes";
 import { usd } from "@/lib/format";
 import { IconSearch } from "@/components/Icons";
 import { useProject } from "@/lib/projectContext";
@@ -46,6 +47,7 @@ export default function LibraryPage() {
     (query ? `&q=${encodeURIComponent(query)}` : "");
 
   const { data, refresh } = useApi<Page>(`/api/jobs?limit=${PAGE}${scope}`, 8000);
+  useOnChange(refresh);
 
   // Any change of scope invalidates the older pages — they belong to the
   // question that was being asked before.

@@ -12,6 +12,7 @@ import type { Gen } from "./GenCard";
 import Review from "./Review";
 import { ParticlSpinner } from "./ParticlMark";
 import { appConfirm, appPrompt, appAlert } from "./dialog";
+import { renameClip } from "./ContextMenu";
 import { uploadFile } from "@/lib/uploadClient";
 import { useProject } from "@/lib/projectContext";
 import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
@@ -74,7 +75,13 @@ export default function Theatre({
     rawPrompt?: string; cast?: string[];
   };
   const shown = p.rawPrompt || gen.prompt;
-  const title = gen.shotCode ? `${gen.shotCode} · v${gen.version ?? 1}` : clipId(gen.id);
+  const filing = gen.shotCode ? `${gen.shotCode} · v${gen.version ?? 1}` : clipId(gen.id);
+  const title = gen.title || filing;
+
+  async function rename() {
+    await renameClip(gen!.id, gen!.title ?? "");
+    onChanged();
+  }
 
   async function copy() {
     try {
@@ -173,7 +180,8 @@ export default function Theatre({
   return createPortal(
     <div className="theatre" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
       <div className="theatre-stage" onClick={(e) => e.stopPropagation()}
-        data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)}>
+        data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)}
+        data-gen-title={gen.title ?? ""}>
         {done ? (
           still ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -213,9 +221,12 @@ export default function Theatre({
       <aside className="theatre-side" onClick={(e) => e.stopPropagation()}>
         <header className="theatre-head">
           <div className="min-w-0">
-            <p className="truncate text-[16px] font-semibold tracking-[-0.01em]">{title}</p>
+            <button type="button" onClick={rename} title={gen.title ? "Rename" : "Name this clip"}
+              className="block max-w-full truncate text-left text-[16px] font-semibold tracking-[-0.01em] hover:text-blue">
+              {title}
+            </button>
             <p className="text-[12.5px] text-mute">
-              {gen.projectName ?? "Unfiled"}{gen.authorName ? ` · ${gen.authorName}` : ""} · {timeAgo(gen.createdAt)}
+              {gen.title ? `${filing} · ` : ""}{gen.projectName ?? "Unfiled"}{gen.authorName ? ` · ${gen.authorName}` : ""} · {timeAgo(gen.createdAt)}
             </p>
           </div>
           <button type="button" onClick={onClose} className="theatre-close" title="Close  Esc"><IconClose /></button>

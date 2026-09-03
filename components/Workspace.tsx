@@ -17,6 +17,7 @@ import Composer, { type Engine, type WriterInfo } from "./Composer";
 import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
 import { useApi } from "@/lib/useApi";
+import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { composePrompt, specCount, type ShotSpec } from "@/lib/studio";
 import {
@@ -207,6 +208,8 @@ export default function Workspace() {
   const dims = isImage ? null : dimensionsFor(params.resolution, params.ratio);
 
   function afterChange() { refresh(); refreshProjects(); }
+  // Renames, moves and deletes from the right-click menu land at once.
+  useOnChange(afterChange);
 
   /** Drop an @ImageN or @Name token in at the caret so the prompt can address it. */
   const cite = useCallback((token: string) => {

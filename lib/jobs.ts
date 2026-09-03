@@ -13,6 +13,8 @@ export type Generation = {
   reviewBy: string | null;
   model: string;
   prompt: string;
+  /** The name the team gave it, if any — shown in place of the clip id. */
+  title: string | null;
   params: Record<string, unknown>;
   status: string;
   sourceUrl: string | null;
@@ -57,6 +59,7 @@ export function rowToGeneration(r: any): Generation {
     reviewBy: r.review_by ?? null,
     model: r.model,
     prompt: r.prompt,
+    title: r.title ?? null,
     params: JSON.parse(r.params || "{}"),
     status: r.status,
     sourceUrl: r.source_url ?? null,
@@ -120,8 +123,9 @@ export async function listGenerations(opts: {
   // ever holds a page or two, so a client-side filter would quietly search
   // just the newest slice and swear the rest of the library doesn't exist.
   if (opts.search) {
-    where.push("LOWER(g.prompt) LIKE ?");
-    args.push(`%${opts.search.toLowerCase()}%`);
+    where.push("(LOWER(g.prompt) LIKE ? OR LOWER(COALESCE(g.title, '')) LIKE ?)");
+    const needle = `%${opts.search.toLowerCase()}%`;
+    args.push(needle, needle);
   }
   if (opts.status && opts.status !== "all") {
     where.push("g.status = ?");

@@ -47,12 +47,12 @@ export function appConfirm(
 }
 
 export function appPrompt(
-  title: string, defaultValue = "", placeholder?: string
+  title: string, defaultValue = "", placeholder?: string, message?: string
 ): Promise<string | null> {
-  if (!pushDialog) return Promise.resolve(window.prompt(title, defaultValue));
+  if (!pushDialog) return Promise.resolve(window.prompt(message ? `${title}\n\n${message}` : title, defaultValue));
   return new Promise((res) =>
     pushDialog!({
-      kind: "prompt", title, defaultValue, placeholder, confirmLabel: "Save",
+      kind: "prompt", title, message, defaultValue, placeholder, confirmLabel: "Save",
       resolve: (v) => res(typeof v === "string" ? v : null),
     })
   );

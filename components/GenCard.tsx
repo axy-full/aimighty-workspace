@@ -16,6 +16,8 @@ export type Gen = {
   reviewBy?: string | null;
   model: string;
   prompt: string;
+  /** The name the team gave it, shown in place of the clip id. */
+  title?: string | null;
   params: Record<string, unknown>;
   status: string;
   storedUrl: string | null;
@@ -67,14 +69,15 @@ export default function GenCard({
   }
 
   async function remove() {
-    if (!(await appConfirm(`Delete ${clipId(gen.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
+    if (!(await appConfirm(`Delete ${gen.title || clipId(gen.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
     await fetch(`/api/jobs/${gen.id}`, { method: "DELETE" });
     onChanged?.();
   }
 
   return (
     <article
-      data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)}
+      data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)}
+      data-gen-title={gen.title ?? ""}
       className="group flex flex-col"
     >
       {/* The frame */}
@@ -134,7 +137,9 @@ export default function GenCard({
 
       {/* What it is */}
       <p className="mt-2.5 line-clamp-2 text-[14px] leading-snug text-bone" title={gen.prompt}>
-        {gen.shotCode && <span className="mr-1.5 font-semibold">{gen.shotCode} v{gen.version ?? 1}</span>}
+        {gen.title
+          ? <span className="mr-1.5 font-semibold">{gen.title}</span>
+          : gen.shotCode && <span className="mr-1.5 font-semibold">{gen.shotCode} v{gen.version ?? 1}</span>}
         {gen.prompt}
       </p>
 

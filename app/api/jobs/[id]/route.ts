@@ -30,6 +30,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
       args: [body.projectId || null, Date.now(), id],
     });
   }
+  // A name for the render. Empty clears it — the clip id comes back.
+  if (body.title !== undefined) {
+    const title = String(body.title ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+    await db().execute({
+      sql: `UPDATE generations SET title=?, updated_at=? WHERE id=?`,
+      args: [title || null, Date.now(), id],
+    });
+  }
   // Signing off on a shot, or asking for changes. The name is recorded so a
   // review is answerable to someone rather than appearing from nowhere.
   if (body.reviewState !== undefined) {

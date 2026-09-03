@@ -103,7 +103,7 @@ export const TOOLS: ToolDef[] = [
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
 
 type Gen = {
-  id: string; status: string; prompt: string; kind?: string;
+  id: string; status: string; prompt: string; title?: string | null; kind?: string;
   params?: Record<string, unknown>;
   costUsd?: number | null; refineCostUsd?: number | null;
   authorName?: string | null; error?: string | null;
@@ -113,7 +113,8 @@ function describe(g: Gen): string {
   const p = (g.params ?? {}) as { resolution?: string; ratio?: string; duration?: number };
   const spec = [p.resolution, p.ratio, p.duration ? `${p.duration}s` : null].filter(Boolean).join(" · ");
   const cost = g.costUsd == null ? "" : ` · ${usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0))}`;
-  return `${g.id} · ${g.status}${spec ? ` · ${spec}` : ""}${cost}\n  ${g.prompt}`;
+  const name = g.title ? `${g.title} · ` : "";
+  return `${name}${g.id} · ${g.status}${spec ? ` · ${spec}` : ""}${cost}\n  ${g.prompt}`;
 }
 
 /** Calls the workspace's own API as the caller, so scopes and caps still apply. */

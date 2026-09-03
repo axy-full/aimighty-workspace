@@ -283,6 +283,8 @@ export async function ready(): Promise<void> {
         // generate | edit | extend, and the render this one works on.
         `task TEXT NOT NULL DEFAULT 'generate'`,
         `source_gen_id TEXT`,
+        // A name the team gives a render, shown in place of the clip id.
+        `title TEXT`,
       ]) {
         try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
         catch { /* column already exists */ }

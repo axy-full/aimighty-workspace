@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useProject } from "@/lib/projectContext";
-import { appAlert, appConfirm } from "./dialog";
+import { appAlert, appConfirm, appPrompt } from "./dialog";
+import { announceChange } from "@/lib/changes";
 
 /**
  * App-wide right-click menu, themed like the rest of the desk. On touch
@@ -12,7 +13,7 @@ import { appAlert, appConfirm } from "./dialog";
  * Context decides the verbs:
  *  • text fields    → Cut / Copy / Paste / Delete on the selection (mouse
  *                     only — native selection handles fields on touch)
- *  • a clip         → Copy prompt / Cut clip / Move to project… / Delete
+ *  • a clip         → Rename / Copy prompt / Cut clip / Move to project… / Delete
  *  • a project row  → Paste clip (moves the cut clip into it)
  *  • anywhere else  → Copy for a text selection, Paste into the focused field
  */
@@ -45,6 +46,23 @@ async function moveClip(genId: string, projectId: string | null) {
     method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ projectId }),
   });
+  announceChange();
+}
+
+/** Ask for a name and save it. Empty clears the name; Cancel changes nothing. */
+export async function renameClip(genId: string, current: string): Promise<void> {
+  const next = await appPrompt(
+    current ? "Rename clip" : "Name this clip",
+    current, "Hero close-up",
+    "Shown on the wall and in search in place of the clip id. Leave it empty to clear the name."
+  );
+  if (next === null || next.trim() === current) return;
+  const res = await fetch(`/api/jobs/${genId}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: next }),
+  });
+  if (!res.ok) { await appAlert("Could not save the name"); return; }
+  announceChange();
 }
 
 export default function ContextMenu() {
@@ -107,7 +125,12 @@ export default function ContextMenu() {
         const id = clipEl.dataset.genId!;
         const promptText = clipEl.dataset.genPrompt ?? "";
         const label = clipEl.dataset.genLabel ?? id.slice(-6).toUpperCase();
+        const title = clipEl.dataset.genTitle ?? "";
         items.push(
+          {
+            kind: "item", label: title ? "Rename…" : "Name this clip…",
+            action: () => renameClip(id, title),
+          },
           {
             kind: "item", label: "Copy prompt", disabled: !promptText,
             action: async () => { try { await navigator.clipboard.writeText(promptText); } catch { /* blocked */ } },
@@ -140,6 +163,7 @@ export default function ContextMenu() {
             action: async () => {
               if (!(await appConfirm(`Delete clip ${label}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
               await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+              announceChange();
             },
           },
         );

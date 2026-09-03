@@ -129,8 +129,9 @@ function Tile({ gen, active, now, onOpen }: { gen: Gen; active: boolean; now: nu
 
   return (
     <button
-      type="button" onClick={onOpen} title={gen.prompt}
-      data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)}
+      type="button" onClick={onOpen} title={gen.title ? `${gen.title} — ${gen.prompt}` : gen.prompt}
+      data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)}
+      data-gen-title={gen.title ?? ""}
       className={`tile ${active ? "is-active" : ""} ${live ? "tile-live" : ""} ${gen.status === "failed" ? "tile-failed" : ""}`}
       style={{ aspectRatio: aspectOf(gen) }}
     >
@@ -154,7 +155,7 @@ function Tile({ gen, active, now, onOpen }: { gen: Gen; active: boolean; now: nu
           <span className="tile-scrim" />
           <span className="tile-meta">
             <span className="truncate font-medium">
-              {gen.shotCode ? `${gen.shotCode} v${gen.version ?? 1}` : clipId(gen.id)}
+              {gen.title || (gen.shotCode ? `${gen.shotCode} v${gen.version ?? 1}` : clipId(gen.id))}
             </span>
             <span className="ml-auto shrink-0 tabular-nums">
               {still ? String(p.resolution ?? "").toUpperCase() : p.duration != null ? `${p.duration}s` : ""}
