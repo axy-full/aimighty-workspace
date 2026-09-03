@@ -10,14 +10,15 @@ export async function POST(req: Request) {
   if (got.response) return got.response;
   await ready();
   const body = await req.json().catch(() => ({}));
-  const amount = Number(body.amountUsd);
-  if (!Number.isFinite(amount) || amount === 0)
-    return NextResponse.json({ error: "A non-zero amount is required" }, { status: 400 });
+  const amount = Number(body.amountUsd ?? 0) || 0;
+  const credits = body.credits == null || body.credits === "" ? null : Math.round(Number(body.credits));
+  if ((!Number.isFinite(amount) || amount === 0) && !(credits && Number.isFinite(credits)))
+    return NextResponse.json({ error: "A non-zero amount is required — dollars, or credits for ElevenLabs" }, { status: 400 });
 
   const provider = PROVIDERS.some((p) => p.id === body.provider) ? String(body.provider) : "byteplus";
   await db().execute({
-    sql: `INSERT INTO topups (id, provider, amount_usd, note, created_at) VALUES (?,?,?,?,?)`,
-    args: [id("top"), provider, amount, String(body.note ?? "").slice(0, 200), now()],
+    sql: `INSERT INTO topups (id, provider, amount_usd, credits, note, created_at) VALUES (?,?,?,?,?,?)`,
+    args: [id("top"), provider, amount, credits, String(body.note ?? "").slice(0, 200), now()],
   });
   return NextResponse.json({ ok: true });
 }

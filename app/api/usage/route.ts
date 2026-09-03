@@ -4,7 +4,7 @@ import { syncActive } from "@/lib/jobs";
 import { modelLabel } from "@/lib/models";
 import { prettyModel, hasFreeTier, gatewayCredits } from "@/lib/enhance";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
-import { elevenConfigured, subscription } from "@/lib/elevenlabs";
+import { elevenConfigured, subscription, FALLBACK_USD_PER_CREDIT } from "@/lib/elevenlabs";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -80,13 +80,13 @@ export async function GET() {
       SELECT provider, COUNT(*) AS n_all, SUM(status='succeeded') AS n,
              COALESCE(SUM(COALESCE(cost_usd,0)),0) AS render_spend,
              COALESCE(SUM(total_tokens),0) AS tokens
-      FROM generations GROUP BY provider`),
+      FROM generations WHERE deleted = 0 OR deleted IS NULL GROUP BY provider`),
     db().execute(`
       SELECT ${LEDGER} AS ledger, COUNT(*) AS prompts,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS prompt_spend
       FROM generations WHERE refine_model IS NOT NULL GROUP BY ledger`),
-    db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total FROM topups GROUP BY provider`),
-    db().execute(`SELECT id, provider, amount_usd, note, created_at FROM topups ORDER BY created_at DESC LIMIT 100`),
+    db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total, COALESCE(SUM(credits),0) AS credits FROM topups GROUP BY provider`),
+    db().execute(`SELECT id, provider, amount_usd, credits, note, created_at FROM topups ORDER BY created_at DESC LIMIT 100`),
   ]);
 
   /* What each vendor says for itself, where it says anything. */
@@ -97,6 +97,7 @@ export async function GET() {
   const renderBy = new Map(byVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), r]));
   const promptBy = new Map(promptByLedger.rows.map((r: any) => [String(r.ledger), r]));
   const addedBy = new Map(topupsByVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.total)]));
+  const creditsBy = new Map(topupsByVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.credits ?? 0)]));
   const vendors = PROVIDERS.map((p) => {
     const r: any = renderBy.get(p.id) ?? {};
     const pr: any = promptBy.get(p.id) ?? {};
@@ -104,7 +105,14 @@ export async function GET() {
     const promptSpend = Number(pr.prompt_spend ?? 0);
     const added = addedBy.get(p.id) ?? 0;
     const spent = renderSpend + promptSpend;
+    // ElevenLabs is bought and spent in credits; every audio render wrote
+    // its credits into total_tokens, so the ledger counts those exactly.
+    const unit = p.id === "elevenlabs" ? "credits" : "usd";
+    const addedCredits = creditsBy.get(p.id) ?? 0;
+    const spentCredits = Number(r.tokens ?? 0);
+    const usdPerCredit = p.id === "elevenlabs" ? (eleven?.usdPerCredit ?? FALLBACK_USD_PER_CREDIT) : null;
     return {
+      unit, addedCredits, spentCredits, remainingCredits: addedCredits - spentCredits, usdPerCredit,
       id: p.id,
       label: p.id === "google" ? "Google Gemini" : p.label,
       via: providerVia(p),
@@ -127,7 +135,8 @@ export async function GET() {
         model: m.model, label: label(m.model), n: Number(m.n), spend: Number(m.spend), tokens: Number(m.tokens),
       })),
       topups: topupList.rows.filter((t: any) => String(t.provider ?? "byteplus") === p.id).map((t: any) => ({
-        id: t.id, amountUsd: Number(t.amount_usd), note: t.note ?? "", createdAt: Number(t.created_at),
+        id: t.id, amountUsd: Number(t.amount_usd), credits: t.credits == null ? null : Number(t.credits),
+        note: t.note ?? "", createdAt: Number(t.created_at),
       })),
     };
   });

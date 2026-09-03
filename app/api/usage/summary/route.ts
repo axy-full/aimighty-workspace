@@ -26,7 +26,7 @@ type Summary = {
   /** The writer's share of spentUsd. */
   promptSpendUsd: number;
   /** Each vendor's own credit position. */
-  vendors: { id: string; label: string; spent: number; added: number; remaining: number }[];
+  vendors: { id: string; label: string; spent: number; added: number; remaining: number; unit: "usd" | "credits"; remainingCredits?: number }[];
 };
 
 let cache: { at: number; value: Summary } | null = null;
@@ -54,7 +54,8 @@ export async function GET() {
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS spend
       FROM generations WHERE refine_model IS NOT NULL GROUP BY ledger`),
   ]);
-  const added = await db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total FROM topups GROUP BY provider`);
+  const added = await db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total, COALESCE(SUM(credits),0) AS credits FROM topups GROUP BY provider`);
+  const audio = await db().execute(`SELECT COALESCE(SUM(total_tokens),0) AS credits FROM generations WHERE provider='elevenlabs' AND deleted = 0`);
 
   const g: any = gen.rows[0];
   const spentUsd = Number(g?.spend ?? 0);
@@ -62,10 +63,16 @@ export async function GET() {
   const spendBy = new Map(byVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.spend)]));
   const promptSpendBy = new Map(promptBy.rows.map((r: any) => [String(r.ledger), Number(r.spend)]));
   const addedBy = new Map(added.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.total)]));
+  const creditsBy = new Map(added.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.credits ?? 0)]));
+  const audioCredits = Number((audio.rows[0] as any)?.credits ?? 0);
   const vendors = PROVIDERS.map((p) => {
     const spent = (spendBy.get(p.id) ?? 0) + (promptSpendBy.get(p.id) ?? 0);
     const a = addedBy.get(p.id) ?? 0;
-    return { id: p.id, label: p.id === "google" ? "Google Gemini" : p.label, spent, added: a, remaining: a - spent };
+    const unit = p.id === "elevenlabs" ? "credits" as const : "usd" as const;
+    return {
+      id: p.id, label: p.id === "google" ? "Google Gemini" : p.label, spent, added: a, remaining: a - spent, unit,
+      ...(unit === "credits" ? { remainingCredits: (creditsBy.get(p.id) ?? 0) - audioCredits } : {}),
+    };
   });
   const value: Summary = {
     pending: Number(g?.pending ?? 0),

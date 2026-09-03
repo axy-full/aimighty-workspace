@@ -20,13 +20,14 @@ import { usePageTitle } from "@/lib/usePageTitle";
 type Vendor = {
   id: string; label: string; via: string | null; configured: boolean; envKey: string;
   added: number; spent: number; renderSpend: number; promptSpend: number; remaining: number;
+  unit: "usd" | "credits"; addedCredits: number; spentCredits: number; remainingCredits: number; usdPerCredit: number | null;
   renders: number; attempts: number; prompts: number; tokens: number;
   live: { kind: "gateway"; balanceUsd: number; usedUsd: number }
       | { kind: "credits"; used: number; limit: number; tier: string; resetAt: number | null }
       | null;
   note: string;
   models: { model: string; label: string; n: number; spend: number; tokens: number }[];
-  topups: { id: string; amountUsd: number; note: string; createdAt: number }[];
+  topups: { id: string; amountUsd: number; credits: number | null; note: string; createdAt: number }[];
 };
 
 type Usage = {
@@ -233,7 +234,9 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
     try {
       const res = await fetch("/api/topups", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountUsd: n, note, provider: v.id }),
+        body: JSON.stringify(v.unit === "credits"
+          ? { credits: n, amountUsd: 0, note, provider: v.id }
+          : { amountUsd: n, note, provider: v.id }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Could not record it");
@@ -248,7 +251,10 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
     if (res.ok) onChanged();
   }
 
-  const over = v.remaining < 0;
+  const credits = v.unit === "credits";
+  const over = credits ? v.remainingCredits < 0 : v.remaining < 0;
+  const rate = v.usdPerCredit ?? 0;
+  const cr = (n: number) => n.toLocaleString();
   return (
     <section className="card flex flex-col gap-4 px-5 py-5">
       <div>
@@ -261,11 +267,20 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
         <p className="mt-1 text-[13px] leading-snug text-mute">{v.note}</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <Figure label="Added" value={usd(v.added, 2)} />
-        <Figure label="Spent" value={usd(v.spent, 2)} sub={v.promptSpend > 0 ? `prompts ${usd(v.promptSpend, 2)}` : undefined} />
-        <Figure label="Left" value={v.added > 0 || over ? usd(v.remaining, 2) : "—"} tone={over ? "bad" : v.added > 0 ? "good" : undefined} />
-      </div>
+      {credits ? (
+        <div className="grid grid-cols-3 gap-3">
+          <Figure label="Added" value={`${cr(v.addedCredits)} cr`} sub={rate ? `≈ ${usd(v.addedCredits * rate, 2)}` : undefined} />
+          <Figure label="Spent" value={`${cr(v.spentCredits)} cr`} sub={rate ? `≈ ${usd(v.spentCredits * rate, 2)}` : undefined} />
+          <Figure label="Left" value={v.addedCredits > 0 || over ? `${cr(v.remainingCredits)} cr` : "—"} tone={over ? "bad" : v.addedCredits > 0 ? "good" : undefined}
+            sub={rate && v.addedCredits > 0 ? `≈ ${usd(v.remainingCredits * rate, 2)}` : undefined} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-3">
+          <Figure label="Added" value={usd(v.added, 2)} />
+          <Figure label="Spent" value={usd(v.spent, 2)} sub={v.promptSpend > 0 ? `prompts ${usd(v.promptSpend, 2)}` : undefined} />
+          <Figure label="Left" value={v.added > 0 || over ? usd(v.remaining, 2) : "—"} tone={over ? "bad" : v.added > 0 ? "good" : undefined} />
+        </div>
+      )}
 
       {v.live?.kind === "gateway" && (
         <p className="text-[13px] text-dim">
@@ -307,7 +322,7 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
           <ul className="mt-2 flex flex-col gap-1">
             {v.topups.map((t) => (
               <li key={t.id} className="group flex items-center gap-2 text-[13px]">
-                <span className="tabular-nums font-medium">{usd(t.amountUsd, 2)}</span>
+                <span className="tabular-nums font-medium">{t.credits != null ? `${cr(t.credits)} credits${t.amountUsd ? ` · ${usd(t.amountUsd, 2)}` : ""}` : usd(t.amountUsd, 2)}</span>
                 <span className="truncate text-mute">{t.note || "—"} · {timeAgo(t.createdAt)}</span>
                 <button type="button" onClick={() => remove(t.id)} title="Remove this entry"
                   className="reveal ml-auto grid h-6 w-6 place-items-center rounded-full text-mute hover:text-lift"><IconClose className="!h-3 !w-3" /></button>
@@ -315,10 +330,10 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
             ))}
           </ul>
         )}
-        {v.topups.length === 0 && !adding && <p className="mt-1 text-[13px] text-mute">Nothing added yet — {usd(0, 2)} on this ledger.</p>}
+        {v.topups.length === 0 && !adding && <p className="mt-1 text-[13px] text-mute">Nothing added yet — {credits ? "0 credits" : usd(0, 2)} on this ledger.</p>}
         {adding && (
           <div className="mt-2 flex flex-wrap gap-2">
-            <input className="ctl !h-[34px] w-[120px] !text-[14px]" value={amount} inputMode="decimal" placeholder="USD"
+            <input className="ctl !h-[34px] w-[120px] !text-[14px]" value={amount} inputMode="decimal" placeholder={credits ? "Credits" : "USD"}
               onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} autoFocus />
             <input className="ctl !h-[34px] min-w-[160px] flex-1 !text-[14px]" value={note} placeholder="Note or invoice reference"
               onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />

@@ -7,7 +7,7 @@ import { useProject } from "@/lib/projectContext";
 import Link from "next/link";
 import ParticlLockup from "./ParticlMark";
 
-type Usage = { pending: number; spentUsd: number; remainingUsd: number; vendors?: { label: string; remaining: number; added: number }[] };
+type Usage = { pending: number; spentUsd: number; remainingUsd: number; vendors?: { label: string; remaining: number; added: number; unit?: string; remainingCredits?: number }[] };
 
 /**
  * A thin strip, mostly empty on purpose: what screen you're on is said by the
@@ -58,7 +58,9 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
           <span
             className="chip !cursor-default !text-[13px] !text-dim"
             title={usage.vendors?.length
-              ? usage.vendors.filter((v) => v.added > 0 || v.remaining < 0).map((v) => `${v.label}: ${usd(v.remaining, 2)} left`).join(" · ") || "No credit recorded yet — see Usage"
+              ? usage.vendors.filter((v) => v.added > 0 || v.remaining < 0 || (v.remainingCredits ?? 0) !== 0)
+                  .map((v) => v.unit === "credits" ? `${v.label}: ${(v.remainingCredits ?? 0).toLocaleString()} credits left` : `${v.label}: ${usd(v.remaining, 2)} left`)
+                  .join(" · ") || "No credit recorded yet — see Usage"
               : usage.remainingUsd >= 0
                 ? `${usd(usage.remainingUsd, 2)} of recorded credit left`
                 : "Spend has passed the credit recorded on the Usage page"}
