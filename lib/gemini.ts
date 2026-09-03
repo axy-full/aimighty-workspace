@@ -59,10 +59,38 @@ async function refPayload(ref: Reference): Promise<{ mime: string; b64: string }
 
 function refusal(text: string | null): Error {
   return new Error(
-    "Google declined to draw this one (its safety filter). Nothing was charged — " +
-    "reword the prompt or drop a reference and try again." +
+    "Google's built-in image filter declined this one. The adjustable safety " +
+    "thresholds are already off, so this is the layer no setting turns off. " +
+    "Nothing was charged — reword the prompt or drop a reference and try again." +
     (text ? ` Google said: ${text.slice(0, 300)}` : "")
   );
+}
+
+/* ── Safety thresholds ──────────────────────────────────────────────────
+ * Google's four adjustable categories are sent explicitly at OFF, so a
+ * prompt is never held back by the probability classifiers — the team's
+ * shots are judged by the one filter Google keeps for itself. Google's own
+ * default for Gemini 2.5/3 models is already Off when nothing is sent;
+ * saying so on every request keeps that true if their default moves.
+ * GOOGLE_SAFETY_THRESHOLD overrides (BLOCK_NONE, BLOCK_ONLY_HIGH,
+ * BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE, or "default" to send none).
+ * ------------------------------------------------------------------- */
+export const SAFETY_CATEGORIES = [
+  "HARM_CATEGORY_HARASSMENT",
+  "HARM_CATEGORY_HATE_SPEECH",
+  "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+  "HARM_CATEGORY_DANGEROUS_CONTENT",
+] as const;
+
+export function safetyThreshold(): string | null {
+  const t = (process.env.GOOGLE_SAFETY_THRESHOLD ?? "OFF").trim().toUpperCase();
+  if (t === "DEFAULT" || t === "") return null;
+  return ["OFF", "BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"].includes(t) ? t : "OFF";
+}
+
+export function safetySettings(): { category: string; threshold: string }[] | null {
+  const threshold = safetyThreshold();
+  return threshold ? SAFETY_CATEGORIES.map((category) => ({ category, threshold })) : null;
 }
 
 export async function generateImage(opts: {
@@ -95,23 +123,35 @@ async function viaGateway(opts: {
     content.push({ type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } });
   }
   const imageConfig = { aspectRatio: opts.ratio, imageSize: opts.size.toUpperCase() };
-  const body = JSON.stringify({
-    model: modelId,
-    max_tokens: 8192,
-    modalities: ["image", "text"],
-    // The gateway routes Google models through either door; the config is
-    // read under whichever namespace the serving provider uses.
-    providerOptions: { google: { imageConfig }, vertex: { imageConfig } },
-    messages: [{ role: "user", content }],
-  });
+  const safety = safetySettings();
+  const bodyFor = (withSafety: boolean) => {
+    const google: Record<string, unknown> = { imageConfig };
+    if (withSafety && safety) google.safetySettings = safety;
+    return JSON.stringify({
+      model: modelId,
+      max_tokens: 8192,
+      modalities: ["image", "text"],
+      // The gateway routes Google models through either door; the config is
+      // read under whichever namespace the serving provider uses.
+      providerOptions: { google, vertex: { ...google } },
+      messages: [{ role: "user", content }],
+    });
+  };
 
-  const res = await fetch(GATEWAY_URL(), {
+  const send = (body: string) => fetch(GATEWAY_URL(), {
     method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
     body,
     signal: AbortSignal.timeout(240_000),
   });
-  const raw = await res.text();
+  let res = await send(bodyFor(true));
+  let raw = await res.text();
+  // Should the gateway ever refuse the safety block itself, the render must
+  // not die for it: send once more the way it went before the block existed.
+  if (res.status === 400 && safety && /safety/i.test(raw)) {
+    res = await send(bodyFor(false));
+    raw = await res.text();
+  }
   if (!res.ok) {
     const plain = explainGatewayFailure(res.status, raw);
     if (plain) throw new Error(plain);

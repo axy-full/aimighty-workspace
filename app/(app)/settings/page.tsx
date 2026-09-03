@@ -18,7 +18,7 @@ type Me = { name: string; email: string; role: string };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; promptSpendUsd?: number };
 type Credits = { balanceUsd: number; usedUsd: number } | null;
 type EngineInfo = {
-  id: string; label: string; envKey: string; docs: string; configured: boolean;
+  id: string; label: string; envKey: string; docs: string; configured: boolean; safety?: string;
   via?: "key" | "gateway" | null;
   models: { id: string; label: string; kind: "video" | "image" }[];
 };
@@ -106,6 +106,7 @@ export default function SettingsPage() {
                 <span className="mt-0.5 block text-[12px] leading-snug text-mute">
                   {e.models.map((m) => m.label).join(" · ")}
                   {e.configured && e.via === "gateway" && <> — through Vercel AI Gateway, on the same credit as the prompt writer.</>}
+                  {e.safety && <> Safety thresholds: <span className="font-medium">{e.safety === "OFF" ? "off" : e.safety.toLowerCase().replace(/_/g, " ")}</span>; Google&rsquo;s built-in image filter stays.</>}
                   {!e.configured && isAdmin && (
                     <> — set <code className="font-mono text-[11.5px]">{e.envKey}</code> in
                     Vercel → Settings → Environment Variables, then redeploy.</>

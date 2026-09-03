@@ -3,6 +3,7 @@ import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { MODELS } from "@/lib/models";
 import { requireUser } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
+import { safetyThreshold } from "@/lib/gemini";
 import { invalidateSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,8 @@ export async function GET() {
       configured: providerConfigured(p),
       /** "key" for the vendor's own key, "gateway" for Vercel AI Gateway. */
       via: providerVia(p),
+      /** Google only: where its adjustable safety thresholds sit. */
+      safety: p.id === "google" ? (safetyThreshold() ?? "Google default") : undefined,
       models: MODELS.filter((m) => m.provider === p.id)
         .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
     })),
