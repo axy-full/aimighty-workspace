@@ -17,7 +17,7 @@
  * models.ts. Nothing else in the app should learn its name.
  */
 
-export type ProviderId = "byteplus";
+export type ProviderId = "byteplus" | "google";
 
 export type ProviderDef = {
   id: ProviderId;
@@ -66,6 +66,30 @@ export const PROVIDERS: ProviderDef[] = [
     },
     rateLimit: "Per-key concurrency and RPM set in the ModelArk console; a 429 " +
                "or 'rate' error is retried with backoff rather than failed.",
+    billsFailures: false,
+  },
+  {
+    id: "google",
+    label: "Google Gemini",
+    envKey: "GEMINI_API_KEY",
+    baseUrlEnv: "GEMINI_BASE_URL",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com",
+    docs: "https://ai.google.dev/gemini-api/docs/image-generation",
+    limits: {
+      // References travel inline as base64 inside one JSON request, and the
+      // request as a whole is what Google bounds — so the per-image ceiling
+      // is set to leave room for the fourteen the model accepts.
+      maxImageBytes: 7 * 1024 * 1024,
+      maxVideoBytes: 0,
+      maxRequestBytes: 20 * 1024 * 1024,
+      minImagePx: 64,
+      maxImagePx: 8192,
+      minAspect: 0.25,
+      maxAspect: 4,
+      imageFormats: ["jpeg", "jpg", "png", "webp", "heic", "heif"],
+    },
+    rateLimit: "Per-project RPM and daily quotas set in Google AI Studio; a 429 " +
+               "or RESOURCE_EXHAUSTED is retried with backoff rather than failed.",
     billsFailures: false,
   },
 ];

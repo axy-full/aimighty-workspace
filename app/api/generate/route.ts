@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
-import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
+import {
+  getModel, DEFAULT_MODEL_ID, IMAGE_OUT_USD, IMAGE_REF_IN_USD, imageTokens,
+} from "@/lib/models";
+import { generateImage } from "@/lib/gemini";
+import { storeImageBytes } from "@/lib/storage";
 import {
   enhancePrompt, shouldRefine, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS, hasFreeTier,
 } from "@/lib/enhance";
@@ -10,7 +14,7 @@ import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
-import { withRetry, classifyFailure } from "@/lib/providers";
+import { withRetry, classifyFailure, getProvider, providerConfigured } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice } from "@/lib/tasks";
 import {
@@ -91,6 +95,13 @@ export async function POST(req: Request) {
   let model;
   try { model = getModel(modelId); }
   catch { return NextResponse.json({ error: `Unknown model: ${modelId}` }, { status: 400 }); }
+  // No key, no row: better a 400 now than a "running" render that fails later.
+  const vendor = getProvider(model.provider);
+  if (!providerConfigured(vendor)) {
+    return NextResponse.json({
+      error: `${model.label} needs a ${vendor.label} key on this deployment — set ${vendor.envKey} in Vercel and redeploy.`,
+    }, { status: 400 });
+  }
 
   /* ── Task ────────────────────────────────────────────────────────────
    * generate | edit | extend. Editing and extension are LOCKED tasks: the
@@ -286,6 +297,89 @@ export async function POST(req: Request) {
     }
     castPrompt = expanded.prompt;
     castUsed = expanded.used.map((m) => m.name);
+  }
+
+  /* ── Still engines (Nano Banana Pro) ─────────────────────────────────
+   * Google renders synchronously and thinks before it draws, so there is no
+   * task id to poll: the row goes in as running, the response returns at
+   * once, and the render finishes inside after() — the client's ordinary
+   * polling picks it up. The prompt goes as written (the cast resolved, a
+   * raw: prefix honoured); the model reasons about it itself. A refusal
+   * fails the row in Google's own words and is never charged.
+   * ------------------------------------------------------------------ */
+  if (model.kind === "image") {
+    const ratio = model.ratios.includes(body.ratio) ? String(body.ratio) : model.ratios[0];
+    const size = model.resolutions.includes(body.resolution)
+      ? String(body.resolution) : model.resolutions[0];
+    const stillPrompt = castPrompt.replace(/^raw:\s*/i, "");
+    const stillProject = body.projectId ? String(body.projectId) : null;
+    const stillShot = body.shotId ? String(body.shotId) : null;
+    let stillVersion = 1;
+    if (stillShot) {
+      const shot = await getShot(stillShot);
+      if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 400 });
+      stillVersion = await nextVersion(stillShot);
+    }
+    const stillRefs = references.filter((r) => r.kind === "image");
+    // The cast just added its stills — the vendor's ceiling counts those too.
+    if (stillRefs.length > model.maxReferenceImages) {
+      return NextResponse.json({
+        error: `${model.label} accepts at most ${model.maxReferenceImages} reference images including cast stills (${stillRefs.length} attached).`,
+      }, { status: 400 });
+    }
+    const genId = id("gen");
+    const ts = now();
+    const stillParams = {
+      ratio, resolution: size,
+      references: stillRefs.map((r) => ({ uploadId: r.id, role: r.role, kind: r.kind })),
+      rawPrompt: castPrompt !== prompt ? prompt : undefined,
+      cast: castUsed.length ? castUsed : undefined,
+    };
+
+    await db().execute({
+      sql: `INSERT INTO generations
+            (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
+             created_at, updated_at, token_id, shot_id, version, provider, task)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      args: [genId, stillProject, null, "image", modelId, stillPrompt,
+             JSON.stringify(stillParams), "running", got.user.id, ts, ts,
+             got.token?.id ?? null, stillShot, stillVersion, model.provider, "generate"],
+    });
+    invalidate(PROJECTS_KEY);
+
+    after(async () => {
+      try {
+        const img = await generateImage({
+          prompt: stillPrompt, ratio, size, references: stillRefs,
+        });
+        // Google can only emit JPEG; the library keeps PNG. Decode once and
+        // re-encode LOSSLESSLY — pixel-identical, and nothing downstream can
+        // add generation loss to a PNG. (sharp is for THIS transcode and for
+        // delivery copies only — reference masters never pass through it.)
+        const sharp = (await import("sharp")).default;
+        const png = await sharp(img.bytes).png().toBuffer();
+        const storedUrl = await storeImageBytes(genId, png);
+        // Google bills flat per image (+ per reference in). Their published
+        // figures ARE the ledger; usage tokens are recorded when returned.
+        const cost = (IMAGE_OUT_USD[size] ?? 0) + stillRefs.length * IMAGE_REF_IN_USD;
+        const tokens = img.totalTokens ?? imageTokens(size, stillRefs.length);
+        await db().execute({
+          sql: `UPDATE generations
+                SET status='succeeded', stored_url=?, total_tokens=?,
+                    cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?, updated_at=?
+                WHERE id=?`,
+          args: [storedUrl, tokens, cost, 120, now() - ts, now(), genId],
+        });
+      } catch (e) {
+        await db().execute({
+          sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=?`,
+          args: [(e as Error).message.slice(0, 600), now() - ts, now(), genId],
+        }).catch(() => {});
+      }
+      invalidate(PROJECTS_KEY);
+    });
+
+    return NextResponse.json({ id: genId, status: "running" });
   }
 
   /* ── Auto-refine ─────────────────────────────────────────────────────

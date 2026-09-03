@@ -16,7 +16,7 @@ export default function ThemeRow() {
       <span className="min-w-0 flex-1">
         Appearance
         <span className="mt-0.5 block text-[12px] leading-snug text-mute">
-          Auto follows the system.
+          Auto follows your system setting.
         </span>
       </span>
       <span className="row-value">

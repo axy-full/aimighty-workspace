@@ -93,8 +93,7 @@ export default function ChatDock() {
           <button
             onClick={() => toggle(true)}
             title="Team chat"
-            className="fixed right-5 z-40 grid h-[52px] w-[52px] place-items-center rounded-full bg-panel text-dim shadow-[var(--shadow-pop)] transition-transform hover:scale-105 max-[860px]:right-3.5"
-            style={{ bottom: "calc(var(--tabbar) + 6px)" }}
+            className="chat-fab fixed right-5 z-40 grid h-[52px] w-[52px] place-items-center rounded-full bg-panel text-dim shadow-[var(--shadow-pop)] transition-transform hover:scale-105 max-[860px]:right-3.5"
           >
             <ChatGlyph />
             {badge}

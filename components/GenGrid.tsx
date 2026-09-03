@@ -1,7 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import GenCard, { type Gen } from "./GenCard";
+import Theatre from "./Theatre";
+import { Empty } from "./ParticlMark";
 import { usd } from "@/lib/format";
+import { useProject } from "@/lib/projectContext";
 
 export default function GenGrid({
   gens, projects, onChanged, empty = "No clips.",
@@ -11,19 +16,38 @@ export default function GenGrid({
   onChanged?: () => void;
   empty?: string;
 }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const router = useRouter();
+  const { setSelection } = useProject();
+
+  /** "Use" from the library: carry the prompt to the composer, in its project. */
+  function useGen(g: Gen) {
+    const typed = (g.params as { rawPrompt?: string }).rawPrompt || g.prompt;
+    try { window.localStorage.setItem("aw_compose_seed", typed); } catch { /* private mode */ }
+    if (g.projectId) setSelection(g.projectId);
+    router.push("/");
+  }
+
   if (!gens.length) {
     return (
       <div className="grid h-full min-h-[200px] place-items-center rounded-[var(--r)] bg-panel2 p-6">
-        <p className="text-[14px] text-mute">{empty}</p>
+        <Empty compact title={empty} />
       </div>
     );
   }
   return (
-    <div className="grid gap-x-5 gap-y-7 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
-      {gens.map((g) => (
-        <GenCard key={g.id} gen={g} projects={projects} onChanged={onChanged} />
-      ))}
-    </div>
+    <>
+      <div className="grid gap-x-5 gap-y-7 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
+        {gens.map((g) => (
+          <GenCard key={g.id} gen={g} projects={projects} onChanged={onChanged} onOpen={() => setOpen(g.id)} />
+        ))}
+      </div>
+      <Theatre
+        gens={gens} activeId={open && gens.some((g) => g.id === open) ? open : null}
+        onClose={() => setOpen(null)} onSelect={setOpen}
+        onChanged={() => onChanged?.()} onUse={useGen}
+      />
+    </>
   );
 }
 

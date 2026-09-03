@@ -9,6 +9,8 @@
  * validation, pricing and the ledger stay in exactly one place.
  */
 
+import { getModel } from "./models";
+
 export type ToolDef = {
   name: string;
   description: string;
@@ -163,14 +165,30 @@ export async function runTool(
       const model = String(args.model ?? "2.5").includes("2.0")
         ? "dreamina-seedance-2-0-260128"
         : "dreamina-seedance-2-5-260628";
+      // The server quietly substitutes a valid value for one it does not
+      // offer; a tool must not then report the value it asked for as if it
+      // had been used. Refuse up front, naming the options.
+      const def = getModel(model);
+      const duration = Number(args.duration ?? 5);
+      const resolution = String(args.resolution ?? "1080p");
+      const ratio = String(args.ratio ?? "16:9");
+      if (!def.durations.includes(duration)) {
+        throw new Error(`Duration must be one of ${def.durations.join(", ")} seconds for ${def.label}.`);
+      }
+      if (!def.resolutions.includes(resolution)) {
+        throw new Error(`Resolution must be one of ${def.resolutions.join(", ")} for ${def.label}.`);
+      }
+      if (!def.ratios.includes(ratio)) {
+        throw new Error(`Aspect ratio must be one of ${def.ratios.join(", ")} for ${def.label}.`);
+      }
       const out = (await call("/api/generate", {
         method: "POST",
         body: {
           prompt: args.prompt,
           model,
-          ratio: args.ratio ?? "16:9",
-          resolution: args.resolution ?? "1080p",
-          duration: args.duration ?? 5,
+          ratio,
+          resolution,
+          duration,
           generateAudio: Boolean(args.audio),
           seed: args.seed ?? null,
           watermark: false,
@@ -180,7 +198,7 @@ export async function runTool(
       return (
         `Rendering started.\n\nid: ${out.id}\nproject: ${project?.name ?? "Unfiled"}\n` +
         `model: ${model.includes("2-5") ? "Seedance 2.5" : "Seedance 2.0"} · ` +
-        `${args.resolution ?? "1080p"} · ${args.ratio ?? "16:9"} · ${args.duration ?? 5}s\n\n` +
+        `${resolution} · ${ratio} · ${duration}s\n\n` +
         `Call wait_for_render with this id to collect it.`
       );
     }

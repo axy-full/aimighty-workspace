@@ -29,7 +29,7 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
         body: JSON.stringify(patch),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Could not save");
+      if (!res.ok) throw new Error(json.error ?? "Couldn't save that");
       setDraft(null);
       refresh();
     } catch (e) {
@@ -49,7 +49,7 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
       <p className="grouplabel mt-10">Downloads</p>
       <div className="rows">
         <div className="row !block py-3">
-          <span className="text-[15px]">Filename protocol</span>
+          <span className="text-[15px]">Filename pattern</span>
           <input
             value={template}
             onChange={(e) => setDraft(e.target.value)}
@@ -64,8 +64,8 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
             {TOKENS.map((t) => `{${t}}`).join(" · ")}
           </p>
           <p className="mt-1.5 text-[12px] text-mute">
-            A token that resolves to nothing takes its separator with it, so an
-            unfiled render doesn&rsquo;t come out as <code>v.mp4</code>.
+            A token with nothing to show drops its separator too, so an unfiled
+            render never comes out as <code>v.mp4</code>.
           </p>
           {isAdmin && dirty && (
             <button onClick={() => save({ namingTemplate: template })} disabled={busy}
@@ -82,8 +82,8 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
           <span className="min-w-0 flex-1">
             Delivery copies
             <span className="mt-0.5 block text-[12px] leading-snug text-mute">
-              Keep the master untouched and send a derived copy when an API
-              won&rsquo;t accept it. Off means oversized assets are refused.
+              Keep the master untouched and send a derived copy whenever an API
+              won&rsquo;t accept the original. When this is off, oversized assets are refused.
             </span>
           </span>
           <Switch checked={derive} disabled={!isAdmin}
@@ -93,9 +93,9 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
           <span className="min-w-0 flex-1">
             Edit &amp; extend output
             <span className="mt-0.5 block text-[12px] leading-snug text-mute">
-              ByteDance recommend mov for edits — it holds colour and audio
-              continuity an mp4 re-encode loses. mp4 is the default because
-              QuickTime doesn&rsquo;t play reliably in Chrome.
+              ByteDance recommends MOV for edits: it keeps the colour and audio
+              continuity an MP4 re-encode loses. MP4 stays the default because
+              QuickTime files don&rsquo;t play reliably in Chrome.
             </span>
           </span>
           <span className="row-value">
@@ -103,17 +103,17 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
               <select value={data.settings.editOutputFormat ?? "mp4"} disabled={busy}
                 onChange={(e) => save({ editOutputFormat: e.target.value })}
                 className="rounded-[8px] bg-chip px-2 py-1 text-[14px]">
-                <option value="mp4">mp4</option>
-                <option value="mov">mov</option>
+                <option value="mp4">MP4</option>
+                <option value="mov">MOV</option>
               </select>
-            ) : (data.settings.editOutputFormat ?? "mp4")}
+            ) : (data.settings.editOutputFormat ?? "mp4").toUpperCase()}
           </span>
         </div>
         <div className="row">
           <span className="min-w-0 flex-1">
             Retry failed submits
             <span className="mt-0.5 block text-[12px] leading-snug text-mute">
-              Timeouts and rate limits only. A rejected prompt never retries.
+              Retries cover timeouts and rate limits only. A rejected prompt is never retried.
             </span>
           </span>
           <span className="row-value">

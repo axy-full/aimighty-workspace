@@ -23,7 +23,7 @@ project you asked for, and on the ledger like any other render.
 **Claude Code** — one command:
 
 ```bash
-claude mcp add particl --env PARTICL_URL=https://www.particlstudio.com --env PARTICL_TOKEN=aw_your_token_here -- node /Users/axy/Downloads/ark-video/mcp/particl-mcp.mjs
+claude mcp add particl --env PARTICL_URL=https://particlstudio.com --env PARTICL_TOKEN=aw_your_token_here -- node /Users/axy/Downloads/ark-video/mcp/particl-mcp.mjs
 ```
 
 **Claude Desktop** — add this to `claude_desktop_config.json`
@@ -36,7 +36,7 @@ claude mcp add particl --env PARTICL_URL=https://www.particlstudio.com --env PAR
       "command": "node",
       "args": ["/Users/axy/Downloads/ark-video/mcp/particl-mcp.mjs"],
       "env": {
-        "PARTICL_URL": "https://www.particlstudio.com",
+        "PARTICL_URL": "https://particlstudio.com",
         "PARTICL_TOKEN": "aw_your_token_here"
       }
     }
@@ -49,7 +49,7 @@ Restart Claude Desktop afterwards.
 ## 3. Check it before you rely on it
 
 ```bash
-PARTICL_URL=https://www.particlstudio.com \
+PARTICL_URL=https://particlstudio.com \
 PARTICL_TOKEN=aw_your_token_here \
 node mcp/particl-mcp.mjs --check
 ```

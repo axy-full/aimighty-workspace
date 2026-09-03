@@ -1,10 +1,15 @@
 "use client";
 
+/**
+ * The team, in the app's own idiom: a title, an invite card, and one
+ * grouped list of members — the same list on a desk and a phone.
+ */
 import { useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { usd, timeAgo } from "@/lib/format";
-import { Panel } from "@/components/Panel";
 import { avatarHue, initialsOf } from "@/lib/avatar";
+import { usePageTitle } from "@/lib/usePageTitle";
+import { Empty } from "@/components/ParticlMark";
 
 type Member = {
   id: string; email: string; name: string; role: string;
@@ -17,6 +22,7 @@ type Invite = {
 };
 
 export default function TeamPage() {
+  usePageTitle("Team");
   const { data, refresh } = useApi<{ users: Member[]; invites: Invite[] }>("/api/team", 30000);
   const [form, setForm] = useState({ name: "", email: "", role: "member" });
   const [busy, setBusy] = useState(false);
@@ -32,7 +38,7 @@ export default function TeamPage() {
         body: JSON.stringify(form),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Could not create the invite");
+      if (!res.ok) throw new Error(json.error ?? "Couldn't create the invite");
       setForm({ name: "", email: "", role: "member" });
       refresh();
     } catch (e) { setErr((e as Error).message); }
@@ -66,200 +72,128 @@ export default function TeamPage() {
   const active = users.filter((u) => !u.disabled).length;
 
   return (
-    // pb reserves the floating tab pill's space, the way .screen does — with a
-    // flat py-5 the last member row and the role legend sat behind it, with no
-    // scroll left to reveal them.
-    <div className="h-full min-h-0 overflow-y-auto px-6 pt-5 pb-[var(--tabbar)] max-[860px]:px-3.5">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="flex flex-col gap-0.5">
-          <span className="ptitle text-[20px] leading-tight">Team</span>
-          <span className="text-[12px] text-dim">{active} active member{active === 1 ? "" : "s"} · invite-only</span>
-        </span>
-        <span className="ml-auto" />
-        <a href="/api/export" download
-          title="Download every prompt, cost and account record as JSON"
-          className="chip !py-[7px] !text-dim">
-          Export data
-        </a>
-      </div>
+    <div className="screen">
+      <div className="mx-auto w-full max-w-[760px] pb-10">
+        <div className="flex flex-wrap items-end gap-3 pt-6">
+          <span className="flex flex-col">
+            <h1 className="h1">Team</h1>
+            <span className="mt-1 text-[15px] text-dim">
+              {active} active member{active === 1 ? "" : "s"} · invitation only
+            </span>
+          </span>
+          <a href="/api/export" download
+            title="Every prompt, cost and account record, as JSON"
+            className="chip mb-2 ml-auto !text-dim">
+            Export data
+          </a>
+        </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-[var(--r)] border border-line bg-panel p-3">
-        <input className="ctl w-[170px] flex-1 sm:flex-none" placeholder="Name"
-          value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-          onKeyDown={(e) => e.key === "Enter" && invite()} />
-        <input className="ctl w-[220px] flex-1 sm:flex-none" placeholder="Email" type="email"
-          value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
-          onKeyDown={(e) => e.key === "Enter" && invite()} />
-        <select className="ctl w-auto shrink-0" value={form.role}
-          onChange={(e) => setForm({ ...form, role: e.target.value })}>
-          <option value="member">Member</option>
-          <option value="admin">Admin</option>
-        </select>
-        <button onClick={invite} disabled={busy || !form.name.trim() || !form.email.trim()}
-          className="btn-render h-[32px] shrink-0 px-3.5 text-[12.5px]">
-          Invite member
-        </button>
-        <span className="w-full font-mono text-[9px] tracking-wider text-mute sm:ml-auto sm:w-auto">
-          SHARE THE LINK YOURSELF — NO EMAIL IS SENT
-        </span>
-      </div>
+        <p className="grouplabel mt-10">Invite someone</p>
+        <div className="card p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <input className="ctl min-w-[160px] flex-1" placeholder="Name"
+              value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && invite()} />
+            <input className="ctl min-w-[200px] flex-1" placeholder="Email" type="email"
+              value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && invite()} />
+            <select className="ctl w-auto shrink-0" value={form.role}
+              onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button onClick={invite} disabled={busy || !form.name.trim() || !form.email.trim()}
+              className="btn-render h-[38px] shrink-0 px-4 text-[14px]">
+              Create invite
+            </button>
+          </div>
+          <p className="mt-2.5 text-[12.5px] text-mute">
+            No email is sent. Copy the link and share it yourself; it expires on its own.
+          </p>
+          {err && (
+            <p className="mt-3 rounded-[10px] bg-lift/8 px-3 py-2 text-[13.5px] text-lift">{err}</p>
+          )}
+        </div>
 
-      {err && (
-        <p className="mt-3 rounded-[8px] bg-lift/8 px-3 py-2 font-mono text-[10.5px] text-lift">{err}</p>
-      )}
-
-      {invites.length > 0 && (
-        <Panel title="Pending invites" className="mt-3">
-          <ul className="divide-y divide-hair">
-            {invites.map((iv) => (
-              <li key={iv.code} className="flex flex-wrap items-center gap-2.5 px-4 py-2.5">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-[1.4px] border-dashed border-mute/60" />
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-[12.5px] font-semibold text-dim">{iv.name}</span>
-                  <span className="truncate font-mono text-[10px] text-mute">{iv.email}</span>
-                </span>
-                <span className="rounded-full border border-dashed border-line px-2.5 py-[3px] text-[11px] text-mute">
-                  {iv.role} · pending
-                </span>
-                <span className="font-mono text-[9.5px] text-mute">
-                  expires {new Date(iv.expiresAt).toLocaleDateString()}
-                </span>
-                <span className="ml-auto flex items-center gap-1.5">
-                  <button onClick={() => copyLink(iv.code)}
-                    className="rounded-[7px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-dim hover:border-lift hover:text-lift max-[860px]:px-3 max-[860px]:py-2">
-                    {copied === iv.code ? "COPIED ✓" : "COPY LINK"}
-                  </button>
-                  <button onClick={() => revoke(iv.code)}
-                    className="rounded-[7px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-mute hover:border-lift hover:text-lift max-[860px]:px-3 max-[860px]:py-2">
-                    REVOKE
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      )}
-
-      <Panel title="Members" className="mt-3">
-        {/* Phones: one card per member — no sideways table-dragging. */}
-        <ul className="hidden divide-y divide-hair max-[860px]:block">
-          {users.map((u) => (
-            <li key={u.id} className={`px-4 py-3 ${u.disabled ? "opacity-45" : ""}`}>
-              <div className="flex items-center gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[12px] font-semibold text-white"
-                  style={{ background: avatarHue(u.name) }}>
-                  {initialsOf(u.name)}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-[13px] font-semibold text-bone">
-                    {u.name}
-                    {u.locked && (
-                      <span className="ml-2 font-mono text-[9px] tracking-wider text-warn">LOCKED</span>
-                    )}
+        {invites.length > 0 && (
+          <>
+            <p className="grouplabel mt-10">Pending invites</p>
+            <div className="rows">
+              {invites.map((iv) => (
+                <div key={iv.code} className="row">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-[1.5px] border-dashed border-mute/60 text-[12px] text-mute">
+                    {initialsOf(iv.name)}
                   </span>
-                  <span className="truncate font-mono text-[10px] text-mute">{u.email}</span>
-                </span>
-                <span className="shrink-0 text-right font-mono text-[11px] tabular-nums">
-                  <span className="block text-bone">{usd(u.spend, 2)}</span>
-                  <span className="block text-mute">{u.clips} clips</span>
-                </span>
-              </div>
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                <select value={u.role} onChange={(e) => patch(u.id, { role: e.target.value })}
-                  className={`h-[32px] rounded-full border px-2.5 font-medium ${
-                    u.role === "admin"
-                      ? "border-red/35 bg-red/15 text-lift"
-                      : "border-line bg-chip text-dim"
-                  }`}>
-                  <option value="member">member</option>
-                  <option value="admin">admin</option>
-                </select>
-                <span className="font-mono text-[10px] text-mute">
-                  {u.lastSeen ? timeAgo(u.lastSeen) : "never seen"}
-                </span>
-                <span className="ml-auto flex items-center gap-1.5">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-[15px]">{iv.name}</span>
+                    <span className="truncate text-[12.5px] text-mute">
+                      {iv.email} · {iv.role} · expires {new Date(iv.expiresAt).toLocaleDateString()}
+                    </span>
+                  </span>
+                  <span className="row-value !gap-1.5">
+                    <button onClick={() => copyLink(iv.code)} className="chip !py-1.5 !text-[13px]">
+                      {copied === iv.code ? "Copied ✓" : "Copy link"}
+                    </button>
+                    <button onClick={() => revoke(iv.code)} className="chip !py-1.5 !text-[13px] !text-lift">
+                      Revoke
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        <p className="grouplabel mt-10">Members</p>
+        <div className="rows">
+          {users.length === 0 && <div className="row"><Empty compact title="Nobody yet" /></div>}
+          {users.map((u) => (
+            <div key={u.id} className={`row !items-start !py-3 ${u.disabled ? "opacity-45" : ""}`}>
+              <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full text-[12px] font-semibold text-white"
+                style={{ background: avatarHue(u.name) }}>
+                {initialsOf(u.name)}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-[15px] font-medium">{u.name}</span>
+                  {u.role === "admin" && (
+                    <span className="rounded-full bg-blue/10 px-2 py-px text-[11px] font-medium text-blue">Admin</span>
+                  )}
                   {u.locked && (
-                    <button onClick={() => patch(u.id, { unlock: true })}
-                      className="rounded-[8px] border border-line px-3 py-2 font-mono text-[10px] tracking-wider text-warn">
-                      UNLOCK
+                    <span className="rounded-full bg-warn/15 px-2 py-px text-[11px] font-medium text-warn">Locked</span>
+                  )}
+                  {u.disabled && (
+                    <span className="rounded-full bg-chip px-2 py-px text-[11px] font-medium text-dim">Disabled</span>
+                  )}
+                </span>
+                <span className="truncate text-[12.5px] text-mute">{u.email}</span>
+                <span className="text-[12.5px] tabular-nums text-mute">
+                  {u.clips} render{u.clips === 1 ? "" : "s"} · {usd(u.spend, 2)} ·{" "}
+                  {u.lastSeen ? `seen ${timeAgo(u.lastSeen)}` : "never signed in"}
+                </span>
+                <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <select value={u.role} onChange={(e) => patch(u.id, { role: e.target.value })}
+                    className="h-[28px] rounded-full bg-chip px-2.5 text-[12.5px] font-medium text-dim">
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  {u.locked && (
+                    <button onClick={() => patch(u.id, { unlock: true })} className="chip !py-1 !text-[12.5px] !text-warn">
+                      Unlock
                     </button>
                   )}
                   <button onClick={() => patch(u.id, { disabled: !u.disabled })}
-                    className="rounded-[8px] border border-line px-3 py-2 font-mono text-[10px] tracking-wider text-mute">
-                    {u.disabled ? "ENABLE" : "DISABLE"}
+                    className={`chip !py-1 !text-[12.5px] ${u.disabled ? "" : "!text-lift"}`}>
+                    {u.disabled ? "Enable" : "Disable"}
                   </button>
                 </span>
-              </div>
-            </li>
+              </span>
+            </div>
           ))}
-        </ul>
-        <div className="overflow-x-auto max-[860px]:hidden">
-          <table className="w-full min-w-[720px] border-collapse text-[12px]">
-            <thead>
-              <tr className="text-left">
-                {["Member", "Role", "Clips", "Spend", "Last seen", ""].map((h, i) => (
-                  <th key={h || i} className={`lbl px-4 py-2.5 font-normal ${i > 1 && i < 5 ? "text-right" : ""}`}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className={`border-t border-hair hover:bg-chip/60 ${u.disabled ? "opacity-45" : ""}`}>
-                  <td className="px-4 py-2.5">
-                    <span className="flex items-center gap-3">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white"
-                        style={{ background: avatarHue(u.name) }}>
-                        {initialsOf(u.name)}
-                      </span>
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate text-[12.5px] font-semibold text-bone">
-                          {u.name}
-                          {u.locked && (
-                            <span className="ml-2 font-mono text-[9px] tracking-wider text-warn">LOCKED</span>
-                          )}
-                        </span>
-                        <span className="truncate font-mono text-[10px] text-mute">{u.email}</span>
-                      </span>
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <select value={u.role} onChange={(e) => patch(u.id, { role: e.target.value })}
-                      className={`h-[24px] rounded-full border px-2 text-[11px] font-medium ${
-                        u.role === "admin"
-                          ? "border-red/35 bg-red/15 text-lift"
-                          : "border-line bg-chip text-dim"
-                      }`}>
-                      <option value="member">member</option>
-                      <option value="admin">admin</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-[11px] tabular-nums text-dim">{u.clips}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-[11px] tabular-nums text-bone">{usd(u.spend, 2)}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-[11.5px] text-mute">
-                    {u.lastSeen ? timeAgo(u.lastSeen) : "never"}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                    {u.locked && (
-                      <button onClick={() => patch(u.id, { unlock: true })}
-                        className="mr-1.5 rounded-[7px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-warn hover:border-warn">
-                        UNLOCK
-                      </button>
-                    )}
-                    <button onClick={() => patch(u.id, { disabled: !u.disabled })}
-                      className="rounded-[7px] border border-line px-2 py-1 font-mono text-[9.5px] tracking-wider text-mute hover:border-lift hover:text-lift">
-                      {u.disabled ? "ENABLE" : "DISABLE"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
-      </Panel>
-
-      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-[11.5px] text-mute">
-        <span><span className="font-semibold text-dim">Admin</span> — team, invites &amp; ledger</span>
-        <span><span className="font-semibold text-dim">Member</span> — generate &amp; edit</span>
+        <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
+          Admins manage the team, invites and the ledger. Members generate and edit.
+        </p>
       </div>
     </div>
   );

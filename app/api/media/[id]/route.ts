@@ -57,9 +57,30 @@ export async function GET(req: Request, { params }: Ctx) {
     }
   }
 
+  /* Poster capture (?stream=1): the wall draws one frame of each render to
+     a canvas, and a canvas will only read pixels from the page's own origin.
+     So for that one request the bytes pass through here, Range and all —
+     a few hundred kilobytes for the header and the first frame, never the
+     whole file — instead of redirecting to storage's own domain. */
+  const wantsStream = new URL(req.url).searchParams.get("stream") === "1";
+
   if (usingBlob()) {
     try {
       const signed = await presignedReadUrl(isImage ? imagePath(id) : videoPath(id), 6);
+      if (wantsStream) {
+        const range = req.headers.get("range");
+        const upstream = await fetch(signed, {
+          headers: range ? { Range: range } : {},
+          cache: "no-store",
+        });
+        const headers = new Headers({ "Cache-Control": "private, no-store" });
+        for (const h of ["content-type", "content-length", "content-range", "accept-ranges"]) {
+          const v = upstream.headers.get(h);
+          if (v) headers.set(h, v);
+        }
+        if (!headers.has("content-type")) headers.set("content-type", contentType);
+        return new Response(upstream.body, { status: upstream.status, headers });
+      }
       return new Response(null, {
         status: 302,
         headers: {

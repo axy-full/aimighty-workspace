@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { appAlert } from "./dialog";
-import { IconPlus, IconClose } from "./Icons";
+import { IconClose, IconPlus } from "./Icons";
+import { ParticlSpinner } from "./ParticlMark";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
 import { uploadFile, sha256OfFile } from "@/lib/uploadClient";
 import type { ModelDef } from "@/lib/models";
@@ -17,13 +18,14 @@ export type RefItem = {
   role: ImageRole; verified: boolean;
 };
 
-/** Lets the island's "+ Reference" chip open this panel's file picker. */
-export type RefPicker = { open: () => void } | null;
+/** Lets the island open this strip's file picker, or hand it dropped files. */
+export type RefPicker = { open: () => void; add: (files: FileList | File[]) => void } | null;
 
 const ROLE_LABEL: Record<ImageRole, string> = {
   first_frame: "FIRST", last_frame: "LAST",
-  reference_image: "REF", reference_video: "REF VID",
+  reference_image: "REF", reference_video: "REF",
 };
+const ROLE_CYCLE: ImageRole[] = ["reference_image", "first_frame", "last_frame"];
 
 const kb = (n: number) =>
   n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
@@ -35,7 +37,7 @@ const kb = (n: number) =>
 export function referenceProblem(
   refs: RefItem[], model: ModelDef, prompt = ""
 ): string | null {
-  // Image engines (Nano Banana Pro): stills in, one still out. No videos,
+  // Still engines (Nano Banana Pro): stills in, one still out. No videos,
   // no first/last-frame mode — every image is simply a reference.
   if (model.kind === "image") {
     const vids = refs.filter((r) => r.kind === "video");
@@ -101,7 +103,12 @@ export function referenceProblem(
   return null;
 }
 
-/** The right-hand references panel — show the model instead of describing. */
+/**
+ * The references, as a strip of thumbnails inside the composer — where they
+ * belong, since they travel with the one render being written. Tap a thumb
+ * to cite it; tap its tag to change its role; drop files anywhere on the
+ * island to add more. Masters are stored byte-for-byte and hash-checked.
+ */
 export default function References({
   refs, setRefs, model, onCite, pickerRef,
 }: {
@@ -115,13 +122,6 @@ export default function References({
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [drag, setDrag] = useState(false);
-
-  useEffect(() => {
-    if (!pickerRef) return;
-    pickerRef.current = { open: () => input.current?.click() };
-    return () => { pickerRef.current = null; };
-  }, [pickerRef]);
 
   async function add(files: FileList | File[]) {
     setBusy(true); setErr(null);
@@ -154,158 +154,99 @@ export default function References({
     if (input.current) input.current.value = "";
   }
 
-  function setRole(id: string, role: ImageRole) {
-    setRefs((prev) => prev.map((r) => (r.id === id ? { ...r, role } : r)));
+  useEffect(() => {
+    if (!pickerRef) return;
+    pickerRef.current = { open: () => input.current?.click(), add };
+    return () => { pickerRef.current = null; };
+    // add() closes over setters only — stable for the component's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickerRef]);
+
+  function cycleRole(r: RefItem) {
+    const i = ROLE_CYCLE.indexOf(r.role);
+    const role = ROLE_CYCLE[(i + 1) % ROLE_CYCLE.length];
+    setRefs((prev) => prev.map((x) => (x.id === r.id ? { ...x, role } : x)));
   }
 
-  async function remove(id: string) {
+  function remove(id: string) {
     setRefs((prev) => prev.filter((r) => r.id !== id));
     fetch(`/api/uploads/${id}`, { method: "DELETE" }).catch(() => {});
   }
 
   const referenceImages = refs.filter((r) => r.kind === "image" && r.role === "reference_image");
   const referenceVideos = refs.filter((r) => r.kind === "video");
-  const totalVideoS = referenceVideos.reduce((a, v) => a + (v.durationS ?? 0), 0);
-  const unverified = refs.some((r) => !r.verified);
+  const show = refs.length > 0 || busy || err;
 
   return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-      onDragLeave={() => setDrag(false)}
-      onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) add(e.dataTransfer.files); }}
-      className={`card flex flex-col gap-3 p-4 transition-colors ${drag ? "!bg-blue/5" : ""}`}
-    >
-      <div className="flex items-baseline gap-2">
-        <span className="text-[16px] font-semibold tracking-[-0.015em]">References</span>
-        <span className="ml-auto text-[13px] text-mute">
-          {refs.length > 0
-            ? `${refs.length}${referenceVideos.length > 0 ? ` · ${totalVideoS.toFixed(1)}s / ${model.maxVideoSecondsTotal}s` : ""}`
-            : ""}
-        </span>
-      </div>
-      <p className="text-[13.5px] leading-relaxed text-dim">
-        Show the model instead of describing. Attach stills and clips, then call
-        them in the prompt as <span className="font-medium text-blue">@Image1</span> or{" "}
-        <span className="font-medium text-blue">@Video1</span>.
-      </p>
-
-      <button
-        type="button" onClick={() => input.current?.click()} disabled={busy}
-        className="grid h-[84px] w-full place-items-center rounded-[12px] border-2 border-dashed border-line bg-panel2/60 text-mute transition-colors hover:border-blue/50 hover:text-blue disabled:opacity-40"
-        title="Add reference images or videos"
-      >
-        {busy
-          ? <span className="text-[13px]">{progress ?? "…"}</span>
-          : <span className="flex items-center gap-2 text-[13px]">
-              <IconPlus /> drop stills or clips
-            </span>}
-      </button>
+    <div className={show ? "ref-strip" : "contents"}>
       <input
         ref={input} type="file" multiple hidden
         accept="image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,video/mp4,video/quicktime"
         onChange={(e) => e.target.files && add(e.target.files)}
       />
 
-      {refs.length > 0 && (
-        <div className="grid grid-cols-2 gap-2">
+      {show && (
+        <div className="ref-row">
           {refs.map((r) => {
             const citeIndex = r.kind === "video"
               ? referenceVideos.findIndex((x) => x.id === r.id) + 1
               : r.role === "reference_image"
                 ? referenceImages.findIndex((x) => x.id === r.id) + 1
                 : 0;
-            const citeToken = r.kind === "video" ? `@Video${citeIndex}` : `@Image${citeIndex}`;
+            const token = r.kind === "video" ? `@Video${citeIndex}` : `@Image${citeIndex}`;
+            const citable = citeIndex > 0;
+            const canCycle = r.kind === "image" && model.kind !== "image";
+            const detail = r.kind === "video"
+              ? `${r.durationS?.toFixed(1) ?? "?"}s · ${kb(r.bytes)}`
+              : `${r.width ?? "?"}×${r.height ?? "?"} · ${kb(r.bytes)}`;
             return (
-              <div key={r.id} className="min-w-0">
-              <div className="group relative h-[84px] overflow-hidden rounded-[12px] bg-thumb">
-                {r.kind === "video" ? (
-                  <video src={`${r.url}#t=0.1`} muted preload="metadata" playsInline
-                    className="h-full w-full object-cover"
-                    title={`${r.filename}\n${r.durationS?.toFixed(1) ?? "?"}s · ${kb(r.bytes)}\nsha256 ${r.sha256.slice(0, 16)}…`} />
-                ) : (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img src={r.url} alt={r.filename}
-                    className="h-full w-full object-cover"
-                    title={`${r.filename}\n${r.width ?? "?"}×${r.height ?? "?"} · ${kb(r.bytes)}\nsha256 ${r.sha256.slice(0, 16)}…`} />
-                )}
-
-                <span className={`absolute left-0 top-0 rounded-br-[6px] px-1.5 py-px font-mono text-[8px] tracking-wide ${
-                  r.role === "reference_image" || r.role === "reference_video"
-                    ? "bg-black/60 text-white" : "bg-blue text-white"
-                }`}>
-                  {citeIndex > 0 ? citeToken : ROLE_LABEL[r.role]}
-                </span>
-                {r.kind === "video" && r.durationS != null && (
-                  <span className="absolute right-0 top-0 rounded-bl-[6px] bg-black/70 px-1.5 font-mono text-[8px] text-white/80">
-                    {r.durationS.toFixed(1)}s
-                  </span>
-                )}
-
+              <div key={r.id} className={`ref-thumb group ${r.verified ? "" : "ref-unverified"}`}
+                title={`${r.filename}\n${detail}${r.verified ? "\nstored byte-identical" : "\nSTORED BYTES DO NOT MATCH"}`}>
+                <button type="button"
+                  onClick={() => citable && onCite(token)}
+                  className="block h-full w-full"
+                  aria-label={citable ? `Cite ${token}` : r.filename}>
+                  {r.kind === "video" ? (
+                    <video src={`${r.url}#t=0.1`} muted preload="metadata" playsInline
+                      className="h-full w-full object-cover" />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={r.url} alt={r.filename} className="h-full w-full object-cover" />
+                  )}
+                </button>
+                <button type="button"
+                  onClick={(e) => { e.stopPropagation(); if (canCycle) cycleRole(r); }}
+                  className={`ref-tag ${citable ? "ref-tag-cite" : "ref-tag-role"}`}
+                  title={canCycle ? "Tap to change: reference → first frame → last frame" : undefined}
+                  tabIndex={canCycle ? 0 : -1}>
+                  {citable ? token : ROLE_LABEL[r.role]}
+                </button>
                 {!r.verified && (
                   <button type="button"
-                    onClick={() => appAlert("Hashes don't match",
-                      "The stored copy's bytes do not hash-match the original file. Remove it and upload again before spending a render on it.")}
-                    className="absolute bottom-0 left-0 rounded-tr-[6px] bg-lift px-1.5 text-[9px] text-white"
-                    title="Stored bytes do not match the original — tap for details">
-                    HASH?
-                  </button>
+                    onClick={(e) => { e.stopPropagation(); appAlert("Hashes don't match",
+                      "The stored copy's bytes do not hash-match the original file. Remove it and upload again before spending a render on it."); }}
+                    className="ref-bad" title="Stored bytes do not match the original">!</button>
                 )}
-
-                <div className="reveal absolute inset-x-0 bottom-0 flex">
-                  {r.kind === "image" && model.kind !== "image" && (
-                    <select
-                      value={r.role}
-                      onChange={(e) => setRole(r.id, e.target.value as ImageRole)}
-                      className="h-[18px] min-w-0 flex-1 border-0 bg-black/80 px-0.5 font-mono text-[8px] text-white/80 max-[860px]:h-[26px]"
-                      title="Role"
-                    >
-                      <option value="reference_image">ref</option>
-                      <option value="first_frame">first</option>
-                      <option value="last_frame">last</option>
-                    </select>
-                  )}
-                  {citeIndex > 0 && (
-                    <button type="button" onClick={() => onCite(citeToken)} title="Cite in prompt"
-                      className="h-[18px] flex-1 bg-black/80 px-1 font-mono text-[8px] text-white/80 hover:text-lift max-[860px]:h-[26px] max-[860px]:text-[11px]">@</button>
-                  )}
-                  <button type="button" onClick={() => remove(r.id)} title="Remove"
-                    className="grid h-[18px] w-[18px] shrink-0 place-items-center bg-black/80 text-white/80 hover:text-lift max-[860px]:h-[26px] max-[860px]:w-[26px]">
-                    <IconClose />
-                  </button>
-                </div>
-              </div>
-              <p className="mt-1 truncate text-[11.5px] text-mute" title={r.filename}>
-                {r.filename}
-              </p>
+                <button type="button" onClick={(e) => { e.stopPropagation(); remove(r.id); }}
+                  className="ref-x reveal" title="Remove"><IconClose className="!h-3 !w-3" /></button>
               </div>
             );
           })}
+          {busy && (
+            <div className="ref-thumb ref-busy" title={progress ?? "Uploading…"}>
+              <ParticlSpinner size={18} className="text-dim" />
+            </div>
+          )}
+          {!busy && (
+            <button type="button" onClick={() => input.current?.click()} className="ref-thumb ref-add"
+              title="Add stills or clips">
+              <IconPlus />
+            </button>
+          )}
         </div>
       )}
-
-      <div className="flex items-center gap-2">
-        {progress && !busy && <span className="font-mono text-[9px] text-run">{progress}</span>}
-        {refs.length > 0 && !unverified && !progress && (
-          <span className="text-[12px] font-medium text-ok" title="Stored bytes hash-match the originals">
-            ✓ BYTE-IDENTICAL
-          </span>
-        )}
-      </div>
-
-      {err && (
-        <p className="rounded-[10px] bg-lift/8 px-3 py-2 text-[13px] leading-relaxed text-lift">
-          {err}
-        </p>
-      )}
-
-      <div className="border-t border-hair pt-3 text-[12px] leading-relaxed text-mute">
-        {model.kind === "image"
-          ? <>{model.label} — up to {model.maxReferenceImages} reference images, no videos.
-              Never recompressed: what you drop is byte-for-byte what the model sees.</>
-          : <>{model.label} — up to {model.maxReferenceImages} images ·{" "}
-              {model.maxReferenceVideos} videos, {model.maxVideoSecondsTotal}s combined.
-              Never recompressed: what you drop is byte-for-byte what the model sees.</>}
-      </div>
+      {busy && progress && <p className="ref-note">{progress}</p>}
+      {err && <p className="ref-err">{err}</p>}
     </div>
   );
 }

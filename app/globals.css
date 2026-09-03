@@ -208,6 +208,14 @@ input, textarea {
   .chat-panel { left: 0; width: auto; bottom: calc(var(--kb, 0px) + var(--tabbar)); }
 }
 
+/* The chat bubble floats above the tab pill — and on a phone above the
+   composer island too, which publishes its height as --island-h while the
+   Generate screen is mounted, so the bubble never sits on the render button. */
+.chat-fab {
+  bottom: calc(var(--tabbar) + 6px + var(--island-h, 0px));
+  transition: bottom .2s var(--ease-spring);
+}
+
 /* Long-pressing a clip opens OUR menu — suppress iOS's own callout there. */
 [data-gen-id], [data-project-target] { -webkit-touch-callout: none; }
 
@@ -234,51 +242,66 @@ input, textarea {
 }
 .app-work { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
 
-/* Generate: work on the left, settings on the right — one column on phones,
-   where a flex child with min-height:0 would otherwise collapse to nothing
-   and let the composer and the shelf overlap. */
+/* Generate: the wall, the island and the setup. A grid on a desk — the
+   wall scrolls in its own column with the island parked under it — and one
+   scrolling column on a phone, where the island is the LAST child and
+   sticks to the bottom for the whole scroll (a sticky last child never
+   scrolls away, which is the whole trick). */
 .generate {
-  display: flex; gap: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  column-gap: 24px;
   height: 100%; min-height: 0;
-  padding: 8px max(32px, env(safe-area-inset-right, 0px)) var(--tabbar)
-              max(32px, env(safe-area-inset-left, 0px));
+  padding: 6px max(28px, env(safe-area-inset-right, 0px)) var(--tabbar)
+              max(28px, env(safe-area-inset-left, 0px));
 }
-.generate-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
-.generate-side { width: var(--refs); flex: none; overflow-y: auto; }
+.generate-solo { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 861px) { .generate-solo .setup { display: none; } }
+.feed   { grid-column: 1; grid-row: 1; min-height: 0; overflow-y: auto; padding: 2px 2px 14px; }
+.island { grid-column: 1; grid-row: 2; padding-top: 10px; }
+.setup  { grid-column: 2; grid-row: 1 / span 2; min-height: 0; overflow-y: auto; padding: 2px 2px 8px; }
+.island-card { max-width: 920px; margin: 0 auto; }
+
 @media (max-width: 860px) {
   .generate {
-    flex-direction: column;
-    /* MUST be a fixed height, not auto.
-       `height: auto` lets this box grow to its content — 1651px on a phone —
-       so nothing ever overflows IT and `overflow-y: auto` never engages. The
-       overflow lands on .app-work instead, which is `overflow: hidden`, and
-       the bottom 900px of the screen is silently clipped: settings, Shot,
-       Studio, Cast, References and the cost line all unreachable. Taking the
-       shell's height and scrolling inside it is what .screen already does. */
+    display: flex; flex-direction: column;
+    /* MUST be a definite height, not auto — with auto nothing overflows
+       this box, the overflow lands on .app-work (overflow: hidden) and the
+       bottom of the screen is silently clipped. */
     height: 100%; min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    /* Room for the floating tab pill at the end of the scroll, plus the
-       home-indicator inset. */
-    /* --kb is the keyboard height ViewportGuard publishes. Without it the
-       composer sat behind the keyboard with no way to scroll to it — you
-       typed blind — because .app is 100dvh and dvh does not shrink for a
-       virtual keyboard. */
-    padding: 8px max(14px, env(safe-area-inset-right, 0px))
+    /* --kb is the keyboard height ViewportGuard publishes; dvh does not
+       shrink for a virtual keyboard, so the room has to be added here. */
+    padding: 6px max(14px, env(safe-area-inset-right, 0px))
                 calc(var(--tabbar) + var(--kb, 0px) + env(safe-area-inset-bottom, 0px))
                 max(14px, env(safe-area-inset-left, 0px));
   }
-  /* Stacked, this column must take its CONTENT height. It kept the desktop
-     `flex: 1` (= 1 1 0%), and once .generate gained a definite height that
-     0% flex-basis became a real 0px — with `min-height: 0` removing the
-     automatic min-content floor that would have saved it. Measured at
-     375x812: .generate-main computed to 0px tall while its three children
-     (viewer, composer, shelf) rendered outside it, overlapping the settings
-     column. elementFromPoint over the composer returned a settings `.row`,
-     so the prompt box was covered and untappable — the scroll fix above
-     made the page reachable but left this collision behind it. */
-  .generate-main { flex: none; min-height: auto; }
-  .generate-side { width: auto; overflow: visible; }
+  .feed  { order: 1; flex: none; overflow: visible; min-height: 40vh; padding-bottom: 6px; }
+  .setup { order: 2; flex: none; overflow: visible; padding: 6px 0 14px; }
+  .island {
+    order: 3; flex: none;
+    position: sticky; z-index: 30;
+    /* The scroller's own padding-bottom already reserves the tab pill and
+       the keyboard, and a sticky offset is measured from the CONTENT box —
+       so bottom: 0 rests the island exactly on that reserved space. Adding
+       the pill's height again floated it a whole pill too high. */
+    bottom: 0;
+    padding: 8px 0 0;
+  }
+  /* On a phone the island rides over the wall, and legibility must not
+     depend on backdrop blur being available — so it goes nearly solid. */
+  .island-card {
+    background: color-mix(in oklab, var(--color-panel) 94%, transparent);
+    padding: 8px 10px 8px;
+  }
+  .chip-hint { display: none; }
+  .chip-ctl { height: 30px; padding: 0 10px; }
+}
+@media (max-width: 430px) {
+  .island-bar { gap: 5px; }
+  .chip-ctl { padding: 0 9px; font-size: 12.5px; }
 }
 
 /* Every screen scrolls its own body and leaves room for the floating bar. */
@@ -368,6 +391,13 @@ input, textarea {
 
   /* Media wells get a hairline inner ring so white-on-white edges read. */
   .media-well { box-shadow: inset 0 0 0 1px var(--color-hair); }
+
+  /* A frame on its way: the well breathes until the poster lands. */
+  .media-shimmer {
+    background: linear-gradient(110deg, var(--color-thumb) 20%, var(--color-panel3) 50%, var(--color-thumb) 80%);
+    background-size: 220% 100%;
+    animation: shimmer 1.8s linear infinite;
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .screen > * { animation: none; }
@@ -554,6 +584,287 @@ button.row:active, a.row:active { background: var(--color-chip2); }
 @media (max-width: 560px) { .tab { min-width: 0; padding: 8px 11px; } }
   /* Five tabs have to clear a 375px phone inside max-width: 100vw - 24px. */
   @media (max-width: 430px) { .tab { padding: 8px 7px; font-size: 11px; } }
+
+  /* ── The island ───────────────────────────────────────────────────
+     One frosted surface: references on top, the prompt, then a row of
+     control chips whose menus open upward. It glows when it has focus
+     and when a file is being dragged over it. */
+  .island-card {
+    position: relative;
+    background: var(--glass);
+    backdrop-filter: blur(24px) saturate(1.8);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    border-radius: 22px;
+    box-shadow: var(--shadow-pop);
+    padding: 10px 12px 10px;
+    transition: box-shadow .2s, background .2s;
+  }
+  .island-card:focus-within {
+    box-shadow: var(--shadow-pop), 0 0 0 1.5px color-mix(in oklab, var(--color-blue) 45%, transparent);
+  }
+  .island-card.is-drag {
+    background: color-mix(in oklab, var(--color-blue) 8%, var(--glass));
+    box-shadow: var(--shadow-pop), 0 0 0 2px var(--color-blue);
+  }
+  .island-task {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    margin: 2px 4px 8px; padding: 6px 12px; border-radius: 12px;
+    background: color-mix(in oklab, var(--color-blue) 8%, transparent);
+    font-size: 13.5px;
+  }
+  .island-problem {
+    margin: 2px 4px 8px; padding: 7px 12px; border-radius: 12px;
+    background: color-mix(in oklab, var(--color-lift) 8%, transparent);
+    color: var(--color-lift); font-size: 13.5px; line-height: 1.45;
+  }
+  .island-text { position: relative; min-width: 0; margin: 0 4px; }
+  .island-overlay {
+    pointer-events: none; position: absolute; inset: 0; overflow: hidden;
+    white-space: pre-wrap; overflow-wrap: break-word;
+    padding: 8px 6px; font-size: 16px; line-height: 1.45;
+    /* The textarea reserves a scrollbar gutter; so must the layer painted
+       under it, or long lines wrap at different points on platforms with
+       classic scrollbars and the highlights drift from the caret. */
+    scrollbar-gutter: stable;
+  }
+  .island-cite {
+    border-radius: 4px; font-weight: 500; color: var(--color-blue);
+    background: color-mix(in oklab, var(--color-blue) 12%, transparent);
+  }
+  .island-input {
+    position: relative; display: block; width: 100%; max-height: 180px;
+    resize: none; background: transparent; padding: 8px 6px;
+    font-size: 16px; line-height: 1.45;
+    color: transparent; caret-color: var(--color-bone);
+  }
+  .island-input::placeholder { color: var(--color-mute); }
+  .island-input:focus { outline: none; }
+  .island-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; padding: 0 2px; }
+  .island-cost {
+    display: inline-flex; align-items: center; height: 30px; padding: 0 10px;
+    border-radius: 999px; font-size: 13px; color: var(--color-dim);
+    white-space: nowrap; font-variant-numeric: tabular-nums; transition: background .15s;
+  }
+  @media (hover: hover) { .island-cost:hover { background: var(--color-chip); } }
+  .island-send { display: grid; place-items: center; width: 36px; height: 36px; flex: none; }
+  .island-menu { bottom: calc(100% + 8px); left: 0; min-width: 210px; }
+  .island-menu-right { left: auto; right: 0; }
+
+  /* Control chips: smaller than an action pill, with a caret. */
+  .chip-ctl {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 30px; padding: 0 11px; border-radius: 999px;
+    background: var(--color-chip); color: var(--color-bone);
+    font-size: 13px; font-weight: 500; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    transition: background .15s, color .15s, transform .18s var(--ease-spring);
+  }
+  @media (hover: hover) { .chip-ctl:hover:not(:disabled) { background: var(--color-chip2); } }
+  .chip-ctl:active:not(:disabled) { transform: scale(.96); }
+  .chip-ctl:disabled { opacity: .4; cursor: not-allowed; }
+  .chip-ctl.is-open { background: var(--color-panel3); }
+  .chip-ctl.is-on { background: color-mix(in oklab, var(--color-blue) 12%, transparent); color: var(--color-blue); }
+  .chip-caret { opacity: .55; margin-right: -3px; }
+  .chip-hint { font-size: 11.5px; font-weight: 400; color: var(--color-mute); }
+
+  /* References, as a strip of thumbs on the island. */
+  .ref-strip { margin: 2px 4px 6px; }
+  .ref-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ref-thumb {
+    position: relative; width: 58px; height: 58px; flex: none; overflow: hidden;
+    border-radius: 12px; background: var(--color-thumb);
+    box-shadow: inset 0 0 0 1px var(--color-hair);
+  }
+  .ref-thumb.ref-unverified { box-shadow: 0 0 0 2px var(--color-lift); }
+  .ref-busy { display: grid; place-items: center; background: var(--color-chip); box-shadow: none; }
+  .ref-add {
+    display: grid; place-items: center; color: var(--color-mute);
+    background: transparent; box-shadow: none;
+    border: 1.5px dashed var(--color-line);
+    transition: color .15s, border-color .15s;
+  }
+  @media (hover: hover) {
+    .ref-add:hover { color: var(--color-blue); border-color: color-mix(in oklab, var(--color-blue) 50%, transparent); }
+  }
+  .ref-tag {
+    position: absolute; left: 0; bottom: 0; padding: 2px 6px;
+    border-top-right-radius: 8px;
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: .04em; line-height: 1.2;
+  }
+  .ref-tag-cite { background: rgba(0, 0, 0, .62); color: #fff; }
+  .ref-tag-role { background: var(--color-blue); color: #fff; }
+  .ref-x {
+    position: absolute; right: 3px; top: 3px; display: grid; place-items: center;
+    width: 18px; height: 18px; border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff;
+  }
+  .ref-bad {
+    position: absolute; right: 3px; bottom: 3px; width: 16px; height: 16px; border-radius: 999px;
+    background: var(--color-lift); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+  }
+  .ref-note { margin-top: 5px; font-size: 12px; color: var(--color-mute); }
+  .ref-err {
+    margin-top: 6px; padding: 6px 10px; border-radius: 10px;
+    background: color-mix(in oklab, var(--color-lift) 8%, transparent);
+    color: var(--color-lift); font-size: 13px; line-height: 1.45;
+  }
+
+  /* ── The wall ─────────────────────────────────────────────────────── */
+  .feed-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 2px 12px; min-height: 40px; }
+  .feed-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--color-ink); }
+  .feed-live {
+    display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px;
+    background: color-mix(in oklab, var(--color-blue) 10%, transparent);
+    color: var(--color-blue); font-size: 12.5px; font-weight: 500;
+  }
+  .feed-filter { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--color-chip); }
+  .feed-filter button {
+    padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 500;
+    color: var(--color-dim); transition: background .15s, color .15s;
+  }
+  .feed-filter button[data-active="true"] { background: var(--color-panel); color: var(--color-ink); box-shadow: var(--shadow-card); }
+  .feed-link { font-size: 13.5px; color: var(--color-blue); }
+  /* Narrow screens: the filter takes a row of its own under the title. */
+  @media (max-width: 560px) {
+    .feed-filter { order: 5; flex-basis: 100%; justify-content: flex-start; width: fit-content; }
+  }
+  .feed-empty { display: grid; place-items: center; min-height: 46vh; }
+  .masonry { display: grid; gap: 12px; align-items: start; }
+  .masonry-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  .tile {
+    position: relative; display: block; width: 100%; overflow: hidden;
+    border-radius: 14px; background: var(--color-thumb);
+    box-shadow: var(--shadow-card); text-align: left;
+    transition: transform .22s var(--ease-spring), box-shadow .22s var(--ease-spring);
+  }
+  @media (hover: hover) {
+    .tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-card-hover); }
+    .tile:hover .tile-scrim, .tile:hover .tile-meta { opacity: 1; }
+  }
+  .tile:active { transform: scale(.985); }
+  .tile.is-active { box-shadow: 0 0 0 2px var(--color-blue), var(--shadow-card-hover); }
+  .tile-face {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center;
+  }
+  .tile-face-label { font-size: 13px; font-weight: 500; color: var(--color-dim); font-variant-numeric: tabular-nums; }
+  .tile-face-sub { font-size: 11.5px; color: var(--color-mute); }
+  .tile-face-error {
+    font-size: 12px; line-height: 1.4; color: var(--color-lift);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .tile-live {
+    background: linear-gradient(110deg, var(--color-panel2) 20%, var(--color-panel3) 50%, var(--color-panel2) 80%);
+    background-size: 220% 100%;
+    animation: shimmer 1.8s linear infinite;
+  }
+  .tile-failed { background: color-mix(in oklab, var(--color-lift) 6%, var(--color-panel2)); }
+  .tile-scrim {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 60%; pointer-events: none;
+    background: linear-gradient(to top, rgba(0, 0, 0, .6), rgba(0, 0, 0, 0));
+    opacity: 0; transition: opacity .2s;
+  }
+  .tile-meta {
+    position: absolute; left: 11px; right: 11px; bottom: 9px; pointer-events: none;
+    display: flex; align-items: center; gap: 8px; color: #fff; font-size: 12px;
+    opacity: 0; transition: opacity .2s;
+  }
+  @media (hover: none) { .tile-scrim, .tile-meta { opacity: 1; } }
+  .tile-badge {
+    position: absolute; left: 8px; top: 8px; display: grid; place-items: center;
+    width: 20px; height: 20px; border-radius: 999px; color: #fff; font-size: 11px; font-weight: 700;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .25);
+  }
+
+  /* ── The theatre ──────────────────────────────────────────────────── */
+  .theatre {
+    position: fixed; inset: 0; z-index: 90; display: flex;
+    background: rgba(8, 8, 10, .86);
+    backdrop-filter: blur(22px) saturate(1.4);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    animation: theatre-in .22s var(--ease-spring) both;
+  }
+  .theatre-stage { position: relative; flex: 1; min-width: 0; display: grid; place-items: center; padding: 28px 64px; }
+  .theatre-media {
+    max-width: 100%; max-height: 100%; width: auto; height: auto;
+    border-radius: 12px; background: #000; box-shadow: 0 24px 80px rgba(0, 0, 0, .6);
+  }
+  .theatre-face { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px; }
+  .theatre-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    display: grid; place-items: center; width: 42px; height: 42px; border-radius: 999px;
+    background: rgba(255, 255, 255, .12); color: #fff;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    transition: background .15s, transform .18s var(--ease-spring);
+  }
+  .theatre-nav:hover { background: rgba(255, 255, 255, .22); }
+  .theatre-nav:active { transform: translateY(-50%) scale(.94); }
+  .theatre-prev { left: 14px; }
+  .theatre-next { right: 14px; }
+  .theatre-side {
+    width: 380px; flex: none; display: flex; flex-direction: column; min-height: 0;
+    background: var(--color-panel); box-shadow: -1px 0 0 var(--color-hair);
+  }
+  .theatre-head { display: flex; align-items: center; gap: 10px; padding: 16px 16px 12px 20px; border-bottom: 1px solid var(--color-hair); }
+  .theatre-close {
+    margin-left: auto; flex: none; display: grid; place-items: center; width: 32px; height: 32px;
+    border-radius: 999px; color: var(--color-dim); transition: background .15s;
+  }
+  .theatre-close:hover { background: var(--color-chip); }
+  .theatre-body { min-height: 0; flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
+  .theatre-prompt { white-space: pre-wrap; user-select: text; -webkit-user-select: text; font-size: 14.5px; line-height: 1.55; color: var(--color-bone); }
+  .theatre-meta {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px;
+    font-size: 12.5px; color: var(--color-mute); font-variant-numeric: tabular-nums;
+  }
+  .theatre-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+  .theatre-icon {
+    display: grid; place-items: center; width: 32px; height: 32px; border-radius: 999px;
+    color: var(--color-dim); transition: background .15s, color .15s;
+  }
+  .theatre-icon:hover { background: var(--color-chip); color: var(--color-bone); }
+  @media (max-width: 860px) {
+    .theatre { flex-direction: column; }
+    .theatre-stage { flex: none; height: 50vh; padding: max(14px, env(safe-area-inset-top, 0px)) 12px 12px; }
+    .theatre-nav { width: 36px; height: 36px; }
+    .theatre-prev { left: 8px; }
+    .theatre-next { right: 8px; }
+    .theatre-side { width: auto; flex: 1; border-radius: 20px 20px 0 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, .3); }
+    .theatre-body { padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+  }
+
+  /* ── The setup ────────────────────────────────────────────────────── */
+  .setup-head { display: flex; align-items: baseline; gap: 8px; padding: 6px 4px 10px; }
+  .setup-close {
+    margin-left: auto; align-self: center; display: grid; place-items: center;
+    width: 28px; height: 28px; border-radius: 999px; color: var(--color-mute);
+    transition: background .15s, color .15s;
+  }
+  .setup-close:hover { background: var(--color-chip); color: var(--color-bone); }
+  @media (max-width: 860px) { .setup-close { display: none; } }
+
+  /* Fingers, not pointers: taller chips and bigger thumbs and closes. */
+  @media (hover: none) {
+    .chip-ctl { height: 34px; }
+    .ref-thumb { width: 64px; height: 64px; }
+    .ref-x { width: 24px; height: 24px; right: 2px; top: 2px; }
+    .setup-close, .theatre-close, .theatre-icon { width: 40px; height: 40px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tile, .chip-ctl, .theatre-nav { transition: none; }
+    .tile-live { animation: none; }
+    .theatre { animation: none; }
+  }
+}
+
+@keyframes shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@keyframes theatre-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 *:focus-visible {
@@ -605,20 +916,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 @keyframes stripSlide {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
-}
-
-/* The viewer's fixed-ratio stage. Desktop: the panel has a definite height,
-   so the stage fits whichever dimension is tighter. Stacked/mobile: the
-   panel's height is content-driven — container-type:size would contain it
-   to ZERO — so we switch to inline-size and let width drive the ratio. */
-.viewer-stage { container-type: size; }
-.stage16 {
-  aspect-ratio: 16 / 9;
-  width: min(calc(100cqw - 8px), calc((100cqh - 8px) * 16 / 9));
-}
-@media (max-width: 860px) {
-  .viewer-stage { container-type: inline-size; }
-  .stage16 { width: 100cqw; }
 }
 
 /* Status lamp */

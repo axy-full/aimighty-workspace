@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { usd, timeAgo, downloadHref } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { appConfirm } from "./dialog";
 import LazyMedia from "./LazyMedia";
+import { ParticlSpinner } from "./ParticlMark";
 import { IconDown, IconTrash } from "./Icons";
 
 export type Gen = {
@@ -33,29 +33,25 @@ export type Gen = {
   createdAt: number;
 };
 
-const STATUS: Record<string, { cls: string; label: string; live?: boolean }> = {
-  queued:    { cls: "text-mute", label: "Queued",   live: true },
-  running:   { cls: "text-blue", label: "Rendering", live: true },
-  succeeded: { cls: "text-ok",   label: "Ready" },
-  failed:    { cls: "text-lift", label: "Failed" },
-  cancelled: { cls: "text-mute", label: "Cancelled" },
-};
-
 /** Short clip handle, the way a bin shows a shot name. */
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
+/**
+ * A render on a library shelf: the frame plays on approach and opens the
+ * theatre on a click; the prompt and the ledger line sit under it.
+ */
 export default function GenCard({
-  gen, projects = [], onChanged,
+  gen, projects = [], onChanged, onOpen,
 }: {
   gen: Gen;
   projects?: { id: string; name: string }[];
   onChanged?: () => void;
+  onOpen?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const s = STATUS[gen.status] ?? STATUS.queued;
   const url = gen.storedUrl ?? gen.sourceUrl;
   const p = gen.params as { resolution?: string; ratio?: string; duration?: number };
-  const done = gen.status === "succeeded" && url;
+  const done = gen.status === "succeeded" && Boolean(url);
+  const live = gen.status === "queued" || gen.status === "running";
   const still = gen.kind === "image";
 
   async function move(projectId: string) {
@@ -78,21 +74,27 @@ export default function GenCard({
       className="group flex flex-col"
     >
       {/* The frame */}
-      <div className="relative aspect-video overflow-hidden rounded-[var(--r)] bg-thumb shadow-[var(--shadow-card)] transition-transform duration-200 group-hover:-translate-y-1">
+      <div
+        role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          // The download link and delete button inside the frame keep their
+          // own Enter/Space; only the frame itself opens the theatre.
+          if (e.target !== e.currentTarget) return;
+          if (onOpen && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(); }
+        }}
+        className={`tile aspect-video ${live ? "tile-live" : ""} ${gen.status === "failed" ? "tile-failed" : ""} ${onOpen ? "cursor-pointer" : ""}`}
+      >
         {done ? (
-          <LazyMedia url={url!} kind={still ? "image" : "video"} alt={gen.prompt.slice(0, 120)} />
+          <LazyMedia url={url!} kind={still ? "image" : "video"} hoverPlay alt={gen.prompt.slice(0, 120)} className="!absolute inset-0" />
         ) : (
-          <div className="grid h-full place-items-center px-4">
-            {gen.error ? (
-              <p className="text-center text-[12px] leading-relaxed text-lift">
-                {gen.error.slice(0, 150)}
-              </p>
-            ) : (
-              <span className={`text-[13px] font-medium ${s.cls} ${s.live ? "render-sweep" : ""}`}>
-                {s.label}…
-              </span>
-            )}
-          </div>
+          <span className="tile-face">
+            {live && <ParticlSpinner size={24} className="text-dim" />}
+            <span className={`tile-face-label ${live ? "" : "text-lift"}`}>
+              {live ? (gen.status === "queued" ? "Queued…" : "Rendering…") : gen.status === "cancelled" ? "Cancelled" : "Failed"}
+            </span>
+            {gen.error && <span className="tile-face-error">{gen.error.slice(0, 150)}</span>}
+          </span>
         )}
 
         {gen.reviewState === "approved" && (
@@ -114,11 +116,12 @@ export default function GenCard({
         <span className="reveal absolute bottom-2 right-2 flex items-center gap-1.5">
           {url && (
             <a href={downloadHref(url)} download={`${clipId(gen.id)}.${still ? "png" : "mp4"}`} title="Download"
+              onClick={(e) => e.stopPropagation()}
               className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel">
               <IconDown />
             </a>
           )}
-          <button onClick={remove} title="Delete"
+          <button type="button" onClick={(e) => { e.stopPropagation(); remove(); }} title="Delete"
             className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel hover:text-lift">
             <IconTrash />
           </button>
@@ -126,11 +129,8 @@ export default function GenCard({
       </div>
 
       {/* What it is */}
-      <p
-        onClick={() => setOpen(!open)}
-        title="Click to expand"
-        className={`mt-2.5 cursor-pointer text-[14px] leading-snug text-bone ${open ? "" : "line-clamp-2"}`}
-      >
+      <p className="mt-2.5 line-clamp-2 text-[14px] leading-snug text-bone" title={gen.prompt}>
+        {gen.shotCode && <span className="mr-1.5 font-semibold">{gen.shotCode} v{gen.version ?? 1}</span>}
         {gen.prompt}
       </p>
 

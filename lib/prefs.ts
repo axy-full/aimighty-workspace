@@ -35,7 +35,7 @@ function read(): Prefs {
         resolution: model.resolutions.includes(p.resolution ?? "")
           ? p.resolution! : model.resolutions[model.resolutions.length - 1],
         duration: model.durations.includes(Number(p.duration))
-          ? Number(p.duration) : model.durations[0],
+          ? Number(p.duration) : (model.durations[0] ?? Number(p.duration)) || FALLBACK.duration,
       };
     }
   } catch { /* a corrupt or unknown preference is just a default */ }

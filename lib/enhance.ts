@@ -48,23 +48,81 @@ export const TEXT_RATES: Record<string, { input: number; output: number }> = {
   "claude-opus-5": { input: 5.0, output: 25.0 },
   "claude-sonnet-5": { input: 2.0, output: 10.0 },
   "claude-haiku-4-5": { input: 1.0, output: 5.0 },
+  // The same models through Vercel AI Gateway, at the gateway's list prices
+  // (read off ai-gateway.vercel.sh/v1/models on 2026-09-03 — identical to
+  // Anthropic's own). Cache reads bill at a tenth of input.
+  "anthropic/claude-opus-5": { input: 5.0, output: 25.0 },
+  "anthropic/claude-sonnet-5": { input: 2.0, output: 10.0 },
+  "anthropic/claude-haiku-4.5": { input: 1.0, output: 5.0 },
+  "google/gemini-3.1-pro-preview": { input: 2.0, output: 12.0 },
 };
 
-/** Which model writes the prompt. Claude when a key is present, else ByteDance. */
-export function refineProvider(): "anthropic" | "byteplus" {
-  return process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN
-    ? "anthropic" : "byteplus";
+/**
+ * Which model writes the prompt.
+ *
+ *   anthropic — Claude straight from Anthropic, when a console key exists.
+ *   gateway   — the same Claude through Vercel AI Gateway: billed to the
+ *               Vercel account, no Anthropic console needed. Reached with an
+ *               AI_GATEWAY_API_KEY, or with no key at all on Vercel, where
+ *               every function carries an OIDC identity the gateway accepts.
+ *   byteplus  — ByteDance's own text models on the ModelArk key.
+ *
+ * REFINE_PROVIDER forces one; otherwise the first that can be reached wins.
+ */
+export type RefineProvider = "anthropic" | "gateway" | "byteplus";
+export function refineProvider(): RefineProvider {
+  const forced = process.env.REFINE_PROVIDER;
+  if (forced === "anthropic" || forced === "gateway" || forced === "byteplus") return forced;
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "anthropic";
+  if (gatewayReachable()) return "gateway";
+  return "byteplus";
+}
+export function gatewayReachable(): boolean {
+  return Boolean(
+    process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL
+  );
 }
 
 /** Overridable, but Opus 5 is the default — this is the judgement step. */
 export const CLAUDE_MODEL = () => process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
+/** Through the gateway, in order: Opus 5 first, Sonnet 5 if it cannot answer. */
+export const GATEWAY_MODELS = (): string[] =>
+  (process.env.GATEWAY_PROMPT_MODELS ?? "anthropic/claude-opus-5,anthropic/claude-sonnet-5")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+export const GATEWAY_URL = () =>
+  (process.env.AI_GATEWAY_BASE_URL?.replace(/\/$/, "") ?? "https://ai-gateway.vercel.sh/v1") +
+  "/chat/completions";
 export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
 
 /** Each ByteDance text model's first 500k tokens are free on this account;
- *  charges begin past that. Anthropic models have no such allowance, and
- *  lib/generate prices them from token one. */
+ *  charges begin past that. Anthropic models — direct or through the
+ *  gateway — have no such allowance, and lib/generate prices them from
+ *  token one. */
 export const TEXT_FREE_TOKENS = 500_000;
-export const hasFreeTier = (model: string) => !model.startsWith("claude-");
+export const hasFreeTier = (model: string) => !model.startsWith("claude-") && !model.includes("/");
+
+/** What a human should read about the writer in use. */
+export function refinerDescription(): { provider: RefineProvider; model: string; label: string; via: string } {
+  const provider = refineProvider();
+  if (provider === "anthropic") {
+    return { provider, model: CLAUDE_MODEL(), label: prettyModel(CLAUDE_MODEL()), via: "Anthropic" };
+  }
+  if (provider === "gateway") {
+    const m = GATEWAY_MODELS()[0];
+    return { provider, model: m, label: prettyModel(m), via: process.env.AI_GATEWAY_API_KEY ? "Vercel AI Gateway (API key)" : "Vercel AI Gateway (OIDC)" };
+  }
+  return { provider, model: TEXT_MODEL(), label: prettyModel(TEXT_MODEL()), via: "BytePlus ModelArk" };
+}
+function prettyModel(id: string): string {
+  const bare = id.split("/").pop() ?? id;
+  if (/claude-opus-5/.test(bare)) return "Claude Opus 5";
+  if (/claude-sonnet-5/.test(bare)) return "Claude Sonnet 5";
+  if (/claude-haiku-4/.test(bare)) return "Claude Haiku 4.5";
+  if (/gemini-3\.1-pro/.test(bare)) return "Gemini 3.1 Pro";
+  if (/dola-seed-2-1/.test(bare)) return "Seed 2.1 Turbo";
+  if (/seed-2-0-pro/.test(bare)) return "Seed 2.0 Pro";
+  return bare;
+}
 
 export type RefineResult = {
   text: string;
@@ -326,6 +384,124 @@ async function refineWithClaude(
   };
 }
 
+/**
+ * Credentials for the gateway: an explicit key wins; otherwise the OIDC
+ * identity of this deployment, which @vercel/oidc reads from the request
+ * (and, in local development, from the token `vercel env pull` writes).
+ */
+async function gatewayAuth(): Promise<Record<string, string>> {
+  const key = process.env.AI_GATEWAY_API_KEY;
+  if (key) return { Authorization: `Bearer ${key}` };
+  let token: string | null = process.env.VERCEL_OIDC_TOKEN ?? null;
+  try {
+    const { getVercelOidcToken } = await import("@vercel/oidc");
+    token = await getVercelOidcToken();
+  } catch { /* not on Vercel and no pulled token — the env value stands */ }
+  if (!token) {
+    throw new Error(
+      "Vercel AI Gateway is unreachable from here: set AI_GATEWAY_API_KEY, or run on Vercel with OIDC enabled."
+    );
+  }
+  return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * The gateway path: Claude through Vercel AI Gateway's OpenAI-compatible
+ * endpoint. The system message carries an explicit cache marker (the
+ * gateway lists explicit caching for Opus), effort is low for the same
+ * reason as the direct path, and the request is retried once in the
+ * plainest shape if the gateway ever rejects those extras — a refine must
+ * never fail on a formality. Models are tried in order; a
+ * refusal or an empty answer throws so the caller renders the raw words.
+ */
+async function refineWithGateway(
+  system: string, userMsg: string, style: string
+): Promise<RefineResult & { cachedIn: number }> {
+  const auth = await gatewayAuth();
+  const effort = process.env.GATEWAY_PROMPT_EFFORT ?? "low";
+  const shaped = (model: string, rich: boolean) => JSON.stringify({
+    model,
+    max_tokens: 1200,
+    ...(rich ? { reasoning: { effort } } : {}),
+    messages: [
+      // The gateway's documented placement for Anthropic caching on this
+      // endpoint is on the MESSAGE, not on a content part. One system
+      // message carries the frozen rules and the house style together; the
+      // style changes only when a shot is approved, and a rewrite then is
+      // a cache write, not a broken cache.
+      rich
+        ? { role: "system", content: style ? `${system}\n\n${style}` : system,
+            cache_control: { type: "ephemeral" } }
+        : { role: "system", content: style ? `${system}\n\n${style}` : system },
+      { role: "user", content: userMsg },
+    ],
+  });
+
+  let lastErr = "";
+  for (const model of GATEWAY_MODELS()) {
+    const send = (rich: boolean) => fetch(GATEWAY_URL(), {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: shaped(model, rich),
+      signal: AbortSignal.timeout(120_000),
+    });
+    let res = await send(true);
+    let text = await res.text();
+    if (res.status === 400 && /cache_control|reasoning|unknown|unsupported|invalid/i.test(text)) {
+      console.warn(`refine(gateway): ${model} rejected the rich shape, retrying plain — ${text.slice(0, 140)}`);
+      res = await send(false);
+      text = await res.text();
+    }
+    if (res.ok) {
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const j = JSON.parse(text) as any;
+      const choice = j.choices?.[0];
+      const content = choice?.message?.content;
+      const out = typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+          ? content.map((p: any) => p?.text ?? "").join("")
+          : "";
+      if (choice?.finish_reason === "content_filter" || !out.trim()) {
+        throw new Error("The prompt writer declined this request; rendering the raw prompt.");
+      }
+      const u = j.usage ?? {};
+      return {
+        text: out.trim(),
+        model,
+        inTokens: Number(u.prompt_tokens ?? 0),
+        outTokens: Number(u.completion_tokens ?? 0),
+        cachedIn: Number(u.prompt_tokens_details?.cached_tokens ?? u.cached_tokens ?? 0),
+      };
+    }
+    if (res.status === 403 && /free tier|RestrictedModels/i.test(text)) {
+      throw new Error(
+        "Vercel AI Gateway is on its free tier, which does not include Claude. " +
+        "Add credits under Vercel → AI Gateway and prompts will be written by Claude from then on."
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Vercel AI Gateway rejected this deployment's credentials.");
+    }
+    // Not found, rate-limited, or the vendor is down: the next model in line.
+    lastErr = `${model}: ${res.status} ${text.slice(0, 160)}`;
+    console.warn(`refine(gateway): ${lastErr}`);
+  }
+  throw new Error(`No gateway model answered (${lastErr}).`);
+}
+
+/** Take the CAMERA line off the end and hand back what the engine gets. */
+function finishRefine(r: RefineResult & { cachedIn: number }): RefineResult {
+  const raw = stripScaffolding(r.text);
+  const pick = /(^|\n)\s*CAMERA\s*[:：]\s*([a-z]+)\s*$/i.exec(raw);
+  const out = pick ? raw.slice(0, pick.index).trim() : raw;
+  if (!out) throw new Error("The model returned nothing.");
+  if (r.cachedIn) console.log(`refine: ${r.cachedIn} input tokens served from cache`);
+  return { text: out, model: r.model, inTokens: r.inTokens, outTokens: r.outTokens,
+           move: pick ? pick[2].toLowerCase() : null };
+}
+
 export async function enhancePrompt(opts: {
   prompt: string;
   citations: string[]; // e.g. ["@Image1 (image)", "@Video1 (video, 8s)"]
@@ -338,28 +514,22 @@ export async function enhancePrompt(opts: {
   /** Approved work from this workspace, used as the style to match. */
   style?: string;
 }): Promise<RefineResult> {
-  const key = process.env.ARK_API_KEY;
-  if (!key) throw new Error("ARK_API_KEY is not set");
-
   const userMsg =
     `${targetBlock(opts.model, opts.durationS, opts.task, opts.prompt.trim().split(/\s+/).filter(Boolean).length)}\n\n` +
     (opts.citations.length
       ? `Attached reference assets, in upload order: ${opts.citations.join(", ")}.\n\n`
       : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a Seedance prompt:\n\n${opts.prompt}`;
 
-  if (refineProvider() === "anthropic") {
-    const r = await refineWithClaude(SYSTEM, userMsg, opts.style ?? "");
-    const raw = stripScaffolding(r.text);
-    const pick = /(^|\n)\s*CAMERA\s*[:：]\s*([a-z]+)\s*$/i.exec(raw);
-    const out = pick ? raw.slice(0, pick.index).trim() : raw;
-    if (!out) throw new Error("The model returned nothing.");
-    if (r.cachedIn) {
-      console.log(`refine: ${r.cachedIn} input tokens served from cache`);
-    }
-    return { text: out, model: r.model, inTokens: r.inTokens, outTokens: r.outTokens,
-             move: pick ? pick[2].toLowerCase() : null };
+  const provider = refineProvider();
+  if (provider === "anthropic") {
+    return finishRefine(await refineWithClaude(SYSTEM, userMsg, opts.style ?? ""));
+  }
+  if (provider === "gateway") {
+    return finishRefine(await refineWithGateway(SYSTEM, userMsg, opts.style ?? ""));
   }
 
+  const key = process.env.ARK_API_KEY;
+  if (!key) throw new Error("ARK_API_KEY is not set");
   let lastErr = "";
   for (const model of TEXT_MODELS()) {
     const res = await fetch(CHAT_URL(), {

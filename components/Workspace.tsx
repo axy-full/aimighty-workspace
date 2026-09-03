@@ -1,48 +1,41 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import References, { referenceProblem, type RefItem, type RefPicker } from "./References";
+/**
+ * Generate — the landing screen.
+ *
+ * Three things on it, and nothing else: the wall of renders (Feed), the
+ * island you write the next one on (Composer), and the setup that every
+ * render carries with it (SetupPanel). A tile opens the theatre. The state
+ * lives here; the pieces are dumb on purpose.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { referenceProblem, type RefItem, type RefPicker } from "./References";
 import { appAlert, appConfirm } from "./dialog";
-import { Switch } from "./Panel";
 import type { Gen } from "./GenCard";
+import Feed, { type FeedFilter } from "./Feed";
+import Composer, { type Engine } from "./Composer";
+import Theatre from "./Theatre";
+import SetupPanel from "./SetupPanel";
 import { useApi } from "@/lib/useApi";
-import { usd, compactTokens, timeAgo, downloadHref } from "@/lib/format";
-import LazyMedia from "./LazyMedia";
-import Cast from "./Cast";
-import Studio from "./Studio";
-import ShotRow from "./ShotRow";
-import { Empty, ParticlSpinner } from "./ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { composePrompt, type ShotSpec } from "@/lib/studio";
-import Review from "./Review";
+import { composePrompt, specCount, type ShotSpec } from "@/lib/studio";
 import {
-  MODELS, DEFAULT_MODEL_ID, getModel, shortLabel, dimensionsFor,
+  DEFAULT_MODEL_ID, getModel, dimensionsFor,
   estimateCostUsd, estimateTokens, estimateImageCostUsd,
 } from "@/lib/models";
 import { usePrefs } from "@/lib/prefs";
 import { useProject } from "@/lib/projectContext";
-import { IconDown, IconTrash, IconSparkle, IconArrowUp, IconChevron } from "./Icons";
 
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
   watermark: boolean; generateAudio: boolean; seed: string;
 };
 
-const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
-
-const STATUS: Record<string, { cls: string; label: string; live?: boolean }> = {
-  queued:    { cls: "text-mute", label: "Queued", live: true },
-  running:   { cls: "text-blue", label: "Rendering", live: true },
-  succeeded: { cls: "text-ok",   label: "Ready" },
-  failed:    { cls: "text-lift", label: "Failed" },
-  cancelled: { cls: "text-mute", label: "Cancelled" },
-};
-
-type Menu = null | "model" | "dur" | "ratio" | "res" | "refine";
+const SETUP_KEY = "aw_setup_open";
 
 export default function Workspace() {
   usePageTitle("Generate");
-  const { selection: bin, refreshProjects } = useProject();
+  const { selection: bin, current, refreshProjects } = useProject();
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -56,12 +49,33 @@ export default function Workspace() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
-  const [menu, setMenu] = useState<Menu>(null);
-  const [stripKind, setStripKind] = useState<"all" | "video" | "image">("all");
-  const [advanced, setAdvanced] = useState(false);
-  const promptEl = useRef<HTMLTextAreaElement>(null);
-  const overlayEl = useRef<HTMLDivElement>(null);
+  const [filter, setFilter] = useState<FeedFilter>("all");
+  const [setupOpen, setSetupOpen] = useState(true);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<RefPicker>(null);
+  const islandRef = useRef<HTMLDivElement>(null);
+
+  // The island's height, published for anything that floats near the bottom
+  // of the screen (the chat bubble) so it can stay clear of the render button
+  // on a phone. Cleared when this screen goes away.
+  useEffect(() => {
+    const el = islandRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    // On <body>, not <html>: ViewportGuard owns the root element's inline
+    // style for --kb and rewrites it on every viewport event, which on a
+    // phone silently wiped this variable within seconds of it being set.
+    const host = document.body;
+    const ro = new ResizeObserver(() => {
+      // The border box, padding included — what actually has to be cleared.
+      host.style.setProperty("--island-h", `${Math.round(el.offsetHeight)}px`);
+    });
+    ro.observe(el);
+    return () => { ro.disconnect(); host.style.removeProperty("--island-h"); };
+  }, []);
+
+  // Which vendors have keys — decides which engines the menu will offer.
+  const { data: engineData } = useApi<{ engines: Engine[] }>("/api/engines", 0);
+  const engines = useMemo(() => engineData?.engines ?? [], [engineData]);
 
   // The composer opens on whatever Settings says, then stays where you put it.
   const [params, setParams] = useState<Params>(() => ({
@@ -69,28 +83,36 @@ export default function Workspace() {
     watermark: false, generateAudio: false, seed: "",
   }));
   const seeded = useRef(false);
+  /** Set the moment a person changes any control — from then on Settings
+   *  defaults stop overwriting what they chose. */
+  const touched = useRef(false);
   useEffect(() => {
-    if (seeded.current) return;
-    seeded.current = true;
-    // Work handed over from elsewhere — a card from the canvas, or a prompt
-    // and shot spec built in the Studio. Read after mount, never in a
-    // useState initializer: the server has no localStorage, so seeding at
-    // first render hydrates wrong.
-    try {
-      const carried = window.localStorage.getItem("aw_compose_seed");
-      const carriedSpec = window.localStorage.getItem("aw_compose_spec");
-      if (carried) window.localStorage.removeItem("aw_compose_seed");
-      if (carriedSpec) window.localStorage.removeItem("aw_compose_spec");
-      if (carried || carriedSpec) {
+    if (!seeded.current) {
+      seeded.current = true;
+      // Work handed over from elsewhere — a card from the canvas, or a prompt
+      // and shot spec built in the Studio — and the setup panel's last state.
+      // Read after mount, never in a useState initializer: the server has no
+      // localStorage, so seeding at first render hydrates wrong.
+      try {
+        const carried = window.localStorage.getItem("aw_compose_seed");
+        const carriedSpec = window.localStorage.getItem("aw_compose_spec");
+        const setup = window.localStorage.getItem(SETUP_KEY);
+        if (carried) window.localStorage.removeItem("aw_compose_seed");
+        if (carriedSpec) window.localStorage.removeItem("aw_compose_spec");
         Promise.resolve().then(() => {
           if (carried) setPrompt(carried);
           if (carriedSpec) {
             try { setSpec(JSON.parse(carriedSpec) as ShotSpec); }
             catch { /* a spec we can't read is one we don't apply */ }
           }
+          if (setup === "0") setSetupOpen(false);
         });
-      }
-    } catch { /* private mode — nothing carried, nothing lost */ }
+      } catch { /* private mode — nothing carried, nothing lost */ }
+    }
+    // The prefs store hydrates with its server fallback and only reads the
+    // browser's saved defaults in a later pass, so this has to follow `prefs`
+    // rather than run once — until the person touches a control.
+    if (touched.current) return;
     const m = getModel(prefs.modelId);
     setParams((s) => ({
       ...s,
@@ -100,7 +122,20 @@ export default function Workspace() {
     }));
   }, [prefs]);
 
-  const patch = (p: Partial<Params>) => setParams((s) => ({ ...s, ...p }));
+  const patch = (p: Partial<Params>) => { touched.current = true; setParams((s) => ({ ...s, ...p })); };
+
+  function toggleSetup() {
+    // On a phone the setup always sits below the wall, so the chip is a
+    // shortcut to it rather than a switch.
+    if (typeof matchMedia !== "undefined" && matchMedia("(max-width: 860px)").matches) {
+      document.querySelector(".setup")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    setSetupOpen((v) => {
+      try { window.localStorage.setItem(SETUP_KEY, v ? "0" : "1"); } catch { /* fine */ }
+      return !v;
+    });
+  }
 
   function switchModel(next: string) {
     setErr(null);          // the old failure was about the old engine
@@ -118,63 +153,29 @@ export default function Workspace() {
       setRefs((prev) => prev.map((r) =>
         r.kind === "image" && r.role !== "reference_image" ? { ...r, role: "reference_image" } : r
       ));
+      if (taskOn) setTaskOn(null);   // stills can't be edited or extended
     }
   }
 
   const query =
     bin === "all" || bin === "unfiled" ? "" : `&projectId=${encodeURIComponent(bin)}`;
-  const { data, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=40${query}`, 5000);
+  const { data, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=60${query}`, 5000);
   const gens = useMemo(() => {
     const all = data?.generations ?? [];
     return bin === "unfiled" ? all.filter((g) => !g.projectId) : all;
   }, [data, bin]);
 
-  // The viewer shows a clip ONLY after an explicit filmstrip click — no
-  // auto-loading of the newest render, no fallback.
-  const activeId = selected && gens.some((g) => g.id === selected) ? selected : null;
-  const clip = gens.find((g) => g.id === activeId) ?? null;
-
-  // Clicking outside the clip dismisses it — the viewer, the strip and the
-  // composer all count as "inside", and we listen for a completed click so a
-  // touch that starts a scroll never blanks the viewer mid-gesture.
-  const viewerRef = useRef<HTMLElement>(null);
-  const stripRef = useRef<HTMLElement>(null);
-  const islandRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    function onTap(e: MouseEvent) {
-      const t = e.target as Node;
-      if (viewerRef.current?.contains(t) || stripRef.current?.contains(t) ||
-          islandRef.current?.contains(t)) return;
-      setSelected(null);
-    }
-    document.addEventListener("click", onTap);
-    return () => document.removeEventListener("click", onTap);
-  }, []);
-
-  // The composer grows with the prompt, and the highlight layer must track
-  // the textarea's scroll exactly or the coloured @cites drift.
-  const fitComposer = useCallback(() => {
-    const el = promptEl.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-    if (overlayEl.current) overlayEl.current.scrollTop = el.scrollTop;
-  }, []);
-
-  useEffect(() => { fitComposer(); }, [prompt, fitComposer]);
-
-  /* A height in px computed for one width is wrong at the next one: the same
-     text needs more lines when the box narrows, and the tail scrolled out of
-     a fixed-height textarea with no scrollbar until the next keystroke. The
-     box changes width on window resize, on crossing 860px, and whenever the
-     reference chips or the error banner reflow the card — so observe it. */
-  useEffect(() => {
-    const el = promptEl.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => fitComposer());
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [fitComposer]);
+  // The Clips/Stills filter lives here so the wall and the theatre agree on
+  // what "next" means.
+  const clips = gens.filter((g) => g.kind !== "image").length;
+  const mixed = clips > 0 && clips < gens.length;
+  const visible = useMemo(
+    () => !mixed || filter === "all"
+      ? gens
+      : gens.filter((g) => (filter === "image" ? g.kind === "image" : g.kind !== "image")),
+    [gens, mixed, filter]
+  );
+  const activeId = selected && visible.some((g) => g.id === selected) ? selected : null;
 
   const modelDef = getModel(params.modelId);
   const isImage = modelDef.kind === "image";
@@ -195,31 +196,22 @@ export default function Workspace() {
     : estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
   const dims = isImage ? null : dimensionsFor(params.resolution, params.ratio);
 
-  const referenceImages = refs.filter((r) => r.kind === "image" && r.role === "reference_image");
-  const referenceVideos = refs.filter((r) => r.kind === "video");
-  const citeTokenFor = (r: RefItem) =>
-    r.kind === "video"
-      ? `@Video${referenceVideos.findIndex((x) => x.id === r.id) + 1}`
-      : r.role === "reference_image"
-        ? `@Image${referenceImages.findIndex((x) => x.id === r.id) + 1}`
-        : r.role === "first_frame" ? "FIRST" : "LAST";
-
   function afterChange() { refresh(); refreshProjects(); }
 
-  /** Drop an @ImageN token in at the caret so the prompt can address a reference. */
-  function cite(token: string) {
-    const el = promptEl.current;
+  /** Drop an @ImageN or @Name token in at the caret so the prompt can address it. */
+  const cite = useCallback((token: string) => {
+    const el = promptRef.current;
     if (!el) { setPrompt((v) => `${v}${v && !v.endsWith(" ") ? " " : ""}${token} `); return; }
-    const start = el.selectionStart ?? prompt.length;
+    const start = el.selectionStart ?? el.value.length;
     const end = el.selectionEnd ?? start;
-    const next = `${prompt.slice(0, start)}${token} ${prompt.slice(end)}`;
+    const next = `${el.value.slice(0, start)}${token} ${el.value.slice(end)}`;
     setPrompt(next);
     requestAnimationFrame(() => {
       el.focus();
       const caret = start + token.length + 1;
       el.setSelectionRange(caret, caret);
     });
-  }
+  }, []);
 
   async function render() {
     // The same conditions that disable the send button. The guard lives HERE
@@ -262,596 +254,63 @@ export default function Workspace() {
     } finally { setBusy(false); }
   }
 
-  // Prompt text with @cites picked out, painted under a transparent textarea.
-  const segments = useMemo(() => {
-    const out: { t: string; tag: boolean }[] = [];
-    for (const part of prompt.split(/(@(?:Image|Video)\d+)/gi)) {
-      if (part) out.push({ t: part, tag: /^@(?:Image|Video)\d+$/i.test(part) });
-    }
-    if (prompt.endsWith("\n") || prompt === "") out.push({ t: "​", tag: false });
-    return out;
-  }, [prompt]);
-
-  const clipCount = gens.filter((g) => g.kind !== "image").length;
-  const stillCount = gens.length - clipCount;
-  const mixed = clipCount > 0 && stillCount > 0;
-  const strip = !mixed || stripKind === "all"
-    ? gens
-    : gens.filter((g) => (stripKind === "image" ? g.kind === "image" : g.kind !== "image"));
-
-  return (
-    <div className="generate">
-      {/* ── The work ──────────────────────────────────────────────────── */}
-      <div className="generate-main">
-        <section ref={viewerRef as React.Ref<HTMLElement>}
-          className="flex min-h-0 flex-1 flex-col gap-3 max-[860px]:flex-none">
-          <ViewerBody clip={clip} onChanged={afterChange} />
-          {clip && (
-            <ClipDetail
-              clip={clip}
-              onChanged={afterChange}
-              onEditExtend={(id) => {
-                setTaskOn({ id, gen: clip });
-                setPrompt(id === "edit"
-                  ? "Replace "
-                  : "Continue from the final frame: ");
-                promptEl.current?.focus();
-              }}
-              onUse={async () => {
-                if (prompt.trim() &&
-                    !(await appConfirm("Replace the composer?", "This clip's prompt will replace what you've typed.", { confirmLabel: "Replace" }))) return;
-                // Hand back what was typed — cast names, not the @ImageN they became.
-                const typed = (clip.params as { rawPrompt?: string }).rawPrompt;
-                setPrompt(typed || clip.prompt);
-                promptEl.current?.focus();
-              }}
-            />
-          )}
-        </section>
-
-        {/* ── Composer: one pill, the way a message box should feel ────── */}
-        <div ref={islandRef} className="shrink-0">
-          {refs.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
-              {refs.map((r) => {
-                const token = citeTokenFor(r);
-                const citable = token.startsWith("@");
-                return (
-                  <span key={r.id} className="flex items-center gap-1.5 rounded-full bg-panel2 py-1 pl-2.5 pr-1.5 text-[13px]">
-                    <button onClick={() => citable && cite(token)}
-                      title={citable ? "Cite in the prompt" : r.role.replace("_", " ")}
-                      className="flex items-center gap-1.5">
-                      <span className="font-medium text-blue">{token}</span>
-                      <span className="max-w-[130px] truncate text-dim">{r.filename}</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setRefs((prev) => prev.filter((x) => x.id !== r.id));
-                        fetch(`/api/uploads/${r.id}`, { method: "DELETE" }).catch(() => {});
-                      }}
-                      className="grid h-4 w-4 place-items-center rounded-full text-mute hover:bg-chip2 hover:text-bone"
-                      title="Remove">×</button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
-
-          {taskOn && (
-            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-[12px] bg-blue/8 px-3.5 py-2 text-[13.5px] text-blue">
-              <span className="font-medium">
-                {taskOn.id === "edit" ? "Editing" : "Continuing"}
-              </span>
-              <span className="truncate text-dim">
-                {taskOn.gen.shotCode ? `${taskOn.gen.shotCode} v${taskOn.gen.version}` : "this render"}
-              </span>
-              <span className="text-[12px] text-mute">
-                {taskOn.id === "edit"
-                  ? "aspect and length follow the source"
-                  : "aspect follows the source"}
-              </span>
-              <button onClick={() => setTaskOn(null)}
-                className="ml-auto text-[12px] text-lift">Cancel</button>
-            </div>
-          )}
-
-          {/* The blocking reason wins over a stale submit error — that error
-              used to sit on top of it, so the send button went dead with no
-              visible cause. */}
-          {(err || refProblem) && (
-            <p className="mb-2 rounded-[12px] bg-lift/8 px-3.5 py-2 text-[13.5px] leading-relaxed text-lift">
-              {refProblem ?? err}
-            </p>
-          )}
-
-          <div className="card flex items-end gap-2 rounded-[24px] px-4 py-2.5">
-            <span className="pb-2 text-mute"><IconSparkle /></span>
-            <div className="relative min-w-0 flex-1">
-              <div ref={overlayEl} aria-hidden
-                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words py-2 text-[16px] leading-[1.45]">
-                {segments.map((s, i) =>
-                  s.tag ? (
-                    <span key={i} className="rounded-[4px] font-medium text-blue"
-                      style={{ background: "color-mix(in oklab, var(--color-blue) 12%, transparent)" }}>
-                      {s.t}
-                    </span>
-                  ) : <span key={i}>{s.t}</span>
-                )}
-              </div>
-              <textarea
-                ref={promptEl} rows={1}
-                value={prompt}
-                onChange={(e) => {
-                  setPrompt(e.target.value);
-                  // A submit error describes a submit that already happened.
-                  if (err) setErr(null);
-                }}
-                onScroll={(e) => { if (overlayEl.current) overlayEl.current.scrollTop = e.currentTarget.scrollTop; }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); render(); }
-                }}
-                placeholder="Describe the shot…"
-                spellCheck={false}
-                /* Stable gutter: past 160px the textarea scrolls, and on
-                   platforms with classic scrollbars that gutter comes out of
-                   its content box only — the transparent text then wrapped
-                   earlier than the painted highlight underneath it. */
-                style={{ scrollbarGutter: "stable" }}
-                className="relative block max-h-[160px] w-full resize-none bg-transparent py-2 text-[16px] leading-[1.45] text-transparent caret-bone placeholder:text-mute focus:outline-none"
-              />
-            </div>
-            <button
-              type="button" onClick={render}
-              disabled={busy || !prompt.trim() || Boolean(refProblem)}
-              title="⌘ + ↵"
-              className="btn-render mb-0.5 grid h-9 w-9 shrink-0 place-items-center"
-            >
-              <IconArrowUp />
-            </button>
-          </div>
-
-          <div className="mt-1.5 flex items-center gap-3 px-4 text-[12px] text-mute">
-            <button
-              onClick={() => setMenu(menu === "refine" ? null : "refine")}
-              className="relative transition-colors hover:text-dim"
-            >
-              {isImage ? "Thinks first" : "Auto-refined"}
-              {menu === "refine" && (
-                <>
-                  <span className="fixed inset-0 z-50" onClick={() => setMenu(null)} />
-                  <span className="menu-pop block w-[260px] px-3 py-2.5 text-left text-[13px] leading-relaxed text-dim">
-                    Every prompt is rewritten with ByteDance&apos;s own Seedance recipe
-                    before it renders. Start with{" "}
-                    <span className="font-medium text-blue">raw:</span> to send your exact
-                    words instead.
-                  </span>
-                </>
-              )}
-            </button>
-            <span className="ml-auto tabular-nums">{prompt.trim().length}/10000</span>
-          </div>
-        </div>
-
-        {/* ── The shelf ─────────────────────────────────────────────────── */}
-        <section ref={stripRef as React.Ref<HTMLElement>} className="shrink-0">
-          {mixed && (
-            <div className="mb-2 flex items-center gap-1">
-              {([
-                ["all", `All ${gens.length}`],
-                ["video", `Clips ${clipCount}`],
-                ["image", `Stills ${stillCount}`],
-              ] as const).map(([k, label]) => (
-                <button key={k} onClick={() => setStripKind(k)}
-                  className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors ${
-                    stripKind === k ? "bg-chip2 text-bone" : "text-mute hover:text-dim"
-                  }`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="pan-x flex gap-3 overflow-x-auto pb-1">
-            {gens.length === 0 ? (
-              <div className="flex h-[76px] w-full items-center justify-center rounded-[14px] bg-panel2">
-                <p className="text-[13px] text-mute">Renders land here as they finish.</p>
-              </div>
-            ) : strip.length === 0 ? (
-              <div className="flex h-[76px] w-full items-center justify-center rounded-[14px] bg-panel2">
-                <p className="text-[13px] text-mute">Nothing of this kind yet.</p>
-              </div>
-            ) : (
-              strip.map((g) => (
-                <StripItem key={g.id} gen={g} active={g.id === activeId} onSelect={() => setSelected(g.id)} />
-              ))
-            )}
-          </div>
-        </section>
-      </div>
-
-      {/* ── The settings card ─────────────────────────────────────────── */}
-      <aside className="generate-side">
-        <div className="rows">
-          <MenuRow
-            label="Model" value={modelDef.label}
-            open={menu === "model"} setOpen={(v) => setMenu(v ? "model" : null)}
-          >
-            {MODELS.map((m) => (
-              <button key={m.id} onClick={() => { switchModel(m.id); setMenu(null); }} className="menu-item">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium">{m.label}</span>
-                  <span className="text-[12.5px] text-mute">{m.note}</span>
-                </span>
-                <span className={params.modelId === m.id ? "text-blue" : "text-transparent"}>✓</span>
-              </button>
-            ))}
-          </MenuRow>
-
-          {!isImage && (
-            <MenuRow
-              label="Duration" value={`${params.duration}s`}
-              open={menu === "dur"} setOpen={(v) => setMenu(v ? "dur" : null)}
-            >
-              {modelDef.durations.map((d) => {
-                const c = estimateCostUsd(params.modelId, params.resolution, params.ratio, d, inputSeconds, hasVideoInput);
-                return (
-                  <button key={d} onClick={() => { patch({ duration: d }); setMenu(null); }} className="menu-item">
-                    <span className={`flex-1 ${params.duration === d ? "text-blue" : ""}`}>{d}s</span>
-                    <span className="text-[13px] text-mute">{c ? usd(c.net, 2) : ""}</span>
-                  </button>
-                );
-              })}
-            </MenuRow>
-          )}
-
-          <MenuRow
-            label="Aspect" value={params.ratio === "adaptive" ? "Auto" : params.ratio}
-            open={menu === "ratio"} setOpen={(v) => setMenu(v ? "ratio" : null)}
-          >
-            {modelDef.ratios.map((r) => (
-              <button key={r} onClick={() => { patch({ ratio: r }); setMenu(null); }}
-                className={`menu-item ${params.ratio === r ? "text-blue" : ""}`}>
-                {r === "adaptive" ? "Auto" : r}
-              </button>
-            ))}
-          </MenuRow>
-
-          <MenuRow
-            label="Resolution" value={params.resolution.toUpperCase()}
-            hint={dims ? `${dims.w} × ${dims.h}` : undefined}
-            open={menu === "res"} setOpen={(v) => setMenu(v ? "res" : null)}
-          >
-            {modelDef.resolutions.map((r) => {
-              const c = isImage ? estimateImageCostUsd(r, imageRefCount) : null;
-              return (
-                <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }} className="menu-item">
-                  <span className={`flex-1 ${params.resolution === r ? "text-blue" : ""}`}>{r.toUpperCase()}</span>
-                  {c && <span className="text-[13px] text-mute">{usd(c.net, 2)}</span>}
-                </button>
-              );
-            })}
-          </MenuRow>
-
-          {!isImage && (
-            <div className="row">
-              <span className="flex flex-col">
-                Audio
-                {!modelDef.supportsAudio && (
-                  <span className="text-[13px] text-mute">Seedance 2.5 only</span>
-                )}
-              </span>
-              <span className="row-value">
-                <Switch
-                  checked={params.generateAudio}
-                  disabled={!modelDef.supportsAudio}
-                  onChange={(v) => patch({ generateAudio: v })}
-                />
-              </span>
-            </div>
-          )}
-
-          <button className="row" onClick={() => setAdvanced(!advanced)}>
-            Advanced
-            <span className="row-value">
-              <IconChevron className={`!text-mute transition-transform ${advanced ? "rotate-90" : ""}`} />
-            </span>
-          </button>
-
-          {advanced && !isImage && (
-            <>
-              <div className="row">
-                Seed
-                <span className="row-value">
-                  <input
-                    className="ctl !h-8 w-[110px] text-right" value={params.seed}
-                    inputMode="numeric" placeholder="Random"
-                    onChange={(e) => patch({ seed: e.target.value.replace(/\D/g, "") })}
-                  />
-                </span>
-              </div>
-              <div className="row">
-                Watermark
-                <span className="row-value">
-                  <Switch checked={params.watermark} onChange={(v) => patch({ watermark: v })} />
-                </span>
-              </div>
-            </>
-          )}
-          {advanced && isImage && (
-            <div className="row">
-              <span className="text-[14px] leading-relaxed text-dim">
-                Stills take their size and shape above; there are no seeds or
-                watermark controls on this engine.
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4">
-          <ShotRow projectId={bin} shotId={shotId} setShotId={setShotId} />
-        </div>
-
-        <div className="mt-4">
-          <Studio spec={spec} setSpec={setSpec} />
-        </div>
-
-        <div className="mt-4">
-          <Cast projectId={bin} onCite={cite} />
-        </div>
-
-        <div className="mt-4">
-          <References refs={refs} setRefs={setRefs} onCite={cite} model={modelDef} pickerRef={picker} />
-        </div>
-
-        <p className="mt-4 text-center text-[13px] text-dim">
-          This shot{" "}
-          <span className="font-semibold text-bone">{est ? usd(est.net, 2) : "—"}</span>
-          {!isImage && estTokens != null && (
-            <span className="text-mute"> · {compactTokens(estTokens)} tokens</span>
-          )}
-        </p>
-      </aside>
-    </div>
-  );
-}
-
-/* ── pieces ──────────────────────────────────────────────────── */
-
-/** A settings row that opens its options in a floating menu. */
-function MenuRow({ label, value, hint, open, setOpen, children }: {
-  label: string; value: string; hint?: string;
-  open: boolean; setOpen: (v: boolean) => void;
-  children: React.ReactNode;
-}) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [drop, setDrop] = useState(false);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const r = wrapRef.current?.getBoundingClientRect();
-    // Open downward when there isn't room above — these rows sit high on the page.
-    if (r) setDrop(r.top < 280);
-  }, [open]);
-
-  return (
-    <div ref={wrapRef} className="relative">
-      <button className="row w-full" onClick={() => setOpen(!open)}>
-        {label}
-        <span className="row-value">
-          {hint && <span className="text-[13px] text-mute">{hint}</span>}
-          {value}
-          <IconChevron className="!text-mute" />
-        </span>
-      </button>
-      {open && (
-        <>
-          <button aria-label="Close menu" onClick={() => setOpen(false)}
-            className="fixed inset-0 z-50 cursor-default" />
-          <span
-            className="menu-pop block right-3 !left-auto"
-            style={drop ? { top: "calc(100% - 4px)", bottom: "auto" } : undefined}
-          >
-            {children}
-          </span>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** What the selected clip is, what it cost, and what to do with it. */
-function ClipDetail({ clip, onUse, onChanged, onEditExtend }: {
-  clip: Gen; onUse: () => void; onChanged: () => void;
-  onEditExtend: (task: "edit" | "extend") => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const p = clip.params as {
-    resolution?: string; ratio?: string; duration?: number; seed?: number | string | null;
-    rawPrompt?: string; cast?: string[];
-  };
-  // What a person wrote, when it differs from what was sent to the engine.
-  const shown = p.rawPrompt || clip.prompt;
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(shown);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch { /* clipboard blocked — nothing sensible to do */ }
+  async function useGen(gen: Gen) {
+    if (prompt.trim() &&
+        !(await appConfirm("Replace the composer?", "This render's prompt will replace what you've typed.", { confirmLabel: "Replace" }))) return;
+    // Hand back what was typed — cast names, not the @ImageN they became.
+    const typed = (gen.params as { rawPrompt?: string }).rawPrompt;
+    setPrompt(typed || gen.prompt);
+    setSelected(null);
+    requestAnimationFrame(() => promptRef.current?.focus());
   }
 
+  function editExtend(id: "edit" | "extend", gen: Gen) {
+    if (isImage) switchModel(DEFAULT_MODEL_ID);
+    setTaskOn({ id, gen });
+    setPrompt(id === "edit" ? "Replace " : "Continue from the final frame: ");
+    setSelected(null);
+    requestAnimationFrame(() => promptRef.current?.focus());
+  }
+
+  const scopeName = bin === "all" ? "All projects" : bin === "unfiled" ? "Unfiled" : current?.name ?? "";
+  const setupCount = specCount(spec) + (shotId ? 1 : 0);
+
   return (
-    <div className="card shrink-0 px-4 py-3">
-      <p className="max-h-[84px] select-text overflow-y-auto whitespace-pre-wrap text-[14px] leading-relaxed text-bone/90">
-        {shown}
-      </p>
-      {p.cast && p.cast.length > 0 && (
-        <p className="mt-1.5 flex flex-wrap gap-1.5">
-          {p.cast.map((n) => (
-            <span key={n} className="rounded-full bg-blue/10 px-2 py-0.5 text-[12px] font-medium text-blue">
-              @{n}
-            </span>
-          ))}
-        </p>
-      )}
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-mute">
-        <span className="font-medium text-dim">{shortLabel(clip.model)}</span>
-        {p.resolution && <span>{String(p.resolution).toUpperCase()}</span>}
-        {p.ratio && <span>{p.ratio}</span>}
-        {p.duration != null && <span>{p.duration}s</span>}
-        {p.seed != null && p.seed !== "" && <span>seed {p.seed}</span>}
-        {clip.costUsd != null && (
-          <span className="font-medium text-bone" title={clip.refineCostUsd ? "includes prompt refinement" : undefined}>
-            {usd(clip.costUsd + (clip.refineCostUsd ?? 0))}
-          </span>
-        )}
-        {clip.authorName && <span>· {clip.authorName}</span>}
-        <span>· {timeAgo(clip.createdAt)}</span>
-        <span className="ml-auto flex items-center gap-1.5">
-          <button onClick={copy} className="chip !py-1.5 !text-[12.5px]">
-            {copied ? "Copied" : "Copy prompt"}
-          </button>
-          <button onClick={onUse} className="chip !py-1.5 !text-[12.5px]" title="Load into the composer">
-            Use
-          </button>
-          {/* Editing and extension work on a finished video, so they only
-              exist once there is one. */}
-          {clip.status === "succeeded" && clip.storedUrl && clip.kind !== "image" && (
-            <>
-              <button onClick={() => onEditExtend("edit")}
-                className="chip !py-1.5 !text-[12.5px]"
-                title="Change something inside this shot; everything else stays">
-                Edit
-              </button>
-              <button onClick={() => onEditExtend("extend")}
-                className="chip !py-1.5 !text-[12.5px]"
-                title="Continue this shot from its final frame">
-                Extend
-              </button>
-            </>
-          )}
-        </span>
+    <div className={`generate ${setupOpen ? "" : "generate-solo"}`}>
+      <Feed
+        gens={gens} visible={visible} activeId={activeId} onOpen={setSelected}
+        filter={filter} setFilter={setFilter} scopeName={scopeName}
+      />
+
+      <div className="island" ref={islandRef}>
+        <Composer
+          prompt={prompt} setPrompt={(v) => { setPrompt(v); if (err) setErr(null); }}
+          promptRef={promptRef}
+          params={params} patch={patch} switchModel={switchModel}
+          model={modelDef} engines={engines}
+          refs={refs} setRefs={setRefs} picker={picker} cite={cite}
+          taskOn={taskOn} cancelTask={() => setTaskOn(null)}
+          problem={refProblem ?? err} blocked={Boolean(refProblem)}
+          est={est} estTokens={estTokens} dims={dims}
+          inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
+          busy={busy} onRender={render}
+          setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
+        />
       </div>
 
-      <Review
-        genId={clip.id}
-        state={clip.reviewState ?? ""}
-        reviewBy={clip.reviewBy ?? null}
-        onChanged={onChanged}
+      <aside className="setup">
+        <SetupPanel
+          projectId={bin} shotId={shotId} setShotId={setShotId}
+          spec={spec} setSpec={setSpec} onCite={cite}
+          onClose={toggleSetup}
+        />
+      </aside>
+
+      <Theatre
+        gens={visible} activeId={activeId}
+        onClose={() => setSelected(null)} onSelect={setSelected}
+        onChanged={afterChange} onUse={useGen} onEditExtend={editExtend}
       />
     </div>
-  );
-}
-
-function ViewerBody({ clip, onChanged }: { clip: Gen | null; onChanged: () => void }) {
-  if (!clip) {
-    return (
-      <div className="viewer-stage grid min-h-0 flex-1 place-items-center">
-        <div className="stage16 media-well grid place-items-center overflow-hidden rounded-[var(--r-lg)] bg-thumb">
-          <Empty compact title="Nothing playing" line="Pick a render from the shelf below." />
-        </div>
-      </div>
-    );
-  }
-
-  const s = STATUS[clip.status] ?? STATUS.queued;
-  const url = clip.storedUrl ?? clip.sourceUrl;
-  const done = clip.status === "succeeded" && url;
-  const still = clip.kind === "image";
-
-  async function remove() {
-    if (!(await appConfirm(`Delete ${clipId(clip!.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
-    await fetch(`/api/jobs/${clip!.id}`, { method: "DELETE" });
-    onChanged();
-  }
-
-  return (
-    <div className="viewer-stage grid min-h-0 flex-1 place-items-center"
-      data-gen-id={clip.id} data-gen-prompt={clip.prompt} data-gen-label={clipId(clip.id)}>
-      <div className={`stage16 media-well group relative overflow-hidden rounded-[var(--r-lg)] shadow-[var(--shadow-media)] ${done ? "bg-black" : "bg-thumb"}`}>
-        {done ? (
-          still ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img key={clip.id} src={url!} alt={clip.prompt.slice(0, 120)}
-              className="absolute inset-0 h-full w-full object-contain" />
-          ) : (
-            <video key={clip.id} src={url!} controls loop preload="metadata" playsInline
-              className="absolute inset-0 h-full w-full object-contain" />
-          )
-        ) : (
-          <div className="absolute inset-0 grid place-items-center px-6">
-            {clip.error ? (
-              <p className="max-w-[520px] text-center text-[13.5px] leading-relaxed text-lift">
-                {clip.error}
-              </p>
-            ) : (
-              <div className="flex flex-col items-center gap-3">
-                {/* A render in flight looks like the brand thinking, not a
-                    progress bar borrowed from somewhere else. */}
-                {s.live
-                  ? <ParticlSpinner size={34} className="text-dim" />
-                  : null}
-                <span className={`text-[14px] font-medium ${s.cls}`}>{s.label}{s.live ? "…" : ""}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Actions ride the corner, revealed on approach so the frame stays clean. */}
-        <span className="reveal absolute right-3 top-3 flex items-center gap-1.5">
-          {url && (
-            <a href={downloadHref(url)} download={`${clipId(clip.id)}.${still ? "png" : "mp4"}`} title="Download"
-              className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel">
-              <IconDown />
-            </a>
-          )}
-          <button onClick={remove} title="Delete"
-            className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel hover:text-lift">
-            <IconTrash />
-          </button>
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function StripItem({ gen, active, onSelect }: { gen: Gen; active: boolean; onSelect: () => void }) {
-  const s = STATUS[gen.status] ?? STATUS.queued;
-  const url = gen.storedUrl ?? gen.sourceUrl;
-  const done = gen.status === "succeeded" && url;
-  const still = gen.kind === "image";
-  const p = gen.params as { duration?: number; resolution?: string };
-
-  return (
-    <button
-      onClick={onSelect}
-      title={gen.prompt}
-      data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={clipId(gen.id)}
-      className={`relative h-[76px] w-[134px] shrink-0 overflow-hidden rounded-[12px] bg-thumb text-left transition-all duration-150 ${
-        active
-          ? "ring-2 ring-blue ring-offset-2 ring-offset-desk"
-          : "hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)]"
-      }`}
-    >
-      {done ? (
-        <LazyMedia url={url!} kind={still ? "image" : "video"} />
-      ) : (
-        <span className={`grid h-full place-items-center ${s.live ? "render-sweep" : ""}`}>
-          <span className={`text-[11px] font-medium ${s.cls}`}>{s.label}</span>
-        </span>
-      )}
-
-      {gen.reviewState === "approved" && (
-        <span className="absolute left-1.5 top-1.5 grid h-4 w-4 place-items-center rounded-full bg-ok text-[10px] font-bold text-white"
-          title="Approved">✓</span>
-      )}
-      {gen.reviewState === "changes" && (
-        <span className="absolute left-1.5 top-1.5 h-4 w-4 rounded-full bg-warn"
-          title="Changes wanted" />
-      )}
-      {(still ? p.resolution : p.duration != null) && done && (
-        <span className="absolute right-1.5 top-1.5 rounded-full bg-black/45 px-1.5 py-px text-[10px] font-medium text-white backdrop-blur-sm">
-          {still ? String(p.resolution).toUpperCase() : `${p.duration}s`}
-        </span>
-      )}
-    </button>
   );
 }

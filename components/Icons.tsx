@@ -84,3 +84,32 @@ export const IconSparkle = (p: P) => (
     <path d="M12 4l1.7 4.3L18 10l-4.3 1.7L12 16l-1.7-4.3L6 10l4.3-1.7z" />
   </svg>
 );
+
+/* The island and the theatre */
+export const IconCaret = (p: P) => (
+  <svg {...base} {...p} width={12} height={12} strokeWidth={2.2}><path d="M6 9l6 6 6-6" /></svg>
+);
+export const IconArrowLeft = (p: P) => (
+  <svg {...base} {...p} width={18} height={18} strokeWidth={2}><path d="M19 12H5M11 18l-6-6 6-6" /></svg>
+);
+export const IconArrowRight = (p: P) => (
+  <svg {...base} {...p} width={18} height={18} strokeWidth={2}><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+);
+export const IconSliders = (p: P) => (
+  <svg {...base} {...p} width={15} height={15}>
+    <path d="M4 7h9M19 7h1M4 17h3M13 17h7" /><circle cx="15.5" cy="7" r="2.2" /><circle cx="9.5" cy="17" r="2.2" />
+  </svg>
+);
+export const IconAttach = (p: P) => (
+  <svg {...base} {...p} width={15} height={15}>
+    <path d="M20 11.5l-8.2 8.2a5 5 0 0 1-7-7l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7L9.7 17.2a1.6 1.6 0 0 1-2.3-2.3L15 7.3" />
+  </svg>
+);
+export const IconExpand = (p: P) => (
+  <svg {...base} {...p} width={15} height={15}><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" /></svg>
+);
+export const IconCopy = (p: P) => (
+  <svg {...base} {...p} width={15} height={15}>
+    <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" />
+  </svg>
+);
