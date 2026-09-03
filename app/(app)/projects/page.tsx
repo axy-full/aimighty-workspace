@@ -10,7 +10,8 @@ import { usd } from "@/lib/format";
 import { appPrompt, appAlert } from "@/components/dialog";
 import LazyMedia from "@/components/LazyMedia";
 import type { Gen } from "@/components/GenCard";
-import { IconSearch, IconPlus } from "@/components/Icons";
+import { IconSearch, IconPlus, IconTrash } from "@/components/Icons";
+import { confirmDeleteProject } from "@/lib/deleteProject";
 import { ParticlMark } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
 
@@ -22,7 +23,7 @@ export default function ProjectsPage() {
   usePageTitle("Projects");
   const [q, setQ] = useState("");
   const router = useRouter();
-  const { projects, setSelection, refreshProjects } = useProject();
+  const { projects, selection, setSelection, refreshProjects } = useProject();
 
   // One cheap page of recent clips supplies every cover, newest first.
   const { data } = useApi<{ generations: Gen[] }>("/api/jobs?limit=60&sync=0", 20000);
@@ -43,6 +44,12 @@ export default function ProjectsPage() {
   function open(id: string) {
     setSelection(id);
     router.push("/");
+  }
+
+  async function remove(id: string, name: string, count: number) {
+    if (!(await confirmDeleteProject(id, name, count))) return;
+    if (selection === id) setSelection("all");
+    refreshProjects();
   }
 
   async function create() {
@@ -80,9 +87,9 @@ export default function ProjectsPage() {
           {shown.map((p) => {
             const cover = coverFor.get(p.id);
             return (
-              <div key={p.id}>
+              <div key={p.id} className="group/card relative">
                 <button onClick={() => open(p.id)} className="group w-full text-left"
-                data-project-target={p.id} data-project-name={p.name}>
+                data-project-target={p.id} data-project-name={p.name} data-project-count={p.genCount}>
                 <div className="card-link media-well aspect-square overflow-hidden rounded-[var(--r-lg)] bg-thumb shadow-[var(--shadow-media)]">
                   {cover?.storedUrl ? (
                     <LazyMedia url={cover.storedUrl} kind={cover.kind === "image" ? "image" : "video"} alt={p.name} />
@@ -105,6 +112,10 @@ export default function ProjectsPage() {
                   className="mt-0.5 inline-block text-[13px] text-blue">
                   Overview
                 </Link>
+                <button type="button" onClick={() => remove(p.id, p.name, p.genCount)} title="Delete project"
+                  className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone opacity-0 shadow-[var(--shadow-card)] backdrop-blur transition-opacity hover:bg-panel hover:text-lift focus-visible:opacity-100 group-hover/card:opacity-100 [@media(hover:none)]:opacity-100">
+                  <IconTrash />
+                </button>
                 </div>
             );
           })}

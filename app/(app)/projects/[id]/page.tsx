@@ -11,6 +11,9 @@
  */
 import { use, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useProject } from "@/lib/projectContext";
+import { confirmDeleteProject } from "@/lib/deleteProject";
 import { useApi } from "@/lib/useApi";
 import { usd, hours, pct, timeAgo } from "@/lib/format";
 import { type Analytics, Headline, BarList, ShotTable, Patterns } from "@/components/Analytics";
@@ -26,6 +29,8 @@ type ShotRow = {
 
 export default function ProjectOverview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
+  const { selection, setSelection, refreshProjects: refreshCtx } = useProject();
   const { data } = useApi<Analytics>(`/api/analytics?projectId=${encodeURIComponent(id)}`, 30000);
   const { data: projects, refresh: refreshProjects } =
     useApi<{ projects: Project[] }>("/api/projects", 60000);
@@ -57,6 +62,13 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
     } finally {
       setBusy(false);
     }
+  }
+
+  async function remove() {
+    if (!(await confirmDeleteProject(id, project?.name ?? "this project", data?.totals?.generations ?? null))) return;
+    if (selection === id) setSelection("all");
+    refreshCtx();
+    router.push("/projects");
   }
 
   async function setCode() {
@@ -115,6 +127,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
           <Link href={`/canvas/${id}`} className="chip">Canvas</Link>
           <Link href="/all" className="chip">Library</Link>
           <Link href="/dashboard" className="chip">Production dashboard</Link>
+          <button type="button" onClick={remove} className="chip !text-lift">Delete project</button>
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">

@@ -6,7 +6,10 @@
  * in the grid the moment it is submitted — a breathing card with the brand
  * thinking and the clock running — rather than a status word in a strip.
  */
-import { IconAudio } from "./Icons";
+import { IconAudio, IconDown, IconTrash } from "./Icons";
+import { appConfirm } from "./dialog";
+import { announceChange } from "@/lib/changes";
+import { downloadHref } from "@/lib/format";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Gen } from "./GenCard";
@@ -135,12 +138,23 @@ function Tile({ gen, active, now, onOpen }: { gen: Gen; active: boolean; now: nu
   const p = gen.params as { duration?: number; resolution?: string; voiceName?: string; durationSeconds?: number | null; lengthMs?: number };
   const elapsed = Math.max(0, Math.floor((now - gen.createdAt) / 1000));
 
+  async function remove() {
+    if (!(await appConfirm(`Delete ${gen.title || clipId(gen.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
+    await fetch(`/api/jobs/${gen.id}`, { method: "DELETE" });
+    announceChange();
+  }
+
   return (
-    <button
-      type="button" onClick={onOpen} title={gen.title ? `${gen.title} — ${gen.prompt}` : gen.prompt}
+    <div
+      role="button" tabIndex={0} onClick={onOpen} title={gen.title ? `${gen.title} — ${gen.prompt}` : gen.prompt}
+      onKeyDown={(e) => {
+        // The buttons inside keep their own Enter/Space; only the tile itself opens.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); }
+      }}
       data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)}
       data-gen-title={gen.title ?? ""}
-      className={`tile ${active ? "is-active" : ""} ${live ? "tile-live" : ""} ${gen.status === "failed" ? "tile-failed" : ""}`}
+      className={`tile group cursor-pointer ${active ? "is-active" : ""} ${live ? "tile-live" : ""} ${gen.status === "failed" ? "tile-failed" : ""}`}
       style={{ aspectRatio: audio ? "16 / 6" : aspectOf(gen) }}
     >
       {done && audio ? (
@@ -179,6 +193,21 @@ function Tile({ gen, active, now, onOpen }: { gen: Gen; active: boolean; now: nu
       )}
       {gen.reviewState === "approved" && <span className="tile-badge bg-ok" title="Approved">✓</span>}
       {gen.reviewState === "changes" && <span className="tile-badge bg-warn" title="Changes wanted">!</span>}
-    </button>
+
+      {!live && (
+        <span className="reveal absolute right-2 top-2 flex items-center gap-1.5">
+          {done && url && (
+            <a href={downloadHref(url)} download title="Download" onClick={(e) => e.stopPropagation()}
+              className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel">
+              <IconDown />
+            </a>
+          )}
+          <button type="button" title="Delete" onClick={(e) => { e.stopPropagation(); remove(); }}
+            className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel hover:text-lift">
+            <IconTrash />
+          </button>
+        </span>
+      )}
+    </div>
   );
 }

@@ -25,13 +25,25 @@ export async function PATCH(req: Request, { params }: Ctx) {
   return NextResponse.json({ ok: true });
 }
 
-/** Deletes the project but keeps its generations (they fall back to All gens). */
+/**
+ * Deleting a project keeps its renders: they fall back to Unfiled, and their
+ * cost stays on the ledger. What was filed UNDER the project — its shots,
+ * cast, notes and the like — goes with it, deleted here explicitly rather
+ * than left to the database's cascade rules.
+ */
 export async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
+  const found = await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [id] });
+  if (!found.rows.length) return NextResponse.json({ error: "No such project." }, { status: 404 });
   await db().execute({ sql: `UPDATE generations SET project_id = NULL WHERE project_id = ?`, args: [id] });
+  await db().execute({ sql: `UPDATE identities SET project_id = NULL WHERE project_id = ?`, args: [id] });
+  await db().execute({ sql: `DELETE FROM cast_members WHERE project_id = ?`, args: [id] });
+  await db().execute({ sql: `DELETE FROM shots WHERE project_id = ?`, args: [id] });
+  await db().execute({ sql: `DELETE FROM canvas_items WHERE project_id = ?`, args: [id] });
+  await db().execute({ sql: `DELETE FROM shot_presets WHERE project_id = ?`, args: [id] });
   await db().execute({ sql: `DELETE FROM projects WHERE id = ?`, args: [id] });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });

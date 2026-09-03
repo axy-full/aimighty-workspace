@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useProject } from "@/lib/projectContext";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 import { announceChange } from "@/lib/changes";
+import { confirmDeleteProject } from "@/lib/deleteProject";
 
 /**
  * App-wide right-click menu, themed like the rest of the desk. On touch
@@ -14,7 +15,7 @@ import { announceChange } from "@/lib/changes";
  *  • text fields    → Cut / Copy / Paste / Delete on the selection (mouse
  *                     only — native selection handles fields on touch)
  *  • a clip         → Rename / Copy prompt / Cut clip / Move to project… / Delete
- *  • a project row  → Paste clip (moves the cut clip into it)
+ *  • a project row  → Paste clip (moves the cut clip into it) / Delete project
  *  • anywhere else  → Copy for a text selection, Paste into the focused field
  */
 
@@ -67,9 +68,10 @@ export async function renameClip(genId: string, current: string): Promise<void> 
 
 export default function ContextMenu() {
   const [menu, setMenu] = useState<{ x: number; y: number; items: Item[] } | null>(null);
-  const { projects } = useProject();
-  const projectsRef = useRef(projects);
-  useEffect(() => { projectsRef.current = projects; }, [projects]);
+  const ctx = useProject();
+  const projectsRef = useRef(ctx.projects);
+  const ctxRef = useRef(ctx);
+  useEffect(() => { projectsRef.current = ctx.projects; ctxRef.current = ctx; }, [ctx]);
 
   // A long-press opens the menu while the finger is still down; the lift-off
   // click that follows must not immediately dismiss it (or press an item).
@@ -180,6 +182,18 @@ export default function ContextMenu() {
             armedClip = null;
           },
         });
+        if (target !== "unfiled") {
+          const count = Number(projEl.dataset.projectCount ?? "") || null;
+          items.push({ kind: "sep" }, {
+            kind: "item", label: "Delete project…", danger: true,
+            action: async () => {
+              if (!(await confirmDeleteProject(target, name, count))) return;
+              const c = ctxRef.current;
+              if (c.selection === target) c.setSelection("all");
+              c.refreshProjects();
+            },
+          });
+        }
       } else if (!touch) {
         const sel = window.getSelection()?.toString() ?? "";
         items.push(
