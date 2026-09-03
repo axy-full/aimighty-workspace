@@ -187,7 +187,7 @@ export default function Workspace() {
     .reduce((a, r) => a + (r.durationS ?? 0), 0);
   const imageRefCount = refs.filter((r) => r.kind === "image").length;
   const est = isImage
-    ? estimateImageCostUsd(params.resolution, imageRefCount)
+    ? estimateImageCostUsd(params.modelId, params.resolution, imageRefCount)
     : estimateCostUsd(
         params.modelId, params.resolution, params.ratio, params.duration,
         inputSeconds, hasVideoInput

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PROVIDERS, providerConfigured } from "@/lib/providers";
+import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { MODELS } from "@/lib/models";
 import { requireUser } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
@@ -32,6 +32,8 @@ export async function GET() {
       envKey: p.envKey,
       docs: p.docs,
       configured: providerConfigured(p),
+      /** "key" for the vendor's own key, "gateway" for Vercel AI Gateway. */
+      via: providerVia(p),
       models: MODELS.filter((m) => m.provider === p.id)
         .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
     })),

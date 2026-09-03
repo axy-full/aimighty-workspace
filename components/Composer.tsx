@@ -199,7 +199,7 @@ export default function Composer(p: ComposerProps) {
         <ChipMenu label={params.resolution.toUpperCase()} hint={dims ? `${dims.w}×${dims.h}` : undefined}
           open={menu === "res"} onOpen={() => setMenu("res")} onClose={() => setMenu(null)}>
           {model.resolutions.map((r) => {
-            const c = isImage ? estimateImageCostUsd(r, imageRefCount)
+            const c = isImage ? estimateImageCostUsd(params.modelId, r, imageRefCount)
               : estimateCostUsd(params.modelId, r, params.ratio, params.duration, inputSeconds, hasVideoInput);
             return (
               <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }} className="menu-item">

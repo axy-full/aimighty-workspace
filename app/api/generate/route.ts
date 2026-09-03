@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import {
-  getModel, DEFAULT_MODEL_ID, IMAGE_OUT_USD, IMAGE_REF_IN_USD, imageTokens,
+  getModel, DEFAULT_MODEL_ID, estimateImageCostUsd, imageTokens,
 } from "@/lib/models";
 import { generateImage } from "@/lib/gemini";
 import { storeImageBytes } from "@/lib/storage";
@@ -351,7 +351,7 @@ export async function POST(req: Request) {
     after(async () => {
       try {
         const img = await generateImage({
-          prompt: stillPrompt, ratio, size, references: stillRefs,
+          model, prompt: stillPrompt, ratio, size, references: stillRefs,
         });
         // Google can only emit JPEG; the library keeps PNG. Decode once and
         // re-encode LOSSLESSLY — pixel-identical, and nothing downstream can
@@ -360,16 +360,19 @@ export async function POST(req: Request) {
         const sharp = (await import("sharp")).default;
         const png = await sharp(img.bytes).png().toBuffer();
         const storedUrl = await storeImageBytes(genId, png);
-        // Google bills flat per image (+ per reference in). Their published
-        // figures ARE the ledger; usage tokens are recorded when returned.
-        const cost = (IMAGE_OUT_USD[size] ?? 0) + stillRefs.length * IMAGE_REF_IN_USD;
+        // The gateway states the exact charge; Google direct bills flat per
+        // image by size (+ a little per reference in), from the catalogue.
+        const cost = img.costUsd
+          ?? (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0);
         const tokens = img.totalTokens ?? imageTokens(size, stillRefs.length);
+        const ratePerM = tokens ? (cost / tokens) * 1_000_000 : null;
         await db().execute({
           sql: `UPDATE generations
                 SET status='succeeded', stored_url=?, total_tokens=?,
-                    cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?, updated_at=?
+                    cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?,
+                    params=json_set(params, '$.via', ?), updated_at=?
                 WHERE id=?`,
-          args: [storedUrl, tokens, cost, 120, now() - ts, now(), genId],
+          args: [storedUrl, tokens, cost, ratePerM, now() - ts, img.via, now(), genId],
         });
       } catch (e) {
         await db().execute({

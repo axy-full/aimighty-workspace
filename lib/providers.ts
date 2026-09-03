@@ -102,9 +102,21 @@ export function getProvider(pid: string): ProviderDef {
   return p;
 }
 
+import { gatewayReachable } from "./gateway";
+
 /** Is this vendor usable right now? Reported on /api/health and in Settings. */
 export function providerConfigured(p: ProviderDef): boolean {
-  return Boolean(process.env[p.envKey]);
+  return Boolean(process.env[p.envKey]) || (p.id === "google" && gatewayReachable());
+}
+
+/** Which door a vendor's calls go through from this deployment. */
+export function providerVia(p: ProviderDef): "key" | "gateway" | null {
+  if (p.id === "google") {
+    if (process.env.STILLS_VIA === "google" && process.env[p.envKey]) return "key";
+    if (gatewayReachable()) return "gateway";
+    return process.env[p.envKey] ? "key" : null;
+  }
+  return process.env[p.envKey] ? "key" : null;
 }
 
 export function providerBaseUrl(p: ProviderDef): string {

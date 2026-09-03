@@ -18,6 +18,7 @@ type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; pro
 type Credits = { balanceUsd: number; usedUsd: number } | null;
 type EngineInfo = {
   id: string; label: string; envKey: string; docs: string; configured: boolean;
+  via?: "key" | "gateway" | null;
   models: { id: string; label: string; kind: "video" | "image" }[];
 };
 type Refiner = { writer: "none" | "byteplus" | "claude"; provider: string; model: string; label: string; via: string; configured: boolean };
@@ -103,6 +104,7 @@ export default function SettingsPage() {
                 {e.label}
                 <span className="mt-0.5 block text-[12px] leading-snug text-mute">
                   {e.models.map((m) => m.label).join(" · ")}
+                  {e.configured && e.via === "gateway" && <> — through Vercel AI Gateway, on the same credit as the prompt writer.</>}
                   {!e.configured && isAdmin && (
                     <> — set <code className="font-mono text-[11.5px]">{e.envKey}</code> in
                     Vercel → Settings → Environment Variables, then redeploy.</>

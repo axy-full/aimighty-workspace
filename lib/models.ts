@@ -50,6 +50,11 @@ export type ModelDef = {
   provider: string;
   /** What the engine produces. Image engines skip duration/audio/refine. */
   kind: "video" | "image";
+  /** The model's id on Vercel AI Gateway, when it is also served there. */
+  gatewayId?: string;
+  /** Still engines bill per image by size (USD), plus a little per reference in. */
+  imagePricing?: Record<string, number>;
+  imageRefInUsd?: number;
   paramStyle: ParamStyle;
   tiers: RateTier[];
   resolutions: string[];
@@ -120,6 +125,7 @@ export const MODELS: ModelDef[] = [
     // Retired once for Google's moderation locks; back by request, with
     // refusals surfaced in Google's own words and never charged.
     id: "gemini-3-pro-image",
+    gatewayId: "google/gemini-3-pro-image",
     label: "Nano Banana Pro",
     short: "NB PRO",
     family: "nano-banana",
@@ -127,6 +133,9 @@ export const MODELS: ModelDef[] = [
     kind: "image",
     paramStyle: "fields",
     tiers: [],
+    // Per image, from the gateway catalogue (identical to Google's list).
+    imagePricing: { "1K": 0.1344, "2K": 0.1344, "4K": 0.24 },
+    imageRefInUsd: 0.0011,
     resolutions: ["1K", "2K", "4K"],
     ratios: ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"],
     durations: [],
@@ -135,7 +144,31 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 14,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
-    note: "Google's still-image model — up to 4K, legible text, up to 14 refs.",
+    note: "Google's studio still-image model — up to 4K, legible text, up to 14 refs.",
+  },
+  {
+    // Nano Banana 2 (Gemini 3.1 Flash Image): the fast, cheaper still engine.
+    // Prices per image from the gateway catalogue, read 2026-09-03.
+    id: "gemini-3.1-flash-image",
+    gatewayId: "google/gemini-3.1-flash-image",
+    label: "Nano Banana 2",
+    short: "NB 2",
+    family: "nano-banana",
+    provider: "google",
+    kind: "image",
+    paramStyle: "fields",
+    tiers: [],
+    imagePricing: { "512": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151 },
+    imageRefInUsd: 0.0003,
+    resolutions: ["512", "1K", "2K", "4K"],
+    ratios: ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 14,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "Google's quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
   },
 ];
 
@@ -151,7 +184,7 @@ export function getModel(id: string): ModelDef {
 export function shortLabel(modelId: string): string {
   return MODELS.find((m) => m.id === modelId)?.short
     ?? (modelId.includes("2-5") ? "SD 2.5" : modelId.includes("2-0") ? "SD 2.0"
-      : modelId.includes("image") ? "NB PRO" : modelId);
+      : modelId.includes("flash-image") ? "NB 2" : modelId.includes("image") ? "NB PRO" : modelId);
 }
 
 /** Undiscounted published rate, USD per million tokens. */
@@ -241,10 +274,14 @@ export const IMAGE_OUT_TOKENS: Record<string, number> = { "1K": 1120, "2K": 1120
 export const IMAGE_REF_IN_USD = 0.0011;
 export const IMAGE_REF_IN_TOKENS = 560;
 
-export function estimateImageCostUsd(size: string, refImages = 0): { list: number; net: number } | null {
-  const out = IMAGE_OUT_USD[size.toUpperCase()];
+export function estimateImageCostUsd(
+  modelId: string, size: string, refImages = 0
+): { list: number; net: number } | null {
+  const m = MODELS.find((x) => x.id === modelId);
+  const table = m?.imagePricing ?? IMAGE_OUT_USD;
+  const out = table[size.toUpperCase()] ?? table[size];
   if (out == null) return null;
-  const total = out + refImages * IMAGE_REF_IN_USD;
+  const total = out + refImages * (m?.imageRefInUsd ?? IMAGE_REF_IN_USD);
   return { list: total, net: total };
 }
 

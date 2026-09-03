@@ -21,6 +21,8 @@
  */
 
 import { getSetting } from "./settings";
+import { gatewayReachable, gatewayAuth, GATEWAY_URL, explainGatewayFailure } from "./gateway";
+export { gatewayReachable, gatewayAuth, gatewayCredits, GATEWAY_BASE, GATEWAY_URL } from "./gateway";
 
 const CHAT_URL = () =>
   (process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
@@ -79,47 +81,12 @@ export function refineProvider(): RefineProvider {
   if (gatewayReachable()) return "gateway";
   return "byteplus";
 }
-export function gatewayReachable(): boolean {
-  return Boolean(
-    process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL
-  );
-}
-
 /** Opus 5 by default — this is the judgement step, and the studio asked for the best. */
 export const CLAUDE_MODEL = () => process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
 /** Through the gateway, in order: Opus 5, then Sonnet 5 if it cannot answer. */
 export const GATEWAY_MODELS = (): string[] =>
   (process.env.GATEWAY_PROMPT_MODELS ?? "anthropic/claude-opus-5,anthropic/claude-sonnet-5")
     .split(",").map((s) => s.trim()).filter(Boolean);
-export const GATEWAY_BASE = () =>
-  process.env.AI_GATEWAY_BASE_URL?.replace(/\/$/, "") ?? "https://ai-gateway.vercel.sh/v1";
-export const GATEWAY_URL = () => `${GATEWAY_BASE()}/chat/completions`;
-
-/**
- * The gateway's credit balance, in dollars — what is left of what was
- * topped up, and what has been used. Null when this deployment cannot
- * reach the gateway or the call fails; never a reason to block anything.
- */
-export async function gatewayCredits(): Promise<{ balanceUsd: number; usedUsd: number } | null> {
-  if (!gatewayReachable()) return null;
-  try {
-    const auth = await gatewayAuth();
-    const res = await fetch(`${GATEWAY_BASE()}/credits`, {
-      headers: auth, signal: AbortSignal.timeout(6_000), cache: "no-store",
-    });
-    if (!res.ok) {
-      console.warn(`gateway credits: ${res.status} ${(await res.text()).slice(0, 160)}`);
-      return null;
-    }
-    const j = await res.json() as { balance?: string | number; total_used?: string | number };
-    const balance = Number(j.balance), used = Number(j.total_used);
-    if (!Number.isFinite(balance)) return null;
-    return { balanceUsd: balance, usedUsd: Number.isFinite(used) ? used : 0 };
-  } catch (e) {
-    console.warn(`gateway credits: ${(e as Error).message}`);
-    return null;
-  }
-}
 export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
 
 /** Each ByteDance text model's first 500k tokens are free on this account;
@@ -446,27 +413,6 @@ async function refineWithClaude(
 }
 
 /**
- * Credentials for the gateway: an explicit key wins; otherwise the OIDC
- * identity of this deployment, which @vercel/oidc reads from the request
- * (and, in local development, from the token `vercel env pull` writes).
- */
-export async function gatewayAuth(): Promise<Record<string, string>> {
-  const key = process.env.AI_GATEWAY_API_KEY;
-  if (key) return { Authorization: `Bearer ${key}` };
-  let token: string | null = process.env.VERCEL_OIDC_TOKEN ?? null;
-  try {
-    const { getVercelOidcToken } = await import("@vercel/oidc");
-    token = await getVercelOidcToken();
-  } catch { /* not on Vercel and no pulled token — the env value stands */ }
-  if (!token) {
-    throw new Error(
-      "Vercel AI Gateway is unreachable from here: set AI_GATEWAY_API_KEY, or run on Vercel with OIDC enabled."
-    );
-  }
-  return { Authorization: `Bearer ${token}` };
-}
-
-/**
  * The gateway path: Claude through Vercel AI Gateway's OpenAI-compatible
  * endpoint. The system message carries an explicit cache marker (the
  * gateway lists explicit caching for Claude), and the request is retried
@@ -538,20 +484,8 @@ async function refineWithGateway(
         costUsd: cost,
       };
     }
-    if (res.status === 403 && /free tier|RestrictedModels/i.test(text)) {
-      throw new Error(
-        "Vercel AI Gateway is on its free tier, which does not include Claude. " +
-        "Add credits under Vercel → AI Gateway and prompts will be written by Claude from then on."
-      );
-    }
-    if (res.status === 401) {
-      throw new Error(
-        "Vercel AI Gateway rejected this deployment's credentials." +
-        (process.env.AI_GATEWAY_API_KEY
-          ? " Check AI_GATEWAY_API_KEY in Vercel."
-          : " On Vercel the OIDC identity is fresh on every request; locally, a token from `vercel env pull` expires after twelve hours.")
-      );
-    }
+    const plain = explainGatewayFailure(res.status, text);
+    if (plain) throw new Error(plain);
     // Not found, rate-limited, or the vendor is down: the next model in line.
     lastErr = `${model}: ${res.status} ${text.slice(0, 160)}`;
     console.warn(`refine(gateway): ${lastErr}`);
