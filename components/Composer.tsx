@@ -42,12 +42,13 @@ import type { Params } from "./Workspace";
 type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost";
 
 export type Engine = { id: string; label: string; configured: boolean };
+export type WriterInfo = { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean };
 
 export type ComposerProps = {
   prompt: string; setPrompt: (v: string) => void;
   promptRef: React.RefObject<HTMLTextAreaElement | null>;
   params: Params; patch: (p: Partial<Params>) => void; switchModel: (id: string) => void;
-  model: ModelDef; engines: Engine[];
+  model: ModelDef; engines: Engine[]; writer?: WriterInfo | null;
   refs: RefItem[]; setRefs: React.Dispatch<React.SetStateAction<RefItem[]>>;
   picker: React.MutableRefObject<RefPicker>; cite: (token: string) => void;
   taskOn: { id: "edit" | "extend"; gen: Gen } | null; cancelTask: () => void;
@@ -64,7 +65,7 @@ export type ComposerProps = {
 
 export default function Composer(p: ComposerProps) {
   const {
-    prompt, setPrompt, promptRef, params, patch, switchModel, model, engines,
+    prompt, setPrompt, promptRef, params, patch, switchModel, model, engines, writer,
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked,
     est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup,
@@ -270,7 +271,11 @@ export default function Composer(p: ComposerProps) {
                 {isImage ? (
                   <>Flat per still on Google — {usd(est?.net ?? 0, 3)} at {params.resolution.toUpperCase()}{imageRefCount ? ` with ${imageRefCount} reference${imageRefCount === 1 ? "" : "s"}` : ""}. The model thinks before it draws; your prompt goes as written. A refusal costs nothing.</>
                 ) : (
-                  <>Billed by frame tokens: {estTokens != null ? compactTokens(estTokens) : "—"} at {dims ? `${dims.w}×${dims.h}` : "the source size"} for {params.duration}s. Prompts go library-first — your words as written, the camera as a module from the bank. Start with <span className="font-medium text-blue">raw:</span> to send exactly what you typed.</>
+                  <>Billed by frame tokens: {estTokens != null ? compactTokens(estTokens) : "—"} at {dims ? `${dims.w}×${dims.h}` : "the source size"} for {params.duration}s.{" "}
+                    {!writer || writer.writer === "none"
+                      ? <>Pro mode: your words go as written, the camera as a module from the bank.</>
+                      : <>Your words go as written; an idea too thin to film is finished by {writer.label}{writer.configured ? "" : " (not reachable right now, so it goes raw)"}. The camera comes from the bank.</>}
+                    {" "}Start with <span className="font-medium text-blue">raw:</span> to bypass everything.</>
                 )}
               </span>
             </>

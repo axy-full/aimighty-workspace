@@ -13,7 +13,7 @@ import { referenceProblem, type RefItem, type RefPicker } from "./References";
 import { appAlert, appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
 import Feed, { type FeedFilter } from "./Feed";
-import Composer, { type Engine } from "./Composer";
+import Composer, { type Engine, type WriterInfo } from "./Composer";
 import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
 import { useApi } from "@/lib/useApi";
@@ -74,8 +74,9 @@ export default function Workspace() {
   }, []);
 
   // Which vendors have keys — decides which engines the menu will offer.
-  const { data: engineData } = useApi<{ engines: Engine[] }>("/api/engines", 0);
+  const { data: engineData } = useApi<{ engines: Engine[]; refiner?: WriterInfo }>("/api/engines", 0);
   const engines = useMemo(() => engineData?.engines ?? [], [engineData]);
+  const writer = engineData?.refiner ?? null;
 
   // The composer opens on whatever Settings says, then stays where you put it.
   const [params, setParams] = useState<Params>(() => ({
@@ -287,7 +288,7 @@ export default function Workspace() {
           prompt={prompt} setPrompt={(v) => { setPrompt(v); if (err) setErr(null); }}
           promptRef={promptRef}
           params={params} patch={patch} switchModel={switchModel}
-          model={modelDef} engines={engines}
+          model={modelDef} engines={engines} writer={writer}
           refs={refs} setRefs={setRefs} picker={picker} cite={cite}
           taskOn={taskOn} cancelTask={() => setTaskOn(null)}
           problem={refProblem ?? err} blocked={Boolean(refProblem)}

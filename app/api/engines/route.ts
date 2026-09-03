@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured } from "@/lib/providers";
 import { MODELS } from "@/lib/models";
 import { requireUser } from "@/lib/auth";
-import { refinerDescription } from "@/lib/enhance";
+import { activeWriter } from "@/lib/enhance";
+import { invalidateSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -14,14 +15,14 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
-  const writer = refinerDescription();
+  // Settings are memoed per function for ten seconds; a person who has just
+  // changed the writer must see the change, so this route always re-reads.
+  invalidateSettings();
+  const writer = await activeWriter();
   return NextResponse.json({
-    /* Who writes the prompts too thin to film: shown on Settings › Engines
-       and greyed in the composer's menu when it cannot be reached. */
-    refiner: {
-      ...writer,
-      configured: writer.provider !== "byteplus" || Boolean(process.env.ARK_API_KEY),
-    },
+    /* Who writes the prompts too thin to film — the workspace's choice on
+       Settings › Prompt, resolved to what this deployment can reach. */
+    refiner: writer,
     engines: PROVIDERS.map((p) => ({
       id: p.id,
       label: p.label,

@@ -20,6 +20,8 @@
  * the ModelArk console like the video models were.
  */
 
+import { getSetting } from "./settings";
+
 const CHAT_URL = () =>
   (process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
     "https://ark.ap-southeast.bytepluses.com") + "/api/v3/chat/completions";
@@ -83,11 +85,11 @@ export function gatewayReachable(): boolean {
   );
 }
 
-/** Overridable, but Opus 5 is the default — this is the judgement step. */
-export const CLAUDE_MODEL = () => process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
-/** Through the gateway, in order: Opus 5 first, Sonnet 5 if it cannot answer. */
+/** Sonnet 5 by default — fast, and more than enough judgement for a rewrite. */
+export const CLAUDE_MODEL = () => process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-sonnet-5";
+/** Through the gateway, in order: Sonnet 5, then Haiku 4.5 if it cannot answer. */
 export const GATEWAY_MODELS = (): string[] =>
-  (process.env.GATEWAY_PROMPT_MODELS ?? "anthropic/claude-opus-5,anthropic/claude-sonnet-5")
+  (process.env.GATEWAY_PROMPT_MODELS ?? "anthropic/claude-sonnet-5,anthropic/claude-haiku-4.5")
     .split(",").map((s) => s.trim()).filter(Boolean);
 export const GATEWAY_URL = () =>
   (process.env.AI_GATEWAY_BASE_URL?.replace(/\/$/, "") ?? "https://ai-gateway.vercel.sh/v1") +
@@ -101,17 +103,47 @@ export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
 export const TEXT_FREE_TOKENS = 500_000;
 export const hasFreeTier = (model: string) => !model.startsWith("claude-") && !model.includes("/");
 
-/** What a human should read about the writer in use. */
-export function refinerDescription(): { provider: RefineProvider; model: string; label: string; via: string } {
-  const provider = refineProvider();
-  if (provider === "anthropic") {
-    return { provider, model: CLAUDE_MODEL(), label: prettyModel(CLAUDE_MODEL()), via: "Anthropic" };
+/**
+ * The workspace's choice of writer, resolved to something callable.
+ *
+ *   Pro      — nothing is rewritten. The library still supplies the camera
+ *              module; only the model step is gone.
+ *   Seedream — ByteDance's text model on the ModelArk key.
+ *   Claude   — Sonnet 5: straight from Anthropic when a console key exists,
+ *              otherwise through Vercel AI Gateway on the deployment's own
+ *              identity.
+ */
+export type Writer = "none" | "byteplus" | "claude";
+export type ActiveWriter = {
+  writer: Writer;
+  provider: RefineProvider | "none";
+  model: string;
+  label: string;
+  via: string;
+  configured: boolean;
+};
+export async function activeWriter(): Promise<ActiveWriter> {
+  const chosen = (await getSetting("promptWriter")) as Writer;
+  if (chosen === "none") {
+    return { writer: "none", provider: "none", model: "", label: "Pro", via: "your words, as written", configured: true };
   }
-  if (provider === "gateway") {
-    const m = GATEWAY_MODELS()[0];
-    return { provider, model: m, label: prettyModel(m), via: process.env.AI_GATEWAY_API_KEY ? "Vercel AI Gateway (API key)" : "Vercel AI Gateway (OIDC)" };
+  if (chosen === "byteplus") {
+    return {
+      writer: "byteplus", provider: "byteplus", model: TEXT_MODEL(),
+      label: "Seedream", via: `BytePlus ModelArk · ${prettyModel(TEXT_MODEL())}`,
+      configured: Boolean(process.env.ARK_API_KEY),
+    };
   }
-  return { provider, model: TEXT_MODEL(), label: prettyModel(TEXT_MODEL()), via: "BytePlus ModelArk" };
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
+    return { writer: "claude", provider: "anthropic", model: CLAUDE_MODEL(),
+             label: prettyModel(CLAUDE_MODEL()), via: "Anthropic", configured: true };
+  }
+  const m = GATEWAY_MODELS()[0];
+  return {
+    writer: "claude", provider: "gateway", model: m, label: prettyModel(m),
+    via: process.env.AI_GATEWAY_API_KEY ? "Vercel AI Gateway (API key)" : "Vercel AI Gateway (OIDC)",
+    configured: gatewayReachable(),
+  };
 }
 function prettyModel(id: string): string {
   const bare = id.split("/").pop() ?? id;
@@ -408,21 +440,21 @@ async function gatewayAuth(): Promise<Record<string, string>> {
 /**
  * The gateway path: Claude through Vercel AI Gateway's OpenAI-compatible
  * endpoint. The system message carries an explicit cache marker (the
- * gateway lists explicit caching for Opus), effort is low for the same
- * reason as the direct path, and the request is retried once in the
- * plainest shape if the gateway ever rejects those extras — a refine must
- * never fail on a formality. Models are tried in order; a
+ * gateway lists explicit caching for Claude), and the request is retried
+ * once in the plainest shape if the gateway ever rejects it — a refine
+ * must never fail on a formality. Models are tried in order; a
  * refusal or an empty answer throws so the caller renders the raw words.
  */
 async function refineWithGateway(
   system: string, userMsg: string, style: string
 ): Promise<RefineResult & { cachedIn: number }> {
   const auth = await gatewayAuth();
-  const effort = process.env.GATEWAY_PROMPT_EFFORT ?? "low";
+  // No `reasoning` field: on this surface the docs say it is a silent no-op
+  // for Claude 5 (and a 400 in its max_tokens form). Effort is simply not a
+  // knob here — which is fine, Sonnet answers in a couple of seconds.
   const shaped = (model: string, rich: boolean) => JSON.stringify({
     model,
     max_tokens: 1200,
-    ...(rich ? { reasoning: { effort } } : {}),
     messages: [
       // The gateway's documented placement for Anthropic caching on this
       // endpoint is on the MESSAGE, not on a content part. One system
@@ -482,7 +514,12 @@ async function refineWithGateway(
       );
     }
     if (res.status === 401) {
-      throw new Error("Vercel AI Gateway rejected this deployment's credentials.");
+      throw new Error(
+        "Vercel AI Gateway rejected this deployment's credentials." +
+        (process.env.AI_GATEWAY_API_KEY
+          ? " Check AI_GATEWAY_API_KEY in Vercel."
+          : " On Vercel the OIDC identity is fresh on every request; locally, a token from `vercel env pull` expires after twelve hours.")
+      );
     }
     // Not found, rate-limited, or the vendor is down: the next model in line.
     lastErr = `${model}: ${res.status} ${text.slice(0, 160)}`;
@@ -513,6 +550,8 @@ export async function enhancePrompt(opts: {
   task?: string;
   /** Approved work from this workspace, used as the style to match. */
   style?: string;
+  /** Which writer to use; the workspace's choice when omitted. */
+  provider?: RefineProvider;
 }): Promise<RefineResult> {
   const userMsg =
     `${targetBlock(opts.model, opts.durationS, opts.task, opts.prompt.trim().split(/\s+/).filter(Boolean).length)}\n\n` +
@@ -520,7 +559,7 @@ export async function enhancePrompt(opts: {
       ? `Attached reference assets, in upload order: ${opts.citations.join(", ")}.\n\n`
       : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a Seedance prompt:\n\n${opts.prompt}`;
 
-  const provider = refineProvider();
+  const provider = opts.provider ?? refineProvider();
   if (provider === "anthropic") {
     return finishRefine(await refineWithClaude(SYSTEM, userMsg, opts.style ?? ""));
   }

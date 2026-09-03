@@ -19,7 +19,7 @@ type EngineInfo = {
   id: string; label: string; envKey: string; docs: string; configured: boolean;
   models: { id: string; label: string; kind: "video" | "image" }[];
 };
-type Refiner = { provider: string; model: string; label: string; via: string; configured: boolean };
+type Refiner = { writer: "none" | "byteplus" | "claude"; provider: string; model: string; label: string; via: string; configured: boolean };
 type RefinerTest = {
   ok: boolean; ms: number; model?: string; sample?: string; move?: string | null; error?: string;
 };
@@ -31,7 +31,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { data: me } = useApi<Me>("/api/me");
   const { data: usage } = useApi<Usage>("/api/usage/summary", 30000);
-  const { data: engineData } = useApi<{ engines: EngineInfo[]; refiner?: Refiner }>("/api/engines");
+  const { data: engineData, refresh: refreshEngines } = useApi<{ engines: EngineInfo[]; refiner?: Refiner }>("/api/engines");
   const [busy, setBusy] = useState(false);
   const isAdmin = me?.role === "admin";
 
@@ -114,15 +114,25 @@ export default function SettingsPage() {
               </span>
             </div>
           ))}
-          {engineData?.refiner && <WriterRow writer={engineData.refiner} isAdmin={isAdmin} />}
           {!engineData && (
             <div className="row"><span className="text-[14px] text-mute">Checking the keys…</span></div>
           )}
         </div>
         <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
           Keys live on the server as environment variables and are never shown here.
-          An engine without a key stays in the composer&rsquo;s menu, greyed out. The prompt
-          writer only runs on ideas too thin to film; everything else composes from the library.
+          An engine without a key stays in the composer&rsquo;s menu, greyed out.
+        </p>
+
+        <p className="grouplabel mt-10">Prompt</p>
+        <div className="rows">
+          {engineData?.refiner
+            ? <WriterRow writer={engineData.refiner} isAdmin={isAdmin} onChanged={refreshEngines} />
+            : <div className="row"><span className="text-[14px] text-mute">Reading the workspace&rsquo;s choice…</span></div>}
+        </div>
+        <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
+          Who finishes an idea too thin to film. The library&rsquo;s camera modules apply in every
+          mode; this only decides whether a model rewrites the words first. Start a prompt with{" "}
+          <span className="font-medium text-blue">raw:</span> to bypass everything for one render.
         </p>
 
         <p className="grouplabel mt-10">Credit</p>
@@ -208,14 +218,38 @@ export default function SettingsPage() {
 }
 
 /**
- * Who writes the prompts, and a way to hear them answer. Through Vercel AI
- * Gateway the credentials are the deployment's own, so the one thing that
- * can still be missing is credit on the gateway — which is exactly what a
- * test call reports in plain words.
+ * The workspace's writer, as a three-way choice, and a way to hear it answer.
+ * Through Vercel AI Gateway the credentials are the deployment's own, so the
+ * one thing that can still be missing is credit on the gateway — which is
+ * exactly what a test call reports in plain words.
  */
-function WriterRow({ writer, isAdmin }: { writer: Refiner; isAdmin: boolean }) {
+const WRITERS: { id: Refiner["writer"]; label: string; blurb: string }[] = [
+  { id: "none", label: "Pro", blurb: "No rewriting. Your words reach the engine exactly as written." },
+  { id: "byteplus", label: "Seedream", blurb: "ByteDance's own text model finishes thin ideas, on the ModelArk key." },
+  { id: "claude", label: "Claude Sonnet 5", blurb: "Anthropic's Sonnet 5 finishes thin ideas, through Vercel AI Gateway." },
+];
+
+function WriterRow({ writer, isAdmin, onChanged }: { writer: Refiner; isAdmin: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<RefinerTest | null>(null);
+  const current = WRITERS.find((w) => w.id === writer.writer) ?? WRITERS[2];
+
+  async function choose(id: Refiner["writer"]) {
+    if (!isAdmin || saving || id === writer.writer) return;
+    setSaving(true); setResult(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promptWriter: id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Couldn't save that");
+      onChanged();
+    } catch (e) {
+      await appAlert("Couldn't change the writer", (e as Error).message);
+    } finally { setSaving(false); }
+  }
 
   async function test() {
     setBusy(true); setResult(null);
@@ -228,29 +262,50 @@ function WriterRow({ writer, isAdmin }: { writer: Refiner; isAdmin: boolean }) {
   }
 
   return (
-    <div className="row !items-start">
-      <span className="min-w-0 flex-1">
-        Prompt writer
-        <span className="mt-0.5 block text-[12px] leading-snug text-mute">
-          {writer.label} · {writer.via}
-        </span>
-        {result && (
-          <span className={`mt-1.5 block text-[12.5px] leading-snug ${result.ok ? "text-dim" : "text-lift"}`}>
-            {result.ok
-              ? <>Answered in {(result.ms / 1000).toFixed(1)}s{result.move ? `, chose “${result.move}”` : ""}: <span className="italic">{result.sample}</span></>
-              : result.error}
+    <div className="row !block py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="min-w-0 flex-1">
+          Prompt writer
+          <span className="mt-0.5 block text-[12px] leading-snug text-mute">
+            {current.blurb}{writer.writer !== "none" ? ` Currently ${writer.label} · ${writer.via}.` : ""}
           </span>
-        )}
-      </span>
-      <span className="row-value !text-[13px] font-medium">
-        {isAdmin ? (
-          <button type="button" onClick={test} disabled={busy} className="chip !py-1.5 !text-[13px] !text-blue disabled:opacity-50">
-            {busy ? "Asking…" : "Test"}
-          </button>
-        ) : (
-          <><span className="lamp" /><span className={writer.configured ? "!text-ok" : "!text-mute"}>{writer.configured ? "Ready" : "No key"}</span></>
-        )}
-      </span>
+        </span>
+        <span className="inline-flex rounded-[10px] bg-chip p-[3px]" role="radiogroup" aria-label="Prompt writer">
+          {WRITERS.map((w) => {
+            const on = writer.writer === w.id;
+            return (
+              <button key={w.id} type="button" role="radio" aria-checked={on}
+                disabled={!isAdmin || saving}
+                onClick={() => choose(w.id)}
+                className={`rounded-[8px] px-3 py-1 text-[13px] font-medium transition-colors disabled:cursor-default ${
+                  on ? "bg-panel text-ink shadow-[var(--shadow-card)]" : "text-dim"
+                }`}>
+                {w.label}
+              </button>
+            );
+          })}
+        </span>
+      </div>
+      {(isAdmin || result) && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-3">
+          {isAdmin && writer.writer !== "none" && (
+            <button type="button" onClick={test} disabled={busy}
+              className="chip !py-1.5 !text-[13px] !text-blue disabled:opacity-50">
+              {busy ? "Asking…" : "Test the writer"}
+            </button>
+          )}
+          {!writer.configured && writer.writer !== "none" && (
+            <span className="text-[12.5px] text-warn">Not reachable from this deployment.</span>
+          )}
+          {result && (
+            <span className={`text-[12.5px] leading-snug ${result.ok ? "text-dim" : "text-lift"}`}>
+              {result.ok
+                ? <>{result.ms ? `Answered in ${(result.ms / 1000).toFixed(1)}s` : ""}{result.move ? `, chose “${result.move}”` : ""}{result.ms ? ": " : ""}<span className="italic">{result.sample}</span></>
+                : result.error}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

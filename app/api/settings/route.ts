@@ -19,6 +19,9 @@ export async function PATCH(req: Request) {
   const changed: string[] = [];
   for (const [k, v] of Object.entries(body)) {
     if (!keys.includes(k)) continue;
+    if (k === "promptWriter" && !["none", "byteplus", "claude"].includes(String(v))) {
+      return NextResponse.json({ error: "Prompt writer must be none, byteplus or claude." }, { status: 400 });
+    }
     await setSetting(k, String(v).slice(0, 400), got.user.id);
     changed.push(k);
   }

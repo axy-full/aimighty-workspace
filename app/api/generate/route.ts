@@ -7,7 +7,8 @@ import {
 import { generateImage } from "@/lib/gemini";
 import { storeImageBytes } from "@/lib/storage";
 import {
-  enhancePrompt, shouldRefine, TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS, hasFreeTier,
+  enhancePrompt, shouldRefine, activeWriter,
+  TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS, hasFreeTier,
 } from "@/lib/enhance";
 import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
@@ -407,8 +408,12 @@ export async function POST(req: Request) {
   const detected = detectSpec(castPrompt);
   const detectedAxes = Object.values(detected).filter(Boolean).length;
   const refineCall = shouldRefine(castPrompt, detectedAxes);
+  const writer = await activeWriter();
   if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
+  } else if (writer.writer === "none") {
+    // Pro: the workspace has said its prompts are not to be rewritten.
+    console.log("generate: skipping refine — writer is Pro");
   } else if (!refineCall.refine) {
     // Already specific enough to film. Rewriting it would cost money and up
     // to a minute of latency to replace the author's restraint with invented
@@ -432,6 +437,7 @@ export async function POST(req: Request) {
       const r = await enhancePrompt({
         prompt: castPrompt, citations,
         model: modelId, durationS: params.duration, task: task.id, style,
+        provider: writer.provider === "none" ? undefined : writer.provider,
       });
       finalPrompt = r.text;
       chosenMove = r.move ?? null;
