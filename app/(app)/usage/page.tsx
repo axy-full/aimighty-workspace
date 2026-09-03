@@ -12,12 +12,17 @@ type Usage = {
   purchasedUsd: number; spentUsd: number; remainingUsd: number;
   totalGenerations: number; succeeded: number; failed: number; pending: number;
   totalTokens: number; avgCostUsd: number;
-  byModel: { model: string; label: string; n: number; spend: number; tokens: number }[];
+  /** The prompt writer's share of spentUsd, and how many prompts it wrote. */
+  promptSpendUsd: number; promptCount: number;
+  byModel: { model: string; label: string; n: number; spend: number; promptSpend: number; tokens: number }[];
   byProject: { name: string; n: number; spend: number }[];
   byPerson: { name: string; n: number; spend: number }[];
-  refines: { model: string; n: number; tokens: number; spend: number; freeLeft: number }[];
+  refines: { model: string; label: string; n: number; inTokens: number; outTokens: number;
+             tokens: number; spend: number; free: boolean; freeLeft: number }[];
   byMonth: { month: string; n: number; spend: number }[];
-  recent: { id: string; label: string; prompt: string; costUsd: number;
+  recent: { id: string; label: string; prompt: string; costUsd: number; renderCostUsd: number;
+            refineCostUsd: number | null; refineModel: string | null; refineLabel: string | null;
+            refineInTokens: number | null; refineOutTokens: number | null;
             totalTokens: number; params: Record<string, unknown>; createdAt: number }[];
 };
 
@@ -89,6 +94,7 @@ export default function UsagePage() {
             <p className="mt-3 text-[16px] text-dim">
               spent all time
               {data.purchasedUsd > 0 && <> · credit {usd(data.purchasedUsd, 2)}</>}
+              {data.promptSpendUsd > 0 && <> · prompts {usd(data.promptSpendUsd, 3)}</>}
             </p>
 
             {days.length > 0 ? (
@@ -188,21 +194,29 @@ export default function UsagePage() {
 
         {data.refines.length > 0 && (
           <>
-            <p className="grouplabel mt-12">Prompt refinement · first 500k tokens per model free</p>
+            <p className="grouplabel mt-12">Prompt writing</p>
             <div className="rows">
               {data.refines.map((r) => (
                 <div key={r.model} className="row">
                   <span className="flex min-w-0 flex-col">
-                    <span className="truncate">{r.model}</span>
+                    <span className="truncate">{r.label}</span>
                     <span className="text-[13px] text-mute">
-                      {r.n} refine{r.n === 1 ? "" : "s"} · {compactTokens(r.tokens)} tokens ·{" "}
-                      {r.freeLeft > 0 ? `${compactTokens(r.freeLeft)} free left` : "free allowance used"}
+                      {r.n} prompt{r.n === 1 ? "" : "s"} · {compactTokens(r.inTokens)} in / {compactTokens(r.outTokens)} out
+                      {r.free && <> · {r.freeLeft > 0 ? `${compactTokens(r.freeLeft)} of the free 500k left` : "free allowance used"}</>}
                     </span>
                   </span>
                   <span className="row-value tabular-nums">{r.spend > 0 ? usd(r.spend, 3) : "Free"}</span>
                 </div>
               ))}
+              <div className="row">
+                <span className="font-medium">All prompt writing</span>
+                <span className="row-value font-semibold tabular-nums !text-bone">{usd(data.promptSpendUsd, 3)}</span>
+              </div>
             </div>
+            <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
+              Every prompt&rsquo;s cost is part of its render&rsquo;s total wherever a total is shown.
+              A prompt written for a render that then failed still counts.
+            </p>
           </>
         )}
 
@@ -220,6 +234,12 @@ export default function UsagePage() {
                     {shortLabel(r.label) === r.label ? r.label : r.label} ·{" "}
                     {[p.resolution, p.ratio, p.duration && `${p.duration}s`].filter(Boolean).join(" · ")} ·{" "}
                     {compactTokens(r.totalTokens)}t · {timeAgo(r.createdAt)}
+                  </span>
+                  <span className="mt-0.5 text-[12.5px] tabular-nums text-mute">
+                    render {usd(r.renderCostUsd)}
+                    {r.refineLabel
+                      ? <> + prompt {r.refineCostUsd ? usd(r.refineCostUsd) : "free"} <span className="text-mute/80">({r.refineLabel})</span></>
+                      : <> · prompt as written</>}
                   </span>
                 </span>
                 <span className="row-value shrink-0 font-medium !text-bone tabular-nums">{usd(r.costUsd)}</span>

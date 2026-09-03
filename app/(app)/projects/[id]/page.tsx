@@ -176,11 +176,21 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
                 <span className="row-value tabular-nums">{t.failed}</span></div>
               <div className="row"><span>Render time</span>
                 <span className="row-value tabular-nums">{hours(t.renderMs)}</span></div>
-              <div className="row"><span>Total cost</span>
-                <span className="row-value tabular-nums">{usd(t.spend, 2)}</span></div>
+              <div className="row"><span>Renders</span>
+                <span className="row-value tabular-nums">{usd(t.spend - t.promptSpend, 2)}</span></div>
+              <div className="row">
+                <span className="flex flex-col">
+                  Prompt writing
+                  <span className="text-[12px] text-mute">
+                    {t.prompts} prompt{t.prompts === 1 ? "" : "s"} finished by the writer
+                  </span>
+                </span>
+                <span className="row-value tabular-nums">{usd(t.promptSpend, 3)}</span></div>
+              <div className="row"><span className="font-medium">Total cost</span>
+                <span className="row-value font-semibold tabular-nums !text-bone">{usd(t.spend, 2)}</span></div>
             </div>
             <p className="mt-4 text-[13px] text-mute">
-              All-in: the render plus its prompt refinement. Binned takes still
+              All-in: the render plus what the prompt writer charged. Binned takes still
               count — money spent is money spent.
               {data.byDay.length > 0 && (
                 <> Last activity {timeAgo(data.byDay[data.byDay.length - 1].day)}.</>

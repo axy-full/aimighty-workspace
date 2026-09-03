@@ -20,7 +20,11 @@ export const maxDuration = 30;
  * so several open tabs collapse into one read.
  */
 
-type Summary = { pending: number; spentUsd: number; purchasedUsd: number; remainingUsd: number };
+type Summary = {
+  pending: number; spentUsd: number; purchasedUsd: number; remainingUsd: number;
+  /** The writer's share of spentUsd. */
+  promptSpendUsd: number;
+};
 
 let cache: { at: number; value: Summary } | null = null;
 const TTL_MS = 20_000;
@@ -37,7 +41,8 @@ export async function GET() {
   const [gen, top] = await Promise.all([
     db().execute(`
       SELECT COALESCE(SUM(status IN ('queued','running')), 0) AS pending,
-             COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)), 0) AS spend
+             COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)), 0) AS spend,
+             COALESCE(SUM(COALESCE(refine_cost_usd,0)), 0) AS prompt_spend
       FROM generations WHERE deleted = 0`),
     db().execute(`SELECT COALESCE(SUM(amount_usd),0) AS total FROM topups`),
   ]);
@@ -50,6 +55,7 @@ export async function GET() {
     spentUsd,
     purchasedUsd,
     remainingUsd: purchasedUsd - spentUsd,
+    promptSpendUsd: Number(g?.prompt_spend ?? 0),
   };
 
   cache = { at: now(), value };

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured } from "@/lib/providers";
 import { MODELS } from "@/lib/models";
 import { requireUser } from "@/lib/auth";
-import { activeWriter } from "@/lib/enhance";
+import { activeWriter, gatewayCredits } from "@/lib/enhance";
 import { invalidateSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,10 @@ export async function GET() {
   // changed the writer must see the change, so this route always re-reads.
   invalidateSettings();
   const writer = await activeWriter();
+  const credits = writer.provider === "gateway" ? await gatewayCredits() : null;
   return NextResponse.json({
+    /* What is left on the gateway, when the writer runs through it. */
+    gatewayCredits: credits,
     /* Who writes the prompts too thin to film — the workspace's choice on
        Settings › Prompt, resolved to what this deployment can reach. */
     refiner: writer,

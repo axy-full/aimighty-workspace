@@ -19,7 +19,11 @@ export type Generation = {
   storedUrl: string | null;
   totalTokens: number | null;
   costUsd: number | null;
+  /** What the prompt writer charged for this render, and who it was. */
   refineCostUsd: number | null;
+  refineModel: string | null;
+  refineInTokens: number | null;
+  refineOutTokens: number | null;
   error: string | null;
   createdBy: string;
   authorName: string | null;
@@ -60,6 +64,9 @@ export function rowToGeneration(r: any): Generation {
     totalTokens: r.total_tokens ?? null,
     costUsd: r.cost_usd ?? null,
     refineCostUsd: r.refine_cost_usd ?? null,
+    refineModel: r.refine_model ?? null,
+    refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
+    refineOutTokens: r.refine_out_tokens == null ? null : Number(r.refine_out_tokens),
     error: r.error ?? null,
     createdBy: r.created_by ?? "",
     authorName: r.author_name ?? null,

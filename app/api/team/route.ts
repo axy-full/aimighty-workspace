@@ -16,8 +16,8 @@ export async function GET() {
     db().execute(`
       SELECT u.id, u.email, u.name, u.role, u.disabled, u.last_seen, u.created_at, u.locked_until,
              (SELECT COUNT(*) FROM generations g WHERE g.created_by = u.id) AS clips,
-             (SELECT COALESCE(SUM(g.cost_usd),0) FROM generations g
-               WHERE g.created_by = u.id AND g.status='succeeded') AS spend
+             (SELECT COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0)
+                FROM generations g WHERE g.created_by = u.id) AS spend
       FROM users u ORDER BY u.created_at ASC`),
     db().execute({
       sql: `SELECT code, email, name, role, created_at, expires_at FROM invites

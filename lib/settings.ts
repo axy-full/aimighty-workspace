@@ -31,7 +31,7 @@ export const DEFAULTS = {
    * Who finishes a prompt too thin to film:
    *   "none"     — Pro: nothing is rewritten; the words go as written
    *   "byteplus" — Seedream: ByteDance's own text model on the ModelArk key
-   *   "claude"   — Claude Sonnet 5, through Vercel AI Gateway (or a direct key)
+   *   "claude"   — Claude Opus 5, through Vercel AI Gateway (or a direct key)
    * The library's camera modules apply in every mode; this is only the model.
    */
   promptWriter: "claude",

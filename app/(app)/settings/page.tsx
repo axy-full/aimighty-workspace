@@ -14,7 +14,8 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import ThemeRow from "@/components/ThemeRow";
 
 type Me = { name: string; email: string; role: string };
-type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number };
+type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; promptSpendUsd?: number };
+type Credits = { balanceUsd: number; usedUsd: number } | null;
 type EngineInfo = {
   id: string; label: string; envKey: string; docs: string; configured: boolean;
   models: { id: string; label: string; kind: "video" | "image" }[];
@@ -31,7 +32,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { data: me } = useApi<Me>("/api/me");
   const { data: usage } = useApi<Usage>("/api/usage/summary", 30000);
-  const { data: engineData, refresh: refreshEngines } = useApi<{ engines: EngineInfo[]; refiner?: Refiner }>("/api/engines");
+  const { data: engineData, refresh: refreshEngines } = useApi<{ engines: EngineInfo[]; refiner?: Refiner; gatewayCredits?: Credits }>("/api/engines");
   const [busy, setBusy] = useState(false);
   const isAdmin = me?.role === "admin";
 
@@ -126,7 +127,7 @@ export default function SettingsPage() {
         <p className="grouplabel mt-10">Prompt</p>
         <div className="rows">
           {engineData?.refiner
-            ? <WriterRow writer={engineData.refiner} isAdmin={isAdmin} onChanged={refreshEngines} />
+            ? <WriterRow writer={engineData.refiner} credits={engineData.gatewayCredits ?? null} isAdmin={isAdmin} onChanged={refreshEngines} />
             : <div className="row"><span className="text-[14px] text-mute">Reading the workspace&rsquo;s choice…</span></div>}
         </div>
         <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
@@ -146,7 +147,14 @@ export default function SettingsPage() {
             <span className="row-value">{usage ? usd(usage.purchasedUsd, 2) : "—"}</span>
           </div>
           <div className="row">
-            Remaining
+            <span className="flex flex-col">
+              Remaining
+              {usage && (usage.promptSpendUsd ?? 0) > 0 && (
+                <span className="text-[12px] text-mute">
+                  Of the spend, {usd(usage.promptSpendUsd ?? 0, 3)} went to prompt writing.
+                </span>
+              )}
+            </span>
             <span className={`row-value font-medium ${usage && usage.remainingUsd < 0 ? "!text-lift" : "!text-bone"}`}>
               {usage ? usd(usage.remainingUsd, 2) : "—"}
             </span>
@@ -226,10 +234,10 @@ export default function SettingsPage() {
 const WRITERS: { id: Refiner["writer"]; label: string; blurb: string }[] = [
   { id: "none", label: "Pro", blurb: "No rewriting. Your words reach the engine exactly as written." },
   { id: "byteplus", label: "Seedream", blurb: "ByteDance's own text model finishes thin ideas, on the ModelArk key." },
-  { id: "claude", label: "Claude Sonnet 5", blurb: "Anthropic's Sonnet 5 finishes thin ideas, through Vercel AI Gateway." },
+  { id: "claude", label: "Claude Opus 5", blurb: "Anthropic's Opus 5 finishes thin ideas, through Vercel AI Gateway." },
 ];
 
-function WriterRow({ writer, isAdmin, onChanged }: { writer: Refiner; isAdmin: boolean; onChanged: () => void }) {
+function WriterRow({ writer, credits, isAdmin, onChanged }: { writer: Refiner; credits: Credits; isAdmin: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<RefinerTest | null>(null);
@@ -268,6 +276,9 @@ function WriterRow({ writer, isAdmin, onChanged }: { writer: Refiner; isAdmin: b
           Prompt writer
           <span className="mt-0.5 block text-[12px] leading-snug text-mute">
             {current.blurb}{writer.writer !== "none" ? ` Currently ${writer.label} · ${writer.via}.` : ""}
+            {credits && writer.writer === "claude" && (
+              <> Gateway credit: <span className="text-dim">{usd(credits.balanceUsd, 2)}</span> left, {usd(credits.usedUsd, 3)} used.</>
+            )}
           </span>
         </span>
         <span className="inline-flex rounded-[10px] bg-chip p-[3px]" role="radiogroup" aria-label="Prompt writer">

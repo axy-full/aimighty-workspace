@@ -12,8 +12,9 @@ import type { Gen } from "./GenCard";
 import Review from "./Review";
 import { ParticlSpinner } from "./ParticlMark";
 import { appConfirm } from "./dialog";
-import { usd, timeAgo, downloadHref } from "@/lib/format";
+import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
+import { prettyModel } from "@/lib/enhance";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy } from "./Icons";
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
@@ -152,11 +153,27 @@ export default function Theatre({
             {p.duration != null && <span>{p.duration}s</span>}
             {p.seed != null && p.seed !== "" && <span>seed {p.seed}</span>}
             {gen.costUsd != null && (
-              <span className="font-semibold text-bone" title={gen.refineCostUsd ? "includes prompt refinement" : undefined}>
+              <span className="font-semibold text-bone" title="Render plus prompt">
                 {usd(gen.costUsd + (gen.refineCostUsd ?? 0))}
               </span>
             )}
           </div>
+
+          {/* The ledger for this one render: what the engine charged, what
+              the writer charged, and the sum that appears everywhere else. */}
+          {gen.costUsd != null && (
+            <div className="theatre-ledger">
+              <span><span className="text-mute">Render</span> {usd(gen.costUsd)}</span>
+              <span>
+                <span className="text-mute">Prompt</span>{" "}
+                {gen.refineCostUsd != null && gen.refineModel
+                  ? <>{gen.refineCostUsd > 0 ? usd(gen.refineCostUsd) : "free"}<span className="text-mute"> · {prettyModel(gen.refineModel)}
+                      {gen.refineInTokens != null ? ` · ${compactTokens(gen.refineInTokens)} in / ${compactTokens(gen.refineOutTokens ?? 0)} out` : ""}</span></>
+                  : <span className="text-mute">as written</span>}
+              </span>
+              <span className="ml-auto font-semibold text-bone">{usd(gen.costUsd + (gen.refineCostUsd ?? 0))}</span>
+            </div>
+          )}
 
           <div className="theatre-actions">
             <button type="button" onClick={copy} className="chip !py-1.5 !text-[13px]">

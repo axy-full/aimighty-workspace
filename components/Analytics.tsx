@@ -11,7 +11,8 @@ export type Analytics = {
   scope: { projectId: string; days: number };
   totals: {
     generations: number; succeeded: number; failed: number; pending: number;
-    binned: number; spend: number; tokens: number; renderMs: number;
+    binned: number; spend: number; promptSpend: number; prompts: number;
+    tokens: number; renderMs: number;
     people: number; shots: number; successRate: number;
   };
   credit: { toppedUp: number; spentAllTime: number };

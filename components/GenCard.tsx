@@ -22,7 +22,11 @@ export type Gen = {
   sourceUrl: string | null;
   totalTokens: number | null;
   costUsd: number | null;
+  /** The prompt writer's share, and who wrote it. */
   refineCostUsd?: number | null;
+  refineModel?: string | null;
+  refineInTokens?: number | null;
+  refineOutTokens?: number | null;
   error: string | null;
   authorName?: string | null;
   /** Shot filing, as returned by /api/jobs. */
@@ -138,7 +142,10 @@ export default function GenCard({
         <span>{shortLabel(gen.model)}</span>
         {p.resolution && <span>· {String(p.resolution).toUpperCase()}</span>}
         {gen.costUsd != null && (
-          <span className="font-medium text-dim" title={gen.refineCostUsd ? "includes prompt refinement" : undefined}>
+          <span className="font-medium text-dim"
+            title={gen.refineModel
+              ? `Render ${usd(gen.costUsd)} + prompt ${gen.refineCostUsd ? usd(gen.refineCostUsd) : "free"}`
+              : `Render ${usd(gen.costUsd)} · prompt as written`}>
             · {usd(gen.costUsd + (gen.refineCostUsd ?? 0), 2)}
           </span>
         )}

@@ -51,6 +51,8 @@ export async function GET(req: Request) {
                SUM(g.status NOT IN ('succeeded','failed','cancelled')) AS pending,
                SUM(g.deleted=1)          AS binned,
                ${SPEND} AS spend,
+               COALESCE(SUM(COALESCE(g.refine_cost_usd,0)),0) AS prompt_spend,
+               SUM(g.refine_model IS NOT NULL) AS prompts,
                COALESCE(SUM(g.total_tokens),0) AS tokens,
                COALESCE(SUM(g.duration_ms),0)  AS render_ms,
                COUNT(DISTINCT g.created_by)    AS people,
@@ -164,6 +166,9 @@ export async function GET(req: Request) {
       pending: num(t?.pending),
       binned: num(t?.binned),
       spend: num(t?.spend),
+      /** The prompt writer's share of `spend`, and how many prompts it wrote. */
+      promptSpend: num(t?.prompt_spend),
+      prompts: num(t?.prompts),
       tokens: num(t?.tokens),
       /** Machine time, not people time — the honest version of "hours on this project". */
       renderMs: num(t?.render_ms),

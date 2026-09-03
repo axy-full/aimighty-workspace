@@ -85,15 +85,41 @@ export function gatewayReachable(): boolean {
   );
 }
 
-/** Sonnet 5 by default — fast, and more than enough judgement for a rewrite. */
-export const CLAUDE_MODEL = () => process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-sonnet-5";
-/** Through the gateway, in order: Sonnet 5, then Haiku 4.5 if it cannot answer. */
+/** Opus 5 by default — this is the judgement step, and the studio asked for the best. */
+export const CLAUDE_MODEL = () => process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
+/** Through the gateway, in order: Opus 5, then Sonnet 5 if it cannot answer. */
 export const GATEWAY_MODELS = (): string[] =>
-  (process.env.GATEWAY_PROMPT_MODELS ?? "anthropic/claude-sonnet-5,anthropic/claude-haiku-4.5")
+  (process.env.GATEWAY_PROMPT_MODELS ?? "anthropic/claude-opus-5,anthropic/claude-sonnet-5")
     .split(",").map((s) => s.trim()).filter(Boolean);
-export const GATEWAY_URL = () =>
-  (process.env.AI_GATEWAY_BASE_URL?.replace(/\/$/, "") ?? "https://ai-gateway.vercel.sh/v1") +
-  "/chat/completions";
+export const GATEWAY_BASE = () =>
+  process.env.AI_GATEWAY_BASE_URL?.replace(/\/$/, "") ?? "https://ai-gateway.vercel.sh/v1";
+export const GATEWAY_URL = () => `${GATEWAY_BASE()}/chat/completions`;
+
+/**
+ * The gateway's credit balance, in dollars — what is left of what was
+ * topped up, and what has been used. Null when this deployment cannot
+ * reach the gateway or the call fails; never a reason to block anything.
+ */
+export async function gatewayCredits(): Promise<{ balanceUsd: number; usedUsd: number } | null> {
+  if (!gatewayReachable()) return null;
+  try {
+    const auth = await gatewayAuth();
+    const res = await fetch(`${GATEWAY_BASE()}/credits`, {
+      headers: auth, signal: AbortSignal.timeout(6_000), cache: "no-store",
+    });
+    if (!res.ok) {
+      console.warn(`gateway credits: ${res.status} ${(await res.text()).slice(0, 160)}`);
+      return null;
+    }
+    const j = await res.json() as { balance?: string | number; total_used?: string | number };
+    const balance = Number(j.balance), used = Number(j.total_used);
+    if (!Number.isFinite(balance)) return null;
+    return { balanceUsd: balance, usedUsd: Number.isFinite(used) ? used : 0 };
+  } catch (e) {
+    console.warn(`gateway credits: ${(e as Error).message}`);
+    return null;
+  }
+}
 export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
 
 /** Each ByteDance text model's first 500k tokens are free on this account;
@@ -109,7 +135,7 @@ export const hasFreeTier = (model: string) => !model.startsWith("claude-") && !m
  *   Pro      — nothing is rewritten. The library still supplies the camera
  *              module; only the model step is gone.
  *   Seedream — ByteDance's text model on the ModelArk key.
- *   Claude   — Sonnet 5: straight from Anthropic when a console key exists,
+ *   Claude   — Opus 5: straight from Anthropic when a console key exists,
  *              otherwise through Vercel AI Gateway on the deployment's own
  *              identity.
  */
@@ -145,7 +171,7 @@ export async function activeWriter(): Promise<ActiveWriter> {
     configured: gatewayReachable(),
   };
 }
-function prettyModel(id: string): string {
+export function prettyModel(id: string): string {
   const bare = id.split("/").pop() ?? id;
   if (/claude-opus-5/.test(bare)) return "Claude Opus 5";
   if (/claude-sonnet-5/.test(bare)) return "Claude Sonnet 5";
@@ -424,7 +450,7 @@ async function refineWithClaude(
  * identity of this deployment, which @vercel/oidc reads from the request
  * (and, in local development, from the token `vercel env pull` writes).
  */
-async function gatewayAuth(): Promise<Record<string, string>> {
+export async function gatewayAuth(): Promise<Record<string, string>> {
   const key = process.env.AI_GATEWAY_API_KEY;
   if (key) return { Authorization: `Bearer ${key}` };
   let token: string | null = process.env.VERCEL_OIDC_TOKEN ?? null;
