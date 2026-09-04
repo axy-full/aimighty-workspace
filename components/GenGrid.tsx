@@ -84,10 +84,19 @@ export function LibrarySections({
   );
 }
 
-function Section({ title, items, projects, onChanged }: {
+/**
+ * One kind of render under its own heading, with its count and what it cost.
+ * Exported because the project's asset view wants exactly this and a second
+ * splitter would be the third in the codebase — Feed's filter chips and
+ * LibrarySections are already two.
+ */
+export function Section({ title, items, projects, onChanged, empty }: {
   title: string; items: Gen[];
   projects?: { id: string; name: string }[];
   onChanged?: () => void;
+  /** What to say when this kind has nothing. Without it GenGrid says
+   *  "No clips.", which is wrong under an Images or Audio heading. */
+  empty?: string;
 }) {
   const spend = items.reduce(
     (a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0
@@ -100,7 +109,7 @@ function Section({ title, items, projects, onChanged }: {
           {items.length} · {usd(spend, 2)}
         </span>
       </div>
-      <GenGrid gens={items} projects={projects} onChanged={onChanged} />
+      <GenGrid gens={items} projects={projects} onChanged={onChanged} empty={empty} />
     </section>
   );
 }

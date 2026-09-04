@@ -29,6 +29,7 @@ export async function GET(req: Request) {
     status: url.searchParams.get("status") ?? undefined,
     kind: url.searchParams.get("kind") ?? undefined,
     identityId: url.searchParams.get("identityId") ?? undefined,
+    castName: url.searchParams.get("castName") ?? undefined,
     search,
     before,
     limit,

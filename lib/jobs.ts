@@ -124,6 +124,8 @@ export async function listGenerations(opts: {
   kind?: string;
   /** Only renders made with this identity. */
   identityId?: string | null;
+  /** Only renders that cited this cast member by name. */
+  castName?: string | null;
   /** Cursor: return only rows OLDER than this created_at (keyset pagination). */
   before?: number | null;
 } = {}): Promise<Generation[]> {
@@ -157,6 +159,15 @@ export async function listGenerations(opts: {
   if (opts.identityId) {
     where.push("json_extract(g.params, '$.identity.id') = ?");
     args.push(opts.identityId);
+  }
+  /* params.cast is the array of names a prompt actually cited, written at
+     render time. COALESCE keeps json_each from being handed a null path on
+     the rows that cited nobody, which is most of them. */
+  if (opts.castName) {
+    where.push(
+      "EXISTS (SELECT 1 FROM json_each(COALESCE(json_extract(g.params,'$.cast'), '[]')) WHERE value = ?)"
+    );
+    args.push(opts.castName);
   }
   if (opts.before) {
     where.push("g.created_at < ?");

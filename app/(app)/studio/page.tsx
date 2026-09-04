@@ -25,6 +25,7 @@ import { IconPlus, IconClose, IconSparkle } from "@/components/Icons";
 import ParticlLockup, { Empty, ParticlSpinner } from "@/components/ParticlMark";
 import LazyMedia from "@/components/LazyMedia";
 import IdentitySheet, { type IdentityView, type IdentityTerms } from "@/components/IdentitySheet";
+import ElementSheet from "@/components/ElementSheet";
 import CreditStrip from "@/components/CreditStrip";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo } from "@/lib/format";
@@ -63,6 +64,7 @@ export default function StudioPage() {
   const [busy, setBusy] = useState(false);
   const [pendingKind, setPendingKind] = useState<CastMember["kind"]>("character");
   const [openId, setOpenId] = useState<string | "new" | null>(null);
+  const [openElement, setOpenElement] = useState<CastMember | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
   const cast = castData?.cast ?? [];
@@ -252,10 +254,13 @@ export default function StudioPage() {
           </div>
         </section>
 
-        {/* ── Cast ─────────────────────────────────────────────── */}
+        {/* ── Elements ─────────────────────────────────────────── */}
         <section className="card mt-6 px-5 py-5">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="grouplabel !pb-0">Cast</p>
+            <p className="grouplabel !pb-0">Elements</p>
+            <span className="text-[13px] text-mute">
+              A face, a place, a prop or a look, defined once. Open one to see everything made with it.
+            </span>
             <span className="ml-auto flex flex-wrap gap-1.5">
               {KINDS.map((k) => (
                 <button key={k.id} title={k.blurb}
@@ -270,29 +275,34 @@ export default function StudioPage() {
             onChange={(e) => { if (e.target.files) addFrom(e.target.files); e.target.value = ""; }} />
 
           {cast.length === 0 ? (
-            <Empty title="Nobody cast yet"
-              line="Add a character, a place or a prop with a still and a line of description, then write @TheirName in any prompt." />
+            <Empty title="No elements yet"
+              line="Add a character, a place, a prop or a look with a still and a line of description, then write @TheirName in any prompt." />
           ) : (
             <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(190px,1fr))]">
               {cast.map((m) => (
                 <div key={m.id} className="group relative overflow-hidden rounded-[var(--r)] bg-panel2">
-                  <div className="aspect-[4/3] w-full bg-thumb">
-                    {m.uploadId && (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img src={`/api/uploads/${m.uploadId}`} alt={m.name}
-                        className="h-full w-full object-cover" />
-                    )}
-                  </div>
-                  <div className="px-3 py-2">
-                    <p className="flex items-baseline gap-2">
-                      <span className="truncate font-mono text-[13px] font-medium text-ink">@{m.name}</span>
-                      <span className="text-[11px] uppercase tracking-wide text-mute">
-                        {m.kind === "style" ? "look" : m.kind}
+                  <button type="button" onClick={() => setOpenElement(m)}
+                    className="block w-full text-left" title={`Open @${m.name}`}>
+                    <span className="block aspect-[4/3] w-full bg-thumb">
+                      {m.uploadId && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={`/api/uploads/${m.uploadId}`} alt={m.name}
+                          className="h-full w-full object-cover" loading="lazy" />
+                      )}
+                    </span>
+                    <span className="block px-3 pt-2">
+                      <span className="flex items-baseline gap-2">
+                        <span className="truncate font-mono text-[13px] font-medium text-ink">@{m.name}</span>
+                        <span className="text-[11px] uppercase tracking-wide text-mute">
+                          {m.kind === "style" ? "look" : m.kind}
+                        </span>
                       </span>
-                    </p>
-                    <p className="mt-0.5 line-clamp-2 text-[12px] text-mute">{m.description || "—"}</p>
+                      <span className="mt-0.5 line-clamp-2 block text-[12px] text-mute">{m.description || "—"}</span>
+                    </span>
+                  </button>
+                  <div className="px-3 pb-2">
                     <button onClick={() => setProse((p) => `${p}${p && !p.endsWith(" ") ? " " : ""}@${m.name} `)}
-                      className="mt-1.5 text-[12px] text-blue">Cite</button>
+                      className="mt-1 text-[12px] text-blue">Cite</button>
                   </div>
                   <button onClick={() => removeCast(m)} aria-label={`Remove ${m.name}`}
                     className="reveal absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white">
@@ -360,6 +370,13 @@ export default function StudioPage() {
         </section>
       </div>
 
+      {openElement && (
+        <ElementSheet
+          member={openElement}
+          onClose={() => setOpenElement(null)}
+          onChanged={refreshCast}
+        />
+      )}
       {openId && (
         <IdentitySheet
           key={openId}

@@ -28,7 +28,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
     args: [
       body.name == null ? null : String(body.name).trim(),
       body.description == null ? null : String(body.description).slice(0, 600),
-      ["character", "location", "style"].includes(body.kind) ? body.kind : null,
+      // "prop" was added to the cast later and this list was not updated,
+      // so a member could never be re-kinded to one.
+      ["character", "location", "prop", "style"].includes(body.kind) ? body.kind : null,
       body.uploadId == null ? null : String(body.uploadId),
       id,
     ],

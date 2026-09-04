@@ -42,8 +42,12 @@ export default function ProjectsPage() {
   const unfiled = data?.generations.filter((g) => !g.projectId).length ?? 0;
 
   function open(id: string) {
+    // The selection still moves, so the composers land in this project when
+    // you go on to make something. But the card itself opens the project's
+    // own assets rather than the video composer, which showed one kind of
+    // four and made stills, audio and cast feel like they lived elsewhere.
     setSelection(id);
-    router.push("/");
+    router.push(`/projects/${id}/assets`);
   }
 
   async function remove(id: string, name: string, count: number) {
