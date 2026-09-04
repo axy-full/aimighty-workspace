@@ -83,6 +83,60 @@ export const TASKS: TaskDef[] = [
   },
 ];
 
+/**
+ * The edits worth naming.
+ *
+ * This is the part the composer could not do for you. ModelArk reads the
+ * INTENT off the words — "replace", "remove", "change the" — and a prompt
+ * that describes the same change in different words is a different request,
+ * or no request at all. Someone typing freely into an Edit box has no way to
+ * know that, and the failure is silent: the render comes back untouched, or
+ * generated from scratch, and looks like the model simply ignored them.
+ *
+ * So the operations are offered as a list, each writing a skeleton that
+ * already carries a trigger the vendor recognises, with the caret dropped
+ * where the specifics go. `{}` marks that spot.
+ *
+ * Every template is checked against its task's triggers by a test below, so
+ * one cannot be added that quietly fails to register as an edit.
+ */
+export type EditMove = {
+  id: string;
+  label: string;
+  /** What it does, in the studio's words. */
+  blurb: string;
+  /** `{}` is where the caret lands. */
+  template: string;
+};
+
+export const EDIT_MOVES: EditMove[] = [
+  { id: "replace", label: "Replace something", blurb: "Swap one thing in the shot for another.",
+    template: "Replace the {} with " },
+  { id: "background", label: "Change the background", blurb: "Keep the subject, change what is behind them.",
+    template: "Change the background to {}" },
+  { id: "add", label: "Add something", blurb: "Put a new thing into the scene.",
+    template: "Add {} to the scene" },
+  { id: "remove", label: "Remove something", blurb: "Take a thing out and close the gap.",
+    template: "Remove the {} from the shot" },
+  { id: "wardrobe", label: "Change wardrobe", blurb: "Same person, different clothes.",
+    template: "Change the {}'s outfit to " },
+  { id: "look", label: "Change the look", blurb: "Restyle the whole shot without changing what happens.",
+    template: "Change the grade and lighting to {}" },
+  { id: "audio", label: "Change the audio", blurb: "Keep the picture, replace what is heard.",
+    template: "Replace the audio with {}" },
+];
+
+export const EXTEND_MOVES: EditMove[] = [
+  { id: "forward", label: "Carry on", blurb: "Continue past the final frame.",
+    template: "Continue from the final frame: {}" },
+  { id: "backward", label: "Go back", blurb: "Show what happened before the first frame.",
+    template: "Extend backward: {}" },
+];
+
+export function movesFor(task: TaskId): EditMove[] {
+  return task === "edit" ? EDIT_MOVES : task === "extend" ? EXTEND_MOVES : [];
+}
+
 export function getTask(id: string): TaskDef {
   return TASKS.find((t) => t.id === id) ?? TASKS[0];
 }

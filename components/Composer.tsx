@@ -38,6 +38,7 @@ import { usd, compactTokens } from "@/lib/format";
 import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef } from "@/lib/models";
 import { IconArrowUp, IconCaret, IconAttach, IconSliders, IconClose } from "./Icons";
 import LazyMedia from "./LazyMedia";
+import { movesFor, type EditMove } from "@/lib/tasks";
 import type { Params } from "./Workspace";
 
 type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost";
@@ -81,6 +82,21 @@ export default function Composer(p: ComposerProps) {
   const overlayEl = useRef<HTMLDivElement>(null);
   const costRef = useRef<HTMLSpanElement>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+
+  /** Write a recognised phrasing and put the caret where the words go. */
+  const applyMove = useCallback((m: EditMove) => {
+    const at = m.template.indexOf("{}");
+    const text = m.template.replace("{}", "");
+    setPrompt(text);
+    // After the value has landed, or the selection would be clobbered by it.
+    requestAnimationFrame(() => {
+      const el = promptRef.current;
+      if (!el) return;
+      el.focus();
+      const pos = at >= 0 ? at : text.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }, [setPrompt, promptRef]);
   useDismiss(costRef, menu === "cost", closeMenu);
   const isImage = model.kind === "image";
 
@@ -132,16 +148,32 @@ export default function Composer(p: ComposerProps) {
       }}
     >
       {taskOn && (
-        <div className="island-task">
-          <span className="font-medium text-blue">{taskOn.id === "edit" ? "Editing" : "Continuing"}</span>
-          <span className="truncate text-dim">
-            {taskOn.gen.shotCode ? `${taskOn.gen.shotCode} v${taskOn.gen.version}` : "this render"}
-          </span>
-          <span className="text-[12px] text-mute">
-            {taskOn.id === "edit" ? "aspect and length follow the source" : "aspect follows the source"}
-          </span>
-          <button type="button" onClick={cancelTask} className="ml-auto text-[12px] text-lift">Cancel</button>
-        </div>
+        <>
+          <div className="island-task">
+            <span className="font-medium text-blue">{taskOn.id === "edit" ? "Editing" : "Continuing"}</span>
+            <span className="truncate text-dim">
+              {taskOn.gen.shotCode ? `${taskOn.gen.shotCode} v${taskOn.gen.version}` : "this render"}
+            </span>
+            <span className="text-[12px] text-mute">
+              {taskOn.id === "edit" ? "aspect and length follow the source" : "aspect follows the source"}
+            </span>
+            <button type="button" onClick={cancelTask} className="ml-auto text-[12px] text-lift">Cancel</button>
+          </div>
+
+          {/* The engine reads the INTENT off the words, so a change described
+              in the wrong ones is a different request or no request at all.
+              These write a phrasing it recognises and leave the caret where
+              the specifics go. */}
+          <div className="mx-1 mb-1.5 flex flex-wrap items-center gap-1.5">
+            {movesFor(taskOn.id).map((m) => (
+              <button key={m.id} type="button" title={m.blurb}
+                onClick={() => applyMove(m)}
+                className="chip !py-1 !text-[12.5px]">
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {problem && <p className="island-problem">{problem}</p>}
