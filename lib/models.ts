@@ -95,6 +95,14 @@ export type ModelDef = {
   kind: "video" | "image";
   /** Not offered in the composer's model menu — reached from its own screen. */
   hidden?: boolean;
+  /** Which tasks this engine can be asked for. Absent means generate only.
+   *  Editing and extension are Seedance 2.5 features: 2.0's own ceilings
+   *  (three reference videos, fifteen seconds combined) show it was never
+   *  meant for them, and lib/tasks.ts is transcribed wholly from the 2.5
+   *  guide. Declaring it here keeps the model id honest — an id is what is
+   *  SENT to the vendor, so a synthetic "…:edit" id would be sent verbatim
+   *  and rejected. */
+  supportsTasks?: ("generate" | "edit" | "extend")[];
   /** The model's id on Vercel AI Gateway, when it is also served there. */
   gatewayId?: string;
   /** Still engines bill per image by size (USD), plus a little per reference in. */
@@ -119,6 +127,7 @@ export const MODELS: ModelDef[] = [
   {
     id: "dreamina-seedance-2-5-260628",
     label: "Seedance 2.5",
+    supportsTasks: ["generate", "edit", "extend"],
     short: "SD 2.5",
     family: "seedance-2",
     provider: "byteplus",

@@ -160,3 +160,36 @@ export function sourceAdvice(task: TaskDef, sourceSeconds: number | null): strin
   }
   return null;
 }
+
+/**
+ * Why this clip cannot be the source, if it cannot.
+ *
+ * The limits are the vendor's, and two of them are surprising enough to be
+ * worth stopping a person before they spend rather than after:
+ *
+ *   • The source must be 480p or 720p. A 1080p clip is a legal OUTPUT and an
+ *     illegal INPUT, so the studio's best-looking renders are exactly the
+ *     ones that cannot be edited. Nothing in the interface said so.
+ *   • An edit source must be at least four seconds, where every other task
+ *     accepts two.
+ *
+ * Returns null when the clip is usable.
+ */
+export function sourceProblem(
+  task: TaskDef, source: { resolution?: string; duration?: number } | null
+): string | null {
+  if (!task.locked || !source) return null;
+  const res = String(source.resolution ?? "").toLowerCase();
+  if (res && res !== "480p" && res !== "720p") {
+    return `ModelArk only accepts 480p or 720p as an input video, and this one is ${res.toUpperCase()}. ` +
+           `Render it again at 720p to edit it — 1080p is fine as an output, just not as a source.`;
+  }
+  const secs = typeof source.duration === "number" ? source.duration : null;
+  if (secs != null && secs < 4) {
+    return `An edit source has to be at least 4 seconds; this one is ${secs}s.`;
+  }
+  if (secs != null && secs > 30) {
+    return `An edit source has to be 30 seconds or less; this one is ${secs}s.`;
+  }
+  return null;
+}

@@ -15,6 +15,8 @@ import type { Gen } from "./GenCard";
 import Feed, { type FeedFilter } from "./Feed";
 import CreditStrip from "./CreditStrip";
 import Boundary from "./Boundary";
+import SourcePicker from "./SourcePicker";
+import { getTask, sourceProblem } from "@/lib/tasks";
 import Composer, { type Engine, type WriterInfo } from "./Composer";
 import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
@@ -55,7 +57,11 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const [shotId, setShotId] = useState<string>("");
   /** Editing or extending an existing render, rather than making a new one.
    *  Both are LOCKED tasks: the source decides the output's shape. */
-  const [taskOn, setTaskOn] = useState<{ id: "edit" | "extend"; gen: Gen } | null>(null);
+  /* A locked task can now be chosen BEFORE its source, so the clip is
+     nullable: picking "Seedance 2.5 Edit" puts the composer in edit mode and
+     then asks which clip. Both call sites in Composer must handle the gap. */
+  const [taskOn, setTaskOn] = useState<{ id: "edit" | "extend"; gen: Gen | null } | null>(null);
+  const [pickingSource, setPickingSource] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
@@ -221,7 +227,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
 
   const modelDef = getModel(params.modelId);
   const isImage = modelDef.kind === "image";
-  const refProblem = referenceProblem(refs, modelDef, prompt);
+  // The locked task's source is a reference video the strip cannot see.
+  const refProblem = referenceProblem(refs, modelDef, prompt, taskOn?.gen ? 1 : 0);
   const hasVideoInput = refs.some((r) => r.kind === "video");
   const inputSeconds = refs
     .filter((r) => r.kind === "video")
@@ -275,7 +282,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           seed: params.seed || null,
           projectId: bin !== "all" && bin !== "unfiled" ? bin : null,
           task: taskOn?.id ?? "generate",
-          sourceGenId: taskOn?.gen.id ?? null,
+          sourceGenId: taskOn?.gen?.id ?? null,
           shotId: shotId || null,
           shotSpec: spec,
           references: [
@@ -320,6 +327,22 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     setSelected(null);
   }
 
+  /**
+   * Choose an engine and what to do with it, in one act.
+   *
+   * The model menu is a menu of MODES rather than of engines, because that
+   * is how the work begins — you know you are editing before you know which
+   * clip. A locked mode leaves the source empty and the banner asks for it.
+   */
+  function pickMode(modelId: string, task: "generate" | "edit" | "extend") {
+    switchModel(modelId);
+    if (task === "generate") { setTaskOn(null); return; }
+    setTaskOn((prev) => ({ id: task, gen: prev?.gen ?? null }));
+    setPrompt((v) => v.trim() ? v : (task === "edit" ? "Replace " : "Continue from the final frame: "));
+    requestAnimationFrame(() => promptRef.current?.focus());
+  }
+
+  /** From the theatre: the same mode, with the clip already known. */
   function editExtend(id: "edit" | "extend", gen: Gen) {
     if (isImage) switchModel(DEFAULT_MODEL_ID);
     setTaskOn({ id, gen });
@@ -330,6 +353,12 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
 
   const scopeName = bin === "all" ? "All projects" : bin === "unfiled" ? "Unfiled" : current?.name ?? "";
   const setupCount = specCount(spec) + (shotId ? 1 : 0);
+
+  /* A locked mode is not renderable until it has a clip the vendor accepts.
+     Checked here rather than at submit so the button says why. */
+  const sourceIssue = !taskOn ? null
+    : !taskOn.gen ? `Choose the clip you want to ${taskOn.id === "edit" ? "edit" : "continue"}.`
+    : sourceProblem(getTask(taskOn.id), taskOn.gen.params as { resolution?: string; duration?: number });
 
   return (
     <div className={`generate ${setupOpen ? "" : "generate-solo"}`}>
@@ -350,16 +379,18 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           prompt={prompt}
           setPrompt={(v) => { setPrompt(v); saveDraft(kind, v); if (err) setErr(null); }}
           promptRef={promptRef}
-          params={params} patch={patch} switchModel={switchModel}
+          params={params} patch={patch}
           model={modelDef} engines={engines} writer={writer}
           refs={refs} setRefs={setRefs} picker={picker} cite={cite}
           taskOn={taskOn} cancelTask={() => setTaskOn(null)}
-          problem={refProblem ?? err} blocked={Boolean(refProblem)}
+          problem={refProblem ?? sourceIssue ?? err} blocked={Boolean(refProblem || sourceIssue)}
           est={est} estTokens={estTokens} dims={dims}
           inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
           busy={busy} onRender={render}
           setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
           kind={kind}
+          pickMode={pickMode}
+          onPickSource={() => setPickingSource(true)}
           ownRefs={ownRefs}
           dropOwnRef={(id) => setOwnRefs((prev) => prev.filter((g) => g.id !== id))}
         />
@@ -374,7 +405,15 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       </aside>
 
       <Boundary what="This render">
-        <Theatre
+        {pickingSource && taskOn && (
+        <SourcePicker
+          task={taskOn.id}
+          onPick={(gen) => setTaskOn((prev) => (prev ? { ...prev, gen } : { id: "edit", gen }))}
+          onClose={() => setPickingSource(false)}
+        />
+      )}
+
+      <Theatre
           gens={visible} activeId={activeId}
           onClose={() => setSelected(null)} onSelect={setSelected}
           onChanged={afterChange} onUse={useGen} onUseAsRef={useAsRef} onEditExtend={editExtend}

@@ -35,7 +35,11 @@ const kb = (n: number) =>
  * before a doomed submit. The server still validates — this is the UI's copy.
  */
 export function referenceProblem(
-  refs: RefItem[], model: ModelDef, prompt = ""
+  refs: RefItem[], model: ModelDef, prompt = "",
+  /** Videos the request carries that are NOT in the strip. A locked task's
+   *  source clip is one, and it is the vendor's @Video 1 — without counting
+   *  it, writing ByteDance's own documented phrasing blocks the button. */
+  sourceVideos = 0
 ): string | null {
   // Still engines (Nano Banana Pro): stills in, one still out. No videos,
   // no first/last-frame mode — every image is simply a reference.
@@ -43,13 +47,13 @@ export function referenceProblem(
     const vids = refs.filter((r) => r.kind === "video");
     if (vids.length) return `${model.label} takes image references only — remove the video.`;
     const imgs = refs.filter((r) => r.kind === "image");
-    for (const m of prompt.matchAll(/@Image(\d+)/gi)) {
+    for (const m of prompt.matchAll(/@Image\s?(\d+)/gi)) {
       const n = Number(m[1]);
       if (n < 1 || n > imgs.length) {
         return `The prompt cites @Image${m[1]} but only ${imgs.length} reference image${imgs.length === 1 ? " is" : "s are"} attached.`;
       }
     }
-    if (/@Video\d+/i.test(prompt)) {
+    if (/@Video\s?\d+/i.test(prompt)) {
       return `${model.label} has no video references — remove the @Video citation.`;
     }
     if (imgs.length > model.maxReferenceImages) {
@@ -60,19 +64,22 @@ export function referenceProblem(
 
   const images = refs.filter((r) => r.kind === "image" && r.role === "reference_image");
   const videos = refs.filter((r) => r.kind === "video");
+  // A locked task's source clip is the vendor's @Video 1 and is not in the
+  // strip, so without counting it their own documented phrasing is blocked.
+  const videoCount = videos.length + sourceVideos;
 
   // A citation outliving its media would spend real money resolving to the
   // wrong reference or to nothing.
-  for (const m of prompt.matchAll(/@Image(\d+)/gi)) {
+  for (const m of prompt.matchAll(/@Image\s?(\d+)/gi)) {
     const n = Number(m[1]);
     if (n < 1 || n > images.length) {
       return `The prompt cites @Image${m[1]} but only ${images.length} reference image${images.length === 1 ? " is" : "s are"} attached.`;
     }
   }
-  for (const m of prompt.matchAll(/@Video(\d+)/gi)) {
+  for (const m of prompt.matchAll(/@Video\s?(\d+)/gi)) {
     const n = Number(m[1]);
-    if (n < 1 || n > videos.length) {
-      return `The prompt cites @Video${m[1]} but only ${videos.length} reference video${videos.length === 1 ? " is" : "s are"} attached.`;
+    if (n < 1 || n > videoCount) {
+      return `The prompt cites @Video${m[1]} but only ${videoCount} reference video${videoCount === 1 ? " is" : "s are"} attached.`;
     }
   }
   if (!refs.length) return null;

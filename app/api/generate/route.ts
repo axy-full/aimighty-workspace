@@ -117,6 +117,13 @@ export async function POST(req: Request) {
 
   let sourceRef: Reference | null = null;
   if (task.locked) {
+    /* An engine that cannot edit must say so here, not drop the source and
+       render something unrelated. Absent supportsTasks means generate only. */
+    if (model.kind === "image" || !(model.supportsTasks ?? ["generate"]).includes(task.id)) {
+      return NextResponse.json(
+        { error: `${model.label} can't ${task.id} — that is a Seedance 2.5 feature.` },
+        { status: 400 });
+    }
     if (!sourceGenId) {
       return NextResponse.json(
         { error: `${task.label} needs a source render to work on.` }, { status: 400 });

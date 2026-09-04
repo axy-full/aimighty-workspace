@@ -209,6 +209,15 @@ export async function buildRequestBody(
    * browser, so defaulting to mov would trade a visible library for an
    * invisible improvement. It is a workspace setting; when it is on, the
    * storage and media layers serve the right container. */
+  /* Say what this is, rather than leaving the model to work it out from the
+     words alone. Without it, a prompt whose intent the model reads
+     differently is legal for plain reference-to-video, so the task proceeds
+     and quietly returns a NEW video instead of an edited one — the worst
+     failure available, because it looks like the edit was ignored. With it,
+     a disagreement is an immediate 400 the composer can show.
+     The prompt still has to carry a trigger word: this flag front-loads the
+     validation, it does not replace the intent the model reads. */
+  if (task.locked) body.omni_reference_task_type = task.id;
   if (p.outputFormat === "mov") body.output_format = "mov";
   void task.preferMov;   // the vendor's advice, recorded in lib/tasks.ts
   if (p.seed != null) body.seed = p.seed;

@@ -38,7 +38,7 @@ import { usd, compactTokens } from "@/lib/format";
 import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef } from "@/lib/models";
 import { IconArrowUp, IconCaret, IconAttach, IconSliders, IconClose } from "./Icons";
 import LazyMedia from "./LazyMedia";
-import { movesFor, type EditMove } from "@/lib/tasks";
+import { movesFor, getTask, type EditMove } from "@/lib/tasks";
 import type { Params } from "./Workspace";
 
 type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost";
@@ -49,11 +49,15 @@ export type WriterInfo = { writer: "none" | "byteplus" | "claude"; label: string
 export type ComposerProps = {
   prompt: string; setPrompt: (v: string) => void;
   promptRef: React.RefObject<HTMLTextAreaElement | null>;
-  params: Params; patch: (p: Partial<Params>) => void; switchModel: (id: string) => void;
+  params: Params; patch: (p: Partial<Params>) => void;
   model: ModelDef; engines: Engine[]; writer?: WriterInfo | null;
   refs: RefItem[]; setRefs: React.Dispatch<React.SetStateAction<RefItem[]>>;
   picker: React.MutableRefObject<RefPicker>; cite: (token: string) => void;
-  taskOn: { id: "edit" | "extend"; gen: Gen } | null; cancelTask: () => void;
+  /** The source is null until a clip is chosen — a mode can be picked first. */
+  taskOn: { id: "edit" | "extend"; gen: Gen | null } | null; cancelTask: () => void;
+  /** Choose an engine and what to do with it, in one act. */
+  pickMode: (modelId: string, task: "generate" | "edit" | "extend") => void;
+  onPickSource: () => void;
   /** The message to show, whatever its cause. */
   problem: string | null;
   /** Whether the references make a submit impossible — the only thing that
@@ -72,10 +76,11 @@ export type ComposerProps = {
 
 export default function Composer(p: ComposerProps) {
   const {
-    prompt, setPrompt, promptRef, params, patch, switchModel, model, engines, writer,
+    prompt, setPrompt, promptRef, params, patch, model, engines, writer,
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked,
     est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
+    pickMode, onPickSource,
   } = p;
   const [menu, setMenu] = useState<Menu>(null);
   const [drag, setDrag] = useState(false);
@@ -99,6 +104,8 @@ export default function Composer(p: ComposerProps) {
   }, [setPrompt, promptRef]);
   useDismiss(costRef, menu === "cost", closeMenu);
   const isImage = model.kind === "image";
+  /* The chip says what you are about to do, not merely which engine. */
+  const modeLabel = taskOn ? `${model.label} ${getTask(taskOn.id).label}` : model.label;
 
   // The prompt box grows with its text, and the highlight layer must track
   // the textarea's scroll exactly or the coloured @cites drift.
@@ -151,9 +158,15 @@ export default function Composer(p: ComposerProps) {
         <>
           <div className="island-task">
             <span className="font-medium text-blue">{taskOn.id === "edit" ? "Editing" : "Continuing"}</span>
-            <span className="truncate text-dim">
-              {taskOn.gen.shotCode ? `${taskOn.gen.shotCode} v${taskOn.gen.version}` : "this render"}
-            </span>
+            {/* The one place on the island already conditional on a mode, so
+                the one place the missing clip belongs. */}
+            <button type="button" onClick={onPickSource}
+              className={`min-w-0 truncate ${taskOn.gen ? "text-dim hover:text-ink" : "font-medium text-blue"}`}
+              title={taskOn.gen ? "Choose a different clip" : "Choose the clip to work on"}>
+              {taskOn.gen
+                ? (taskOn.gen.title || (taskOn.gen.shotCode ? `${taskOn.gen.shotCode} v${taskOn.gen.version}` : "this render"))
+                : "Choose a clip →"}
+            </button>
             <span className="text-[12px] text-mute">
               {taskOn.id === "edit" ? "aspect and length follow the source" : "aspect follows the source"}
             </span>
@@ -230,20 +243,42 @@ export default function Composer(p: ComposerProps) {
           <IconAttach /> {refs.length ? refs.length : "Add"}
         </button>
 
-        <ChipMenu label={model.label} open={menu === "model"} onOpen={() => setMenu("model")} onClose={() => setMenu(null)} wide>
-          {MODELS.filter((m) => !m.hidden && m.kind === kind).map((m) => {
+        {/* A menu of MODES, not of engines. Editing is a thing the engine
+            does, and you know you are editing before you know which clip —
+            so it belongs here, chosen first, rather than hidden behind a
+            button on a render you have to go and find. The id underneath
+            stays the real one: it is what gets sent to the vendor. */}
+        <ChipMenu label={modeLabel} open={menu === "model"} onOpen={() => setMenu("model")} onClose={() => setMenu(null)} wide>
+          {MODELS.filter((m) => !m.hidden && m.kind === kind).flatMap((m) => {
             const on = configured(m.provider);
-            return (
-              <button key={m.id} disabled={!on} onClick={() => { switchModel(m.id); setMenu(null); }} className="menu-item disabled:opacity-50">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium">{m.label}
-                    <span className="ml-1.5 text-[11px] font-normal uppercase tracking-wide text-mute">{m.kind === "image" ? "still" : "video"}</span>
+            const tasks = m.supportsTasks ?? ["generate"];
+            return tasks.map((t) => {
+              const def = getTask(t);
+              const label = t === "generate" ? m.label : `${m.label} ${def.label}`;
+              const picked = params.modelId === m.id &&
+                (t === "generate" ? !taskOn : taskOn?.id === t);
+              return (
+                <button key={`${m.id}:${t}`} disabled={!on}
+                  onClick={() => { pickMode(m.id, t); setMenu(null); }}
+                  className="menu-item disabled:opacity-50">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="font-medium">{label}
+                      {t !== "generate" && (
+                        <span className="ml-1.5 text-[11px] font-normal uppercase tracking-wide text-mute">
+                          needs a clip
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[12.5px] text-mute">
+                      {!on
+                        ? `Needs a ${engineOf(m)?.label ?? "vendor"} key — see Settings › Engines.`
+                        : t === "generate" ? m.note : def.blurb}
+                    </span>
                   </span>
-                  <span className="text-[12.5px] text-mute">{on ? m.note : `Needs a ${engineOf(m)?.label ?? "vendor"} key — see Settings › Engines.`}</span>
-                </span>
-                <span className={params.modelId === m.id ? "text-blue" : "text-transparent"}>✓</span>
-              </button>
-            );
+                  <span className={picked ? "text-blue" : "text-transparent"}>✓</span>
+                </button>
+              );
+            });
           })}
         </ChipMenu>
 
