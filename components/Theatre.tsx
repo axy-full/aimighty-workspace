@@ -40,6 +40,7 @@ export default function Theatre({
   const prev = idx > 0 ? gens[idx - 1] : null;
   const next = idx >= 0 && idx < gens.length - 1 ? gens[idx + 1] : null;
   const [copied, setCopied] = useState(false);
+  const [copiedErr, setCopiedErr] = useState(false);
   const [saveMenu, setSaveMenu] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const { selection } = useProject();
@@ -81,6 +82,16 @@ export default function Theatre({
   async function rename() {
     await renameClip(gen!.id, gen!.title ?? "");
     onChanged();
+  }
+
+  /** The vendor's own words, verbatim, for pasting into a support thread. */
+  async function copyError() {
+    if (!gen?.error) return;
+    try {
+      await navigator.clipboard.writeText(gen.error);
+      setCopiedErr(true);
+      setTimeout(() => setCopiedErr(false), 1600);
+    } catch { /* clipboard blocked — the text is selectable anyway */ }
   }
 
   async function copy() {
@@ -186,7 +197,21 @@ export default function Theatre({
             ) : (
               <>
                 <p className="text-[15px] font-medium text-[#FF6B60]">{gen.status === "cancelled" ? "Cancelled" : "Failed"}</p>
-                {gen.error && <p className="mt-2 max-w-[52ch] text-[13.5px] leading-relaxed text-white/70">{gen.error}</p>}
+                {gen.error && (
+                  <>
+                    {/* Monospace, selectable and scrollable: a vendor refusal
+                        arrives as JSON carrying the error CODE, and the code is
+                        the part that says which review refused it. Prose
+                        styling made that unreadable and hard to copy exactly. */}
+                    <pre className="mt-3 max-h-[38vh] max-w-[68ch] select-text overflow-auto whitespace-pre-wrap break-words rounded-[10px] bg-black/40 px-3 py-2.5 text-left font-mono text-[12px] leading-relaxed text-white/80">
+                      {gen.error}
+                    </pre>
+                    <button type="button" onClick={copyError}
+                      className="mt-2 rounded-full bg-white/10 px-3 py-1.5 text-[12.5px] font-medium text-white/80 transition-colors hover:bg-white/15">
+                      {copiedErr ? "Copied" : "Copy the error"}
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>

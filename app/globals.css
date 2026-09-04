@@ -665,6 +665,12 @@ button.row:active, a.row:active { background: var(--color-chip2); }
     margin: 2px 4px 8px; padding: 7px 12px; border-radius: 12px;
     background: color-mix(in oklab, var(--color-lift) 8%, transparent);
     color: var(--color-lift); font-size: 13.5px; line-height: 1.45;
+    /* A vendor refusal arrives as JSON and can run long. Bound it so it
+       cannot push the composer off the screen, keep it scrollable so none
+       of it is lost, and keep it selectable so the code can be copied into
+       a support thread. */
+    max-height: 30vh; overflow: auto; overscroll-behavior: contain;
+    user-select: text; overflow-wrap: anywhere;
   }
   .island-text { position: relative; min-width: 0; margin: 0 4px; }
   .island-overlay {
