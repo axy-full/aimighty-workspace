@@ -260,6 +260,72 @@ const SCHEMA = [
      note       TEXT NOT NULL DEFAULT '',
      created_at INTEGER NOT NULL
    )`,
+
+  /* ── Atomik ───────────────────────────────────────────────────────────
+     The studio's agent. A chat is one production conversation; messages
+     are its transcript; steps are the generations the agent has PROPOSED
+     and that a person has not yet paid for.
+
+     Steps are a table rather than JSON on the message because a step
+     outlives the sentence that proposed it: it is approved minutes later,
+     edited before approval, run, retried, and finally points at a real
+     generation. Each of those is a single-row update, which is miserable
+     against a blob every writer has to read, rewrite and race over. */
+  `CREATE TABLE IF NOT EXISTS atomik_chats (
+     id          TEXT PRIMARY KEY,
+     project_id  TEXT,
+     title       TEXT NOT NULL DEFAULT 'New chat',
+     /* the planner: a Vercel AI Gateway model id, or 'auto' */
+     model       TEXT NOT NULL DEFAULT 'auto',
+     /* ask | auto -- whether each generation stops for approval */
+     agent_mode  TEXT NOT NULL DEFAULT 'ask',
+     /* running | waiting | idle | failed */
+     status      TEXT NOT NULL DEFAULT 'idle',
+     text_cost_usd REAL NOT NULL DEFAULT 0,
+     created_by  TEXT NOT NULL DEFAULT '',
+     created_at  INTEGER NOT NULL,
+     updated_at  INTEGER NOT NULL,
+     deleted     INTEGER NOT NULL DEFAULT 0
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_atomik_chats_created ON atomik_chats(created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS atomik_messages (
+     id         TEXT PRIMARY KEY,
+     chat_id    TEXT NOT NULL,
+     /* user | assistant | system */
+     role       TEXT NOT NULL,
+     text       TEXT NOT NULL DEFAULT '',
+     /* the collapsible activity groups, as JSON: what it loaded, weighed
+        and decided on the way to this answer */
+     activity   TEXT NOT NULL DEFAULT '[]',
+     /* a question put back to the person, with its suggested answers */
+     ask        TEXT,
+     /* how long the turn took, and what the model charged for it */
+     worked_ms  INTEGER,
+     cost_usd   REAL NOT NULL DEFAULT 0,
+     model      TEXT NOT NULL DEFAULT '',
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_atomik_messages_chat ON atomik_messages(chat_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS atomik_steps (
+     id           TEXT PRIMARY KEY,
+     chat_id      TEXT NOT NULL,
+     message_id   TEXT NOT NULL DEFAULT '',
+     position     INTEGER NOT NULL DEFAULT 0,
+     /* video | image | audio */
+     kind         TEXT NOT NULL DEFAULT 'video',
+     title        TEXT NOT NULL DEFAULT '',
+     prompt       TEXT NOT NULL DEFAULT '',
+     model        TEXT NOT NULL DEFAULT '',
+     params       TEXT NOT NULL DEFAULT '{}',
+     /* proposed | running | done | failed | rejected */
+     status       TEXT NOT NULL DEFAULT 'proposed',
+     gen_id       TEXT,
+     est_cost_usd REAL,
+     error        TEXT,
+     created_at   INTEGER NOT NULL,
+     updated_at   INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_atomik_steps_chat ON atomik_steps(chat_id, created_at)`,
 ];
 
 /**

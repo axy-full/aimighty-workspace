@@ -3,8 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
-import Link from "next/link";
-import ParticlLockup from "./ParticlMark";
+import ModeSwitch from "./ModeSwitch";
 
 type Usage = { pending: number };
 
@@ -32,12 +31,11 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
 
   return (
     <header className="app-title flex items-center gap-3">
-      {/* The brand is on every screen, never loud: the mark, the name, and
-          on Generate the project you're in as a tappable breadcrumb. */}
-      <Link href="/" className="flex shrink-0 items-center" title="particl studio">
-        <ParticlLockup size={19} studio={false} className="max-[430px]:hidden" />
-        <ParticlLockup size={19} studio={false} className="min-[431px]:hidden [&_.wordmark]:hidden" />
-      </Link>
+      {/* The brand is also the switch. Particl and Atomik are the same
+          studio at two heights — one renders the shot you describe, the
+          other works out what the shots should be — so the control that
+          moves between them belongs on the identity, not in the nav. */}
+      <ModeSwitch />
       {title && (
         <>
           <span className="text-[15px] text-mute" aria-hidden="true">/</span>
