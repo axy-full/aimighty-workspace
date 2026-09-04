@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useApi } from "@/lib/useApi";
-import { usd, compactTokens, timeAgo } from "@/lib/format";
+import { usd, compactTokens, timeAgo, dur } from "@/lib/format";
 import SectionNav from "@/components/SectionNav";
 import { Waiting, Trouble } from "@/components/ParticlMark";
 import { IconClose } from "@/components/Icons";
@@ -38,6 +38,9 @@ type Usage = {
   vendors: Vendor[];
   byProject: { name: string; n: number; spend: number }[];
   byPerson: { name: string; n: number; spend: number }[];
+  timing: { kind: string; n: number; totalMs: number | null; queueMs: number | null;
+            refineMs: number | null; submitMs: number | null; engineMs: number | null;
+            noticeMs: number | null; storeMs: number | null }[];
   refines: { model: string; label: string; n: number; inTokens: number; outTokens: number;
              tokens: number; spend: number; free: boolean; freeLeft: number }[];
   byMonth: { month: string; n: number; spend: number }[];
@@ -169,6 +172,40 @@ export default function UsagePage() {
               Every prompt&rsquo;s cost is part of its render&rsquo;s total wherever a total is shown, and
               is counted against the ledger of whoever wrote it: Claude on the Google Gemini credit,
               ByteDance&rsquo;s writer on ModelArk.
+            </p>
+          </>
+        )}
+
+        {(data.timing ?? []).length > 0 && (
+          <>
+            <p className="grouplabel mt-12">Where the time goes</p>
+            <div className="rows">
+              {(data.timing ?? []).map((t) => (
+                <div key={t.kind} className="row !items-start">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="capitalize">{t.kind}</span>
+                    <span className="mt-0.5 text-[13px] text-mute">
+                      {t.n} render{t.n === 1 ? "" : "s"} measured · median
+                    </span>
+                    <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] tabular-nums text-mute">
+                      {t.refineMs != null && <span>prompt {dur(t.refineMs)}</span>}
+                      {t.queueMs != null && <span>queued {dur(t.queueMs)}</span>}
+                      {t.submitMs != null && <span>submit {dur(t.submitMs)}</span>}
+                      {t.engineMs != null && <span className="text-dim">engine {dur(t.engineMs)}</span>}
+                      {t.noticeMs != null && <span>noticed after {dur(t.noticeMs)}</span>}
+                      {t.storeMs != null && <span>stored {dur(t.storeMs)}</span>}
+                    </span>
+                  </span>
+                  <span className="row-value shrink-0 font-medium !text-bone tabular-nums">{dur(t.totalMs)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
+              The figure on the right is the whole wait, from pressing the button to the
+              tile appearing. Engine is the vendor&rsquo;s own working time; everything else
+              is ours. Each stage is its own median, so they will not add up to the total
+              exactly. A video reports engine time only when ModelArk stamps the task, and
+              &ldquo;noticed after&rdquo; is how long it sat finished before a poll found it.
             </p>
           </>
         )}

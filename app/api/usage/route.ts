@@ -25,7 +25,7 @@ export async function GET() {
      on the same credit as Google's stills) or ByteDance's own writer. */
   const LEDGER = `CASE WHEN refine_model LIKE 'anthropic/%' OR refine_model LIKE 'google/%' THEN 'google' ELSE 'byteplus' END`;
 
-  const [totals, topups, byModel, byProject, byPerson, byMonth, recent, refines,
+  const [totals, topups, byModel, byProject, byPerson, byMonth, recent, stages, refines,
          byVendor, promptByLedger, topupsByVendor, topupList] = await Promise.all([
     db().execute(`
       SELECT COUNT(*) AS n,
@@ -69,6 +69,20 @@ export async function GET() {
              refine_in_tokens, refine_out_tokens, total_tokens, params, created_at
       FROM generations WHERE status='succeeded' AND cost_usd IS NOT NULL
       ORDER BY created_at DESC LIMIT 60`),
+    /* Where the time goes. Only rows that recorded a stage, so the medians
+       describe renders made since the timing landed rather than being
+       diluted by every older row that never measured anything. */
+    db().execute(`
+      SELECT kind, queue_ms, refine_ms, submit_ms, engine_ms, notice_ms, store_ms,
+             /* The wait a PERSON experiences, which starts when they press the
+                button. duration_ms alone misses the prompt writer, because the
+                row's clock only starts once the writer has finished and the
+                row is inserted. */
+             duration_ms + COALESCE(refine_ms, 0) AS wait_ms
+      FROM generations
+      WHERE status='succeeded' AND deleted=0
+        AND (engine_ms IS NOT NULL OR store_ms IS NOT NULL OR refine_ms IS NOT NULL)
+      ORDER BY created_at DESC LIMIT 400`),
     db().execute(`
       SELECT refine_model AS model, COUNT(*) AS n,
              COALESCE(SUM(COALESCE(refine_in_tokens,0)),0)  AS in_tokens,
@@ -190,6 +204,33 @@ export async function GET() {
       params: JSON.parse(r.params || "{}"),
       createdAt: Number(r.created_at),
     })),
+    /* Median, not mean: a single render that waited on a dead cron would
+       drag an average somewhere useless. Null where nothing recorded it. */
+    timing: (() => {
+      const med = (xs: number[]) => {
+        if (!xs.length) return null;
+        const sorted = [...xs].sort((a, b) => a - b);
+        return Math.round(sorted[Math.floor(sorted.length / 2)]);
+      };
+      const groups: Record<string, any[]> = { video: [], image: [], audio: [] };
+      for (const r of stages.rows as any[]) {
+        groups[r.kind === "image" ? "image" : r.kind === "audio" ? "audio" : "video"].push(r);
+      }
+      const pick = (rows: any[], col: string) =>
+        med(rows.map((r) => r[col]).filter((v) => v != null).map(Number));
+      return Object.entries(groups)
+        .filter(([, rows]) => rows.length > 0)
+        .map(([kind, rows]) => ({
+          kind, n: rows.length,
+          totalMs: pick(rows, "wait_ms"),
+          queueMs: pick(rows, "queue_ms"),
+          refineMs: pick(rows, "refine_ms"),
+          submitMs: pick(rows, "submit_ms"),
+          engineMs: pick(rows, "engine_ms"),
+          noticeMs: pick(rows, "notice_ms"),
+          storeMs: pick(rows, "store_ms"),
+        }));
+    })(),
     refines: refines.rows.map((r: any) => ({
       model: r.model, label: prettyModel(r.model), n: Number(r.n),
       inTokens: Number(r.in_tokens), outTokens: Number(r.out_tokens),

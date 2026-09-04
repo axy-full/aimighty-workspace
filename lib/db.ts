@@ -334,6 +334,19 @@ export async function ready(): Promise<void> {
         `source_gen_id TEXT`,
         // A name the team gives a render, shown in place of the clip id.
         `title TEXT`,
+        /* Where the time actually went. duration_ms alone says only how long
+           a render took to reach a terminal state, which on a path that waits
+           for a poll is mostly OUR waiting rather than the engine's working —
+           one row read 21 hours because the cron was down. These split it:
+              queue_ms   asked → the work actually starting
+              refine_ms  the prompt writer, before the engine sees anything
+              submit_ms  handing the task to the vendor
+              engine_ms  the vendor's own working time
+              notice_ms  vendor finished → we found out (polled paths only)
+              store_ms   moving the bytes into our storage
+           Each is null where it does not apply or could not be measured. */
+        `queue_ms INTEGER`, `refine_ms INTEGER`, `submit_ms INTEGER`,
+        `engine_ms INTEGER`, `notice_ms INTEGER`, `store_ms INTEGER`,
       ]) {
         await addColumn("generations", col);
       }

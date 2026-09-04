@@ -139,12 +139,24 @@ async function hydrate(
 /* ── Producing: the part that costs money ──────────────────────────── */
 
 /** Deliberately small and serializable: a worker memoises exactly this. */
-export type Produced =
+/** Where the time went, carried alongside the result so seal can record it. */
+export type Timings = {
+  /** Asked for → the work actually starting. On the worker this is the
+   *  queue's pickup latency; inline it is near zero. */
+  queueMs: number;
+  /** The vendor's call, and nothing else. */
+  engineMs: number;
+  /** Moving the bytes into our storage. */
+  storeMs: number;
+};
+
+export type Produced = { timings: Timings } & (
   /* tokens can be null for a size the catalogue has no figure for; credits
      never is, because each of the three audio calls falls back to its own
      published rate when the vendor doesn't state one. */
   | { kind: "image"; storedUrl: string; cost: number; tokens: number | null; via: string }
-  | { kind: "audio"; storedUrl: string; credits: number; requestId: string | null };
+  | { kind: "audio"; storedUrl: string; credits: number; requestId: string | null }
+);
 
 export async function produce(job: Job): Promise<Produced> {
   return job.kind === "audio" ? produceAudio(job) : produceStill(job);
@@ -152,15 +164,19 @@ export async function produce(job: Job): Promise<Produced> {
 
 async function produceStill(job: StillJob): Promise<Produced> {
   const model = getModel(job.modelId);
+  const queueMs = Math.max(0, now() - job.startedAt);
+  const engineStart = now();
   const img = await generateImage({
     model, prompt: job.prompt, ratio: job.ratio, size: job.size, references: job.references,
   });
+  const engineMs = now() - engineStart;
   // Google can only emit JPEG; the library keeps PNG. Decode once and
   // re-encode LOSSLESSLY — pixel-identical, and nothing downstream can add
   // generation loss to a PNG. (sharp is for THIS transcode and for delivery
   // copies only — reference masters never pass through it.)
   const sharp = (await import("sharp")).default;
   const png = await sharp(img.bytes).png().toBuffer();
+  const storeStart = now();
   /* Google has already drawn and charged for this image. A brief Blob
      outage here would otherwise throw the whole render away. The put is
      idempotent (allowOverwrite) and costs nothing per attempt, so unlike a
@@ -171,11 +187,18 @@ async function produceStill(job: StillJob): Promise<Produced> {
   const cost = img.costUsd
     ?? (estimateImageCostUsd(job.modelId, job.size, job.references.length)?.net ?? 0);
   const tokens = img.totalTokens ?? imageTokens(job.size, job.references.length);
-  return { kind: "image", storedUrl, cost, tokens, via: img.via };
+  return {
+    kind: "image", storedUrl, cost, tokens, via: img.via,
+    // The transcode sits between the two, and is counted with the store:
+    // it is our work, not the engine's.
+    timings: { queueMs, engineMs, storeMs: now() - storeStart },
+  };
 }
 
 async function produceAudio(job: AudioJob): Promise<Produced> {
   const p = job.params;
+  const queueMs = Math.max(0, now() - job.startedAt);
+  const engineStart = now();
   const { value: out } = await withRetry(async () => {
     if (job.task === "speech") {
       return textToSpeech({
@@ -195,25 +218,33 @@ async function produceAudio(job: AudioJob): Promise<Produced> {
       prompt: job.text, lengthMs: p.lengthMs as number, instrumental: Boolean(p.instrumental),
     });
   }, { max: 2 });
+  const engineMs = now() - engineStart;
   /* ElevenLabs has already spoken the line and taken the credits. A Blob
      blip must not throw that away; the put is idempotent. */
+  const storeStart = now();
   const { value: storedUrl } = await withRetry(() => storeAudioBytes(job.genId, out.bytes), { max: 3 });
-  return { kind: "audio", storedUrl, credits: out.credits, requestId: out.requestId };
+  return {
+    kind: "audio", storedUrl, credits: out.credits, requestId: out.requestId,
+    timings: { queueMs, engineMs, storeMs: now() - storeStart },
+  };
 }
 
 /* ── Sealing: writing the outcome down ─────────────────────────────── */
 
 export async function seal(job: Job, produced: Produced): Promise<void> {
   const ms = Math.max(0, now() - job.startedAt);
+  const t = produced.timings;
   if (produced.kind === "image") {
     const ratePerM = produced.tokens ? (produced.cost / produced.tokens) * 1_000_000 : null;
     await db().execute({
       sql: `UPDATE generations
             SET status='succeeded', stored_url=?, total_tokens=?,
                 cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?,
+                queue_ms=?, engine_ms=?, store_ms=?,
                 params=json_set(params, '$.via', ?), updated_at=?
             WHERE id=?`,
       args: [produced.storedUrl, produced.tokens, produced.cost, ratePerM, ms,
+             t.queueMs, t.engineMs, t.storeMs,
              produced.via, now(), job.genId],
     });
   } else {
@@ -225,11 +256,12 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
     await db().execute({
       sql: `UPDATE generations
             SET status='succeeded', stored_url=?, total_tokens=?, cost_usd=?, rate_usd_per_m=?,
-                error=NULL, duration_ms=?,
+                error=NULL, duration_ms=?, queue_ms=?, engine_ms=?, store_ms=?,
                 params=json_set(params, '$.credits', ?, '$.tier', ?, '$.requestId', ?), updated_at=?
             WHERE id=?`,
       args: [produced.storedUrl, credits, cost, credits ? (cost / credits) * 1_000_000 : null,
-             ms, credits, tier, produced.requestId, now(), job.genId],
+             ms, t.queueMs, t.engineMs, t.storeMs,
+             credits, tier, produced.requestId, now(), job.genId],
     });
   }
   invalidate(PROJECTS_KEY);

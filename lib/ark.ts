@@ -58,6 +58,12 @@ type ArkTaskResponse = {
   id?: string;
   model?: string;
   status?: string;
+  /* ModelArk stamps its tasks in Unix SECONDS. Optional because it is their
+     field, not our contract: when it is absent we fall back to measuring
+     from our own submit, which folds their queue time into the engine time
+     but never invents a number. */
+  created_at?: number;
+  updated_at?: number;
   content?: { video_url?: string | null };
   usage?: { total_tokens?: number; completion_tokens?: number };
   error?: { message?: string; code?: string };
@@ -70,6 +76,9 @@ export type ArkTask = {
   videoUrl: string | null;
   totalTokens: number | null;
   error: string | null;
+  /** The vendor's own clock, in ms, when it reports one. */
+  vendorStartedAt: number | null;
+  vendorEndedAt: number | null;
   raw: unknown;
 };
 
@@ -256,6 +265,15 @@ function parseArk<T>(text: string, what: string): T {
   }
 }
 
+/** A vendor Unix-seconds stamp, in ms, or null if it is missing or absurd. */
+function sane(sec: number | undefined): number | null {
+  if (typeof sec !== "number" || !Number.isFinite(sec) || sec <= 0) return null;
+  const ms = sec * 1000;
+  // Anything before 2020 or more than a day ahead is not a real task stamp.
+  if (ms < 1577836800000 || ms > Date.now() + 86400000) return null;
+  return ms;
+}
+
 export async function fetchTask(taskId: string): Promise<ArkTask> {
   const res = await arkFetch(`${TASKS_URL}/${encodeURIComponent(taskId)}`, {
     headers: { Authorization: `Bearer ${apiKey()}` },
@@ -287,6 +305,10 @@ export async function fetchTask(taskId: string): Promise<ArkTask> {
     // BytePlus bills on completion_tokens — prefer it over total_tokens.
     totalTokens: j.usage?.completion_tokens ?? j.usage?.total_tokens ?? null,
     error: j.error?.message ?? j.error?.code ?? null,
+    // Seconds on their side, milliseconds on ours. Guarded: a zero or a
+    // wildly out-of-range value is treated as absent rather than trusted.
+    vendorStartedAt: sane(j.created_at),
+    vendorEndedAt: sane(j.updated_at),
     raw: j,
   };
 }

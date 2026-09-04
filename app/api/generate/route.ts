@@ -376,6 +376,8 @@ export async function POST(req: Request) {
   let rawPrompt: string | undefined = castPrompt !== prompt ? prompt : undefined;
   let refineModel: string | null = null;
   let refineIn = 0, refineOut = 0;
+  /** How long the prompt writer held the submit up. Null when it never ran. */
+  let refineMs: number | null = null;
   let refineCost: number | null = null;
   /* ── Library-first composition ───────────────────────────────────────
    * The bank supplies the craft; the author's words stay the author's words.
@@ -412,11 +414,13 @@ export async function POST(req: Request) {
       // Show it the work this studio has actually approved, so the writing
       // converges on their taste rather than on a generic one.
       const style = houseStyleBlock(await houseStyle(projectIdForCast));
+      const refineStartedAt = now();
       const r = await enhancePrompt({
         prompt: castPrompt, citations,
         model: modelId, durationS: params.duration, task: task.id, style,
         provider: writer.provider === "none" ? undefined : writer.provider,
       });
+      refineMs = now() - refineStartedAt;
       finalPrompt = r.text;
       chosenMove = r.move ?? null;
       rawPrompt = prompt;   // the words a person actually typed
@@ -558,13 +562,13 @@ export async function POST(req: Request) {
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
-           shot_id, version, provider, task, source_gen_id)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           shot_id, version, provider, task, source_gen_id, refine_ms)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(storedParams), "queued",
            got.user.id, ts, ts,
            refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost,
            got.token?.id ?? null,
-           shotId, version, model.provider ?? "byteplus", task.id, sourceGenId],
+           shotId, version, model.provider ?? "byteplus", task.id, sourceGenId, refineMs],
   });
 
   invalidate(PROJECTS_KEY);
@@ -574,6 +578,7 @@ export async function POST(req: Request) {
    * rejected prompt is a decision and fails immediately with the vendor's
    * own words. Either way the row already exists, so nothing disappears. */
   const maxRetries = Math.max(0, Math.min(5, Number(await getSetting("maxRetries")) || 0));
+  const submitStartedAt = now();
   try {
     const { value: taskId, attempts } = await withRetry(
       async () => {
@@ -604,8 +609,11 @@ export async function POST(req: Request) {
       }
     );
     await db().execute({
-      sql: `UPDATE generations SET ark_task_id=?, status='running', attempts=?, updated_at=? WHERE id=?`,
-      args: [taskId, attempts, now(), genId],
+      sql: `UPDATE generations
+            SET ark_task_id=?, status='running', attempts=?,
+                queue_ms=?, submit_ms=?, updated_at=?
+            WHERE id=?`,
+      args: [taskId, attempts, submitStartedAt - ts, now() - submitStartedAt, now(), genId],
     });
     return NextResponse.json({
       id: genId, arkTaskId: taskId, status: "running", attempts,

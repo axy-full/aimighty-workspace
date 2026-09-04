@@ -213,11 +213,26 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   let storedUrl = gen.storedUrl;
   let cost = gen.costUsd;
   let rate: number | null = null;
+  /* Where the tail of a video render actually goes. The vendor's own clock,
+     when it gives one, is the only way to tell its working time apart from
+     our waiting: everything else we can see is "how long until a poll
+     noticed". storeMs is ours either way — it is the file coming down from
+     ModelArk and going up to our storage, which happens between the vendor
+     finishing and the tile flipping. */
+  let engineMs: number | null = null;
+  let noticeMs: number | null = null;
+  let storeMs: number | null = null;
+  if (task.vendorStartedAt && task.vendorEndedAt && task.vendorEndedAt >= task.vendorStartedAt) {
+    engineMs = task.vendorEndedAt - task.vendorStartedAt;
+    noticeMs = Math.max(0, now() - task.vendorEndedAt);
+  }
 
   if (task.status === "succeeded") {
     if (task.videoUrl && !storedUrl) {
+      const storeStart = now();
       try {
         storedUrl = await storeVideo(gen.id, task.videoUrl);
+        storeMs = now() - storeStart;
       } catch (e) {
         // Keep the (expiring) Ark URL as a fallback rather than losing the render.
         // Loud in the logs: a silent failure here cost us two near-lost videos.
@@ -245,6 +260,9 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
               cost_usd=COALESCE(?, cost_usd),
               rate_usd_per_m=COALESCE(?, rate_usd_per_m),
               duration_ms=COALESCE(duration_ms, ?),
+              engine_ms=COALESCE(?, engine_ms),
+              notice_ms=COALESCE(?, notice_ms),
+              store_ms=COALESCE(?, store_ms),
               error=?, updated_at=?
           WHERE id=?`,
     args: [
@@ -255,6 +273,9 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
       cost,
       rate,
       durationMs,
+      engineMs,
+      noticeMs,
+      storeMs,
       task.error,
       ts,
       gen.id,
