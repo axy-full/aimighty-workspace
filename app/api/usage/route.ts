@@ -7,6 +7,7 @@ import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { elevenConfigured, subscription, FALLBACK_USD_PER_CREDIT } from "@/lib/elevenlabs";
 import { requireUser } from "@/lib/auth";
 import { listChecks, spendSince, computedSpendUpTo } from "@/lib/reconcile";
+import { storageLedger } from "@/lib/storageCost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -103,6 +104,9 @@ export async function GET() {
     db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total, COALESCE(SUM(credits),0) AS credits FROM topups GROUP BY provider`),
     db().execute(`SELECT id, provider, amount_usd, credits, note, created_at FROM topups ORDER BY created_at DESC LIMIT 100`),
   ]);
+
+  /* The only cost here that is rent rather than a purchase. */
+  const storage = await storageLedger().catch(() => null);
 
   /* What each vendor says for itself, where it says anything. */
   const [gateway, eleven] = await Promise.all([
@@ -227,6 +231,7 @@ export async function GET() {
     remainingUsd: purchased - spend,
     /* One ledger per vendor: what was added, what it has cost, what's left. */
     vendors,
+    storage,
     totalGenerations: Number(t.n),
     succeeded: okCount,
     failed: Number(t.failed),

@@ -3,6 +3,7 @@ import { falConfigured, falSubmit, falStatus, falResult, falAwait, progressFromL
 import { readUploadBytes, storeIdentityZip, storeImageBytes, presignedReadUrl, usingBlob } from "./storage";
 import { nameProblem } from "./cast";
 import { invalidate, PROJECTS_KEY } from "./cache";
+import { withRetry } from "./providers";
 
 /**
  * Identities — a real face, learned.
@@ -415,15 +416,17 @@ async function finishRender(genId: string, out: RenderResult, startedAt: number,
   const meta = await sharp(bytes).metadata();
   // The library keeps PNG. A JPEG from the vendor is decoded once, losslessly.
   if (meta.format !== "png") bytes = await sharp(bytes).png().toBuffer();
-  const storedUrl = await storeImageBytes(genId, bytes);
+  // fal has already rendered and billed this. A Blob blip must not be the
+  // thing that loses it; the put is idempotent, so trying again is free.
+  const { value: stored } = await withRetry(() => storeImageBytes(genId, bytes), { max: 3 });
   const mp = ((img.width ?? meta.width ?? 1024) * (img.height ?? meta.height ?? 1024)) / 1_000_000;
   const cost = Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) / 10_000;
   await db().execute({
     sql: `UPDATE generations
-          SET status='succeeded', stored_url=?, cost_usd=?, error=NULL, duration_ms=?,
+          SET status='succeeded', stored_url=?, cost_usd=?, error=NULL, duration_ms=?, bytes=?,
               params=json_set(params, '$.seed', ?, '$.width', ?, '$.height', ?), updated_at=?
           WHERE id=?`,
-    args: [storedUrl, cost, Math.max(0, now() - startedAt), out.seed ?? seed ?? null,
+    args: [stored.url, cost, Math.max(0, now() - startedAt), stored.bytes, out.seed ?? seed ?? null,
            img.width ?? meta.width ?? null, img.height ?? meta.height ?? null, now(), genId],
   });
   invalidate(PROJECTS_KEY);

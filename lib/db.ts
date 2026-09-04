@@ -369,6 +369,11 @@ export async function ready(): Promise<void> {
               notice_ms  vendor finished → we found out (polled paths only)
               store_ms   moving the bytes into our storage
            Each is null where it does not apply or could not be measured. */
+        /* How many bytes this render occupies in storage. Unlike every
+           other cost here it is not paid once: it is rent, charged every
+           month for as long as the render is kept, and it is the only line
+           on the ledger that grows without anyone doing anything. */
+        `bytes INTEGER`,
         `queue_ms INTEGER`, `refine_ms INTEGER`, `submit_ms INTEGER`,
         `engine_ms INTEGER`, `notice_ms INTEGER`, `store_ms INTEGER`,
       ]) {

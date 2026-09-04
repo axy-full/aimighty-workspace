@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncPending } from "@/lib/jobs";
 import { syncTrainingIdentities } from "@/lib/identities";
+import { backfillSizes } from "@/lib/storageCost";
 import { setSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,9 @@ export async function GET(req: Request) {
     // Faces mid-training get asked about too, so a finished model is found
     // even if nobody opens the Studio for a while.
     await syncTrainingIdentities(10).catch(() => {});
+    // Renders made before anyone recorded a size. Costs five millionths of a
+    // dollar per thousand blobs and stops the moment there is nothing left.
+    await backfillSizes().catch(() => {});
   } catch (e) {
     console.error("cron sync failed:", (e as Error).message);
   }

@@ -26,7 +26,7 @@ export function usingBlob(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 }
 
-export async function storeVideo(genId: string, sourceUrl: string): Promise<string> {
+export async function storeVideo(genId: string, sourceUrl: string): Promise<{ url: string; bytes: number }> {
   /* Two minutes, and no less: a 200 MB master over a slow link legitimately
      needs it, and abandoning one early would strand the very render the cron
      exists to rescue. But not unbounded either — this runs 30-wide inside a
@@ -56,12 +56,12 @@ export async function storeVideo(genId: string, sourceUrl: string): Promise<stri
       allowOverwrite: true,
     });
     // Always hand back our own route, never a storage URL.
-    return `/api/media/${genId}`;
+    return { url: `/api/media/${genId}`, bytes: buf.length };
   }
 
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.mp4`), buf);
-  return `/api/media/${genId}`;
+  return { url: `/api/media/${genId}`, bytes: buf.length };
 }
 
 /** Reads a private blob back as bytes. */
@@ -84,7 +84,7 @@ export async function readVideoBytes(genId: string): Promise<Buffer> {
 /* ── Image renders (Nano Banana) — bytes arrive in the API response, not at
  * a downloadable URL, so they're stored directly. Same privacy rules. ── */
 
-export async function storeImageBytes(genId: string, buf: Buffer): Promise<string> {
+export async function storeImageBytes(genId: string, buf: Buffer): Promise<{ url: string; bytes: number }> {
   if (usingBlob()) {
     const { put } = await import("@vercel/blob");
     await put(imagePath(genId), buf, {
@@ -93,11 +93,11 @@ export async function storeImageBytes(genId: string, buf: Buffer): Promise<strin
       addRandomSuffix: false,
       allowOverwrite: true,
     });
-    return `/api/media/${genId}`;
+    return { url: `/api/media/${genId}`, bytes: buf.length };
   }
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.png`), buf);
-  return `/api/media/${genId}`;
+  return { url: `/api/media/${genId}`, bytes: buf.length };
 }
 
 export async function readImageBytes(genId: string): Promise<Buffer> {
@@ -108,7 +108,7 @@ export async function readImageBytes(genId: string): Promise<Buffer> {
 
 /* ── Audio renders (ElevenLabs) — MP3 bytes arrive in the response body. ── */
 
-export async function storeAudioBytes(genId: string, buf: Buffer): Promise<string> {
+export async function storeAudioBytes(genId: string, buf: Buffer): Promise<{ url: string; bytes: number }> {
   if (usingBlob()) {
     const { put } = await import("@vercel/blob");
     await put(audioPath(genId), buf, {
@@ -117,11 +117,11 @@ export async function storeAudioBytes(genId: string, buf: Buffer): Promise<strin
       addRandomSuffix: false,
       allowOverwrite: true,
     });
-    return `/api/media/${genId}`;
+    return { url: `/api/media/${genId}`, bytes: buf.length };
   }
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.mp3`), buf);
-  return `/api/media/${genId}`;
+  return { url: `/api/media/${genId}`, bytes: buf.length };
 }
 
 export async function readAudioBytes(genId: string): Promise<Buffer> {

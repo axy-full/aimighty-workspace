@@ -233,6 +233,8 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   let engineMs: number | null = null;
   let noticeMs: number | null = null;
   let storeMs: number | null = null;
+  /** How much of the store this render occupies — rent, not a one-off charge. */
+  let storedBytes: number | null = null;
   if (task.vendorStartedAt && task.vendorEndedAt && task.vendorEndedAt >= task.vendorStartedAt) {
     engineMs = task.vendorEndedAt - task.vendorStartedAt;
     noticeMs = Math.max(0, now() - task.vendorEndedAt);
@@ -242,7 +244,9 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
     if (task.videoUrl && !storedUrl) {
       const storeStart = now();
       try {
-        storedUrl = await storeVideo(gen.id, task.videoUrl);
+        const put = await storeVideo(gen.id, task.videoUrl);
+        storedUrl = put.url;
+        storedBytes = put.bytes;
         storeMs = now() - storeStart;
       } catch (e) {
         // Keep the (expiring) Ark URL as a fallback rather than losing the render.
@@ -274,6 +278,7 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
               engine_ms=COALESCE(?, engine_ms),
               notice_ms=COALESCE(?, notice_ms),
               store_ms=COALESCE(?, store_ms),
+              bytes=COALESCE(?, bytes),
               error=?, updated_at=?
           WHERE id=?`,
     args: [
@@ -287,6 +292,7 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
       engineMs,
       noticeMs,
       storeMs,
+      storedBytes,
       task.error,
       ts,
       gen.id,

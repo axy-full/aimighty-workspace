@@ -3,6 +3,13 @@
 import { useMemo, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo, dur } from "@/lib/format";
+
+/** Bytes, the way a producer would say them. */
+function gb(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
+  return `${(bytes / 1e3).toFixed(0)} KB`;
+}
 import SectionNav from "@/components/SectionNav";
 import { Waiting, Trouble } from "@/components/ParticlMark";
 import { IconClose } from "@/components/Icons";
@@ -48,6 +55,14 @@ type Usage = {
   totalTokens: number; avgCostUsd: number;
   promptSpendUsd: number; promptCount: number;
   vendors: Vendor[];
+  /** Rent rather than a purchase: what it costs to KEEP what has been made. */
+  storage: {
+    bytes: number; counted: number; unmeasured: number;
+    monthlyUsd: number; yearlyUsd: number;
+    byKind: { kind: string; n: number; bytes: number; monthlyUsd: number }[];
+    largest: { id: string; title: string | null; kind: string; bytes: number }[];
+    perGbMonthUsd: number; perGbTransferUsd: number;
+  } | null;
   byProject: { name: string; n: number; spend: number }[];
   byPerson: { name: string; n: number; spend: number }[];
   timing: { kind: string; n: number; totalMs: number | null; queueMs: number | null;
@@ -184,6 +199,52 @@ export default function UsagePage() {
               Every prompt&rsquo;s cost is part of its render&rsquo;s total wherever a total is shown, and
               is counted against the ledger of whoever wrote it: Claude on the Google Gemini credit,
               ByteDance&rsquo;s writer on ModelArk.
+            </p>
+          </>
+        )}
+
+        {/* ── Storage ─────────────────────────────────────────────── */}
+        {data.storage && data.storage.counted > 0 && (
+          <>
+            <p className="grouplabel mt-12">Storage</p>
+            <div className="rows">
+              <div className="row">
+                <span className="flex min-w-0 flex-col">
+                  <span>Everything kept</span>
+                  <span className="mt-0.5 text-[13px] text-mute">
+                    {gb(data.storage.bytes)} across {data.storage.counted} render
+                    {data.storage.counted === 1 ? "" : "s"}
+                    {data.storage.unmeasured > 0 && ` · ${data.storage.unmeasured} not yet measured`}
+                  </span>
+                </span>
+                <span className="row-value tabular-nums">
+                  {usd(data.storage.monthlyUsd, 2)}<span className="text-mute"> / month</span>
+                </span>
+              </div>
+              {data.storage.byKind.map((k) => (
+                <div key={k.kind} className="row">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="capitalize">{k.kind}</span>
+                    <span className="text-[13px] text-mute">{k.n} · {gb(k.bytes)}</span>
+                  </span>
+                  <span className="row-value tabular-nums">{usd(k.monthlyUsd, 3)}</span>
+                </div>
+              ))}
+              <div className="row">
+                <span className="font-medium">A year at this size</span>
+                <span className="row-value font-semibold tabular-nums !text-bone">
+                  {usd(data.storage.yearlyUsd, 2)}
+                </span>
+              </div>
+            </div>
+            <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
+              The only cost here that is rent rather than a purchase: it is charged every
+              month for as long as a render is kept, and it grows while nobody is doing
+              anything. Keeping is cheap — {usd(data.storage.perGbMonthUsd, 3)} a gigabyte
+              a month in Mumbai. <span className="text-dim">Watching is what costs</span>:{" "}
+              {usd(data.storage.perGbTransferUsd, 3)} a gigabyte every time a render travels,
+              so one view of a clip costs about what a month of storing it does. That side
+              is not counted here, because nothing yet counts views.
             </p>
           </>
         )}

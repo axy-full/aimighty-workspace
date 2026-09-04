@@ -186,7 +186,7 @@ export type Timings = {
   storeMs: number;
 };
 
-export type Produced = { timings: Timings } & (
+export type Produced = { timings: Timings; bytes: number } & (
   /* tokens can be null for a size the catalogue has no figure for; credits
      never is, because each of the three audio calls falls back to its own
      published rate when the vendor doesn't state one. */
@@ -217,14 +217,14 @@ async function produceStill(job: StillJob): Promise<Produced> {
      outage here would otherwise throw the whole render away. The put is
      idempotent (allowOverwrite) and costs nothing per attempt, so unlike a
      vendor call it is safe to try again. */
-  const { value: storedUrl } = await withRetry(() => storeImageBytes(job.genId, png), { max: 3 });
+  const { value: stored } = await withRetry(() => storeImageBytes(job.genId, png), { max: 3 });
   // The gateway states the exact charge; Google direct bills flat per image
   // by size (+ a little per reference in), from the catalogue.
   const cost = img.costUsd
     ?? (estimateImageCostUsd(job.modelId, job.size, job.references.length)?.net ?? 0);
   const tokens = img.totalTokens ?? imageTokens(job.size, job.references.length);
   return {
-    kind: "image", storedUrl, cost, tokens, via: img.via,
+    kind: "image", storedUrl: stored.url, bytes: stored.bytes, cost, tokens, via: img.via,
     // The transcode sits between the two, and is counted with the store:
     // it is our work, not the engine's.
     timings: { queueMs, engineMs, storeMs: now() - storeStart },
@@ -258,9 +258,10 @@ async function produceAudio(job: AudioJob): Promise<Produced> {
   /* ElevenLabs has already spoken the line and taken the credits. A Blob
      blip must not throw that away; the put is idempotent. */
   const storeStart = now();
-  const { value: storedUrl } = await withRetry(() => storeAudioBytes(job.genId, out.bytes), { max: 3 });
+  const { value: stored } = await withRetry(() => storeAudioBytes(job.genId, out.bytes), { max: 3 });
   return {
-    kind: "audio", storedUrl, credits: out.credits, requestId: out.requestId,
+    kind: "audio", storedUrl: stored.url, bytes: stored.bytes,
+    credits: out.credits, requestId: out.requestId,
     timings: { queueMs, engineMs, storeMs: now() - storeStart },
   };
 }
@@ -276,11 +277,11 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
       sql: `UPDATE generations
             SET status='succeeded', stored_url=?, total_tokens=?,
                 cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?,
-                queue_ms=?, engine_ms=?, store_ms=?,
+                queue_ms=?, engine_ms=?, store_ms=?, bytes=?,
                 params=json_set(params, '$.via', ?), updated_at=?
             WHERE id=?`,
       args: [produced.storedUrl, produced.tokens, produced.cost, ratePerM, ms,
-             t.queueMs, t.engineMs, t.storeMs,
+             t.queueMs, t.engineMs, t.storeMs, produced.bytes,
              produced.via, now(), job.genId],
     });
   } else {
@@ -292,11 +293,11 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
     await db().execute({
       sql: `UPDATE generations
             SET status='succeeded', stored_url=?, total_tokens=?, cost_usd=?, rate_usd_per_m=?,
-                error=NULL, duration_ms=?, queue_ms=?, engine_ms=?, store_ms=?,
+                error=NULL, duration_ms=?, queue_ms=?, engine_ms=?, store_ms=?, bytes=?,
                 params=json_set(params, '$.credits', ?, '$.tier', ?, '$.requestId', ?), updated_at=?
             WHERE id=?`,
       args: [produced.storedUrl, credits, cost, credits ? (cost / credits) * 1_000_000 : null,
-             ms, t.queueMs, t.engineMs, t.storeMs,
+             ms, t.queueMs, t.engineMs, t.storeMs, produced.bytes,
              credits, tier, produced.requestId, now(), job.genId],
     });
   }
