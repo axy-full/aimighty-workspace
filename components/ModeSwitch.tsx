@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import ParticlLockup from "./ParticlMark";
-import { AtomikMark, AtomikLockup } from "./AtomikMark";
+import AtomikLockup, { AtomikMark } from "./AtomikMark";
 
 /**
  * Particl or Atomik.
@@ -69,7 +69,7 @@ export default function ModeSwitch() {
             app's identity, and an identity that shrinks to an unlabelled
             icon in one of its two states reads as a loading failure. */}
         {onAtomik
-          ? <AtomikLockup size={17} className="max-[430px]:[&_.atomik-word]:hidden" />
+          ? <AtomikLockup size={17} className="max-[430px]:[&_.wordmark]:hidden" />
           : <ParticlLockup size={19} studio={false} className="max-[430px]:[&_.wordmark]:hidden" />}
         <svg viewBox="0 0 10 14" aria-hidden className="mode-switch-caret">
           <path d="M5 1.5 8 5M5 12.5 8 9M5 1.5 2 5M5 12.5 2 9"
@@ -96,7 +96,7 @@ export default function ModeSwitch() {
             <AtomikMark size={17} />
             <span className="min-w-0 flex-1">
               <span className="mode-item-name">Atomik</span>
-              <span className="mode-item-note">Describe it, approve what it costs</span>
+              <span className="mode-item-note">Describe it, approve the cost</span>
             </span>
             {onAtomik && <Tick />}
           </button>

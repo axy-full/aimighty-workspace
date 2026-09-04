@@ -9,7 +9,7 @@ import { announceChange } from "@/lib/changes";
 import { usd } from "@/lib/format";
 import Boundary from "@/components/Boundary";
 import { ParticlSpinner } from "@/components/ParticlMark";
-import { AtomikMark } from "@/components/AtomikMark";
+import { AtomikStacked } from "@/components/AtomikMark";
 import ApprovalCard from "@/components/atomik/ApprovalCard";
 import ModelMenu, { type PlannerModel } from "@/components/atomik/ModelMenu";
 import type { Chat, Message, Step, Engine, AgentMode } from "@/lib/atomik";
@@ -297,7 +297,10 @@ export default function AtomikPage() {
           </div>
         ) : empty ? (
           <div className="atomik-hero">
-            <AtomikMark size={40} className="text-ink" />
+            {/* The one place the section introduces itself, so it does it
+                properly: the stacked lockup with the parent's name under it.
+                Once there is a conversation this is gone for good. */}
+            <AtomikStacked size={30} className="text-ink" />
             <h1 className="atomik-h1">What are we creating today?</h1>
             <p className="atomik-sub">
               Describe the whole thing. Atomik works out the shots and asks before it spends.

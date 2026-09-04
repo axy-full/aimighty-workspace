@@ -1565,10 +1565,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .mode-item.is-on { background: color-mix(in oklab, var(--color-blue) 10%, transparent); }
 .mode-item-name { display: block; font-size: 14px; font-weight: 550; color: var(--color-ink); }
 .mode-item-note { display: block; margin-top: 1px; font-size: 11.5px; color: var(--color-mute); }
-.atomik-word {
-  font-family: var(--font-display); font-weight: 600;
-  letter-spacing: -0.02em; color: var(--color-ink);
-}
 
 @media (max-width: 560px) {
   .atomik-dock { padding-bottom: calc(var(--tabbar) + 2px); }
