@@ -65,8 +65,25 @@ function explain(status: number, json: unknown): string {
   return `fal.ai returned ${status}${detail ? `: ${detail}` : ""}.`;
 }
 
-async function call<T>(url: string, init: RequestInit): Promise<T> {
-  const res = await fetch(url, { ...init, cache: "no-store" });
+async function call<T>(url: string, init: RequestInit, timeoutMs = 60_000): Promise<T> {
+  /* Without a deadline a hung socket holds the whole serverless function to
+     its maxDuration — five minutes of paid compute spent waiting on a
+     connection that will never answer. */
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    const err = e as Error;
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      // Deliberately NOT worded as a timeout: classifyFailure treats that word
+      // as retryable, and a submit that may already have been accepted (and
+      // billed) must never be sent a second time on its own.
+      throw new Error(
+        `fal.ai did not answer within ${Math.round(timeoutMs / 1000)}s. The job may still be on their queue.`
+      );
+    }
+    throw new Error(`Could not reach fal.ai: ${err.message}`);
+  }
   const text = await res.text();
   let json: unknown = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = { message: text.slice(0, 300) }; }
@@ -98,25 +115,35 @@ export async function falResult<T>(model: string, requestId: string): Promise<T>
 }
 
 /**
- * Submit and wait — for the jobs that finish in seconds. Polls the queue
- * gently rather than holding a connection open; gives up with a clear
- * message rather than leaving a function hanging at its time limit.
+ * Wait for a job that is ALREADY on the queue.
+ *
+ * Split out from falRun so the caller can write the request id down before
+ * it starts waiting. That one line is what makes a fal render durable: if
+ * this function instance dies mid-wait, fal still has the job, and the cron
+ * can finish it later from the id rather than paying for it twice.
  */
-export async function falRun<T>(
-  model: string, input: unknown, opts: { timeoutMs?: number; pollMs?: number } = {}
+export async function falAwait<T>(
+  model: string, requestId: string, opts: { timeoutMs?: number; pollMs?: number } = {}
 ): Promise<T> {
   const timeoutMs = opts.timeoutMs ?? 240_000;
   const pollMs = opts.pollMs ?? 1500;
-  const queued = await falSubmit(model, input);
   const started = Date.now();
   for (;;) {
-    const st = await falStatus(model, queued.request_id);
-    if (st.status === "COMPLETED") return falResult<T>(model, queued.request_id);
+    const st = await falStatus(model, requestId);
+    if (st.status === "COMPLETED") return falResult<T>(model, requestId);
     if (Date.now() - started > timeoutMs) {
-      throw new Error(`fal.ai is still working after ${Math.round(timeoutMs / 1000)}s — the job (${queued.request_id}) was left on the queue.`);
+      throw new Error(`fal.ai is still working after ${Math.round(timeoutMs / 1000)}s — the job (${requestId}) is still on their queue and will be picked up again.`);
     }
     await new Promise((r) => setTimeout(r, pollMs));
   }
+}
+
+/** Submit and wait, for jobs short enough to sit inside one request. */
+export async function falRun<T>(
+  model: string, input: unknown, opts: { timeoutMs?: number; pollMs?: number } = {}
+): Promise<T> {
+  const queued = await falSubmit(model, input);
+  return falAwait<T>(model, queued.request_id, opts);
 }
 
 /** Training progress out of the trainer's own log lines ("… 340/1500 …"). */

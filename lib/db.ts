@@ -240,6 +240,12 @@ const SCHEMA = [
 
 export async function ready(): Promise<void> {
   if (!_ready) {
+    /* The promise is memoised so the migration runs once per instance. That
+       makes the FAILURE path the dangerous one: a rejected promise left in
+       `_ready` would be handed to every subsequent request, so one blink of
+       the database during a cold start would turn into an outage lasting the
+       whole life of the container. Clearing it on failure means the next
+       request simply tries again. */
     _ready = (async () => {
       for (const stmt of SCHEMA) await db().execute(stmt);
       // Lightweight migrations for columns added after first deploy.
@@ -350,7 +356,10 @@ export async function ready(): Promise<void> {
         try { await db().execute(stmt); }
         catch { /* index already exists, or the column predates it */ }
       }
-    })();
+    })().catch((e) => {
+      _ready = null;
+      throw e;
+    });
   }
   return _ready;
 }

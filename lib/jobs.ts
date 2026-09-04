@@ -2,6 +2,7 @@ import { db, ready, now } from "./db";
 import { fetchTask } from "./ark";
 import { storeVideo } from "./storage";
 import { costUsd, effectiveRate } from "./models";
+import { reconcileFalRender } from "./identities";
 
 export type Generation = {
   id: string;
@@ -48,6 +49,9 @@ export type Generation = {
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/** libsql rows, typed loosely at the one place we read them by hand. */
+function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
+
 export function rowToGeneration(r: any): Generation {
   return {
     id: r.id,
@@ -283,15 +287,54 @@ export async function syncActive(limit = 12): Promise<void> {
 export async function syncPending(limit = 30): Promise<void> {
   await ready();
 
-  // An image render ran synchronously inside its own request — there was no
-  // task to poll. A row still "running" long past any plausible call means the
-  // function died mid-generation; fail it so it isn't stuck forever.
+  /* ── First, rescue what CAN be rescued ──────────────────────────────
+   * fal keeps its jobs on a durable queue, and every render writes its
+   * request id to the row before it starts waiting. So a render whose
+   * function died is not lost: ask fal how it went and seal the row.
+   * This has to run BEFORE the repair sweep below, or the sweep would
+   * fail rows whose work is sitting finished at the vendor.
+   * ---------------------------------------------------------------- */
+  try {
+    const falRows = await db().execute({
+      sql: `SELECT id, params, created_at FROM generations
+            WHERE provider='fal' AND status IN ('queued','running') AND deleted=0
+              AND json_extract(params, '$.falRequestId') IS NOT NULL
+            ORDER BY created_at DESC LIMIT ?`,
+      args: [limit],
+    });
+    await Promise.allSettled(rows(falRows).map((r) => {
+      let p: { falRequestId?: string; seed?: number } = {};
+      try { p = JSON.parse(r.params || "{}"); } catch { /* unreadable params, no handle */ }
+      if (!p.falRequestId) return Promise.resolve();
+      return reconcileFalRender({
+        id: r.id, requestId: p.falRequestId,
+        createdAt: Number(r.created_at),
+        seed: typeof p.seed === "number" ? p.seed : null,
+      });
+    }));
+  } catch (e) {
+    console.error("fal reconcile failed:", (e as Error).message);
+  }
+
+  /* ── Then fail what cannot ──────────────────────────────────────────
+   * Stills on Google and audio on ElevenLabs are synchronous: the bytes
+   * come back inside our own after() callback, with no task and no queue
+   * behind them. If such a row is still running long past the route's own
+   * five-minute ceiling, the function died mid-call and nothing will ever
+   * finish it. Fifteen minutes is the horizon — comfortably beyond any
+   * live work, so this can never kill a render that is still going.
+   * A fal row that never got as far as a request id belongs here too.
+   * ---------------------------------------------------------------- */
   await db().execute({
     sql: `UPDATE generations
           SET status='failed',
-              error='The image call was interrupted before it finished — render again.',
+              error='The call was interrupted before it finished — render again.',
               updated_at=?
-          WHERE kind='image' AND status IN ('queued','running') AND created_at < ?`,
+          WHERE status IN ('queued','running')
+            AND deleted = 0
+            AND ark_task_id IS NULL
+            AND json_extract(params, '$.falRequestId') IS NULL
+            AND created_at < ?`,
     args: [now(), now() - 15 * 60_000],
   });
 

@@ -9,6 +9,7 @@ import { IconClose, IconPlus, IconSparkle } from "./Icons";
 import { ParticlSpinner, Empty } from "./ParticlMark";
 import LazyMedia from "./LazyMedia";
 import Theatre from "./Theatre";
+import Boundary from "./Boundary";
 import type { Gen } from "./GenCard";
 
 /**
@@ -357,8 +358,10 @@ function IdentityComposer({ identity, projectId }: { identity: IdentityView; pro
           })}
         </div>
       )}
-      <Theatre gens={renders} activeId={open && renders.some((g) => g.id === open) ? open : null}
-        onClose={() => setOpen(null)} onSelect={setOpen} onChanged={refresh} />
+      <Boundary what="This render">
+        <Theatre gens={renders} activeId={open && renders.some((g) => g.id === open) ? open : null}
+          onClose={() => setOpen(null)} onSelect={setOpen} onChanged={refresh} />
+      </Boundary>
     </div>
   );
 }

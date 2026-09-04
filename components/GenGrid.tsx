@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import GenCard, { type Gen } from "./GenCard";
 import Theatre from "./Theatre";
+import Boundary from "./Boundary";
 import { Empty } from "./ParticlMark";
 import { usd } from "@/lib/format";
 import { useProject } from "@/lib/projectContext";
@@ -42,11 +43,13 @@ export default function GenGrid({
           <GenCard key={g.id} gen={g} projects={projects} onChanged={onChanged} onOpen={() => setOpen(g.id)} />
         ))}
       </div>
-      <Theatre
-        gens={gens} activeId={open && gens.some((g) => g.id === open) ? open : null}
-        onClose={() => setOpen(null)} onSelect={setOpen}
-        onChanged={() => onChanged?.()} onUse={useGen}
-      />
+      <Boundary what="This render">
+        <Theatre
+          gens={gens} activeId={open && gens.some((g) => g.id === open) ? open : null}
+          onClose={() => setOpen(null)} onSelect={setOpen}
+          onChanged={() => onChanged?.()} onUse={useGen}
+        />
+      </Boundary>
     </>
   );
 }

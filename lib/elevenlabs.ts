@@ -87,11 +87,28 @@ function explain(status: number, json: unknown): string {
   return `ElevenLabs returned ${status}${msg ? `: ${msg}` : ""}.`;
 }
 
+/**
+ * A deadline on every call. ElevenLabs is synchronous — the bytes come back
+ * in the response body — so a stalled connection would otherwise hold the
+ * route open for its full five minutes and leave the row spinning.
+ */
+async function elevenFetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    const err = e as Error;
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      throw new Error(`ElevenLabs did not answer within ${Math.round(timeoutMs / 1000)}s. Nothing was delivered, so nothing was charged.`);
+    }
+    throw new Error(`Could not reach ElevenLabs: ${err.message}`);
+  }
+}
+
 async function callJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${base()}${path}`, {
+  const res = await elevenFetch(`${base()}${path}`, {
     ...init, cache: "no-store",
     headers: { "xi-api-key": key(), ...(init.headers ?? {}) },
-  });
+  }, 30_000);
   const text = await res.text();
   let json: unknown = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = { message: text.slice(0, 300) }; }
@@ -101,11 +118,13 @@ async function callJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 /** POST for bytes: the audio itself, plus what the headers say it cost. */
 async function callAudio(path: string, body: unknown): Promise<{ bytes: Buffer; mime: string; credits: number | null; requestId: string | null }> {
-  const res = await fetch(`${base()}${path}`, {
+  // Generous: a long line on the v3 model, or a full music piece, genuinely
+  // takes a while to synthesise — but still well inside the route's ceiling.
+  const res = await elevenFetch(`${base()}${path}`, {
     method: "POST", cache: "no-store",
     headers: { "xi-api-key": key(), "Content-Type": "application/json", Accept: "audio/mpeg" },
     body: JSON.stringify(body),
-  });
+  }, 180_000);
   if (!res.ok) {
     const text = await res.text();
     let json: unknown = null;

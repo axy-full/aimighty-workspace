@@ -1,5 +1,5 @@
 import { db, ready, now, id as newId } from "./db";
-import { falConfigured, falSubmit, falStatus, falResult, falRun, progressFromLogs } from "./fal";
+import { falConfigured, falSubmit, falStatus, falResult, falAwait, progressFromLogs } from "./fal";
 import { readUploadBytes, storeIdentityZip, storeImageBytes, presignedReadUrl, usingBlob } from "./storage";
 import { nameProblem } from "./cast";
 import { invalidate, PROJECTS_KEY } from "./cache";
@@ -60,6 +60,19 @@ export const TRAIN_STEPS = Math.max(500, Math.min(5000, Number(process.env.FAL_T
  *  "$0.0024 per step. A minimum of 1000 steps will be billed." */
 export const TRAIN_USD_PER_STEP = Number(process.env.FAL_TRAIN_USD_PER_STEP ?? 0.0024);
 export const TRAIN_MIN_BILLED_STEPS = 1000;
+/** How long a training job may sit unfinished before we call it lost. A
+ *  1500-step portrait LoRA runs in tens of minutes; three hours means the
+ *  job is gone, and an identity must not read "training" for ever. */
+export const TRAIN_CEILING_MS = 3 * 60 * 60_000;
+/** The same idea for a render, which takes seconds rather than minutes. */
+export const RENDER_CEILING_MS = 30 * 60_000;
+/** And a much longer one for when we cannot even ASK how a render went —
+ *  fal unreachable, or the key withdrawn. A job that is demonstrably still
+ *  queued may be abandoned after half an hour; one we simply cannot see is
+ *  given hours, because giving up early would throw away the record of a
+ *  render fal may have finished and billed. */
+export const RENDER_UNREACHABLE_CEILING_MS = 6 * 60 * 60_000;
+
 /** Rendering with a LoRA: "$0.035 per megapixel", rounded UP to the megapixel. */
 export const RENDER_USD_PER_MP = Number(process.env.FAL_RENDER_USD_PER_MP ?? 0.035);
 
@@ -269,7 +282,18 @@ export async function syncIdentity(identity: Identity): Promise<{ identity: Iden
     if (/rejected the key/.test(msg)) await markFailed(identity.id, msg);
     return { identity: (await getIdentity(identity.id))!, progress: null };
   }
-  if (st.status !== "COMPLETED") return { identity, progress: progressFromLogs(st.logs) };
+  if (st.status !== "COMPLETED") {
+    // A job fal has forgotten would otherwise leave this identity reading
+    // "training" for good, with no way for anyone to clear it.
+    const since = identity.updatedAt || identity.createdAt;
+    if (now() - since > TRAIN_CEILING_MS) {
+      await markFailed(identity.id,
+        "The trainer never finished. Nothing usable came back, so train again — " +
+        "fal only bills for a completed run.");
+      return { identity: (await getIdentity(identity.id))!, progress: null };
+    }
+    return { identity, progress: progressFromLogs(st.logs) };
+  }
   try {
     const out = await falResult<TrainResult>(identity.trainer, identity.requestId);
     const lora = out.diffusers_lora_file?.url;
@@ -344,52 +368,156 @@ type RenderResult = {
   has_nsfw_concepts?: boolean[];
 };
 
+/** The exact body fal is asked to render. Kept in one place so a resumed
+ *  render and a fresh one can never drift apart. */
+function renderInput(identity: Identity, opts: { prompt: string; ratio: string; seed: number | null }) {
+  return {
+    prompt: opts.prompt,
+    loras: [{ path: identity.loraUrl, scale: 1 }],
+    image_size: imageSizeFor(opts.ratio),
+    num_images: 1,
+    num_inference_steps: 28,
+    guidance_scale: 3.5,
+    output_format: "png",
+    enable_safety_checker: true,
+    ...(opts.seed != null ? { seed: opts.seed } : {}),
+  };
+}
+
 /**
- * One render, start to finish, on a row that already exists as "running".
- * Runs after the response has gone out.
+ * fal looked at the job and said no — a safety refusal, or a result with no
+ * image in it. Distinct from every transport failure, because a refusal is
+ * final and retrying it just spends the clock.
+ */
+class RenderRefused extends Error {}
+
+async function failRender(genId: string, message: string, startedAt: number): Promise<void> {
+  await db().execute({
+    sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=?`,
+    args: [message.slice(0, 600), Math.max(0, now() - startedAt), now(), genId],
+  }).catch(() => {});
+  invalidate(PROJECTS_KEY);
+}
+
+/**
+ * Take a finished fal result and seal the row: fetch the image, store it,
+ * price it. Shared by the live path and by the cron's recovery, so a render
+ * rescued an hour later is recorded exactly like one that never stumbled.
+ */
+async function finishRender(genId: string, out: RenderResult, startedAt: number, seed: number | null): Promise<void> {
+  const img = out.images?.[0];
+  if (!img?.url) throw new RenderRefused("fal.ai returned no image.");
+  if (out.has_nsfw_concepts?.[0]) throw new RenderRefused("The safety checker flagged this render. Reword the prompt.");
+  const res = await fetch(img.url, { cache: "no-store", signal: AbortSignal.timeout(60_000) });
+  if (!res.ok) throw new Error(`Could not fetch the render (${res.status}).`);
+  let bytes = Buffer.from(await res.arrayBuffer());
+  const sharp = (await import("sharp")).default;
+  const meta = await sharp(bytes).metadata();
+  // The library keeps PNG. A JPEG from the vendor is decoded once, losslessly.
+  if (meta.format !== "png") bytes = await sharp(bytes).png().toBuffer();
+  const storedUrl = await storeImageBytes(genId, bytes);
+  const mp = ((img.width ?? meta.width ?? 1024) * (img.height ?? meta.height ?? 1024)) / 1_000_000;
+  const cost = Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) / 10_000;
+  await db().execute({
+    sql: `UPDATE generations
+          SET status='succeeded', stored_url=?, cost_usd=?, error=NULL, duration_ms=?,
+              params=json_set(params, '$.seed', ?, '$.width', ?, '$.height', ?), updated_at=?
+          WHERE id=?`,
+    args: [storedUrl, cost, Math.max(0, now() - startedAt), out.seed ?? seed ?? null,
+           img.width ?? meta.width ?? null, img.height ?? meta.height ?? null, now(), genId],
+  });
+  invalidate(PROJECTS_KEY);
+}
+
+/**
+ * One render, on a row that already exists as "running". Runs after the
+ * response has gone out.
+ *
+ * The submit and the wait are deliberately separate. fal holds the job on
+ * its own queue, so the moment we have a request id we write it to the row —
+ * and from then on the work is recoverable. If this instance is reclaimed
+ * mid-wait (a deploy, a timeout, a reaped container), the cron finds the row
+ * by that id and finishes the render fal has already done and charged for.
+ * It is the same trick that makes the video path durable, where ModelArk
+ * holds the task.
  */
 export async function runIdentityRender(genId: string, identity: Identity, opts: {
   prompt: string; ratio: string; seed: number | null; startedAt: number;
 }): Promise<void> {
+  let handle: string | null = null;
   try {
     if (!identity.loraUrl) throw new Error("This identity has no trained model yet.");
-    const out = await falRun<RenderResult>(RENDERER, {
-      prompt: opts.prompt,
-      loras: [{ path: identity.loraUrl, scale: 1 }],
-      image_size: imageSizeFor(opts.ratio),
-      num_images: 1,
-      num_inference_steps: 28,
-      guidance_scale: 3.5,
-      output_format: "png",
-      enable_safety_checker: true,
-      ...(opts.seed != null ? { seed: opts.seed } : {}),
-    });
-    const img = out.images?.[0];
-    if (!img?.url) throw new Error("fal.ai returned no image.");
-    if (out.has_nsfw_concepts?.[0]) throw new Error("The safety checker flagged this render. Reword the prompt.");
-    const res = await fetch(img.url, { cache: "no-store" });
-    if (!res.ok) throw new Error(`Could not fetch the render (${res.status}).`);
-    let bytes = Buffer.from(await res.arrayBuffer());
-    const sharp = (await import("sharp")).default;
-    const meta = await sharp(bytes).metadata();
-    // The library keeps PNG. A JPEG from the vendor is decoded once, losslessly.
-    if (meta.format !== "png") bytes = await sharp(bytes).png().toBuffer();
-    const storedUrl = await storeImageBytes(genId, bytes);
-    const mp = ((img.width ?? meta.width ?? 1024) * (img.height ?? meta.height ?? 1024)) / 1_000_000;
-    const cost = Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) / 10_000;
+    const queued = await falSubmit(RENDERER, renderInput(identity, opts));
+    handle = queued.request_id;
+    // Written down BEFORE the wait: this is the whole point.
     await db().execute({
-      sql: `UPDATE generations
-            SET status='succeeded', stored_url=?, cost_usd=?, error=NULL, duration_ms=?,
-                params=json_set(params, '$.seed', ?, '$.width', ?, '$.height', ?), updated_at=?
-            WHERE id=?`,
-      args: [storedUrl, cost, now() - opts.startedAt, out.seed ?? opts.seed ?? null,
-             img.width ?? meta.width ?? null, img.height ?? meta.height ?? null, now(), genId],
+      sql: `UPDATE generations SET params=json_set(params, '$.falRequestId', ?), updated_at=? WHERE id=?`,
+      args: [queued.request_id, now(), genId],
     });
+    const out = await falAwait<RenderResult>(RENDERER, queued.request_id);
+    await finishRender(genId, out, opts.startedAt, opts.seed);
   } catch (e) {
-    await db().execute({
-      sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=?`,
-      args: [(e as Error).message.slice(0, 600), now() - opts.startedAt, now(), genId],
-    }).catch(() => {});
+    const err = e as Error;
+    /* Once fal has the job, a failure HERE is almost always our side of the
+       wire: the wait ran long, the image URL blipped, the instance is being
+       torn down. Binning the row would throw away a render fal has finished
+       and charged for. So leave it running and let the cron finish it from
+       the request id — the ceilings in reconcileFalRender stop it spinning
+       for ever. Only a refusal, which no amount of asking again will change,
+       ends the render here. */
+    if (handle && !(err instanceof RenderRefused)) {
+      console.error(`identity render ${genId} interrupted; left for the cron:`, err.message);
+      return;
+    }
+    await failRender(genId, err.message, opts.startedAt);
   }
-  invalidate(PROJECTS_KEY);
+}
+
+/**
+ * Pick up a render whose function died after the job was submitted.
+ *
+ * Called by the cron for any fal row still running that carries a request id.
+ * Anything genuinely still working is left alone; it only gives up once the
+ * job has had far longer than a real render could need.
+ */
+export async function reconcileFalRender(row: {
+  id: string; requestId: string; createdAt: number; seed: number | null;
+}): Promise<void> {
+  let st;
+  try {
+    st = await falStatus(RENDERER, row.requestId);
+  } catch (e) {
+    const msg = (e as Error).message;
+    // A job fal no longer knows about is never coming back.
+    if (/\b404\b|not found/i.test(msg)) {
+      await failRender(row.id, "fal.ai no longer has this job. Render again.", row.createdAt);
+      return;
+    }
+    // Anything else is weather, and the next run of the cron asks again —
+    // but not for ever. A row nobody can ever get an answer about would
+    // otherwise spin on the wall until someone deleted it by hand.
+    if (now() - row.createdAt > RENDER_UNREACHABLE_CEILING_MS) {
+      await failRender(row.id,
+        `Could not reach fal.ai to find out how this render went: ${msg} ` +
+        "If it did complete, fal will still have charged for it.", row.createdAt);
+    }
+    return;
+  }
+  if (st.status !== "COMPLETED") {
+    if (now() - row.createdAt > RENDER_CEILING_MS) {
+      await failRender(row.id, "The render never came back from fal.ai. Render again.", row.createdAt);
+    }
+    return;
+  }
+  try {
+    const out = await falResult<RenderResult>(RENDERER, row.requestId);
+    await finishRender(row.id, out, row.createdAt, row.seed);
+  } catch (e) {
+    const err = e as Error;
+    // A refusal is final. Anything else gets another go on the next run,
+    // until the unreachable ceiling above calls it.
+    if (err instanceof RenderRefused || now() - row.createdAt > RENDER_UNREACHABLE_CEILING_MS) {
+      await failRender(row.id, err.message, row.createdAt);
+    }
+  }
 }

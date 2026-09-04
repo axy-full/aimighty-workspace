@@ -208,36 +208,66 @@ export async function submitTask(
     );
   }
 
-  const res = await fetch(TASKS_URL, {
+  const res = await arkFetch(TASKS_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey()}`,
     },
     body: payload,
-  });
+  }, 120_000);
 
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`Ark submit failed (${res.status}): ${text.slice(0, 600)}`);
   }
-  const json = JSON.parse(text) as { id?: string };
+  const json = parseArk<{ id?: string }>(text, "submit");
   if (!json.id) throw new Error(`Ark returned no task id: ${text.slice(0, 300)}`);
   return json.id;
 }
 
+/**
+ * One fetch to ModelArk, with a deadline. A submit carries a large body and
+ * is given longer than a poll; neither is allowed to hang until the
+ * function's own five-minute ceiling.
+ */
+async function arkFetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    const err = e as Error;
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      throw new Error(`ModelArk did not answer within ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw new Error(`Could not reach ModelArk: ${err.message}`);
+  }
+}
+
+/**
+ * Their body is JSON until the day it isn't — a gateway 502 arrives as an
+ * HTML page, and a bare JSON.parse turns that into "Unexpected token <",
+ * which tells nobody anything.
+ */
+function parseArk<T>(text: string, what: string): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`ModelArk sent an unreadable ${what} response: ${text.slice(0, 200)}`);
+  }
+}
+
 export async function fetchTask(taskId: string): Promise<ArkTask> {
-  const res = await fetch(`${TASKS_URL}/${encodeURIComponent(taskId)}`, {
+  const res = await arkFetch(`${TASKS_URL}/${encodeURIComponent(taskId)}`, {
     headers: { Authorization: `Bearer ${apiKey()}` },
     cache: "no-store",
-  });
+  }, 30_000);
 
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`Ark poll failed (${res.status}): ${text.slice(0, 600)}`);
   }
 
-  const j = JSON.parse(text) as ArkTaskResponse;
+  const j = parseArk<ArkTaskResponse>(text, "poll");
   const rawStatus = String(j.status ?? "queued").toLowerCase();
   const status: ArkStatus = (
     ["queued", "running", "succeeded", "failed", "cancelled"].includes(rawStatus)

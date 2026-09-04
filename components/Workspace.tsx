@@ -14,6 +14,7 @@ import { appAlert, appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
 import Feed, { type FeedFilter } from "./Feed";
 import CreditStrip from "./CreditStrip";
+import Boundary from "./Boundary";
 import Composer, { type Engine, type WriterInfo } from "./Composer";
 import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
@@ -292,11 +293,16 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
 
   return (
     <div className={`generate ${setupOpen ? "" : "generate-solo"}`}>
-      <Feed
-        gens={gens} visible={visible} activeId={activeId} onOpen={setSelected}
-        filter={filter} setFilter={setFilter} scopeName={scopeName}
-        aside={<CreditStrip vendor={modelDef.provider} />}
-      />
+      {/* The wall draws whatever the library holds, including rows made by
+          engines that have since been retired. One unreadable row must not
+          take the composer down with it. */}
+      <Boundary what="The wall" resetKey={bin}>
+        <Feed
+          gens={gens} visible={visible} activeId={activeId} onOpen={setSelected}
+          filter={filter} setFilter={setFilter} scopeName={scopeName}
+          aside={<CreditStrip vendor={modelDef.provider} />}
+        />
+      </Boundary>
 
       <div className="island" ref={islandRef}>
         <Composer
@@ -323,11 +329,13 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         />
       </aside>
 
-      <Theatre
-        gens={visible} activeId={activeId}
-        onClose={() => setSelected(null)} onSelect={setSelected}
-        onChanged={afterChange} onUse={useGen} onEditExtend={editExtend}
-      />
+      <Boundary what="This render">
+        <Theatre
+          gens={visible} activeId={activeId}
+          onClose={() => setSelected(null)} onSelect={setSelected}
+          onChanged={afterChange} onUse={useGen} onEditExtend={editExtend}
+        />
+      </Boundary>
     </div>
   );
 }
