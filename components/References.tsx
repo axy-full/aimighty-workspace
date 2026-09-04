@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { appAlert } from "./dialog";
+import { appAlert, appConfirm } from "./dialog";
 import { IconClose, IconPlus } from "./Icons";
 import { ParticlSpinner } from "./ParticlMark";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
@@ -175,9 +175,26 @@ export default function References({
     setRefs((prev) => prev.map((x) => (x.id === r.id ? { ...x, role } : x)));
   }
 
-  function remove(id: string) {
-    setRefs((prev) => prev.filter((r) => r.id !== id));
-    fetch(`/api/uploads/${id}`, { method: "DELETE" }).catch(() => {});
+  /**
+   * The × on a thumbnail.
+   *
+   * This asks first because it does more than the × suggests: the file is
+   * DELETED from storage, not merely taken off this prompt. The strip owns
+   * every upload it made and nothing else holds a handle to one, so there
+   * is no copy to fall back on — using the same file again means uploading
+   * it again. A silent hard delete behind a hover-revealed × was the one
+   * unguarded way to lose bytes in this app.
+   */
+  async function remove(r: RefItem) {
+    const ok = await appConfirm(
+      `Remove ${r.filename}?`,
+      "This deletes the file, it doesn't just take it off the prompt. " +
+      "Using it again means uploading it again.",
+      { confirmLabel: "Remove", danger: true },
+    );
+    if (!ok) return;
+    setRefs((prev) => prev.filter((x) => x.id !== r.id));
+    fetch(`/api/uploads/${r.id}`, { method: "DELETE" }).catch(() => {});
   }
 
   const referenceImages = refs.filter((r) => r.kind === "image" && r.role === "reference_image");
@@ -234,7 +251,7 @@ export default function References({
                       "The stored copy's bytes do not hash-match the original file. Remove it and upload again before spending a render on it."); }}
                     className="ref-bad" title="Stored bytes do not match the original">!</button>
                 )}
-                <button type="button" onClick={(e) => { e.stopPropagation(); remove(r.id); }}
+                <button type="button" onClick={(e) => { e.stopPropagation(); void remove(r); }}
                   className="ref-x reveal" title="Remove"><IconClose className="!h-3 !w-3" /></button>
               </div>
             );

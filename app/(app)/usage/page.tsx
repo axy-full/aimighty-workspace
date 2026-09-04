@@ -13,6 +13,7 @@ function gb(bytes: number): string {
 import SectionNav from "@/components/SectionNav";
 import { Waiting, Trouble } from "@/components/ParticlMark";
 import { IconClose } from "@/components/Icons";
+import { appConfirm } from "@/components/dialog";
 import { usePageTitle } from "@/lib/usePageTitle";
 
 /**
@@ -391,8 +392,22 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
     finally { setBusy(false); }
   }
 
-  async function remove(id: string) {
-    const res = await fetch(`/api/topups?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  /**
+   * Removing a top-up rewrites what this vendor's ledger says is left, so
+   * it asks — the number people read to decide whether they can afford a
+   * render moves the moment this runs.
+   */
+  async function remove(t: Vendor["topups"][number]) {
+    const amount = t.credits != null
+      ? `${cr(t.credits)} credits${t.amountUsd ? ` · ${usd(t.amountUsd, 2)}` : ""}`
+      : usd(t.amountUsd, 2);
+    const ok = await appConfirm(
+      `Remove this top-up of ${amount}?`,
+      "The balance on this ledger drops by that much. Spending already recorded stays as it is.",
+      { confirmLabel: "Remove", danger: true },
+    );
+    if (!ok) return;
+    const res = await fetch(`/api/topups?id=${encodeURIComponent(t.id)}`, { method: "DELETE" });
     if (res.ok) onChanged();
   }
 
@@ -560,7 +575,7 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
               <li key={t.id} className="group flex items-center gap-2 text-[13px]">
                 <span className="tabular-nums font-medium">{t.credits != null ? `${cr(t.credits)} credits${t.amountUsd ? ` · ${usd(t.amountUsd, 2)}` : ""}` : usd(t.amountUsd, 2)}</span>
                 <span className="truncate text-mute">{t.note || "—"} · {timeAgo(t.createdAt)}</span>
-                <button type="button" onClick={() => remove(t.id)} title="Remove this entry"
+                <button type="button" onClick={() => void remove(t)} title="Remove this entry"
                   className="reveal ml-auto grid h-6 w-6 place-items-center rounded-full text-mute hover:text-lift"><IconClose className="!h-3 !w-3" /></button>
               </li>
             ))}

@@ -134,10 +134,15 @@ export default function DialogHost() {
         )}
         <div className="mt-5 flex gap-2">
           {current.kind !== "alert" && (
-            <button onClick={cancel} className="chip flex-1 justify-center !py-2.5 !text-[15px] !text-dim">Cancel</button>
+            /* On a destructive dialog the SAFE button is the one that holds
+               focus. Autofocusing "Delete" meant a stray Return — the same
+               keypress that just sent a prompt — could destroy the thing the
+               dialog was asking about, which defeats the asking. */
+            <button onClick={cancel} autoFocus={current.danger}
+              className="chip flex-1 justify-center !py-2.5 !text-[15px] !text-dim">Cancel</button>
           )}
           <button
-            onClick={confirm} autoFocus={current.kind !== "prompt"}
+            onClick={confirm} autoFocus={current.kind !== "prompt" && !current.danger}
             className={`flex-1 rounded-full py-2.5 text-[15px] font-semibold text-white ${
               current.danger ? "bg-lift" : current.kind === "alert" ? "bg-blue" : "bg-blue"
             }`}

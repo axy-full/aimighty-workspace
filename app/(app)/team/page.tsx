@@ -96,8 +96,14 @@ export default function TeamPage() {
     finally { setSending(null); }
   }
 
-  async function revoke(code: string) {
-    await fetch(`/api/team/invites/${code}`, { method: "DELETE" });
+  async function revoke(iv: Invite) {
+    const ok = await appConfirm(
+      `Revoke the invitation to ${iv.email}?`,
+      "Their link stops working straight away. If they still need access you'd have to invite them again.",
+      { confirmLabel: "Revoke", danger: true },
+    );
+    if (!ok) return;
+    await fetch(`/api/team/invites/${iv.code}`, { method: "DELETE" });
     refresh();
   }
 
@@ -199,7 +205,7 @@ export default function TeamPage() {
                     <button onClick={() => copyLink(iv.code)} className="chip !py-1.5 !text-[13px]">
                       {copied === iv.code ? "Copied ✓" : "Copy link"}
                     </button>
-                    <button onClick={() => revoke(iv.code)} className="chip !py-1.5 !text-[13px] !text-lift">
+                    <button onClick={() => void revoke(iv)} className="chip !py-1.5 !text-[13px] !text-lift">
                       Revoke
                     </button>
                   </span>
