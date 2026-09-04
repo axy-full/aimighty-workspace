@@ -108,6 +108,31 @@ export function Waiting({ label = "Loading" }: { label?: string }) {
 }
 
 /** An empty state that looks designed rather than absent: the mark at rest. */
+/**
+ * A screen that could not read what it needs. Distinct from Empty, which
+ * means "nothing here yet" — telling someone their library is empty when
+ * the request actually failed is the more expensive lie of the two.
+ */
+export function Trouble({ label = "This didn't load", detail, onRetry }: {
+  label?: string; detail?: string | null; onRetry?: () => void;
+}) {
+  return (
+    <div className="screen grid place-items-center">
+      <div className="max-w-[44ch] text-center">
+        <p className="text-[16px] font-semibold tracking-[-0.01em]">{label}</p>
+        <p className="mt-2 text-[14px] leading-relaxed text-dim">
+          The connection or the server had a problem. Nothing has been lost —
+          anything rendering carries on.
+        </p>
+        {detail && <p className="mt-2 break-words font-mono text-[11.5px] text-mute">{detail}</p>}
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="chip mt-4 !text-blue">Try again</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Empty({ title, line, action, compact = false }: {
   title: string; line?: string; action?: React.ReactNode; compact?: boolean;
 }) {

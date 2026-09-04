@@ -63,11 +63,15 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
-  await deleteVideo(id);
+  /* The row first, the bytes second. If the order were reversed and the
+     UPDATE then failed, the render would still be listed as delivered with
+     its file already gone — a permanently broken tile with no repair path.
+     An orphaned blob is only storage, and the reverse is unrecoverable. */
   await db().execute({
     sql: `UPDATE generations SET deleted=1, stored_url=NULL, source_url=NULL, updated_at=? WHERE id=?`,
     args: [Date.now(), id],
   });
+  await deleteVideo(id);
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
 }

@@ -40,7 +40,12 @@ export default function SettingsPage() {
 
   async function signOut() {
     setBusy(true);
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch { /* the cookie may already be gone; leaving is still the intent */ }
+    finally { setBusy(false); }
+    // Leave regardless. A failed request must not strand someone on a dead
+    // button believing they are still signed in.
     router.push("/login");
     router.refresh();
   }
@@ -409,7 +414,13 @@ function PushRow() {
         });
         await sub.unsubscribe();
       }
-    } finally { setState("off"); }
+      setState("off");
+    } catch (e) {
+      // The old code set "off" in a finally, so a failed unsubscribe showed
+      // the toggle off while the device kept receiving pushes.
+      setState("on");
+      await appAlert("Notifications are still on", (e as Error).message);
+    }
   }
 
   if (state === "unsupported") return null;

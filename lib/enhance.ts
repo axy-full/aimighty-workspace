@@ -536,8 +536,11 @@ export async function enhancePrompt(opts: {
   if (!key) throw new Error("ARK_API_KEY is not set");
   let lastErr = "";
   for (const model of TEXT_MODELS()) {
+    // A minute, not two: this is a $0.001 helper sitting in front of a paid
+    // submit that wants 120s of its own, and both have to fit inside 300s.
     const res = await fetch(CHAT_URL(), {
       method: "POST",
+      signal: AbortSignal.timeout(60_000),
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model,

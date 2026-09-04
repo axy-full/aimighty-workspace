@@ -56,10 +56,13 @@ export default function Canvas({ projectId, items, onChanged, onUse }: Props) {
   );
 
   const save = useCallback(async (id: string, patch: Partial<CanvasItem>) => {
-    await fetch(`/api/canvas/${id}`, {
+    const res = await fetch(`/api/canvas/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
-    });
+    }).catch(() => null);
+    // The board is shared, so a silently dropped move means one person sees
+    // a layout nobody else does until the next poll snaps it back.
+    if (!res?.ok) console.error(`canvas ${id}: the move wasn't saved`);
     onChanged();
   }, [onChanged]);
 

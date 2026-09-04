@@ -49,6 +49,20 @@ export type Generation = {
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Run tasks a few at a time rather than all at once.
+ *
+ * The cron has 300 seconds and a job of work that includes downloading
+ * masters up to 200 MB. Firing thirty of those in one Promise.allSettled
+ * lets a single slow download own the whole window, and everything behind
+ * it goes unreconciled until the next run.
+ */
+async function inChunks<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>): Promise<void> {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.allSettled(items.slice(i, i + size).map(fn));
+  }
+}
+
 /** libsql rows, typed loosely at the one place we read them by hand. */
 function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
 
@@ -276,7 +290,7 @@ export async function syncActive(limit = 12): Promise<void> {
     args: [limit],
   });
   if (!rs.rows.length) return;
-  await Promise.allSettled(rs.rows.map((r) => syncGeneration(rowToGeneration(r))));
+  await inChunks(rows(rs), 6, (r) => syncGeneration(rowToGeneration(r)));
 }
 
 /**
@@ -302,7 +316,7 @@ export async function syncPending(limit = 30): Promise<void> {
             ORDER BY created_at DESC LIMIT ?`,
       args: [limit],
     });
-    await Promise.allSettled(rows(falRows).map((r) => {
+    await inChunks(rows(falRows), 4, (r) => {
       let p: { falRequestId?: string; seed?: number } = {};
       try { p = JSON.parse(r.params || "{}"); } catch { /* unreadable params, no handle */ }
       if (!p.falRequestId) return Promise.resolve();
@@ -311,7 +325,7 @@ export async function syncPending(limit = 30): Promise<void> {
         createdAt: Number(r.created_at),
         seed: typeof p.seed === "number" ? p.seed : null,
       });
-    }));
+    });
   } catch (e) {
     console.error("fal reconcile failed:", (e as Error).message);
   }
@@ -341,6 +355,26 @@ export async function syncPending(limit = 30): Promise<void> {
   // Repair clauses only look back 3 days: past that, Ark's task and URL are
   // long gone (48h expiry) and re-polling a dead task forever is just noise.
   const horizon = now() - 3 * 86400_000;
+
+  /* ── And the video rows whose task ModelArk has since forgotten ──────
+   * The horizon above bounds only the second clause of the sweep below;
+   * the first one — anything not yet terminal — had no age bound at all,
+   * so a row whose task record expired was re-polled for ever and never
+   * reached a terminal state. Three days is deliberately generous: the
+   * poll itself has a 30s deadline and a single ModelArk 502 must never
+   * be mistaken for an expired task and kill a live, already-paid render.
+   * ------------------------------------------------------------------ */
+  await db().execute({
+    sql: `UPDATE generations
+          SET status='failed',
+              error='ModelArk no longer has this task — its record expired before the result could be read. Render again.',
+              updated_at=?
+          WHERE status IN ('queued','running')
+            AND deleted = 0
+            AND ark_task_id IS NOT NULL
+            AND created_at < ?`,
+    args: [now(), horizon],
+  });
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status NOT IN ('succeeded','failed','cancelled') AND g.deleted=0)
              OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
@@ -348,5 +382,5 @@ export async function syncPending(limit = 30): Promise<void> {
           ORDER BY g.created_at DESC LIMIT ?`,
     args: [horizon, limit],
   });
-  await Promise.allSettled(rs.rows.map((r) => syncGeneration(rowToGeneration(r))));
+  await inChunks(rows(rs), 4, (r) => syncGeneration(rowToGeneration(r)));
 }

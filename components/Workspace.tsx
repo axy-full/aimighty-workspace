@@ -172,7 +172,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
 
   const query =
     bin === "all" || bin === "unfiled" ? "" : `&projectId=${encodeURIComponent(bin)}`;
-  const { data, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=60&kind=${kind}${query}`, 5000);
+  const { data, error: feedError, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=60&kind=${kind}${query}`, 5000);
   const gens = useMemo(() => {
     const all = data?.generations ?? [];
     return bin === "unfiled" ? all.filter((g) => !g.projectId) : all;
@@ -301,6 +301,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           gens={gens} visible={visible} activeId={activeId} onOpen={setSelected}
           filter={filter} setFilter={setFilter} scopeName={scopeName}
           aside={<CreditStrip vendor={modelDef.provider} />}
+          problem={data ? null : feedError}
         />
       </Boundary>
 

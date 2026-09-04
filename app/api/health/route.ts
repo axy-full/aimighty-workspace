@@ -86,7 +86,10 @@ export async function GET(req: Request) {
     videosSaved,
     videosAtRisk,
     providers: PROVIDERS.map((p) => ({ id: p.id, configured: providerConfigured(p) })),
-    cron: await cronStatus(),
+    // Reads the settings table, so during a database outage it throws — and
+    // the one endpoint whose job is to SAY "database unreachable" would 500
+    // instead of answering. Its absence is itself the signal.
+    cron: await cronStatus().catch(() => null),
     arkKeyConfigured: Boolean(process.env.ARK_API_KEY),
     pushConfigured: Boolean(
       process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY

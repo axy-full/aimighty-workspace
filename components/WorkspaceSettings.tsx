@@ -13,7 +13,7 @@ import { Switch } from "@/components/Panel";
 type Settings = Record<string, string>;
 
 export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
-  const { data, refresh } = useApi<{ settings: Settings }>("/api/settings");
+  const { data, error, refresh } = useApi<{ settings: Settings }>("/api/settings");
   /** null means "showing what the server has"; a string means someone typed.
    *  Derived rather than copied into state by an effect — copying would fight
    *  every poll for control of the field. */
@@ -37,7 +37,17 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
     } finally { setBusy(false); }
   }
 
-  if (!data) return null;
+  if (!data) {
+    // Returning null made the whole panel disappear, which reads as "this
+    // workspace has no settings" rather than "they could not be read".
+    if (!error) return null;
+    return (
+      <p className="px-[18px] py-3 text-[13px] text-mute">
+        The workspace settings couldn&rsquo;t be read ({error}).{" "}
+        <button onClick={refresh} className="text-blue">Try again</button>
+      </p>
+    );
+  }
   const saved = data.settings.namingTemplate ?? "";
   const template = draft ?? saved;
   const dirty = draft != null && draft !== saved;

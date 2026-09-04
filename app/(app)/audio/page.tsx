@@ -15,7 +15,7 @@ import { usd, timeAgo, downloadHref } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { appConfirm } from "@/components/dialog";
 import { IconDown, IconTrash, IconSparkle, IconAudio, IconSearch } from "@/components/Icons";
-import ParticlLockup, { Empty, ParticlSpinner, Waiting } from "@/components/ParticlMark";
+import ParticlLockup, { Empty, ParticlSpinner, Waiting, Trouble } from "@/components/ParticlMark";
 import CreditStrip from "@/components/CreditStrip";
 import type { Gen } from "@/components/GenCard";
 
@@ -44,7 +44,7 @@ export default function AudioPage() {
   usePageTitle("Audio");
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
-  const { data: setup } = useApi<Setup>("/api/audio", 0);
+  const { data: setup, error: setupError, refresh: refreshSetup } = useApi<Setup>("/api/audio", 0);
   const q = `/api/jobs?kind=audio&limit=60${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}`;
   const { data: jobs, refresh } = useApi<{ generations: Gen[] }>(q, 5000);
   useOnChange(refresh);
@@ -122,7 +122,7 @@ export default function AudioPage() {
     refresh();
   }
 
-  if (!setup) return <Waiting label="Opening the audio desk" />;
+  if (!setup) return setupError ? <Trouble label="The audio desk didn't open" detail={setupError} onRetry={refreshSetup} /> : <Waiting label="Opening the audio desk" />;
 
   const acct = setup.account;
   const left = acct ? Math.max(0, acct.limit - acct.used) : null;

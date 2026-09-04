@@ -27,7 +27,20 @@ export function usingBlob(): boolean {
 }
 
 export async function storeVideo(genId: string, sourceUrl: string): Promise<string> {
-  const res = await fetch(sourceUrl);
+  /* Two minutes, and no less: a 200 MB master over a slow link legitimately
+     needs it, and abandoning one early would strand the very render the cron
+     exists to rescue. But not unbounded either — this runs 30-wide inside a
+     300s cron, where one stalled download could own the whole window. */
+  let res: Response;
+  try {
+    res = await fetch(sourceUrl, { signal: AbortSignal.timeout(120_000) });
+  } catch (e) {
+    const err = e as Error;
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      throw new Error("The render's file did not finish downloading in 120s.");
+    }
+    throw new Error(`Could not download the render: ${err.message}`);
+  }
   if (!res.ok) throw new Error(`Could not download render (${res.status})`);
   const buf = Buffer.from(await res.arrayBuffer());
 

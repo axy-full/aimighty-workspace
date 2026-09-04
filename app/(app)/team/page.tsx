@@ -10,7 +10,7 @@ import { usd, timeAgo } from "@/lib/format";
 import { avatarHue, initialsOf } from "@/lib/avatar";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { Empty } from "@/components/ParticlMark";
-import { appConfirm } from "@/components/dialog";
+import { appConfirm, appAlert } from "@/components/dialog";
 
 type Member = {
   id: string; email: string; name: string; role: string;
@@ -97,11 +97,17 @@ export default function TeamPage() {
     refresh();
   }
 
-  function copyLink(code: string) {
+  async function copyLink(code: string) {
     const link = `${window.location.origin}/invite/${code}`;
-    navigator.clipboard?.writeText(link);
-    setCopied(code);
-    setTimeout(() => setCopied(null), 2000);
+    try {
+      // Safari refuses the write outside a user gesture, and http origins
+      // have no clipboard at all — both used to still say "Copied ✓".
+      await navigator.clipboard.writeText(link);
+      setCopied(code);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      await appAlert("The link wasn't copied", link);
+    }
   }
 
   const users = data?.users ?? [];

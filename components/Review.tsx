@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { appAlert } from "./dialog";
 import { useApi } from "@/lib/useApi";
 import { timeAgo } from "@/lib/format";
 
@@ -26,11 +27,19 @@ export default function Review({ genId, state, reviewBy, onChanged }: {
   const notes = data?.notes ?? [];
 
   async function setState(next: "" | "approved" | "changes") {
-    await fetch(`/api/jobs/${genId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reviewState: next === state ? "" : next }),
-    });
-    onChanged();
+    try {
+      const res = await fetch(`/api/jobs/${genId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewState: next === state ? "" : next }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "The review wasn't saved");
+      onChanged();
+    } catch (e) {
+      // Doing nothing silently is worse than the failure itself: the button
+      // never latches, so the person assumes they mis-clicked and walks away
+      // believing the shot is signed off.
+      await appAlert("The review wasn't saved", (e as Error).message);
+    }
   }
 
   async function addNote() {
@@ -38,12 +47,17 @@ export default function Review({ genId, state, reviewBy, onChanged }: {
     if (!body || busy) return;
     setBusy(true);
     try {
-      await fetch("/api/notes", {
+      const res = await fetch("/api/notes", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ genId, text: body }),
       });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "The note wasn't posted");
+      // Cleared only once it has actually saved — clearing first threw away
+      // whatever had just been typed.
       setText("");
       refresh();
+    } catch (e) {
+      await appAlert("The note wasn't posted", (e as Error).message);
     } finally { setBusy(false); }
   }
 

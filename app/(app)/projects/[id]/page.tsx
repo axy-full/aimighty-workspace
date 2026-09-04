@@ -18,7 +18,7 @@ import { useApi } from "@/lib/useApi";
 import { usd, hours, pct, timeAgo } from "@/lib/format";
 import { type Analytics, Headline, BarList, ShotTable, Patterns } from "@/components/Analytics";
 import { appPrompt, appAlert } from "@/components/dialog";
-import { Waiting } from "@/components/ParticlMark";
+import { Waiting, Trouble } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
 
 type Project = { id: string; name: string; description: string; code?: string; category?: string };
@@ -31,7 +31,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const router = useRouter();
   const { selection, setSelection, refreshProjects: refreshCtx } = useProject();
-  const { data } = useApi<Analytics>(`/api/analytics?projectId=${encodeURIComponent(id)}`, 30000);
+  const { data, error, refresh } = useApi<Analytics>(`/api/analytics?projectId=${encodeURIComponent(id)}`, 30000);
   const { data: projects, refresh: refreshProjects } =
     useApi<{ projects: Project[] }>("/api/projects", 60000);
   const { data: shotData, refresh: refreshShots } =
@@ -95,7 +95,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   }
 
   usePageTitle(project?.name ?? "Project");
-  if (!data) return <Waiting label="Reading the project" />;
+  if (!data) return error ? <Trouble label="The project didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the project" />;
 
   const t = data.totals;
   const shots = shotData?.shots ?? [];

@@ -17,7 +17,7 @@ import {
   type Analytics, Headline, BarList, StuckTable, ShotTable, Patterns,
 } from "@/components/Analytics";
 import SectionNav from "@/components/SectionNav";
-import { Waiting } from "@/components/ParticlMark";
+import { Waiting, Trouble } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
 
 const WINDOWS = [
@@ -29,10 +29,10 @@ const WINDOWS = [
 
 export default function DashboardPage() {
   const [days, setDays] = useState(0);
-  const { data } = useApi<Analytics>(`/api/analytics?days=${days}`, 30000);
+  const { data, error, refresh } = useApi<Analytics>(`/api/analytics?days=${days}`, 30000);
 
   usePageTitle("Production");
-  if (!data) return <Waiting label="Reading production" />;
+  if (!data) return error ? <Trouble label="Production didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading production" />;
 
   const maxDay = Math.max(...data.byDay.map((d) => d.spend), 0.000001);
 

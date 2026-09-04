@@ -29,7 +29,7 @@ export async function GET(req: Request) {
                  up.stored_url AS upload_url, up.mime AS upload_mime
           FROM canvas_items c
           LEFT JOIN users u  ON u.id = c.created_by
-          LEFT JOIN generations g ON g.id = c.ref_id AND c.kind = 'generation'
+          LEFT JOIN generations g ON g.id = c.ref_id AND c.kind = 'generation' AND g.deleted = 0
           LEFT JOIN shots s  ON s.id = g.shot_id
           LEFT JOIN uploads up ON up.id = c.ref_id AND c.kind = 'upload'
           WHERE c.project_id = ?

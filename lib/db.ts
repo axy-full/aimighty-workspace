@@ -238,6 +238,33 @@ const SCHEMA = [
    )`,
 ];
 
+/**
+ * An ALTER expected to fail exactly once, when the column already exists.
+ *
+ * A bare `catch {}` here cannot tell "already there" from a dropped
+ * connection, and swallowing the second one is the worse bug of the two:
+ * ready() would resolve, report the schema complete, and cache that success
+ * for the life of the instance while a column every query touches is simply
+ * missing. Only the duplicate is ignored; anything else propagates, clears
+ * the memo, and is retried by the next request.
+ */
+async function addColumn(table: string, decl: string): Promise<void> {
+  try {
+    await db().execute(`ALTER TABLE ${table} ADD COLUMN ${decl}`);
+  } catch (e) {
+    if (!/duplicate column|already exists/i.test((e as Error).message)) throw e;
+  }
+}
+
+/** Same reasoning for an index that may name a column added moments ago. */
+async function addIndex(stmt: string): Promise<void> {
+  try {
+    await db().execute(stmt);
+  } catch (e) {
+    if (!/already exists|no such column|duplicate/i.test((e as Error).message)) throw e;
+  }
+}
+
 export async function ready(): Promise<void> {
   if (!_ready) {
     /* The promise is memoised so the migration runs once per instance. That
@@ -249,28 +276,20 @@ export async function ready(): Promise<void> {
     _ready = (async () => {
       for (const stmt of SCHEMA) await db().execute(stmt);
       // Lightweight migrations for columns added after first deploy.
-      try {
-        await db().execute(`ALTER TABLE generations ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`);
-      } catch { /* column already exists */ }
-      try {
-        await db().execute(`ALTER TABLE uploads ADD COLUMN kind TEXT NOT NULL DEFAULT 'image'`);
-      } catch { /* column already exists */ }
-      try {
-        await db().execute(`ALTER TABLE uploads ADD COLUMN duration_s REAL`);
-      } catch { /* column already exists */ }
+      await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
+      await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
+      await addColumn("uploads", `duration_s REAL`);
       for (const col of [
         // Reference uploads keep their master untouched; when a downstream
         // API can't accept the master, the derivative lives alongside it.
         `derivative_url TEXT`, `derivative_bytes INTEGER`,
         `derivative_note TEXT`, `sha256 TEXT`,
       ]) {
-        try { await db().execute(`ALTER TABLE uploads ADD COLUMN ${col}`); }
-        catch { /* column already exists */ }
+        await addColumn("uploads", col);
       }
       // A deleted member is retired, not erased: their renders and spend keep
       // their name on the ledger, while access and listings treat them as gone.
-      try { await db().execute(`ALTER TABLE users ADD COLUMN deleted_at INTEGER`); }
-      catch { /* column already exists */ }
+      await addColumn("users", `deleted_at INTEGER`);
       // Looks: a category, a cover, a blurb, a style block, references,
       // and whether the product shipped it.
       for (const col of [
@@ -279,20 +298,17 @@ export async function ready(): Promise<void> {
         `cover_gen_id TEXT`, `cover_upload_id TEXT`, `swatch TEXT`,
         `builtin INTEGER NOT NULL DEFAULT 0`, `updated_at INTEGER`,
       ]) {
-        try { await db().execute(`ALTER TABLE shot_presets ADD COLUMN ${col}`); }
-        catch { /* column already exists */ }
+        await addColumn("shot_presets", col);
       }
       // Invites remember whether and when they were emailed.
       for (const col of [`sent_at INTEGER`, `send_count INTEGER NOT NULL DEFAULT 0`]) {
-        try { await db().execute(`ALTER TABLE invites ADD COLUMN ${col}`); }
-        catch { /* column already exists */ }
+        await addColumn("invites", col);
       }
       for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`,
                          // What kind of job this is — the axis R2 calls
                          // genre/category-level performance.
                          `category TEXT NOT NULL DEFAULT ''`]) {
-        try { await db().execute(`ALTER TABLE projects ADD COLUMN ${col}`); }
-        catch { /* column already exists */ }
+        await addColumn("projects", col);
       }
       for (const col of [
         `refine_model TEXT`, `refine_in_tokens INTEGER`,
@@ -319,8 +335,7 @@ export async function ready(): Promise<void> {
         // A name the team gives a render, shown in place of the clip id.
         `title TEXT`,
       ]) {
-        try { await db().execute(`ALTER TABLE generations ADD COLUMN ${col}`); }
-        catch { /* column already exists */ }
+        await addColumn("generations", col);
       }
       /* Indexes for columns added above — created AFTER the ALTERs, since on
          an existing database the column doesn't exist until they've run.
@@ -328,11 +343,9 @@ export async function ready(): Promise<void> {
          filters on shot_id, so without this they scan the whole table. */
       /* Top-ups belong to a vendor. Everything recorded before there was more
          than one vendor was ModelArk money, which the default preserves. */
-      try { await db().execute(`ALTER TABLE topups ADD COLUMN provider TEXT NOT NULL DEFAULT 'byteplus'`); }
-      catch { /* column already exists */ }
+      await addColumn("topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */
-      try { await db().execute(`ALTER TABLE topups ADD COLUMN credits INTEGER`); }
-      catch { /* column already exists */ }
+      await addColumn("topups", `credits INTEGER`);
       /* The balances the team reported on 3 Sep 2026, written once into the
          ledger so each vendor's credit counts down from what was actually
          loaded. Fixed ids: a redeploy never records them twice, and deleting
@@ -353,8 +366,7 @@ export async function ready(): Promise<void> {
         `CREATE INDEX IF NOT EXISTS idx_gen_shot ON generations(shot_id)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_kind ON generations(kind)`,
       ]) {
-        try { await db().execute(stmt); }
-        catch { /* index already exists, or the column predates it */ }
+        await addIndex(stmt);
       }
     })().catch((e) => {
       _ready = null;

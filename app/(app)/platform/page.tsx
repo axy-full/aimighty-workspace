@@ -13,7 +13,7 @@
  */
 import { useApi } from "@/lib/useApi";
 import Link from "next/link";
-import { Waiting } from "@/components/ParticlMark";
+import { Waiting, Trouble } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
 
 type Platform = {
@@ -43,9 +43,9 @@ function QA({ q, children }: { q: string; children: React.ReactNode }) {
 }
 
 export default function PlatformPage() {
-  const { data } = useApi<Platform>("/api/platform");
+  const { data, error, refresh } = useApi<Platform>("/api/platform");
   usePageTitle("Platform");
-  if (!data) return <Waiting label="Reading the system" />;
+  if (!data) return error ? <Trouble label="The system page didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the system" />;
   const s = data.storage;
 
   return (

@@ -31,7 +31,7 @@ export function aspectOf(g: Gen): string {
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 export default function Feed({
-  gens, visible, activeId, onOpen, filter, setFilter, scopeName, className = "", aside,
+  gens, visible, activeId, onOpen, filter, setFilter, scopeName, className = "", aside, problem,
 }: {
   /** Everything in scope — what the counts describe. */
   gens: Gen[];
@@ -45,6 +45,8 @@ export default function Feed({
   scopeName: string;
   /** Something to sit at the head's right, before the Library link — the credit strip. */
   aside?: React.ReactNode;
+  /** Set when the library could not be read, so an empty wall isn't mistaken for a new one. */
+  problem?: string | null;
   className?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -105,7 +107,14 @@ export default function Feed({
         <Link href="/all" className="feed-link">Library</Link>
       </div>
 
-      {gens.length === 0 ? (
+      {gens.length === 0 && problem ? (
+        <div className="feed-empty">
+          <Empty
+            title="The library didn't load"
+            line={`${problem} Anything rendering carries on; this wall fills in as soon as the connection does.`}
+          />
+        </div>
+      ) : gens.length === 0 ? (
         <div className="feed-empty">
           <Empty
             title="Your first shot goes here"

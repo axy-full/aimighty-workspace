@@ -97,7 +97,9 @@ export async function POST(req: Request) {
         }
         return composeMusic({ prompt: text, lengthMs: params.lengthMs as number, instrumental: Boolean(params.instrumental) });
       }, { max: 2 });
-      const storedUrl = await storeAudioBytes(genId, out.bytes);
+      /* ElevenLabs has already spoken the line and taken the credits. A
+         Blob blip must not throw that away; the put is idempotent. */
+      const { value: storedUrl } = await withRetry(() => storeAudioBytes(genId, out.bytes), { max: 3 });
       // Price from the plan the account is on; the tier is read once per render.
       let tier: string | null = null;
       try { tier = (await subscription()).tier; } catch { /* estimate at the fallback rate */ }
@@ -112,9 +114,15 @@ export async function POST(req: Request) {
                now() - ts, credits, tier, out.requestId, now(), genId],
       });
     } catch (e) {
+      /* Credits spent on a line that was delivered but never stored are
+         still spent. Record the estimate rather than letting a real charge
+         vanish from the ledger. */
       await db().execute({
-        sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=?`,
-        args: [(e as Error).message.slice(0, 600), now() - ts, now(), genId],
+        sql: `UPDATE generations
+              SET status='failed', error=?, duration_ms=?,
+                  total_tokens=COALESCE(total_tokens, ?), updated_at=?
+              WHERE id=?`,
+        args: [(e as Error).message.slice(0, 600), now() - ts, estCredits ?? null, now(), genId],
       }).catch(() => {});
     }
     invalidate(PROJECTS_KEY);

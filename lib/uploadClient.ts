@@ -35,8 +35,8 @@ export async function uploadFile(
     const fd = new FormData();
     fd.append("file", file);
     const res = await fetch("/api/uploads", { method: "POST", body: fd });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error ?? "Upload failed");
+    const json = await res.json().catch(() => ({} as { error?: string }));
+    if (!res.ok) throw new Error(json.error ?? `Upload failed (${res.status})`);
     onProgress?.(100);
     return json;
   }
@@ -75,8 +75,8 @@ export async function uploadFile(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session, count, filename: file.name, purpose, mime: file.type || undefined }),
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? "Upload failed");
+  const json = await res.json().catch(() => ({} as { error?: string }));
+  if (!res.ok) throw new Error(json.error ?? `Upload failed (${res.status})`);
   onProgress?.(100);
   return json;
 }

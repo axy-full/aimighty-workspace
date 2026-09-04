@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo } from "@/lib/format";
 import SectionNav from "@/components/SectionNav";
-import { Waiting } from "@/components/ParticlMark";
+import { Waiting, Trouble } from "@/components/ParticlMark";
 import { IconClose } from "@/components/Icons";
 import { usePageTitle } from "@/lib/usePageTitle";
 
@@ -49,7 +49,7 @@ type Usage = {
 };
 
 export default function UsagePage() {
-  const { data, refresh } = useApi<Usage>("/api/usage", 20000);
+  const { data, error, refresh } = useApi<Usage>("/api/usage", 20000);
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [vendorFilter, setVendorFilter] = useState<string>("all");
 
@@ -70,7 +70,7 @@ export default function UsagePage() {
   const monthLabel = new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
   usePageTitle("Usage");
-  if (!data) return <Waiting label="Reading the ledgers" />;
+  if (!data) return error ? <Trouble label="The ledger didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the ledgers" />;
 
   const maxDay = Math.max(...days.map(([, v]) => v), 0.0001);
   const monthSpend = days.reduce((a, [, v]) => a + v, 0);

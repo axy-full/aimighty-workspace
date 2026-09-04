@@ -52,7 +52,7 @@ export default function StudioPage() {
 
   const { data: castData, refresh: refreshCast } =
     useApi<{ cast: CastMember[] }>(`/api/cast${q}`, 0);
-  const { data: idData, refresh: refreshIds } =
+  const { data: idData, error: idError, refresh: refreshIds } =
     useApi<{ identities: IdentityView[]; terms: IdentityTerms }>(`/api/identities${q}`, 0);
   // The bank's shop window borrows its previews from the library: the
   // newest render made with each move.
@@ -180,7 +180,11 @@ export default function StudioPage() {
             Ten to twenty photos of one person teach a small model that face. Stills made
             with it carry the face itself, not a description of it, and @Name in any
             prompt carries a still of it into video.
-            {!terms.configured && (
+            {idError && (
+              <> The identities couldn&rsquo;t be read just now ({idError}), so this list may be
+                incomplete. <button onClick={refreshIds} className="text-blue">Try again</button>.</>
+            )}
+            {!idError && !terms.configured && (
               <> Training runs on fal.ai, which isn&rsquo;t connected yet — an admin sets{" "}
                 <code className="font-mono text-[12px]">FAL_KEY</code> in Vercel. Photos can be gathered meanwhile.</>
             )}

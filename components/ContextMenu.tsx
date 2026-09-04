@@ -43,11 +43,18 @@ function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: strin
 }
 
 async function moveClip(genId: string, projectId: string | null) {
-  await fetch(`/api/jobs/${genId}`, {
-    method: "PATCH", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId }),
-  });
-  announceChange();
+  try {
+    const res = await fetch(`/api/jobs/${genId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "The clip wasn't moved");
+    announceChange();
+  } catch (e) {
+    // The wall refreshes either way, so a silent failure looks exactly like
+    // a move that quietly undid itself.
+    await appAlert("The clip wasn't moved", (e as Error).message);
+  }
 }
 
 /** Ask for a name and save it. Empty clears the name; Cancel changes nothing. */
@@ -164,7 +171,8 @@ export default function ContextMenu() {
             kind: "item", label: "Delete clip", danger: true,
             action: async () => {
               if (!(await appConfirm(`Delete clip ${label}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
-              await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+              const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+              if (!res.ok) { await appAlert("The clip wasn't deleted", `The server answered ${res.status}.`); return; }
               announceChange();
             },
           },

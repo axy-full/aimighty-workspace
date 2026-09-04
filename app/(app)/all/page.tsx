@@ -87,7 +87,9 @@ export default function LibraryPage() {
       setCursor(page.nextCursor);
       if (!page.nextCursor || !page.generations?.length) setExhausted(true);
     } catch {
-      setExhausted(true);
+      /* Deliberately NOT setExhausted: one failed page used to retire the
+         button for good, hiding the rest of the library behind a reload.
+         Leave it pressable so they can simply try again. */
     } finally {
       setLoadingMore(false);
     }

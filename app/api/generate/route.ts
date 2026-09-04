@@ -362,7 +362,11 @@ export async function POST(req: Request) {
         // delivery copies only — reference masters never pass through it.)
         const sharp = (await import("sharp")).default;
         const png = await sharp(img.bytes).png().toBuffer();
-        const storedUrl = await storeImageBytes(genId, png);
+        /* Google has already drawn and charged for this image. A brief Blob
+           outage here would otherwise throw the whole render away. The put
+           is idempotent (allowOverwrite) and costs nothing per attempt, so
+           unlike a vendor call it is safe to try again. */
+        const { value: storedUrl } = await withRetry(() => storeImageBytes(genId, png), { max: 3 });
         // The gateway states the exact charge; Google direct bills flat per
         // image by size (+ a little per reference in), from the catalogue.
         const cost = img.costUsd
@@ -378,9 +382,16 @@ export async function POST(req: Request) {
           args: [storedUrl, tokens, cost, ratePerM, now() - ts, img.via, now(), genId],
         });
       } catch (e) {
+        /* If the engine drew it, the money is gone whether or not we managed
+           to keep the file — so the cost goes on the row even in failure.
+           Dropping it here is how a real charge disappears from the ledger. */
+        const spent = estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? null;
         await db().execute({
-          sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=?`,
-          args: [(e as Error).message.slice(0, 600), now() - ts, now(), genId],
+          sql: `UPDATE generations
+                SET status='failed', error=?, duration_ms=?,
+                    cost_usd=COALESCE(cost_usd, ?), updated_at=?
+                WHERE id=?`,
+          args: [(e as Error).message.slice(0, 600), now() - ts, spent, now(), genId],
         }).catch(() => {});
       }
       invalidate(PROJECTS_KEY);
@@ -604,7 +615,27 @@ export async function POST(req: Request) {
   const maxRetries = Math.max(0, Math.min(5, Number(await getSetting("maxRetries")) || 0));
   try {
     const { value: taskId, attempts } = await withRetry(
-      () => submitTask(modelId, finalPrompt, params, references),
+      async () => {
+        try {
+          return await submitTask(modelId, finalPrompt, params, references);
+        } catch (e) {
+          /* Two very different failures wear the same coat here. "Could not
+             reach ModelArk" means the request never landed, and trying again
+             is free. But an error CARRYING a status — "Ark submit failed
+             (500)" — means they received it, and may well have accepted and
+             billed the task before failing to tell us. Retrying that buys a
+             second paid render nobody asked for. So it is re-thrown in words
+             classifyFailure reads as fatal. (lib/fal.ts carries the same
+             reasoning for the same reason.) */
+          const msg = (e as Error).message;
+          if (/^Ark submit failed \(/.test(msg)) {
+            throw new Error(
+              `${msg} The task may already have been accepted, so it was not sent again.`
+            );
+          }
+          throw e;
+        }
+      },
       {
         max: maxRetries,
         onRetry: (n, cls, err) =>
