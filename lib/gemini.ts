@@ -1,4 +1,4 @@
-import { readUploadBytes } from "./storage";
+import { readUploadBytes, readImageBytes } from "./storage";
 import type { Reference } from "./ark";
 import type { ModelDef } from "./models";
 import { gatewayReachable, gatewayAuth, GATEWAY_URL, explainGatewayFailure } from "./gateway";
@@ -48,6 +48,11 @@ export function stillsDoor(): "gateway" | "google" | null {
 
 /** A reference as the vendor should receive it: the delivery copy if there is one. */
 async function refPayload(ref: Reference): Promise<{ mime: string; b64: string }> {
+  // Our own render, kept under generations/ as a PNG, with no delivery copy.
+  if (ref.fromGeneration) {
+    const own = await readImageBytes(ref.id);
+    return { mime: "image/png", b64: own.toString("base64") };
+  }
   const useDelivery = Boolean(ref.deliveryUrl);
   const bytes = await readUploadBytes(
     useDelivery ? `${ref.id}-api` : ref.id,

@@ -23,7 +23,7 @@ import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
 export default function Theatre({
-  gens, activeId, onClose, onSelect, onChanged, onUse, onEditExtend,
+  gens, activeId, onClose, onSelect, onChanged, onUse, onUseAsRef, onEditExtend,
 }: {
   gens: Gen[];
   activeId: string | null;
@@ -32,6 +32,8 @@ export default function Theatre({
   onChanged: () => void;
   /** Load this render's prompt into the composer. */
   onUse?: (gen: Gen) => void;
+  /** Carry this render into the composer as a REFERENCE rather than a prompt. */
+  onUseAsRef?: (gen: Gen) => void;
   /** Start an edit or extension from this render. */
   onEditExtend?: (task: "edit" | "extend", gen: Gen) => void;
 }) {
@@ -291,6 +293,14 @@ export default function Theatre({
             <button type="button" onClick={copy} className="chip !py-1.5 !text-[13px]">
               <IconCopy /> {copied ? "Copied" : "Copy prompt"}
             </button>
+            {onUseAsRef && done && !still && gen.kind !== "audio" && (
+              <button type="button" onClick={() => onUseAsRef(gen)} className="chip !py-1.5 !text-[13px]"
+                title="Attach this clip to the next render">Use as reference</button>
+            )}
+            {onUseAsRef && done && still && (
+              <button type="button" onClick={() => onUseAsRef(gen)} className="chip !py-1.5 !text-[13px]"
+                title="Attach this still to the next render">Use as reference</button>
+            )}
             {onUse && (
               <button type="button" onClick={() => onUse(gen)} className="chip !py-1.5 !text-[13px]" title="Load into the composer">
                 Use

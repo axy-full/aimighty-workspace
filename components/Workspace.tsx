@@ -59,6 +59,11 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [refs, setRefs] = useState<RefItem[]>([]);
+  /* Our own renders used as references. Kept apart from `refs` on purpose:
+     a RefItem is an uploads row, and removing one from that strip HARD
+     DELETES the upload (References.tsx). A render must never be destroyed by
+     being taken off the next prompt. */
+  const [ownRefs, setOwnRefs] = useState<Gen[]>([]);
   const [filter, setFilter] = useState<FeedFilter>("all");
   const [setupOpen, setSetupOpen] = useState(true);
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -255,7 +260,10 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           sourceGenId: taskOn?.gen.id ?? null,
           shotId: shotId || null,
           shotSpec: spec,
-          references: refs.map((r) => ({ uploadId: r.id, role: r.role })),
+          references: [
+            ...refs.map((r) => ({ uploadId: r.id, role: r.role })),
+            ...ownRefs.map((g) => ({ genId: g.id, role: "reference_image" as const })),
+          ],
         }),
       });
       const json = await res.json();
@@ -263,6 +271,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       // Only now: a failed submit keeps the words, which is when they matter most.
       clearDraft(kind);
       setPrompt("");
+      setOwnRefs([]);
       setRefs([]);
       setTaskOn(null);
       if (Array.isArray(json?.notices) && json.notices.length) {
@@ -285,6 +294,12 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     setPrompt(typed || gen.prompt);
     setSelected(null);
     requestAnimationFrame(() => promptRef.current?.focus());
+  }
+
+  /** Attach one of ours to the next render, without leaving the room. */
+  function useAsRef(gen: Gen) {
+    setOwnRefs((prev) => (prev.some((g) => g.id === gen.id) ? prev : [...prev, gen]));
+    setSelected(null);
   }
 
   function editExtend(id: "edit" | "extend", gen: Gen) {
@@ -327,6 +342,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           busy={busy} onRender={render}
           setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
           kind={kind}
+          ownRefs={ownRefs}
+          dropOwnRef={(id) => setOwnRefs((prev) => prev.filter((g) => g.id !== id))}
         />
       </div>
 
@@ -342,7 +359,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         <Theatre
           gens={visible} activeId={activeId}
           onClose={() => setSelected(null)} onSelect={setSelected}
-          onChanged={afterChange} onUse={useGen} onEditExtend={editExtend}
+          onChanged={afterChange} onUse={useGen} onUseAsRef={useAsRef} onEditExtend={editExtend}
         />
       </Boundary>
     </div>

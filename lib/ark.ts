@@ -10,7 +10,7 @@
 
 import { getModel, type ModelDef } from "./models";
 import { getTask, type TaskId } from "./tasks";
-import { readUploadBytes, presignedReadUrl, uploadPath, videoPath, usingBlob } from "./storage";
+import { readUploadBytes, readImageBytes, presignedReadUrl, uploadPath, imagePath, videoPath, usingBlob } from "./storage";
 import { IMAGE_LIMITS } from "./imagemeta";
 
 const HOST =
@@ -129,6 +129,23 @@ async function toRefContent(ref: Reference) {
   /* R4: if a delivery copy exists, that is what travels. The master stays
    * where it is — the vendor's ceiling decides what we SEND, never what we
    * keep. Derivatives are always JPEG (see lib/derive.ts). */
+  /* One of OUR OWN stills used as a reference lives under generations/ and
+     has no delivery copy, so it takes the short path. The video branch above
+     has always known this; the image branch did not, which is why a render
+     could only ever be extended, never referenced. */
+  if (ref.fromGeneration) {
+    if (usingBlob()) {
+      const url = await presignedReadUrl(imagePath(ref.id));
+      return { type: "image_url", image_url: { url }, role: ref.role };
+    }
+    const own = await readImageBytes(ref.id);
+    return {
+      type: "image_url",
+      image_url: { url: `data:image/png;base64,${own.toString("base64")}` },
+      role: ref.role,
+    };
+  }
+
   const useDelivery = Boolean(ref.deliveryUrl);
   const sendId = useDelivery ? `${ref.id}-api` : ref.id;
   const sendExt = useDelivery ? "jpg" : ref.ext;

@@ -36,7 +36,8 @@ import type { Gen } from "./GenCard";
 import { ParticlSpinner } from "./ParticlMark";
 import { usd, compactTokens } from "@/lib/format";
 import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef } from "@/lib/models";
-import { IconArrowUp, IconCaret, IconAttach, IconSliders } from "./Icons";
+import { IconArrowUp, IconCaret, IconAttach, IconSliders, IconClose } from "./Icons";
+import LazyMedia from "./LazyMedia";
 import type { Params } from "./Workspace";
 
 type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost";
@@ -60,6 +61,9 @@ export type ComposerProps = {
   est: { net: number } | null; estTokens: number | null; dims: { w: number; h: number } | null;
   inputSeconds: number; hasVideoInput: boolean; imageRefCount: number;
   busy: boolean; onRender: () => void;
+  /** Our own renders attached to this one, and how to take one off. */
+  ownRefs: Gen[];
+  dropOwnRef: (id: string) => void;
   setupCount: number; setupOpen: boolean; toggleSetup: () => void;
   /** Which kind of thing this composer makes — the model menu shows only those. */
   kind: "video" | "image";
@@ -70,7 +74,7 @@ export default function Composer(p: ComposerProps) {
     prompt, setPrompt, promptRef, params, patch, switchModel, model, engines, writer,
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked,
     est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
-    busy, onRender, setupCount, setupOpen, toggleSetup, kind,
+    busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
   } = p;
   const [menu, setMenu] = useState<Menu>(null);
   const [drag, setDrag] = useState(false);
@@ -141,6 +145,28 @@ export default function Composer(p: ComposerProps) {
       )}
 
       {problem && <p className="island-problem">{problem}</p>}
+
+      {/* Our own renders, kept visually apart from uploaded references
+          because they behave differently: taking one off drops it from this
+          prompt, where taking an upload off deletes the file outright. */}
+      {ownRefs.length > 0 && (
+        <div className="mx-1 mb-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11.5px] text-mute">From the library</span>
+          {ownRefs.map((g) => (
+            <span key={g.id} className="relative block h-[42px] w-[42px] overflow-hidden rounded-[8px] bg-thumb"
+              title={g.title || g.prompt}>
+              {g.storedUrl && (
+                <LazyMedia url={g.storedUrl} kind={g.kind === "image" ? "image" : "video"}
+                  alt="" className="!absolute inset-0" />
+              )}
+              <button type="button" onClick={() => dropOwnRef(g.id)} title="Take it off"
+                className="absolute right-0 top-0 grid h-4 w-4 place-items-center rounded-bl-[6px] bg-black/60 text-white">
+                <IconClose className="!h-2.5 !w-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       <References refs={refs} setRefs={setRefs} onCite={cite} model={model} pickerRef={picker} />
 

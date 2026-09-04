@@ -182,6 +182,58 @@ export async function POST(req: Request) {
         .filter((r: { uploadId: string }) => r.uploadId)
     : [];
 
+  /* ── Our own renders, used as references ──────────────────────────
+   * A still we made is not an upload — it lives under generations/ — so it
+   * cannot be hydrated from the uploads table. Referencing one used to be
+   * impossible except through the locked edit and extend tasks. These are
+   * resolved separately and carry fromGeneration, which the vendor adapters
+   * now honour on the image path as well as the video one.
+   * --------------------------------------------------------------- */
+  const wantedGens: { genId: string; role: ImageRole }[] = Array.isArray(body.references)
+    ? body.references
+        .map((r: { genId?: string; role?: string }) => ({
+          genId: String(r?.genId ?? ""),
+          role: (ROLES.includes(r?.role as ImageRole) ? r!.role : "reference_image") as ImageRole,
+        }))
+        .filter((r: { genId: string }) => r.genId)
+    : [];
+  const ownRefs: Reference[] = [];
+  if (wantedGens.length) {
+    const rs = await db().execute({
+      sql: `SELECT id, kind, status, stored_url FROM generations
+            WHERE id IN (${wantedGens.map(() => "?").join(",")}) AND deleted = 0`,
+      args: wantedGens.map((w) => w.genId),
+    });
+    const byId = new Map((rs.rows as unknown as {
+      id: string; kind: string; status: string; stored_url: string | null;
+    }[]).map((r) => [r.id, r]));
+    for (const w of wantedGens) {
+      const row = byId.get(w.genId);
+      if (!row || row.status !== "succeeded" || !row.stored_url) {
+        return NextResponse.json(
+          { error: "That render can't be used as a reference — it hasn't finished, or its file is gone." },
+          { status: 400 });
+      }
+      if (row.kind === "audio") {
+        return NextResponse.json({ error: "A sound can't be a visual reference." }, { status: 400 });
+      }
+      const isVideo = row.kind !== "image";
+      ownRefs.push({
+        id: row.id,
+        mime: isVideo ? "video/mp4" : "image/png",
+        ext: isVideo ? "mp4" : "png",
+        storedUrl: row.stored_url,
+        role: (model.kind === "image" ? "reference_image" : isVideo ? "reference_video" : w.role) as ImageRole,
+        kind: isVideo ? "video" : "image",
+        fromGeneration: true,
+      });
+    }
+    if (model.kind === "image" && ownRefs.some((r) => r.kind === "video")) {
+      return NextResponse.json(
+        { error: `${model.label} takes image references only — remove the clip.` }, { status: 400 });
+    }
+  }
+
   const projectIdForCast = body.projectId ? String(body.projectId) : null;
   let references: Reference[] = [];
   let inputSeconds = 0;
@@ -251,6 +303,10 @@ export async function POST(req: Request) {
       };
     });
   }
+
+  // Our own renders join the list after the uploads, so a person's own
+  // @Image1 stays their first attached file.
+  references.push(...ownRefs);
 
   /* The source goes first: with several videos attached the model decides
    * which one to work on from the prompt, and leading with it matches the
@@ -333,7 +389,12 @@ export async function POST(req: Request) {
     const ts = now();
     const stillParams = {
       ratio, resolution: size,
-      references: stillRefs.map((r) => ({ uploadId: r.id, role: r.role, kind: r.kind })),
+      // A reference is recorded by WHICH STORE it came from, because the
+      // worker rebuilds this job from the row and has to look in the right
+      // place. An id alone would be ambiguous.
+      references: stillRefs.map((r) => (r.fromGeneration
+        ? { genId: r.id, role: r.role, kind: r.kind }
+        : { uploadId: r.id, role: r.role, kind: r.kind })),
       rawPrompt: castPrompt !== prompt ? prompt : undefined,
       cast: castUsed.length ? castUsed : undefined,
     };
@@ -544,7 +605,9 @@ export async function POST(req: Request) {
 
   const storedParams = {
     ...params,
-    references: references.map((r) => ({ uploadId: r.id, role: r.role, kind: r.kind })),
+    references: references.map((r) => (r.fromGeneration
+      ? { genId: r.id, role: r.role, kind: r.kind }
+      : { uploadId: r.id, role: r.role, kind: r.kind })),
     hasVideoInput,
     inputSeconds: hasVideoInput ? inputSeconds : undefined,
     rawPrompt,

@@ -95,7 +95,7 @@ export async function loadJob(genId: string): Promise<Job | null> {
   }
 
   const refs = Array.isArray(params.references)
-    ? (params.references as { uploadId: string; role: string; kind: string }[]) : [];
+    ? (params.references as { uploadId?: string; genId?: string; role: string; kind: string }[]) : [];
   return {
     kind: "image", genId: row.id, modelId: row.model, prompt: row.prompt,
     ratio: String(params.ratio ?? "16:9"),
@@ -105,27 +105,63 @@ export async function loadJob(genId: string): Promise<Job | null> {
   };
 }
 
-/** Reference ids on the row become the objects the vendor adapter wants. */
+/**
+ * Reference ids on the row become the objects the vendor adapter wants.
+ *
+ * Two stores, and the row says which: an uploaded file under uploads/, or
+ * one of our own renders under generations/. Rebuilding a job has to look in
+ * the right one, which is why the row records `uploadId` or `genId` rather
+ * than a bare id.
+ */
 async function hydrate(
-  refs: { uploadId: string; role: string; kind: string }[]
+  refs: { uploadId?: string; genId?: string; role: string; kind: string }[]
 ): Promise<Reference[]> {
-  const wanted = refs.filter((r) => r.kind === "image").map((r) => r.uploadId);
-  if (!wanted.length) return [];
-  const rs = await db().execute({
-    sql: `SELECT id, mime, ext, stored_url, derivative_url
-          FROM uploads WHERE id IN (${wanted.map(() => "?").join(",")})`,
-    args: wanted,
-  });
-  const byId = new Map(
-    (rs.rows as unknown as {
+  const stills = refs.filter((r) => r.kind === "image");
+  if (!stills.length) return [];
+
+  const uploadIds = stills.map((r) => r.uploadId).filter(Boolean) as string[];
+  const genIds = stills.map((r) => r.genId).filter(Boolean) as string[];
+
+  const byUpload = new Map<string, {
+    id: string; mime: string; ext: string; stored_url: string; derivative_url: string | null;
+  }>();
+  if (uploadIds.length) {
+    const rs = await db().execute({
+      sql: `SELECT id, mime, ext, stored_url, derivative_url
+            FROM uploads WHERE id IN (${uploadIds.map(() => "?").join(",")})`,
+      args: uploadIds,
+    });
+    for (const r of rs.rows as unknown as {
       id: string; mime: string; ext: string; stored_url: string; derivative_url: string | null;
-    }[]).map((r) => [r.id, r])
-  );
+    }[]) byUpload.set(r.id, r);
+  }
+
+  const ownOk = new Set<string>();
+  if (genIds.length) {
+    const rs = await db().execute({
+      sql: `SELECT id FROM generations
+            WHERE id IN (${genIds.map(() => "?").join(",")})
+              AND deleted = 0 AND status = 'succeeded' AND stored_url IS NOT NULL`,
+      args: genIds,
+    });
+    for (const r of rs.rows as unknown as { id: string }[]) ownOk.add(r.id);
+  }
+
   const out: Reference[] = [];
-  for (const r of refs) {
-    const row = byId.get(r.uploadId);
-    // A reference deleted since the render was asked for is dropped rather
-    // than fatal: the prompt still describes the shot.
+  for (const r of stills) {
+    if (r.genId) {
+      // One of ours. Deleted since, and it is dropped rather than fatal —
+      // the prompt still describes the shot.
+      if (!ownOk.has(r.genId)) continue;
+      out.push({
+        id: r.genId, mime: "image/png", ext: "png",
+        storedUrl: `/api/media/${r.genId}`,
+        role: (r.role as ImageRole) ?? "reference_image", kind: "image",
+        fromGeneration: true,
+      });
+      continue;
+    }
+    const row = r.uploadId ? byUpload.get(r.uploadId) : undefined;
     if (!row) continue;
     out.push({
       id: row.id, mime: row.mime, ext: row.ext, storedUrl: row.stored_url,
