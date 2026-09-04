@@ -115,7 +115,11 @@ export async function GET() {
   const checks = await listChecks();
   const latestCheck = new Map<string, (typeof checks)[number]>();
   for (const c of checks) if (!latestCheck.has(c.provider)) latestCheck.set(c.provider, c);
-  const anchors = new Map<string, { check: (typeof checks)[number]; sinceUsd: number; sinceRenders: number; driftUsd: number | null }>();
+  const anchors = new Map<string, {
+    check: (typeof checks)[number];
+    sinceUsd: number; sinceCredits: number; sinceRenders: number;
+    driftUsd: number | null; driftCredits: number | null;
+  }>();
   for (const [provider, check] of latestCheck) {
     const [since, computedThen] = await Promise.all([
       spendSince(provider, check.checkedAt),
@@ -124,10 +128,12 @@ export async function GET() {
     anchors.set(provider, {
       check,
       sinceUsd: since.usd,
+      sinceCredits: since.credits,
       sinceRenders: since.renders,
       // How far our arithmetic had drifted by the moment of the reading.
       // Positive means we were over-counting: the vendor charged less.
-      driftUsd: check.spendUsd == null ? null : computedThen - check.spendUsd,
+      driftUsd: check.spendUsd == null ? null : computedThen.usd - check.spendUsd,
+      driftCredits: check.spendCredits == null ? null : computedThen.credits - check.spendCredits,
     });
   }
   const renderBy = new Map(byVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), r]));
@@ -151,12 +157,19 @@ export async function GET() {
     // its credits into total_tokens, so the ledger counts those exactly.
     const unit = p.id === "elevenlabs" ? "credits" : "usd";
     const addedCredits = creditsBy.get(p.id) ?? 0;
-    const spentCredits = Number(r.tokens ?? 0);
+    const computedCredits = Number(r.tokens ?? 0);
+    const spentCredits = anchor && anchor.check.spendCredits != null
+      ? anchor.check.spendCredits + anchor.sinceCredits
+      : computedCredits;
     const usdPerCredit = p.id === "elevenlabs" ? (eleven?.usdPerCredit ?? FALLBACK_USD_PER_CREDIT) : null;
     return {
-      unit, addedCredits, spentCredits, remainingCredits: addedCredits - spentCredits, usdPerCredit,
+      unit, addedCredits, spentCredits, computedCredits, usdPerCredit,
+      remainingCredits: anchor && anchor.check.balanceCredits != null
+        ? anchor.check.balanceCredits - anchor.sinceCredits
+        : addedCredits - spentCredits,
       id: p.id,
       label: p.id === "google" ? "Google Gemini" : p.label,
+      serves: p.serves,
       via: providerVia(p),
       configured: providerConfigured(p),
       envKey: p.envKey,
@@ -171,11 +184,15 @@ export async function GET() {
         checkedAt: anchor.check.checkedAt,
         balanceUsd: anchor.check.balanceUsd,
         spendUsd: anchor.check.spendUsd,
+        balanceCredits: anchor.check.balanceCredits,
+        spendCredits: anchor.check.spendCredits,
         note: anchor.check.note,
         authorName: anchor.check.authorName,
         sinceUsd: anchor.sinceUsd,
+        sinceCredits: anchor.sinceCredits,
         sinceRenders: anchor.sinceRenders,
         driftUsd: anchor.driftUsd,
+        driftCredits: anchor.driftCredits,
       } : null,
       renders: Number(r.n ?? 0), attempts: Number(r.n_all ?? 0), prompts: Number(pr.prompts ?? 0),
       tokens: Number(r.tokens ?? 0),

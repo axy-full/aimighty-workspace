@@ -22,6 +22,9 @@ export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal";
 export type ProviderDef = {
   id: ProviderId;
   label: string;
+  /** What this vendor makes, in the words the studio uses for it. A ledger
+   *  is looked for by the medium it paid for, not by the company's name. */
+  serves: string;
   /** Env var holding the key. Never NEXT_PUBLIC_ — these are server-side. */
   envKey: string;
   /** Overridable so a local echo server can stand in during verification. */
@@ -50,6 +53,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "byteplus",
     label: "BytePlus ModelArk",
+    serves: "Video",
     envKey: "ARK_API_KEY",
     baseUrlEnv: "ARK_BASE_URL",
     defaultBaseUrl: "https://ark.ap-southeast.bytepluses.com",
@@ -71,6 +75,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "google",
     label: "Google Gemini",
+    serves: "Images",
     envKey: "GEMINI_API_KEY",
     baseUrlEnv: "GEMINI_BASE_URL",
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
@@ -95,6 +100,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "elevenlabs",
     label: "ElevenLabs",
+    serves: "Sound",
     envKey: "ELEVENLABS_API_KEY",
     baseUrlEnv: "ELEVENLABS_BASE_URL",
     defaultBaseUrl: "https://api.elevenlabs.io",
@@ -118,6 +124,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "fal",
     label: "fal.ai",
+    serves: "Characters",
     envKey: "FAL_KEY",
     baseUrlEnv: "FAL_BASE_URL",
     defaultBaseUrl: "https://queue.fal.run",

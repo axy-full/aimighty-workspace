@@ -20,6 +20,7 @@ import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
 import { useApi } from "@/lib/useApi";
 import { useOnChange } from "@/lib/changes";
+import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { composePrompt, specCount, type ShotSpec } from "@/lib/studio";
 import {
@@ -109,8 +110,12 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         const setup = window.localStorage.getItem(SETUP_KEY);
         if (carried) window.localStorage.removeItem("aw_compose_seed");
         if (carriedSpec) window.localStorage.removeItem("aw_compose_spec");
+        // A prompt handed over from elsewhere wins; otherwise pick up
+        // whatever was being typed here before you left the room.
+        const draft = carried ? "" : loadDraft(kind);
         Promise.resolve().then(() => {
           if (carried) setPrompt(carried);
+          else if (draft) setPrompt(draft);
           if (carriedSpec) {
             try { setSpec(JSON.parse(carriedSpec) as ShotSpec); }
             catch { /* a spec we can't read is one we don't apply */ }
@@ -255,6 +260,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Submit failed");
+      // Only now: a failed submit keeps the words, which is when they matter most.
+      clearDraft(kind);
       setPrompt("");
       setRefs([]);
       setTaskOn(null);
@@ -307,7 +314,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
 
       <div className="island" ref={islandRef}>
         <Composer
-          prompt={prompt} setPrompt={(v) => { setPrompt(v); if (err) setErr(null); }}
+          prompt={prompt}
+          setPrompt={(v) => { setPrompt(v); saveDraft(kind, v); if (err) setErr(null); }}
           promptRef={promptRef}
           params={params} patch={patch} switchModel={switchModel}
           model={modelDef} engines={engines} writer={writer}

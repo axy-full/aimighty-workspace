@@ -24,6 +24,8 @@ export async function POST(req: Request) {
       provider: String(body.provider ?? "byteplus"),
       balanceUsd: num(body.balanceUsd),
       spendUsd: num(body.spendUsd),
+      balanceCredits: num(body.balanceCredits),
+      spendCredits: num(body.spendCredits),
       note: String(body.note ?? ""),
       // A reading is often typed up after the fact; let it carry its real date.
       checkedAt: body.checkedAt ? Number(body.checkedAt) : undefined,

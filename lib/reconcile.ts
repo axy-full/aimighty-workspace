@@ -26,6 +26,8 @@ export type LedgerCheck = {
   provider: string;
   balanceUsd: number | null;
   spendUsd: number | null;
+  balanceCredits: number | null;
+  spendCredits: number | null;
   note: string;
   checkedAt: number;
   authorName: string | null;
@@ -38,6 +40,8 @@ function rowTo(r: any): LedgerCheck {
     provider: r.provider,
     balanceUsd: r.balance_usd == null ? null : Number(r.balance_usd),
     spendUsd: r.spend_usd == null ? null : Number(r.spend_usd),
+    balanceCredits: r.balance_credits == null ? null : Number(r.balance_credits),
+    spendCredits: r.spend_credits == null ? null : Number(r.spend_credits),
     note: r.note ?? "",
     checkedAt: Number(r.checked_at),
     authorName: r.author_name ?? null,
@@ -56,19 +60,24 @@ export async function listChecks(provider?: string): Promise<LedgerCheck[]> {
 }
 
 export async function recordCheck(input: {
-  provider: string; balanceUsd: number | null; spendUsd: number | null;
+  provider: string;
+  balanceUsd: number | null; spendUsd: number | null;
+  balanceCredits: number | null; spendCredits: number | null;
   note: string; checkedAt?: number; userId: string;
 }): Promise<LedgerCheck> {
   await ready();
-  if (input.balanceUsd == null && input.spendUsd == null) {
-    throw new Error("Record at least one of the two figures the console shows.");
+  if (input.balanceUsd == null && input.spendUsd == null &&
+      input.balanceCredits == null && input.spendCredits == null) {
+    throw new Error("Record at least one of the figures the console shows.");
   }
   const id = newId("chk");
   const at = input.checkedAt && Number.isFinite(input.checkedAt) ? input.checkedAt : now();
   await db().execute({
-    sql: `INSERT INTO ledger_checks (id, provider, balance_usd, spend_usd, note, checked_at, created_by, created_at)
-          VALUES (?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO ledger_checks
+          (id, provider, balance_usd, spend_usd, balance_credits, spend_credits, note, checked_at, created_by, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
     args: [id, input.provider, input.balanceUsd, input.spendUsd,
+           input.balanceCredits, input.spendCredits,
            input.note.slice(0, 200), at, input.userId, now()],
   });
   const rs = await db().execute({ sql: `${SELECT} WHERE c.id = ?`, args: [id] });
@@ -87,26 +96,36 @@ export async function deleteCheck(id: string): Promise<void> {
  * to extrapolate forward from a known-true number using the only method we
  * have, not to pretend the extrapolation is also authoritative.
  */
-export async function spendSince(provider: string, since: number): Promise<{ usd: number; renders: number }> {
+export async function spendSince(
+  provider: string, since: number
+): Promise<{ usd: number; credits: number; renders: number }> {
   await ready();
   const rs = await db().execute({
-    sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend, COUNT(*) AS n
+    sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend,
+                 COALESCE(SUM(COALESCE(total_tokens,0)),0) AS credits,
+                 COUNT(*) AS n
           FROM generations
           WHERE provider = ? AND cost_usd IS NOT NULL AND created_at > ?`,
     args: [provider, since],
   });
   const r: any = rs.rows[0];
-  return { usd: Number(r?.spend ?? 0), renders: Number(r?.n ?? 0) };
+  // For a credits vendor every audio render wrote its credits to
+  // total_tokens, so the same column carries both units honestly.
+  return { usd: Number(r?.spend ?? 0), credits: Number(r?.credits ?? 0), renders: Number(r?.n ?? 0) };
 }
 
 /** What we HAD computed as spent up to that moment, for measuring the drift. */
-export async function computedSpendUpTo(provider: string, at: number): Promise<number> {
+export async function computedSpendUpTo(
+  provider: string, at: number
+): Promise<{ usd: number; credits: number }> {
   await ready();
   const rs = await db().execute({
-    sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend
+    sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend,
+                 COALESCE(SUM(COALESCE(total_tokens,0)),0) AS credits
           FROM generations
           WHERE provider = ? AND cost_usd IS NOT NULL AND created_at <= ?`,
     args: [provider, at],
   });
-  return Number((rs.rows[0] as any)?.spend ?? 0);
+  const r: any = rs.rows[0];
+  return { usd: Number(r?.spend ?? 0), credits: Number(r?.credits ?? 0) };
 }

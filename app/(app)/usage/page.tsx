@@ -18,7 +18,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
  */
 
 type Vendor = {
-  id: string; label: string; via: string | null; configured: boolean; envKey: string;
+  id: string; label: string; serves: string; via: string | null; configured: boolean; envKey: string;
   added: number; spent: number; renderSpend: number; promptSpend: number; remaining: number;
   unit: "usd" | "credits"; addedCredits: number; spentCredits: number; remainingCredits: number; usdPerCredit: number | null;
   renders: number; attempts: number; prompts: number; tokens: number;
@@ -28,11 +28,15 @@ type Vendor = {
   note: string;
   /** What we would have said with no reading to anchor to. */
   computedSpent: number;
+  computedCredits: number;
   /** The most recent reading from this vendor's own console. */
   anchor: {
-    checkedAt: number; balanceUsd: number | null; spendUsd: number | null;
+    checkedAt: number;
+    balanceUsd: number | null; spendUsd: number | null;
+    balanceCredits: number | null; spendCredits: number | null;
     note: string; authorName: string | null;
-    sinceUsd: number; sinceRenders: number; driftUsd: number | null;
+    sinceUsd: number; sinceCredits: number; sinceRenders: number;
+    driftUsd: number | null; driftCredits: number | null;
   } | null;
   models: { model: string; label: string; n: number; spend: number; tokens: number }[];
   topups: { id: string; amountUsd: number; credits: number | null; note: string; createdAt: number }[];
@@ -284,8 +288,18 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: v.id,
-          balanceUsd: balance.trim() === "" ? null : Number(balance),
-          spendUsd: portalSpend.trim() === "" ? null : Number(portalSpend),
+          // Recorded in whatever unit the console showed, never converted:
+          // converting at read time would bake in whatever rate we happened
+          // to believe on the day.
+          ...(v.unit === "credits"
+            ? {
+                balanceCredits: balance.trim() === "" ? null : Number(balance),
+                spendCredits: portalSpend.trim() === "" ? null : Number(portalSpend),
+              }
+            : {
+                balanceUsd: balance.trim() === "" ? null : Number(balance),
+                spendUsd: portalSpend.trim() === "" ? null : Number(portalSpend),
+              }),
           note: note.trim(),
         }),
       });
@@ -330,6 +344,7 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
       <div>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-[19px] font-semibold tracking-[-0.015em]">{v.label}</h2>
+          <span className="grouplabel !pb-0 !text-[10px]">{v.serves}</span>
           <span className={`text-[12.5px] ${v.configured ? "text-ok" : "text-mute"}`}>
             {v.configured ? (v.via === "gateway" ? "connected · gateway" : "connected") : `not connected · ${v.envKey}`}
           </span>
@@ -353,7 +368,7 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
       )}
 
       {/* ── Anchored to the vendor's own console ─────────────────────── */}
-      {!credits && (
+      {(
         <div className="rounded-[var(--r)] bg-panel2 px-4 py-3">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="text-[12px] font-medium uppercase tracking-wide text-mute">
@@ -368,34 +383,46 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
 
           {v.anchor ? (
             <>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-dim">
-                Read {timeAgo(v.anchor.checkedAt)}
-                {v.anchor.authorName ? ` by ${v.anchor.authorName}` : ""}:{" "}
-                {v.anchor.balanceUsd != null && <><span className="font-medium text-ink">{usd(v.anchor.balanceUsd, 2)}</span> left</>}
-                {v.anchor.balanceUsd != null && v.anchor.spendUsd != null && ", "}
-                {v.anchor.spendUsd != null && <><span className="font-medium text-ink">{usd(v.anchor.spendUsd, 2)}</span> spent</>}
-                . The figures above count on from that
-                {v.anchor.sinceRenders > 0
-                  ? `, plus ${usd(v.anchor.sinceUsd, 2)} across ${v.anchor.sinceRenders} render${v.anchor.sinceRenders === 1 ? "" : "s"} since.`
-                  : "; nothing has been rendered since."}
-              </p>
-              {v.anchor.driftUsd != null && Math.abs(v.anchor.driftUsd) >= 0.01 && (
-                <p className="mt-1.5 text-[12.5px] leading-relaxed text-mute">
-                  Our own arithmetic had it{" "}
-                  <span className={v.anchor.driftUsd > 0 ? "text-lift" : "text-ok"}>
-                    {usd(Math.abs(v.anchor.driftUsd), 2)} {v.anchor.driftUsd > 0 ? "high" : "low"}
-                  </span>{" "}
-                  at that point. A gap that keeps growing means a rate in the catalogue is wrong,
-                  or a promotion applies that we don&rsquo;t know about.
-                </p>
-              )}
+              {(() => {
+                const bal = credits ? v.anchor!.balanceCredits : v.anchor!.balanceUsd;
+                const sp = credits ? v.anchor!.spendCredits : v.anchor!.spendUsd;
+                const since = credits ? v.anchor!.sinceCredits : v.anchor!.sinceUsd;
+                const drift = credits ? v.anchor!.driftCredits : v.anchor!.driftUsd;
+                const fmt = (n: number) => (credits ? `${cr(Math.round(n))} cr` : usd(n, 2));
+                const floor = credits ? 1 : 0.01;
+                return (
+                  <>
+                    <p className="mt-1.5 text-[13px] leading-relaxed text-dim">
+                      Read {timeAgo(v.anchor!.checkedAt)}
+                      {v.anchor!.authorName ? ` by ${v.anchor!.authorName}` : ""}:{" "}
+                      {bal != null && <><span className="font-medium text-ink">{fmt(bal)}</span> left</>}
+                      {bal != null && sp != null && ", "}
+                      {sp != null && <><span className="font-medium text-ink">{fmt(sp)}</span> spent</>}
+                      . The figures above count on from that
+                      {v.anchor!.sinceRenders > 0
+                        ? `, plus ${fmt(since)} across ${v.anchor!.sinceRenders} render${v.anchor!.sinceRenders === 1 ? "" : "s"} since.`
+                        : "; nothing has been made since."}
+                    </p>
+                    {drift != null && Math.abs(drift) >= floor && (
+                      <p className="mt-1.5 text-[12.5px] leading-relaxed text-mute">
+                        Our own arithmetic had it{" "}
+                        <span className={drift > 0 ? "text-lift" : "text-ok"}>
+                          {fmt(Math.abs(drift))} {drift > 0 ? "high" : "low"}
+                        </span>{" "}
+                        at that point. A gap that keeps growing means a rate in the catalogue is
+                        wrong, or a discount applies that we don&rsquo;t know about.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
               {v.anchor.note && <p className="mt-1 text-[12.5px] text-mute">{v.anchor.note}</p>}
             </>
           ) : (
             <p className="mt-1.5 text-[13px] leading-relaxed text-mute">
-              Every figure above is computed from tokens and our own rate table, so it is an
-              estimate. Open the {v.label} console, type in what it says, and these count on
-              from that instead.
+              Every figure above is computed from what each render reported and our own rate
+              table, so it is an estimate. Open the {v.label} console, type in what it says,
+              and these count on from that instead.
             </p>
           )}
 
@@ -403,9 +430,12 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
             <div className="mt-3 flex flex-col gap-2">
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-[12px] text-mute">Balance it shows</span>
+                  <span className="mb-1 block text-[12px] text-mute">
+                    Balance it shows{credits ? " (credits)" : ""}
+                  </span>
                   <input className="ctl !h-[34px] !text-[14px]" value={balance} inputMode="decimal"
-                    placeholder="e.g. 62.04" onChange={(e) => setBalance(e.target.value)} />
+                    placeholder={credits ? "e.g. 128500" : "e.g. 62.04"}
+                    onChange={(e) => setBalance(e.target.value)} />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-[12px] text-mute">Spend to date, if shown</span>

@@ -6,8 +6,9 @@
  * Three doors into ElevenLabs. Every result is a render: it lands on the
  * wall and the ledger like a clip, with what it cost in credits and money.
  */
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useApi } from "@/lib/useApi";
+import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { useProject } from "@/lib/projectContext";
 import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -52,6 +53,14 @@ export default function AudioPage() {
 
   const [task, setTask] = useState<Task>("speech");
   const [text, setText] = useState("");
+  // Picked up on mount, never in the initializer: the server has no
+  // localStorage and seeding at first render would hydrate wrong.
+  useEffect(() => {
+    const draft = loadDraft("audio");
+    // Off the effect body, the way Workspace does it: every setState here
+    // sits behind an await, so nothing is set synchronously during the effect.
+    if (draft) Promise.resolve().then(() => setText(draft));
+  }, []);
   const [voiceChoice, setVoiceId] = useState("");
   const [voiceQuery, setVoiceQuery] = useState("");
   const [modelChoice, setModelId] = useState("");
@@ -110,6 +119,7 @@ export default function AudioPage() {
       const res = await fetch("/api/audio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Couldn't start");
+      clearDraft("audio");
       setText("");
       setTimeout(refresh, 500);
     } catch (e) { setErr((e as Error).message); }
@@ -167,7 +177,7 @@ export default function AudioPage() {
           </div>
 
           <textarea
-            value={text} onChange={(e) => setText(e.target.value)} rows={task === "speech" ? 4 : 2}
+            value={text} onChange={(e) => { setText(e.target.value); saveDraft("audio", e.target.value); }} rows={task === "speech" ? 4 : 2}
             onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); make(); } }}
             placeholder={task === "speech"
               ? "The line, as it should be read. With Eleven v3, direct it inline: [whispers] we shouldn't be here. [laughs]"

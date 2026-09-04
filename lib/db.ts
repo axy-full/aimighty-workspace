@@ -242,6 +242,12 @@ const SCHEMA = [
      provider     TEXT NOT NULL,
      balance_usd  REAL,
      spend_usd    REAL,
+     /* A vendor sold in credits rather than dollars — ElevenLabs — is read
+        off its console in credits, so the reading is kept in the same unit
+        the console showed. Converting at read time would bake in whatever
+        rate we happened to believe that day. */
+     balance_credits INTEGER,
+     spend_credits   INTEGER,
      note         TEXT NOT NULL DEFAULT '',
      checked_at   INTEGER NOT NULL,
      created_by   TEXT NOT NULL DEFAULT '',
@@ -377,6 +383,12 @@ export async function ready(): Promise<void> {
       await addColumn("topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */
       await addColumn("topups", `credits INTEGER`);
+      /* Added after ledger_checks first shipped, so the CREATE TABLE above
+         will not deliver them to a database that already has the table. A
+         column added to a CREATE TABLE IF NOT EXISTS reaches new databases
+         only; every existing one needs the ALTER. */
+      await addColumn("ledger_checks", `balance_credits INTEGER`);
+      await addColumn("ledger_checks", `spend_credits INTEGER`);
       /* The balances the team reported on 3 Sep 2026, written once into the
          ledger so each vendor's credit counts down from what was actually
          loaded. Fixed ids: a redeploy never records them twice, and deleting
