@@ -13,13 +13,15 @@ import type { CastMember } from "@/lib/cast";
 import type { Gen } from "./GenCard";
 
 /**
- * One element, opened: what it is, and everything made with it.
+ * One cast member or element, opened: what it is, and everything made with it.
  *
- * The cast has always been able to hold a face, a place, a prop or a look
- * and drop it into a prompt as @Name. What it could not do was answer the
- * obvious next question — what has this actually been used for — because
- * the renders that cited it were scattered through the library with nothing
- * tying them back.
+ * The two words are the same thing here and the app says both, because the
+ * studio does: a face or a place is cast, a prop or a look is an element,
+ * and both are a named visual reference dropped into a prompt as @Name.
+ *
+ * What the cast could not do was answer the obvious next question — what has
+ * this actually been used for — because the renders that cited it were
+ * scattered through the library with nothing tying them back.
  *
  * They were tied all along: every render records the names its prompt cited
  * in params.cast. This reads that back, so an element has its own body of

@@ -254,10 +254,10 @@ export default function StudioPage() {
           </div>
         </section>
 
-        {/* ── Elements ─────────────────────────────────────────── */}
+        {/* ── Cast and elements ────────────────────────────────── */}
         <section className="card mt-6 px-5 py-5">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="grouplabel !pb-0">Elements</p>
+            <p className="grouplabel !pb-0">Cast and elements</p>
             <span className="text-[13px] text-mute">
               A face, a place, a prop or a look, defined once. Open one to see everything made with it.
             </span>
@@ -275,7 +275,7 @@ export default function StudioPage() {
             onChange={(e) => { if (e.target.files) addFrom(e.target.files); e.target.value = ""; }} />
 
           {cast.length === 0 ? (
-            <Empty title="No elements yet"
+            <Empty title="Nothing cast yet"
               line="Add a character, a place, a prop or a look with a still and a line of description, then write @TheirName in any prompt." />
           ) : (
             <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(190px,1fr))]">
