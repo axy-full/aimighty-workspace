@@ -6,14 +6,17 @@
  *
  * Two things the flat-rate version got wrong and this one gets right:
  *   1. Rates are TIERED BY OUTPUT RESOLUTION (2.5 at 1080p is 11.70, not 10.70).
- *   2. Rates differ depending on whether the INPUT includes video.
- *      We only do text-to-video today, so `withoutVideo` is what gets used —
- *      `withVideo` is carried for when reference/extend modes are added.
+ *   2. Rates differ depending on whether the INPUT includes video. Both
+ *      tiers are live: edit and extend send a source video, and syncGeneration
+ *      passes `hasVideoInput` so those renders price at the cheaper rate.
  *
  * Official token formula, same page:
  *   tokens = (input video duration + output duration) × w × h × fps / 1024
- * Billing uses `usage.completion_tokens` returned by the API. Failed
- * generations are not charged.
+ * We do NOT use that formula, and should not: ModelArk's own docs say the
+ * returned `usage.completion_tokens` is authoritative, and that where a
+ * render falls under the per-model minimum the field already reports the
+ * minimum that was actually billed. Computing tokens ourselves would miss
+ * that floor. Failed generations are not charged.
  */
 
 /**
@@ -26,11 +29,34 @@
 export const ACCOUNT_DISCOUNT = 0;
 
 /**
- * NOTE: BytePlus advertises a public time-limited promo — 1080p output on
- * Seedance 2.5 at 72% of list, to 17 Sep 2026. It is NOT applied here because
- * we haven't confirmed it lands on this account. If it does, 1080p on 2.5 is
- * cheaper than these figures, and it should be added with its expiry date so
- * it stops applying on its own rather than silently under-reporting later.
+ * PROMOTIONS — known to exist, deliberately NOT applied.
+ *
+ * BytePlus advertises time-limited discounts that no list-rate table carries.
+ * The one that touches us is 1080p on Seedance 2.5, running 14 Aug to
+ * 17 Oct 2026. (Two others cover Seedance 2.0 mini and 2.0 fast at 480p and
+ * 720p, 7 Aug to 7 Oct — neither model is in this catalogue, so they are
+ * noted only so nobody wonders later.)
+ *
+ * Two reasons it stays unapplied rather than being guessed at:
+ *
+ *   1. Nobody has confirmed it lands on THIS account. A promotion advertised
+ *      publicly is not necessarily one your contract gets.
+ *   2. The size is genuinely ambiguous. The English page reads "28% off",
+ *      which is the shape of a mistranslated 折 — in Chinese pricing 2.8折
+ *      means 28% OF list, i.e. 72% off. Those two readings differ by a
+ *      factor of two and a half, and picking wrong is worse than not
+ *      applying it at all.
+ *
+ * The answer is not to guess but to measure: record what the console says
+ * (Usage › the vendor card › "Match it to the console") and the drift will
+ * show both whether a discount applies and how big it really is. Only then
+ * add it here, with its end date, so it stops on its own rather than
+ * silently under-reporting from 17 Oct.
+ *
+ * There is no API that returns the billed cost of a single generation — the
+ * task response carries tokens and nothing about money — so a computed
+ * figure reconciled against the console is the best available, by design
+ * rather than for want of trying.
  */
 
 export type ParamStyle = "flags" | "fields";
