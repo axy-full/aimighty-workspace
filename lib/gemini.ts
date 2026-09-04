@@ -62,11 +62,28 @@ async function refPayload(ref: Reference): Promise<{ mime: string; b64: string }
   return { mime: useDelivery ? "image/jpeg" : ref.mime.toLowerCase(), b64: bytes.toString("base64") };
 }
 
+/**
+ * What to say when Google declines a still.
+ *
+ * The old wording asserted flatly that the thresholds were already off.
+ * That is only true at the default -- set GOOGLE_SAFETY_THRESHOLD to
+ * something restrictive and the message became a lie that sent people
+ * rewording a prompt no rewording would save. It now reads the setting it
+ * is describing.
+ */
 function refusal(text: string | null): Error {
+  const t = safetyThreshold();
+  const off = t === "OFF" || t === "BLOCK_NONE";
+  const where = off
+    ? "The adjustable safety thresholds are already off, so this is the layer no setting turns off."
+    : t
+      ? `The adjustable thresholds are set to ${t} on this deployment, so this may be one of them — ` +
+        "GOOGLE_SAFETY_THRESHOLD=OFF turns all four down. Google keeps one filter behind them that no setting reaches."
+      : "This deployment sends no thresholds, so Google's own defaults applied — " +
+        "GOOGLE_SAFETY_THRESHOLD=OFF turns the adjustable four down. Google keeps one filter behind them that no setting reaches.";
   return new Error(
-    "Google's built-in image filter declined this one. The adjustable safety " +
-    "thresholds are already off, so this is the layer no setting turns off. " +
-    "Nothing was charged — reword the prompt or drop a reference and try again." +
+    "Google's built-in image filter declined this one. " + where +
+    " Nothing was charged — reword the prompt or drop a reference and try again." +
     (text ? ` Google said: ${text.slice(0, 300)}` : "")
   );
 }
@@ -211,9 +228,17 @@ async function viaGoogle(opts: {
     const { mime, b64 } = await refPayload(ref);
     input.push({ type: "image", mime_type: mime, data: b64 });
   }
-  const body = JSON.stringify({
+  /* This door speaks the Interactions API, which takes the same four
+     thresholds under a snake_case name -- safety_settings, matching
+     mime_type and aspect_ratio below -- rather than the camelCase
+     safetySettings that generateContent wants. Until now only the gateway
+     door sent them, so a render that fell through to this one was judged
+     by Google's defaults while the refusal text claimed otherwise. */
+  const safety = safetySettings();
+  const bodyFor = (withSafety: boolean) => JSON.stringify({
     model: process.env.GEMINI_IMAGE_MODEL ?? opts.model.id,
     input,
+    ...(withSafety && safety ? { safety_settings: safety } : {}),
     response_format: {
       type: "image",
       // The live API 400s on anything but image/jpeg here — JPEG is the only
@@ -225,13 +250,22 @@ async function viaGoogle(opts: {
     },
   });
 
-  const res = await fetch(`${GOOGLE_HOST}/v1beta/interactions`, {
+  const send = (body: string) => fetch(`${GOOGLE_HOST}/v1beta/interactions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body,
     signal: AbortSignal.timeout(240_000),
   });
-  const raw = await res.text();
+
+  let res = await send(bodyFor(true));
+  let raw = await res.text();
+  // The same guard the gateway door carries: if this endpoint ever refuses
+  // the block itself, the render must not die for it -- send it once more
+  // the way it went before the block existed.
+  if (res.status === 400 && safety && /safety/i.test(raw)) {
+    res = await send(bodyFor(false));
+    raw = await res.text();
+  }
   let j: InteractionResponse;
   try { j = JSON.parse(raw) as InteractionResponse; }
   catch { throw new Error(`Gemini returned non-JSON (${res.status}): ${raw.slice(0, 300)}`); }
