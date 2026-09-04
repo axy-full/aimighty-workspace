@@ -3,6 +3,7 @@ import { PROVIDERS, providerConfigured } from "@/lib/providers";
 import { allSettings } from "@/lib/settings";
 import { db, ready } from "@/lib/db";
 import { presignedReadUrl } from "@/lib/storage";
+import { mailConfigured, mailFrom } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -91,6 +92,12 @@ export async function GET(req: Request) {
     // instead of answering. Its absence is itself the signal.
     cron: await cronStatus().catch(() => null),
     arkKeyConfigured: Boolean(process.env.ARK_API_KEY),
+    /* Whether invitations can be emailed, and from what address. Neither is
+       a secret — the address appears in every invitation it sends — and
+       without this the only way to tell was to send one and see. */
+    mail: mailConfigured()
+      ? { configured: true, from: mailFrom() }
+      : { configured: false, needs: ["RESEND_API_KEY", "MAIL_FROM"] },
     pushConfigured: Boolean(
       process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
     ),
