@@ -13,6 +13,7 @@ export async function GET() {
   const got = await requireAdmin();
   if (got.response) return got.response;
   await ready();
+  const canSeeRoles = isSuperAdmin(got.user.email);
 
   const [users, invites] = await Promise.all([
     db().execute(`
@@ -30,18 +31,24 @@ export async function GET() {
 
   return NextResponse.json({
     mail: { configured: mailConfigured(), from: mailFrom() },
+    /* Standing in the workspace is between a person and the owner. Everyone
+       else on the roster — members and admins alike — sees who is here and
+       what they have made, and not who outranks whom. Withheld on the SERVER
+       rather than hidden in the page, or it would still be one devtools panel
+       away from being read. */
+    canSeeRoles,
     users: users.rows.map((r: any) => ({
-      id: r.id, email: r.email, name: r.name, role: r.role,
+      id: r.id, email: r.email, name: r.name,
+      ...(canSeeRoles ? { role: r.role, permanent: isSuperAdmin(r.email) } : {}),
       disabled: Boolean(Number(r.disabled)),
       locked: r.locked_until != null && Number(r.locked_until) > now(),
       lastSeen: r.last_seen == null ? null : Number(r.last_seen),
       createdAt: Number(r.created_at),
       clips: Number(r.clips), spend: Number(r.spend),
-      // Marked so the roster can say why this one has no remove button.
-      permanent: isSuperAdmin(r.email),
     })),
     invites: invites.rows.map((r: any) => ({
-      code: r.code, email: r.email, name: r.name, role: r.role,
+      code: r.code, email: r.email, name: r.name,
+      ...(canSeeRoles ? { role: r.role } : {}),
       createdAt: Number(r.created_at), expiresAt: Number(r.expires_at),
       sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0),
     })),
@@ -52,12 +59,15 @@ export async function GET() {
 export async function POST(req: Request) {
   const got = await requireAdmin();
   if (got.response) return got.response;
+  // Same reasoning as the roster: only the owner decides standing, so an
+  // invite from anyone else is a member invite whatever it asked for.
+  const mayChooseRole = isSuperAdmin(got.user.email);
   await ready();
 
   const body = await req.json().catch(() => ({}));
   const email = String(body.email ?? "").trim().toLowerCase();
   const name = String(body.name ?? "").trim();
-  const role = body.role === "admin" ? "admin" : "member";
+  const role = mayChooseRole && body.role === "admin" ? "admin" : "member";
 
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {

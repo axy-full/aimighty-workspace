@@ -13,14 +13,16 @@ import { Empty } from "@/components/ParticlMark";
 import { appConfirm, appAlert } from "@/components/dialog";
 
 type Member = {
-  id: string; email: string; name: string; role: string;
+  id: string; email: string; name: string;
+  /** Present only for the owner; nobody else is told who outranks whom. */
+  role?: string;
   disabled: boolean; locked: boolean;
   lastSeen: number | null; createdAt: number; clips: number; spend: number;
   /** The workspace's permanent admin: cannot be demoted, disabled or removed. */
   permanent?: boolean;
 };
 type Invite = {
-  code: string; email: string; name: string; role: string;
+  code: string; email: string; name: string; role?: string;
   createdAt: number; expiresAt: number;
   sentAt?: number | null; sendCount?: number;
 };
@@ -28,7 +30,7 @@ type Mail = { configured: boolean; from: string | null };
 
 export default function TeamPage() {
   usePageTitle("Team");
-  const { data, refresh } = useApi<{ users: Member[]; invites: Invite[]; mail?: Mail }>("/api/team", 30000);
+  const { data, refresh } = useApi<{ users: Member[]; invites: Invite[]; mail?: Mail; canSeeRoles?: boolean }>("/api/team", 30000);
   const [notice, setNotice] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const { data: me } = useApi<{ id?: string; email: string }>("/api/me");
@@ -113,6 +115,8 @@ export default function TeamPage() {
   }
 
   const users = data?.users ?? [];
+  /** True only for the workspace owner. Everyone else is shown no standing. */
+  const canSeeRoles = Boolean(data?.canSeeRoles);
   const invites = data?.invites ?? [];
   const active = users.filter((u) => !u.disabled).length;
   const mail = data?.mail?.configured ?? false;
@@ -143,11 +147,15 @@ export default function TeamPage() {
             <input className="ctl min-w-[200px] flex-1" placeholder="Email" type="email"
               value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
               onKeyDown={(e) => e.key === "Enter" && invite()} />
-            <select className="ctl w-auto shrink-0" value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
+            {/* Only the owner chooses standing. For anyone else the invite
+                is a member invite, decided on the server rather than here. */}
+            {canSeeRoles && (
+              <select className="ctl w-auto shrink-0" value={form.role}
+                onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            )}
             <button onClick={invite} disabled={busy || !form.name.trim() || !form.email.trim()}
               className="btn-render h-[38px] shrink-0 px-4 text-[14px]">
               {busy ? "Sending…" : mail ? "Send invite" : "Create invite"}
@@ -178,7 +186,7 @@ export default function TeamPage() {
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-[15px]">{iv.name}</span>
                     <span className="truncate text-[12.5px] text-mute">
-                      {iv.email} · {iv.role} · expires {new Date(iv.expiresAt).toLocaleDateString()}
+                      {iv.email}{iv.role ? ` · ${iv.role}` : ""} · expires {new Date(iv.expiresAt).toLocaleDateString()}
                       {iv.sentAt ? ` · emailed ${timeAgo(iv.sentAt)}${(iv.sendCount ?? 0) > 1 ? ` (${iv.sendCount}×)` : ""}` : mail ? " · not emailed yet" : ""}
                     </span>
                   </span>
@@ -213,14 +221,14 @@ export default function TeamPage() {
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="truncate text-[15px] font-medium">{u.name}</span>
-                  {u.permanent ? (
+                  {canSeeRoles && (u.permanent ? (
                     <span className="rounded-full bg-blue/10 px-2 py-px text-[11px] font-medium text-blue"
                       title="The workspace's permanent admin — can't be demoted, disabled or removed">
                       Owner
                     </span>
                   ) : u.role === "admin" && (
                     <span className="rounded-full bg-blue/10 px-2 py-px text-[11px] font-medium text-blue">Admin</span>
-                  )}
+                  ))}
                   {u.locked && (
                     <span className="rounded-full bg-warn/15 px-2 py-px text-[11px] font-medium text-warn">Locked</span>
                   )}
@@ -237,7 +245,7 @@ export default function TeamPage() {
                   {/* A control that will always be refused is worse than no
                       control: it invites the click and then explains itself.
                       Unlock stays, because it only ever helps this account. */}
-                  {u.permanent ? (
+                  {!canSeeRoles ? null : u.permanent ? (
                     <>
                       <span className="text-[12.5px] text-mute">
                         Permanent admin — can&rsquo;t be demoted, disabled or removed.

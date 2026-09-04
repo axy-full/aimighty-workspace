@@ -32,6 +32,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const target = rs.rows[0] as any;
   if (!target || target.deleted_at) return NextResponse.json({ error: "No such user" }, { status: 404 });
 
+  /* Standing is the owner's to set. Everyone else cannot see roles at all
+     (see /api/team), so leaving the route open would make the hiding
+     decorative — a hand-written request would still work. */
+  if (body.role !== undefined && !isSuperAdmin(got.user.email)) {
+    return NextResponse.json(
+      { error: "Only the workspace owner can change what someone is." }, { status: 403 });
+  }
+
   /* Absolute, unlike the last-admin rule below it, which two admins acting
      in the wrong order can still walk around. Clearing a LOCKOUT is allowed
      — that helps this account rather than harming it. */
