@@ -28,7 +28,7 @@ export default function Studio({ spec, setSpec }: {
       <button onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-4 py-3 text-left">
         <span className="grouplabel">Shot control</span>
-        {n > 0 && <span className="chip bg-blue text-white">{n}</span>}
+        {n > 0 && <span className="chip bg-blue text-on-ink">{n}</span>}
         <span className="ml-auto text-[13px] text-mute">{open ? "Hide" : "Show"}</span>
       </button>
 
@@ -56,7 +56,7 @@ export default function Studio({ spec, setSpec }: {
                   return (
                     <button key={o.value} onClick={() => toggle(c.key, o.value)}
                       title={o.phrase}
-                      className={`chip ${on ? "bg-blue text-white" : ""}`}>
+                      className={`chip ${on ? "bg-blue text-on-ink" : ""}`}>
                       {o.label}
                     </button>
                   );

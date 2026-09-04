@@ -66,7 +66,7 @@ export default function Review({ genId, state, reviewBy, onChanged }: {
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => setState("approved")}
           className={`rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors ${
-            state === "approved" ? "bg-ok text-white" : "bg-chip text-dim hover:bg-chip2"
+            state === "approved" ? "bg-ok text-on-ink" : "bg-chip text-dim hover:bg-chip2"
           }`}>
           {state === "approved" ? "Approved" : "Approve"}
         </button>

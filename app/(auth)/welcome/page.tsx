@@ -50,7 +50,7 @@ export default function WelcomePage() {
 
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
             <Link href="/login"
-              className="rounded-full bg-blue px-7 py-3 text-[16px] font-medium text-white transition-opacity hover:opacity-90">
+              className="rounded-full bg-blue px-7 py-3 text-[16px] font-medium text-on-ink transition-opacity hover:opacity-90">
               Sign in
             </Link>
             <span className="text-[14px] text-mute">Invitation only.</span>

@@ -126,7 +126,7 @@ export default function LibraryPage() {
           <button key={s} onClick={() => setStatus(s)}
             className={`rounded-full border px-3.5 py-[6px] text-[13.5px] font-medium capitalize transition-colors ${
               status === s
-                ? "border-transparent bg-blue text-white"
+                ? "border-transparent bg-blue text-on-ink"
                 : "border-transparent bg-chip text-dim hover:bg-chip2"
             }`}>
             {s === "all" ? "All" : s}
@@ -136,7 +136,7 @@ export default function LibraryPage() {
         <button onClick={() => setMine(!mine)}
           className={`rounded-full border px-3.5 py-[6px] text-[13.5px] font-medium transition-colors ${
             mine
-              ? "border-transparent bg-blue text-white"
+              ? "border-transparent bg-blue text-on-ink"
               : "border-transparent bg-chip text-dim hover:bg-chip2"
           }`}>
           My clips

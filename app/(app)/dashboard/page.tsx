@@ -46,7 +46,7 @@ export default function DashboardPage() {
         <div className="mt-5 flex flex-wrap gap-2">
           {WINDOWS.map((w) => (
             <button key={w.days} onClick={() => setDays(w.days)}
-              className={`chip ${days === w.days ? "bg-blue text-white" : ""}`}>
+              className={`chip ${days === w.days ? "bg-blue text-on-ink" : ""}`}>
               {w.label}
             </button>
           ))}

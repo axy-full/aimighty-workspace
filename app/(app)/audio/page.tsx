@@ -171,7 +171,7 @@ export default function AudioPage() {
           <div className="flex flex-wrap items-center gap-1.5">
             {TASKS.map((t) => (
               <button key={t.id} type="button" onClick={() => setTask(t.id)} title={t.blurb}
-                className={`chip ${task === t.id ? "bg-blue text-white" : ""}`}>{t.label}</button>
+                className={`chip ${task === t.id ? "bg-blue text-on-ink" : ""}`}>{t.label}</button>
             ))}
             <span className="ml-2 text-[13px] text-mute">{TASKS.find((t) => t.id === task)!.blurb}</span>
           </div>
@@ -203,7 +203,7 @@ export default function AudioPage() {
                 <div className="mt-2 grid max-h-[260px] gap-1.5 overflow-y-auto pr-1 [grid-template-columns:repeat(auto-fill,minmax(170px,1fr))]">
                   {shownVoices.map((v) => (
                     <button key={v.id} type="button" onClick={() => setVoiceId(v.id)}
-                      className={`flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-left ${voiceId === v.id ? "bg-blue text-white" : "bg-panel2 hover:bg-chip"}`}>
+                      className={`flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-left ${voiceId === v.id ? "bg-blue text-on-ink" : "bg-panel2 hover:bg-chip"}`}>
                       <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); playPreview(v); }} title="Hear it"
                         className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${voiceId === v.id ? "bg-white/20" : "bg-chip"} ${!v.previewUrl ? "opacity-40" : ""}`}>
                         {playing === v.id ? <span className="h-2.5 w-2.5 rounded-[2px] bg-current" /> : <span className="ml-0.5 border-y-[5px] border-l-[8px] border-y-transparent border-l-current" />}
@@ -238,7 +238,7 @@ export default function AudioPage() {
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="text-[13px] font-medium text-dim">Length</span>
               {(["", "1", "2", "5", "10", "20"] as const).map((d) => (
-                <button key={d} type="button" onClick={() => setDuration(d)} className={`chip !py-1 !text-[12.5px] ${duration === d ? "bg-blue text-white" : ""}`}>
+                <button key={d} type="button" onClick={() => setDuration(d)} className={`chip !py-1 !text-[12.5px] ${duration === d ? "bg-blue text-on-ink" : ""}`}>
                   {d === "" ? "Let it decide" : `${d}s`}
                 </button>
               ))}
@@ -250,9 +250,9 @@ export default function AudioPage() {
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="text-[13px] font-medium text-dim">Length</span>
               {[15, 30, 60, 120, 180].map((s) => (
-                <button key={s} type="button" onClick={() => setLengthS(s)} className={`chip !py-1 !text-[12.5px] ${lengthS === s ? "bg-blue text-white" : ""}`}>{mmss(s)}</button>
+                <button key={s} type="button" onClick={() => setLengthS(s)} className={`chip !py-1 !text-[12.5px] ${lengthS === s ? "bg-blue text-on-ink" : ""}`}>{mmss(s)}</button>
               ))}
-              <button type="button" onClick={() => setInstrumental((v) => !v)} className={`chip !py-1 !text-[12.5px] ${instrumental ? "bg-blue text-white" : ""}`}>Instrumental</button>
+              <button type="button" onClick={() => setInstrumental((v) => !v)} className={`chip !py-1 !text-[12.5px] ${instrumental ? "bg-blue text-on-ink" : ""}`}>Instrumental</button>
             </div>
           )}
 

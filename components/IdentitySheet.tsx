@@ -187,7 +187,7 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
                 {!training && (
                   <>
                     <button type="button" onClick={() => setCover(pid)} title="Use as the cover"
-                      className={`absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white ${cover === pid ? "bg-blue" : "reveal bg-black/55"}`}>
+                      className={`absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium text-on-ink ${cover === pid ? "bg-blue" : "reveal bg-black/55"}`}>
                       {cover === pid ? "Cover" : "Cover"}
                     </button>
                     <button type="button" onClick={() => { setPhotos((p) => p.filter((x) => x !== pid)); if (cover === pid) setCover(null); }}
@@ -325,11 +325,11 @@ function IdentityComposer({ identity, projectId }: { identity: IdentityView; pro
         className="mt-2 w-full resize-none rounded-[12px] bg-chip px-3.5 py-3 text-[14.5px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none" />
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {RATIOS.map((r) => (
-          <button key={r} type="button" onClick={() => setRatio(r)} className={`chip !py-1 !text-[12.5px] ${ratio === r ? "bg-blue text-white" : ""}`}>{r}</button>
+          <button key={r} type="button" onClick={() => setRatio(r)} className={`chip !py-1 !text-[12.5px] ${ratio === r ? "bg-blue text-on-ink" : ""}`}>{r}</button>
         ))}
         <span className="mx-1 text-mute">·</span>
         {[1, 2, 4].map((n) => (
-          <button key={n} type="button" onClick={() => setCount(n)} className={`chip !py-1 !text-[12.5px] ${count === n ? "bg-blue text-white" : ""}`}>{n} still{n === 1 ? "" : "s"}</button>
+          <button key={n} type="button" onClick={() => setCount(n)} className={`chip !py-1 !text-[12.5px] ${count === n ? "bg-blue text-on-ink" : ""}`}>{n} still{n === 1 ? "" : "s"}</button>
         ))}
         <button type="button" onClick={render} disabled={!prompt.trim() || busy}
           className="btn-render ml-auto h-[34px] px-4 text-[13.5px] disabled:opacity-50">

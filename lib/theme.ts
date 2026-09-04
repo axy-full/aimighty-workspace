@@ -15,8 +15,10 @@ import { useSyncExternalStore } from "react";
 export type ThemePref = "auto" | "light" | "dark";
 
 export const THEME_KEY = "aw_theme";
-const BAR_LIGHT = "#FAFAF8";
-const BAR_DARK = "#141416";
+/* The browser chrome follows the page ground, so the status bar does not
+   lie about which theme is showing. Both are the system's `page` token. */
+const BAR_LIGHT = "#ECEDEF";
+const BAR_DARK = "#1D1F24";
 
 const listeners = new Set<() => void>();
 let snapshot: ThemePref | null = null;

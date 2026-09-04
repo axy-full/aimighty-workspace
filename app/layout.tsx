@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Outfit, Kode_Mono } from "next/font/google";
+import { Outfit, Kode_Mono, Geist } from "next/font/google";
 import "./globals.css";
 
 /* The brand's two faces. Outfit sets the wordmark and every big title;
@@ -10,7 +10,14 @@ const outfit = Outfit({
   variable: "--font-outfit", display: "swap",
 });
 const kode = Kode_Mono({
-  subsets: ["latin"], weight: ["500"], variable: "--font-kode-mono", display: "swap",
+  subsets: ["latin"], weight: ["500", "700"], variable: "--font-kode-mono", display: "swap",
+});
+/* The interface face. 300 carries lead copy and prompts, 400 body, 500
+   labels — the system asks for all three, and the weights are what make a
+   monochrome interface read as more than one voice. */
+const geist = Geist({
+  subsets: ["latin"], weight: ["300", "400", "500", "600"],
+  variable: "--font-geist", display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -55,7 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     // suppressHydrationWarning: the script above may have stamped data-theme
     // on <html> before React compared it to the server's version.
-    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${kode.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${kode.variable} ${geist.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>

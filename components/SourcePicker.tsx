@@ -81,7 +81,7 @@ export default function SourcePicker({ task, onPick, onClose }: {
             </span>
             {selection !== "all" && selection !== "unfiled" && (
               <button type="button" onClick={() => setAllProjects((v) => !v)}
-                className={`chip !py-1.5 !text-[13px] ${allProjects ? "" : "bg-blue text-white"}`}>
+                className={`chip !py-1.5 !text-[13px] ${allProjects ? "" : "bg-blue text-on-ink"}`}>
                 {allProjects ? "All projects" : "This project"}
               </button>
             )}

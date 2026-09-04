@@ -111,7 +111,7 @@ export default function GenCard({
         )}
 
         {gen.reviewState === "approved" && (
-          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-ok px-2 py-0.5 text-[10.5px] font-semibold text-white">
+          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-ok px-2 py-0.5 text-[10.5px] font-semibold text-on-ink">
             ✓ Approved
           </span>
         )}

@@ -62,7 +62,7 @@ export default function ConnectPage() {
           {CLIENTS.map((c) => (
             <button key={c.id} onClick={() => setClient(c.id)}
               className={`rounded-full px-3.5 py-[7px] text-[13.5px] font-medium transition-colors ${
-                client === c.id ? "bg-blue text-white" : "bg-chip text-dim hover:bg-chip2"
+                client === c.id ? "bg-blue text-on-ink" : "bg-chip text-dim hover:bg-chip2"
               }`}>
               {c.label}
             </button>

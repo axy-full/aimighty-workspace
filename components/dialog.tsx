@@ -143,8 +143,11 @@ export default function DialogHost() {
           )}
           <button
             onClick={confirm} autoFocus={current.kind !== "prompt" && !current.danger}
-            className={`flex-1 rounded-full py-2.5 text-[15px] font-semibold text-white ${
-              current.danger ? "bg-lift" : current.kind === "alert" ? "bg-blue" : "bg-blue"
+            /* Two fills, two inks. A destructive action keeps the one red
+               this system allows and white type on it; everything else is
+               the ink inversion — a white fill with near-black type. */
+            className={`flex-1 rounded-full py-2.5 text-[15px] font-semibold ${
+              current.danger ? "bg-lift text-white" : "bg-blue text-on-ink"
             }`}
           >
             {current.confirmLabel ?? "OK"}

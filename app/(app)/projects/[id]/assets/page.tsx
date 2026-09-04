@@ -147,7 +147,7 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
                                 <img src={`/api/uploads/${i.coverUploadId}`} alt={i.name}
                                   className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
                               : <span className="absolute inset-0 grid place-items-center font-mono text-[22px] text-mute">@</span>}
-                            <span className={`gal-tag ${i.status === "ready" ? "!bg-ok !text-white" : i.status === "training" ? "!bg-blue !text-white" : ""}`}>
+                            <span className={`gal-tag ${i.status === "ready" ? "!bg-ok !text-on-ink" : i.status === "training" ? "!bg-blue !text-on-ink" : ""}`}>
                               {i.status === "ready" ? "Ready" : i.status === "training" ? "Training" : i.status === "failed" ? "Failed" : "Draft"}
                             </span>
                           </span>

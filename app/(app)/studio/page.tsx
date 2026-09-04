@@ -205,7 +205,7 @@ export default function StudioPage() {
                       ? /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={`/api/uploads/${i.coverUploadId}`} alt={i.name} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
                       : <span className="absolute inset-0 grid place-items-center font-mono text-[22px] text-mute">@</span>}
-                    <span className={`gal-tag ${i.status === "ready" ? "!bg-ok !text-white" : i.status === "training" ? "!bg-blue !text-white" : i.status === "failed" ? "!bg-lift !text-white" : ""}`}>
+                    <span className={`gal-tag ${i.status === "ready" ? "!bg-ok !text-on-ink" : i.status === "training" ? "!bg-blue !text-on-ink" : i.status === "failed" ? "!bg-lift !text-on-ink" : ""}`}>
                       {i.status === "ready" ? "Ready" : i.status === "training" ? "Training" : i.status === "failed" ? "Failed" : "Draft"}
                     </span>
                     <span className="gal-tag gal-tag-right">{i.photos.length} photo{i.photos.length === 1 ? "" : "s"}</span>
@@ -318,7 +318,7 @@ export default function StudioPage() {
         <section className="card mt-6 px-5 py-5">
           <div className="flex flex-wrap items-center gap-2">
             <p className="grouplabel !pb-0">The shot</p>
-            {n > 0 && <span className="chip bg-blue text-white">{n} set</span>}
+            {n > 0 && <span className="chip bg-blue text-on-ink">{n} set</span>}
             {n > 0 && <span className="ml-auto"><button onClick={() => setSpec({})} className="chip !text-lift">Clear</button></span>}
           </div>
           {phrase && <p className="mt-2 text-[13px] text-dim"><span className="text-mute">Reads as: </span>{phrase}.</p>}
@@ -331,7 +331,7 @@ export default function StudioPage() {
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {c.options.map((o) => (
                     <button key={o.value} onClick={() => toggle(c.key, o.value)} title={o.phrase}
-                      className={`chip ${spec[c.key] === o.value ? "bg-blue text-white" : ""}`}>
+                      className={`chip ${spec[c.key] === o.value ? "bg-blue text-on-ink" : ""}`}>
                       {o.label}
                     </button>
                   ))}
@@ -359,7 +359,7 @@ export default function StudioPage() {
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button onClick={sendToGenerate}
               disabled={!prose.trim() && !n}
-              className="inline-flex items-center gap-2 rounded-full bg-blue px-5 py-2.5 text-[15px] font-medium text-white disabled:opacity-40">
+              className="inline-flex items-center gap-2 rounded-full bg-blue px-5 py-2.5 text-[15px] font-medium text-on-ink disabled:opacity-40">
               <IconSparkle className="!h-4 !w-4" /> Take it to Video
             </button>
             <span className="text-[13px] text-mute">

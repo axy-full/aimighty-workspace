@@ -67,11 +67,11 @@ export default function ShotRow({ projectId, shotId, setShotId }: {
 
       <div className="mt-2 flex flex-wrap gap-1.5">
         <button onClick={() => setShotId("")}
-          className={`chip ${!shotId ? "bg-blue text-white" : ""}`}>Unfiled</button>
+          className={`chip ${!shotId ? "bg-blue text-on-ink" : ""}`}>Unfiled</button>
         {shots.map((s) => (
           <button key={s.id} onClick={() => setShotId(s.id)}
             title={s.title || undefined}
-            className={`chip ${shotId === s.id ? "bg-blue text-white" : ""}`}>
+            className={`chip ${shotId === s.id ? "bg-blue text-on-ink" : ""}`}>
             {s.scene ? `${s.scene}·` : ""}{s.code}
             {s.takes > 0 && <span className="ml-1 opacity-60">{s.takes}</span>}
           </button>

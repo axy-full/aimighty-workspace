@@ -289,7 +289,7 @@ export default function UsagePage() {
           <span className="ml-auto flex flex-wrap gap-1.5">
             {[["all", "All"], ...data.vendors.map((v) => [v.id, v.label] as const)].map(([k, l]) => (
               <button key={k} type="button" onClick={() => setVendorFilter(k)}
-                className={`chip !py-1 !text-[12.5px] ${vendorFilter === k ? "bg-blue text-white" : ""}`}>{l}</button>
+                className={`chip !py-1 !text-[12.5px] ${vendorFilter === k ? "bg-blue text-on-ink" : ""}`}>{l}</button>
             ))}
           </span>
         </div>

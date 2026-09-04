@@ -56,9 +56,13 @@ export function Switch({ checked, onChange, disabled }: {
         : checked ? "bg-ok" : "bg-switch-off"
       }`}
     >
+      {/* The knob inverts with the track. In a system with no accent, ON is
+          an ink track with a dark knob and OFF is a faint track with an ink
+          one — the inversion IS the state. A permanently white knob went
+          invisible the moment the "on" track became ink. */}
       <span
-        className={`absolute top-[2px] block h-[27px] w-[27px] rounded-full bg-white shadow-[0_2px_5px_rgba(0,0,0,.2)] transition-transform duration-200 ${
-          checked ? "translate-x-[22px]" : "translate-x-[2px]"
+        className={`absolute top-[2px] block h-[27px] w-[27px] rounded-full transition-[transform,background-color] duration-200 ${
+          checked ? "translate-x-[22px] bg-on-ink" : "translate-x-[2px] bg-ink"
         }`}
       />
     </button>

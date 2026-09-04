@@ -123,7 +123,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
         </p>
 
         <div className="mt-6 flex flex-wrap gap-2">
-          <Link href="/" className="chip bg-blue text-white">Open in Generate</Link>
+          <Link href="/" className="chip bg-blue text-on-ink">Open in Generate</Link>
           <Link href={`/canvas/${id}`} className="chip">Canvas</Link>
           <Link href="/all" className="chip">Library</Link>
           <Link href="/dashboard" className="chip">Production dashboard</Link>
