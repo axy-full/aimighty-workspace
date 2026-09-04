@@ -393,6 +393,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           onPickSource={() => setPickingSource(true)}
           ownRefs={ownRefs}
           dropOwnRef={(id) => setOwnRefs((prev) => prev.filter((g) => g.id !== id))}
+          onDropAsset={useAsRef}
         />
       </div>
 

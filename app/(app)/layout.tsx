@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import TopBar from "@/components/TopBar";
 import TabBar from "@/components/TabBar";
 import ChatDock from "@/components/ChatDock";
+import ProjectRail from "@/components/ProjectRail";
 import ContextMenu from "@/components/ContextMenu";
 import DialogHost from "@/components/dialog";
 import ViewportGuard from "@/components/ViewportGuard";
@@ -21,6 +22,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="app">
         <TopBar />
         <div className="app-work">
+          {/* A third child of a row that already had room: the chat dock's
+              own children are all fixed, so it contributes no width. */}
+          <ProjectRail />
           <div className="min-h-0 min-w-0 flex-1">{children}</div>
           <ChatDock />
         </div>

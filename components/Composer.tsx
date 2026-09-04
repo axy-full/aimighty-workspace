@@ -38,6 +38,7 @@ import { usd, compactTokens } from "@/lib/format";
 import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef } from "@/lib/models";
 import { IconArrowUp, IconCaret, IconAttach, IconSliders, IconClose } from "./Icons";
 import LazyMedia from "./LazyMedia";
+import { readDraggedAsset } from "./ProjectRail";
 import { movesFor, getTask, type EditMove } from "@/lib/tasks";
 import type { Params } from "./Workspace";
 
@@ -69,6 +70,8 @@ export type ComposerProps = {
   /** Our own renders attached to this one, and how to take one off. */
   ownRefs: Gen[];
   dropOwnRef: (id: string) => void;
+  /** A render dragged in from the rail. */
+  onDropAsset: (gen: Gen) => void;
   setupCount: number; setupOpen: boolean; toggleSetup: () => void;
   /** Which kind of thing this composer makes — the model menu shows only those. */
   kind: "video" | "image";
@@ -80,7 +83,7 @@ export default function Composer(p: ComposerProps) {
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked,
     est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
-    pickMode, onPickSource,
+    pickMode, onPickSource, onDropAsset,
   } = p;
   const [menu, setMenu] = useState<Menu>(null);
   const [drag, setDrag] = useState(false);
@@ -151,6 +154,11 @@ export default function Composer(p: ComposerProps) {
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => {
         e.preventDefault(); setDrag(false);
+        // A render dragged from the rail is one of OURS: it goes to the
+        // separate ownRefs list, never into the upload strip, because
+        // removing something from that strip deletes the file.
+        const asset = readDraggedAsset(e);
+        if (asset) { onDropAsset(asset.gen as Gen); return; }
         if (e.dataTransfer.files.length) picker.current?.add(e.dataTransfer.files);
       }}
     >
