@@ -1,4 +1,5 @@
 import { Inngest } from "inngest";
+import { db, now } from "./db";
 
 /**
  * The durable worker.
@@ -42,4 +43,42 @@ export const EVENTS = {
 export function inngestConfigured(): boolean {
   if (process.env.NODE_ENV !== "production") return true;
   return Boolean(process.env.INNGEST_SIGNING_KEY && process.env.INNGEST_EVENT_KEY);
+}
+
+/**
+ * Hand a render to the worker, and say whether it was taken.
+ *
+ * A false answer is not a failure — it means this deployment has no queue
+ * reachable right now (no keys, or the send itself failed), and the caller
+ * should do the work inline the way it always did. That fallback is what
+ * makes the queue safe to adopt: the worst case is the behaviour we had
+ * before it existed.
+ *
+ * The row is stamped on success so the cron's janitor knows the render
+ * belongs to the worker and stops counting the fifteen minutes after which
+ * an unowned row is presumed dead.
+ */
+export async function enqueueRender(genId: string, kind: "image" | "audio"): Promise<boolean> {
+  if (!inngestConfigured()) return false;
+  try {
+    /* A deadline, like every other outbound call in this app. The send sits
+       on the path of a request a person is waiting on, so if Inngest is slow
+       to accept the event we stop waiting and render inline instead. Losing
+       durability for one render is a far smaller cost than holding the
+       submit open until the function's own ceiling. */
+    await Promise.race([
+      inngest.send({ name: EVENTS.render, data: { genId, kind } }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Inngest did not accept the event within 5s")), 5_000)
+      ),
+    ]);
+    await db().execute({
+      sql: `UPDATE generations SET params=json_set(params, '$.worker', 'inngest'), updated_at=? WHERE id=?`,
+      args: [now(), genId],
+    });
+    return true;
+  } catch (e) {
+    console.error(`could not queue ${genId}, running it inline instead:`, (e as Error).message);
+    return false;
+  }
 }

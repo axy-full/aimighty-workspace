@@ -348,8 +348,35 @@ export async function syncPending(limit = 30): Promise<void> {
             AND deleted = 0
             AND ark_task_id IS NULL
             AND json_extract(params, '$.falRequestId') IS NULL
+            AND json_extract(params, '$.worker') IS NULL
             AND created_at < ?`,
     args: [now(), now() - 15 * 60_000],
+  });
+
+  /* ── The backstop for rows the worker owns ──────────────────────────
+   * A render handed to Inngest is exempt from the sweep above, and rightly:
+   * Inngest retries with its own backoff, which can run well past fifteen
+   * minutes, and killing a row mid-retry would abandon work it is about to
+   * finish. Inngest is also what ENDS such a row — its onFailure writes the
+   * failure once the retries are spent.
+   *
+   * This exists only for the case where Inngest never comes back at all: the
+   * app unregistered, the account gone, the event lost before delivery. Two
+   * hours is far beyond any real retry schedule, so it can only catch a row
+   * nobody is coming for.
+   * ------------------------------------------------------------------ */
+  await db().execute({
+    sql: `UPDATE generations
+          SET status='failed',
+              error='The worker never picked this up. Nothing was delivered — render again.',
+              updated_at=?
+          WHERE status IN ('queued','running')
+            AND deleted = 0
+            AND ark_task_id IS NULL
+            AND json_extract(params, '$.falRequestId') IS NULL
+            AND json_extract(params, '$.worker') IS NOT NULL
+            AND created_at < ?`,
+    args: [now(), now() - 2 * 60 * 60_000],
   });
 
   // Repair clauses only look back 3 days: past that, Ark's task and URL are

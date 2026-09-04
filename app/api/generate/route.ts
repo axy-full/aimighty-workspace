@@ -1,11 +1,9 @@
 import { NextResponse, after } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
-import {
-  getModel, DEFAULT_MODEL_ID, estimateImageCostUsd, imageTokens,
-} from "@/lib/models";
-import { generateImage } from "@/lib/gemini";
-import { storeImageBytes } from "@/lib/storage";
+import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
+import { enqueueRender } from "@/lib/inngest";
+import { runInline } from "@/lib/renderWork";
 import {
   enhancePrompt, shouldRefine, activeWriter,
   TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS, hasFreeTier,
@@ -351,51 +349,14 @@ export async function POST(req: Request) {
     });
     invalidate(PROJECTS_KEY);
 
-    after(async () => {
-      try {
-        const img = await generateImage({
-          model, prompt: stillPrompt, ratio, size, references: stillRefs,
-        });
-        // Google can only emit JPEG; the library keeps PNG. Decode once and
-        // re-encode LOSSLESSLY — pixel-identical, and nothing downstream can
-        // add generation loss to a PNG. (sharp is for THIS transcode and for
-        // delivery copies only — reference masters never pass through it.)
-        const sharp = (await import("sharp")).default;
-        const png = await sharp(img.bytes).png().toBuffer();
-        /* Google has already drawn and charged for this image. A brief Blob
-           outage here would otherwise throw the whole render away. The put
-           is idempotent (allowOverwrite) and costs nothing per attempt, so
-           unlike a vendor call it is safe to try again. */
-        const { value: storedUrl } = await withRetry(() => storeImageBytes(genId, png), { max: 3 });
-        // The gateway states the exact charge; Google direct bills flat per
-        // image by size (+ a little per reference in), from the catalogue.
-        const cost = img.costUsd
-          ?? (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0);
-        const tokens = img.totalTokens ?? imageTokens(size, stillRefs.length);
-        const ratePerM = tokens ? (cost / tokens) * 1_000_000 : null;
-        await db().execute({
-          sql: `UPDATE generations
-                SET status='succeeded', stored_url=?, total_tokens=?,
-                    cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?,
-                    params=json_set(params, '$.via', ?), updated_at=?
-                WHERE id=?`,
-          args: [storedUrl, tokens, cost, ratePerM, now() - ts, img.via, now(), genId],
-        });
-      } catch (e) {
-        /* If the engine drew it, the money is gone whether or not we managed
-           to keep the file — so the cost goes on the row even in failure.
-           Dropping it here is how a real charge disappears from the ledger. */
-        const spent = estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? null;
-        await db().execute({
-          sql: `UPDATE generations
-                SET status='failed', error=?, duration_ms=?,
-                    cost_usd=COALESCE(cost_usd, ?), updated_at=?
-                WHERE id=?`,
-          args: [(e as Error).message.slice(0, 600), now() - ts, spent, now(), genId],
-        }).catch(() => {});
-      }
-      invalidate(PROJECTS_KEY);
-    });
+    /* The render itself now belongs to the worker: the row is written, the
+       event is sent, and Inngest drives the vendor call outside this request
+       where a reclaimed instance cannot lose it. If there is no queue to
+       hand — no keys, or the send failed — it runs here in after() exactly
+       as it always did. Same code either way; see lib/renderWork.ts. */
+    if (!(await enqueueRender(genId, "image"))) {
+      after(() => runInline(genId));
+    }
 
     return NextResponse.json({ id: genId, status: "running" });
   }

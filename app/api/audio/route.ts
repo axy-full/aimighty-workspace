@@ -1,14 +1,10 @@
 import { NextResponse, after } from "next/server";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { requireRender } from "@/lib/auth";
-import { storeAudioBytes } from "@/lib/storage";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
-import { withRetry } from "@/lib/providers";
-import {
-  elevenConfigured, textToSpeech, soundEffect, composeMusic, subscription, usdForCredits,
-  SPEECH_MODELS, DEFAULT_SPEECH_MODEL, SFX_MODEL, MUSIC_MODEL,
-  speechCredits, sfxCredits, musicCredits, listVoices, SFX_CREDITS, MUSIC_CREDITS_PER_MINUTE,
-} from "@/lib/elevenlabs";
+import { enqueueRender } from "@/lib/inngest";
+import { runInline } from "@/lib/renderWork";
+import { elevenConfigured, subscription, SPEECH_MODELS, DEFAULT_SPEECH_MODEL, SFX_MODEL, MUSIC_MODEL, speechCredits, sfxCredits, musicCredits, listVoices, SFX_CREDITS, MUSIC_CREDITS_PER_MINUTE } from "@/lib/elevenlabs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -80,53 +76,12 @@ export async function POST(req: Request) {
   });
   invalidate(PROJECTS_KEY);
 
-  after(async () => {
-    try {
-      const { value: out } = await withRetry(async () => {
-        if (task === "speech") {
-          return textToSpeech({
-            voiceId: String(params.voiceId), text, modelId,
-            settings: Object.fromEntries(Object.entries(params.settings as Record<string, unknown>).filter(([, v]) => v !== undefined)),
-          });
-        }
-        if (task === "sound") {
-          return soundEffect({
-            text, durationSeconds: params.durationSeconds as number | null,
-            promptInfluence: params.promptInfluence as number | undefined, loop: Boolean(params.loop),
-          });
-        }
-        return composeMusic({ prompt: text, lengthMs: params.lengthMs as number, instrumental: Boolean(params.instrumental) });
-      }, { max: 2 });
-      /* ElevenLabs has already spoken the line and taken the credits. A
-         Blob blip must not throw that away; the put is idempotent. */
-      const { value: storedUrl } = await withRetry(() => storeAudioBytes(genId, out.bytes), { max: 3 });
-      // Price from the plan the account is on; the tier is read once per render.
-      let tier: string | null = null;
-      try { tier = (await subscription()).tier; } catch { /* estimate at the fallback rate */ }
-      const credits = out.credits;
-      const cost = usdForCredits(credits, tier);
-      await db().execute({
-        sql: `UPDATE generations
-              SET status='succeeded', stored_url=?, total_tokens=?, cost_usd=?, rate_usd_per_m=?,
-                  error=NULL, duration_ms=?, params=json_set(params, '$.credits', ?, '$.tier', ?, '$.requestId', ?), updated_at=?
-              WHERE id=?`,
-        args: [storedUrl, credits, cost, credits ? (cost / credits) * 1_000_000 : null,
-               now() - ts, credits, tier, out.requestId, now(), genId],
-      });
-    } catch (e) {
-      /* Credits spent on a line that was delivered but never stored are
-         still spent. Record the estimate rather than letting a real charge
-         vanish from the ledger. */
-      await db().execute({
-        sql: `UPDATE generations
-              SET status='failed', error=?, duration_ms=?,
-                  total_tokens=COALESCE(total_tokens, ?), updated_at=?
-              WHERE id=?`,
-        args: [(e as Error).message.slice(0, 600), now() - ts, estCredits ?? null, now(), genId],
-      }).catch(() => {});
-    }
-    invalidate(PROJECTS_KEY);
-  });
+  /* Handed to the worker so a reclaimed instance cannot lose a line the
+     voice has already spoken and been paid for. No queue reachable means
+     the old inline path, unchanged. See lib/renderWork.ts. */
+  if (!(await enqueueRender(genId, "audio"))) {
+    after(() => runInline(genId));
+  }
 
   return NextResponse.json({ id: genId, status: "running", estCredits });
 }
