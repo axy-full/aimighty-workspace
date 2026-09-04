@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PROVIDERS, providerConfigured } from "@/lib/providers";
+import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { allSettings } from "@/lib/settings";
 import { db, ready } from "@/lib/db";
 import { presignedReadUrl } from "@/lib/storage";
@@ -86,7 +86,13 @@ export async function GET(req: Request) {
     ...(presignRange ? { presignRange } : {}),
     videosSaved,
     videosAtRisk,
-    providers: PROVIDERS.map((p) => ({ id: p.id, configured: providerConfigured(p) })),
+    /* `via` is the door, not just whether a vendor is reachable: stills can
+       be served by Google's own key or by the Vercel gateway, and which one
+       it is decides whose balance pays. Without it the only way to find out
+       was to make a render and read the ledger afterwards. */
+    providers: PROVIDERS.map((p) => ({
+      id: p.id, configured: providerConfigured(p), via: providerVia(p),
+    })),
     // Reads the settings table, so during a database outage it throws — and
     // the one endpoint whose job is to SAY "database unreachable" would 500
     // instead of answering. Its absence is itself the signal.
