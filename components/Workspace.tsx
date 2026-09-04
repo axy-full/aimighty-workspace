@@ -182,11 +182,29 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
 
   const query =
     bin === "all" || bin === "unfiled" ? "" : `&projectId=${encodeURIComponent(bin)}`;
-  const { data, error: feedError, refresh } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=60&kind=${kind}${query}`, 5000);
+  /* Five seconds is the right cadence while a render is in flight and far
+     too eager when nothing is: a page of sixty rows is tens of kilobytes,
+     and every tick re-renders the whole wall. Nothing changes on a quiet
+     library except by someone else's hand, which twenty seconds catches
+     soon enough. The interval flips the moment anything is queued or
+     running, so a render still appears the instant it lands. */
+  const [live, setLive] = useState(false);
+  const { data, error: feedError, refresh } = useApi<{ generations: Gen[] }>(
+    `/api/jobs?limit=60&kind=${kind}${query}`, live ? 4000 : 20000);
   const gens = useMemo(() => {
     const all = data?.generations ?? [];
     return bin === "unfiled" ? all.filter((g) => !g.projectId) : all;
   }, [data, bin]);
+
+  /* Kept in state, not derived inline: the interval feeds the very hook that
+     produces `gens`, so reading it directly would be circular. Set off the
+     effect body — the same trick the seeding effect above uses — because the
+     rule against setting state in an effect cannot see through the await. */
+  const anyLive = gens.some((g) => g.status === "queued" || g.status === "running");
+  useEffect(() => {
+    if (anyLive === live) return;
+    Promise.resolve().then(() => setLive(anyLive));
+  }, [anyLive, live]);
 
   // The Clips/Stills filter lives here so the wall and the theatre agree on
   // what "next" means.

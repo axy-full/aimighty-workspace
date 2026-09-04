@@ -15,7 +15,7 @@
  * set of add and delete controls over the same tables would be two truths
  * about one thing.
  */
-import { use, useMemo } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { useOnChange } from "@/lib/changes";
@@ -38,12 +38,19 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
      and an empty one costs nothing. The wall polls because renders land
      while you watch; the banks do not, because /api/identities asks fal
      about every training face on each call. */
+  /* Three sections polling every eight seconds is three requests every eight
+     seconds for a page that is mostly read, not watched. They poll briskly
+     only while something is actually in flight; otherwise they tick slowly,
+     and the change bus refreshes them at once when anything is deleted,
+     renamed or moved. */
+  const [live, setLive] = useState(false);
+  const every = live ? 6000 : 30000;
   const { data: video, error: videoErr, refresh: rVideo } =
-    useApi<{ generations: Gen[] }>(`/api/jobs?${q}&kind=video&limit=60`, 8000);
+    useApi<{ generations: Gen[] }>(`/api/jobs?${q}&kind=video&limit=60`, every);
   const { data: images, refresh: rImages } =
-    useApi<{ generations: Gen[] }>(`/api/jobs?${q}&kind=image&limit=60`, 8000);
+    useApi<{ generations: Gen[] }>(`/api/jobs?${q}&kind=image&limit=60`, every);
   const { data: audio, refresh: rAudio } =
-    useApi<{ generations: Gen[] }>(`/api/jobs?${q}&kind=audio&limit=60`, 8000);
+    useApi<{ generations: Gen[] }>(`/api/jobs?${q}&kind=audio&limit=60`, every);
   const { data: idData, refresh: rIds } =
     useApi<{ identities: IdentityView[] }>(`/api/identities?${q}`, 0);
   const { data: castData, refresh: rCast } =
@@ -61,6 +68,13 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
   const sounds = useMemo(() => audio?.generations ?? [], [audio]);
   const identities = idData?.identities ?? [];
   const cast = castData?.cast ?? [];
+
+  const anyLive = [...clips, ...stills, ...sounds]
+    .some((g) => g.status === "queued" || g.status === "running");
+  useEffect(() => {
+    if (anyLive === live) return;
+    Promise.resolve().then(() => setLive(anyLive));
+  }, [anyLive, live]);
 
   const spend = [...clips, ...stills, ...sounds]
     .reduce((a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0);
