@@ -2,18 +2,22 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
-import { usd } from "@/lib/format";
 import { useProject } from "@/lib/projectContext";
 import Link from "next/link";
 import ParticlLockup from "./ParticlMark";
 
-type Usage = { pending: number; spentUsd: number; remainingUsd: number; vendors?: { label: string; remaining: number; added: number; unit?: string; remainingCredits?: number }[] };
+type Usage = { pending: number };
 
 /**
  * A thin strip, mostly empty on purpose: what screen you're on is said by the
  * screen's own title, so this carries only what is true everywhere — the
- * project you're working in, whether anything is rendering, and what the
- * month has cost so far.
+ * project you're working in and whether anything is rendering.
+ *
+ * The running spend used to sit in the far corner. A number that only ever
+ * goes up, parked in the loudest position on the screen, reads as a meter on
+ * a taxi rather than as information — and it is the one figure here that
+ * nothing on this bar can act on. It moved to the foot of the projects rail,
+ * still glanceable, next to the link to the page that explains it.
  */
 export default function TopBar({ action }: { action?: React.ReactNode }) {
   const path = usePathname();
@@ -52,20 +56,6 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
           <span className="flex items-center gap-2 rounded-full bg-blue/10 px-3 py-1.5 text-[13px] font-medium text-blue">
             <span className="lamp lamp-live" style={{ width: 7, height: 7 }} />
             Rendering {usage.pending > 1 ? usage.pending : ""}
-          </span>
-        )}
-        {usage != null && (
-          <span
-            className="chip !cursor-default !text-[13px] !text-dim"
-            title={usage.vendors?.length
-              ? usage.vendors.filter((v) => v.added > 0 || v.remaining < 0 || (v.remainingCredits ?? 0) !== 0)
-                  .map((v) => v.unit === "credits" ? `${v.label}: ${(v.remainingCredits ?? 0).toLocaleString()} credits left` : `${v.label}: ${usd(v.remaining, 2)} left`)
-                  .join(" · ") || "No credit recorded yet — see Usage"
-              : usage.remainingUsd >= 0
-                ? `${usd(usage.remainingUsd, 2)} of recorded credit left`
-                : "Spend has passed the credit recorded on the Usage page"}
-          >
-            {usd(usage.spentUsd, 2)} used
           </span>
         )}
         {action}

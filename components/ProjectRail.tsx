@@ -94,6 +94,11 @@ export default function ProjectRail() {
     return { video: settled(video), image: settled(image), audio: settled(audio) };
   }, [assets]);
 
+  /* Ambient, so it is asked for slowly. */
+  const { data: spend } = useApi<{ spentUsd: number; remainingUsd: number }>(
+    "/api/usage/summary", 60_000
+  );
+
   const loaded = Boolean(data);
   const empty = loaded && assets.length === 0 && cast.length === 0;
 
@@ -200,12 +205,28 @@ export default function ProjectRail() {
         })}
       </div>
 
+      {/* The running spend, rehoused.
+          It used to sit in the far corner of the top bar, which is the
+          loudest position on the screen and the wrong one for a number that
+          only ever goes up and that nothing on that bar can act on. Here it
+          is still on every screen, still glanceable, and directly beside the
+          page that explains it. Its own poll is slow on purpose: this is
+          ambient, not live, and the top bar already asks every 20 seconds
+          for the thing that IS live. */}
       <div className="rail-foot">
         <Link href="/projects" className={`rail-link ${path === "/projects" ? "text-ink" : ""}`}>All projects</Link>
         {open && (
           <button type="button" onClick={() => router.push(`/projects/${open}/assets`)} className="rail-link">
             Open
           </button>
+        )}
+        {spend != null && (
+          <Link href="/usage" className="rail-spend"
+            title={spend.remainingUsd >= 0
+              ? `${usd(spend.remainingUsd, 2)} of recorded credit left`
+              : "Spend has passed the credit recorded on the Usage page"}>
+            {usd(spend.spentUsd, 2)} used
+          </Link>
         )}
       </div>
     </aside>
