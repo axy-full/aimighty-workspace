@@ -389,6 +389,24 @@ export async function ready(): Promise<void> {
          only; every existing one needs the ALTER. */
       await addColumn("ledger_checks", `balance_credits INTEGER`);
       await addColumn("ledger_checks", `spend_credits INTEGER`);
+      /* Re-assert the super admin on every boot. A guarantee checked only at
+         the point of use can be undone by a direct database edit or a bug in
+         a route; re-asserting it here means the account heals itself on the
+         next request instead of staying broken.
+
+         The LIKE clause matters: deleting a member mangles the address to
+         "<email>#deleted-<ts>", so a super admin deleted before this existed
+         would otherwise never be found again. This restores the address too. */
+      try {
+        const superEmail = (process.env.SUPER_ADMIN_EMAIL ?? "axy@akshaypanchal.com").trim().toLowerCase();
+        await db().execute({
+          sql: `UPDATE users
+                SET role='admin', disabled=0, deleted_at=NULL,
+                    locked_until=NULL, failed_count=0, email=?
+                WHERE LOWER(email)=? OR LOWER(email) LIKE ?`,
+          args: [superEmail, superEmail, `${superEmail}#deleted-%`],
+        });
+      } catch { /* the users table may not exist on the very first boot */ }
       /* The balances the team reported on 3 Sep 2026, written once into the
          ledger so each vendor's credit counts down from what was actually
          loaded. Fixed ids: a redeploy never records them twice, and deleting

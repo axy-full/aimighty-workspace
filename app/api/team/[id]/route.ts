@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, isSuperAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -11,6 +11,9 @@ const KEEP_ADMIN = `(SELECT COUNT(*) FROM users u2
   WHERE u2.role='admin' AND u2.disabled=0 AND u2.id != ?) >= 1`;
 
 const LAST_ADMIN = { error: "That's the last admin — promote someone else first." };
+const PROTECTED = {
+  error: "That account is the workspace's permanent admin. It can't be demoted, disabled or removed.",
+};
 
 /**
  * Enable/disable, change role, or clear a lockout. The last-admin guard lives
@@ -28,6 +31,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const rs = await db().execute({ sql: `SELECT * FROM users WHERE id=? LIMIT 1`, args: [id] });
   const target = rs.rows[0] as any;
   if (!target || target.deleted_at) return NextResponse.json({ error: "No such user" }, { status: 404 });
+
+  /* Absolute, unlike the last-admin rule below it, which two admins acting
+     in the wrong order can still walk around. Clearing a LOCKOUT is allowed
+     — that helps this account rather than harming it. */
+  if (isSuperAdmin(target.email)) {
+    const harmful =
+      (body.role !== undefined && body.role !== "admin") ||
+      (body.disabled !== undefined && Boolean(body.disabled));
+    if (harmful) return NextResponse.json(PROTECTED, { status: 400 });
+  }
 
   if (id === got.user.id && body.disabled === true) {
     return NextResponse.json({ error: "You can't disable your own account." }, { status: 400 });
@@ -93,6 +106,7 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   const rs = await db().execute({ sql: `SELECT * FROM users WHERE id=? LIMIT 1`, args: [id] });
   const target = rs.rows[0] as any;
   if (!target || target.deleted_at) return NextResponse.json({ error: "No such user" }, { status: 404 });
+  if (isSuperAdmin(target.email)) return NextResponse.json(PROTECTED, { status: 400 });
 
   const ts = now();
   const upd = await db().execute({

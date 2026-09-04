@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { mailConfigured, mailFrom, emailInvite } from "@/lib/mail";
+import { isSuperAdmin } from "@/lib/auth";
 import { randomBytes } from "node:crypto";
 import { db, ready, now } from "@/lib/db";
 import { requireAdmin, findByEmail } from "@/lib/auth";
@@ -36,6 +37,8 @@ export async function GET() {
       lastSeen: r.last_seen == null ? null : Number(r.last_seen),
       createdAt: Number(r.created_at),
       clips: Number(r.clips), spend: Number(r.spend),
+      // Marked so the roster can say why this one has no remove button.
+      permanent: isSuperAdmin(r.email),
     })),
     invites: invites.rows.map((r: any) => ({
       code: r.code, email: r.email, name: r.name, role: r.role,

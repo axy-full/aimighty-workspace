@@ -16,6 +16,8 @@ type Member = {
   id: string; email: string; name: string; role: string;
   disabled: boolean; locked: boolean;
   lastSeen: number | null; createdAt: number; clips: number; spend: number;
+  /** The workspace's permanent admin: cannot be demoted, disabled or removed. */
+  permanent?: boolean;
 };
 type Invite = {
   code: string; email: string; name: string; role: string;
@@ -211,7 +213,12 @@ export default function TeamPage() {
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="truncate text-[15px] font-medium">{u.name}</span>
-                  {u.role === "admin" && (
+                  {u.permanent ? (
+                    <span className="rounded-full bg-blue/10 px-2 py-px text-[11px] font-medium text-blue"
+                      title="The workspace's permanent admin — can't be demoted, disabled or removed">
+                      Owner
+                    </span>
+                  ) : u.role === "admin" && (
                     <span className="rounded-full bg-blue/10 px-2 py-px text-[11px] font-medium text-blue">Admin</span>
                   )}
                   {u.locked && (
@@ -227,25 +234,43 @@ export default function TeamPage() {
                   {u.lastSeen ? `seen ${timeAgo(u.lastSeen)}` : "never signed in"}
                 </span>
                 <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <select value={u.role} onChange={(e) => patch(u.id, { role: e.target.value })}
-                    className="h-[28px] rounded-full bg-chip px-2.5 text-[12.5px] font-medium text-dim">
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                  {u.locked && (
-                    <button onClick={() => patch(u.id, { unlock: true })} className="chip !py-1 !text-[12.5px] !text-warn">
-                      Unlock
-                    </button>
-                  )}
-                  <button onClick={() => patch(u.id, { disabled: !u.disabled })}
-                    className="chip !py-1 !text-[12.5px]">
-                    {u.disabled ? "Enable" : "Disable"}
-                  </button>
-                  {(me?.id ? me.id !== u.id : me?.email !== u.email) && (
-                    <button onClick={() => remove(u)} className="chip !py-1 !text-[12.5px] !text-lift"
-                      title="Revoke access and remove from the team; their work stays on the ledger">
-                      Delete
-                    </button>
+                  {/* A control that will always be refused is worse than no
+                      control: it invites the click and then explains itself.
+                      Unlock stays, because it only ever helps this account. */}
+                  {u.permanent ? (
+                    <>
+                      <span className="text-[12.5px] text-mute">
+                        Permanent admin — can&rsquo;t be demoted, disabled or removed.
+                      </span>
+                      {u.locked && (
+                        <button onClick={() => patch(u.id, { unlock: true })} className="chip !py-1 !text-[12.5px] !text-warn">
+                          Unlock
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <select value={u.role} onChange={(e) => patch(u.id, { role: e.target.value })}
+                        className="h-[28px] rounded-full bg-chip px-2.5 text-[12.5px] font-medium text-dim">
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      {u.locked && (
+                        <button onClick={() => patch(u.id, { unlock: true })} className="chip !py-1 !text-[12.5px] !text-warn">
+                          Unlock
+                        </button>
+                      )}
+                      <button onClick={() => patch(u.id, { disabled: !u.disabled })}
+                        className="chip !py-1 !text-[12.5px]">
+                        {u.disabled ? "Enable" : "Disable"}
+                      </button>
+                      {(me?.id ? me.id !== u.id : me?.email !== u.email) && (
+                        <button onClick={() => remove(u)} className="chip !py-1 !text-[12.5px] !text-lift"
+                          title="Revoke access and remove from the team; their work stays on the ledger">
+                          Delete
+                        </button>
+                      )}
+                    </>
                   )}
                 </span>
               </span>

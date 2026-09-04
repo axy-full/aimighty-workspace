@@ -12,6 +12,25 @@ import { db, ready, now, id } from "./db";
  */
 
 export const SESSION_COOKIE = "aw_session";
+
+/**
+ * The one account that cannot be locked out of its own workspace.
+ *
+ * Every other protection here is relative — the last admin cannot be
+ * demoted, nobody can delete themselves — and all of them can be walked
+ * around by two admins acting in the wrong order. This one is absolute:
+ * the account is always an admin, always enabled, and cannot be deleted by
+ * anyone, including itself.
+ *
+ * Overridable by env so the guarantee can move with the studio rather than
+ * being welded to a name in a file.
+ */
+export const SUPER_ADMIN_EMAIL =
+  (process.env.SUPER_ADMIN_EMAIL ?? "axy@akshaypanchal.com").trim().toLowerCase();
+
+export function isSuperAdmin(email: string | null | undefined): boolean {
+  return Boolean(email) && String(email).trim().toLowerCase() === SUPER_ADMIN_EMAIL;
+}
 const SESSION_DAYS = 30;
 const MAX_FAILED = 8;
 const LOCK_MINUTES = 15;
