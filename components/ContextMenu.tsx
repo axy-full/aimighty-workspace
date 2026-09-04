@@ -15,7 +15,7 @@ import { confirmDeleteProject } from "@/lib/deleteProject";
  *  • text fields    → Cut / Copy / Paste / Delete on the selection (mouse
  *                     only — native selection handles fields on touch)
  *  • a clip         → Rename / Copy prompt / Cut clip / Move to project… / Delete
- *  • a project row  → Paste clip (moves the cut clip into it) / Delete project
+ *  • a project row  → Rename / Paste clip (moves the cut clip into it) / Delete
  *  • anywhere else  → Copy for a text selection, Paste into the focused field
  */
 
@@ -55,6 +55,22 @@ async function moveClip(genId: string, projectId: string | null) {
     // a move that quietly undid itself.
     await appAlert("The clip wasn't moved", (e as Error).message);
   }
+}
+
+/** Rename a project in place, wherever its card or row happens to be. */
+export async function renameProject(projectId: string, current: string): Promise<boolean> {
+  const next = await appPrompt("Rename project", current, "e.g. Nike AW26");
+  if (next === null || !next.trim() || next.trim() === current) return false;
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: next.trim() }),
+  });
+  if (!res.ok) {
+    await appAlert("Couldn't rename the project", (await res.json().catch(() => ({}))).error);
+    return false;
+  }
+  announceChange();
+  return true;
 }
 
 /** Ask for a name and save it. Empty clears the name; Cancel changes nothing. */
@@ -180,6 +196,14 @@ export default function ContextMenu() {
       } else if (projEl) {
         const target = projEl.dataset.projectTarget!;
         const name = projEl.dataset.projectName ?? "project";
+        if (target !== "unfiled") {
+          items.push({
+            kind: "item", label: "Rename…",
+            action: async () => {
+              if (await renameProject(target, name)) ctxRef.current.refreshProjects();
+            },
+          }, { kind: "sep" });
+        }
         items.push({
           kind: "item",
           label: armedClip ? `Paste clip ${armedClip.label} into ${name}` : "Paste clip",
