@@ -68,11 +68,11 @@ export async function POST(req: Request) {
   await db().execute({
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
-           created_at, updated_at, token_id, provider, task, title)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           created_at, updated_at, token_id, provider, task, title, billed_to)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, projectId, null, "audio", modelId, text, JSON.stringify({ ...params, estCredits }),
            "running", got.user.id, ts, ts, got.token?.id ?? null, "elevenlabs", "generate",
-           body.title ? String(body.title).slice(0, 80) : null],
+           body.title ? String(body.title).slice(0, 80) : null, "elevenlabs"],
   });
   invalidate(PROJECTS_KEY);
 

@@ -96,6 +96,10 @@ export async function deleteCheck(id: string): Promise<void> {
  * to extrapolate forward from a known-true number using the only method we
  * have, not to pretend the extrapolation is also authoritative.
  */
+/* Both sums below count against the ledger that PAID, not the vendor that
+   made the render — see billed_to in lib/db.ts. Anchoring a vendor to its
+   own console only works if the rows we add since the reading are the same
+   rows that console will bill for. */
 export async function spendSince(
   provider: string, since: number
 ): Promise<{ usd: number; credits: number; renders: number }> {
@@ -105,7 +109,7 @@ export async function spendSince(
                  COALESCE(SUM(COALESCE(total_tokens,0)),0) AS credits,
                  COUNT(*) AS n
           FROM generations
-          WHERE provider = ? AND cost_usd IS NOT NULL AND created_at > ?`,
+          WHERE COALESCE(billed_to, provider) = ? AND cost_usd IS NOT NULL AND created_at > ?`,
     args: [provider, since],
   });
   const r: any = rs.rows[0];
@@ -123,7 +127,7 @@ export async function computedSpendUpTo(
     sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend,
                  COALESCE(SUM(COALESCE(total_tokens,0)),0) AS credits
           FROM generations
-          WHERE provider = ? AND cost_usd IS NOT NULL AND created_at <= ?`,
+          WHERE COALESCE(billed_to, provider) = ? AND cost_usd IS NOT NULL AND created_at <= ?`,
     args: [provider, at],
   });
   const r: any = rs.rows[0];

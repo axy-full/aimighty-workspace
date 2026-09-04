@@ -23,12 +23,26 @@ export async function GET() {
 
   const label = (m: string) => modelLabel(m);
 
-  /* Prompt writing bills to whichever door wrote it: the gateway (Claude,
-     on the same credit as Google's stills) or ByteDance's own writer. */
-  const LEDGER = `CASE WHEN refine_model LIKE 'anthropic/%' OR refine_model LIKE 'google/%' THEN 'google' ELSE 'byteplus' END`;
+  /* WHOSE BALANCE THE THINKING CAME OUT OF.
+     Every gateway model is named vendor/model — "anthropic/claude-opus-5",
+     "google/gemini-3-flash" — and every one of them is paid for in Vercel
+     AI Gateway credit, whoever built the model. ByteDance's own text
+     models are bare ids and are paid for on the ModelArk key.
+
+     This used to read the vendor out of the model's PREFIX and charge
+     Claude's thinking to Google, which is a company that was never
+     involved. Google's ledger could not agree with Google's console, and
+     Vercel's spend was invisible because Vercel was not a vendor here at
+     all. */
+  const LEDGER = `CASE WHEN refine_model LIKE '%/%' THEN 'vercel' ELSE 'byteplus' END`;
+  /* Renders are charged where the money actually left, which for stills is
+     not always the vendor that made them — see billed_to in lib/db.ts.
+     Older rows have no value and fall back to provider, which is exactly
+     what this sum assumed before the column existed. */
+  const PAID_BY = `COALESCE(billed_to, provider)`;
 
   const [totals, topups, byModel, byProject, byPerson, byMonth, recent, stages, refines,
-         byVendor, promptByLedger, topupsByVendor, topupList] = await Promise.all([
+         byVendor, promptByLedger, topupsByVendor, topupList, atomikText] = await Promise.all([
     db().execute(`
       SELECT COUNT(*) AS n,
              SUM(status='succeeded') AS ok,
@@ -93,17 +107,26 @@ export async function GET() {
       FROM generations WHERE refine_model IS NOT NULL
       GROUP BY refine_model ORDER BY spend DESC, in_tokens DESC`),
     db().execute(`
-      SELECT provider, COUNT(*) AS n_all, SUM(status='succeeded') AS n,
+      SELECT ${PAID_BY} AS provider, COUNT(*) AS n_all, SUM(status='succeeded') AS n,
              COALESCE(SUM(COALESCE(cost_usd,0)),0) AS render_spend,
              COALESCE(SUM(total_tokens),0) AS tokens
-      FROM generations WHERE deleted = 0 OR deleted IS NULL GROUP BY provider`),
+      FROM generations WHERE deleted = 0 OR deleted IS NULL GROUP BY ${PAID_BY}`),
     db().execute(`
       SELECT ${LEDGER} AS ledger, COUNT(*) AS prompts,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS prompt_spend
       FROM generations WHERE refine_model IS NOT NULL GROUP BY ledger`),
     db().execute(`SELECT provider, COALESCE(SUM(amount_usd),0) AS total, COALESCE(SUM(credits),0) AS credits FROM topups GROUP BY provider`),
     db().execute(`SELECT id, provider, amount_usd, credits, note, created_at FROM topups ORDER BY created_at DESC LIMIT 100`),
+    /* Atomik's thinking. It is the only spend in this app that is not
+       attached to a render — a conversation costs money whether or not
+       anything is ever approved out of it — so it has to be summed from
+       its own table or it simply would not appear on any ledger. */
+    db().execute(`SELECT COALESCE(SUM(COALESCE(text_cost_usd,0)),0) AS spend, COUNT(*) AS chats
+                  FROM atomik_chats WHERE deleted = 0`),
   ]);
+  const atomikRow = atomikText.rows[0] as Record<string, unknown> | undefined;
+  const atomikUsd = Number(atomikRow?.spend ?? 0);
+  const atomikChats = Number(atomikRow?.chats ?? 0);
 
   /* The only cost here that is rent rather than a purchase. */
   const storage = await storageLedger().catch(() => null);
@@ -148,7 +171,9 @@ export async function GET() {
     const r: any = renderBy.get(p.id) ?? {};
     const pr: any = promptBy.get(p.id) ?? {};
     const renderSpend = Number(r.render_spend ?? 0);
-    const promptSpend = Number(pr.prompt_spend ?? 0);
+    /* Atomik's conversations are gateway text, so they land on the gateway's
+       own line beside the prompt writer's. */
+    const promptSpend = Number(pr.prompt_spend ?? 0) + (p.id === "vercel" ? atomikUsd : 0);
     const added = addedBy.get(p.id) ?? 0;
     const computedSpent = renderSpend + promptSpend;
     /* Anchored where a reading exists: the vendor's own spend, plus ours
@@ -179,10 +204,18 @@ export async function GET() {
       envKey: p.envKey,
       added, spent, renderSpend, promptSpend,
       /* A balance the console stated beats anything we can derive, so where
-         one was recorded the remaining figure counts down from it. */
-      remaining: anchor && anchor.check.balanceUsd != null
-        ? anchor.check.balanceUsd - anchor.sinceUsd
-        : added - spent,
+         one was recorded the remaining figure counts down from it.
+
+         The gateway states its own balance over the API, which beats even a
+         hand-recorded reading: it is live rather than as-of-a-moment. It is
+         also the only vendor here that needs no top-ups entered by hand, so
+         without this its line would read as overdrawn the moment anything
+         was spent — nobody having told it about money it can see itself. */
+      remaining: p.id === "vercel" && gateway
+        ? gateway.balanceUsd
+        : anchor && anchor.check.balanceUsd != null
+          ? anchor.check.balanceUsd - anchor.sinceUsd
+          : added - spent,
       computedSpent,
       anchor: anchor ? {
         checkedAt: anchor.check.checkedAt,
@@ -200,13 +233,20 @@ export async function GET() {
       } : null,
       renders: Number(r.n ?? 0), attempts: Number(r.n_all ?? 0), prompts: Number(pr.prompts ?? 0),
       tokens: Number(r.tokens ?? 0),
-      live: p.id === "google" && gateway
+      /* The gateway is the one vendor here that will simply tell us what is
+         left, so its line needs no top-ups recorded by hand. It reads under
+         Vercel now rather than under Google: it is Vercel's balance, and
+         showing it on Google's line was what made Google look funded. */
+      live: p.id === "vercel" && gateway
         ? { kind: "gateway" as const, balanceUsd: gateway.balanceUsd, usedUsd: gateway.usedUsd }
         : p.id === "elevenlabs" && eleven
           ? { kind: "credits" as const, used: eleven.used, limit: eleven.limit, tier: eleven.tier, resetAt: eleven.resetAt }
           : null,
-      note: p.id === "google"
-        ? "Stills through Vercel AI Gateway; the Claude prompt writer bills to the same credit."
+      note: p.id === "vercel"
+        ? `Every text call: Atomik's ${atomikChats === 1 ? "conversation" : "conversations"} and the prompt writer. ` +
+          "Stills bill here too while the gateway is the door to Google."
+        : p.id === "google"
+        ? "Stills, when they go direct on GEMINI_API_KEY. While the Vercel AI Gateway is the door, they bill to Vercel instead."
         : p.id === "byteplus" ? "Seedance video and ByteDance's own prompt writer."
         : p.id === "fal" ? "Identity training and identity stills. fal publishes no balance over the API."
         : "Voice, sound effects and music. Billed in the plan's credits; the plan's own counter is the authority.",

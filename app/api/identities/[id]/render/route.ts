@@ -43,8 +43,8 @@ export async function POST(req: Request, { params }: Ctx) {
     await db().execute({
       sql: `INSERT INTO generations
             (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
-             created_at, updated_at, token_id, provider, task)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             created_at, updated_at, token_id, provider, task, billed_to)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       args: [genId, projectId, null, "image", RENDERER, finalPrompt,
              JSON.stringify({
                ratio, resolution: "1K", rawPrompt: prompt,
@@ -52,7 +52,7 @@ export async function POST(req: Request, { params }: Ctx) {
                cast: [identity.name],
                seed: seed != null && Number.isFinite(seed) ? seed + i : undefined,
              }),
-             "running", got.user.id, ts, ts, got.token?.id ?? null, "fal", "generate"],
+             "running", got.user.id, ts, ts, got.token?.id ?? null, "fal", "generate", "fal"],
     });
   }
   invalidate(PROJECTS_KEY);

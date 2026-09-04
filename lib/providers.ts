@@ -17,7 +17,7 @@
  * models.ts. Nothing else in the app should learn its name.
  */
 
-export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal";
+export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal" | "vercel";
 
 export type ProviderDef = {
   id: ProviderId;
@@ -143,6 +143,33 @@ export const PROVIDERS: ProviderDef[] = [
                "retried with backoff.",
     billsFailures: false,
   },
+  {
+    /* The thinking, as opposed to the making.
+     *
+     * Every text call this app makes -- the prompt writer, and every Atomik
+     * turn -- goes through the Vercel AI Gateway, and the dollars come out
+     * of the gateway's own credit balance. They were being charged to
+     * whichever vendor made the RENDER, so a Claude turn showed up on
+     * Google's ledger and a Seedance one on BytePlus's, and neither ledger
+     * could ever agree with its own console.
+     *
+     * It is also the one vendor here whose balance we can simply ask for,
+     * which is why it needs no top-ups recorded by hand. */
+    id: "vercel",
+    label: "Vercel AI Gateway",
+    serves: "Thinking",
+    envKey: "AI_GATEWAY_API_KEY",
+    baseUrlEnv: "AI_GATEWAY_BASE_URL",
+    defaultBaseUrl: "https://ai-gateway.vercel.sh/v1",
+    docs: "https://vercel.com/docs/ai-gateway",
+    limits: {
+      maxImageBytes: 0, maxVideoBytes: 0, maxRequestBytes: 20 * 1024 * 1024,
+      minImagePx: 0, maxImagePx: 0, minAspect: 0, maxAspect: 0,
+      imageFormats: [],
+    },
+    rateLimit: "Per-account limits set by Vercel; a 429 is retried with backoff.",
+    billsFailures: false,
+  },
 ];
 
 export const DEFAULT_PROVIDER: ProviderId = "byteplus";
@@ -157,11 +184,43 @@ import { gatewayReachable } from "./gateway";
 
 /** Is this vendor usable right now? Reported on /api/health and in Settings. */
 export function providerConfigured(p: ProviderDef): boolean {
+  if (p.id === "vercel") return gatewayReachable();
   return Boolean(process.env[p.envKey]) || (p.id === "google" && gatewayReachable());
 }
 
 /** Which door a vendor's calls go through from this deployment. */
+/**
+ * Whose balance actually pays for a render by this provider.
+ *
+ * `provider` records who MADE a render; this records who was charged, and
+ * for stills the two differ. Nano Banana is a Google model, but when the
+ * door is the Vercel AI Gateway — which it is on Vercel, where no
+ * GEMINI_API_KEY is needed — the dollars come out of gateway credit. A
+ * ledger that put them on Google could never agree with Google's console.
+ *
+ * The door logic mirrors stillsDoor() in lib/gemini.ts, which stays the
+ * single authority on which door is actually opened; if that changes, this
+ * must change with it.
+ */
+export function billedTo(provider: string): ProviderId {
+  /* Widened to string because ModelDef.provider is one, and a model that
+     names a vendor this build has never heard of must land somewhere
+     nameable rather than throwing inside an INSERT. */
+  if (provider !== "google") {
+    return (PROVIDERS.some((p) => p.id === provider) ? provider : "byteplus") as ProviderId;
+  }
+  const key = Boolean(process.env.GEMINI_API_KEY);
+  if (process.env.STILLS_VIA === "google" && key) return "google";
+  if (gatewayReachable()) return "vercel";
+  return "google";
+}
+
 export function providerVia(p: ProviderDef): "key" | "gateway" | null {
+  /* The gateway IS this vendor, and on Vercel it authenticates by the
+     deployment's OIDC identity rather than a key — so asking whether the
+     key is set would report the one vendor that is always reachable as
+     not configured. */
+  if (p.id === "vercel") return gatewayReachable() ? "gateway" : null;
   if (p.id === "google") {
     if (process.env.STILLS_VIA === "google" && process.env[p.envKey]) return "key";
     if (gatewayReachable()) return "gateway";

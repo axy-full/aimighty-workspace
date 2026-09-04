@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import ParticlLockup from "./ParticlMark";
-import { AtomikMark } from "./AtomikMark";
+import { AtomikMark, AtomikLockup } from "./AtomikMark";
 
 /**
  * Particl or Atomik.
@@ -65,8 +65,11 @@ export default function ModeSwitch() {
       <button type="button" onClick={() => setOpen((v) => !v)}
         className="mode-switch" aria-haspopup="menu" aria-expanded={open}
         title={onAtomik ? "Atomik — switch back to Particl" : "Particl — switch to Atomik"}>
+        {/* Both modes wear a lockup, not a bare glyph: the switch is the
+            app's identity, and an identity that shrinks to an unlabelled
+            icon in one of its two states reads as a loading failure. */}
         {onAtomik
-          ? <AtomikMark size={19} />
+          ? <AtomikLockup size={17} className="max-[430px]:[&_.atomik-word]:hidden" />
           : <ParticlLockup size={19} studio={false} className="max-[430px]:[&_.wordmark]:hidden" />}
         <svg viewBox="0 0 10 14" aria-hidden className="mode-switch-caret">
           <path d="M5 1.5 8 5M5 12.5 8 9M5 1.5 2 5M5 12.5 2 9"

@@ -442,6 +442,16 @@ export async function ready(): Promise<void> {
         `bytes INTEGER`,
         `queue_ms INTEGER`, `refine_ms INTEGER`, `submit_ms INTEGER`,
         `engine_ms INTEGER`, `notice_ms INTEGER`, `store_ms INTEGER`,
+        /* WHOSE BALANCE PAID FOR THIS.
+           `provider` above says who MADE the render; this says whose money
+           left. They are usually the same and for stills they are not: Nano
+           Banana is a Google model, but whenever the door is the Vercel AI
+           Gateway the dollars come out of Vercel's credit, not Google's. The
+           ledger charged them to Google, so Google's line could never agree
+           with Google's console — it was short by exactly what Vercel had
+           taken. Null on older rows, which fall back to `provider`: that is
+           what the ledger already assumed, so nothing restates itself. */
+        `billed_to TEXT`,
       ]) {
         await addColumn("generations", col);
       }
@@ -497,9 +507,29 @@ export async function ready(): Promise<void> {
       for (const stmt of [
         `CREATE INDEX IF NOT EXISTS idx_gen_shot ON generations(shot_id)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_kind ON generations(kind)`,
+        `CREATE INDEX IF NOT EXISTS idx_gen_billed ON generations(billed_to)`,
       ]) {
         await addIndex(stmt);
       }
+
+      /* One-time correction: stills already made were billed to Google.
+         They were not. Every one of them went through the Vercel AI Gateway
+         — the only door this app has opened for Nano Banana, since on
+         Vercel it needs no Google key at all — so the dollars came out of
+         gateway credit while the ledger put them on Google's line, where
+         they could never be reconciled against Google's own console.
+
+         Narrow on purpose: only rows with nothing recorded yet, only
+         Google stills. `provider` is untouched, so who MADE each render is
+         still on the row and nothing is lost. If a still ever did go direct
+         on GEMINI_API_KEY it is misfiled by this, which is what the
+         ledger_checks anchor exists to catch. */
+      try {
+        await db().execute(
+          `UPDATE generations SET billed_to = 'vercel'
+           WHERE billed_to IS NULL AND provider = 'google' AND kind = 'image'`
+        );
+      } catch { /* the column arrives with the ALTERs above; nothing to fix yet */ }
     })().catch((e) => {
       _ready = null;
       throw e;

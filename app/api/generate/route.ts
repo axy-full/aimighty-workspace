@@ -13,7 +13,7 @@ import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
-import { withRetry, classifyFailure, getProvider, providerConfigured } from "@/lib/providers";
+import { withRetry, classifyFailure, getProvider, providerConfigured, billedTo } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice } from "@/lib/tasks";
 import {
@@ -409,11 +409,12 @@ export async function POST(req: Request) {
     await db().execute({
       sql: `INSERT INTO generations
             (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
-             created_at, updated_at, token_id, shot_id, version, provider, task)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       args: [genId, stillProject, null, "image", modelId, stillPrompt,
              JSON.stringify(stillParams), "running", got.user.id, ts, ts,
-             got.token?.id ?? null, stillShot, stillVersion, model.provider, "generate"],
+             got.token?.id ?? null, stillShot, stillVersion, model.provider, "generate",
+             billedTo(model.provider)],
     });
     invalidate(PROJECTS_KEY);
 
@@ -632,13 +633,14 @@ export async function POST(req: Request) {
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
-           shot_id, version, provider, task, source_gen_id, refine_ms)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           shot_id, version, provider, task, source_gen_id, refine_ms, billed_to)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(storedParams), "queued",
            got.user.id, ts, ts,
            refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost,
            got.token?.id ?? null,
-           shotId, version, model.provider ?? "byteplus", task.id, sourceGenId, refineMs],
+           shotId, version, model.provider ?? "byteplus", task.id, sourceGenId, refineMs,
+           billedTo(model.provider ?? "byteplus")],
   });
 
   invalidate(PROJECTS_KEY);
