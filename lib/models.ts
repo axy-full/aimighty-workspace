@@ -59,6 +59,23 @@ export const ACCOUNT_DISCOUNT = 0;
  * rather than for want of trying.
  */
 
+/**
+ * Every whole second between two bounds.
+ *
+ * ModelArk documents `duration` as an interval — "[4, 30] or -1", "in whole
+ * seconds" — not as a set of blessed values. Where only some integers in a
+ * range are legal it says so plainly, as it does for `frames`: "All integer
+ * values in the range [29, 289] that fit the format 25 + 4n". Nothing of the
+ * sort qualifies duration, their own code samples use 11 and 20, and billing
+ * is a continuous function of it.
+ *
+ * The old hand-picked lists were a guess at a set that was never a set, and
+ * they withheld working lengths — including three seconds at the top of
+ * Seedance 2.0, whose real ceiling is 15 rather than the 12 we offered.
+ */
+const seconds = (from: number, to: number): number[] =>
+  Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
 export type ParamStyle = "flags" | "fields";
 
 export type RateTier = {
@@ -113,7 +130,8 @@ export const MODELS: ModelDef[] = [
     ],
     resolutions: ["480p", "720p", "1080p"],
     ratios: ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-    durations: [4, 5, 6, 8, 10, 12, 15, 20, 25, 30],
+    // "Dreamina Seedance 2.5: Default -1; supports [4, 30] or -1."
+    durations: seconds(4, 30),
     supportsAudio: true,
     supportsCameraFixed: false,
     maxReferenceImages: 30,
@@ -136,7 +154,8 @@ export const MODELS: ModelDef[] = [
     ],
     resolutions: ["480p", "720p", "1080p", "4k"],
     ratios: ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-    durations: [4, 5, 6, 8, 10, 12],
+    // "Dreamina Seedance 2.0 series: Default 5; supports [4, 15] or -1."
+    durations: seconds(4, 15),
     supportsAudio: false,
     supportsCameraFixed: false,
     maxReferenceImages: 9,
