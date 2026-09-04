@@ -274,15 +274,22 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
   if (produced.kind === "image") {
     const ratePerM = produced.tokens ? (produced.cost / produced.tokens) * 1_000_000 : null;
     await db().execute({
+      /* billed_to is written from the door that ACTUALLY served this
+         render, not from the one the environment implies. A still can fall
+         back between doors mid-render, and the ledger has to follow the
+         money rather than the intent: through the gateway it is Vercel
+         credit, on the Google key it is Google's account. Guessing at
+         insert time was right until the day a fallback fired. */
       sql: `UPDATE generations
             SET status='succeeded', stored_url=?, total_tokens=?,
                 cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?,
                 queue_ms=?, engine_ms=?, store_ms=?, bytes=?,
-                params=json_set(params, '$.via', ?), updated_at=?
+                params=json_set(params, '$.via', ?), billed_to=?, updated_at=?
             WHERE id=?`,
       args: [produced.storedUrl, produced.tokens, produced.cost, ratePerM, ms,
              t.queueMs, t.engineMs, t.storeMs, produced.bytes,
-             produced.via, now(), job.genId],
+             produced.via, produced.via === "google" ? "google" : "vercel",
+             now(), job.genId],
     });
   } else {
     // Price from the plan the account is on; the tier is read once per render.

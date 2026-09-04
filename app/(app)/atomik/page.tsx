@@ -44,7 +44,7 @@ export default function AtomikPage() {
   const { selection } = useProject();
 
   const { data: index, refresh: refreshIndex } = useApi<Index>("/api/atomik", 0);
-  const { data: loaded, refresh: refreshChat } =
+  const { data: loaded, error: loadError, refresh: refreshChat } =
     useApi<Loaded>(chatId ? `/api/atomik/${encodeURIComponent(chatId)}` : null, 0);
 
   const [draft, setDraft] = useState("");
@@ -59,6 +59,21 @@ export default function AtomikPage() {
   const [picked, setPicked] = useState<{ id: string | null; model: string; mode: AgentMode } | null>(null);
   const mine = picked && picked.id === chatId ? picked : null;
   const bottom = useRef<HTMLDivElement>(null);
+
+  /* A live handle on the CURRENT refresh.
+     send() starts while this chat has no id and therefore no url, and
+     useApi's refresh is bound to the url it was made with — so the refresh
+     captured at the top of send() is a no-op for the chat send() is about
+     to create. The first reply of every new conversation never appeared
+     because of it. */
+  const refreshRef = useRef(refreshChat);
+  useEffect(() => { refreshRef.current = refreshChat; }, [refreshChat]);
+
+  /* Steps this browser has already sent to a vendor. The server refuses a
+     second claim, so this cannot prevent a double charge — it prevents the
+     pointless second request, and keeps the auto-mode effect from looping
+     on a step whose refresh has not landed yet. */
+  const dispatched = useRef<Set<string>>(new Set());
 
   const engines = useMemo(() => index?.engines ?? [], [index]);
   const model = mine?.model ?? loaded?.chat.model ?? "auto";
@@ -100,14 +115,14 @@ export default function AtomikPage() {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) setError(j.error ?? "The planner didn't answer.");
-      refreshChat();
+      refreshRef.current();
       refreshIndex();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setThinking(false);
     }
-  }, [chatId, thinking, model, mode, selection, router, refreshChat, refreshIndex]);
+  }, [chatId, thinking, model, mode, selection, router, refreshIndex]);
 
   /* ── the gate ── */
 
@@ -119,15 +134,24 @@ export default function AtomikPage() {
    * afterwards — same project, same wall, same ledger, same retry rules.
    * The step keeps the generation's id so the card can become a thumbnail.
    */
-  const approve = useCallback(async (step: Step) => {
-    if (busyStep) return;
+  const approve = useCallback(async (proposed: Step) => {
+    if (busyStep || dispatched.current.has(proposed.id)) return;
+    dispatched.current.add(proposed.id);
     setBusyStep(true);
     setError(null);
     try {
-      await fetch(`/api/atomik/steps/${step.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "running" }),
-      });
+      /* Claim it first. The server moves the row from proposed to running
+         in one conditional UPDATE and hands back the step AS STORED, so
+         two tabs, a double click and a re-running effect all resolve to one
+         winner — and the render is billed for what was priced rather than
+         for whatever this browser had in memory. */
+      const claim = await fetch(`/api/atomik/steps/${proposed.id}/claim`, { method: "POST" });
+      const cj = await claim.json().catch(() => ({}));
+      if (!claim.ok) {
+        if (claim.status !== 409) setError(cj.error ?? "That step couldn't be started.");
+        return;
+      }
+      const step: Step = cj.step;
 
       const projectId = loaded?.chat.projectId ?? null;
       const res = step.kind === "audio"
@@ -165,10 +189,13 @@ export default function AtomikPage() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      /* The refresh lands BEFORE the button is released. Releasing first
+         re-rendered the page with the step still reading "proposed", which
+         is what let auto mode approve — and pay for — the same step twice. */
+      await refreshRef.current();
       setBusyStep(false);
-      refreshChat();
     }
-  }, [busyStep, loaded, refreshChat]);
+  }, [busyStep, loaded]);
 
   const reject = useCallback(async (step: Step, instead: string) => {
     if (busyStep) return;
@@ -178,46 +205,65 @@ export default function AtomikPage() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "rejected" }),
       });
-      await refreshChat();
+      await refreshRef.current();
       if (instead) await send(instead);
     } finally {
+      await refreshRef.current();
       setBusyStep(false);
-      refreshChat();
     }
-  }, [busyStep, refreshChat, send]);
+  }, [busyStep, send]);
 
+  /* Awaited, so the price on the button is the re-priced one before anyone
+     can press it. */
   const editStep = useCallback(async (patch: {
     prompt?: string; params?: Record<string, unknown>;
   }) => {
     if (!pending) return;
-    await fetch(`/api/atomik/steps/${pending.id}`, {
+    const res = await fetch(`/api/atomik/steps/${pending.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-    refreshChat();
-  }, [pending, refreshChat]);
-
-  const setChatModel = useCallback(async (id: string) => {
-    setPicked({ id: chatId, model: id, mode });
-    if (chatId) {
-      await fetch(`/api/atomik/${encodeURIComponent(chatId)}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: id }),
-      });
-      refreshChat();
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setError(j.error ?? "That change didn't stick.");
     }
-  }, [chatId, refreshChat, mode]);
+    await refreshRef.current();
+  }, [pending]);
+
+  /* An optimistic control that never checks the write is a control that
+     lies: the menu would keep showing the model you chose while the chat
+     went on planning with the old one. */
+  const setChatModel = useCallback(async (id: string) => {
+    const was = model;
+    setPicked({ id: chatId, model: id, mode });
+    if (!chatId) return;
+    const res = await fetch(`/api/atomik/${encodeURIComponent(chatId)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: id }),
+    });
+    if (!res.ok) {
+      setPicked({ id: chatId, model: was, mode });
+      setError("That planner didn't stick. Still using " + was + ".");
+      return;
+    }
+    refreshChat();
+  }, [chatId, refreshChat, mode, model]);
 
   const setChatMode = useCallback(async (m: AgentMode) => {
+    const was = mode;
     setPicked({ id: chatId, model, mode: m });
-    if (chatId) {
-      await fetch(`/api/atomik/${encodeURIComponent(chatId)}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentMode: m }),
-      });
-      refreshChat();
+    if (!chatId) return;
+    const res = await fetch(`/api/atomik/${encodeURIComponent(chatId)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentMode: m }),
+    });
+    if (!res.ok) {
+      setPicked({ id: chatId, model, mode: was });
+      setError("That didn't stick — still " + (was === "ask" ? "asking before each render." : "generating without asking."));
+      return;
     }
-  }, [chatId, refreshChat, model]);
+    refreshChat();
+  }, [chatId, refreshChat, model, mode]);
 
   /* Auto mode: the person has said they do not want to be asked, so the
      gate approves itself. Deferred off the effect body because `approve`
@@ -232,12 +278,24 @@ export default function AtomikPage() {
     return () => { live = false; };
   }, [mode, pending, busyStep, thinking, approve]);
 
-  const empty = !chatId || (messages.length === 0 && !thinking);
+  /* A chat that failed to LOAD is not an empty chat. Falling through to the
+     hero told someone whose transcript was one network blip away that they
+     had no conversation at all. */
+  const brokenLoad = Boolean(chatId && loadError && !loaded);
+  const empty = !brokenLoad && (!chatId || (messages.length === 0 && !thinking));
 
   return (
     <div className="atomik">
       <div className="atomik-scroll">
-        {empty ? (
+        {brokenLoad ? (
+          <div className="atomik-hero">
+            <p className="atomik-sub">This conversation didn&rsquo;t load.</p>
+            <p className="text-[12.5px] text-mute">{loadError}</p>
+            <button type="button" className="chip mt-2" onClick={() => refreshChat()}>
+              Try again
+            </button>
+          </div>
+        ) : empty ? (
           <div className="atomik-hero">
             <AtomikMark size={40} className="text-ink" />
             <h1 className="atomik-h1">What are we creating today?</h1>

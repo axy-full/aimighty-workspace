@@ -129,7 +129,32 @@ export async function generateImage(opts: {
       "for the gateway, or set GEMINI_API_KEY for Google directly."
     );
   }
-  return door === "gateway" ? viaGateway(opts) : viaGoogle(opts);
+  if (door === "gateway") return viaGateway(opts);
+
+  /* Direct to Google, with the gateway kept behind it.
+   *
+   * Preferring the Google key is what makes stills actually bill Google
+   * rather than Vercel credit — the model is Google's either way, but the
+   * door decides whose account pays. The fallback is here because that key
+   * is the single point of failure for every still in the app: expire it,
+   * rotate it, hit a project quota, and without this the answer is that
+   * nobody can make an image until someone edits an environment variable.
+   *
+   * Deliberately NOT retried: a refusal. That is the model's answer, not a
+   * transport problem — the other door runs the same model and would refuse
+   * it again, having charged for the privilege. Only the failures that mean
+   * "this door is shut" get a second one.
+   */
+  try {
+    return await viaGoogle(opts);
+  } catch (e) {
+    const msg = (e as Error).message ?? "";
+    const doorIsShut = /API key|api_key|invalid.*key|unauthor|forbidden|quota|RESOURCE_EXHAUSTED|fetch failed|ENOTFOUND|ECONNRESET|timed? ?out|abort|\b5\d\d\b/i.test(msg);
+    const wasRefused = /declined|filter/i.test(msg);
+    if (wasRefused || !doorIsShut || !gatewayReachable()) throw e;
+    console.warn(`stills: the Google door failed (${msg.slice(0, 140)}); falling back to the gateway`);
+    return viaGateway(opts);
+  }
 }
 
 /* ── Door 1: Vercel AI Gateway ─────────────────────────────────────────── */

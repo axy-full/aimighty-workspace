@@ -47,10 +47,21 @@ export default function ApprovalCard({
   const resolution = typeof step.params.resolution === "string" ? step.params.resolution : undefined;
 
   /* Escape stops. It is the safe answer, so it gets the reflex key — the
-     same reasoning that puts focus on Cancel in a destructive dialog. */
+     same reasoning that puts focus on Cancel in a destructive dialog.
+     
+     It listens on the document because the card rarely holds focus, and it
+     therefore has to stand down whenever something is stacked ON the card:
+     a confirm dialog, an open parameter menu, or a field being typed in.
+     Bound in the capture phase and swallowing the key, it was rejecting the
+     proposal every time Escape was aimed at any of those. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) { e.stopPropagation(); onReject(step, ""); }
+      if (e.key !== "Escape" || busy) return;
+      if (document.querySelector('[role="dialog"], .approve-menu, .atomik-models, .mode-pop')) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      e.stopPropagation();
+      onReject(step, "");
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);

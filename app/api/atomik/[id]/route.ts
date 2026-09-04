@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireRender } from "@/lib/auth";
 import {
   getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext,
   type AgentMode,
@@ -53,7 +53,11 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
  * them what went wrong.
  */
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const got = await requireUser();
+  /* A turn is a paid call to the gateway, so this is a spending route and
+     a read-only token has no business reaching it. requireUser accepts a
+     bearer of ANY scope, which let a token minted to list renders run the
+     planner and bill the workspace for it. */
+  const got = await requireRender();
   if (got.response) return got.response;
   const { id } = await ctx.params;
 

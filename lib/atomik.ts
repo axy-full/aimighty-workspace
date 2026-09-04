@@ -171,10 +171,44 @@ export async function patchChat(chatId: string, patch: {
 
 export async function deleteChat(chatId: string): Promise<void> {
   await ready();
+  /* The transcript and the proposals go with the conversation. A chat is
+     soft-deleted so the id stays resolvable, but its messages and steps are
+     only ever read through it — leaving them would accumulate rows nothing
+     can reach, in the two tables that grow fastest. Renders are untouched:
+     an approved step became an ordinary generation and belongs to the
+     project now, not to the conversation that suggested it. */
+  await db().execute({ sql: `DELETE FROM atomik_messages WHERE chat_id = ?`, args: [chatId] });
+  await db().execute({ sql: `DELETE FROM atomik_steps WHERE chat_id = ?`, args: [chatId] });
   await db().execute({
     sql: `UPDATE atomik_chats SET deleted = 1, updated_at = ? WHERE id = ?`,
     args: [now(), chatId],
   });
+}
+
+/**
+ * Claim a proposed step for rendering, once.
+ *
+ * The single UPDATE is the whole point. Approval is the moment money is
+ * spent, and everything that could approve twice — an effect re-running on
+ * stale state, a double click, two tabs open on the same chat, a retried
+ * request — resolves to two callers racing this row. `WHERE status =
+ * 'proposed'` makes the database the arbiter: the first caller changes a
+ * row and gets the step, every later one changes nothing and gets null,
+ * and only a caller holding the step is allowed to spend.
+ *
+ * It returns the step as STORED rather than as the client remembers it, so
+ * a render is always billed for what was priced, not for whatever the
+ * browser had in memory when the button went down.
+ */
+export async function claimStep(stepId: string): Promise<Step | null> {
+  await ready();
+  const rs = await db().execute({
+    sql: `UPDATE atomik_steps SET status = 'running', updated_at = ?
+          WHERE id = ? AND status = 'proposed'`,
+    args: [now(), stepId],
+  });
+  if (Number(rs.rowsAffected ?? 0) === 0) return null;
+  return getStep(stepId);
 }
 
 /* ── Steps ────────────────────────────────────────────────────────────── */
@@ -235,11 +269,17 @@ export async function patchStep(stepId: string, patch: {
 export async function estimateStepUsd(
   kind: StepKind, model: string, params: Record<string, unknown>,
 ): Promise<number | null> {
-  const seconds = Number(params.seconds) || 5;
-  const resolution = typeof params.resolution === "string" ? params.resolution : "1080p";
-  const ratio = typeof params.ratio === "string" ? params.ratio : "16:9";
-
   const own = MODELS.find((m) => m.id === model);
+  /* Where a value is missing, fall back to what the RENDERER would use —
+     the engine's own first option — rather than to a house guess. The two
+     used to differ, so a step that omitted a resolution was priced at 1080p
+     and rendered at 480p. */
+  const seconds = Number(params.seconds) || own?.durations[0] || 5;
+  const resolution = typeof params.resolution === "string"
+    ? params.resolution : (own?.resolutions[0] ?? "1080p");
+  const ratio = typeof params.ratio === "string"
+    ? params.ratio : (own?.ratios[0] ?? "16:9");
+
   if (own) {
     try {
       const r = own.kind === "image"
@@ -534,8 +574,6 @@ function extractTurn(text: string): ParsedTurn | null {
   const say = String(raw.say ?? "").trim();
   if (!say && !Array.isArray(raw.propose)) return null;
 
-  const ids = new Set(MODELS.filter((m) => !m.hidden).map((m) => m.id));
-  ids.add("elevenlabs");
   const defaultFor = (k: StepKind) =>
     k === "audio" ? "elevenlabs"
       : (MODELS.find((m) => !m.hidden && m.kind === k)?.id ?? MODELS[0].id);
@@ -547,14 +585,43 @@ function extractTurn(text: string): ParsedTurn | null {
     const prompt = String(s.prompt ?? "").trim();
     if (!prompt) continue;
     const kind: StepKind = s.kind === "image" ? "image" : s.kind === "audio" ? "audio" : "video";
-    let model = String(s.model ?? "").trim();
-    if (!ids.has(model)) model = defaultFor(kind);
 
+    /* The engine has to match the KIND, not merely exist. Checking the id
+       against one set and the kind against another let a "video" step be
+       filed against a stills engine: it passed validation here and was
+       priced as video, then rendered as whatever the engine actually is. */
+    let model = String(s.model ?? "").trim();
+    const named = MODELS.find((m) => !m.hidden && m.id === model);
+    if (kind === "audio") model = "elevenlabs";
+    else if (!named || named.kind !== kind) model = defaultFor(kind);
+
+    /* Every axis is FILLED, and filled from the engine's own lists.
+       Leaving one out meant two different defaults decided it: this file
+       assumed 5s / 16:9 / 1080p when pricing, and /api/generate quietly
+       used the engine's first option — 4s / adaptive / 480p — when
+       rendering. The number on the Approve button was then a price for a
+       render nobody was going to make. Anything the engine does not offer
+       is snapped to the nearest thing it does. */
+    const def = MODELS.find((m) => m.id === model);
     const params: Record<string, unknown> = {};
-    const seconds = Number(s.seconds);
-    if (Number.isFinite(seconds) && seconds > 0) params.seconds = Math.min(30, Math.round(seconds));
-    if (typeof s.ratio === "string" && /^\d+:\d+$/.test(s.ratio)) params.ratio = s.ratio;
-    if (typeof s.resolution === "string") params.resolution = s.resolution;
+    if (def && kind !== "audio") {
+      const wantRatio = typeof s.ratio === "string" ? s.ratio : "";
+      params.ratio = def.ratios.includes(wantRatio) ? wantRatio : def.ratios[0];
+      const wantRes = typeof s.resolution === "string" ? s.resolution : "";
+      params.resolution = def.resolutions.find(
+        (x) => x.toLowerCase() === wantRes.toLowerCase()
+      ) ?? def.resolutions[0];
+      if (def.durations.length) {
+        const want = Number(s.seconds);
+        params.seconds = Number.isFinite(want) && want > 0
+          ? def.durations.reduce((best, d) =>
+            Math.abs(d - want) < Math.abs(best - want) ? d : best, def.durations[0])
+          : def.durations[0];
+      }
+    } else {
+      const want = Number(s.seconds);
+      if (Number.isFinite(want) && want > 0) params.seconds = Math.min(60, Math.round(want));
+    }
 
     propose.push({
       kind, model, prompt: prompt.slice(0, 4000),
