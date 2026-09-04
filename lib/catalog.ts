@@ -6,13 +6,13 @@ import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
  * Particl's own five engines are hand-written in lib/models.ts, because each
  * one is wired to a vendor by hand and carries knowledge no catalogue has —
  * which durations Seedance accepts as an interval, that an edit source must
- * be 480p or 720p, that Nano Banana wants an uppercase K. Alpha is the
+ * be 480p or 720p, that Nano Banana wants an uppercase K. Atomik is the
  * opposite case: it offers WHATEVER the gateway is serving, which on the day
  * this was written was 369 models and will not be 369 tomorrow.
  *
  * So this is deliberately not a hand-written list. It reads /v1/models and
  * keeps the answer for an hour. A model that appears at Vercel appears in
- * Alpha without a deploy; one that is retired stops being offered without a
+ * Atomik without a deploy; one that is retired stops being offered without a
  * bug report. The only hand-written parts are the shortlist of engines worth
  * putting at the top of a menu, and the cost arithmetic — because the
  * catalogue states prices in five different shapes and a person needs one
@@ -52,8 +52,8 @@ const TTL_MS = 60 * 60 * 1000;   // an hour; the catalogue moves in weeks
  * Every model the gateway will serve this deployment.
  *
  * Returns an empty list rather than throwing when the gateway is
- * unreachable: Alpha's model menu going quiet is a far better failure than
- * Alpha's screen refusing to render, and every caller here is drawing a
+ * unreachable: Atomik's model menu going quiet is a far better failure than
+ * Atomik's screen refusing to render, and every caller here is drawing a
  * menu rather than spending money.
  */
 export async function catalog(force = false): Promise<CatalogModel[]> {
@@ -109,11 +109,18 @@ export async function findModel(id: string): Promise<CatalogModel | null> {
  * serves that is NOT here is still reachable under "everything else".
  */
 export const FEATURED = {
-  /** Models that plan a production. Cheap-and-fast first is deliberate:
-   *  most briefs do not need a frontier model to become a shot list. */
+  /** Models that plan a production.
+   *
+   *  Cheap-and-capable first is deliberate: a brief becoming a shot list is
+   *  not the hardest thing a frontier model does, and Sonnet 5 did it well
+   *  in the tests this was built against for about two cents a turn. The
+   *  expensive ones are offered rather than defaulted to — Fable 5.1 bills
+   *  five times Sonnet's output rate, which is worth it for a difficult
+   *  production and wasted on "three product stills". */
   planner: [
     "anthropic/claude-sonnet-5",
     "anthropic/claude-opus-5",
+    "anthropic/claude-fable-5.1",
     "google/gemini-3-flash",
     "google/gemini-3.1-pro-preview",
     "openai/gpt-5.2",

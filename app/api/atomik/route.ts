@@ -25,7 +25,12 @@ function band(m: CatalogModel): "Low cost" | "Medium cost" | "High cost" | "" {
   const out = Number(p?.output);
   if (!Number.isFinite(out)) return "";
   const perM = out * 1e6;
-  return perM <= 2 ? "Low cost" : perM <= 12 ? "Medium cost" : "High cost";
+  /* Cut where the models actually cluster, not on round numbers. Output
+     rates run in three groups: the cheap open-weight planners land under
+     $3, the mid-tier frontier models between there and $15, and only the
+     top of each house is above. Tighter cuts put GLM at $2.20 and Kimi at
+     $2.00 in different bands, which tells a reader nothing true. */
+  return perM <= 3 ? "Low cost" : perM <= 15 ? "Medium cost" : "High cost";
 }
 
 const shape = (m: CatalogModel) => ({
