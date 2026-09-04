@@ -617,11 +617,31 @@ button.row:active, a.row:active { background: var(--color-chip2); }
   display: flex; align-items: center; gap: 8px;
   padding: 14px 14px 8px;
 }
+.rail-new {
+  margin-left: auto; display: grid; place-items: center;
+  height: 22px; width: 22px; border-radius: 7px;
+  color: var(--color-blue);
+  transition: background .15s;
+}
+@media (hover: hover) { .rail-new:hover { background: var(--color-chip); } }
+
 .rail-body {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   padding: 0 8px 8px;
 }
-.rail-group { margin-bottom: 2px; }
+
+/* A project and everything under it are one block. Before this an open
+   project simply ran out of thumbnails and the next project's name began,
+   so the two read as one list of parts; the ground and the hairline are
+   what say where a project stops. */
+.rail-group { margin-bottom: 2px; border-radius: 11px; }
+.rail-group.is-open {
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-hair);
+}
+
 .rail-row {
   display: flex; align-items: center; gap: 7px;
   width: 100%; padding: 7px 8px;
@@ -631,23 +651,100 @@ button.row:active, a.row:active { background: var(--color-chip2); }
 }
 @media (hover: hover) { .rail-row:hover { background: var(--color-chip); color: var(--color-ink); } }
 .rail-row.is-on { background: color-mix(in oklab, var(--color-blue) 12%, transparent); color: var(--color-blue); }
+.rail-group.is-open > .rail-row { font-weight: 550; }
 
-/* The assets of the open project. A grid rather than a list: at this width
-   three thumbnails a row reads as a contact sheet, which is what it is. */
-.rail-assets {
+.rail-caret {
+  height: 12px; width: 12px; flex: none;
+  transition: transform .15s;
+}
+.rail-caret.is-open { transform: rotate(90deg); }
+
+/* The count sits in a fixed lane so the numbers line up down the rail
+   instead of stepping in and out with each name's length. */
+.rail-count {
+  flex: none; min-width: 20px;
+  font-size: 11.5px; font-variant-numeric: tabular-nums;
+  text-align: right; color: var(--color-mute);
+}
+
+/* ── An open project's contents, split by media ───────────────────── */
+/* Capped, with its own scroll. A project with forty renders otherwise
+   pushed every OTHER project past the bottom of the rail, so opening one
+   cost you the ability to reach the rest — the opposite of what a rail is
+   for. Half the viewport keeps two or three neighbours in view. */
+.rail-shelves {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 2px 8px 4px;
+  max-height: 48vh;
+  overflow-y: auto; overscroll-behavior: contain;
+}
+.rail-note { padding: 2px 2px 4px; font-size: 12px; color: var(--color-mute); }
+
+.rail-shelf { display: flex; flex-direction: column; gap: 5px; }
+.rail-shelf-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .07em;
+  color: var(--color-mute);
+}
+/* A hairline that fills whatever the label leaves, so the shelves read as
+   rules across the column rather than as four floating words. */
+.rail-shelf-head::after {
+  content: ""; flex: 1; height: 1px; background: var(--color-hair);
+}
+.rail-shelf-n { font-variant-numeric: tabular-nums; color: var(--color-mute); }
+
+.rail-grid {
   display: grid; gap: 4px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding: 4px 8px 8px;
 }
+/* Clips get two to a row. Three 16:9 tiles in a 248px column are 38px tall,
+   which is a smear; two are 60px, which is a shot you can recognise. */
+.rail-grid.is-wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
 .rail-asset {
   position: relative; display: block;
   aspect-ratio: 1 / 1; overflow: hidden;
   border-radius: 7px; background: var(--color-thumb);
 }
+.rail-asset.is-wide { aspect-ratio: 16 / 9; }
 .rail-asset.is-draggable { cursor: grab; }
 .rail-asset.is-draggable:active { cursor: grabbing; }
 @media (hover: hover) {
   .rail-asset.is-draggable:hover { box-shadow: 0 0 0 2px var(--color-blue); }
+}
+/* A render that failed or is still running is not a thumbnail — it should
+   read as a gap in the sheet, not compete with the shots either side. */
+.rail-asset.is-dead { background: transparent; border: 1px dashed var(--color-hair); }
+.rail-dead {
+  display: grid; height: 100%; width: 100%; place-items: center;
+  font-size: 9.5px; color: var(--color-mute);
+}
+
+.rail-audio {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 7px; border-radius: 7px;
+  font-size: 12px; color: var(--color-dim);
+  background: var(--color-chip);
+}
+.rail-audio.is-dead { opacity: .5; }
+.rail-audio-mark {
+  flex: none; height: 12px; width: 3px; border-radius: 2px;
+  background: var(--color-blue);
+  box-shadow: 5px 0 0 -1px var(--color-blue), 10px 0 0 0 var(--color-blue);
+  margin-right: 8px;
+}
+
+.rail-cast {
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 11.5px; color: var(--color-blue);
+  background: color-mix(in oklab, var(--color-blue) 12%, transparent);
+}
+
+.rail-all {
+  align-self: flex-start;
+  font-size: 11.5px; color: var(--color-blue);
+  padding: 2px 0;
 }
 
 .rail-foot {
