@@ -230,6 +230,24 @@ const SCHEMA = [
      updated_by TEXT NOT NULL DEFAULT '',
      updated_at INTEGER NOT NULL
    )`,
+  /* A reading taken from a vendor's own console.
+     Every cost in this app is COMPUTED — tokens times a rate we hold in a
+     table — which is an estimate however careful, and drifts the moment a
+     vendor changes a price or applies a promotion we don't know about. A
+     reading anchors the ledger to what the vendor itself says, so the
+     figure on the Usage page is the vendor's, not ours, and the difference
+     between them is visible instead of silent. */
+  `CREATE TABLE IF NOT EXISTS ledger_checks (
+     id           TEXT PRIMARY KEY,
+     provider     TEXT NOT NULL,
+     balance_usd  REAL,
+     spend_usd    REAL,
+     note         TEXT NOT NULL DEFAULT '',
+     checked_at   INTEGER NOT NULL,
+     created_by   TEXT NOT NULL DEFAULT '',
+     created_at   INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_checks_provider ON ledger_checks(provider, checked_at DESC)`,
   `CREATE TABLE IF NOT EXISTS topups (
      id         TEXT PRIMARY KEY,
      amount_usd REAL NOT NULL,

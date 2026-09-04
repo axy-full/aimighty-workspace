@@ -6,6 +6,7 @@ import { prettyModel, hasFreeTier, gatewayCredits } from "@/lib/enhance";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { elevenConfigured, subscription, FALLBACK_USD_PER_CREDIT } from "@/lib/elevenlabs";
 import { requireUser } from "@/lib/auth";
+import { listChecks, spendSince, computedSpendUpTo } from "@/lib/reconcile";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -108,6 +109,27 @@ export async function GET() {
     gatewayCredits().catch(() => null),
     elevenConfigured() ? subscription().catch(() => null) : Promise.resolve(null),
   ]);
+  /* The most recent reading from each vendor's own console. From that point
+     the ledger reports THEIR number plus what we have computed since, so it
+     agrees with the console instead of quietly diverging from it. */
+  const checks = await listChecks();
+  const latestCheck = new Map<string, (typeof checks)[number]>();
+  for (const c of checks) if (!latestCheck.has(c.provider)) latestCheck.set(c.provider, c);
+  const anchors = new Map<string, { check: (typeof checks)[number]; sinceUsd: number; sinceRenders: number; driftUsd: number | null }>();
+  for (const [provider, check] of latestCheck) {
+    const [since, computedThen] = await Promise.all([
+      spendSince(provider, check.checkedAt),
+      computedSpendUpTo(provider, check.checkedAt),
+    ]);
+    anchors.set(provider, {
+      check,
+      sinceUsd: since.usd,
+      sinceRenders: since.renders,
+      // How far our arithmetic had drifted by the moment of the reading.
+      // Positive means we were over-counting: the vendor charged less.
+      driftUsd: check.spendUsd == null ? null : computedThen - check.spendUsd,
+    });
+  }
   const renderBy = new Map(byVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), r]));
   const promptBy = new Map(promptByLedger.rows.map((r: any) => [String(r.ledger), r]));
   const addedBy = new Map(topupsByVendor.rows.map((r: any) => [String(r.provider ?? "byteplus"), Number(r.total)]));
@@ -118,7 +140,13 @@ export async function GET() {
     const renderSpend = Number(r.render_spend ?? 0);
     const promptSpend = Number(pr.prompt_spend ?? 0);
     const added = addedBy.get(p.id) ?? 0;
-    const spent = renderSpend + promptSpend;
+    const computedSpent = renderSpend + promptSpend;
+    /* Anchored where a reading exists: the vendor's own spend, plus ours
+       since. Falls back to pure computation where nobody has checked. */
+    const anchor = anchors.get(p.id) ?? null;
+    const spent = anchor && anchor.check.spendUsd != null
+      ? anchor.check.spendUsd + anchor.sinceUsd
+      : computedSpent;
     // ElevenLabs is bought and spent in credits; every audio render wrote
     // its credits into total_tokens, so the ledger counts those exactly.
     const unit = p.id === "elevenlabs" ? "credits" : "usd";
@@ -132,7 +160,23 @@ export async function GET() {
       via: providerVia(p),
       configured: providerConfigured(p),
       envKey: p.envKey,
-      added, spent, renderSpend, promptSpend, remaining: added - spent,
+      added, spent, renderSpend, promptSpend,
+      /* A balance the console stated beats anything we can derive, so where
+         one was recorded the remaining figure counts down from it. */
+      remaining: anchor && anchor.check.balanceUsd != null
+        ? anchor.check.balanceUsd - anchor.sinceUsd
+        : added - spent,
+      computedSpent,
+      anchor: anchor ? {
+        checkedAt: anchor.check.checkedAt,
+        balanceUsd: anchor.check.balanceUsd,
+        spendUsd: anchor.check.spendUsd,
+        note: anchor.check.note,
+        authorName: anchor.check.authorName,
+        sinceUsd: anchor.sinceUsd,
+        sinceRenders: anchor.sinceRenders,
+        driftUsd: anchor.driftUsd,
+      } : null,
       renders: Number(r.n ?? 0), attempts: Number(r.n_all ?? 0), prompts: Number(pr.prompts ?? 0),
       tokens: Number(r.tokens ?? 0),
       live: p.id === "google" && gateway

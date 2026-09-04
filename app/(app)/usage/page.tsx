@@ -26,6 +26,14 @@ type Vendor = {
       | { kind: "credits"; used: number; limit: number; tier: string; resetAt: number | null }
       | null;
   note: string;
+  /** What we would have said with no reading to anchor to. */
+  computedSpent: number;
+  /** The most recent reading from this vendor's own console. */
+  anchor: {
+    checkedAt: number; balanceUsd: number | null; spendUsd: number | null;
+    note: string; authorName: string | null;
+    sinceUsd: number; sinceRenders: number; driftUsd: number | null;
+  } | null;
   models: { model: string; label: string; n: number; spend: number; tokens: number }[];
   topups: { id: string; amountUsd: number; credits: number | null; note: string; createdAt: number }[];
 };
@@ -263,6 +271,31 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [balance, setBalance] = useState("");
+  const [portalSpend, setPortalSpend] = useState("");
+
+  /** Write down what the vendor's own console says, and anchor to it. */
+  async function saveCheck() {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch("/api/ledger-checks", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: v.id,
+          balanceUsd: balance.trim() === "" ? null : Number(balance),
+          spendUsd: portalSpend.trim() === "" ? null : Number(portalSpend),
+          note: note.trim(),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not record it");
+      setBalance(""); setPortalSpend(""); setNote(""); setChecking(false);
+      onChanged();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
 
   async function add() {
     const n = Number(amount);
@@ -316,6 +349,81 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
           <Figure label="Added" value={usd(v.added, 2)} />
           <Figure label="Spent" value={usd(v.spent, 2)} sub={v.promptSpend > 0 ? `prompts ${usd(v.promptSpend, 2)}` : undefined} />
           <Figure label="Left" value={v.added > 0 || over ? usd(v.remaining, 2) : "—"} tone={over ? "bad" : v.added > 0 ? "good" : undefined} />
+        </div>
+      )}
+
+      {/* ── Anchored to the vendor's own console ─────────────────────── */}
+      {!credits && (
+        <div className="rounded-[var(--r)] bg-panel2 px-4 py-3">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-[12px] font-medium uppercase tracking-wide text-mute">
+              {v.label} console
+            </span>
+            {!checking && (
+              <button type="button" onClick={() => setChecking(true)} className="ml-auto text-[13px] text-blue">
+                {v.anchor ? "Record a new reading" : "Match it to the console"}
+              </button>
+            )}
+          </div>
+
+          {v.anchor ? (
+            <>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-dim">
+                Read {timeAgo(v.anchor.checkedAt)}
+                {v.anchor.authorName ? ` by ${v.anchor.authorName}` : ""}:{" "}
+                {v.anchor.balanceUsd != null && <><span className="font-medium text-ink">{usd(v.anchor.balanceUsd, 2)}</span> left</>}
+                {v.anchor.balanceUsd != null && v.anchor.spendUsd != null && ", "}
+                {v.anchor.spendUsd != null && <><span className="font-medium text-ink">{usd(v.anchor.spendUsd, 2)}</span> spent</>}
+                . The figures above count on from that
+                {v.anchor.sinceRenders > 0
+                  ? `, plus ${usd(v.anchor.sinceUsd, 2)} across ${v.anchor.sinceRenders} render${v.anchor.sinceRenders === 1 ? "" : "s"} since.`
+                  : "; nothing has been rendered since."}
+              </p>
+              {v.anchor.driftUsd != null && Math.abs(v.anchor.driftUsd) >= 0.01 && (
+                <p className="mt-1.5 text-[12.5px] leading-relaxed text-mute">
+                  Our own arithmetic had it{" "}
+                  <span className={v.anchor.driftUsd > 0 ? "text-lift" : "text-ok"}>
+                    {usd(Math.abs(v.anchor.driftUsd), 2)} {v.anchor.driftUsd > 0 ? "high" : "low"}
+                  </span>{" "}
+                  at that point. A gap that keeps growing means a rate in the catalogue is wrong,
+                  or a promotion applies that we don&rsquo;t know about.
+                </p>
+              )}
+              {v.anchor.note && <p className="mt-1 text-[12.5px] text-mute">{v.anchor.note}</p>}
+            </>
+          ) : (
+            <p className="mt-1.5 text-[13px] leading-relaxed text-mute">
+              Every figure above is computed from tokens and our own rate table, so it is an
+              estimate. Open the {v.label} console, type in what it says, and these count on
+              from that instead.
+            </p>
+          )}
+
+          {checking && (
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-[12px] text-mute">Balance it shows</span>
+                  <input className="ctl !h-[34px] !text-[14px]" value={balance} inputMode="decimal"
+                    placeholder="e.g. 62.04" onChange={(e) => setBalance(e.target.value)} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[12px] text-mute">Spend to date, if shown</span>
+                  <input className="ctl !h-[34px] !text-[14px]" value={portalSpend} inputMode="decimal"
+                    placeholder="optional" onChange={(e) => setPortalSpend(e.target.value)} />
+                </label>
+              </div>
+              <input className="ctl !h-[34px] !text-[14px]" value={note}
+                placeholder="Note — which page, which period" onChange={(e) => setNote(e.target.value)} />
+              <div className="flex gap-2">
+                <button type="button" onClick={saveCheck} disabled={busy}
+                  className="btn-render h-[32px] px-4 text-[13px] disabled:opacity-50">
+                  {busy ? "Saving…" : "Anchor to this"}
+                </button>
+                <button type="button" onClick={() => { setChecking(false); setErr(null); }} className="chip !py-1.5 !text-[13px]">Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
