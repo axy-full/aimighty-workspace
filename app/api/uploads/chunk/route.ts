@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { storeChunk } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export const maxDuration = 60;
 const SESSION = /^[a-f0-9-]{16,64}$/;
 
 /** One slice of a large upload. Chunks stay under Vercel's 4.5MB body cap. */
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
 
@@ -28,4 +28,4 @@ export async function POST(req: Request) {
   // hijacked across users.
   await storeChunk(`${got.user.id}/${session}`, index, buf);
   return NextResponse.json({ ok: true, index });
-}
+});

@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { TOOLS, runTool, makeCaller } from "@/lib/mcp";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ const ok = (id: unknown, result: unknown) =>
 const fail = (id: unknown, code: number, message: string) =>
   Response.json({ jsonrpc: "2.0", id, error: { code, message } });
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) {
     // Answer in the shape MCP clients understand, not just a bare 401 body.
@@ -73,14 +73,14 @@ export async function POST(req: Request) {
   }
 
   return fail(id, -32601, `Method not found: ${method}`);
-}
+});
 
 /** A plain GET makes the endpoint self-describing when someone opens it. */
-export async function GET() {
+export const GET = withTenant(async function GET() {
   return Response.json({
     name: "particl",
     transport: "mcp/streamable-http",
     usage: "POST JSON-RPC here with an 'Authorization: Bearer aw_…' header.",
     tools: TOOLS.map((t) => t.name),
   });
-}
+});

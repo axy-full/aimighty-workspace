@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { db, ready, now, id as newId } from "@/lib/db";
-import { requireRender } from "@/lib/auth";
+import { requireRender, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { enqueueRender } from "@/lib/inngest";
 import { runInline } from "@/lib/renderWork";
@@ -17,7 +17,7 @@ const MAX_TEXT = 5000;
  * other: a row on the wall and the ledger, made after the response goes
  * out, with what it cost written down when it lands.
  */
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
   if (got.response) return got.response;
   await ready();
@@ -96,11 +96,11 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ id: genId, status: "running", estCredits });
-}
+});
 
 /** What the Audio screen needs to draw itself: engines, terms, and — when
  *  connected — the voices and the account's credit position. */
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireRender();
   if (got.response) return got.response;
   const configured = elevenConfigured();
@@ -121,4 +121,4 @@ export async function GET() {
     accountError: account && "error" in account ? account.error : null,
     terms: { sfxCredits: SFX_CREDITS, musicCreditsPerMinute: MUSIC_CREDITS_PER_MINUTE },
   });
-}
+});

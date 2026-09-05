@@ -4,7 +4,7 @@ import {
 } from "@/lib/storage";
 import { getGeneration } from "@/lib/jobs";
 import { downloadFilename } from "@/lib/downloadName";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,7 +28,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * the `download` attribute and would lose the filename — but they stream
  * rather than buffer, so nothing is ever held whole in memory.
  */
-export async function GET(req: Request, { params }: Ctx) {
+export const GET = withTenant(async function GET(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await params;
@@ -147,4 +147,4 @@ export async function GET(req: Request, { params }: Ctx) {
   return new Response(new Uint8Array(buf), {
     headers: { ...common, "Content-Length": String(buf.length) },
   });
-}
+});

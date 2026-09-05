@@ -6,7 +6,7 @@ import DialogHost from "@/components/dialog";
 import ViewportGuard from "@/components/ViewportGuard";
 import { ProjectProvider } from "@/lib/projectContext";
 import { SessionProvider } from "@/lib/session";
-import { currentUser, userCount } from "@/lib/auth";
+import { currentContext, userCount, isPlatformOwner } from "@/lib/auth";
 
 /**
  * The shell, for everyone.
@@ -23,8 +23,9 @@ import { currentUser, userCount } from "@/lib/auth";
  * forgets requireUser, this layout will not catch it.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await currentUser();
-  // No accounts at all yet → the first person here creates the admin.
+  const ctx = await currentContext();
+  const user = ctx?.user ?? null;
+  // No accounts at all yet → the first person here becomes the platform's owner.
   if (!user && (await userCount()) === 0) redirect("/setup");
 
   return (
@@ -32,6 +33,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       signedIn: Boolean(user),
       name: user?.name ?? null,
       email: user?.email ?? null,
+      workspace: ctx?.workspace ? { id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug } : null,
+      role: ctx?.role ?? null,
+      owner: Boolean(ctx?.role === "owner"),
+      superAdmin: await isPlatformOwner(user),
+      workspaces: ctx?.workspaces ?? [],
     }}>
     <ProjectProvider>
       {/* The pipeline redesign puts the project and the nav in one 52px

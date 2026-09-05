@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { getTreatment, upsertTreatment, type Scene, type Note } from "@/lib/atomikDocs";
 import { listCast } from "@/lib/cast";
 
 export const dynamic = "force-dynamic";
 
 /** The production's treatment, with the cast it can cite and what is trained. */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const projectId = new URL(req.url).searchParams.get("projectId");
@@ -18,10 +18,10 @@ export async function GET(req: Request) {
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const identities = (ids.rows as any[]).map((r) => ({ name: String(r.name), status: String(r.status) }));
   return NextResponse.json({ treatment, cast, identities });
-}
+});
 
 /** Save the whole document. `bump` starts a new draft number. */
-export async function PUT(req: Request) {
+export const PUT = withTenant(async function PUT(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -36,4 +36,4 @@ export async function PUT(req: Request) {
     scenes, notes, updatedBy: got.user.name, bump: Boolean(body.bump),
   });
   return NextResponse.json({ treatment });
-}
+});

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { sendChatPush } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ const PAGE = 80;
  * references. Polling, not sockets — six people, and the whole app already
  * heartbeats on short intervals.
  */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -73,9 +73,9 @@ export async function GET(req: Request) {
     mentioned: Number(u?.mentioned ?? 0),
     me: got.user.id,
   });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -135,4 +135,4 @@ export async function POST(req: Request) {
     args: [got.user.id, ts],
   });
   return NextResponse.json({ id: mid, createdAt: ts });
-}
+});

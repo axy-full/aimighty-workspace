@@ -2,6 +2,7 @@ import { readUploadBytes, readImageBytes } from "./storage";
 import type { Reference } from "./ark";
 import type { ModelDef } from "./models";
 import { gatewayReachable, gatewayAuth, GATEWAY_URL, explainGatewayFailure } from "./gateway";
+import { vendorKey } from "./vendorKeys";
 
 /**
  * Google's still engines — Nano Banana Pro and Nano Banana 2 — through one
@@ -40,7 +41,7 @@ export type ImageResult = {
 };
 
 export function stillsDoor(): "gateway" | "google" | null {
-  const key = Boolean(process.env.GEMINI_API_KEY);
+  const key = Boolean(vendorKey("gemini"));
   if (process.env.STILLS_VIA === "google" && key) return "google";
   if (gatewayReachable()) return "gateway";
   return key ? "google" : null;
@@ -247,7 +248,8 @@ type InteractionResponse = {
 async function viaGoogle(opts: {
   model: ModelDef; prompt: string; ratio: string; size: string; references: Reference[];
 }): Promise<ImageResult> {
-  const key = process.env.GEMINI_API_KEY!;
+  const key = vendorKey("gemini");
+  if (!key) throw new Error("Google Gemini isn't connected for this workspace.");
   const input: Record<string, unknown>[] = [{ type: "text", text: opts.prompt.trim() }];
   for (const ref of opts.references) {
     const { mime, b64 } = await refPayload(ref);

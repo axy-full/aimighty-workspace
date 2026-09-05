@@ -11,49 +11,30 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const email = String(body.email ?? "").trim().toLowerCase();
   const password = String(body.password ?? "");
-  if (!email || !password) {
-    return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
-  }
+  if (!email || !password) return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
 
-  /* Throttling hangs on where the attempt came from, not on the account.
-     Locking the account would let anyone who knows a colleague's address
-     lock them out of their own tool for as long as they cared to keep
-     typing — which became a real attack the day this page went public. */
+  /* Throttling hangs on where the attempt came from, not on the account:
+     locking the account would let anyone who knows an address lock its
+     owner out for as long as they cared to keep typing. */
   const source = sourceKey(req);
-  if (await sourceLocked(source, email)) {
-    return NextResponse.json({ error: LOCK_MESSAGE }, { status: 429 });
-  }
+  if (await sourceLocked(source, email)) return NextResponse.json({ error: LOCK_MESSAGE }, { status: 429 });
 
   const row = await findByEmail(email);
-
-  // Same message whether the account is missing or the password is wrong —
-  // don't reveal which emails exist. The dummy verify keeps the timing the
-  // same too: a fast "no such user" branch would leak just as loudly.
   const generic = { error: "Wrong email or password" };
   if (!row || Number(row.disabled)) {
     verifyPassword(password, DUMMY_HASH);
-    /* Counted even though the address is unknown, so that hunting for
-       valid addresses is throttled exactly as hard as guessing a password
-       for a real one. Otherwise the lockout itself answers "does this
-       account exist?" — the very question the generic message refuses. */
     await noteSourceFailure(source, email);
     return NextResponse.json(generic, { status: 401 });
   }
-
-  if (!verifyPassword(password, row.password_hash)) {
-    await noteFailure(row.id, source, email);
+  if (!verifyPassword(password, String(row.password_hash))) {
+    await noteFailure(String(row.id), source, email);
     return NextResponse.json(generic, { status: 401 });
   }
 
-  await clearFailures(row.id, source, email);
-  const token = await createSession(row.id);
+  await clearFailures(String(row.id), source, email);
+  const token = await createSession(String(row.id));
   (await cookies()).set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 30 * 86400,
+    httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 30 * 86400,
   });
-
-  return NextResponse.json({ ok: true, name: row.name, role: row.role });
+  return NextResponse.json({ ok: true, name: row.name });
 }

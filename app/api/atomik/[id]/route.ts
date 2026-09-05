@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser, requireRender } from "@/lib/auth";
+import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
   getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext,
   type AgentMode,
@@ -12,16 +12,16 @@ export const maxDuration = 300;
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: Ctx) {
+export const GET = withTenant(async function GET(_req: NextRequest, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
   const loaded = await getChat(id);
   if (!loaded) return NextResponse.json({ error: "That chat is gone." }, { status: 404 });
   return NextResponse.json(loaded);
-}
+});
 
-export async function PATCH(req: NextRequest, ctx: Ctx) {
+export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
@@ -33,15 +33,15 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     projectId: b.projectId === undefined ? undefined : (b.projectId || null),
   });
   return NextResponse.json(await getChat(id));
-}
+});
 
-export async function DELETE(_req: NextRequest, ctx: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: NextRequest, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
   await deleteChat(id);
   return NextResponse.json({ ok: true });
-}
+});
 
 /**
  * Say something, and let the agent answer.
@@ -52,7 +52,7 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
  * costs almost nothing to repeat, at the price of never being able to show
  * them what went wrong.
  */
-export async function POST(req: NextRequest, ctx: Ctx) {
+export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   /* A turn is a paid call to the gateway, so this is a spending route and
      a read-only token has no business reaching it. requireUser accepts a
      bearer of ANY scope, which let a token minted to list renders run the
@@ -80,4 +80,4 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     );
   }
   return NextResponse.json(await getChat(id));
-}
+});

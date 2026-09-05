@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { getStep, patchStep, type StepStatus } from "@/lib/atomik";
 
 export const dynamic = "force-dynamic";
@@ -8,14 +8,14 @@ type Ctx = { params: Promise<{ id: string }> };
 
 const STATUSES: StepStatus[] = ["proposed", "running", "done", "failed", "rejected"];
 
-export async function GET(_req: NextRequest, ctx: Ctx) {
+export const GET = withTenant(async function GET(_req: NextRequest, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
   const step = await getStep(id);
   if (!step) return NextResponse.json({ error: "That step is gone." }, { status: 404 });
   return NextResponse.json(step);
-}
+});
 
 /**
  * Change a proposed step, or record what became of it.
@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
  * A step that has already run is frozen. Re-pricing a render that has been
  * paid for would rewrite history, and the row is the receipt.
  */
-export async function PATCH(req: NextRequest, ctx: Ctx) {
+export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
@@ -56,4 +56,4 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     error: b.error === undefined ? undefined : (b.error || null),
   });
   return NextResponse.json(step);
-}
+});

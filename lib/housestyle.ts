@@ -19,6 +19,7 @@
  *    quietly cost full price for something meant to be nearly free.
  */
 import { db, ready } from "@/lib/db";
+import { memoGet, memoPut } from "./memo";
 
 export type StyleExample = { prompt: string; shot: string | null };
 
@@ -26,7 +27,6 @@ const MAX_EXAMPLES = 6;
 const MAX_CHARS = 700;
 
 /** Cached briefly: this runs on the render path and changes only on approval. */
-let cache: { at: number; key: string; examples: StyleExample[] } | null = null;
 const TTL = 60_000;
 
 /**
@@ -34,8 +34,9 @@ const TTL = 60_000;
  * workspace's own approved work when a project has none of its own yet.
  */
 export async function houseStyle(projectId: string | null): Promise<StyleExample[]> {
-  const key = projectId ?? "*";
-  if (cache && cache.key === key && Date.now() - cache.at < TTL) return cache.examples;
+  const key = `house-style:${projectId ?? "*"}`;
+  const hit = memoGet<StyleExample[]>(key, TTL);
+  if (hit) return hit;
 
   await ready();
   const pick = async (scoped: boolean) => {
@@ -69,7 +70,7 @@ export async function houseStyle(projectId: string | null): Promise<StyleExample
   // approved a shot, and every render after that would miss the cache.
   examples.reverse();
 
-  cache = { at: Date.now(), key, examples };
+  memoPut(key, examples);
   return examples;
 }
 

@@ -22,6 +22,7 @@
 
 import { getSetting } from "./settings";
 import { gatewayReachable, gatewayAuth, GATEWAY_URL, explainGatewayFailure } from "./gateway";
+import { vendorKey } from "./vendorKeys";
 export { gatewayReachable, gatewayAuth, gatewayCredits, GATEWAY_BASE, GATEWAY_URL } from "./gateway";
 
 const CHAT_URL = () =>
@@ -124,7 +125,7 @@ export async function activeWriter(): Promise<ActiveWriter> {
     return {
       writer: "byteplus", provider: "byteplus", model: TEXT_MODEL(),
       label: "Seedream", via: `BytePlus ModelArk · ${prettyModel(TEXT_MODEL())}`,
-      configured: Boolean(process.env.ARK_API_KEY),
+      configured: Boolean(vendorKey("ark")),
     };
   }
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
@@ -134,7 +135,7 @@ export async function activeWriter(): Promise<ActiveWriter> {
   const m = GATEWAY_MODELS()[0];
   return {
     writer: "claude", provider: "gateway", model: m, label: prettyModel(m),
-    via: process.env.AI_GATEWAY_API_KEY ? "Vercel AI Gateway (API key)" : "Vercel AI Gateway (OIDC)",
+    via: vendorKey("gateway") ? "Vercel AI Gateway (API key)" : "Vercel AI Gateway (OIDC)",
     configured: gatewayReachable(),
   };
 }
@@ -532,8 +533,8 @@ export async function enhancePrompt(opts: {
     return finishRefine(await refineWithGateway(SYSTEM, userMsg, opts.style ?? ""));
   }
 
-  const key = process.env.ARK_API_KEY;
-  if (!key) throw new Error("ARK_API_KEY is not set");
+  const key = vendorKey("ark");
+  if (!key) throw new Error("BytePlus ModelArk isn't connected for this workspace.");
   let lastErr = "";
   for (const model of TEXT_MODELS()) {
     // A minute, not two: this is a $0.001 helper sitting in front of a paid

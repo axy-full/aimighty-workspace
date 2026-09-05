@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
-import { currentUser } from "@/lib/auth";
+import { currentContext } from "@/lib/auth";
+import { runInTenant } from "@/lib/tenant";
+import { platformDb, platformReady } from "@/lib/platform";
+import { vendorKey } from "@/lib/vendorKeys";
 import { allSettings } from "@/lib/settings";
 import { db, ready } from "@/lib/db";
 import { presignedReadUrl } from "@/lib/storage";
@@ -31,24 +34,29 @@ export async function GET(req: Request) {
    * `deep` is stricter still: it WRITES to Vercel Blob, presigns, ranges
    * and deletes on every call, so anonymously it was an unauthenticated
    * lever on the studio's storage account. */
-  const got = await currentUser();
-  const full = Boolean(got);
+  const ctx = await currentContext();
+  const full = Boolean(ctx?.workspace);
   const deep = full && new URL(req.url).searchParams.get("deep") === "1";
   let database = "unreachable";
   let videosSaved = 0;
   let videosAtRisk = 0; // succeeded renders whose file never landed in our storage
   try {
-    await ready();
-    await db().execute("SELECT 1");
+    await platformReady();
+    await platformDb().execute("SELECT 1");
     database = process.env.TURSO_DATABASE_URL ? "turso" : "local-file";
-    const rs = await db().execute(`
-      SELECT SUM(CASE WHEN stored_url IS NOT NULL THEN 1 ELSE 0 END) AS saved,
-             SUM(CASE WHEN stored_url IS NULL THEN 1 ELSE 0 END) AS atrisk
-      FROM generations WHERE status='succeeded'`);
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    const r: any = rs.rows[0];
-    videosSaved = Number(r?.saved ?? 0);
-    videosAtRisk = Number(r?.atrisk ?? 0);
+    if (ctx?.workspace) {
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const r: any = await runInTenant(ctx.workspace, async () => {
+        await ready();
+        const rs = await db().execute(`
+          SELECT SUM(CASE WHEN stored_url IS NOT NULL THEN 1 ELSE 0 END) AS saved,
+                 SUM(CASE WHEN stored_url IS NULL THEN 1 ELSE 0 END) AS atrisk
+          FROM generations WHERE status='succeeded'`);
+        return rs.rows[0];
+      });
+      videosSaved = Number(r?.saved ?? 0);
+      videosAtRisk = Number(r?.atrisk ?? 0);
+    }
   } catch { /* leave as unreachable */ }
 
   // Live storage probe: write one tiny private object, then remove it.
@@ -104,8 +112,10 @@ export async function GET(req: Request) {
     });
   }
 
-  return NextResponse.json({
+  /* The rest is one workspace's briefing, answered inside that workspace. */
+  return runInTenant(ctx!.workspace!, async () => NextResponse.json({
     ok: database !== "unreachable" && storage !== "blob-BROKEN",
+    workspace: { id: ctx!.workspace!.id, name: ctx!.workspace!.name },
     database,
     storage,
     ...(storageError ? { storageError } : {}),
@@ -123,7 +133,7 @@ export async function GET(req: Request) {
     // the one endpoint whose job is to SAY "database unreachable" would 500
     // instead of answering. Its absence is itself the signal.
     cron: await cronStatus().catch(() => null),
-    arkKeyConfigured: Boolean(process.env.ARK_API_KEY),
+    arkKeyConfigured: Boolean(vendorKey("ark")),
     /* Whether invitations can be emailed, and from what address. Neither is
        a secret — the address appears in every invitation it sends — and
        without this the only way to tell was to send one and see. */
@@ -135,7 +145,7 @@ export async function GET(req: Request) {
     ),
     region: process.env.VERCEL_REGION ?? "local",
     commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7),
-  });
+  }));
 }
 
 

@@ -7,6 +7,7 @@
  * for a few seconds rather than fetched per request.
  */
 import { db, ready, now } from "@/lib/db";
+import { memoGet, memoPut, memoDrop } from "@/lib/memo";
 
 export const DEFAULTS = {
   /** R9 — the platform names the file, never the API. */
@@ -45,16 +46,15 @@ export const DEFAULTS = {
 
 export type SettingKey = keyof typeof DEFAULTS;
 
-let cache: Record<string, string> | null = null;
-let cachedAt = 0;
 const TTL = 10_000;
 
 export function invalidateSettings(): void {
-  cache = null;
+  memoDrop("settings");
 }
 
 export async function allSettings(): Promise<Record<string, string>> {
-  if (cache && Date.now() - cachedAt < TTL) return cache;
+  const hit = memoGet<Record<string, string>>("settings", TTL);
+  if (hit) return hit;
   await ready();
   const rs = await db().execute(`SELECT key, value FROM settings`);
   const out: Record<string, string> = { ...DEFAULTS };
@@ -62,8 +62,7 @@ export async function allSettings(): Promise<Record<string, string>> {
     const row = r as unknown as { key: string; value: string };
     out[row.key] = row.value;
   }
-  cache = out;
-  cachedAt = Date.now();
+  memoPut("settings", out);
   return out;
 }
 

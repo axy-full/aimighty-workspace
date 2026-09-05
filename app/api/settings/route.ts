@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
-import { requireUser, requireAdmin } from "@/lib/auth";
+import { requireUser, requireAdmin, withTenant } from "@/lib/auth";
 import { allSettings, setSetting, DEFAULTS } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   return NextResponse.json({ settings: await allSettings(), defaults: DEFAULTS });
-}
+});
 
 /** Workspace-wide settings are the admin's to set — they change everyone's files. */
-export async function PATCH(req: Request) {
+export const PATCH = withTenant(async function PATCH(req: Request) {
   const got = await requireAdmin();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -27,4 +27,4 @@ export async function PATCH(req: Request) {
   }
   if (!changed.length) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
   return NextResponse.json({ settings: await allSettings(), changed });
-}
+});

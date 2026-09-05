@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { listGenerations, syncActive } from "@/lib/jobs";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const PAGE = 60;
 
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const url = new URL(req.url);
@@ -41,4 +41,4 @@ export async function GET(req: Request) {
     generations.length === limit ? generations[generations.length - 1].createdAt : null;
 
   return NextResponse.json({ generations, nextCursor });
-}
+});

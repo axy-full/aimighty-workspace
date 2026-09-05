@@ -1,21 +1,34 @@
 import { createClient, type Client } from "@libsql/client";
+import { currentTenant, NoTenantError, type TenantWorkspace } from "./tenant";
 
 /**
- * Local dev  -> file:.data/ark.db
- * Production -> set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN
+ * One database per workspace.
+ *
+ * db() hands out the client for the workspace in scope — set per request
+ * by the route wrapper, per unit of background work by runInTenant — and
+ * throws when there is none. There is deliberately no default: a query
+ * that cannot say whose data it wants must not run. The platform's own
+ * tables live behind lib/platform.
+ *
+ * Local dev  -> file:.data/ark.db for the studio's workspace, file:.data/ws_<slug>.db for others
+ * Production -> the primary Turso database for the studio's workspace; one Turso database per other workspace
  */
-let _db: Client | null = null;
-let _ready: Promise<void> | null = null;
+const clients = new Map<string, Client>();
+const bootstrapped = new Map<string, Promise<void>>();
+
+export function tenantClient(ws: TenantWorkspace): Client {
+  let c = clients.get(ws.id);
+  if (!c) {
+    c = createClient({ url: ws.dbUrl, authToken: ws.dbToken ?? undefined });
+    clients.set(ws.id, c);
+  }
+  return c;
+}
 
 export function db(): Client {
-  if (!_db) {
-    const url = process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db";
-    _db = createClient({
-      url,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    });
-  }
-  return _db;
+  const ws = currentTenant()?.workspace;
+  if (!ws) throw new NoTenantError();
+  return tenantClient(ws);
 }
 
 const SCHEMA = [
@@ -426,48 +439,45 @@ const SCHEMA = [
  * missing. Only the duplicate is ignored; anything else propagates, clears
  * the memo, and is retried by the next request.
  */
-async function addColumn(table: string, decl: string): Promise<void> {
+async function addColumn(c: Client, table: string, decl: string): Promise<void> {
   try {
-    await db().execute(`ALTER TABLE ${table} ADD COLUMN ${decl}`);
+    await c.execute(`ALTER TABLE ${table} ADD COLUMN ${decl}`);
   } catch (e) {
     if (!/duplicate column|already exists/i.test((e as Error).message)) throw e;
   }
 }
 
 /** Same reasoning for an index that may name a column added moments ago. */
-async function addIndex(stmt: string): Promise<void> {
+async function addIndex(c: Client, stmt: string): Promise<void> {
   try {
-    await db().execute(stmt);
+    await c.execute(stmt);
   } catch (e) {
     if (!/already exists|no such column|duplicate/i.test((e as Error).message)) throw e;
   }
 }
 
-export async function ready(): Promise<void> {
-  if (!_ready) {
-    /* The promise is memoised so the migration runs once per instance. That
-       makes the FAILURE path the dangerous one: a rejected promise left in
-       `_ready` would be handed to every subsequent request, so one blink of
-       the database during a cold start would turn into an outage lasting the
-       whole life of the container. Clearing it on failure means the next
-       request simply tries again. */
-    _ready = (async () => {
-      for (const stmt of SCHEMA) await db().execute(stmt);
+/**
+ * The schema, applied to one workspace's database. Memoised per workspace
+ * per instance; a failure clears the memo so the next request tries again
+ * rather than inheriting a rejected promise for the life of the container.
+ */
+async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
+      for (const stmt of SCHEMA) await c.execute(stmt);
       // Lightweight migrations for columns added after first deploy.
-      await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
-      await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
-      await addColumn("uploads", `duration_s REAL`);
+      await addColumn(c, "generations", `deleted INTEGER NOT NULL DEFAULT 0`);
+      await addColumn(c, "uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
+      await addColumn(c, "uploads", `duration_s REAL`);
       for (const col of [
         // Reference uploads keep their master untouched; when a downstream
         // API can't accept the master, the derivative lives alongside it.
         `derivative_url TEXT`, `derivative_bytes INTEGER`,
         `derivative_note TEXT`, `sha256 TEXT`,
       ]) {
-        await addColumn("uploads", col);
+        await addColumn(c, "uploads", col);
       }
       // A deleted member is retired, not erased: their renders and spend keep
       // their name on the ledger, while access and listings treat them as gone.
-      await addColumn("users", `deleted_at INTEGER`);
+      await addColumn(c, "users", `deleted_at INTEGER`);
       // Looks: a category, a cover, a blurb, a style block, references,
       // and whether the product shipped it.
       for (const col of [
@@ -476,11 +486,11 @@ export async function ready(): Promise<void> {
         `cover_gen_id TEXT`, `cover_upload_id TEXT`, `swatch TEXT`,
         `builtin INTEGER NOT NULL DEFAULT 0`, `updated_at INTEGER`,
       ]) {
-        await addColumn("shot_presets", col);
+        await addColumn(c, "shot_presets", col);
       }
       // Invites remember whether and when they were emailed.
       for (const col of [`sent_at INTEGER`, `send_count INTEGER NOT NULL DEFAULT 0`]) {
-        await addColumn("invites", col);
+        await addColumn(c, "invites", col);
       }
       for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`,
                          // What kind of job this is — the axis R2 calls
@@ -494,7 +504,7 @@ export async function ready(): Promise<void> {
         `cap_usd REAL`,
         `stage TEXT`,
 ]) {
-        await addColumn("projects", col);
+        await addColumn(c, "projects", col);
       }
       for (const col of [
         `refine_model TEXT`, `refine_in_tokens INTEGER`,
@@ -549,7 +559,7 @@ export async function ready(): Promise<void> {
            what the ledger already assumed, so nothing restates itself. */
         `billed_to TEXT`,
       ]) {
-        await addColumn("generations", col);
+        await addColumn(c, "generations", col);
       }
       /* Indexes for columns added above — created AFTER the ALTERs, since on
          an existing database the column doesn't exist until they've run.
@@ -568,17 +578,18 @@ export async function ready(): Promise<void> {
         `dirty INTEGER NOT NULL DEFAULT 0`,
         `synced_at INTEGER`,
       ]) {
-        await addColumn("shots", col);
+        await addColumn(c, "shots", col);
       }
-      await addColumn("topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
+      await addColumn(c, "topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */
-      await addColumn("topups", `credits INTEGER`);
+      await addColumn(c, "topups", `credits INTEGER`);
       /* Added after ledger_checks first shipped, so the CREATE TABLE above
          will not deliver them to a database that already has the table. A
          column added to a CREATE TABLE IF NOT EXISTS reaches new databases
          only; every existing one needs the ALTER. */
-      await addColumn("ledger_checks", `balance_credits INTEGER`);
-      await addColumn("ledger_checks", `spend_credits INTEGER`);
+      await addColumn(c, "ledger_checks", `balance_credits INTEGER`);
+      await addColumn(c, "ledger_checks", `spend_credits INTEGER`);
+      if (opts.legacy) {
       /* Re-assert the super admin on every boot. A guarantee checked only at
          the point of use can be undone by a direct database edit or a bug in
          a route; re-asserting it here means the account heals itself on the
@@ -589,7 +600,7 @@ export async function ready(): Promise<void> {
          would otherwise never be found again. This restores the address too. */
       try {
         const superEmail = (process.env.SUPER_ADMIN_EMAIL ?? "axy@akshaypanchal.com").trim().toLowerCase();
-        await db().execute({
+        await c.execute({
           sql: `UPDATE users
                 SET role='admin', disabled=0, deleted_at=NULL,
                     locked_until=NULL, failed_count=0, email=?
@@ -597,6 +608,8 @@ export async function ready(): Promise<void> {
           args: [superEmail, superEmail, `${superEmail}#deleted-%`],
         });
       } catch { /* the users table may not exist on the very first boot */ }
+      }
+      if (opts.legacy) {
       /* The balances the team reported on 3 Sep 2026, written once into the
          ledger so each vendor's credit counts down from what was actually
          loaded. Fixed ids: a redeploy never records them twice, and deleting
@@ -607,18 +620,19 @@ export async function ready(): Promise<void> {
         ["top_seed_eleven_20260903", "elevenlabs", 0, 131000, "Plan credits, 3 Sep 2026"],
       ] as const) {
         try {
-          await db().execute({
+          await c.execute({
             sql: `INSERT OR IGNORE INTO topups (id, provider, amount_usd, credits, note, created_at) VALUES (?,?,?,?,?,?)`,
             args: [tid, provider, usd, credits, note, Date.parse("2026-09-03T12:00:00Z")],
           });
         } catch { /* recorded already, or the table is read-only right now */ }
+      }
       }
       for (const stmt of [
         `CREATE INDEX IF NOT EXISTS idx_gen_shot ON generations(shot_id)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_kind ON generations(kind)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_billed ON generations(billed_to)`,
       ]) {
-        await addIndex(stmt);
+        await addIndex(c, stmt);
       }
 
       /* One-time correction: stills already made were billed to Google.
@@ -634,17 +648,22 @@ export async function ready(): Promise<void> {
          on GEMINI_API_KEY it is misfiled by this, which is what the
          ledger_checks anchor exists to catch. */
       try {
-        await db().execute(
+        await c.execute(
           `UPDATE generations SET billed_to = 'vercel'
            WHERE billed_to IS NULL AND provider = 'google' AND kind = 'image'`
         );
       } catch { /* the column arrives with the ALTERs above; nothing to fix yet */ }
-    })().catch((e) => {
-      _ready = null;
-      throw e;
-    });
+}
+
+export function ready(): Promise<void> {
+  const ws = currentTenant()?.workspace;
+  if (!ws) return Promise.reject(new NoTenantError());
+  let p = bootstrapped.get(ws.id);
+  if (!p) {
+    p = bootstrap(tenantClient(ws), { legacy: ws.legacy }).catch((e) => { bootstrapped.delete(ws.id); throw e; });
+    bootstrapped.set(ws.id, p);
   }
-  return _ready;
+  return p;
 }
 
 export function now(): number {

@@ -12,6 +12,7 @@ import { getModel, type ModelDef } from "./models";
 import { getTask, type TaskId } from "./tasks";
 import { readUploadBytes, readImageBytes, presignedReadUrl, uploadPath, imagePath, videoPath, usingBlob } from "./storage";
 import { IMAGE_LIMITS } from "./imagemeta";
+import { vendorKey } from "./vendorKeys";
 
 const HOST =
   process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
@@ -83,8 +84,8 @@ export type ArkTask = {
 };
 
 function apiKey(): string {
-  const k = process.env.ARK_API_KEY;
-  if (!k) throw new Error("ARK_API_KEY is not set. Add it to .env.local");
+  const k = vendorKey("ark");
+  if (!k) throw new Error("BytePlus ModelArk isn't connected for this workspace — add its key under Settings › Engines & keys.");
   return k;
 }
 

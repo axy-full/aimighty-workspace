@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
-import { requireUser, requireAdmin } from "@/lib/auth";
+import { requireUser, requireAdmin, withTenant } from "@/lib/auth";
 import { listChecks, recordCheck, deleteCheck } from "@/lib/reconcile";
 
 export const dynamic = "force-dynamic";
 
 /** Every reading anyone has taken from a vendor's console. */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const provider = new URL(req.url).searchParams.get("provider") ?? undefined;
   return NextResponse.json({ checks: await listChecks(provider || undefined) });
-}
+});
 
 /** Record what the console says. Admin only: it moves the headline figure. */
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireAdmin();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -35,13 +35,13 @@ export async function POST(req: Request) {
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-}
+});
 
-export async function DELETE(req: Request) {
+export const DELETE = withTenant(async function DELETE(req: Request) {
   const got = await requireAdmin();
   if (got.response) return got.response;
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   await deleteCheck(id);
   return NextResponse.json({ ok: true });
-}
+});

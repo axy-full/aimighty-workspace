@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { getShot, STATUSES, codeProblem } from "@/lib/shots";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id: shotId } = await ctx.params;
@@ -48,9 +48,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   sets.push("updated_at = ?"); args.push(now(), shotId);
   await db().execute({ sql: `UPDATE shots SET ${sets.join(", ")} WHERE id = ?`, args });
   return NextResponse.json({ shot: await getShot(shotId) });
-}
+});
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id: shotId } = await ctx.params;
@@ -60,4 +60,4 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   await db().execute({ sql: `UPDATE generations SET shot_id = NULL WHERE shot_id = ?`, args: [shotId] });
   await db().execute({ sql: `DELETE FROM shots WHERE id = ?`, args: [shotId] });
   return NextResponse.json({ ok: true });
-}
+});

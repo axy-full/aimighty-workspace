@@ -5,7 +5,7 @@ import { modelLabel } from "@/lib/models";
 import { prettyModel, hasFreeTier, gatewayCredits } from "@/lib/enhance";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { elevenConfigured, subscription, FALLBACK_USD_PER_CREDIT } from "@/lib/elevenlabs";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { listChecks, spendSince, computedSpendUpTo } from "@/lib/reconcile";
 import { storageLedger } from "@/lib/storageCost";
 
@@ -15,7 +15,7 @@ export const maxDuration = 60;
 
 /** The full ledger — eight aggregates over the table. Only the Usage page
  *  asks for this; the always-on chrome polls /api/usage/summary instead. */
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -346,4 +346,4 @@ export async function GET() {
       freeLeft: hasFreeTier(r.model) ? Math.max(0, 500000 - Number(r.in_tokens) - Number(r.out_tokens)) : 0,
     })),
   });
-}
+});

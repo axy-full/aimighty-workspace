@@ -1,3 +1,4 @@
+import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
 /**
  * Vercel AI Gateway — the one door this deployment can always open.
  *
@@ -12,9 +13,8 @@ export const GATEWAY_BASE = () =>
 export const GATEWAY_URL = () => `${GATEWAY_BASE()}/chat/completions`;
 
 export function gatewayReachable(): boolean {
-  return Boolean(
-    process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL
-  );
+  if (vendorKey("gateway")) return true;
+  return deploymentIdentityAllowed() && Boolean(process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
 }
 
 /**
@@ -23,8 +23,11 @@ export function gatewayReachable(): boolean {
  * (and, in local development, from the token `vercel env pull` writes).
  */
 export async function gatewayAuth(): Promise<Record<string, string>> {
-  const key = process.env.AI_GATEWAY_API_KEY;
+  const key = vendorKey("gateway");
   if (key) return { Authorization: `Bearer ${key}` };
+  if (!deploymentIdentityAllowed()) {
+    throw new Error("Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Engines & keys.");
+  }
   let token: string | null = process.env.VERCEL_OIDC_TOKEN ?? null;
   try {
     const { getVercelOidcToken } = await import("@vercel/oidc");
@@ -49,8 +52,8 @@ export function explainGatewayFailure(status: number, text: string): string | nu
   }
   if (status === 401) {
     return "Vercel AI Gateway rejected this deployment's credentials." +
-      (process.env.AI_GATEWAY_API_KEY
-        ? " Check AI_GATEWAY_API_KEY in Vercel."
+      (vendorKey("gateway")
+        ? " Check the gateway key under Settings › Engines & keys."
         : " On Vercel the OIDC identity is fresh on every request; locally, a token from `vercel env pull` expires after twelve hours.");
   }
   return null;

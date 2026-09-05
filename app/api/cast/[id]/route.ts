@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { nameProblem, rowToCast } from "@/lib/cast";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function PATCH(req: Request, { params }: Ctx) {
+export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -38,13 +38,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const rs = await db().execute({ sql: `SELECT * FROM cast_members WHERE id = ?`, args: [id] });
   if (!rs.rows[0]) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ member: rowToCast(rs.rows[0]) });
-}
+});
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
   await db().execute({ sql: `DELETE FROM cast_members WHERE id = ?`, args: [id] });
   return NextResponse.json({ ok: true });
-}
+});

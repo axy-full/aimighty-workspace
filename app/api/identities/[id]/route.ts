@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { getIdentity, updateIdentity, deleteIdentity, syncIdentity } from "@/lib/identities";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ const publicView = (i: Awaited<ReturnType<typeof getIdentity>>) =>
   i ? { ...i, loraUrl: undefined, configUrl: undefined, trained: Boolean(i.loraUrl) } : null;
 
 /** One identity — asked about at the trainer if it is still training. */
-export async function GET(_req: Request, { params }: Ctx) {
+export const GET = withTenant(async function GET(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await params;
@@ -17,9 +17,9 @@ export async function GET(_req: Request, { params }: Ctx) {
   if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const { identity, progress } = await syncIdentity(found);
   return NextResponse.json({ identity: publicView(identity), progress });
-}
+});
 
-export async function PATCH(req: Request, { params }: Ctx) {
+export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await params;
@@ -35,13 +35,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-}
+});
 
 /** Removing an identity keeps its renders; they are on the ledger. */
-export async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await params;
   await deleteIdentity(id);
   return NextResponse.json({ ok: true });
-}
+});

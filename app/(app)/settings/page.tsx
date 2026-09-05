@@ -49,9 +49,10 @@ type Ws = { settings: Record<string, string>; defaults: Record<string, string> }
 type IdTerms = { terms: { configured: boolean; trainer: string; trainCostUsd: number } };
 type AudioSetup = { configured: boolean; envKey: string; terms: { sfxCredits: number; musicCreditsPerMinute: number }; account: { tier: string } | null };
 type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; monthlyUsd: number } | null };
+type Keys = { usesPlatformKeys: boolean; keyring: boolean; keys: { name: string; label: string; does: string; set: boolean; masked: string | null }[] };
 
 const SECTIONS = [
-  ["team", "Team & roles"], ["engines", "Engines & keys"], ["masters", "Storage & masters"],
+  ["workspace", "Workspace"], ["team", "Team & roles"], ["engines", "Engines & keys"], ["masters", "Storage & masters"],
   ["atomik", "Atomik connection"], ["defaults", "Defaults & caps"], ["account", "Account"],
 ] as const;
 const CAN: Record<string, string> = {
@@ -69,7 +70,7 @@ function gb(bytes: number): string {
 
 export default function SettingsPage() {
   usePageTitle("Settings");
-  const { signedIn } = useSession();
+  const { signedIn, workspace, role, owner, superAdmin, workspaces } = useSession();
   const prefs = usePrefs();
   const model = getModel(prefs.modelId);
   const router = useRouter();
@@ -81,6 +82,7 @@ export default function SettingsPage() {
   const { data: idTerms } = useApi<IdTerms>(signedIn ? "/api/identities" : null, 0);
   const { data: audio } = useApi<AudioSetup>(signedIn ? "/api/audio" : null, 0);
   const { data: ledger } = useApi<Ledger>(signedIn ? "/api/usage" : null, 120000);
+  const { data: keys, refresh: refreshKeys } = useApi<Keys>(signedIn && owner ? "/api/workspaces/keys" : null, 0);
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState<string>("team");
   const isAdmin = me?.role === "admin";
@@ -145,6 +147,19 @@ export default function SettingsPage() {
         </nav>
 
         <div className="flex min-w-0 flex-col gap-5">
+          {/* ── Workspace ── */}
+          <section id="workspace" className="scard">
+            <div className="scard-h"><span>Workspace</span><span>Every workspace has its own database, its own keys and its own team. Nothing in one can be seen from another.</span></div>
+            {!signedIn ? <Empty compact title="Sign in to see your workspace" /> : (
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 max-[900px]:grid-cols-1">
+                <div className="srow"><span>This workspace</span><span className="font-medium">{workspace?.name ?? "—"}</span></div>
+                <div className="srow"><span>Your standing here</span><span className="mono-v">{role === "owner" ? "OWNER" : role === "admin" ? "ADMIN" : role === "member" ? "MEMBER" : "—"}</span></div>
+                <div className="srow"><span>Address</span><span className="mono-v">{workspace ? `/${workspace.slug}` : "—"}</span></div>
+                <div className="srow"><span>Your workspaces</span><span className="text-dim">{workspaces.length} · switch or add one from the logo, top-left</span></div>
+              </div>
+            )}
+          </section>
+
           {/* ── Team & roles ── */}
           <section id="team" className="scard">
             <div className="flex items-baseline justify-between gap-4">
@@ -169,7 +184,14 @@ export default function SettingsPage() {
 
           {/* ── Engines & keys ── */}
           <section id="engines" className="scard">
-            <div className="scard-h"><span>Engines &amp; keys</span><span>Keys live in Vercel, set by an admin, and are never shown here — not even their names. Costs on the render button come from these routes.</span></div>
+            <div className="scard-h"><span>Engines &amp; keys</span><span>{keys && !keys.usesPlatformKeys ? "This workspace's own keys, sealed on the server and shown only to its owner, and only masked. Costs on the render button come from these routes." : "Keys live in Vercel, set by an admin, and are never shown here — not even their names. Costs on the render button come from these routes."}</span></div>
+            {owner && keys && !keys.usesPlatformKeys && (
+              <div className="flex flex-col gap-2">
+                {!keys.keyring && <p className="rail-help text-lift">The deployment can&rsquo;t hold keys yet — KEYRING_SECRET is not set.</p>}
+                {keys.keys.map((k) => <KeyRow key={k.name} k={k} onChanged={() => { refreshKeys(); refreshEngines(); }} />)}
+                <span className="rail-help">Keys are sealed before they are stored and never shown again in full. Only you, the owner, can see this card; the team sees only which engines are connected.</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2.5 max-[900px]:grid-cols-1">
               {engines.map((e) => (
                 <div key={e.id} className="ecard">
@@ -177,7 +199,7 @@ export default function SettingsPage() {
                     <span className="flex flex-col gap-[3px]"><span className="text-[13.5px] font-semibold">{e.name}</span><span className="text-[12px] text-dim">{e.does}</span></span>
                     <span className={`ak-state !text-[10.5px] ${e.on ? "is-approved" : ""}`}><span className={`dot !h-[7px] !w-[7px] ${e.on ? "dot-approved" : "dot-none"}`} />{e.on ? "CONNECTED" : "NOT ROUTED"}</span>
                   </div>
-                  <div className="ekey"><span>{e.via === "gateway" ? "SIGNED IN AS THE DEPLOYMENT · NO KEY TO KEEP" : e.on ? "KEY HELD ON THE SERVER" : "NO KEY YET"}</span>{isAdmin && <span className="text-ink">{e.on ? "Rotate in Vercel" : "Add in Vercel"}</span>}</div>
+                  <div className="ekey"><span>{e.via === "gateway" && (keys?.usesPlatformKeys ?? true) ? "SIGNED IN AS THE DEPLOYMENT · NO KEY TO KEEP" : e.on ? "KEY HELD SEALED ON THE SERVER" : "NO KEY YET"}</span>{owner && <span className="text-ink">{keys?.usesPlatformKeys ? (e.on ? "Rotate in Vercel" : "Add in Vercel") : "Managed above"}</span>}</div>
                   <span className="text-[11.5px] leading-[1.35] text-dim">{e.rate}</span>
                 </div>
               ))}
@@ -270,6 +292,7 @@ export default function SettingsPage() {
               <PushRow />
               <button className="row" onClick={() => router.push("/connect")}>Connect apps &amp; tokens<span className="row-value">Claude · ChatGPT · CLI<IconChevron className="!text-mute" /></span></button>
               <button className="row" onClick={() => router.push("/platform")}>Platform<span className="row-value">Assets · APIs · security · IP<IconChevron className="!text-mute" /></span></button>
+              {superAdmin && <button className="row" onClick={() => router.push("/admin")}>Sign-ups &amp; workspaces<span className="row-value">Platform owner<IconChevron className="!text-mute" /></span></button>}
               {me?.owner && <a className="row" href="/api/export" download title="Every prompt, cost and account record, as JSON — the owner's alone">Export data<span className="row-value">JSON · owner</span></a>}
               {signedIn && <button className="row !text-lift" onClick={signOut} disabled={busy}>{busy ? "Signing out…" : "Sign out"}</button>}
             </div>
@@ -277,6 +300,51 @@ export default function SettingsPage() {
           </section>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** One vendor's key: what it does, whether it is set, and a field to set or rotate it. */
+function KeyRow({ k, onChanged }: { k: Keys["keys"][number]; onChanged: () => void }) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  async function save() {
+    if (!value.trim()) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/workspaces/keys", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: k.name, value: value.trim() }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      setValue(""); setEditing(false); onChanged();
+    } catch (e) { await appAlert("Not saved", (e as Error).message); }
+    finally { setBusy(false); }
+  }
+  async function remove() {
+    setBusy(true);
+    try {
+      await fetch("/api/workspaces/keys", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: k.name }) });
+      onChanged();
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="ecard !gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex flex-col gap-[3px]"><span className="text-[13.5px] font-semibold">{k.label}</span><span className="text-[12px] text-dim">{k.does}</span></span>
+        <span className={`ak-state !text-[10.5px] ${k.set ? "is-approved" : ""}`}><span className={`dot !h-[7px] !w-[7px] ${k.set ? "dot-approved" : "dot-none"}`} />{k.set ? `SET · ${k.masked}` : "NOT SET"}</span>
+      </div>
+      {editing ? (
+        <div className="flex gap-1.5">
+          <input className="ctl !h-9 flex-1 font-mono !text-[12px]" type="password" autoComplete="off" spellCheck={false} value={value} onChange={(e) => setValue(e.target.value)} placeholder={`Paste the ${k.label} key`} autoFocus />
+          <button type="button" className="btn-primary !h-9 !px-3 !text-[12px]" onClick={save} disabled={busy || !value.trim()}>{k.set ? "Rotate" : "Save"}</button>
+          <button type="button" className="btn-secondary !h-9 !px-3 !text-[12px]" onClick={() => { setEditing(false); setValue(""); }}>Cancel</button>
+        </div>
+      ) : (
+        <div className="flex gap-1.5">
+          <button type="button" className="btn-secondary !h-8 !px-3 !text-[12px]" onClick={() => setEditing(true)}>{k.set ? "Rotate" : "Add key"}</button>
+          {k.set && <button type="button" className="btn-secondary !h-8 !px-3 !text-[12px] text-lift" onClick={remove} disabled={busy}>Remove</button>}
+        </div>
+      )}
     </div>
   );
 }

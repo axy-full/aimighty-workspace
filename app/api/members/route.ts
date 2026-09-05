@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** Active teammates — names only, for @mention autocomplete. Any member. */
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -16,4 +16,4 @@ export async function GET() {
   return NextResponse.json({
     members: rs.rows.map((r: any) => ({ id: r.id, name: r.name })),
   });
-}
+});

@@ -1,5 +1,5 @@
 import { db, ready } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { readUploadBytes, deleteUpload, openUploadStream } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * into function memory. Unknown types download as attachments with sniffing
  * off, so an uploaded HTML file can't run in the app's origin.
  */
-export async function GET(_req: Request, { params }: Ctx) {
+export const GET = withTenant(async function GET(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -50,9 +50,9 @@ export async function GET(_req: Request, { params }: Ctx) {
   } catch {
     return new Response("Not found", { status: 404 });
   }
-}
+});
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -65,4 +65,4 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (row) await deleteUpload(id, row.ext, row.stored_url);
   await db().execute({ sql: `DELETE FROM uploads WHERE id = ?`, args: [id] });
   return Response.json({ ok: true });
-}
+});

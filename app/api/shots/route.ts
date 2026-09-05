@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { listShots, createShot, codeProblem } from "@/lib/shots";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ const scope = (v: string | null) =>
   v && v !== "all" && v !== "unfiled" ? v : null;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const projectId = scope(new URL(req.url).searchParams.get("projectId"));
@@ -73,9 +73,9 @@ export async function GET(req: Request) {
       ...(back.get(s.id) ?? { state: s.kind === "type" ? "type" : "none", master: null }),
     })),
   });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -104,4 +104,4 @@ export async function POST(req: Request) {
     createdBy: got.user.id,
   });
   return NextResponse.json({ shot });
-}
+});

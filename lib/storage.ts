@@ -1,5 +1,6 @@
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
+import { currentTenant } from "./tenant";
 
 /**
  * Ark's video_url expires (~24h). We copy every finished render into our own
@@ -12,13 +13,18 @@ import path from "node:path";
  * wrong for client work — nothing here should be viewable outside the login.
  */
 
-/** Deterministic blob paths, so a row id is enough to find the object. */
-export const videoPath  = (genId: string) => `generations/${genId}.mp4`;
-export const imagePath  = (genId: string) => `generations/${genId}.png`;
-export const audioPath  = (genId: string) => `generations/${genId}.mp3`;
+/**
+ * Deterministic blob paths, so a row id is enough to find the object.
+ * Every workspace but the studio's original one keeps its objects under
+ * its own prefix; the original keeps the bare paths it always had.
+ */
+const prefix = () => { const ws = currentTenant()?.workspace; return ws && !ws.legacy ? `ws/${ws.id}/` : ""; };
+export const videoPath  = (genId: string) => `${prefix()}generations/${genId}.mp4`;
+export const imagePath  = (genId: string) => `${prefix()}generations/${genId}.png`;
+export const audioPath  = (genId: string) => `${prefix()}generations/${genId}.mp3`;
 /** The photo set an identity was trained from, zipped for the trainer. */
-export const identityZipPath = (identityId: string) => `identities/${identityId}.zip`;
-export const uploadPath = (uploadId: string, ext: string) => `uploads/${uploadId}.${ext}`;
+export const identityZipPath = (identityId: string) => `${prefix()}identities/${identityId}.zip`;
+export const uploadPath = (uploadId: string, ext: string) => `${prefix()}uploads/${uploadId}.${ext}`;
 
 const LOCAL_DIR = path.join(process.cwd(), ".data", "generations");
 
@@ -274,7 +280,7 @@ export async function deleteUpload(uploadId: string, ext: string, storedUrl: str
  * -------------------------------------------------------------------- */
 
 const CHUNK_DIR = path.join(process.cwd(), ".data", "chunks");
-const chunkPath = (sess: string, i: number) => `chunks/${sess}/${i}`;
+const chunkPath = (sess: string, i: number) => `${prefix()}chunks/${sess}/${i}`;
 
 export async function storeChunk(sess: string, i: number, buf: Buffer): Promise<void> {
   if (usingBlob()) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { modelLabel } from "@/lib/models";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -19,7 +19,7 @@ export const maxDuration = 60;
  * Deleted renders still count — money spent is money spent, and a ledger
  * that forgets binned takes flatters the project.
  */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -222,4 +222,4 @@ export async function GET(req: Request) {
       takesPerShot: shots ? filed / shots : 0,
     },
   });
-}
+});

@@ -1,5 +1,6 @@
 import { Inngest } from "inngest";
 import { db, now } from "./db";
+import { requireTenant } from "./tenant";
 
 /**
  * The durable worker.
@@ -67,7 +68,7 @@ export async function enqueueRender(genId: string, kind: "image" | "audio"): Pro
        durability for one render is a far smaller cost than holding the
        submit open until the function's own ceiling. */
     await Promise.race([
-      inngest.send({ name: EVENTS.render, data: { genId, kind } }),
+      inngest.send({ name: EVENTS.render, data: { genId, kind, workspaceId: requireTenant().id } }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Inngest did not accept the event within 5s")), 5_000)
       ),

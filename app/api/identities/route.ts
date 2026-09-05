@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import {
   listIdentities, createIdentity, syncIdentity,
   MIN_PHOTOS, MAX_PHOTOS, RECOMMENDED_PHOTOS, TRAIN_STEPS, trainCostUsd, RENDER_USD_PER_MP, TRAINER,
@@ -9,7 +9,7 @@ import { falConfigured } from "@/lib/fal";
 export const dynamic = "force-dynamic";
 
 /** The identities this project can see, and the terms training runs on. */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const projectId = new URL(req.url).searchParams.get("projectId");
@@ -27,9 +27,9 @@ export async function GET(req: Request) {
       steps: TRAIN_STEPS, trainCostUsd: trainCostUsd(), renderUsdPerMp: RENDER_USD_PER_MP,
     },
   });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -45,4 +45,4 @@ export async function POST(req: Request) {
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-}
+});

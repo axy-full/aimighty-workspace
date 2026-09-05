@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * over a sequence. Everyone on a project sees the same board; it's polled
  * rather than pushed, which is enough for a room of six.
  */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -51,9 +51,9 @@ export async function GET(req: Request) {
       upload: r.upload_url ? { url: r.upload_url, mime: r.upload_mime } : null,
     })),
   });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -96,4 +96,4 @@ export async function POST(req: Request) {
            z, String(body.colour ?? ""), got.user.id, ts, ts],
   });
   return NextResponse.json({ id: cid });
-}
+});

@@ -8,7 +8,7 @@ import {
   enhancePrompt, shouldRefine, activeWriter,
   TEXT_RATES, TEXT_RATE_FALLBACK, TEXT_FREE_TOKENS, hasFreeTier,
 } from "@/lib/enhance";
-import { requireRender, tokenSpendThisMonth } from "@/lib/auth";
+import { requireRender, tokenSpendThisMonth, withTenant } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
@@ -65,7 +65,7 @@ function validateReferences(
   return null;
 }
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   // Spending money needs a session or a render-scoped token, never a
   // read-only one.
   const got = await requireRender();
@@ -707,4 +707,4 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ id: genId, status: "failed", error: shown }, { status: 502 });
   }
-}
+});

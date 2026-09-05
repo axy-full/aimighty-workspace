@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { db, ready, now, id } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { identifyImage, validateVideo } from "@/lib/imagemeta";
 import { getProvider, DEFAULT_PROVIDER } from "@/lib/providers";
 import { assess, deriveForProvider } from "@/lib/derive";
@@ -20,7 +20,7 @@ const SESSION = /^[a-f0-9-]{16,64}$/;
  * and the sha256 of the assembled file is returned so the browser can prove
  * the stored object matches the file that was picked.
  */
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -156,4 +156,4 @@ export async function POST(req: Request) {
   } finally {
     await deleteChunks(scoped, count);
   }
-}
+});

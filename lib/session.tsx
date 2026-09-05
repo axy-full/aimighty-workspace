@@ -21,13 +21,21 @@ import { usePathname } from "next/navigation";
  * than an error.
  */
 
+export type SessionWorkspace = { id: string; name: string; slug: string };
 export type Session = {
   signedIn: boolean;
   name: string | null;
   email: string | null;
+  /** The workspace this session is in, and the account's standing there. */
+  workspace: SessionWorkspace | null;
+  role: "owner" | "admin" | "member" | null;
+  owner: boolean;
+  /** The platform's owner — the one account that administers sign-ups. */
+  superAdmin: boolean;
+  workspaces: (SessionWorkspace & { role: "owner" | "admin" | "member" })[];
 };
 
-const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null });
+const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null, workspace: null, role: null, owner: false, superAdmin: false, workspaces: [] });
 
 /**
  * What the browser must not keep once nobody is signed in.

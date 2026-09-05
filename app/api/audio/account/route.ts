@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { elevenConfigured, subscription } from "@/lib/elevenlabs";
 
 export const dynamic = "force-dynamic";
 
 /** Where the ElevenLabs account stands this cycle: credits used and left. */
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   if (!elevenConfigured()) return NextResponse.json({ configured: false, account: null });
@@ -14,4 +14,4 @@ export async function GET() {
   } catch (e) {
     return NextResponse.json({ configured: true, account: null, error: (e as Error).message });
   }
-}
+});

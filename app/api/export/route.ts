@@ -1,5 +1,5 @@
 import { db, ready, now } from "@/lib/db";
-import { requireAdmin, isSuperAdmin } from "@/lib/auth";
+import { requireOwner, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -12,13 +12,10 @@ export const maxDuration = 60;
  * object storage and are referenced by URL. Password hashes are deliberately
  * excluded: an export is a record, not a credential store.
  */
-export async function GET() {
-  const got = await requireAdmin();
+export const GET = withTenant(async function GET() {
+  // Every prompt, cost and account record in one file: the workspace owner's to take, nobody else's.
+  const got = await requireOwner();
   if (got.response) return got.response;
-  // Every prompt, cost and account record in one file: the owner's to take, nobody else's.
-  if (!isSuperAdmin(got.user.email)) {
-    return new Response(JSON.stringify({ error: "The export is the workspace owner's." }), { status: 403, headers: { "Content-Type": "application/json" } });
-  }
   await ready();
 
   const [users, projects, generations, topups, uploads] = await Promise.all([
@@ -58,4 +55,4 @@ export async function GET() {
       "Cache-Control": "no-store",
     },
   });
-}
+});

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { saveSubscription } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
 
@@ -18,4 +18,4 @@ export async function POST(req: Request) {
   }
   await saveSubscription(got.user.id, sub);
   return NextResponse.json({ ok: true });
-}
+});

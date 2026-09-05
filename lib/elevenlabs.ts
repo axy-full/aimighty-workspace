@@ -1,4 +1,6 @@
 import { getProvider, providerBaseUrl } from "./providers";
+import { vendorKey } from "./vendorKeys";
+import { memoGet, memoPut } from "./memo";
 
 /**
  * ElevenLabs — voices, sound effects and music.
@@ -10,11 +12,11 @@ import { getProvider, providerBaseUrl } from "./providers";
  */
 
 export function elevenConfigured(): boolean {
-  return Boolean(process.env.ELEVENLABS_API_KEY);
+  return Boolean(vendorKey("elevenlabs"));
 }
 
 function key(): string {
-  const k = process.env.ELEVENLABS_API_KEY;
+  const k = vendorKey("elevenlabs");
   if (!k) {
     throw new Error(
       "ElevenLabs isn't connected — set ELEVENLABS_API_KEY in Vercel › Settings › Environment Variables and redeploy."
@@ -157,11 +159,10 @@ type VoicesResponse = {
   has_more?: boolean;
 };
 
-let voiceCache: { at: number; voices: Voice[] } | null = null;
-
-/** The account's voices — its own and the premade library it can use. */
+/** The account's voices — its own and the premade library it can use. Memoed per workspace: the key differs. */
 export async function listVoices(force = false): Promise<Voice[]> {
-  if (!force && voiceCache && Date.now() - voiceCache.at < 10 * 60_000) return voiceCache.voices;
+  const hit = force ? null : memoGet<Voice[]>("eleven-voices", 10 * 60_000);
+  if (hit) return hit;
   let raw: VoicesResponse;
   try {
     raw = await callJson<VoicesResponse>("/v2/voices?page_size=100");
@@ -175,7 +176,7 @@ export async function listVoices(force = false): Promise<Voice[]> {
   // Your own voices first, then the library, alphabetical inside each.
   const rank = (c: string) => (c === "cloned" || c === "generated" || c === "professional" ? 0 : 1);
   voices.sort((a, b) => rank(a.category) - rank(b.category) || a.name.localeCompare(b.name));
-  voiceCache = { at: Date.now(), voices };
+  memoPut("eleven-voices", voices);
   return voices;
 }
 

@@ -1,138 +1,82 @@
 import { NextResponse } from "next/server";
-import { db, ready, now } from "@/lib/db";
-import { requireAdmin, isSuperAdmin } from "@/lib/auth";
+import { requireAdmin, withTenant, isPlatformOwner, clearFailures } from "@/lib/auth";
+import { requireTenant } from "@/lib/tenant";
+import { platformDb, platformReady, mirrorUser, now } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-/** A demotion/disable only lands when another active admin would remain. */
-const KEEP_ADMIN = `(SELECT COUNT(*) FROM users u2
-  WHERE u2.role='admin' AND u2.disabled=0 AND u2.id != ?) >= 1`;
+const PROTECTED = { error: "That account owns the workspace. It can't be demoted, disabled or removed." };
 
-const LAST_ADMIN = { error: "That's the last admin — promote someone else first." };
-const PROTECTED = {
-  error: "That account is the workspace's permanent admin. It can't be demoted, disabled or removed.",
-};
+async function member(wsId: string, accountId: string) {
+  const rs = await platformDb().execute({
+    sql: `SELECT a.id, a.email, a.name, m.role, m.disabled FROM memberships m JOIN accounts a ON a.id = m.account_id
+          WHERE m.workspace_id = ? AND m.account_id = ? AND a.deleted_at IS NULL LIMIT 1`,
+    args: [wsId, accountId],
+  });
+  return (rs.rows[0] as any) ?? null;
+}
 
-/**
- * Enable/disable, change role, or clear a lockout. The last-admin guard lives
- * IN the SQL — a separate count check would let two concurrent demotions both
- * pass and leave the workspace with no admin at all.
- */
-export async function PATCH(req: Request, { params }: Ctx) {
+/** Change standing, disable or re-enable, or clear a lockout — within this workspace. */
+export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
   const got = await requireAdmin();
   if (got.response) return got.response;
-  await ready();
-
+  const ws = requireTenant();
+  await platformReady();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  const target = await member(ws.id, id);
+  if (!target) return NextResponse.json({ error: "No such member" }, { status: 404 });
+  const owner = got.user.owner || (await isPlatformOwner(got.user));
 
-  const rs = await db().execute({ sql: `SELECT * FROM users WHERE id=? LIMIT 1`, args: [id] });
-  const target = rs.rows[0] as any;
-  if (!target || target.deleted_at) return NextResponse.json({ error: "No such user" }, { status: 404 });
-
-  /* Standing is the owner's to set. Everyone else cannot see roles at all
-     (see /api/team), so leaving the route open would make the hiding
-     decorative — a hand-written request would still work. */
-  if (body.role !== undefined && !isSuperAdmin(got.user.email)) {
-    return NextResponse.json(
-      { error: "Only the workspace owner can change what someone is." }, { status: 403 });
+  if (body.role !== undefined && !owner) {
+    return NextResponse.json({ error: "Only the workspace owner can change what someone is." }, { status: 403 });
   }
-
-  /* Absolute, unlike the last-admin rule below it, which two admins acting
-     in the wrong order can still walk around. Clearing a LOCKOUT is allowed
-     — that helps this account rather than harming it. */
-  if (isSuperAdmin(target.email)) {
-    const harmful =
-      (body.role !== undefined && body.role !== "admin") ||
-      (body.disabled !== undefined && Boolean(body.disabled));
+  if (target.role === "owner") {
+    const harmful = (body.role !== undefined && body.role !== "admin") || (body.disabled !== undefined && Boolean(body.disabled));
     if (harmful) return NextResponse.json(PROTECTED, { status: 400 });
   }
-
   if (id === got.user.id && body.disabled === true) {
     return NextResponse.json({ error: "You can't disable your own account." }, { status: 400 });
   }
 
-  if (body.role === "admin") {
-    await db().execute({ sql: `UPDATE users SET role='admin' WHERE id=?`, args: [id] });
-  } else if (body.role === "member") {
-    const upd = await db().execute({
-      sql: `UPDATE users SET role='member' WHERE id=? AND (role='member' OR ${KEEP_ADMIN})`,
-      args: [id, id],
-    });
-    if (Number(upd.rowsAffected) === 0) {
-      return NextResponse.json(LAST_ADMIN, { status: 400 });
-    }
+  const p = platformDb();
+  if ((body.role === "admin" || body.role === "member") && target.role !== "owner") {
+    await p.execute({ sql: `UPDATE memberships SET role = ? WHERE workspace_id = ? AND account_id = ?`, args: [body.role, ws.id, id] });
+    await mirrorUser(ws, { id: target.id, email: target.email, name: target.name }, body.role, Number(target.disabled) === 1);
   }
-
-  // Someone locked out by failed logins shouldn't have to wait it out.
-  if (body.unlock === true || body.disabled === false) {
-    await db().execute({
-      sql: `UPDATE users SET failed_count=0, locked_until=NULL WHERE id=?`, args: [id],
-    });
-  }
-
+  if (body.unlock === true || body.disabled === false) await clearFailures(String(target.id));
   if (body.disabled === true) {
-    const upd = await db().execute({
-      sql: `UPDATE users SET disabled=1 WHERE id=? AND (role='member' OR ${KEEP_ADMIN})`,
-      args: [id, id],
-    });
-    if (Number(upd.rowsAffected) === 0) {
-      return NextResponse.json(LAST_ADMIN, { status: 400 });
-    }
-    // Disabling someone kicks them out immediately.
-    await db().execute({ sql: `DELETE FROM sessions WHERE user_id=?`, args: [id] });
+    await p.execute({ sql: `UPDATE memberships SET disabled = 1 WHERE workspace_id = ? AND account_id = ?`, args: [ws.id, id] });
+    await mirrorUser(ws, { id: target.id, email: target.email, name: target.name }, target.role, true);
   } else if (body.disabled === false) {
-    await db().execute({ sql: `UPDATE users SET disabled=0 WHERE id=?`, args: [id] });
+    await p.execute({ sql: `UPDATE memberships SET disabled = 0 WHERE workspace_id = ? AND account_id = ?`, args: [ws.id, id] });
+    await mirrorUser(ws, { id: target.id, email: target.email, name: target.name }, target.role, false);
   }
-
   return NextResponse.json({ ok: true });
-}
+});
 
 /**
- * Delete a member.
- *
- * What a studio needs from "delete" is that the person is gone: no sign-in,
- * no API tokens, no notifications, no unused invites they sent, and no
- * entry on any list. What it must NOT lose is the ledger — every render
- * and every dollar stays attributed to them by name. So the account is
- * retired rather than erased: disabled, stamped with the time, its email
- * rewritten so the address can be invited again. The last-admin guard is
- * the same one the demotion path uses, and lives in the SQL for the same
- * reason.
+ * Remove someone from this workspace. Their account lives on — they may
+ * belong to other workspaces — and their renders here keep their name.
  */
-export async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireAdmin();
   if (got.response) return got.response;
-  await ready();
-
+  const ws = requireTenant();
+  await platformReady();
   const { id } = await params;
-  if (id === got.user.id) {
-    return NextResponse.json({ error: "You can't delete your own account." }, { status: 400 });
-  }
-  const rs = await db().execute({ sql: `SELECT * FROM users WHERE id=? LIMIT 1`, args: [id] });
-  const target = rs.rows[0] as any;
-  if (!target || target.deleted_at) return NextResponse.json({ error: "No such user" }, { status: 404 });
-  if (isSuperAdmin(target.email)) return NextResponse.json(PROTECTED, { status: 400 });
-
-  const ts = now();
-  const upd = await db().execute({
-    sql: `UPDATE users
-          SET disabled=1, deleted_at=?, email=?, failed_count=0, locked_until=NULL
-          WHERE id=? AND deleted_at IS NULL AND (role='member' OR ${KEEP_ADMIN})`,
-    args: [ts, `${target.email}#deleted-${ts}`, id, id],
-  });
-  if (Number(upd.rowsAffected) === 0) {
-    return NextResponse.json(LAST_ADMIN, { status: 400 });
-  }
-
-  await Promise.all([
-    db().execute({ sql: `DELETE FROM sessions WHERE user_id=?`, args: [id] }),
-    db().execute({ sql: `UPDATE api_tokens SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL`, args: [ts, id] }),
-    db().execute({ sql: `DELETE FROM push_subs WHERE user_id=?`, args: [id] }),
-    db().execute({ sql: `DELETE FROM invites WHERE created_by=? AND used_at IS NULL`, args: [id] }),
-  ]);
-
+  if (id === got.user.id) return NextResponse.json({ error: "You can't remove yourself." }, { status: 400 });
+  const target = await member(ws.id, id);
+  if (!target) return NextResponse.json({ error: "No such member" }, { status: 404 });
+  if (target.role === "owner") return NextResponse.json(PROTECTED, { status: 400 });
+  const p = platformDb();
+  await p.execute({ sql: `DELETE FROM memberships WHERE workspace_id = ? AND account_id = ?`, args: [ws.id, id] });
+  await p.execute({ sql: `DELETE FROM p_sessions WHERE account_id = ? AND workspace_id = ?`, args: [id, ws.id] });
+  await mirrorUser(ws, { id: target.id, email: target.email, name: target.name }, "member", true);
+  const { db } = await import("@/lib/db");
+  await db().execute({ sql: `UPDATE users SET deleted_at = ? WHERE id = ?`, args: [now(), id] });
+  await db().execute({ sql: `UPDATE api_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`, args: [now(), id] });
   return NextResponse.json({ ok: true, name: target.name });
-}
+});

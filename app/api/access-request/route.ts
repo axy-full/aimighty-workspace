@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createHash } from "node:crypto";
-import { db, ready, now, id as newId } from "@/lib/db";
+import { platformDb as db, platformReady as ready, now, newId } from "@/lib/platform";
 import { SUPER_ADMIN_EMAIL } from "@/lib/auth";
 import { mailConfigured, sendMail } from "@/lib/mail";
 

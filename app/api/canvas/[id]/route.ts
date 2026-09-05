@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** Move, resize, retitle or raise one card. Kept deliberately small — this
  *  fires on every drag release, so it must stay a single indexed UPDATE. */
-export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id: itemId } = await ctx.params;
@@ -28,14 +28,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   sets.push("updated_at = ?"); args.push(now(), itemId);
   await db().execute({ sql: `UPDATE canvas_items SET ${sets.join(", ")} WHERE id = ?`, args });
   return NextResponse.json({ ok: true });
-}
+});
 
 /** Taking a card off the board never touches the render it points at. */
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id: itemId } = await ctx.params;
   await ready();
   await db().execute({ sql: `DELETE FROM canvas_items WHERE id = ?`, args: [itemId] });
   return NextResponse.json({ ok: true });
-}
+});

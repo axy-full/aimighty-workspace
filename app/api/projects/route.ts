@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { cached, putCache, invalidate, PROJECTS_KEY } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
    ledger records money spent, not files kept. */
 const TTL_MS = 15_000;
 
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -102,9 +102,9 @@ export async function GET() {
   };
   putCache(PROJECTS_KEY, body);
   return NextResponse.json(body);
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -121,4 +121,4 @@ export async function POST(req: Request) {
   });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ id: pid, name });
-}
+});

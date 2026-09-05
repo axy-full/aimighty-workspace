@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, withTenant } from "@/lib/auth";
 import { enhancePrompt, activeWriter } from "@/lib/enhance";
 import { invalidateSettings } from "@/lib/settings";
 
@@ -12,7 +12,7 @@ export const maxDuration = 120;
  * rather than discovering on a paid render that it could not. Costs about
  * a tenth of a cent on Sonnet; nothing is stored.
  */
-export async function POST() {
+export const POST = withTenant(async function POST() {
   const got = await requireAdmin();
   if (got.response) return got.response;
   invalidateSettings();
@@ -41,4 +41,4 @@ export async function POST() {
   } catch (e) {
     return NextResponse.json({ ok: false, writer, ms: Date.now() - t0, error: (e as Error).message });
   }
-}
+});

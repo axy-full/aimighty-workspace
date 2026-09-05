@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  * list is what they mean, which clears the edited-since-last-send tint and
  * stamps the time the status line reports.
  */
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -23,4 +23,4 @@ export async function POST(req: Request) {
     args: [ts, projectId],
   });
   return NextResponse.json({ ok: true, sent: Number(rs.rowsAffected ?? 0), at: ts });
-}
+});

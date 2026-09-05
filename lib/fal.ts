@@ -1,4 +1,5 @@
 import { getProvider, providerBaseUrl } from "./providers";
+import { vendorKey } from "./vendorKeys";
 
 /**
  * fal.ai — where identities are trained and rendered.
@@ -13,11 +14,11 @@ import { getProvider, providerBaseUrl } from "./providers";
  */
 
 export function falConfigured(): boolean {
-  return Boolean(process.env.FAL_KEY);
+  return Boolean(vendorKey("fal"));
 }
 
 function auth(): string {
-  const key = process.env.FAL_KEY;
+  const key = vendorKey("fal");
   if (!key) {
     throw new Error(
       "fal.ai isn't connected — set FAL_KEY in Vercel › Settings › Environment Variables and redeploy."

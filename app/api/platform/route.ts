@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { PROVIDERS, providerConfigured, providerBaseUrl } from "@/lib/providers";
 import { MODELS } from "@/lib/models";
 import { allSettings } from "@/lib/settings";
 import { refineProvider, CLAUDE_MODEL, TEXT_MODEL } from "@/lib/enhance";
 import { usingBlob } from "@/lib/storage";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
+import { vendorKey } from "@/lib/vendorKeys";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
  * registry, storage mode from the env, the filename protocol from settings.
  * A page that answers "are files compressed?" must not be able to go stale.
  */
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   const settings = await allSettings();
@@ -50,7 +51,7 @@ export async function GET() {
       model: refineProvider() === "anthropic" ? CLAUDE_MODEL() : TEXT_MODEL(),
       configured: refineProvider() === "anthropic"
         ? Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
-        : Boolean(process.env.ARK_API_KEY),
+        : Boolean(vendorKey("ark")),
     },
     reliability: {
       maxRetries: Number(settings.maxRetries ?? 2),
@@ -58,4 +59,4 @@ export async function GET() {
       health: "/api/health (add ?deep=1 for a live storage probe)",
     },
   });
-}
+});

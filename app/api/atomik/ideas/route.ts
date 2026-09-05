@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { listIdeas, createIdea } from "@/lib/atomikDocs";
 
 export const dynamic = "force-dynamic";
 
 /** Every idea, with the production it became (if it did) and how far that got. */
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   const ideas = await listIdeas();
@@ -26,9 +26,9 @@ export async function GET() {
       parkedByName: i.parkedBy ? names.get(i.parkedBy) ?? null : null,
     })),
   });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -38,4 +38,4 @@ export async function POST(req: Request) {
   const refs = Array.isArray(body.refs) ? body.refs.map(String).slice(0, 3) : [];
   const idea = await createIdea({ logline, tone, refs, createdBy: got.user.id });
   return NextResponse.json({ idea });
-}
+});

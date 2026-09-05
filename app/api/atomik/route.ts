@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { listChats, createChat, engines, type AgentMode } from "@/lib/atomik";
 import { menuFor, priceLabel, type CatalogModel } from "@/lib/catalog";
 
@@ -39,7 +39,7 @@ const shape = (m: CatalogModel) => ({
   band: band(m), price: priceLabel(m),
 });
 
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
 
@@ -54,9 +54,9 @@ export async function GET() {
       rest: menu.rest.map(shape),
     },
   });
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = withTenant(async function POST(req: NextRequest) {
   const got = await requireUser();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -67,4 +67,4 @@ export async function POST(req: NextRequest) {
     agentMode: body.agentMode === "auto" ? "auto" : ("ask" as AgentMode),
   });
   return NextResponse.json({ id });
-}
+});

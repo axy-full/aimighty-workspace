@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { listCast, nameProblem, rowToCast } from "@/lib/cast";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const projectId = new URL(req.url).searchParams.get("projectId");
   const cast = await listCast(projectId && projectId !== "all" && projectId !== "unfiled" ? projectId : null);
   return NextResponse.json({ cast });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -49,4 +49,4 @@ export async function POST(req: Request) {
 
   const rs = await db().execute({ sql: `SELECT * FROM cast_members WHERE id = ?`, args: [cid] });
   return NextResponse.json({ member: rowToCast(rs.rows[0]) });
-}
+});

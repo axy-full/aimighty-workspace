@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { getIdea } from "@/lib/atomikDocs";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * Edit a card. `pin` toggles this person's pin; `state` moves it between
  * open, pinned and parked; `projectId` records the production it became.
  */
-export async function PATCH(req: Request, { params }: Ctx) {
+export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -40,13 +40,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
   sets.push("updated_at = ?"); args.push(now(), id);
   await db().execute({ sql: `UPDATE ideas SET ${sets.join(", ")} WHERE id = ?`, args });
   return NextResponse.json({ idea: await getIdea(id) });
-}
+});
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
   await db().execute({ sql: `DELETE FROM ideas WHERE id = ?`, args: [id] });
   return NextResponse.json({ ok: true });
-}
+});

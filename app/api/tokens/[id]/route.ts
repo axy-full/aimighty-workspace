@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
-import { currentUser } from "@/lib/auth";
+import { currentUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 /** Revoke a token. Session-only, and only your own — revocation is instant
  *  because every request checks revoked_at. */
-export async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Sign in to revoke a token" }, { status: 401 });
   await ready();
@@ -17,4 +17,4 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     args: [now(), id, user.id],
   });
   return NextResponse.json({ ok: true });
-}
+});

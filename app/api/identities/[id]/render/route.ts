@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { db, ready, now, id as newId } from "@/lib/db";
-import { requireRender } from "@/lib/auth";
+import { requireRender, withTenant } from "@/lib/auth";
 import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS } from "@/lib/identities";
 import { falConfigured } from "@/lib/fal";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
@@ -13,7 +13,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * Stills of a trained identity. Each image is its own render on the wall
  * and the ledger, like every other; they run after the response goes out.
  */
-export async function POST(req: Request, { params }: Ctx) {
+export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
   await ready();
@@ -77,4 +77,4 @@ export async function POST(req: Request, { params }: Ctx) {
   });
 
   return NextResponse.json({ ids, status: "running" });
-}
+});

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, withTenant } from "@/lib/auth";
 import { PROVIDERS } from "@/lib/providers";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireAdmin();
   if (got.response) return got.response;
   await ready();
@@ -21,9 +21,9 @@ export async function POST(req: Request) {
     args: [id("top"), provider, amount, credits, String(body.note ?? "").slice(0, 200), now()],
   });
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(req: Request) {
+export const DELETE = withTenant(async function DELETE(req: Request) {
   const got = await requireAdmin();
   if (got.response) return got.response;
   await ready();
@@ -31,4 +31,4 @@ export async function DELETE(req: Request) {
   if (!topupId) return NextResponse.json({ error: "id required" }, { status: 400 });
   await db().execute({ sql: `DELETE FROM topups WHERE id=?`, args: [topupId] });
   return NextResponse.json({ ok: true });
-}
+});

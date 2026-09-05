@@ -181,6 +181,7 @@ export function getProvider(pid: string): ProviderDef {
 }
 
 import { gatewayReachable } from "./gateway";
+import { vendorKey, vendorKeyForEnv } from "./vendorKeys";
 
 /** Is this vendor usable right now? Reported on /api/health and in Settings. */
 export function providerConfigured(p: ProviderDef): boolean {
@@ -209,7 +210,7 @@ export function billedTo(provider: string): ProviderId {
   if (provider !== "google") {
     return (PROVIDERS.some((p) => p.id === provider) ? provider : "byteplus") as ProviderId;
   }
-  const key = Boolean(process.env.GEMINI_API_KEY);
+  const key = Boolean(vendorKey("gemini"));
   if (process.env.STILLS_VIA === "google" && key) return "google";
   if (gatewayReachable()) return "vercel";
   return "google";
@@ -222,7 +223,7 @@ export function providerVia(p: ProviderDef): "key" | "gateway" | null {
      not configured. */
   if (p.id === "vercel") return gatewayReachable() ? "gateway" : null;
   if (p.id === "google") {
-    if (process.env.STILLS_VIA === "google" && process.env[p.envKey]) return "key";
+    if (process.env.STILLS_VIA === "google" && vendorKeyForEnv(p.envKey)) return "key";
     if (gatewayReachable()) return "gateway";
     return process.env[p.envKey] ? "key" : null;
   }

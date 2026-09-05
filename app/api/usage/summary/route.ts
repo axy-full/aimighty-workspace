@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { db, ready, now } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { db, ready } from "@/lib/db";
+import { requireUser, withTenant } from "@/lib/auth";
 import { PROVIDERS } from "@/lib/providers";
+import { memoGet, memoPut } from "@/lib/memo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -29,17 +30,15 @@ type Summary = {
   vendors: { id: string; label: string; spent: number; added: number; remaining: number; unit: "usd" | "credits"; remainingCredits?: number; addedCredits?: number; spentCredits?: number }[];
 };
 
-let cache: { at: number; value: Summary } | null = null;
 const TTL_MS = 20_000;
 
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
 
-  if (cache && now() - cache.at < TTL_MS) {
-    return NextResponse.json({ ...cache.value, cached: true });
-  }
+  const hit = memoGet<Summary>("usage-summary", TTL_MS);
+  if (hit) return NextResponse.json({ ...hit, cached: true });
 
   const [gen, top, byVendor, promptBy] = await Promise.all([
     db().execute(`
@@ -83,6 +82,6 @@ export async function GET() {
     vendors,
   };
 
-  cache = { at: now(), value };
+  memoPut("usage-summary", value);
   return NextResponse.json(value);
-}
+});

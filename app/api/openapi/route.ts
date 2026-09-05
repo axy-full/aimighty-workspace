@@ -1,3 +1,4 @@
+import { withTenant } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 /**
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  * Public on purpose: it is a description of shapes, not data. Every path it
  * names still demands a token.
  */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const origin = new URL(req.url).origin;
 
   return Response.json({
@@ -172,4 +173,4 @@ export async function GET(req: Request) {
       },
     },
   });
-}
+});

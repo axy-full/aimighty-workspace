@@ -4,6 +4,8 @@ import { syncPending } from "@/lib/jobs";
 import { syncTrainingIdentities } from "@/lib/identities";
 import { backfillSizes } from "@/lib/storageCost";
 import { setSetting } from "@/lib/settings";
+import { listWorkspaces } from "@/lib/platform";
+import { runInTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -41,51 +43,56 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await ready();
-  const before = await counts();
-  try {
-    await syncPending(30);
-    // Faces mid-training get asked about too, so a finished model is found
-    // even if nobody opens the Studio for a while.
-    await syncTrainingIdentities(10).catch(() => {});
-    // Renders made before anyone recorded a size. Costs five millionths of a
-    // dollar per thousand blobs and stops the moment there is nothing left.
-    await backfillSizes().catch(() => {});
-  } catch (e) {
-    console.error("cron sync failed:", (e as Error).message);
-  }
-  const after = await counts();
-
-  // Leave a mark. Nothing anywhere recorded when this last ran, which is how
-  // "is the cron firing?" became a question nobody could answer from the
-  // outside. Vercel stamps its scheduled calls with x-vercel-cron: 1, so the
-  // record also says WHO ran it — a manual curl and a real tick look
-  // identical otherwise.
-  // Vercel's documented signature for a scheduled call is the user-agent
-  // "vercel-cron/1.0"; the x-vercel-cron header was a guess and misfiled a
-  // real tick as "manual". Check both, and keep the raw agent so the record
-  // can never be wrong silently again.
   const ua = req.headers.get("user-agent") ?? "";
   const by = req.headers.get("x-vercel-cron") || /vercel-cron/i.test(ua) ? "vercel" : "manual";
-  try {
-    await setSetting("lastCronAt", String(Date.now()), "cron");
-    await setSetting("lastCronBy", by, "cron");
-    await setSetting("lastCronAgent", ua.slice(0, 120), "cron");
-    await setSetting("lastCronResult", JSON.stringify({
-      pending: after.pending, atRisk: after.atRisk,
-      rescued: Math.max(0, before.atRisk - after.atRisk),
-      completed: Math.max(0, before.pending - after.pending),
-    }), "cron");
-  } catch (e) {
-    console.error("cron: could not record the run:", (e as Error).message);
+  const totals = { pending: 0, atRisk: 0, rescued: 0, completed: 0, workspaces: 0 };
+
+  /* Every workspace has its own database, so the heartbeat visits each in
+     turn: pending renders pulled into storage, faces mid-training asked
+     about, sizes backfilled — and a mark left so "is the cron firing?" is
+     answerable from inside any of them. */
+  for (const ws of await listWorkspaces()) {
+    await runInTenant(ws, async () => {
+      try {
+        await ready();
+        const before = await counts();
+        try {
+          await syncPending(30);
+          await syncTrainingIdentities(10).catch(() => {});
+          await backfillSizes().catch(() => {});
+        } catch (e) {
+          console.error(`cron sync failed for ${ws.slug}:`, (e as Error).message);
+        }
+        const after = await counts();
+        totals.workspaces++;
+        totals.pending += after.pending; totals.atRisk += after.atRisk;
+        totals.rescued += Math.max(0, before.atRisk - after.atRisk);
+        totals.completed += Math.max(0, before.pending - after.pending);
+        try {
+          await setSetting("lastCronAt", String(Date.now()), "cron");
+          await setSetting("lastCronBy", by, "cron");
+          await setSetting("lastCronAgent", ua.slice(0, 120), "cron");
+          await setSetting("lastCronResult", JSON.stringify({
+            pending: after.pending, atRisk: after.atRisk,
+            rescued: Math.max(0, before.atRisk - after.atRisk),
+            completed: Math.max(0, before.pending - after.pending),
+          }), "cron");
+        } catch (e) {
+          console.error("cron: could not record the run:", (e as Error).message);
+        }
+      } catch (e) {
+        console.error(`cron: workspace ${ws.slug} unreachable:`, (e as Error).message);
+      }
+    });
   }
 
   return NextResponse.json({
     ok: true,
-    pending: after.pending,
-    videosAtRisk: after.atRisk,
-    rescuedThisRun: Math.max(0, before.atRisk - after.atRisk),
-    completedThisRun: Math.max(0, before.pending - after.pending),
+    workspaces: totals.workspaces,
+    pending: totals.pending,
+    videosAtRisk: totals.atRisk,
+    rescuedThisRun: totals.rescued,
+    completedThisRun: totals.completed,
   });
 }
 

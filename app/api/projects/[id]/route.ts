@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function PATCH(req: Request, { params }: Ctx) {
+export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -23,7 +23,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
-}
+});
 
 /**
  * Deleting a project keeps its renders: they fall back to Unfiled, and their
@@ -31,7 +31,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
  * cast, notes and the like — goes with it, deleted here explicitly rather
  * than left to the database's cascade rules.
  */
-export async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -47,4 +47,4 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   await db().execute({ sql: `DELETE FROM projects WHERE id = ?`, args: [id] });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
-}
+});

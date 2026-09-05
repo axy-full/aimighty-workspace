@@ -18,6 +18,8 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import AtomikLockup, { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
+import { useSession } from "@/lib/session";
+import { appAlert, appPrompt } from "@/components/dialog";
 
 const LAST_PARTICL = "aw_last_particl";
 const LAST_ATOMIK = "aw_last_atomik";
@@ -28,6 +30,30 @@ export default function BrandSwitch({ side }: { side: "particl" | "atomik" }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const onAtomik = side === "atomik";
+  const { signedIn, workspace, workspaces } = useSession();
+  const [switching, setSwitching] = useState(false);
+
+  /* Every workspace has its own database, so moving between them is a
+     server-side change of the session, followed by a fresh page. */
+  async function switchTo(id: string) {
+    if (id === workspace?.id) { setOpen(false); return; }
+    setSwitching(true);
+    try {
+      const res = await fetch("/api/workspaces/switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't switch");
+      try { localStorage.removeItem("aw_project"); } catch { /* private mode */ }
+      window.location.assign(onAtomik ? "/atomik/ideas" : "/");
+    } catch (e) { setSwitching(false); await appAlert("Not switched", (e as Error).message); }
+  }
+  async function create() {
+    setOpen(false);
+    const name = await appPrompt("Name the new workspace", "", "A studio, a client, a project");
+    if (!name?.trim()) return;
+    const res = await fetch("/api/workspaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { await appAlert("Not created", json.error ?? `The server answered ${res.status}.`); return; }
+    await switchTo(json.workspace.id);
+  }
 
   useEffect(() => {
     try { sessionStorage.setItem(path.startsWith("/atomik") ? LAST_ATOMIK : LAST_PARTICL, path); } catch { /* private mode */ }
@@ -96,6 +122,25 @@ export default function BrandSwitch({ side }: { side: "particl" | "atomik" }) {
             <span className={`dot ${onAtomik ? "dot-picked" : "dot-none"}`} aria-hidden="true" />
           </button>
           <span className="brand-pop-note">Same productions, same cast, same ledger — two rooms.</span>
+          {signedIn && (
+            <>
+              <span className="brand-pop-h">Workspaces</span>
+              {workspaces.map((w) => (
+                <button key={w.id} type="button" role="menuitemradio" aria-checked={w.id === workspace?.id} disabled={switching}
+                  className={`brand-item !py-2 ${w.id === workspace?.id ? "is-on" : ""}`} onClick={() => switchTo(w.id)}>
+                  <span className="min-w-0 flex-1">
+                    <span className="brand-item-name !text-[13px]">{w.name}</span>
+                    <span className="brand-item-note">{w.role === "owner" ? "Owner" : w.role === "admin" ? "Admin" : "Member"}</span>
+                  </span>
+                  <span className={`dot ${w.id === workspace?.id ? "dot-picked" : "dot-none"}`} aria-hidden="true" />
+                </button>
+              ))}
+              {workspaces.length === 0 && <span className="brand-pop-note !border-0 !mt-0">You&rsquo;re not on a workspace yet.</span>}
+              <button type="button" role="menuitem" className="brand-item !py-2" onClick={create}>
+                <span className="min-w-0 flex-1"><span className="brand-item-name !text-[13px] text-dim">+ New workspace</span></span>
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

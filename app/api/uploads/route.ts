@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { identifyImage, validateVideo } from "@/lib/imagemeta";
 import { storeUpload } from "@/lib/storage";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { getProvider, DEFAULT_PROVIDER } from "@/lib/providers";
 import { assess, deriveForProvider } from "@/lib/derive";
 import { getSetting } from "@/lib/settings";
@@ -24,7 +24,7 @@ export const maxDuration = 60;
  * decide what resolution this studio is allowed to keep. The copy is never
  * shown in the library, downloaded, or exported; it exists only to be sent.
  */
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -121,4 +121,4 @@ export async function POST(req: Request) {
     // base64 inflates by 4/3 — images may inline as base64 in local dev.
     base64Bytes: meta.kind === "video" ? 0 : Math.ceil(buf.length / 3) * 4,
   });
-}
+});

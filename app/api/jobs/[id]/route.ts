@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getGeneration, syncGeneration } from "@/lib/jobs";
 import { db, ready } from "@/lib/db";
 import { deleteVideo } from "@/lib/storage";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 
@@ -10,16 +10,16 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: Request, { params }: Ctx) {
+export const GET = withTenant(async function GET(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await params;
   const gen = await getGeneration(id);
   if (!gen) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ generation: await syncGeneration(gen) });
-}
+});
 
-export async function PATCH(req: Request, { params }: Ctx) {
+export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -86,7 +86,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
-}
+});
 
 /**
  * "Delete" removes the video file and hides the clip, but the row survives
@@ -94,7 +94,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
  * Hard-deleting rows made "remaining credit" drift optimistic with every
  * library cleanup.
  */
-export async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -110,4 +110,4 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   await deleteVideo(id);
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ ok: true });
-}
+});

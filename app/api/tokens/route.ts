@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import {
-  currentUser, mintTokenSecret, tokenHash, type TokenScope,
-} from "@/lib/auth";
+  currentUser, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -15,7 +14,7 @@ export const dynamic = "force-dynamic";
  * make these while signed in, in Settings.
  */
 
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Sign in to manage tokens" }, { status: 401 });
   await ready();
@@ -45,9 +44,9 @@ export async function GET() {
       createdAt: Number(r.created_at),
     })),
   });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Sign in to create a token" }, { status: 401 });
   await ready();
@@ -70,4 +69,4 @@ export async function POST(req: Request) {
 
   // The only time the secret exists outside a hash. Shown once, never again.
   return NextResponse.json({ id: tid, name, scope, capUsd, token: secret });
-}
+});

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRender } from "@/lib/auth";
+import { requireRender, withTenant } from "@/lib/auth";
 import { startTraining } from "@/lib/identities";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * this in a loop. The paid route beside it (../render) already guards this
  * way; this one was the outlier, and it costs more per call.
  */
-export async function POST(_req: Request, { params }: Ctx) {
+export const POST = withTenant(async function POST(_req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
   const { id } = await params;
@@ -27,4 +27,4 @@ export async function POST(_req: Request, { params }: Ctx) {
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-}
+});

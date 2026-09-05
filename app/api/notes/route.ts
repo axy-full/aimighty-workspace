@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** Notes on one shot — review talk that belongs beside the clip rather than
  *  scrolling away in the workspace chat. */
-export async function GET(req: Request) {
+export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -26,9 +26,9 @@ export async function GET(req: Request) {
       userId: r.user_id, createdAt: Number(r.created_at),
     })),
   });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -42,4 +42,4 @@ export async function POST(req: Request) {
     args: [id("note"), genId, got.user.id, text, now()],
   });
   return NextResponse.json({ ok: true });
-}
+});

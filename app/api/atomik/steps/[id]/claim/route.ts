@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireRender } from "@/lib/auth";
+import { requireRender, withTenant } from "@/lib/auth";
 import { claimStep, getStep } from "@/lib/atomik";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * requireRender, not requireUser: what follows this call costs money, so a
  * read-only token must be refused here rather than at the vendor.
  */
-export async function POST(_req: NextRequest, ctx: Ctx) {
+export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
   const { id } = await ctx.params;
@@ -40,4 +40,4 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     },
     { status: 409 },
   );
-}
+});

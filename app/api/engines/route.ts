@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { MODELS } from "@/lib/models";
-import { requireUser } from "@/lib/auth";
+import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
 import { safetyThreshold } from "@/lib/gemini";
 import { invalidateSettings } from "@/lib/settings";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * a key is present — never a value — so the composer can grey out an engine
  * whose key is missing and Settings can say which variable to set.
  */
-export async function GET() {
+export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   // Settings are memoed per function for ten seconds; a person who has just
@@ -41,4 +41,4 @@ export async function GET() {
         .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
     })),
   });
-}
+});
