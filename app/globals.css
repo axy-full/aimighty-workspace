@@ -2347,3 +2347,17 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .srow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--color-hair); font: 400 13px/1 var(--font-display); color: var(--color-ink); }
 .srow .chip-dd select { max-width: 180px; }
 @media (max-width: 900px) { .st-grid { grid-template-columns: 1fr; } .st-index { position: static; flex-direction: row; flex-wrap: wrap; } .st-index-h { width: 100%; } }
+
+/* ── The logo is the switch ──────────────────────────────────────────── */
+.brand-switch { display: flex; align-items: center; gap: 7px; padding: 5px 7px 5px 6px; margin-left: -6px; border-radius: 7px; color: var(--color-ink); background: transparent; border: 0; transition: background .12s; }
+@media (hover: hover) { .brand-switch:hover { background: var(--color-fill-on); } }
+.brand-switch[aria-expanded="true"] { background: var(--color-fill-on); }
+.brand-caret { height: 12px; width: 9px; flex: none; color: var(--color-dim); }
+.brand-pop { position: absolute; top: calc(100% + 8px); left: 0; z-index: 70; width: 284px; padding: 5px; background: var(--color-panel); border: 1px solid var(--color-edge); border-radius: 9px; display: flex; flex-direction: column; gap: 2px; }
+.brand-item { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; padding: 9px 10px; border-radius: 6px; border: 0; background: transparent; color: var(--color-ink); transition: background .12s; }
+@media (hover: hover) { .brand-item:hover { background: var(--color-fill-on); } }
+.brand-item.is-on { background: rgba(245, 246, 248, .06); }
+.theme-light .brand-item.is-on { background: rgba(21, 23, 28, .05); }
+.brand-item-name { display: block; font: 600 13.5px/1.15 var(--font-display); }
+.brand-item-note { display: block; margin-top: 2px; font: 400 11.5px/1.3 var(--font-display); color: var(--color-dim); }
+.brand-pop-note { padding: 6px 10px 5px; border-top: 1px solid var(--color-hair); margin-top: 3px; font: 400 11px/1.4 var(--font-display); color: var(--color-dim); }

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import BrandSwitch from "./BrandSwitch";
 import { usePathname } from "next/navigation";
-import AtomikLockup from "@/components/AtomikMark";
 import { useProject } from "@/lib/projectContext";
 import { useSession, useSignInHref } from "@/lib/session";
 import { RequestAccessButton } from "@/components/RequestAccess";
@@ -41,9 +41,8 @@ export default function AtomikHeader() {
 
   return (
     <header className="hdr">
-      <Link href="/atomik/ideas" className="hdr-logo" aria-label="atomik — ideas">
-        <AtomikLockup size={17} />
-      </Link>
+      {/* The logo is the switch between the two rooms; IDEAS in the nav is home. */}
+      <BrandSwitch side="atomik" />
 
       <span className="hdr-rule" aria-hidden="true" />
 

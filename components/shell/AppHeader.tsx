@@ -7,6 +7,7 @@ import { useProject } from "@/lib/projectContext";
 import { useSession, useSignInHref } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
 import { RequestAccessButton } from "@/components/RequestAccess";
+import BrandSwitch from "./BrandSwitch";
 
 /**
  * The particl shell header, from the pipeline handoff.
@@ -59,13 +60,8 @@ export default function AppHeader() {
 
   return (
     <header className="hdr">
-      <Link href="/" className="hdr-logo" aria-label="particl — video">
-        {/* The header crop of the trail: viewBox 30 68 140 64 at 34×16. */}
-        <svg viewBox="30 68 140 64" width="34" height="16" fill="currentColor" aria-hidden="true">
-          <ParticlTrail />
-        </svg>
-        <span className="hdr-word">partıcl</span>
-      </Link>
+      {/* The logo is the switch between the two rooms; VIDEO in the nav is home. */}
+      <BrandSwitch side="particl" />
 
       <span className="hdr-rule" aria-hidden="true" />
 
@@ -103,17 +99,6 @@ export default function AppHeader() {
   );
 }
 
-/** The seven dots, shared with the mark so the header can crop them. */
-function ParticlTrail() {
-  return (
-    <>
-      <circle cx="38.7" cy="120.8" r="1.8" /><circle cx="50.9" cy="100.5" r="2.8" />
-      <circle cx="69.8" cy="86.3" r="4" /><circle cx="92.7" cy="80.1" r="5.5" />
-      <circle cx="116.2" cy="83" r="7.2" /><circle cx="136.9" cy="94.5" r="9.2" />
-      <circle cx="151.7" cy="112.9" r="12" />
-    </>
-  );
-}
 
 type Proj = { id: string; name: string; kind?: string | null; runtime?: string | null; spend?: number; capUsd?: number | null };
 
