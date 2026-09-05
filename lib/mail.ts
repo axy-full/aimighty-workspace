@@ -1,5 +1,5 @@
 /**
- * Outbound mail — one job, invitations — through Resend's HTTP API.
+ * Outbound mail — invitations and password resets — through Resend's HTTP API.
  *
  * Two environment variables and nothing else:
  *   RESEND_API_KEY  the key from resend.com
@@ -87,6 +87,35 @@ The link is yours alone and works until ${until}.
   <p style="margin:0 0 22px"><a href="${esc(opts.link)}" style="display:inline-block;background:#007aff;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:999px">Accept the invitation</a></p>
   <p style="font-size:13.5px;color:#666A72;margin:0 0 6px">${esc(roleLine)}</p>
   <p style="font-size:13.5px;color:#666A72;margin:0 0 18px">The link is yours alone and works until ${esc(until)}.</p>
+  <p style="font-size:12px;color:#8A8E96;margin:0;word-break:break-all">If the button doesn't work: ${esc(opts.link)}</p>
+</div>`;
+  return { subject, text, html };
+}
+
+/** The reset email: one link, one hour, and what to do if it wasn't you. */
+export function resetEmail(opts: { name: string; link: string; expiresAt: number; origin?: string }): { subject: string; text: string; html: string } {
+  const lockup = opts.origin ? `${opts.origin}/brand/particl-lockup-horizontal-on-light@4x.png` : null;
+  const until = new Date(opts.expiresAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+  const subject = "Reset your particl studio password";
+  const text =
+`Hi ${opts.name},
+
+Someone asked to reset the password for this particl studio account. If that was you, choose a new one here:
+${opts.link}
+
+The link works once, until ${until}. If it wasn't you, nothing has changed — you can ignore this email.
+
+— particl studio`;
+  const html =
+`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;color:#15171C;line-height:1.5;background:#FCFCFD">
+  ${lockup
+    ? `<img src="${esc(lockup)}" width="164" height="64" alt="particl studio" style="display:block;width:164px;height:auto;margin:0 0 22px">`
+    : `<p style="font-size:15px;font-weight:600;margin:0 0 20px;letter-spacing:-0.02em">particl studio</p>`}
+  <p style="font-size:17px;margin:0 0 12px">Hi ${esc(opts.name)},</p>
+  <p style="font-size:15px;color:#666A72;margin:0 0 20px">Someone asked to reset the password for this particl studio account. If that was you, choose a new one:</p>
+  <p style="margin:0 0 22px"><a href="${esc(opts.link)}" style="display:inline-block;background:#15171C;color:#F5F6F8;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:8px">Choose a new password</a></p>
+  <p style="font-size:13.5px;color:#666A72;margin:0 0 6px">The link works once, until ${esc(until)}.</p>
+  <p style="font-size:13.5px;color:#666A72;margin:0 0 18px">If it wasn't you, nothing has changed — you can ignore this email.</p>
   <p style="font-size:12px;color:#8A8E96;margin:0;word-break:break-all">If the button doesn't work: ${esc(opts.link)}</p>
 </div>`;
   return { subject, text, html };

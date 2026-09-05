@@ -113,7 +113,7 @@ function SignInForm({ next }: { next: string }) {
       <button type="submit" disabled={busy} className="btn-primary !h-[46px] justify-center !text-[14px]">{busy ? "…" : "Sign in"}</button>
       {err && <p className="rail-help text-lift">{err}</p>}
       <div className="wl-form-foot">
-        <span>Invitation only. <RequestAccessButton className="text-lead hover:text-ink" /></span>
+        <span>Invitation only. <RequestAccessButton className="text-lead hover:text-ink" /> · <Link href="/reset" className="text-lead hover:text-ink">Forgot password?</Link></span>
         <Link href="/" className="hdr-mono-link">LOOK AROUND →</Link>
       </div>
     </form>

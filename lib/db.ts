@@ -401,6 +401,18 @@ const SCHEMA = [
      updated_at   INTEGER NOT NULL,
      PRIMARY KEY (ip_hash, email)
    )`,
+  /* Password resets: a random token goes out by email, its hash stays
+     here. Single use, one hour, and the row remembers where the request
+     came from so a flood from one place can be refused. */
+  `CREATE TABLE IF NOT EXISTS password_resets (
+     token_hash  TEXT PRIMARY KEY,
+     user_id     TEXT NOT NULL,
+     ip_hash     TEXT NOT NULL DEFAULT '',
+     created_at  INTEGER NOT NULL,
+     expires_at  INTEGER NOT NULL,
+     used_at     INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_login_attempts_seen ON login_attempts(updated_at)`,
 ];
 
