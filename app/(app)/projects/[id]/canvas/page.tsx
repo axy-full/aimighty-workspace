@@ -75,7 +75,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
       const secs = Number((hero?.params as { duration?: number } | undefined)?.duration
         ?? (takes[0]?.params as { duration?: number } | undefined)?.duration ?? DEFAULT_SECS) || DEFAULT_SECS;
       const refs = mine.filter((g) => g.kind === "image" && g.status === "succeeded" && roleOf(g) !== "loose");
-      const cast = [...new Set(mine.flatMap((g) => ((g.params as { cast?: string[] }).cast ?? [])))];
+      const cast = [...new Set([...(shot.cast ?? []), ...mine.flatMap((g) => ((g.params as { cast?: string[] }).cast ?? []))])];
       return { shot, takes, hero, state, secs, refs, cast, spend: mine.reduce((a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0) };
     });
   }, [shotData, jobs]);
@@ -183,7 +183,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                       return (
                         <button key={c.shot.id} type="button" onClick={() => setSel(c.shot.id)}
                           className={`cv-tile ${c.state === "empty" ? "is-empty" : ""} ${c.state === "approved" ? "is-approved" : ""} ${on ? "is-on" : ""}`}
-                          title={c.shot.title || c.shot.code}>
+                          title={c.shot.title || c.shot.description || c.shot.code}>
                           <span className="cv-tile-well">
                             {url && c.hero ? <LazyMedia url={url} kind="video" alt="" className="media" /> : null}
                             {!url && (c.state === "empty" ? "no take" : c.hero ? `v${c.hero.version ?? 1}` : "rendering")}
@@ -222,7 +222,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
         <aside className="cv-rail">
           <div className="cv-rail-head">
             <span className="mono-v text-dim">{cur?.shot.code ?? "—"}</span>
-            <span className="cv-rail-title">{cur ? (cur.shot.title || "Untitled shot") : "No shot selected"}</span>
+            <span className="cv-rail-title">{cur ? (cur.shot.title || cur.shot.description || "Untitled shot") : "No shot selected"}</span>
           </div>
           <div className="ws-rail-body">
             <div className="cv-preview">

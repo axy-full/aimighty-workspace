@@ -45,7 +45,7 @@ export function aspectOf(g: Gen): string {
   return m ? `${m[1]} / ${m[2]}` : "16 / 9";
 }
 
-type Shot = { id: string; code: string; scene: string; title: string; takes: number; spend: number };
+type Shot = { id: string; code: string; scene: string; title: string; description?: string; takes: number; spend: number };
 
 export function stateOf(g: Gen): "rendering" | "approved" | "picked" | "draft" | "failed" {
   if (g.status === "queued" || g.status === "running") return "rendering";
@@ -145,7 +145,7 @@ export default function Feed({
         const shot = shots.find((s) => s.code === code);
         const takes = list.slice().sort((a, b) => (a.version ?? 0) - (b.version ?? 0));
         return {
-          key: code, code, title: shot?.title ?? "", shotId: shot?.id ?? null, takes,
+          key: code, code, title: shot?.title || shot?.description?.slice(0, 80) || "", shotId: shot?.id ?? null, takes,
           meta: `${list.length} ${stills ? "still" : "take"}${list.length === 1 ? "" : "s"} · ${usd(spendOf(list), 2)}`,
         };
       });

@@ -198,7 +198,7 @@ export default function AudioPage() {
     const groups: Group[] = [...byShot.entries()]
       .sort((a, b) => (order.get(a[0]) ?? 1e9) - (order.get(b[0]) ?? 1e9) || a[0].localeCompare(b[0]))
       .map(([code, list]) => ({
-        key: code, code, title: shots.find((s) => s.code === code)?.title ?? "",
+        key: code, code, title: (() => { const sh = shots.find((s) => s.code === code); return sh?.title || sh?.description?.slice(0, 80) || ""; })(),
         tracks: list.slice().sort((a, b) => a.createdAt - b.createdAt), meta: meta(list),
       }));
     if (loose.length) {

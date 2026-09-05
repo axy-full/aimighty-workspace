@@ -30,6 +30,7 @@ type Row = {
   genCount: number; spend: number; capUsd: number | null; kind: string | null; runtimeTarget: number | null;
   stage: string | null; live: number; shots: number; approvedShots: number; pickedShots: number;
   team: string[]; last: { at: number; who: string | null; what: string } | null;
+  fromAtomik?: boolean; syncedAt?: number | null; unsent?: number;
 };
 type Stage = "Rendering" | "In review" | "Delivered" | "Brief only";
 
@@ -152,7 +153,7 @@ export default function ProjectsPage() {
                     </span>
                     <span className="ptable-last">
                       <span>{p.last ? `${timeAgo(p.last.at)} · ${p.last.who ? `${initials(p.last.who)} ` : ""}${p.last.what}` : `${day(p.createdAt)} · created`}</span>
-                      <span className="mono-s">{p.code ? `${p.code.toUpperCase()} · ` : ""}MADE IN PARTICL</span>
+                      <span className="mono-s">{p.code ? `${p.code.toUpperCase()} · ` : ""}{p.fromAtomik ? `FROM ATOMIK · ${p.unsent ? "EDITS NOT SENT" : p.syncedAt ? "SYNCED" : "NOT SENT YET"}` : "MADE IN PARTICL"}</span>
                     </span>
                   </Link>
                 );

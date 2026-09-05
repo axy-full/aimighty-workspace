@@ -37,7 +37,10 @@ export async function GET() {
              WHERE x.deleted = 0 AND x.review_state = 'picked'
                AND x.shot_id IN (SELECT s.id FROM shots s WHERE s.project_id = p.id)) AS picked_shots,
            (SELECT GROUP_CONCAT(DISTINCT u.name) FROM generations x JOIN users u ON u.id = x.created_by
-             WHERE x.project_id = p.id) AS team
+             WHERE x.project_id = p.id) AS team,
+           (SELECT COUNT(*) FROM treatments t WHERE t.project_id = p.id) AS from_atomik,
+           (SELECT MAX(s.synced_at) FROM shots s WHERE s.project_id = p.id) AS synced_at,
+           (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.id AND s.dirty = 1) AS unsent
     FROM projects p
     LEFT JOIN (
       SELECT project_id,
@@ -91,6 +94,10 @@ export async function GET() {
       pickedShots: Number(r.picked_shots ?? 0),
       team: r.team ? String(r.team).split(",").map((n: string) => n.trim()).filter(Boolean) : [],
       last: lastBy.get(String(r.id)) ?? null,
+      /* Born in Atomik (it has a treatment), and whether the shot list has been sent across since its last edit. */
+      fromAtomik: Number(r.from_atomik ?? 0) > 0,
+      syncedAt: r.synced_at == null ? null : Number(r.synced_at),
+      unsent: Number(r.unsent ?? 0),
     })),
   };
   putCache(PROJECTS_KEY, body);
