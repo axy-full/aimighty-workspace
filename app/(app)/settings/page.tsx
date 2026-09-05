@@ -55,6 +55,7 @@ const SECTIONS = [
   ["atomik", "Atomik connection"], ["defaults", "Defaults & caps"], ["account", "Account"],
 ] as const;
 const CAN: Record<string, string> = {
+  owner: "owns the workspace — cannot be demoted, disabled or removed · everything an admin can",
   admin: "seats · keys · model routing · Atomik connection · everything a member can",
   member: "render · train identities · pick and approve takes · file against shots · order the canvas · download masters",
 };
@@ -147,7 +148,7 @@ export default function SettingsPage() {
           {/* ── Team & roles ── */}
           <section id="team" className="scard">
             <div className="flex items-baseline justify-between gap-4">
-              <div className="scard-h"><span>Team &amp; roles</span><span>{team ? `${team.users.filter((u) => !u.disabled).length} seat${team.users.length === 1 ? "" : "s"}. ` : ""}Roles decide who can set keys and seats; everyone on the team renders, picks and approves.</span></div>
+              <div className="scard-h"><span>Team &amp; roles</span><span>{team ? `${team.users.filter((u) => !u.disabled).length} seat${team.users.length === 1 ? "" : "s"}. ` : ""}One owner, who can&rsquo;t be removed; everyone else is an admin or a member. Everyone on the team renders, picks and approves.</span></div>
               <Link href="/team" className="btn-secondary">Invite</Link>
             </div>
             {!signedIn ? <Empty compact title="The team is for the team" line="Sign in to see who is here." /> : (
@@ -156,8 +157,8 @@ export default function SettingsPage() {
                 {(team?.users ?? []).map((u) => (
                   <div key={u.id} className={`steam ${u.disabled ? "opacity-50" : ""}`}>
                     <span className="flex items-center gap-2.5"><span className="ptable-av !ml-0">{initials(u.name)}</span><span className="flex flex-col gap-0.5"><span className="font-medium">{u.name}</span><span className="text-[11.5px] text-dim">{u.email}</span></span></span>
-                    <span className="chip-dd !w-[130px] justify-between !py-1.5" title={team?.canSeeRoles ? "Change on the Team page" : "Roles are the owner's to see"}>{u.role ? u.role[0].toUpperCase() + u.role.slice(1) : "Team member"} <span className="hdr-caret" aria-hidden="true">▼</span></span>
-                    <span className="text-lead">{CAN[u.role ?? "member"] ?? CAN.member}</span>
+                    <span className="chip-dd !w-[130px] justify-between !py-1.5" title={team?.canSeeRoles ? "Change on the Team page" : "Roles are the owner's to see"}>{u.permanent ? "Owner" : u.role ? u.role[0].toUpperCase() + u.role.slice(1) : "Team member"} <span className="hdr-caret" aria-hidden="true">▼</span></span>
+                    <span className="text-lead">{u.permanent ? CAN.owner : CAN[u.role ?? "member"] ?? CAN.member}</span>
                     <span className="mono-s text-right">{u.lastSeen ? timeAgo(u.lastSeen).toUpperCase() : "—"}</span>
                   </div>
                 ))}
