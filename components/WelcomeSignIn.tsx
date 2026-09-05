@@ -43,6 +43,7 @@ export default function WelcomeSignIn() {
           <p className="wl-tag">The studio&rsquo;s own room for making shots — and for knowing what they cost.</p>
         </div>
 
+        <span className="wl-rooms" aria-hidden="true">THE FOUR ROOMS</span>
         <div className="wl-grid">
           {ROOMS.map((r) => (
             <Link key={r.name} href={r.href} className="wl-cell">
