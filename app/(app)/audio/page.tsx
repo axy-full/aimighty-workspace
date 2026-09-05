@@ -9,6 +9,7 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useApi } from "@/lib/useApi";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
+import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
 import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -43,6 +44,7 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).
 
 export default function AudioPage() {
   usePageTitle("Audio");
+  const { signedIn } = useSession();
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const { data: setup, error: setupError, refresh: refreshSetup } = useApi<Setup>("/api/audio", 0);
@@ -56,11 +58,14 @@ export default function AudioPage() {
   // Picked up on mount, never in the initializer: the server has no
   // localStorage and seeding at first render would hydrate wrong.
   useEffect(() => {
-    const draft = loadDraft("audio");
+    const draft = loadDraft("audio", signedIn);
     // Off the effect body, the way Workspace does it: every setState here
     // sits behind an await, so nothing is set synchronously during the effect.
     if (draft) Promise.resolve().then(() => setText(draft));
-  }, []);
+    /* signedIn belongs here for the same reason it does in Workspace:
+       loadDraft returns nothing without a session, so signing in has to
+       re-run this. */
+  }, [signedIn]);
   const [voiceChoice, setVoiceId] = useState("");
   const [voiceQuery, setVoiceQuery] = useState("");
   const [modelChoice, setModelId] = useState("");

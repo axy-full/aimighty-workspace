@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useProject } from "@/lib/projectContext";
-import { useSession, signInHref, INVITE_CONTACT } from "@/lib/session";
+import { useSession, signInHref } from "@/lib/session";
+import { RequestAccessButton } from "@/components/RequestAccess";
 import { announceChange } from "@/lib/changes";
 import { usd } from "@/lib/format";
 import Boundary from "@/components/Boundary";
@@ -311,8 +312,8 @@ export default function AtomikPage() {
               <p className="atomik-sub !text-[13px]">
                 <a href={signInHref()} className="text-ink underline underline-offset-4">Sign in</a>
                 {" or "}
-                <a href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}
-                  className="text-ink underline underline-offset-4">ask for an invite</a>
+                <RequestAccessButton className="text-ink underline underline-offset-4"
+                  label="contact management" />
                 {" to use it."}
               </p>
             )}

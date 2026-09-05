@@ -23,8 +23,21 @@ export const maxDuration = 300;
  * same class of information as /api/health.
  */
 export async function GET(req: Request) {
+  /* Fail CLOSED in production.
+   *
+   * This used to read `if (secret && ...)`, which is a guard that disarms
+   * itself: with CRON_SECRET unset — which is how the deployment actually
+   * ran — the condition was never true and the route answered anybody. It
+   * reports live render counts and starts reconciliation work, so once the
+   * app went public that was a stranger's button.
+   *
+   * Locally the secret is not expected and the route stays open, which is
+   * what makes it testable without one. */
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.get("authorization") !== `Bearer ${secret}`) {
+  const authorised = secret
+    ? req.headers.get("authorization") === `Bearer ${secret}`
+    : process.env.NODE_ENV !== "production";
+  if (!authorised) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

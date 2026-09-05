@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
+import { currentUser } from "@/lib/auth";
 import { allSettings } from "@/lib/settings";
 import { db, ready } from "@/lib/db";
 import { presignedReadUrl } from "@/lib/storage";
@@ -17,7 +18,22 @@ export const maxDuration = 30;
  * failures: presence of a credential proves nothing about its validity.
  */
 export async function GET(req: Request) {
-  const deep = new URL(req.url).searchParams.get("deep") === "1";
+  /* Two answers from one route, because it has two audiences.
+   *
+   * An uptime monitor needs to know the app is alive and can reach its
+   * database and its storage, and needs no credential to ask. Everything
+   * else here is a fingerprint of the deployment — how many renders the
+   * studio has, which vendor keys it holds, which door stills go through,
+   * the address invitations are sent from, the commit it is running, and
+   * the cron's last heartbeat. That was fine while nobody could find the
+   * app; it is a briefing note now the front door is open.
+   *
+   * `deep` is stricter still: it WRITES to Vercel Blob, presigns, ranges
+   * and deletes on every call, so anonymously it was an unauthenticated
+   * lever on the studio's storage account. */
+  const got = await currentUser();
+  const full = Boolean(got);
+  const deep = full && new URL(req.url).searchParams.get("deep") === "1";
   let database = "unreachable";
   let videosSaved = 0;
   let videosAtRisk = 0; // succeeded renders whose file never landed in our storage
@@ -76,6 +92,16 @@ export async function GET(req: Request) {
     } catch (e) {
       presignRange = `ERROR ${(e as Error).message.slice(0, 160)}`;
     }
+  }
+
+  /* What anyone may know: is it up, and can it reach its two dependencies.
+     A monitor needs exactly this and nothing more. */
+  if (!full) {
+    return NextResponse.json({
+      ok: database !== "unreachable" && storage !== "blob-BROKEN",
+      database: database === "unreachable" ? "unreachable" : "ok",
+      storage: storage === "blob-BROKEN" ? "broken" : "ok",
+    });
   }
 
   return NextResponse.json({

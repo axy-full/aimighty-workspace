@@ -21,6 +21,11 @@ type Member = {
   /** The workspace's permanent admin: cannot be demoted, disabled or removed. */
   permanent?: boolean;
 };
+type AccessRequest = {
+  id: string; name: string; email: string; note: string;
+  mailed: boolean; createdAt: number;
+};
+
 type Invite = {
   code: string; email: string; name: string; role?: string;
   createdAt: number; expiresAt: number;
@@ -30,7 +35,10 @@ type Mail = { configured: boolean; from: string | null };
 
 export default function TeamPage() {
   usePageTitle("Team");
-  const { data, refresh } = useApi<{ users: Member[]; invites: Invite[]; mail?: Mail; canSeeRoles?: boolean }>("/api/team", 30000);
+  const { data, refresh } = useApi<{
+    users: Member[]; invites: Invite[]; mail?: Mail; canSeeRoles?: boolean;
+    requests?: AccessRequest[];
+  }>("/api/team", 30000);
   const [notice, setNotice] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const { data: me } = useApi<{ id?: string; email: string }>("/api/me");
@@ -124,6 +132,7 @@ export default function TeamPage() {
   /** True only for the workspace owner. Everyone else is shown no standing. */
   const canSeeRoles = Boolean(data?.canSeeRoles);
   const invites = data?.invites ?? [];
+  const requests = data?.requests ?? [];
   const active = users.filter((u) => !u.disabled).length;
   const mail = data?.mail?.configured ?? false;
 
@@ -143,6 +152,47 @@ export default function TeamPage() {
             Export data
           </a>
         </div>
+
+        {/* Strangers who have asked to be let in. The interface is public
+            now, so this is the queue that public-ness produces — and it is
+            read from the database rather than from an inbox, so a request
+            survives the email failing. */}
+        {requests.length > 0 && (
+          <>
+            <p className="grouplabel mt-10">
+              Asked for an invitation
+              <span className="ml-2 text-mute">{requests.length}</span>
+            </p>
+            <div className="rows">
+              {requests.map((r) => (
+                <div key={r.id} className="row !items-start">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium">{r.name || r.email}</span>
+                    {r.name && <span className="truncate text-[12.5px] text-mute">{r.email}</span>}
+                    {r.note && (
+                      <span className="mt-0.5 max-w-[52ch] text-[12.5px] leading-relaxed text-dim">
+                        {r.note}
+                      </span>
+                    )}
+                    {!r.mailed && (
+                      <span className="mt-0.5 text-[11.5px] text-mute">
+                        Not emailed — mail isn&rsquo;t set up, so this page is the only copy.
+                      </span>
+                    )}
+                  </span>
+                  <span className="row-value flex shrink-0 items-center gap-2">
+                    <span className="text-[12px] text-mute">{timeAgo(r.createdAt)}</span>
+                    <button type="button" className="chip !py-1.5 !text-[13px]"
+                      onClick={() => setForm({ name: r.name, email: r.email, role: "member" })}
+                      title="Fill the invite form with these details">
+                      Invite
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <p className="grouplabel mt-10">Invite someone</p>
         <div className="card p-4">

@@ -316,21 +316,58 @@ export async function createFirstAdmin(
  * An expired lock resets the count first, so one typo after a lockout
  * doesn't instantly re-lock.
  */
-export async function noteFailure(userId: string): Promise<void> {
-  const ts = now();
-  await db().execute({
-    sql: `UPDATE users SET failed_count=0, locked_until=NULL
-          WHERE id=? AND locked_until IS NOT NULL AND locked_until <= ?`,
-    args: [userId, ts],
-  });
+export async function noteFailure(userId: string, source: string, email: string): Promise<void> {
+  /* The account keeps a tally an admin can see, and no longer a lock. A
+     lock here is a lock on the PERSON, and the person is not the one
+     guessing — see the login_attempts table for where the lock went. */
   await db().execute({
     sql: `UPDATE users SET failed_count = failed_count + 1 WHERE id=?`,
     args: [userId],
   });
+  await noteSourceFailure(source, email);
+}
+
+/**
+ * Count a wrong guess against where it came from.
+ *
+ * Also called when the address does not exist at all, so that probing for
+ * valid emails is throttled at the same rate as guessing passwords for a
+ * real one — otherwise the lockout itself becomes an oracle for which
+ * addresses are worth attacking.
+ */
+export async function noteSourceFailure(source: string, email: string): Promise<void> {
+  const ts = now();
+  const key = email.trim().toLowerCase();
   await db().execute({
-    sql: `UPDATE users SET locked_until=? WHERE id=? AND failed_count >= ? AND locked_until IS NULL`,
-    args: [ts + LOCK_MINUTES * 60_000, userId, MAX_FAILED],
+    sql: `INSERT INTO login_attempts (ip_hash, email, count, locked_until, updated_at)
+          VALUES (?,?,1,NULL,?)
+          ON CONFLICT(ip_hash, email) DO UPDATE SET
+            /* An expired lock resets the count first, so one typo after a
+               lockout does not instantly re-lock. */
+            count = CASE WHEN login_attempts.locked_until IS NOT NULL
+                          AND login_attempts.locked_until <= excluded.updated_at
+                         THEN 1 ELSE login_attempts.count + 1 END,
+            locked_until = CASE WHEN login_attempts.locked_until IS NOT NULL
+                                 AND login_attempts.locked_until <= excluded.updated_at
+                                THEN NULL ELSE login_attempts.locked_until END,
+            updated_at = excluded.updated_at`,
+    args: [source, key, ts],
   });
+  await db().execute({
+    sql: `UPDATE login_attempts SET locked_until=?
+          WHERE ip_hash=? AND email=? AND count >= ? AND locked_until IS NULL`,
+    args: [ts + LOCK_MINUTES * 60_000, source, key, MAX_FAILED],
+  });
+}
+
+/** Whether this source is currently locked out of this address. */
+export async function sourceLocked(source: string, email: string): Promise<boolean> {
+  const rs = await db().execute({
+    sql: `SELECT locked_until FROM login_attempts WHERE ip_hash=? AND email=?`,
+    args: [source, email.trim().toLowerCase()],
+  });
+  const until = (rs.rows[0] as Record<string, unknown> | undefined)?.locked_until;
+  return until != null && Number(until) > now();
 }
 
 /**
@@ -340,11 +377,30 @@ export async function noteFailure(userId: string): Promise<void> {
  */
 export const DUMMY_HASH = hashPassword("dummy-timing-equalizer");
 
-export async function clearFailures(userId: string): Promise<void> {
+export async function clearFailures(userId: string, source?: string, email?: string): Promise<void> {
   await db().execute({
     sql: `UPDATE users SET failed_count=0, locked_until=NULL WHERE id=?`,
     args: [userId],
   });
+  if (source && email) {
+    await db().execute({
+      sql: `DELETE FROM login_attempts WHERE ip_hash=? AND email=?`,
+      args: [source, email.trim().toLowerCase()],
+    });
+  }
+}
+
+/**
+ * A one-way, salted label for where a request came from.
+ *
+ * Enough to count against, never enough to identify anyone — and never
+ * stored raw, because this table exists only to slow an attacker down.
+ */
+export function sourceKey(req: { headers: Headers }): string {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim()
+    ?? req.headers.get("x-real-ip") ?? "";
+  const salt = process.env.SESSION_SECRET ?? process.env.TURSO_AUTH_TOKEN ?? "particl";
+  return createHash("sha256").update(`${salt}:login:${ip}`).digest("hex").slice(0, 32);
 }
 
 export const LOCK_MESSAGE = `Too many attempts. Try again in ${LOCK_MINUTES} minutes.`;

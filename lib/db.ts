@@ -326,6 +326,49 @@ const SCHEMA = [
      updated_at   INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_atomik_steps_chat ON atomik_steps(chat_id, created_at)`,
+
+  /* ── Asking to be let in ──────────────────────────────────────────────
+     The interface is public and the tool is invitation-only, so strangers
+     need somewhere to ask. This is that somewhere, and it exists as a table
+     rather than a mailto for one reason: the address it reaches must never
+     be in the page. It also means a request survives the mail failing —
+     the admin can read them here either way.
+
+     ip_hash is salted and one-way. It is here to rate-limit an
+     unauthenticated endpoint that sends email, which is a spam relay
+     otherwise, and for nothing else. */
+  `CREATE TABLE IF NOT EXISTS access_requests (
+     id         TEXT PRIMARY KEY,
+     name       TEXT NOT NULL DEFAULT '',
+     email      TEXT NOT NULL,
+     note       TEXT NOT NULL DEFAULT '',
+     ip_hash    TEXT NOT NULL DEFAULT '',
+     mailed     INTEGER NOT NULL DEFAULT 0,
+     handled_at INTEGER,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_access_created ON access_requests(created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_access_ip ON access_requests(ip_hash, created_at)`,
+
+  /* ── Failed sign-ins, counted against the SOURCE ──────────────────────
+     Lockout used to live on the user row, which is the standard shape and
+     a denial-of-service the moment the login page is public: five wrong
+     guesses at a known address lock its owner out, and repeating that every
+     fifteen minutes locks them out for good. The attacker needs no account
+     and no password — only the email, which is not a secret.
+
+     So the counter hangs on (source, address) instead. An attacker locks
+     only themselves out of the one account they are guessing at; the real
+     owner, arriving from their own machine, is untouched. */
+  `CREATE TABLE IF NOT EXISTS login_attempts (
+     ip_hash      TEXT NOT NULL,
+     email        TEXT NOT NULL,
+     count        INTEGER NOT NULL DEFAULT 0,
+     locked_until INTEGER,
+     updated_at   INTEGER NOT NULL,
+     PRIMARY KEY (ip_hash, email)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_login_attempts_seen ON login_attempts(updated_at)`,
 ];
 
 /**

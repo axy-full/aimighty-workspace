@@ -86,5 +86,9 @@ export function signInHref(): string {
   return here && here !== "/" ? `/login?next=${encodeURIComponent(here)}` : "/login";
 }
 
-/** The address that hands out invitations. One place, so it cannot drift. */
-export const INVITE_CONTACT = "axy@akshaypanchal.com";
+/* There is deliberately no contact address in this file, or in any other
+   file that reaches a browser. Asking for an invitation goes through
+   /api/access-request, which reads the administrator's address on the
+   server and sets reply-to to whoever asked. A mailto: link would have put
+   that address in the page source of every visitor — which is exactly what
+   a public interface must not do with a private inbox. */

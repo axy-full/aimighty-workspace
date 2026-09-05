@@ -15,7 +15,7 @@ export async function GET() {
   await ready();
   const canSeeRoles = isSuperAdmin(got.user.email);
 
-  const [users, invites] = await Promise.all([
+  const [users, invites, requests] = await Promise.all([
     db().execute(`
       SELECT u.id, u.email, u.name, u.role, u.disabled, u.last_seen, u.created_at, u.locked_until,
              (SELECT COUNT(*) FROM generations g WHERE g.created_by = u.id) AS clips,
@@ -27,10 +27,23 @@ export async function GET() {
             WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at DESC`,
       args: [now()],
     }),
+    /* People who have asked to be let in and not been answered.
+       They are stored as well as emailed precisely so that a send failing
+       does not lose somebody's ask — which only helps if somewhere shows
+       them, and this is that somewhere. */
+    db().execute({
+      sql: `SELECT id, name, email, note, mailed, created_at FROM access_requests
+            WHERE handled_at IS NULL ORDER BY created_at DESC LIMIT 50`,
+    }),
   ]);
 
   return NextResponse.json({
     mail: { configured: mailConfigured(), from: mailFrom() },
+    requests: requests.rows.map((r) => ({
+      id: String(r.id), name: String(r.name ?? ""), email: String(r.email),
+      note: String(r.note ?? ""), mailed: Boolean(Number(r.mailed)),
+      createdAt: Number(r.created_at),
+    })),
     /* Standing in the workspace is between a person and the owner. Everyone
        else on the roster — members and admins alike — sees who is here and
        what they have made, and not who outranks whom. Withheld on the SERVER

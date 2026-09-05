@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useApi } from "@/lib/useApi";
+import { useSession } from "@/lib/session";
 import { timeAgo } from "@/lib/format";
 import { uploadFile } from "@/lib/uploadClient";
 import { IconClose, IconPlus } from "./Icons";
@@ -37,7 +38,23 @@ function readOpen() {
   try { return localStorage.getItem(OPEN_KEY) === "1"; } catch { return false; }
 }
 
+/**
+ * The dock is the team's own room — a place to talk to colleagues about
+ * work a visitor cannot see. Shown to one it was an empty channel with a
+ * working-looking composer and copy written for members, which is worse
+ * than not being there: it invites a stranger to say something into a room
+ * that will refuse it.
+ *
+ * Gated by a wrapper rather than an early return inside, because the
+ * component below opens with four hooks and a conditional return above
+ * them is the rules-of-hooks violation this file would otherwise carry.
+ */
 export default function ChatDock() {
+  const { signedIn } = useSession();
+  return signedIn ? <ChatDockForMembers /> : null;
+}
+
+function ChatDockForMembers() {
   const open = useSyncExternalStore(subscribeOpen, readOpen, () => false);
   function toggle(next: boolean) {
     try { localStorage.setItem(OPEN_KEY, next ? "1" : "0"); } catch { /* fine */ }

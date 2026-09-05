@@ -4,16 +4,24 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
-import { INVITE_CONTACT } from "@/lib/session";
+import { RequestAccessButton } from "@/components/RequestAccess";
 
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  /* Come back to the screen they were looking at. Same-origin paths only:
-     `next` arrives from the URL, so an absolute one would make this an open
-     redirect that any link could point anywhere. */
-  const raw = params.get("next") ?? "/";
-  const next = raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+  /* Come back to the screen they were looking at.
+   *
+   * `next` arrives from the URL, so it is attacker-controlled and this is
+   * an open redirect unless the check is airtight. The obvious check —
+   * starts with "/" and not "//" — is not: browsers normalise a backslash
+   * to a slash, so `/\\evil.com` survives it and then navigates
+   * off-site, and a tab or newline after the slash does the same because
+   * the URL parser strips them before resolving.
+   *
+   * So the test is not a string shape but a resolution: parse it against
+   * this origin and keep it only if it stayed here. Anything that resolves
+   * elsewhere, or fails to parse at all, falls back to the root. */
+  const next = safeNext(params.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,10 +65,8 @@ function LoginForm() {
           somewhere to ask, "sign in" is a door with no handle. */}
       <p className="mt-4 text-[13px] leading-relaxed text-mute">
         No account?{" "}
-        <a className="text-blue" href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}>
-          Ask {INVITE_CONTACT} for an invite
-        </a>
-        .
+        <RequestAccessButton className="text-blue" />
+        {" for an invitation."}
       </p>
       <p className="mt-2 text-[13px] text-mute">
         <Link href="/welcome" className="text-blue">What is Particl?</Link>
@@ -81,4 +87,21 @@ export default function LoginPage() {
       <LoginForm />
     </Suspense>
   );
+}
+
+/** A `next` that provably resolves to this origin, or "/". */
+function safeNext(raw: string | null): string {
+  if (!raw) return "/";
+  // Control characters are stripped by the URL parser before it resolves,
+  // so they must be rejected here rather than parsed around.
+  if (/[\u0000-\u001F\u007F]/.test(raw)) return "/";
+  if (typeof window === "undefined") return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+  try {
+    const here = window.location.origin;
+    const u = new URL(raw, here);
+    if (u.origin !== here) return "/";
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return "/";
+  }
 }

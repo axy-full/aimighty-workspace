@@ -22,7 +22,22 @@ const KEY = (surface: string) => `aw_draft:${surface}`;
 /** Long enough to be a draft, short enough not to bloat localStorage. */
 const MAX = 8000;
 
-export function loadDraft(surface: string): string {
+/**
+ * Read a draft back — but never for somebody who is not signed in.
+ *
+ * The sign-out wipe clears these, and it is not enough on its own: it runs
+ * in an effect, and a composer reads its draft while mounting, so on the
+ * first paint after a sign-out the previous person's unsent prompt was
+ * restored into the box before the wipe caught up. Refusing at the READ
+ * closes that window whatever order things run in.
+ *
+ * `signedIn` is passed in rather than sniffed here: the session cookie is
+ * httpOnly, so document.cookie cannot see it and any check based on it
+ * would silently return "" for everyone. The caller is inside the session
+ * provider and simply knows.
+ */
+export function loadDraft(surface: string, signedIn: boolean): string {
+  if (!signedIn) return "";
   try {
     return (localStorage.getItem(KEY(surface)) ?? "").slice(0, MAX);
   } catch {

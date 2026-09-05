@@ -12,7 +12,7 @@
  * blue — rather than stock illustration.
  */
 import Link from "next/link";
-import { INVITE_CONTACT } from "@/lib/session";
+import { RequestAccessButton } from "@/components/RequestAccess";
 import ParticlIntro from "@/components/ParticlIntro";
 import { ParticlMark, ParticlStacked } from "@/components/ParticlMark";
 
@@ -58,10 +58,7 @@ export default function WelcomePage() {
               className="rounded-full bg-blue px-7 py-3 text-[16px] font-medium text-on-ink transition-opacity hover:opacity-90">
               Look around
             </Link>
-            <a href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}
-              className="chip !px-5 !py-2.5 !text-[15px]">
-              Ask for an invite
-            </a>
+            <RequestAccessButton className="chip !px-5 !py-2.5 !text-[15px]" />
             <Link href="/login" className="text-[14px] text-dim underline underline-offset-4 hover:text-ink">
               Sign in
             </Link>

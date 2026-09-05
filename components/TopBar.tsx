@@ -3,7 +3,8 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
-import { useSession, signInHref, INVITE_CONTACT } from "@/lib/session";
+import { useSession, signInHref } from "@/lib/session";
+import { RequestAccessButton } from "./RequestAccess";
 import ModeSwitch from "./ModeSwitch";
 
 type Usage = { pending: number };
@@ -58,10 +59,8 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
             already been let through it. */}
         {!signedIn && (
           <>
-            <a href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}
-              className="hidden text-[13px] text-dim transition-colors hover:text-ink min-[560px]:block">
-              Ask for an invite
-            </a>
+            <RequestAccessButton
+              className="hidden text-[13px] text-dim transition-colors hover:text-ink min-[560px]:block" />
             <a href={signInHref()} className="btn-render !px-4 !py-1.5 !text-[13.5px]">Sign in</a>
           </>
         )}

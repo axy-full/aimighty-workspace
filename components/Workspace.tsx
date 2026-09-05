@@ -125,7 +125,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         if (carriedSpec) window.localStorage.removeItem("aw_compose_spec");
         // A prompt handed over from elsewhere wins; otherwise pick up
         // whatever was being typed here before you left the room.
-        const draft = carried ? "" : loadDraft(kind);
+        const draft = carried ? "" : loadDraft(kind, signedIn);
         Promise.resolve().then(() => {
           if (carried) setPrompt(carried);
           else if (draft) setPrompt(draft);
@@ -151,7 +151,10 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       resolution: m.resolutions.includes(prefs.resolution) ? prefs.resolution : s.resolution,
       duration: m.durations.includes(prefs.duration) ? prefs.duration : s.duration,
     }));
-  }, [prefs, kind]);
+    /* signedIn belongs here: loadDraft refuses to hand anything back
+       without a session, so signing in has to re-run this or the draft
+       stays lost until a reload. */
+  }, [prefs, kind, signedIn]);
 
   const patch = (p: Partial<Params>) => { touched.current = true; setParams((s) => ({ ...s, ...p })); };
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useSession, signInHref, INVITE_CONTACT } from "@/lib/session";
+import { useSession, signInHref } from "@/lib/session";
+import { RequestAccessButton } from "./RequestAccess";
 
 /**
  * particl studio — the logo system, in code.
@@ -143,8 +144,7 @@ export function SignedOut({ what }: { what?: string }) {
         </p>
         <span className="mt-1 flex flex-wrap items-center justify-center gap-2">
           <a href={signInHref()} className="btn-render !px-4 !py-2 !text-[14px]">Sign in</a>
-          <a href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}
-            className="chip !text-[13px]">Ask for an invite</a>
+          <RequestAccessButton className="chip !text-[13px]" />
         </span>
       </div>
     </div>
