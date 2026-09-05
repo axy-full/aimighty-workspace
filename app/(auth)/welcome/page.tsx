@@ -12,6 +12,7 @@
  * blue — rather than stock illustration.
  */
 import Link from "next/link";
+import { INVITE_CONTACT } from "@/lib/session";
 import ParticlIntro from "@/components/ParticlIntro";
 import { ParticlMark, ParticlStacked } from "@/components/ParticlMark";
 
@@ -43,18 +44,31 @@ export default function WelcomePage() {
         {/* ── The mark, and the claim ─────────────────────────── */}
         <header className="flex flex-col items-center text-center">
           <h1 className="m-0"><ParticlStacked size={64} /></h1>
-          <p className="mt-8 max-w-[34ch] text-[clamp(17px,2.4vw,21px)] leading-snug text-dim">
-            The studio&rsquo;s own room for making shots — and for knowing what
-            they cost.
+          <p className="mt-8 max-w-[36ch] text-[clamp(17px,2.4vw,21px)] leading-snug text-dim">
+            A room for making shots — and for knowing what they cost.
+            Open to look around; invitation only to use.
           </p>
 
+          {/* Three doors, in the order people arrive at them: look first,
+              ask if you like it, sign in if you already have a way in. The
+              tool is invite-only, so the ask is a real door and not a
+              footnote. */}
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/login"
+            <Link href="/"
               className="rounded-full bg-blue px-7 py-3 text-[16px] font-medium text-on-ink transition-opacity hover:opacity-90">
+              Look around
+            </Link>
+            <a href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}
+              className="chip !px-5 !py-2.5 !text-[15px]">
+              Ask for an invite
+            </a>
+            <Link href="/login" className="text-[14px] text-dim underline underline-offset-4 hover:text-ink">
               Sign in
             </Link>
-            <span className="text-[14px] text-mute">Invitation only.</span>
           </div>
+          <p className="mt-4 text-[13px] text-mute">
+            Anyone with an invitation can use Particl. Browsing needs nothing.
+          </p>
         </header>
 
         {/* ── The mark, small, as a rule between the claim and the rooms ── */}

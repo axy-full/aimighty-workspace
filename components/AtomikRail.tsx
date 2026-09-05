@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { timeAgo } from "@/lib/format";
 import { appConfirm } from "./dialog";
+import { useSession } from "@/lib/session";
 import { IconPlus } from "./Icons";
 import type { Chat } from "@/lib/atomik";
 
@@ -27,6 +28,7 @@ export default function AtomikRail() {
   const params = useSearchParams();
   const current = params.get("c");
 
+  const { signedIn } = useSession();
   const { data, refresh } = useApi<{ chats: Row[] }>("/api/atomik", 15_000);
   const chats = data?.chats ?? [];
 
@@ -56,7 +58,9 @@ export default function AtomikRail() {
       <div className="rail-body">
         {chats.length === 0 && (
           <p className="px-3 py-2 text-[12.5px] leading-relaxed text-mute">
-            Nothing yet. Describe a production and Atomik will work out the shots.
+            {signedIn
+              ? "Nothing yet. Describe a production and Atomik will work out the shots."
+              : "Conversations are private. Sign in to start one."}
           </p>
         )}
 

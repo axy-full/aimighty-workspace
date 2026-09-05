@@ -61,6 +61,8 @@ export type ComposerProps = {
   onPickSource: () => void;
   /** The message to show, whatever its cause. */
   problem: string | null;
+  /** The problem is informational, not a fault. */
+  notice?: boolean;
   /** Whether the references make a submit impossible — the only thing that
    *  disables the button. A failed submit is shown, never locked in. */
   blocked: boolean;
@@ -80,7 +82,7 @@ export type ComposerProps = {
 export default function Composer(p: ComposerProps) {
   const {
     prompt, setPrompt, promptRef, params, patch, model, engines, writer,
-    refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked,
+    refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked, notice,
     est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
     pickMode, onPickSource, onDropAsset,
@@ -197,7 +199,12 @@ export default function Composer(p: ComposerProps) {
         </>
       )}
 
-      {problem && <p className="island-problem">{problem}</p>}
+      {/* A blocked render and a signed-out visitor are not the same thing.
+          One is a fault to fix, the other is simply not being a member yet —
+          so the notice drops the alarm colour when nothing is wrong. */}
+      {problem && (
+        <p className={`island-problem ${notice ? "is-notice" : ""}`}>{problem}</p>
+      )}
 
       {/* Our own renders, kept visually apart from uploaded references
           because they behave differently: taking one off drops it from this
@@ -389,7 +396,7 @@ export default function Composer(p: ComposerProps) {
           disabled={busy || !prompt.trim() || blocked}
           title="Render  ⌘↵"
           className="btn-render island-send">
-          {busy ? <ParticlSpinner size={18} className="text-white" /> : <IconArrowUp />}
+          {busy ? <ParticlSpinner size={18} className="text-on-ink" /> : <IconArrowUp />}
         </button>
       </div>
     </div>

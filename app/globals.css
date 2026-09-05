@@ -878,6 +878,12 @@ button.row:active, a.row:active { background: var(--color-chip2); }
     max-height: 30vh; overflow: auto; overscroll-behavior: contain;
     user-select: text; overflow-wrap: anywhere;
   }
+/* The same line, without the alarm: used when the composer is simply not
+   available to whoever is looking, which is a fact rather than a fault. */
+.island-problem.is-notice {
+  color: var(--color-dim);
+  background: var(--color-chip);
+}
   .island-text { position: relative; min-width: 0; margin: 0 4px; }
   .island-overlay {
     pointer-events: none; position: absolute; inset: 0; overflow: hidden;

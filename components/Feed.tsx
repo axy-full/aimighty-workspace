@@ -15,6 +15,7 @@ import Link from "next/link";
 import type { Gen } from "./GenCard";
 import LazyMedia from "./LazyMedia";
 import { Empty, ParticlSpinner } from "./ParticlMark";
+import { useSession } from "@/lib/session";
 import { shortLabel } from "@/lib/models";
 
 export type FeedFilter = "all" | "video" | "image" | "audio";
@@ -49,6 +50,7 @@ export default function Feed({
   problem?: string | null;
   className?: string;
 }) {
+  const { signedIn } = useSession();
   const box = useRef<HTMLDivElement>(null);
   const [cols, setCols] = useState(3);
 
@@ -116,9 +118,15 @@ export default function Feed({
         </div>
       ) : gens.length === 0 ? (
         <div className="feed-empty">
+          {/* An empty wall means two different things. For the studio it is
+              an invitation; for a visitor it is a locked door, and saying
+              "your first shot goes here" to someone who cannot render one
+              would be a small lie. */}
           <Empty
-            title="Your first shot goes here"
-            line="Describe it below. The cost sits on the button before you press it, and every render lands on this wall as it finishes."
+            title={signedIn ? "Your first shot goes here" : "The wall is private"}
+            line={signedIn
+              ? "Describe it below. The cost sits on the button before you press it, and every render lands on this wall as it finishes."
+              : "This is where the studio's renders sit. The composer below is the real one — sign in and the cost appears on the button before you press it."}
           />
         </div>
       ) : shown.length === 0 ? (

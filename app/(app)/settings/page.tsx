@@ -11,6 +11,7 @@ import { Switch } from "@/components/Panel";
 import { IconChevron } from "@/components/Icons";
 import WorkspaceSettings from "@/components/WorkspaceSettings";
 import { usePageTitle } from "@/lib/usePageTitle";
+import { useSession } from "@/lib/session";
 import ThemeRow from "@/components/ThemeRow";
 import { ParticlMark } from "@/components/ParticlMark";
 
@@ -29,6 +30,7 @@ type RefinerTest = {
 
 export default function SettingsPage() {
   usePageTitle("Settings");
+  const { signedIn } = useSession();
   const prefs = usePrefs();
   const model = getModel(prefs.modelId);
   const router = useRouter();
@@ -125,7 +127,9 @@ export default function SettingsPage() {
             </div>
           ))}
           {!engineData && (
-            <div className="row"><span className="text-[14px] text-mute">Checking the keys…</span></div>
+            <div className="row"><span className="text-[14px] text-mute">
+              {signedIn ? "Checking the keys…" : "Sign in to see which engines are connected."}
+            </span></div>
           )}
         </div>
         <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
@@ -137,7 +141,9 @@ export default function SettingsPage() {
         <div className="rows">
           {engineData?.refiner
             ? <WriterRow writer={engineData.refiner} credits={engineData.gatewayCredits ?? null} isAdmin={isAdmin} onChanged={refreshEngines} />
-            : <div className="row"><span className="text-[14px] text-mute">Reading the workspace&rsquo;s choice…</span></div>}
+            : <div className="row"><span className="text-[14px] text-mute">
+                {signedIn ? "Reading the workspace’s choice…" : "Sign in to see who writes the prompts."}
+              </span></div>}
         </div>
         <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
           Who finishes an idea too thin to film. The library&rsquo;s camera modules apply in every
@@ -145,6 +151,7 @@ export default function SettingsPage() {
           <span className="font-medium text-blue">raw:</span> to bypass everything for one render.
         </p>
 
+        {signedIn && <>
         <p className="grouplabel mt-10">Credit</p>
         <div className="rows">
           <div className="row">
@@ -177,6 +184,7 @@ export default function SettingsPage() {
           BytePlus doesn&rsquo;t expose a balance through its API, so your credit is
           whatever you record on the Usage page, drawn down by the real cost of each render.
         </p>
+        </>}
 
         <p className="grouplabel mt-10">Appearance</p>
         <div className="rows">

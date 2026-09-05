@@ -1,5 +1,7 @@
 "use client";
 
+import { useSession, signInHref, INVITE_CONTACT } from "@/lib/session";
+
 /**
  * particl studio — the logo system, in code.
  *
@@ -96,12 +98,54 @@ export function ParticlSpinner({ size = 24, className = "" }: { size?: number; c
 }
 
 /** A wait that's worth a sentence. Centred, quiet, branded. */
-export function Waiting({ label = "Loading" }: { label?: string }) {
+/**
+ * Waiting for data — or, for a visitor, waiting for nothing.
+ *
+ * A signed-out visitor's requests are never sent, so `data` stays null for
+ * ever and every screen that spins on it would spin on it for ever. This is
+ * the one place all of them pass through, so this is where the honest
+ * answer goes: the panel is empty because the work behind it is private,
+ * not because the app is slow.
+ */
+export function Waiting({ label = "Loading", what }: { label?: string; what?: string }) {
+  const { signedIn } = useSession();
+  if (!signedIn) return <SignedOut what={what} />;
   return (
     <div className="screen grid place-items-center">
       <div className="flex flex-col items-center gap-3 text-dim">
         <ParticlSpinner size={26} />
         <p className="text-[14px]">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What a visitor sees where the studio's work would be.
+ *
+ * Deliberately not an error and not a wall: they have found the right
+ * place, the screen around it is real, and this says what is missing and
+ * how to get it. The invitation line matters as much as the button — the
+ * product is invite-only, so "sign in" alone would be a dead end for
+ * everyone who does not already have an account.
+ */
+export function SignedOut({ what }: { what?: string }) {
+  return (
+    <div className="screen grid place-items-center">
+      <div className="flex max-w-[42ch] flex-col items-center gap-3 text-center">
+        <ParticlMark size={22} className="text-mute" />
+        <p className="text-[15px] font-medium text-ink">
+          {what ? `${what} are private` : "This is private"}
+        </p>
+        <p className="text-[13.5px] leading-relaxed text-dim">
+          You&rsquo;re looking at the real interface — every control here is the one the
+          studio uses. What it holds is only visible once you&rsquo;re signed in.
+        </p>
+        <span className="mt-1 flex flex-wrap items-center justify-center gap-2">
+          <a href={signInHref()} className="btn-render !px-4 !py-2 !text-[14px]">Sign in</a>
+          <a href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}
+            className="chip !text-[13px]">Ask for an invite</a>
+        </span>
       </div>
     </div>
   );

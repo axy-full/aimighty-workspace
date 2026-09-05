@@ -7,17 +7,34 @@ import ContextMenu from "@/components/ContextMenu";
 import DialogHost from "@/components/dialog";
 import ViewportGuard from "@/components/ViewportGuard";
 import { ProjectProvider } from "@/lib/projectContext";
+import { SessionProvider } from "@/lib/session";
 import { currentUser, userCount } from "@/lib/auth";
 
-/** Everything under this layout requires a signed-in user. */
+/**
+ * The shell, for everyone.
+ *
+ * This layout used to turn anyone without a session away at the door. It no
+ * longer does: the interface is public and the work inside it is not. A
+ * visitor gets every screen, every control and every empty panel, and not
+ * one render, project or figure — because each of those comes from a route
+ * that answers 401 to an anonymous caller, and spending routes answer 401
+ * before they reach a vendor.
+ *
+ * That is worth being precise about: opening this door is safe ONLY because
+ * the API was already closed. Nothing below is a guard. If a future route
+ * forgets requireUser, this layout will not catch it.
+ */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await currentUser();
-  if (!user) {
-    // No accounts at all yet → send the first person to create the admin.
-    redirect((await userCount()) === 0 ? "/setup" : "/login");
-  }
+  // No accounts at all yet → the first person here creates the admin.
+  if (!user && (await userCount()) === 0) redirect("/setup");
 
   return (
+    <SessionProvider value={{
+      signedIn: Boolean(user),
+      name: user?.name ?? null,
+      email: user?.email ?? null,
+    }}>
     <ProjectProvider>
       <div className="app">
         <TopBar />
@@ -34,5 +51,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <ViewportGuard />
       </div>
     </ProjectProvider>
+    </SessionProvider>
   );
 }

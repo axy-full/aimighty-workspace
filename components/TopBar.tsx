@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
+import { useSession, signInHref, INVITE_CONTACT } from "@/lib/session";
 import ModeSwitch from "./ModeSwitch";
 
 type Usage = { pending: number };
@@ -22,6 +23,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const { current, selection } = useProject();
+  const { signedIn } = useSession();
   const { data: usage } = useApi<Usage>("/api/usage/summary", 20000);
 
   const onGenerate = path === "/" || path.startsWith("/generate") || path.startsWith("/images");
@@ -50,6 +52,19 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
       )}
 
       <div className="ml-auto flex items-center gap-2.5">
+        {/* A visitor gets the way in, and the way to be allowed in. The
+            second half is not optional: the product is invite-only, so a
+            lone Sign in button is a closed door for everyone who has not
+            already been let through it. */}
+        {!signedIn && (
+          <>
+            <a href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}
+              className="hidden text-[13px] text-dim transition-colors hover:text-ink min-[560px]:block">
+              Ask for an invite
+            </a>
+            <a href={signInHref()} className="btn-render !px-4 !py-1.5 !text-[13.5px]">Sign in</a>
+          </>
+        )}
         {usage != null && usage.pending > 0 && (
           <span className="flex items-center gap-2 rounded-full bg-blue/10 px-3 py-1.5 text-[13px] font-medium text-blue">
             <span className="lamp lamp-live" style={{ width: 7, height: 7 }} />

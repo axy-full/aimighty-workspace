@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "./session";
 
 /**
  * Tiny fetch hook with optional polling. Avoids pulling in SWR for four screens.
@@ -10,11 +11,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * finishing after a newer one) must never overwrite fresher data.
  */
 export function useApi<T>(url: string | null, intervalMs = 0) {
+  /* A signed-out visitor is browsing the interface, not using it. Every one
+     of these endpoints would answer 401, so asking is forty pointless
+     requests and forty error states for someone who has done nothing wrong.
+     `locked` is what the screens render a "sign in to see this" panel from.
+     It is a courtesy, not a guard: the guard is the server's 401. */
+  const { signedIn } = useSession();
+  const locked = !signedIn;
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** The HTTP status of the last failure, when there was one. */
   const [status, setStatus] = useState<number | null>(null);
-  const [loading, setLoading] = useState(Boolean(url));
+  const [loading, setLoading] = useState(false);
   const alive = useRef(true);
   // Monotonic request counter: only the newest request may apply its result,
   // which covers both an old poll tick finishing late and an in-flight fetch
@@ -22,7 +30,7 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
   const seq = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (!url) return;
+    if (!url || !signedIn) return;
     const mySeq = ++seq.current;
     try {
       const res = await fetch(url, { cache: "no-store" });
@@ -50,7 +58,11 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
            layout actually runs. Only on 401: a network blip or an unreadable
            body lands in this same catch with no status, and must never bounce
            a working session out of the app. */
-        if (err.status === 401 && typeof window !== "undefined" &&
+        /* Only a session that HAS lapsed gets bounced. A visitor who was
+           never signed in is browsing on purpose, and throwing them at the
+           login page the moment a panel polls would make the public
+           interface impossible to look at. */
+        if (err.status === 401 && signedIn && typeof window !== "undefined" &&
             !window.location.pathname.startsWith("/login")) {
           // A HARD navigation on purpose: the auth check lives in the server
           // layout, and router.push would re-enter the same client tree
@@ -62,7 +74,7 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
     } finally {
       if (alive.current && mySeq === seq.current) setLoading(false);
     }
-  }, [url]);
+  }, [url, signedIn]);
 
   useEffect(() => {
     alive.current = true;
@@ -80,7 +92,7 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
    * is most of the saving in a team that lives with the app open.
    */
   useEffect(() => {
-    if (!intervalMs || !url) return;
+    if (!intervalMs || !url || !signedIn) return;
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const start = () => { timer ??= setInterval(refresh, intervalMs); };
@@ -94,7 +106,7 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
     if (!document.hidden) start();
     document.addEventListener("visibilitychange", onVisibility);
     return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [intervalMs, refresh, url]);
+  }, [intervalMs, refresh, url, signedIn]);
 
-  return { data, error, status, loading, refresh };
+  return { data, error, status, loading, locked, refresh };
 }

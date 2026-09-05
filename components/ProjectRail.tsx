@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { useOnChange } from "@/lib/changes";
 import { useProject } from "@/lib/projectContext";
+import { useSession } from "@/lib/session";
 import { usd } from "@/lib/format";
 import LazyMedia from "./LazyMedia";
 import Boundary from "./Boundary";
@@ -51,6 +52,7 @@ export default function ProjectRail() {
   const path = usePathname();
   const router = useRouter();
   const { projects, selection, setSelection, refreshProjects } = useProject();
+  const { signedIn } = useSession();
   const [open, setOpen] = useState<string | null>(null);
 
   useOnChange(refreshProjects);
@@ -134,7 +136,9 @@ export default function ProjectRail() {
       <div className="rail-body">
         {projects.length === 0 && (
           <p className="px-3 py-2 text-[12.5px] leading-relaxed text-mute">
-            No projects yet. Everything you make lands in Unfiled until there is one.
+            {signedIn
+              ? "No projects yet. Everything you make lands in Unfiled until there is one."
+              : "Projects are private. Sign in and yours appear here."}
           </p>
         )}
 

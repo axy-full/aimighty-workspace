@@ -31,6 +31,7 @@ import {
 } from "@/lib/models";
 import { usePrefs } from "@/lib/prefs";
 import { useProject } from "@/lib/projectContext";
+import { useSession } from "@/lib/session";
 
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
@@ -48,6 +49,7 @@ function defaultModelFor(kind: "video" | "image"): string {
 export default function Workspace({ kind = "video" }: { kind?: "video" | "image" }) {
   usePageTitle(kind === "image" ? "Images" : "Video");
   const { selection: bin, current, refreshProjects } = useProject();
+  const { signedIn } = useSession();
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -383,7 +385,10 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           model={modelDef} engines={engines} writer={writer}
           refs={refs} setRefs={setRefs} picker={picker} cite={cite}
           taskOn={taskOn} cancelTask={() => setTaskOn(null)}
-          problem={refProblem ?? sourceIssue ?? err} blocked={Boolean(refProblem || sourceIssue)}
+          problem={signedIn ? (refProblem ?? sourceIssue ?? err)
+            : "Sign in to render. Everything else here is yours to look at."}
+          blocked={!signedIn || Boolean(refProblem || sourceIssue)}
+          notice={!signedIn}
           est={est} estTokens={estTokens} dims={dims}
           inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
           busy={busy} onRender={render}

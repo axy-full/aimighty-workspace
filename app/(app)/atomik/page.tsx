@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useProject } from "@/lib/projectContext";
+import { useSession, signInHref, INVITE_CONTACT } from "@/lib/session";
 import { announceChange } from "@/lib/changes";
 import { usd } from "@/lib/format";
 import Boundary from "@/components/Boundary";
@@ -42,6 +43,7 @@ export default function AtomikPage() {
   const params = useSearchParams();
   const chatId = params.get("c");
   const { selection } = useProject();
+  const { signedIn } = useSession();
 
   const { data: index, refresh: refreshIndex } = useApi<Index>("/api/atomik", 0);
   const { data: loaded, error: loadError, refresh: refreshChat } =
@@ -305,6 +307,15 @@ export default function AtomikPage() {
             <p className="atomik-sub">
               Describe the whole thing. Atomik works out the shots and asks before it spends.
             </p>
+            {!signedIn && (
+              <p className="atomik-sub !text-[13px]">
+                <a href={signInHref()} className="text-ink underline underline-offset-4">Sign in</a>
+                {" or "}
+                <a href={`mailto:${INVITE_CONTACT}?subject=${encodeURIComponent("Particl — invitation request")}`}
+                  className="text-ink underline underline-offset-4">ask for an invite</a>
+                {" to use it."}
+              </p>
+            )}
             <div className="atomik-seeds">
               {SEEDS.map((s) => (
                 <button key={s} type="button" className="atomik-seed"
@@ -354,9 +365,12 @@ export default function AtomikPage() {
               }
             }}
             rows={1}
-            placeholder={pending
-              ? "Approve the card above, or say what to do instead…"
-              : "Describe what you want made…"}
+            disabled={!signedIn}
+            placeholder={!signedIn
+              ? "Sign in to plan a production — the rest of this screen is yours to look at."
+              : pending
+                ? "Approve the card above, or say what to do instead…"
+                : "Describe what you want made…"}
             className="atomik-input"
           />
           <div className="atomik-controls">
@@ -378,11 +392,15 @@ export default function AtomikPage() {
                   {usd(loaded.chat.textCostUsd, 3)}
                 </span>
               )}
-              <button type="button" className="btn-render !px-4 !py-2"
-                disabled={thinking || !draft.trim()}
-                onClick={() => send(draft)}>
-                {thinking ? "…" : "Send"}
-              </button>
+              {signedIn ? (
+                <button type="button" className="btn-render !px-4 !py-2"
+                  disabled={thinking || !draft.trim()}
+                  onClick={() => send(draft)}>
+                  {thinking ? "…" : "Send"}
+                </button>
+              ) : (
+                <a href={signInHref()} className="btn-render !px-4 !py-2 !text-[14px]">Sign in</a>
+              )}
             </span>
           </div>
         </div>
