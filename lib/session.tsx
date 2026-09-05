@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 
 /**
  * Who is looking, and what that means for the rest of the app.
@@ -28,9 +28,50 @@ export type Session = {
 
 const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null });
 
+/**
+ * What the browser must not keep once nobody is signed in.
+ *
+ * The app caches poster frames of renders in localStorage as base64 JPEGs —
+ * tens of them, tens of kilobytes each — so a wall of clips does not
+ * re-download every time it is scrolled. It also keeps the unsent prompt,
+ * the seed, the shot spec and the last project id, so a reload does not
+ * lose someone's work in progress.
+ *
+ * Every one of those is the studio's private work sitting on a disk. That
+ * was defensible while the app was unreachable without a session; it is not
+ * now the interface is public, because the next person to open the browser
+ * on a shared machine is a visitor. The unsent prompt was the visible half
+ * of it — it rendered straight into the composer for whoever came next —
+ * and the poster cache was the larger, quieter half.
+ *
+ * Preferences deliberately survive: theme, composer defaults, whether the
+ * chat dock was open. Those are about the browser, not about the work.
+ */
+const PRIVATE_PREFIXES = ["aw_poster:", "aw_draft:"];
+const PRIVATE_KEYS = ["aw_posters:index", "aw_project", "aw_compose_seed", "aw_compose_spec"];
+
+export function clearPrivateLocal(): void {
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (PRIVATE_KEYS.includes(k) || PRIVATE_PREFIXES.some((p) => k.startsWith(p))) doomed.push(k);
+    }
+    for (const k of doomed) localStorage.removeItem(k);
+  } catch { /* private mode, or storage disabled — nothing to clear */ }
+}
+
 export function SessionProvider({ value, children }: {
   value: Session; children: React.ReactNode;
 }) {
+  /* Cleared whenever the app loads without a session, not only on the click
+     of a sign-out button. A session that simply expired, a cookie cleared by
+     hand, or a browser someone walked away from all reach this and none of
+     them reach a logout handler. */
+  const { signedIn } = value;
+  useEffect(() => { if (!signedIn) clearPrivateLocal(); }, [signedIn]);
+
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

@@ -11,7 +11,7 @@ import { Switch } from "@/components/Panel";
 import { IconChevron } from "@/components/Icons";
 import WorkspaceSettings from "@/components/WorkspaceSettings";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { useSession } from "@/lib/session";
+import { useSession, clearPrivateLocal } from "@/lib/session";
 import ThemeRow from "@/components/ThemeRow";
 import { ParticlMark } from "@/components/ParticlMark";
 
@@ -44,6 +44,11 @@ export default function SettingsPage() {
     setBusy(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
+      /* The server forgets the session; this forgets what the browser was
+         holding on its behalf — cached render frames, the unsent prompt,
+         the last project. Also done on any sessionless load, but doing it
+         here means it is gone before the navigation rather than after it. */
+      clearPrivateLocal();
     } catch { /* the cookie may already be gone; leaving is still the intent */ }
     finally { setBusy(false); }
     // Leave regardless. A failed request must not strand someone on a dead
