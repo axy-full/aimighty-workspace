@@ -10,8 +10,14 @@ function gb(bytes: number): string {
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
-import SectionNav from "@/components/SectionNav";
-import { Waiting, Trouble } from "@/components/ParticlMark";
+import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
+import Link from "next/link";
+import { useProject } from "@/lib/projectContext";
+import { useSession } from "@/lib/session";
+import { getModel } from "@/lib/models";
+import { stateOf } from "@/components/Feed";
+import type { Analytics } from "@/components/Analytics";
+import type { Gen } from "@/components/GenCard";
 import { IconClose } from "@/components/Icons";
 import { appConfirm } from "@/components/dialog";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -84,79 +90,23 @@ export default function UsagePage() {
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [vendorFilter, setVendorFilter] = useState<string>("all");
 
-  /* Daily spend for the current month, from the finished renders we have. */
-  const days = useMemo(() => {
-    const now = new Date();
-    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const buckets = new Map<number, number>();
-    for (const r of data?.recent ?? []) {
-      const d = new Date(r.createdAt);
-      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (k !== key) continue;
-      buckets.set(d.getDate(), (buckets.get(d.getDate()) ?? 0) + r.costUsd);
-    }
-    return [...buckets.entries()].sort((a, b) => a[0] - b[0]);
-  }, [data]);
 
-  const monthLabel = new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
   usePageTitle("Usage");
   if (!data) return error ? <Trouble label="The ledger didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the ledgers" />;
 
-  const maxDay = Math.max(...days.map(([, v]) => v), 0.0001);
-  const monthSpend = days.reduce((a, [, v]) => a + v, 0);
   const vendorName = (id: string) => data.vendors.find((v) => v.id === id)?.label ?? id;
   const recent = vendorFilter === "all" ? data.recent : data.recent.filter((r) => r.provider === vendorFilter);
 
   return (
-    <div className="screen">
-      <div className="mx-auto w-full max-w-[1120px]">
-        <div className="flex flex-wrap items-center gap-4 pt-6">
-          <h1 className="h1">Usage</h1>
-          <SectionNav />
-          <span className="ml-auto text-[15px] text-dim">{monthLabel}</span>
-        </div>
-
-        {/* The number, and the month it belongs to */}
-        <div className="mt-8">
-          <p className="text-[clamp(52px,7vw,88px)] font-bold leading-none tracking-[-0.04em] text-ink tabular-nums">
-            {usd(data.spentUsd, 2)}
-          </p>
-          <p className="mt-3 text-[16px] text-dim">
-            spent all time, across every vendor
-            {data.promptSpendUsd > 0 && <> · of which prompts {usd(data.promptSpendUsd, 3)}</>}
-            {" "}· each vendor&rsquo;s credit counts down on its own below
-          </p>
-
-          {days.length > 0 ? (
-            <div className="max-w-[720px]">
-              <div className="mt-8 flex h-[150px] items-end gap-[6px]">
-                {days.map(([day, v]) => (
-                  <span key={day} className="flex min-w-0 flex-1 flex-col items-center gap-2"
-                    title={`${day} — ${usd(v, 2)}`}>
-                    <span className="w-full rounded-full bg-blue transition-all"
-                      style={{ height: `${Math.max(4, (v / maxDay) * 120)}px`, maxWidth: 10 }} />
-                  </span>
-                ))}
-              </div>
-              <div className="mt-3 flex gap-[6px] border-t border-hair pt-2">
-                {days.map(([day]) => (
-                  <span key={day} className="min-w-0 flex-1 text-center text-[12px] tabular-nums text-mute">{day}</span>
-                ))}
-              </div>
-              <p className="mt-3 text-[13px] text-mute">
-                {monthLabel} · {usd(monthSpend, 2)} across {days.length} day{days.length === 1 ? "" : "s"}
-                <span className="ml-1">(from the most recent renders)</span>
-              </p>
-            </div>
-          ) : (
-            <p className="mt-8 max-w-[720px] rounded-[var(--r)] bg-panel2 px-4 py-6 text-center text-[14px] text-mute">
-              No finished renders this month yet.
-            </p>
-          )}
-        </div>
+    <div className="page">
+      <div className="page-inner">
+        <ProductionTop />
 
         {/* ── The ledgers ── */}
+        <p className="mt-16 text-[13px] text-dim">
+          Below: the ledgers behind the numbers — each vendor&rsquo;s own count, prompt writing, storage rent, where the time goes, and every render&rsquo;s price.
+        </p>
         <p className="grouplabel mt-12">Ledgers</p>
         <div className="grid gap-5 md:grid-cols-2">
           {data.vendors.map((v) => <VendorCard key={v.id} v={v} onChanged={refresh} />)}
@@ -635,5 +585,220 @@ function Breakdown({ title, rows }: {
         </ul>
       </div>
     </section>
+  );
+}
+
+
+/* ── Production: the top of the page, from the pipeline handoff ───────
+   What the job cost, who spent it, and which shot is taking the most
+   takes. Four tiles, then production × people, then shots × engines. The
+   studio's numbers come from the analytics route over a period; the
+   production's from the same route narrowed to it, its cap from the
+   projects route, and the per-take blocks from its own renders. */
+type Period = "month" | "30" | "quarter";
+type ProjRow = {
+  id: string; name: string; code: string; spend: number; capUsd: number | null;
+  shots: number; approvedShots: number; pickedShots: number; genCount: number;
+};
+const PROVIDER_NAMES: Record<string, string> = {
+  byteplus: "BytePlus ModelArk", gateway: "Vercel AI Gateway", google: "Vercel AI Gateway",
+  fal: "fal.ai", elevenlabs: "ElevenLabs",
+};
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+
+function ProductionTop() {
+  const { signedIn } = useSession();
+  const { selection, current } = useProject();
+  const scoped = selection !== "all" && selection !== "unfiled";
+  const [period, setPeriod] = useState<Period>("month");
+  const days = period === "month" ? new Date().getDate() : period === "30" ? 30 : 90;
+  const periodLabel = period === "month" ? new Date().toLocaleDateString(undefined, { month: "long" }).toUpperCase() : period === "30" ? "30 DAYS" : "QUARTER";
+
+  const { data: all } = useApi<Analytics>(signedIn ? `/api/analytics?days=${days}` : null, 30_000);
+  const { data: proj } = useApi<Analytics>(signedIn && scoped ? `/api/analytics?days=${days}&projectId=${encodeURIComponent(selection)}` : null, 30_000);
+  const { data: projects } = useApi<{ projects: ProjRow[] }>(signedIn ? "/api/projects" : null, 30_000);
+  const { data: jobs } = useApi<{ generations: Gen[] }>(signedIn && scoped ? `/api/jobs?projectId=${encodeURIComponent(selection)}&limit=500&sync=0` : null, 15_000);
+
+  const p = scoped ? projects?.projects.find((x) => x.id === selection) ?? null : null;
+  const focus = (scoped ? proj : all) ?? null;
+  const focusLabel = scoped ? (current?.name ?? "This production").toUpperCase() : "STUDIO";
+
+  /* Takes per shot, as blocks: approved · picked · draft · rendering · sent back. */
+  const shotRows = useMemo(() => {
+    const map = new Map<string, Gen[]>();
+    for (const g of jobs?.generations ?? []) {
+      if (g.kind === "image" || g.kind === "audio" || !g.shotCode) continue;
+      (map.get(g.shotCode) ?? map.set(g.shotCode, []).get(g.shotCode)!).push(g);
+    }
+    return [...map.entries()].map(([code, list]) => {
+      const takes = list.slice().sort((a, b) => (a.version ?? 0) - (b.version ?? 0));
+      const st = takes.map((g) => (g.reviewState === "changes" ? "back" : stateOf(g)));
+      const state = st.includes("approved") ? "Approved" : st.includes("picked") ? "Picked" : st.includes("rendering") ? "Rendering" : "Draft";
+      return {
+        code, n: takes.length, blocks: st, state,
+        back: st.filter((x) => x === "back").length,
+        cost: takes.reduce((a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0),
+      };
+    }).sort((a, b) => b.n - a.n || b.cost - a.cost);
+  }, [jobs]);
+
+  const approved = p?.approvedShots ?? 0;
+  const shots = p?.shots ?? 0;
+  const videoTakes = shotRows.reduce((a, r) => a + r.n, 0);
+  const perApproved = p && approved ? p.spend / approved : null;
+  const takesPerApproval = approved ? videoTakes / approved : null;
+  const projected = perApproved != null ? perApproved * shots : null;
+  const capPct = p?.capUsd ? Math.min(100, Math.round((p.spend / p.capUsd) * 100)) : 0;
+
+  /* The shot that has cost more than any approved one and isn't approved. */
+  const maxApproved = Math.max(0, ...shotRows.filter((r) => r.state === "Approved").map((r) => r.cost));
+  const worry = shotRows.filter((r) => r.state !== "Approved" && r.cost > maxApproved).sort((a, b) => b.cost - a.cost)[0] ?? null;
+
+  const maxProd = Math.max(0.0001, ...(all?.byProject ?? []).map((r) => r.spend));
+  const people = focus?.byPerson ?? [];
+  const maxPerson = Math.max(0.0001, ...people.map((r) => r.spend));
+  const engines = (focus?.byModel ?? []).filter((m) => m.spend > 0).sort((a, b) => b.spend - a.spend);
+  const engineTotal = engines.reduce((a, m) => a + m.spend, 0) || 1;
+  const shade = (i: number) => (i === 0 ? "var(--color-ink)" : i === 1 ? "rgba(245,246,248,.45)" : "rgba(245,246,248,.2)");
+
+  function exportCsv() {
+    const rows: (string | number)[][] = [["section", "name", "renders", "spend_usd"]];
+    for (const r of all?.byProject ?? []) rows.push(["production", r.name, r.n, r.spend.toFixed(2)]);
+    for (const r of people) rows.push(["person", r.name, r.n, r.spend.toFixed(2)]);
+    for (const r of shotRows) rows.push(["shot", r.code, r.n, r.cost.toFixed(2)]);
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `particl-production-${period}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  return (
+    <div className="flex flex-col gap-[30px]">
+      <div className="page-head">
+        <div>
+          <h1 className="page-h1">Production</h1>
+          <p className="page-sub">What the job cost, who spent it, and which shot is taking the most takes.</p>
+        </div>
+        <div className="page-acts items-center">
+          <div className="seg" role="tablist">
+            {([["month", new Date().toLocaleDateString(undefined, { month: "long" })], ["30", "30 days"], ["quarter", "Quarter"]] as [Period, string][]).map(([k, l]) => (
+              <button key={k} type="button" role="tab" aria-selected={period === k} className={`seg-opt ${period === k ? "is-on" : ""}`} onClick={() => setPeriod(k)}>{l}</button>
+            ))}
+          </div>
+          <button type="button" className="btn-secondary" onClick={exportCsv} disabled={!all}>Export CSV ↓</button>
+        </div>
+      </div>
+
+      {!signedIn ? (
+        <Empty title="The numbers are for the team" line="Sign in to see what the studio's productions have cost, who spent it, and which shot is taking the most takes." />
+      ) : !all ? (
+        <Waiting label="Adding it up" />
+      ) : (
+        <>
+          <div className="tiles">
+            <div className="tile">
+              <span className="tile-l">STUDIO · {periodLabel}</span>
+              <span className="tile-v">{usd(all.totals.spend, 2)}</span>
+              <span className="tile-s">{all.byProject.length} production{all.byProject.length === 1 ? "" : "s"} · {all.totals.generations} render{all.totals.generations === 1 ? "" : "s"} · {all.totals.people} {all.totals.people === 1 ? "person" : "people"}</span>
+            </div>
+            <div className="tile">
+              <span className="tile-l">{p ? `${p.name.toUpperCase()} · ${p.capUsd ? `OF $${Math.round(p.capUsd)} CAP` : "NO CAP"}` : "PRODUCTION · OF CAP"}</span>
+              <span className="tile-v">{p ? usd(p.spend, 2) : "—"}</span>
+              {p?.capUsd ? <span className="tile-bar"><span style={{ width: `${capPct}%` }} /></span> : null}
+              <span className="tile-s">{p ? `${p.capUsd ? `${capPct}% spent · ` : ""}${approved} of ${shots} shots approved` : "Pick a production in the header to see it against its cap."}</span>
+            </div>
+            <div className="tile">
+              <span className="tile-l">COST PER APPROVED SHOT</span>
+              <span className="tile-v">{perApproved != null ? usd(perApproved, 2) : "—"}</span>
+              <span className="tile-s">{p ? (approved ? `${p.name} · all takes counted, ${takesPerApproval!.toFixed(1)} takes per approval` : `${p.name} · nothing approved yet`) : "Per production, once one is picked."}</span>
+            </div>
+            <div className="tile">
+              <span className="tile-l">PROJECTED AT THIS RATE</span>
+              <span className="tile-v">{projected != null ? usd(projected, 0) : "—"}</span>
+              <span className="tile-s">{p && projected != null
+                ? `to approve all ${shots} · ${p.capUsd ? (projected <= p.capUsd ? `under cap by ${usd(p.capUsd - projected, 0)}` : `over cap by ${usd(projected - p.capUsd, 0)}`) : "no cap set"}`
+                : "Needs one approved shot to project from."}</span>
+            </div>
+          </div>
+
+          <div className="ugrid">
+            <div className="ucard">
+              <div className="ucard-h"><span>By production</span><span className="mono-s">{periodLabel} · {usd(all.totals.spend, 2)}</span></div>
+              <div className="flex flex-col gap-[9px]">
+                {all.byProject.length === 0 && <span className="rail-help">Nothing rendered in this period.</span>}
+                {all.byProject.slice().sort((a, b) => b.spend - a.spend).map((r) => (
+                  <Link key={r.id ?? "unfiled"} href={r.id ? `/projects/${r.id}/canvas` : "/all"} className="urow">
+                    <span className="truncate">{r.id ? r.name : "Unfiled"}</span>
+                    <span className="ubar"><span style={{ width: `${Math.max(1, (r.spend / maxProd) * 100)}%`, opacity: r.id ? 1 : .35 }} /></span>
+                    <span className="mono-v text-right">{usd(r.spend, 2)}</span>
+                  </Link>
+                ))}
+              </div>
+              <span className="rail-help">Unfiled covers test renders made in All projects. File them against a shot and they move to the production.</span>
+            </div>
+            <div className="ucard">
+              <div className="ucard-h"><span>Who spent it</span><span className="mono-s">{focusLabel} · {focus ? usd(focus.totals.spend, 2) : "—"}</span></div>
+              <div className="flex flex-col gap-[9px]">
+                {people.length === 0 && <span className="rail-help">Nobody has rendered here in this period.</span>}
+                {people.slice().sort((a, b) => b.spend - a.spend).map((r) => (
+                  <div key={r.id || r.name} className="urow is-person">
+                    <span className="flex items-center gap-2 truncate"><span className="ptable-av !ml-0 !h-[22px] !w-[22px] !text-[8.5px]">{initials(r.name)}</span>{r.name} <span className="text-dim">{r.n} render{r.n === 1 ? "" : "s"}</span></span>
+                    <span className="ubar"><span style={{ width: `${Math.max(1, (r.spend / maxPerson) * 100)}%` }} /></span>
+                    <span className="mono-v text-right">{usd(r.spend, 2)}</span>
+                  </div>
+                ))}
+              </div>
+              <span className="rail-help">Anyone on the team renders; the cost is on the button before it is pressed. Change the rule in <Link href="/settings#defaults" className="text-ink">Settings</Link>.</span>
+            </div>
+          </div>
+
+          <div className="ugrid">
+            <div className="ucard">
+              <div className="ucard-h"><span>Which shot is taking the most takes</span>{p && <Link href={`/projects/${p.id}/canvas`} className="hdr-mono-link">CANVAS →</Link>}</div>
+              <div className="ushot-h"><span>SHOT</span><span>TAKES</span><span className="text-right">STATE</span><span className="text-right">SENT BACK</span><span className="text-right">COST</span></div>
+              {!p && <span className="rail-help">Pick a production in the header to see its shots.</span>}
+              {p && shotRows.length === 0 && <span className="rail-help">No takes filed against a shot yet.</span>}
+              {shotRows.slice(0, 8).map((r) => (
+                <Link key={r.code} href="/" className="ushot">
+                  <span className="mono-v">{r.code}</span>
+                  <span className="flex items-center gap-[3px]">
+                    {r.blocks.slice(0, 12).map((b, i) => <span key={i} className={`ublk is-${b}`} />)}
+                    <span className="mono-s ml-1.5">{r.n}</span>
+                  </span>
+                  <span className={`text-right ${r.state === "Approved" ? "text-approved" : r.state === "Draft" ? "text-dim" : ""}`}>{r.state}</span>
+                  <span className="text-right text-dim">{r.back || "—"}</span>
+                  <span className="mono-v text-right">{usd(r.cost, 2)}</span>
+                </Link>
+              ))}
+              {worry && <span className="rail-help">{worry.code} has cost more than any approved shot and isn&rsquo;t approved yet{worry.back ? ` — ${worry.back} take${worry.back === 1 ? " was" : "s were"} sent back with a note` : ""}.</span>}
+            </div>
+            <div className="flex flex-col gap-3">
+              <div className="ucard">
+                <div className="ucard-h"><span>By engine</span><span className="mono-s">{focusLabel}</span></div>
+                {engines.length === 0 ? <span className="rail-help">Nothing rendered in this period.</span> : (
+                  <>
+                    <div className="ueng">{engines.map((m, i) => <span key={m.model} style={{ flex: m.spend / engineTotal, background: shade(i) }} />)}</div>
+                    <div className="flex flex-col gap-1.5">
+                      {engines.map((m, i) => (
+                        <div key={m.model} className="flex justify-between text-[12.5px]">
+                          <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-[2px]" style={{ background: shade(i) }} />{m.label} · {PROVIDER_NAMES[getModel(m.model).provider ?? ""] ?? getModel(m.model).provider ?? "—"} <span className="text-dim">{m.n} render{m.n === 1 ? "" : "s"}</span></span>
+                          <span className="mono-v">{usd(m.spend, 2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="ucard !gap-2.5">
+                <div className="ucard-h"><span>Written back to Atomik</span><Link href="/atomik/shots" className="hdr-mono-link">SHOT LIST →</Link></div>
+                <span className="text-[12.5px] leading-[1.45] text-lead [text-wrap:pretty]">Per shot: state, take count, cost to date and the master&rsquo;s link. The producer sees the same numbers on the shot list as here — one database, nothing to sync.</span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

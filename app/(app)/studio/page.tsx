@@ -1,78 +1,69 @@
 "use client";
 
 /**
- * The Studio — where a project's visual vocabulary is kept.
+ * Studio · Cast & identities — from the pipeline handoff.
  *
- * Artlist's insight is that the hard part of AI film isn't making one good
- * shot, it's making the second one match; Higgsfield's is that a face you
- * have TRAINED comes back as itself, where a face you describe comes back
- * as a stranger. Both are problems of recall, and both are solved by
- * writing the answer down once:
+ * The hard part isn't making one good shot, it's making the second one
+ * match. Two answers, both written down once: an IDENTITY is a real face
+ * learned from photos, rendered as itself; a CAST entry is a face, a place,
+ * a prop or a look with a still and a line, cited by @name in any prompt.
  *
- *   • Identities — a real face, learned from photos, rendered as itself
- *   • the Camera — the craft bank, browsable, with the shots that used it
- *   • the Cast — who, where and what this production keeps returning to
- *   • the shot controls — framing, camera, light, look, told as chips
+ * The page is a list on the left and a detail rail on the right: pick a
+ * card and the rail shows its still, its description, everything made with
+ * it, and how to write it into a prompt. Selection is ink on the card.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
+import { useSession } from "@/lib/session";
 import { uploadFile } from "@/lib/uploadClient";
-import { CATEGORIES, specToPhrase, specCount, composePrompt, type ShotSpec } from "@/lib/studio";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
-import { IconPlus, IconClose, IconSparkle } from "@/components/Icons";
-import ParticlLockup, { Empty, ParticlSpinner } from "@/components/ParticlMark";
+import { Empty, ParticlSpinner } from "@/components/ParticlMark";
 import LazyMedia from "@/components/LazyMedia";
 import IdentitySheet, { type IdentityView, type IdentityTerms } from "@/components/IdentitySheet";
-import ElementSheet from "@/components/ElementSheet";
-import CreditStrip from "@/components/CreditStrip";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { timeAgo } from "@/lib/format";
+import { timeAgo, usd } from "@/lib/format";
 import type { CastMember } from "@/lib/cast";
 import type { Gen } from "@/components/GenCard";
 
-const KINDS = [
-  { id: "character", label: "Character", blurb: "A face the project returns to." },
-  { id: "location", label: "Location", blurb: "A place that has to stay the same place." },
-  { id: "prop", label: "Prop", blurb: "An object that must be the same object." },
-  { id: "style", label: "Look", blurb: "A treatment you keep reaching for." },
-] as const;
-
+const KINDS: { id: CastMember["kind"]; label: string; badge: string; blurb: string }[] = [
+  { id: "character", label: "Character", badge: "CHARACTER", blurb: "A face the project returns to." },
+  { id: "location", label: "Location", badge: "LOCATION", blurb: "A place that has to stay the same place." },
+  { id: "prop", label: "Prop", badge: "PROP", blurb: "An object that must be the same object." },
+  { id: "style", label: "Look", badge: "LOOK", blurb: "A treatment you keep reaching for." },
+];
 const NO_TERMS: IdentityTerms = {
   configured: false, trainer: "", minPhotos: 5, maxPhotos: 40, recommended: "10 to 20",
   steps: 1500, trainCostUsd: 3.6, renderUsdPerMp: 0.035,
 };
+type Sel = { type: "cast"; id: string } | { type: "identity"; id: string } | null;
 
 export default function StudioPage() {
   usePageTitle("Studio");
-  const { selection: bin } = useProject();
-  const router = useRouter();
+  const { signedIn } = useSession();
+  const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const q = scoped ? `?projectId=${encodeURIComponent(bin)}` : "";
 
-  const { data: castData, refresh: refreshCast } =
-    useApi<{ cast: CastMember[] }>(`/api/cast${q}`, 0);
-  const { data: idData, error: idError, refresh: refreshIds } =
-    useApi<{ identities: IdentityView[]; terms: IdentityTerms }>(`/api/identities${q}`, 0);
-  // The bank's shop window borrows its previews from the library: the
-  // newest render made with each move.
-  const { data: recent } = useApi<{ generations: Gen[] }>(`/api/jobs?limit=120&sync=0${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}`, 0);
+  const { data: castData, refresh: refreshCast } = useApi<{ cast: CastMember[] }>(signedIn ? `/api/cast${q}` : null, 0);
+  const { data: idData, refresh: refreshIds } = useApi<{ identities: IdentityView[]; terms: IdentityTerms }>(signedIn ? `/api/identities${q}` : null, 0);
+  // Usage — which shots and takes cited each name — is read off the library.
+  const { data: recent } = useApi<{ generations: Gen[] }>(signedIn ? `/api/jobs?limit=200&sync=0${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}` : null, 0);
 
-  const [spec, setSpec] = useState<ShotSpec>({});
-  const [prose, setProse] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [pendingKind, setPendingKind] = useState<CastMember["kind"]>("character");
-  const [openId, setOpenId] = useState<string | "new" | null>(null);
-  const [openElement, setOpenElement] = useState<CastMember | null>(null);
-  const file = useRef<HTMLInputElement>(null);
-
-  const cast = castData?.cast ?? [];
+  const cast = useMemo(() => castData?.cast ?? [], [castData]);
   const identities = useMemo(() => idData?.identities ?? [], [idData]);
   const terms = idData?.terms ?? NO_TERMS;
-  const n = specCount(spec);
-  const phrase = specToPhrase(spec);
-  const preview = useMemo(() => composePrompt(prose, spec), [prose, spec]);
+  const gens = useMemo(() => recent?.generations ?? [], [recent]);
+
+  const [filter, setFilter] = useState<"all" | CastMember["kind"]>("all");
+  const [sel, setSel] = useState<Sel>(null);
+  const [openId, setOpenId] = useState<string | "new" | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [pendingKind, setPendingKind] = useState<CastMember["kind"]>("character");
+  const [busy, setBusy] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+  const replaceFile = useRef<HTMLInputElement>(null);
 
   // A face mid-training changes state without anyone touching the page.
   const anyTraining = identities.some((i) => i.status === "training");
@@ -82,316 +73,270 @@ export default function StudioPage() {
     return () => clearInterval(t);
   }, [anyTraining, refreshIds]);
 
-  const toggle = (cat: string, value: string) =>
-    setSpec((s) => ({ ...s, [cat]: s[cat] === value ? "" : value }));
-
-  /* ── Camera previews: which render last used each move ────────────── */
-  const movePreview = useMemo(() => {
-    const map = new Map<string, Gen>();
-    for (const g of recent?.generations ?? []) {
-      if (g.status !== "succeeded" || !g.storedUrl) continue;
-      const sp = (g.params as { shotSpec?: ShotSpec }).shotSpec;
-      const key = sp?.move || sp?.technique;
-      if (key && !map.has(key)) map.set(key, g);
+  /** Everything made with a name: the renders whose prompt cited it. */
+  const usage = useMemo(() => {
+    const map = new Map<string, Gen[]>();
+    for (const g of gens) {
+      for (const n of (g.params as { cast?: string[] }).cast ?? []) {
+        const k = n.toLowerCase();
+        (map.get(k) ?? map.set(k, []).get(k)!).push(g);
+      }
     }
     return map;
-  }, [recent]);
+  }, [gens]);
+  const madeWith = (name: string) => usage.get(name.toLowerCase()) ?? [];
+  const usageLine = (name: string) => {
+    const list = madeWith(name);
+    const shots = new Set(list.map((g) => g.shotCode).filter(Boolean)).size;
+    return `${shots} SHOT${shots === 1 ? "" : "S"} · ${list.length} TAKE${list.length === 1 ? "" : "S"}`;
+  };
+  const identityFor = (name: string) => identities.find((i) => i.name.toLowerCase() === name.toLowerCase()) ?? null;
+
+  const shownCast = filter === "all" ? cast : cast.filter((m) => m.kind === filter);
+  const curCast = sel?.type === "cast" ? cast.find((m) => m.id === sel.id) ?? null : null;
+  const curId = sel?.type === "identity" ? identities.find((i) => i.id === sel.id) ?? null : null;
+  const cur = curCast ?? (curId ? null : cast[0] ?? null);
 
   /* ── Cast ─────────────────────────────────────────────────────────── */
   async function addFrom(files: FileList) {
     const f = files[0];
     if (!f) return;
-    const name = await appPrompt(`Name this ${pendingKind === "style" ? "look" : pendingKind}`, "",
-      pendingKind === "character" ? "e.g. Maya"
-        : pendingKind === "location" ? "e.g. HarbourSet"
-        : pendingKind === "prop" ? "e.g. RedHelmet" : "e.g. NoirLook");
+    const kind = KINDS.find((k) => k.id === pendingKind)!;
+    const name = await appPrompt(`Name this ${kind.label.toLowerCase()}`, "",
+      pendingKind === "character" ? "e.g. Maya" : pendingKind === "location" ? "e.g. HarbourSet" : pendingKind === "prop" ? "e.g. RedHelmet" : "e.g. NoirLook");
     if (!name?.trim()) return;
     const description = await appPrompt("Describe it in a line", "",
-      pendingKind === "character" ? "e.g. mid-30s, close-cropped hair, navy overcoat"
-        : pendingKind === "prop" ? "e.g. scuffed red motorcycle helmet, matte finish"
-        : "e.g. a wet harbour at night, sodium lights");
+      pendingKind === "character" ? "e.g. mid-30s, close-cropped hair, navy overcoat" : pendingKind === "prop" ? "e.g. scuffed red motorcycle helmet, matte finish" : "e.g. a wet harbour at night, sodium lights");
     if (description === null) return;
     setBusy(true);
     try {
       const up = await uploadFile(f, "reference");
       const res = await fetch("/api/cast", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(), kind: pendingKind, description,
-          uploadId: up.id, projectId: scoped ? bin : null,
-        }),
+        body: JSON.stringify({ name: name.trim(), kind: pendingKind, description, uploadId: up.id, projectId: scoped ? bin : null }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Could not add");
       refreshCast();
+      if (json.member?.id) setSel({ type: "cast", id: json.member.id });
     } catch (e) {
       await appAlert("Could not add", (e as Error).message);
     } finally { setBusy(false); }
   }
-
-  async function removeCast(m: CastMember) {
-    if (!(await appConfirm(`Remove @${m.name}?`,
-      "Prompts that cite the name will stop resolving.",
-      { confirmLabel: "Remove", danger: true }))) return;
-    await fetch(`/api/cast/${m.id}`, { method: "DELETE" });
+  async function patchCast(m: CastMember, body: Record<string, unknown>) {
+    const res = await fetch(`/api/cast/${m.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!res.ok) { await appAlert("Not saved", `The server answered ${res.status}.`); return; }
     refreshCast();
   }
-
-  /* ── Hand off to the composer ─────────────────────────────────────── */
-  const sendToGenerate = useCallback(() => {
-    try {
-      if (prose.trim()) window.localStorage.setItem("aw_compose_seed", prose.trim());
-      window.localStorage.setItem("aw_compose_spec", JSON.stringify(spec));
-    } catch { /* private mode — the composer just opens empty */ }
-    router.push("/");
-  }, [prose, spec, router]);
+  async function replaceStill(m: CastMember, files: FileList) {
+    const f = files[0];
+    if (!f) return;
+    setBusy(true);
+    try { const up = await uploadFile(f, "reference"); await patchCast(m, { uploadId: up.id }); }
+    catch (e) { await appAlert("Could not replace the still", (e as Error).message); }
+    finally { setBusy(false); }
+  }
+  async function editDescription(m: CastMember) {
+    const d = await appPrompt(`Describe @${m.name} in a line`, m.description, "");
+    if (d === null) return;
+    await patchCast(m, { description: d });
+  }
+  async function removeCast(m: CastMember) {
+    if (!(await appConfirm(`Remove @${m.name}?`, "Prompts that cite the name will stop resolving.", { confirmLabel: "Remove", danger: true }))) return;
+    await fetch(`/api/cast/${m.id}`, { method: "DELETE" });
+    setSel(null); refreshCast();
+  }
 
   const openIdentity = openId === "new" ? null : identities.find((i) => i.id === openId) ?? null;
+  const railName = curId ? curId.name : cur?.name ?? null;
+  const railKind = curId ? "IDENTITY" : cur ? KINDS.find((k) => k.id === cur.kind)?.badge ?? "" : "";
+  const railUpload = curId ? curId.coverUploadId : cur?.uploadId ?? null;
+  const railDesc = curId ? curId.description : cur?.description ?? "";
+  const railWhat = curId ? "face" : cur?.kind === "location" ? "place" : cur?.kind === "prop" ? "object" : cur?.kind === "style" ? "look" : "face";
 
   return (
-    <div className="screen">
-      <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
-          <h1><ParticlLockup /></h1>
-          <span className="text-[15px] text-dim">
-            {scoped ? "this project" : "the whole workspace"}
-          </span>
-        </div>
-        <p className="mt-3 max-w-[64ch] text-[15px] text-dim">
-          The hard part isn&rsquo;t making one good shot, it&rsquo;s making the
-          second one match. Train a face from photos and it comes back as itself;
-          name a face, a place or a prop once and it comes back exactly in every
-          prompt afterwards.
-        </p>
+    <>
+      <nav className="subnav !px-6" aria-label="Studio">
+        <span className="subnav-item is-on" aria-current="page">Cast &amp; identities</span>
+        <Link href="/studio/shot" className="subnav-item">Camera &amp; shot builder</Link>
+        <span className="subnav-note">
+          {scoped ? <>You&rsquo;re in <span className="text-ink">{current?.name ?? "this production"}</span> — cast added here stays with this production.</>
+            : "All projects — cast added here is available everywhere."}
+        </span>
+      </nav>
 
-        {/* ── Identities ────────────────────────────────────────── */}
-        <section className="mt-8">
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="grouplabel !pb-0">Identities</p>
-            <span className="text-[13px] text-mute">
-              {identities.length
-                ? `${identities.length} face${identities.length === 1 ? "" : "s"}${anyTraining ? " · one is training" : ""}`
-                : "a real face, learned from photos"}
-            </span>
-            <span className="ml-auto flex flex-wrap items-center gap-2">
-              <CreditStrip vendor="fal" />
-              <button onClick={() => setOpenId("new")} className="chip !text-blue"><IconPlus /> New identity</button>
-            </span>
+      <div className="st" style={{ "--st-rail": "380px" } as React.CSSProperties}>
+        <section className="st-main">
+          <div className="flex max-w-[760px] flex-col gap-2">
+            <span className="mono !tracking-[.18em]">{scoped ? current?.name ?? "This production" : "The whole workspace"}</span>
+            <p className="m-0 text-[18px] leading-[1.4] text-ink [text-wrap:pretty]">
+              The hard part isn&rsquo;t making one good shot, it&rsquo;s making the second one match. Train a face from photos and it comes back as itself; name a face, a place or a prop once and it comes back exactly in every prompt afterwards.
+            </p>
           </div>
-          <p className="mt-2 max-w-[72ch] text-[13.5px] text-dim">
-            Ten to twenty photos of one person teach a small model that face. Stills made
-            with it carry the face itself, not a description of it, and @Name in any
-            prompt carries a still of it into video.
-            {idError && (
-              <> The identities couldn&rsquo;t be read just now ({idError}), so this list may be
-                incomplete. <button onClick={refreshIds} className="text-blue">Try again</button>.</>
-            )}
-            {!idError && !terms.configured && (
-              <> Training runs on fal.ai, which isn&rsquo;t connected yet — an admin sets{" "}
-                <code className="font-mono text-[12px]">FAL_KEY</code> in Vercel. Photos can be gathered meanwhile.</>
-            )}
-          </p>
 
-          {identities.length === 0 ? (
-            <div className="card mt-4">
-              <Empty title="Nobody trained yet" line="Add an identity with a set of photos of one person, then train it." />
+          {/* ── Identities ─────────────────────────────────────── */}
+          <div className="st-sec">
+            <div className="st-sec-head">
+              <span className="st-h">Identities</span>
+              <span className="st-sub">a real face, learned from photos{!terms.configured && signedIn ? " · training runs on fal.ai, not connected yet" : ""}</span>
+              <button type="button" className="btn-secondary ml-auto" onClick={() => setOpenId("new")} disabled={!signedIn}>New identity</button>
             </div>
-          ) : (
-            <div className="gal-grid mt-4">
+            <div className="idgrid">
               {identities.map((i) => (
-                <button key={i.id} type="button" onClick={() => setOpenId(i.id)} className="gal-card card-link">
-                  <span className="gal-cover bg-thumb">
+                <button key={i.id} type="button" onClick={() => setSel({ type: "identity", id: i.id })}
+                  className={`idcard ${sel?.type === "identity" && sel.id === i.id ? "is-on" : ""}`}>
+                  <span className="idcard-face">
                     {i.coverUploadId
                       ? /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={`/api/uploads/${i.coverUploadId}`} alt={i.name} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
-                      : <span className="absolute inset-0 grid place-items-center font-mono text-[22px] text-mute">@</span>}
-                    <span className={`gal-tag ${i.status === "ready" ? "!bg-ok !text-on-ink" : i.status === "training" ? "!bg-blue !text-on-ink" : i.status === "failed" ? "!bg-lift !text-on-ink" : ""}`}>
-                      {i.status === "ready" ? "Ready" : i.status === "training" ? "Training" : i.status === "failed" ? "Failed" : "Draft"}
-                    </span>
-                    <span className="gal-tag gal-tag-right">{i.photos.length} photo{i.photos.length === 1 ? "" : "s"}</span>
+                        <img src={`/api/uploads/${i.coverUploadId}`} alt="" loading="lazy" />
+                      : <span className="mono-s">FACE · {i.name.toUpperCase()}</span>}
                   </span>
-                  <span className="gal-body">
-                    <span className="gal-name">@{i.name}</span>
-                    <span className="gal-blurb">{i.description || "—"}</span>
-                    <span className="gal-cat">
-                      {i.status === "ready" && i.trainedAt ? `trained ${timeAgo(i.trainedAt)}` : i.status === "training" ? "at the trainer" : i.status === "failed" ? "try again" : "not trained"}
+                  <span className="flex min-w-0 flex-col gap-1.5">
+                    <span className="idcard-name">{i.name}</span>
+                    <span className="idcard-state">
+                      <span className={`dot ${i.status === "ready" ? "dot-approved" : i.status === "training" ? "dot-picked" : i.status === "failed" ? "dot-none" : "dot-draft"}`} />
+                      {i.status === "ready" ? `Trained · ${i.photos.length} photos` : i.status === "training" ? `Training on ${terms.trainer || "fal.ai"}` : i.status === "failed" ? "Training failed" : `Not trained · ${i.photos.length} photo${i.photos.length === 1 ? "" : "s"}`}
+                    </span>
+                    {i.status === "training" && <span className="ptable-bar"><span style={{ width: "50%" }} /></span>}
+                    <span className="idcard-line">
+                      {i.status === "ready"
+                        ? `Used in ${usageLine(i.name).toLowerCase()}. Stills carry the face itself; @${i.name} carries a still into video.`
+                        : i.status === "training"
+                          ? `${i.photos.length} photos · started ${timeAgo(i.updatedAt)}${i.authorName ? ` by ${i.authorName}` : ""}${i.costUsd != null ? ` · ${usd(i.costUsd, 2)} training cost` : terms.trainCostUsd ? ` · ~${usd(terms.trainCostUsd, 2)} training cost` : ""}`
+                          : `${terms.recommended} photos of one person, then Train.`}
                     </span>
                   </span>
                 </button>
               ))}
+              <button type="button" className="idcard-add" onClick={() => setOpenId("new")} disabled={!signedIn}>
+                <span className="text-[13px] font-medium text-ink">Add an identity</span>
+                <span className="idcard-line">Ten to twenty photos of one person teach a small model that face. Gather the photos here; training runs when you press Train.</span>
+              </button>
             </div>
-          )}
-        </section>
-
-        {/* ── The Camera ────────────────────────────────────────── */}
-        <section className="card mt-8 px-5 py-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="grouplabel !pb-0">The camera</p>
-            <span className="text-[13px] text-mute">
-              The bank — every move, written so the engine can&rsquo;t mistake it. Where a render used one, it shows.
-            </span>
           </div>
-          <div className="camera-grid mt-4">
-            {(["move", "technique"] as const).flatMap((key) => {
-              const cat = CATEGORIES.find((c) => c.key === key)!;
-              return cat.options.map((o) => {
-                const g = movePreview.get(o.value);
-                const on = spec[key] === o.value;
+
+          {/* ── Cast and elements ──────────────────────────────── */}
+          <div className="st-sec">
+            <div className="st-sec-head">
+              <span className="st-h">Cast and elements</span>
+              <span className="st-sub">A face, a place, a prop or a look, defined once. Open one to see everything made with it.</span>
+            </div>
+            <div className="seg self-start" role="tablist">
+              {([["all", "All"], ...KINDS.map((k) => [k.id, k.label])] as [typeof filter, string][]).map(([k, label]) => (
+                <button key={k} type="button" role="tab" aria-selected={filter === k} className={`seg-opt ${filter === k ? "is-on" : ""}`} onClick={() => setFilter(k)}>{label}</button>
+              ))}
+            </div>
+            <div className="castgrid">
+              {shownCast.map((m) => {
+                const trained = identityFor(m.name)?.status === "ready";
+                const on = (cur?.id === m.id) && !curId;
                 return (
-                  <button key={`${key}-${o.value}`} type="button" onClick={() => toggle(key, o.value)}
-                    title={o.module || o.phrase} className={`camera-card ${on ? "is-on" : ""}`}>
-                    <span className="camera-preview">
-                      {g?.storedUrl
-                        ? <LazyMedia url={g.storedUrl} kind={g.kind === "image" ? "image" : "video"} hoverPlay alt={o.label} className="!absolute inset-0" />
-                        : <span className="camera-none">no take yet</span>}
+                  <button key={m.id} type="button" onClick={() => setSel({ type: "cast", id: m.id })} className={`castcard ${on ? "is-on" : ""}`}>
+                    <span className="castcard-still">
+                      {m.uploadId && /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={`/api/uploads/${m.uploadId}`} alt="" loading="lazy" />}
+                      <span className="well-badge tl !tracking-[.08em]">{KINDS.find((k) => k.id === m.kind)?.badge}</span>
+                      {trained && <span className="well-badge tr flex items-center gap-1.5"><span className="dot dot-approved !h-1.5 !w-1.5" />IDENTITY</span>}
                     </span>
-                    <span className="camera-name">{o.label}</span>
-                    <span className="camera-kind">{key === "technique" ? "technique" : "move"}</span>
+                    <span className="castcard-body">
+                      <span className="castcard-name">@{m.name}</span>
+                      <span className="castcard-desc">{m.description || "—"}</span>
+                      <span className="mono-s mt-0.5">{usageLine(m.name)}</span>
+                    </span>
                   </button>
                 );
-              });
-            })}
-          </div>
-        </section>
-
-        {/* ── Cast and elements ────────────────────────────────── */}
-        <section className="card mt-6 px-5 py-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="grouplabel !pb-0">Cast and elements</p>
-            <span className="text-[13px] text-mute">
-              A face, a place, a prop or a look, defined once. Open one to see everything made with it.
-            </span>
-            <span className="ml-auto flex flex-wrap gap-1.5">
-              {KINDS.map((k) => (
-                <button key={k.id} title={k.blurb}
-                  onClick={() => { setPendingKind(k.id); file.current?.click(); }}
-                  disabled={busy} className="chip disabled:opacity-50">
-                  <IconPlus className="!h-3 !w-3" /> {k.label}
+              })}
+              <div className="relative">
+                <button type="button" className="castcard-add" onClick={() => setAdding((v) => !v)} disabled={!signedIn || busy}>
+                  <span className="text-[13px] font-medium text-ink">+ Add to cast</span>
+                  <span className="idcard-line text-center">A still and a line of description, then write @TheirName in any prompt.</span>
                 </button>
-              ))}
-            </span>
-          </div>
-          <input ref={file} type="file" accept="image/*" hidden
-            onChange={(e) => { if (e.target.files) addFrom(e.target.files); e.target.value = ""; }} />
-
-          {cast.length === 0 ? (
-            <Empty title="Nothing cast yet"
-              line="Add a character, a place, a prop or a look with a still and a line of description, then write @TheirName in any prompt." />
-          ) : (
-            <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(190px,1fr))]">
-              {cast.map((m) => (
-                <div key={m.id} className="group relative overflow-hidden rounded-[var(--r)] bg-panel2">
-                  <button type="button" onClick={() => setOpenElement(m)}
-                    className="block w-full text-left" title={`Open @${m.name}`}>
-                    <span className="block aspect-[4/3] w-full bg-thumb">
-                      {m.uploadId && (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={`/api/uploads/${m.uploadId}`} alt={m.name}
-                          className="h-full w-full object-cover" loading="lazy" />
-                      )}
-                    </span>
-                    <span className="block px-3 pt-2">
-                      <span className="flex items-baseline gap-2">
-                        <span className="truncate font-mono text-[13px] font-medium text-ink">@{m.name}</span>
-                        <span className="text-[11px] uppercase tracking-wide text-mute">
-                          {m.kind === "style" ? "look" : m.kind}
-                        </span>
-                      </span>
-                      <span className="mt-0.5 line-clamp-2 block text-[12px] text-mute">{m.description || "—"}</span>
-                    </span>
-                  </button>
-                  <div className="px-3 pb-2">
-                    <button onClick={() => setProse((p) => `${p}${p && !p.endsWith(" ") ? " " : ""}@${m.name} `)}
-                      className="mt-1 text-[12px] text-blue">Cite</button>
+                {adding && (
+                  <div role="menu" className="menu-pop absolute left-4 top-12 z-30 min-w-[200px]">
+                    {KINDS.map((k) => (
+                      <button key={k.id} type="button" role="menuitem" className="menu-item" title={k.blurb}
+                        onClick={() => { setAdding(false); setPendingKind(k.id); file.current?.click(); }}>{k.label}</button>
+                    ))}
                   </div>
-                  <button onClick={() => removeCast(m)} aria-label={`Remove ${m.name}`}
-                    className="reveal absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white">
-                    <IconClose className="!h-3 !w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* ── The shot ─────────────────────────────────────────── */}
-        <section className="card mt-6 px-5 py-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="grouplabel !pb-0">The shot</p>
-            {n > 0 && <span className="chip bg-blue text-on-ink">{n} set</span>}
-            {n > 0 && <span className="ml-auto"><button onClick={() => setSpec({})} className="chip !text-lift">Clear</button></span>}
-          </div>
-          {phrase && <p className="mt-2 text-[13px] text-dim"><span className="text-mute">Reads as: </span>{phrase}.</p>}
-
-          <div className="mt-4 grid gap-x-8 gap-y-5 md:grid-cols-2">
-            {CATEGORIES.map((c) => (
-              <div key={c.key}>
-                <p className="text-[12px] font-medium uppercase tracking-wide text-mute">{c.label}</p>
-                {c.hint && <p className="mt-0.5 text-[12px] leading-snug text-mute">{c.hint}</p>}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {c.options.map((o) => (
-                    <button key={o.value} onClick={() => toggle(c.key, o.value)} title={o.phrase}
-                      className={`chip ${spec[c.key] === o.value ? "bg-blue text-on-ink" : ""}`}>
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
+                )}
               </div>
-            ))}
+            </div>
+            {!signedIn && <Empty compact title="Cast is for the team" line="Sign in to see who this production keeps returning to." />}
           </div>
+          <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { if (e.target.files) addFrom(e.target.files); e.target.value = ""; }} />
+          <input ref={replaceFile} type="file" accept="image/*" hidden onChange={(e) => { if (e.target.files && cur) replaceStill(cur, e.target.files); e.target.value = ""; }} />
         </section>
 
-        {/* ── The prompt ───────────────────────────────────────── */}
-        <section className="card mt-6 px-5 py-5">
-          <p className="grouplabel">The prompt</p>
-          <textarea
-            value={prose} onChange={(e) => setProse(e.target.value)}
-            placeholder="What happens in the shot? Subject and action — the chips above handle how it looks."
-            rows={3}
-            className="mt-3 w-full resize-none rounded-[12px] bg-chip px-3.5 py-3 text-[15px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none"
-          />
-          {(prose.trim() || phrase) && (
-            <div className="mt-3 rounded-[var(--r)] bg-panel2 px-4 py-3">
-              <p className="grouplabel">Reads as</p>
-              <p className="mt-1.5 text-[14px] leading-relaxed text-dim">{preview}</p>
-            </div>
-          )}
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button onClick={sendToGenerate}
-              disabled={!prose.trim() && !n}
-              className="inline-flex items-center gap-2 rounded-full bg-blue px-5 py-2.5 text-[15px] font-medium text-on-ink disabled:opacity-40">
-              <IconSparkle className="!h-4 !w-4" /> Take it to Video
-            </button>
-            <span className="text-[13px] text-mute">
-              Nothing is rendered here — the composer keeps the model, duration
-              and references.
+        {/* ── Detail rail ───────────────────────────────────────── */}
+        <aside className="ws-rail">
+          <div className="ws-rail-head">
+            <span className="flex items-baseline gap-2">
+              <span className="ws-bar-h">{railName ? (curId ? railName : `@${railName}`) : "Nothing selected"}</span>
+              <span className="mono !tracking-[.08em]">{railKind}</span>
             </span>
+            {railName && <span className="mono-s">{usageLine(railName)}</span>}
           </div>
-        </section>
+          <div className="ws-rail-body !gap-4">
+            <div className="st-still">
+              {railUpload
+                ? /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={`/api/uploads/${railUpload}`} alt="" />
+                : <span className="mono-s">{railName ? `${curId ? "FACE" : "STILL"} · ${railName.toUpperCase()}` : "PICK A CARD"}</span>}
+            </div>
+            {railName && <p className="m-0 text-[13.5px] leading-[1.5] text-ink [text-wrap:pretty]">{railDesc || "No description yet."}</p>}
+            {cur && !curId && (
+              <div className="flex gap-1.5">
+                <button type="button" className="trk-btn flex-1 !py-2" onClick={() => replaceFile.current?.click()} disabled={busy}>Replace still</button>
+                <button type="button" className="trk-btn flex-1 !py-2" onClick={() => editDescription(cur)}>Edit description</button>
+                {identityFor(cur.name) && <button type="button" className="trk-btn flex-1 !py-2" onClick={() => setOpenId(identityFor(cur.name)!.id)}>Retrain</button>}
+                <button type="button" className="trk-btn !py-2 text-lift" onClick={() => removeCast(cur)} title="Remove from the cast">Remove</button>
+              </div>
+            )}
+            {curId && (
+              <div className="flex gap-1.5">
+                <button type="button" className="trk-btn flex-1 !py-2" onClick={() => setOpenId(curId.id)}>{curId.status === "ready" ? "Retrain" : curId.status === "training" ? "Watch training" : "Photos & train"}</button>
+              </div>
+            )}
+            {railName && (
+              <>
+                <div className="ws-block !pt-3.5">
+                  <span className="mono">Everything made with @{railName}</span>
+                  {madeWith(railName).length ? (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {madeWith(railName).slice(0, 9).map((g) => (
+                        <Link key={g.id} href={g.kind === "image" ? "/images" : g.kind === "audio" ? "/audio" : "/"} className="st-take">
+                          <span className="st-take-well">
+                            {g.storedUrl && g.status === "succeeded" && g.kind !== "audio"
+                              ? <LazyMedia url={g.storedUrl} kind={g.kind === "image" ? "image" : "video"} alt="" className="!absolute inset-0" />
+                              : null}
+                          </span>
+                          <span className="st-take-cap"><span>{g.shotCode ?? "—"}</span><span className="text-dim">{g.kind === "image" ? `S${g.version ?? 1}` : `v${g.version ?? 1}`}</span></span>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : <span className="rail-help">Nothing yet — the first render that cites @{railName} lands here.</span>}
+                </div>
+                <div className="ws-block !pt-3.5">
+                  <span className="mono">In the prompt</span>
+                  <div className="st-explain">
+                    Write <span className="island-cite !rounded-[4px] !px-1 font-medium text-ink">@{railName}</span> anywhere. The composer swaps in the still and the description, so the same {railWhat} comes back in every shot.
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </aside>
       </div>
 
-      {openElement && (
-        <ElementSheet
-          member={openElement}
-          onClose={() => setOpenElement(null)}
-          onChanged={refreshCast}
-        />
-      )}
       {openId && (
-        <IdentitySheet
-          key={openId}
-          identity={openIdentity}
-          projectId={scoped ? bin : null}
-          terms={terms}
-          onClose={() => setOpenId(null)}
-          onChanged={refreshIds}
-        />
+        <IdentitySheet key={openId} identity={openIdentity} projectId={scoped ? bin : null} terms={terms}
+          onClose={() => setOpenId(null)} onChanged={() => { refreshIds(); refreshCast(); }} />
       )}
       {busy && (
-        <div className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-full bg-panel px-4 py-2 text-[13px] shadow-[var(--shadow-pop)]">
-          <ParticlSpinner size={14} className="mr-2 inline-block align-middle text-dim" /> Adding…
+        <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-[7px] border border-line bg-panel px-4 py-2 text-[13px]">
+          <ParticlSpinner size={14} className="mr-2 inline-block align-middle text-dim" /> Working…
         </div>
       )}
-    </div>
+    </>
   );
 }

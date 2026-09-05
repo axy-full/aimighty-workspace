@@ -77,6 +77,9 @@ export type ComposerProps = {
   setupCount: number; setupOpen: boolean; toggleSetup: () => void;
   /** Which kind of thing this composer makes — the model menu shows only those. */
   kind: "video" | "image";
+  /** Rendered inside the right rail: the rail's foot owns the Render button
+   *  and the price, and the rail's blocks own Setup, so those go. */
+  rail?: boolean;
 };
 
 export default function Composer(p: ComposerProps) {
@@ -85,7 +88,7 @@ export default function Composer(p: ComposerProps) {
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked, notice,
     est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
-    pickMode, onPickSource, onDropAsset,
+    pickMode, onPickSource, onDropAsset, rail = false,
   } = p;
   const [menu, setMenu] = useState<Menu>(null);
   const [drag, setDrag] = useState(false);
@@ -151,7 +154,7 @@ export default function Composer(p: ComposerProps) {
 
   return (
     <div
-      className={`island-card ${drag ? "is-drag" : ""}`}
+      className={`${rail ? "rail-composer" : "island-card"} ${drag ? "is-drag" : ""}`}
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => {
@@ -359,15 +362,17 @@ export default function Composer(p: ComposerProps) {
           </ChipMenu>
         )}
 
-        <button type="button" onClick={toggleSetup}
-          className={`chip-ctl ${setupOpen ? "is-on" : ""}`}
-          title="Shot filing, shot control and the cast — carried into every render">
-          <IconSliders /> Setup{setupCount > 0 ? ` · ${setupCount}` : ""}
-        </button>
+        {!rail && (
+          <button type="button" onClick={toggleSetup}
+            className={`chip-ctl ${setupOpen ? "is-on" : ""}`}
+            title="Shot filing, shot control and the cast — carried into every render">
+            <IconSliders /> Setup{setupCount > 0 ? ` · ${setupCount}` : ""}
+          </button>
+        )}
 
         <span className="ml-auto" />
 
-        <span className="relative" ref={costRef}>
+        {!rail && <span className="relative" ref={costRef}>
           <button type="button" onClick={() => setMenu(menu === "cost" ? null : "cost")} className="island-cost"
             title="What this render will cost">
             <span className="font-semibold text-bone">{est ? usd(est.net, 2) : "—"}</span>
@@ -390,14 +395,16 @@ export default function Composer(p: ComposerProps) {
               </span>
             </>
           )}
-        </span>
+        </span>}
 
-        <button type="button" onClick={onRender}
-          disabled={busy || !prompt.trim() || blocked}
-          title="Render  ⌘↵"
-          className="btn-render island-send">
-          {busy ? <ParticlSpinner size={18} className="text-on-ink" /> : <IconArrowUp />}
-        </button>
+        {!rail && (
+          <button type="button" onClick={onRender}
+            disabled={busy || !prompt.trim() || blocked}
+            title="Render  ⌘↵"
+            className="btn-render island-send">
+            {busy ? <ParticlSpinner size={18} className="text-on-ink" /> : <IconArrowUp />}
+          </button>
+        )}
       </div>
     </div>
   );

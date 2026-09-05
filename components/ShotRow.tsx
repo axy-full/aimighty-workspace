@@ -14,11 +14,14 @@ import { appPrompt, appAlert } from "@/components/dialog";
 
 type Shot = { id: string; code: string; scene: string; title: string; takes: number };
 
-export default function ShotRow({ projectId, shotId, setShotId }: {
+export default function ShotRow({ projectId, shotId, setShotId, chip = false }: {
   projectId: string;
   shotId: string;
   setShotId: (id: string) => void;
+  /** The rail-head form: one dropdown chip reading `FILED AGAINST SH04 ▼`. */
+  chip?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
   const scoped = projectId !== "all" && projectId !== "unfiled";
   const { data, refresh } = useApi<{ shots: Shot[] }>(
     scoped ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 0);
@@ -43,6 +46,34 @@ export default function ShotRow({ projectId, shotId, setShotId }: {
     } catch (e) {
       await appAlert((e as Error).message);
     } finally { setBusy(false); }
+  }
+
+  if (chip) {
+    return (
+      <span className="relative">
+        <button type="button" className="chip-dd" disabled={!scoped || busy}
+          onClick={() => setOpen((v) => !v)} title={scoped ? "Which shot this take files against" : "Pick a project to file against a shot"}>
+          <span className="mono" style={{ letterSpacing: ".1em" }}>Filed against</span>
+          <span className="mono-v">{current ? current.code : scoped ? "—" : "NONE"}</span>
+          <span className="hdr-caret">▼</span>
+        </button>
+        {open && (
+          <span className="menu-pop hdr-switch-menu right-0 left-auto" role="menu">
+            <button type="button" className={`menu-item ${!shotId ? "is-on" : ""}`}
+              onClick={() => { setShotId(""); setOpen(false); }}>Unfiled</button>
+            {shots.map((sh) => (
+              <button key={sh.id} type="button" className={`menu-item ${shotId === sh.id ? "is-on" : ""}`}
+                onClick={() => { setShotId(sh.id); setOpen(false); }}>
+                <span className="mono-v mr-2">{sh.code}</span>
+                <span className="min-w-0 flex-1 truncate">{sh.title || ""}</span>
+                {sh.takes > 0 && <span className="mono-s ml-2">{sh.takes}</span>}
+              </button>
+            ))}
+            <button type="button" className="menu-item text-dim" onClick={() => { setOpen(false); newShot(); }}>+ New shot</button>
+          </span>
+        )}
+      </span>
+    );
   }
 
   if (!scoped) {

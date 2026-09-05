@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const scope = (v: string | null) =>
   v && v !== "all" && v !== "unfiled" ? v : null;
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
@@ -34,7 +35,6 @@ export async function GET(req: Request) {
       args: ids,
     });
     for (const r of rs.rows) {
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
       const row = r as any;
       stats.set(row.shot_id, {
         takes: Number(row.takes ?? 0), ok: Number(row.ok ?? 0),
@@ -42,9 +42,35 @@ export async function GET(req: Request) {
       });
     }
   }
+  /* The write-back half: where each shot stands and which take is its
+     master. Video takes only — a still or a track never approves a shot. */
+  const back = new Map<string, { state: string; master: { id: string; version: number | null; url: string | null } | null }>();
+  const sids = shots.map((s) => s.id);
+  if (sids.length) {
+    const rs = await db().execute({
+      sql: `SELECT shot_id, id, version, status, review_state, stored_url, source_url
+            FROM generations
+            WHERE shot_id IN (${sids.map(() => "?").join(",")}) AND deleted = 0 AND kind = 'video'
+            ORDER BY version DESC`,
+      args: sids,
+    });
+    const byShot = new Map<string, any[]>();
+    for (const r of rs.rows as any[]) (byShot.get(r.shot_id) ?? byShot.set(r.shot_id, []).get(r.shot_id)!).push(r);
+    for (const [sid, list] of byShot) {
+      const approved = list.find((r) => r.review_state === "approved");
+      const picked = list.find((r) => r.review_state === "picked");
+      const live = list.some((r) => r.status === "queued" || r.status === "running");
+      const state = approved ? "approved" : picked ? "picked" : live ? "rendering" : list.length ? "draft" : "none";
+      back.set(sid, {
+        state,
+        master: approved ? { id: approved.id, version: approved.version == null ? null : Number(approved.version), url: approved.stored_url ?? approved.source_url ?? null } : null,
+      });
+    }
+  }
   return NextResponse.json({
     shots: shots.map((s) => ({
       ...s, ...(stats.get(s.id) ?? { takes: 0, ok: 0, failed: 0, spend: 0 }),
+      ...(back.get(s.id) ?? { state: s.kind === "type" ? "type" : "none", master: null }),
     })),
   });
 }
@@ -70,6 +96,10 @@ export async function POST(req: Request) {
     scene: String(body.scene ?? ""),
     code,
     title: String(body.title ?? ""),
+    planned: body.planned == null || body.planned === "" ? null : Number(body.planned),
+    setup: body.setup && typeof body.setup === "object" ? body.setup : undefined,
+    cast: Array.isArray(body.cast) ? body.cast.map(String) : undefined,
+    kind: body.kind === "type" ? "type" : undefined,
     description: String(body.description ?? ""),
     createdBy: got.user.id,
   });

@@ -10,7 +10,7 @@ export type Generation = {
   projectName: string | null;
   arkTaskId: string | null;
   kind: "video" | "image" | "audio";
-  reviewState: "" | "approved" | "changes";
+  reviewState: "" | "approved" | "picked" | "changes";
   reviewBy: string | null;
   model: string;
   prompt: string;
@@ -73,7 +73,9 @@ export function rowToGeneration(r: any): Generation {
     projectName: r.project_name ?? null,
     arkTaskId: r.ark_task_id ?? null,
     kind: r.kind === "image" ? "image" : r.kind === "audio" ? "audio" : "video",
-    reviewState: r.review_state === "approved" ? "approved" : r.review_state === "changes" ? "changes" : "",
+    reviewState: r.review_state === "approved" ? "approved"
+      : r.review_state === "picked" ? "picked"
+      : r.review_state === "changes" ? "changes" : "",
     reviewBy: r.review_by ?? null,
     model: r.model,
     prompt: r.prompt,

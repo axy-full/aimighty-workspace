@@ -189,6 +189,39 @@ const SCHEMA = [
      updated_at  INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_shots_project ON shots(project_id, position)`,
+  /* Atomik's words. An IDEA is a card: a logline, a tone, a few references,
+     pinned by whoever thinks it is worth a brief. A TREATMENT is one document
+     per production: scenes with prose, the setup defaults and the margin
+     notes. Shots are the shots table — the breakdown writes them and the
+     shot list reads them back with Particl's numbers beside them. */
+  `CREATE TABLE IF NOT EXISTS ideas (
+     id          TEXT PRIMARY KEY,
+     num         INTEGER NOT NULL DEFAULT 0,
+     project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
+     logline     TEXT NOT NULL DEFAULT '',
+     tone        TEXT NOT NULL DEFAULT '[]',
+     refs        TEXT NOT NULL DEFAULT '[]',
+     state       TEXT NOT NULL DEFAULT 'open',
+     pins        TEXT NOT NULL DEFAULT '[]',
+     parked_by   TEXT,
+     created_by  TEXT NOT NULL DEFAULT '',
+     created_at  INTEGER NOT NULL,
+     updated_at  INTEGER NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS treatments (
+     id          TEXT PRIMARY KEY,
+     project_id  TEXT UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+     idea_id     TEXT,
+     draft       INTEGER NOT NULL DEFAULT 1,
+     title       TEXT NOT NULL DEFAULT '',
+     logline     TEXT NOT NULL DEFAULT '',
+     setup       TEXT NOT NULL DEFAULT '{}',
+     scenes      TEXT NOT NULL DEFAULT '[]',
+     notes       TEXT NOT NULL DEFAULT '[]',
+     updated_by  TEXT NOT NULL DEFAULT '',
+     created_at  INTEGER NOT NULL,
+     updated_at  INTEGER NOT NULL
+   )`,
   /* Where a card sits on a project's canvas. Kept apart from the generation
      row so laying out a board never rewrites production data, and so a
      reference asset or a note can share the same surface as a render. */
@@ -440,7 +473,15 @@ export async function ready(): Promise<void> {
       for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`,
                          // What kind of job this is — the axis R2 calls
                          // genre/category-level performance.
-                         `category TEXT NOT NULL DEFAULT ''`]) {
+                         `category TEXT NOT NULL DEFAULT ''`,
+        /* The pipeline handoff: a production has a kind ("30s car spot"), a
+           runtime target in seconds, a cap the producer owns, and a stage.
+           The cap is what the header reads `$57.20 OF $250 CAP` against. */
+        `kind TEXT`,
+        `runtime_target INTEGER`,
+        `cap_usd REAL`,
+        `stage TEXT`,
+]) {
         await addColumn("projects", col);
       }
       for (const col of [
@@ -504,6 +545,19 @@ export async function ready(): Promise<void> {
          filters on shot_id, so without this they scan the whole table. */
       /* Top-ups belong to a vendor. Everything recorded before there was more
          than one vendor was ModelArk money, which the default preserves. */
+      /* The breakdown's half of a shot: planned seconds, the setup picked
+         per shot, the cast tags, whether it renders at all, and whether it
+         has changed since the shot list was last sent across. */
+      for (const col of [
+        `planned INTEGER`,
+        `setup TEXT NOT NULL DEFAULT '{}'`,
+        `cast TEXT NOT NULL DEFAULT '[]'`,
+        `kind TEXT NOT NULL DEFAULT 'render'`,
+        `dirty INTEGER NOT NULL DEFAULT 0`,
+        `synced_at INTEGER`,
+      ]) {
+        await addColumn("shots", col);
+      }
       await addColumn("topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */
       await addColumn("topups", `credits INTEGER`);

@@ -1,26 +1,42 @@
 "use client";
 
 /**
- * The work, as the room's main wall: every render in the project laid out
- * as a masonry that plays on approach. A render in flight takes its place
- * in the grid the moment it is submitted — a breathing card with the brand
- * thinking and the clock running — rather than a status word in a strip.
+ * The wall, grouped by shot — from the pipeline handoff.
+ *
+ * A render is a TAKE of a shot, and the wall reads that way: one group per
+ * shot, its takes as cards, and a state on every card — draft, picked,
+ * approved, or rendering. The old wall was a masonry of everything ever
+ * made; this one is the production's shot list with the work hung under
+ * each line of it. Unfiled renders (no shot) keep a group of their own at
+ * the end, because an experiment should not need paperwork to exist.
+ *
+ * Stills use the same skeleton with a different question on the filter:
+ * not what state a take is in but what ROLE a still plays — a first frame
+ * pinned to its shot, a cast still standing for a face or a place, or
+ * loose. The role is a badge on the well and a row of small actions under
+ * the card, so a still can be promoted without opening it.
+ *
+ * The filter is client-side and instant: it hides takes and drops the
+ * groups that empty out, and the counts on the segments are live.
  */
-import { IconAudio, IconDown, IconTrash } from "./Icons";
-import { appConfirm } from "./dialog";
-import { announceChange } from "@/lib/changes";
-import { downloadHref } from "@/lib/format";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Gen } from "./GenCard";
 import LazyMedia from "./LazyMedia";
 import { Empty, ParticlSpinner } from "./ParticlMark";
+import { appPrompt } from "./dialog";
 import { useSession } from "@/lib/session";
+import { useApi } from "@/lib/useApi";
 import { shortLabel } from "@/lib/models";
+import { usd, downloadHref } from "@/lib/format";
 
+/** Kept for the callers that still speak it; the wall itself shows one kind. */
 export type FeedFilter = "all" | "video" | "image" | "audio";
+export type TakeState = "all" | "draft" | "picked" | "approved";
+export type StillRole = "first" | "cast" | "loose";
 
-const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
+export const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 /** The tile's shape is the render's shape — a 9:16 stays a portrait. */
 export function aspectOf(g: Gen): string {
@@ -29,45 +45,54 @@ export function aspectOf(g: Gen): string {
   return m ? `${m[1]} / ${m[2]}` : "16 / 9";
 }
 
-const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+type Shot = { id: string; code: string; scene: string; title: string; takes: number; spend: number };
+
+export function stateOf(g: Gen): "rendering" | "approved" | "picked" | "draft" | "failed" {
+  if (g.status === "queued" || g.status === "running") return "rendering";
+  if (g.status === "failed" || g.status === "cancelled") return "failed";
+  if (g.reviewState === "approved") return "approved";
+  if (g.reviewState === "picked") return "picked";
+  return "draft";
+}
+
+/** A still's role on the production, as the composer's USE AS row set it. */
+export function roleOf(g: Gen): StillRole {
+  const r = (g.params as { useAs?: string }).useAs;
+  return r === "first" || r === "cast" ? r : "loose";
+}
 
 export default function Feed({
-  gens, visible, activeId, onOpen, filter, setFilter, scopeName, className = "", aside, problem,
+  gens, visible, activeId, onOpen, scopeName, projectId, kind, className = "", problem, onChanged,
 }: {
   /** Everything in scope — what the counts describe. */
   gens: Gen[];
-  /** What the wall shows: the same list through the Clips/Stills filter,
-   *  decided by the owner so the theatre walks exactly these. */
+  /** What the wall shows: the same list through the owner's kind filter,
+   *  decided there so the theatre walks exactly these. */
   visible: Gen[];
   activeId: string | null;
   onOpen: (id: string) => void;
-  filter: FeedFilter;
-  setFilter: (f: FeedFilter) => void;
   scopeName: string;
-  /** Something to sit at the head's right, before the Library link — the credit strip. */
-  aside?: React.ReactNode;
+  projectId: string;
+  kind: "video" | "image";
   /** Set when the library could not be read, so an empty wall isn't mistaken for a new one. */
   problem?: string | null;
   className?: string;
+  /** A card changed something on the server (a still's role). */
+  onChanged?: () => void;
+  /* The kind filter survives in the signature for the Library; the wall
+     ignores it, because a wall is one kind by construction. */
+  filter?: FeedFilter; setFilter?: (f: FeedFilter) => void; aside?: React.ReactNode;
 }) {
   const { signedIn } = useSession();
-  const box = useRef<HTMLDivElement>(null);
-  const [cols, setCols] = useState(3);
+  const stills = kind === "image";
+  const [take, setTake] = useState<TakeState>("all");
+  const [role, setRole] = useState<"all" | StillRole>("all");
+  const [q, setQ] = useState("");
 
-  // Columns follow the width: two on a phone, up to six on a wide desk.
-  // Items are dealt round-robin so the newest sit on the top row, left to
-  // right — the reading order a feed is expected to have.
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? el.clientWidth;
-      const min = w < 520 ? 156 : 208;
-      setCols(Math.max(1, Math.min(6, Math.floor((w + 12) / (min + 12)))));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const scoped = projectId !== "all" && projectId !== "unfiled";
+  const { data: shotData } = useApi<{ shots: Shot[] }>(
+    scoped ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
+  const shots = useMemo(() => shotData?.shots ?? [], [shotData]);
 
   // One clock for every card in flight.
   const anyLive = gens.some((g) => g.status === "queued" || g.status === "running");
@@ -78,152 +103,238 @@ export default function Feed({
     return () => clearInterval(t);
   }, [anyLive]);
 
-  const clips = gens.filter((g) => g.kind !== "image" && g.kind !== "audio").length;
-  const stills = gens.filter((g) => g.kind === "image").length;
-  const sounds = gens.length - clips - stills;
-  const mixed = [clips, stills, sounds].filter((n) => n > 0).length > 1;
-  const shown = visible;
+  const counts = useMemo(() => {
+    const c = { all: visible.length, draft: 0, picked: 0, approved: 0, first: 0, cast: 0, loose: 0 };
+    for (const g of visible) {
+      const s = stateOf(g);
+      if (s === "approved") c.approved++;
+      else if (s === "picked") c.picked++;
+      else if (s === "draft" || s === "rendering") c.draft++;
+      c[roleOf(g)]++;
+    }
+    return c;
+  }, [visible]);
 
-  const columns: Gen[][] = Array.from({ length: cols }, () => []);
-  shown.forEach((g, i) => columns[i % cols].push(g));
-  const live = gens.filter((g) => g.status === "queued" || g.status === "running").length;
+  /* Group by shot, in shot order; unfiled last. A search narrows by prompt,
+     title, shot code or an @name. */
+  const groups = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const keep = (g: Gen) => {
+      if (stills) {
+        if (role !== "all" && roleOf(g) !== role) return false;
+      } else if (take !== "all") {
+        const s = stateOf(g);
+        if (take === "draft" ? !(s === "draft" || s === "rendering") : s !== take) return false;
+      }
+      if (!needle) return true;
+      return [g.prompt, g.title ?? "", g.shotCode ?? ""].join(" ").toLowerCase().includes(needle);
+    };
+    const byShot = new Map<string, Gen[]>();
+    const loose: Gen[] = [];
+    for (const g of visible) {
+      if (!keep(g)) continue;
+      const key = g.shotCode ?? "";
+      if (!key) { loose.push(g); continue; }
+      (byShot.get(key) ?? byShot.set(key, []).get(key)!).push(g);
+    }
+    const spendOf = (list: Gen[]) => list.reduce((a, g) => a + (g.costUsd ?? 0), 0);
+    const order = new Map(shots.map((s, i) => [s.code, i]));
+    const out = [...byShot.entries()]
+      .sort((a, b) => (order.get(a[0]) ?? 1e9) - (order.get(b[0]) ?? 1e9) || a[0].localeCompare(b[0]))
+      .map(([code, list]) => {
+        const shot = shots.find((s) => s.code === code);
+        const takes = list.slice().sort((a, b) => (a.version ?? 0) - (b.version ?? 0));
+        return {
+          key: code, code, title: shot?.title ?? "", shotId: shot?.id ?? null, takes,
+          meta: `${list.length} ${stills ? "still" : "take"}${list.length === 1 ? "" : "s"} · ${usd(spendOf(list), 2)}`,
+        };
+      });
+    if (loose.length) {
+      out.push({
+        key: "__unfiled", code: "UNFILED", title: "Not filed against a shot", shotId: null,
+        takes: loose, meta: `${loose.length} render${loose.length === 1 ? "" : "s"} · ${usd(spendOf(loose), 2)}`,
+      });
+    }
+    return out;
+  }, [visible, shots, take, role, q, stills]);
+
+  const noun = stills ? "STILLS" : "TAKES";
+  const shotCount = scoped ? shots.length : new Set(visible.map((g) => g.shotCode).filter(Boolean)).size;
+  const filterWord = stills ? (role === "all" ? "" : role === "first" ? "first frames" : role === "cast" ? "cast stills" : "loose") : take;
 
   return (
-    <div ref={box} className={`feed ${className}`}>
-      <div className="feed-head">
-        <span className="feed-title">{scopeName}</span>
-        {live > 0 && (
-          <span className="feed-live"><span className="lamp lamp-live" />{live} rendering</span>
-        )}
-        {mixed && (
-          <span className="feed-filter">
-            {([["all", `All ${gens.length}`], ["video", `Clips ${clips}`], ["image", `Stills ${stills}`], ["audio", `Audio ${sounds}`]] as const)
-              .filter(([k]) => k === "all" || (k === "video" ? clips : k === "image" ? stills : sounds) > 0)
-              .map(([k, label]) => (
-              <button key={k} type="button" onClick={() => setFilter(k)} data-active={filter === k}>{label}</button>
-            ))}
-          </span>
-        )}
-        <span className="ml-auto" />
-        {aside}
-        <Link href="/all" className="feed-link">Library</Link>
+    <section className={`ws-main ${className}`}>
+      <div className="ws-bar">
+        <div className="ws-bar-title">
+          <span className="ws-bar-h">{stills ? "Stills" : "The wall"}</span>
+          <span className="mono-s">{visible.length} {noun} · {shotCount} SHOTS</span>
+          {stills ? (
+            <Link href="/studio" className="hdr-mono-link ml-1.5">CAST →</Link>
+          ) : (
+            <>
+              {scoped && <Link href={`/projects/${encodeURIComponent(projectId)}/canvas`} className="hdr-mono-link ml-1.5">CANVAS →</Link>}
+              <Link href="/all" className="hdr-mono-link">LIBRARY →</Link>
+            </>
+          )}
+        </div>
+        <div className="seg ml-2" role="tablist">
+          {stills ? (
+            ([["all", "All"], ["first", "First frames"], ["cast", "Cast stills"], ["loose", "Loose"]] as const).map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={role === k} onClick={() => setRole(k)}
+                className={`seg-opt ${role === k ? "is-on" : ""}`}>
+                {label}<span className="seg-n">{counts[k]}</span>
+              </button>
+            ))
+          ) : (
+            ([["all", "All"], ["draft", "Draft"], ["picked", "Picked"], ["approved", "Approved"]] as const).map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={take === k} onClick={() => setTake(k)}
+                className={`seg-opt ${take === k ? "is-on" : ""}`}>
+                {label}<span className="seg-n">{counts[k]}</span>
+              </button>
+            ))
+          )}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="chip-dd is-muted" title="Grouped by the shot they file against">Group by shot <span className="hdr-caret">▼</span></span>
+          <label className="search w-[200px]">
+            <span className="search-glyph" aria-hidden>⌕</span>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search renders, @cast…" />
+          </label>
+        </div>
       </div>
 
-      {gens.length === 0 && problem ? (
-        <div className="feed-empty">
+      <div className="ws-scroll">
+        {gens.length === 0 && problem ? (
+          <Empty title="The library didn't load"
+            line={`${problem} Anything rendering carries on; this wall fills in as soon as the connection does.`} />
+        ) : gens.length === 0 ? (
           <Empty
-            title="The library didn't load"
-            line={`${problem} Anything rendering carries on; this wall fills in as soon as the connection does.`}
-          />
-        </div>
-      ) : gens.length === 0 ? (
-        <div className="feed-empty">
-          {/* An empty wall means two different things. For the studio it is
-              an invitation; for a visitor it is a locked door, and saying
-              "your first shot goes here" to someone who cannot render one
-              would be a small lie. */}
-          <Empty
-            title={signedIn ? "Your first shot goes here" : "The wall is private"}
+            title={signedIn ? (stills ? "Your first still goes here" : "Your first shot goes here") : "The wall is private"}
             line={signedIn
-              ? "Describe it below. The cost sits on the button before you press it, and every render lands on this wall as it finishes."
-              : "This is where the studio's renders sit. The composer below is the real one — sign in and the cost appears on the button before you press it."}
+              ? "Describe it on the right. The cost sits on the button before you press it, and every render lands under its shot as it finishes."
+              : "This is where the studio's takes sit, under the shots they belong to. The composer on the right is the real one — sign in and the cost appears on the button before you press it."}
           />
-        </div>
-      ) : shown.length === 0 ? (
-        <div className="feed-empty"><Empty compact title="Nothing of this kind yet" /></div>
-      ) : (
-        <div className="masonry" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-          {columns.map((col, c) => (
-            <div key={c} className="masonry-col">
-              {col.map((g) => (
-                <Tile key={g.id} gen={g} active={g.id === activeId} now={now} onOpen={() => onOpen(g.id)} />
+        ) : groups.length === 0 ? (
+          <Empty compact title={q ? `Nothing matching “${q}”` : `Nothing ${filterWord} yet`} />
+        ) : groups.map((g) => (
+          <div key={g.key} className="flex flex-col gap-2.5">
+            <div className="grp-head">
+              <span className="grp-id">{g.code}</span>
+              {g.title && <span className="grp-title">{g.title}</span>}
+              <span className="grp-meta">{g.meta}</span>
+              <span className="grp-rule" />
+              {g.shotId && scoped && (
+                <Link href={`/projects/${encodeURIComponent(projectId)}/canvas?shot=${encodeURIComponent(g.shotId)}`}
+                  className="hdr-mono-link">OPEN SHOT →</Link>
+              )}
+            </div>
+            <div className={`grp-grid ${stills ? "is-stills" : ""}`}>
+              {g.takes.map((t) => (
+                <Take key={t.id} gen={t} code={g.code} active={t.id === activeId} now={now}
+                  onOpen={() => onOpen(t.id)} onChanged={onChanged} />
               ))}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+          </div>
+        ))}
+        <span className="sr-only">{scopeName}</span>
+      </div>
+    </section>
   );
 }
 
-function Tile({ gen, active, now, onOpen }: { gen: Gen; active: boolean; now: number; onOpen: () => void }) {
+/**
+ * One take. Its state is a dot and a word; its cost rides the right edge.
+ * A still carries its role as a badge and a row of three small actions —
+ * First frame, To cast, download — under the body. `badge` (the Library)
+ * names the production in the top-left corner.
+ */
+export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
+  gen: Gen; code: string; active: boolean; now: number; onOpen: () => void;
+  onChanged?: () => void; badge?: string;
+}) {
   const url = gen.storedUrl ?? gen.sourceUrl;
   const done = gen.status === "succeeded" && Boolean(url);
-  const live = gen.status === "queued" || gen.status === "running";
+  const s = stateOf(gen);
   const still = gen.kind === "image";
   const audio = gen.kind === "audio";
-  const p = gen.params as { duration?: number; resolution?: string; voiceName?: string; durationSeconds?: number | null; lengthMs?: number };
+  const p = gen.params as { duration?: number; resolution?: string; castName?: string };
   const elapsed = Math.max(0, Math.floor((now - gen.createdAt) / 1000));
+  const v = still ? `S${gen.version ?? 1}` : gen.kind === "audio" ? "A" : `v${gen.version ?? 1}`;
+  const dur = still ? String(p.resolution ?? "").toUpperCase() : p.duration != null ? mmss(p.duration) : "";
+  const word = s === "rendering" ? (gen.status === "queued" ? "Queued" : "Rendering")
+    : s === "failed" ? (gen.status === "cancelled" ? "Cancelled" : "Failed")
+      : s[0].toUpperCase() + s.slice(1);
+  const by = gen.authorName ?? (gen as Gen & { createdByName?: string }).createdByName;
+  const role = still ? roleOf(gen) : null;
 
-  async function remove() {
-    if (!(await appConfirm(`Delete ${gen.title || clipId(gen.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
-    await fetch(`/api/jobs/${gen.id}`, { method: "DELETE" });
-    announceChange();
+  async function setRole(useAs: StillRole, castName?: string | null) {
+    await fetch(`/api/jobs/${gen.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ useAs, castName: castName ?? null }),
+    });
+    onChanged?.();
+  }
+  async function toCast() {
+    if (role === "cast") { await setRole("loose"); return; }
+    const name = await appPrompt("Who or what does this still stand for?", p.castName ?? "", "Cass");
+    if (name === null) return;
+    await setRole("cast", name.replace(/^@/, "").trim() || null);
   }
 
   return (
     <div
-      role="button" tabIndex={0} onClick={onOpen} title={gen.title ? `${gen.title} — ${gen.prompt}` : gen.prompt}
-      onKeyDown={(e) => {
-        // The buttons inside keep their own Enter/Space; only the tile itself opens.
-        if (e.target !== e.currentTarget) return;
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); }
-      }}
       data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)}
       data-gen-title={gen.title ?? ""}
-      className={`tile group cursor-pointer ${active ? "is-active" : ""} ${live ? "tile-live" : ""} ${gen.status === "failed" ? "tile-failed" : ""}`}
-      style={{ aspectRatio: audio ? "16 / 6" : aspectOf(gen) }}
-    >
-      {done && audio ? (
-        <span className="tile-face tile-audio">
-          <IconAudio className="!h-6 !w-6 text-dim" />
-          <span className="tile-face-label">{gen.title || (p.voiceName ? `${p.voiceName} · ` : "") + gen.prompt.slice(0, 60)}</span>
-          <span className="tile-face-sub">{shortLabel(gen.model)}{p.durationSeconds ? ` · ${p.durationSeconds}s` : p.lengthMs ? ` · ${Math.round(p.lengthMs / 1000)}s` : ""}</span>
-        </span>
-      ) : done ? (
-        <LazyMedia url={url!} kind={still ? "image" : "video"} hoverPlay alt={gen.prompt.slice(0, 120)} className="!absolute inset-0" />
-      ) : live ? (
-        <span className="tile-face">
-          <ParticlSpinner size={26} className="text-dim" />
-          <span className="tile-face-label">{gen.status === "queued" ? "Queued" : "Rendering"} · {mmss(elapsed)}</span>
-          <span className="tile-face-sub">{shortLabel(gen.model)}{p.resolution ? ` · ${String(p.resolution).toUpperCase()}` : ""}</span>
-        </span>
-      ) : (
-        <span className="tile-face">
-          <span className="tile-face-label text-lift">{gen.status === "cancelled" ? "Cancelled" : "Failed"}</span>
-          {gen.error && <span className="tile-face-error">{gen.error.slice(0, 160)}</span>}
-        </span>
-      )}
-
-      {done && !audio && (
-        <>
-          <span className="tile-scrim" />
-          <span className="tile-meta">
-            <span className="truncate font-medium">
-              {gen.title || (gen.shotCode ? `${gen.shotCode} v${gen.version ?? 1}` : clipId(gen.id))}
+      className={`take ${s === "approved" ? "is-approved" : ""} ${active ? "is-selected" : ""}`}>
+      <button type="button" onClick={onOpen} className="take-hit"
+        title={gen.title ? `${gen.title} — ${gen.prompt}` : gen.prompt}>
+        <span className="well take-well" style={{ aspectRatio: still ? aspectOf(gen) : "16 / 9" }}>
+          {done && !audio ? (
+            <LazyMedia url={url!} kind={still ? "image" : "video"} hoverPlay alt={gen.prompt.slice(0, 120)} className="!absolute inset-0" />
+          ) : s === "rendering" ? (
+            <span className="flex flex-col items-center gap-2">
+              <ParticlSpinner size={22} className="text-dim" />
             </span>
-            <span className="ml-auto shrink-0 tabular-nums">
-              {still ? String(p.resolution ?? "").toUpperCase() : p.duration != null ? `${p.duration}s` : ""}
-            </span>
-          </span>
-        </>
-      )}
-      {gen.reviewState === "approved" && <span className="tile-badge bg-ok" title="Approved">✓</span>}
-      {gen.reviewState === "changes" && <span className="tile-badge bg-warn" title="Changes wanted">!</span>}
-
-      {!live && (
-        <span className="reveal absolute right-2 top-2 flex items-center gap-1.5">
-          {done && url && (
-            <a href={downloadHref(url)} download title="Download" onClick={(e) => e.stopPropagation()}
-              className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel">
-              <IconDown />
-            </a>
+          ) : (
+            <span className="well-cap">{s === "failed" ? word.toLowerCase() : `render · ${code} · ${v}`}</span>
           )}
-          <button type="button" title="Delete" onClick={(e) => { e.stopPropagation(); remove(); }}
-            className="grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:bg-panel hover:text-lift">
-            <IconTrash />
-          </button>
+          <span className="well-badge tl">{badge ? badge.toUpperCase() : v}</span>
+          {badge && <span className="well-badge tl" style={{ left: "auto", right: 8 }}>{code} {v}</span>}
+          {role === "first" && !badge && <span className="well-badge tr is-ink">FIRST FRAME</span>}
+          {role === "cast" && !badge && <span className="well-badge tr is-line">@{(p.castName || "CAST").toUpperCase()}</span>}
+          {dur && !(badge && role) && <span className="well-badge br">{dur}</span>}
+          {s === "rendering" && (
+            <>
+              <span className="take-rendering">{word.toUpperCase()} · {mmss(elapsed)}</span>
+              <span className="take-bar"><span style={{ width: gen.status === "queued" ? "8%" : "62%" }} /></span>
+            </>
+          )}
         </span>
+        <span className="take-body">
+          <span className="take-state">
+            <span className="take-word">
+              {s === "approved" && <span className="dot dot-approved" />}
+              {s === "picked" && <span className="dot dot-picked" />}
+              {(s === "draft" || s === "rendering") && <span className="dot dot-draft" />}
+              {s === "failed" && <span className="dot dot-none" />}
+              {badge ? `${code} ${v} · ${word.toLowerCase()}` : word}
+            </span>
+            <span className="mono-v">{gen.costUsd != null ? usd(gen.costUsd, 2) : "—"}</span>
+          </span>
+          <span className="take-meta">
+            <span>{shortLabel(gen.model)}{p.resolution ? ` · ${String(p.resolution).toUpperCase()}` : ""}{!still && dur ? ` · ${dur}` : ""}</span>
+            <span>{by ? `by ${by}` : gen.title ? gen.title : ""}</span>
+          </span>
+        </span>
+      </button>
+      {still && done && (
+        <div className="take-acts">
+          <button type="button" className={`trk-btn ${role === "first" ? "is-on" : ""}`} onClick={() => setRole(role === "first" ? "loose" : "first")}
+            title={role === "first" ? "Pinned to its shot as the first frame — click to unpin" : "Pin to its shot as the first frame"}>First frame</button>
+          <button type="button" className={`trk-btn ${role === "cast" ? "is-on" : ""}`} onClick={toCast}
+            title={role === "cast" ? "A cast still — click to make it loose" : "Make this a cast still"}>To cast</button>
+          <a href={downloadHref(url!)} download className="trk-btn is-icon" title="Download" aria-label="Download" onClick={(e) => e.stopPropagation()}>↓</a>
+        </div>
       )}
     </div>
   );

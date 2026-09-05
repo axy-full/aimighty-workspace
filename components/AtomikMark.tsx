@@ -1,97 +1,82 @@
 "use client";
 
 /**
- * The atomik mark, from the brand sheet.
+ * The atomik mark, from the pipeline handoff.
  *
- * Six dots on a flatter, shorter arc than particl's seven, radii 3 → 16 on
- * the 200 grid. The relationship is the whole idea and it is legible at a
- * glance once you know: particl accelerates, atomik has already arrived —
- * one fewer step, and much heavier terminal mass.
+ * particl's trail, closed into a ring: eight dots on a 62-unit circle with
+ * the head at the top, radii 2 → 16 running clockwise from the tail. The
+ * earlier six-dot "compressed trail" is superseded — this is the shipped
+ * mark, and it is the one the assets carry.
  *
- * atomik is a SUB-BRAND, not a second brand. The type and the colour system
- * are particl's unchanged; only the mark differs. That is why the wordmark
- * below borrows .wordmark-* wholesale rather than defining its own — the
- * dotless ı with a ring tittle is the same construction at the same
- * measurements, and two copies of it would drift apart the first time one
- * was adjusted.
+ * Two rules the handoff is emphatic about. The wordmark sets the ring AS
+ * the letter o — `at◯mık` — so the standalone ring must never be placed
+ * beside the wordmark, or the o appears twice. The standalone ring appears
+ * only as a badge next to an all-caps mono label (`ATOMIK`, `FROM ATOMIK`)
+ * at 14–16px, and at 28px in Settings › Atomik connection.
  *
- * Never rotate the mark, recolour a dot on its own, or add strokes.
+ * Same colour discipline as particl's mark: currentColor, no strokes, no
+ * per-dot colour, never rotated.
  */
 
-/** cx, cy, r on the 200 × 200 grid, verbatim from the brand sheet. */
-export const ATOMIK_TRAIL: [number, number, number][] = [
-  [50, 116, 3], [68, 103, 5], [89, 96, 7],
-  [111, 97, 9.5], [132, 106, 12.5], [150, 123, 16],
+/** cx, cy, r on the 200 × 200 grid, verbatim from the handoff. */
+export const ATOMIK_RING: [number, number, number][] = [
+  [100, 38, 16], [56.16, 56.16, 11.9], [38, 100, 8.8], [56.16, 143.84, 6.5],
+  [100, 162, 4.8], [143.84, 143.84, 3.6], [162, 100, 2.7], [143.84, 56.16, 2],
 ];
 
-/* The dots' own box (x 47→166, y 87.5→139) plus about three units of air,
-   which is how particl's mark is cropped too. Keeping the same treatment is
-   what makes the two read as the same size at the same `size`. */
-const VIEW = "44 84 126 59";
-const RATIO = 126 / 59;
-
-/** The mark alone. `size` is its HEIGHT; it is about 2.1× as wide. */
-export function AtomikMark({ size = 20, className = "" }: {
+/** The ring alone, as a badge. `size` is its height and width. */
+export function AtomikMark({ size = 16, className = "" }: {
   size?: number; className?: string;
 }) {
   return (
-    <svg width={Math.round(size * RATIO)} height={size} viewBox={VIEW}
-      fill="currentColor" className={className} aria-hidden="true">
-      {ATOMIK_TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
+    <svg width={size} height={size} viewBox="20 20 160 160" fill="currentColor"
+      className={className} aria-hidden="true">
+      {ATOMIK_RING.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
     </svg>
   );
 }
 
 /**
- * "atomık" in Outfit 600, with the ring tittle over the dotless ı.
+ * `at◯mık` — the wordmark recipe, verbatim.
  *
- * `size` is the font size in px. `by` adds the BY PARTICL tag beneath —
- * the parent's name, in the same Kode Mono treatment particl uses for
- * STUDIO, because a sub-brand that never says whose it is stops being one.
+ * A baseline-aligned flex row in Outfit 500 at +0.005em: `at`, the ring
+ * cropped to `20 22 160 145` at 0.61em tall and 0.67em wide, `m`, a dotless
+ * ı carrying the ring tittle (0.17em circle, 0.035em border, 0.09em down),
+ * `k`. `by` adds the BY PARTICL sub-line in Kode Mono at 10px, 0.3em
+ * tracking, 0.6em to the right, muted.
+ *
+ * `size` is the font size in px.
  */
-export function AtomikWordmark({ size = 24, by = false, className = "" }: {
+export function AtomikWordmark({ size = 17, by = false, className = "" }: {
   size?: number; by?: boolean; className?: string;
 }) {
   return (
-    <span className={`wordmark ${className}`} style={{ fontSize: size }}
+    <span className={`atomik-word ${className}`} style={{ fontSize: size }}
       aria-label={by ? "atomik by particl" : "atomik"}>
-      <span className="wordmark-word" aria-hidden="true">
-        atom<span className="wordmark-i">ı<span className="wordmark-ring" /></span>k
-      </span>
-      {by && <span className="wordmark-studio" aria-hidden="true">by particl</span>}
+      <span aria-hidden="true">at</span>
+      <svg viewBox="20 22 160 145" className="atomik-word-o" fill="currentColor" aria-hidden="true">
+        {ATOMIK_RING.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
+      </svg>
+      <span aria-hidden="true">m</span>
+      <span className="atomik-word-i" aria-hidden="true">ı<span className="atomik-word-ring" /></span>
+      <span aria-hidden="true">k</span>
+      {by && <span className="atomik-word-by" aria-hidden="true">by particl</span>}
     </span>
   );
 }
 
-/**
- * The horizontal lockup: mark, one mark-height of air, the wordmark.
- * `size` is the wordmark's font size; the mark stands half as tall, as it
- * does in particl's lockup.
- */
-export default function AtomikLockup({ size = 26, by = false, className = "" }: {
-  size?: number; by?: boolean; className?: string;
-}) {
-  const mark = Math.round(size * 0.5);
-  return (
-    <span className={`inline-flex items-center ${className}`}
-      style={{ gap: mark }}>
-      <AtomikMark size={mark} />
-      <AtomikWordmark size={size} by={by} />
-    </span>
-  );
-}
-
-/**
- * The stacked lockup: the mark over the wordmark, centred.
- * For the places a wide lockup cannot go — an empty state, a splash.
- */
-export function AtomikStacked({ size = 56, className = "" }: {
+/** The wordmark with its sub-line — what every atomik header carries. */
+export default function AtomikLockup({ size = 17, className = "" }: {
   size?: number; className?: string;
 }) {
+  return <AtomikWordmark size={size} by className={className} />;
+}
+
+/** Ring over wordmark, centred — the empty-state lockup. */
+export function AtomikStacked({ size = 30, className = "" }: { size?: number; className?: string }) {
   return (
-    <span className={`inline-flex flex-col items-center ${className}`}
-      style={{ gap: Math.round(size * 0.28) }}>
-      <AtomikMark size={Math.round(size * 0.62)} />
+    <span className={`inline-flex flex-col items-center gap-2 ${className}`}>
+      <AtomikMark size={Math.round(size * 1.1)} />
       <AtomikWordmark size={size} by />
     </span>
   );

@@ -13,14 +13,15 @@ import { referenceProblem, type RefItem, type RefPicker } from "./References";
 import { appAlert, appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
 import Feed, { type FeedFilter } from "./Feed";
-import CreditStrip from "./CreditStrip";
 import Boundary from "./Boundary";
 import SourcePicker from "./SourcePicker";
 import { getTask, sourceProblem } from "@/lib/tasks";
 import Composer, { type Engine, type WriterInfo } from "./Composer";
 import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
+import ShotRow from "./ShotRow";
 import { useApi } from "@/lib/useApi";
+import { usd, compactTokens } from "@/lib/format";
 import { useOnChange } from "@/lib/changes";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -55,8 +56,32 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const [prompt, setPrompt] = useState("");
   /** Artlist-style shot control: one choice per category, appended at submit. */
   const [spec, setSpec] = useState<ShotSpec>({});
+  /* The audio desk shows the sound half of this setup back (Sound, Mood,
+     Time of day, Titles) without owning it, so the latest spec is left
+     where it can peek. */
+  useEffect(() => {
+    try { window.localStorage.setItem("aw_last_spec", JSON.stringify(spec)); } catch { /* private mode */ }
+  }, [spec]);
+  /* The production's saved setup (Studio › Save as … setup) opens the
+     composer already set — unless a spec was carried in, or one is being
+     edited; a saved setup never overwrites work in progress. */
+  useEffect(() => {
+    if (specCount(spec) > 0) return;
+    try {
+      const saved = window.localStorage.getItem(`aw_setup_${bin}`);
+      if (saved) Promise.resolve().then(() => setSpec(JSON.parse(saved) as ShotSpec));
+    } catch { /* private mode */ }
+    // The spec is read, not depended on: this runs when the production changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bin]);
   /** Which shot this take belongs to — what makes it v3 of SH110. */
   const [shotId, setShotId] = useState<string>("");
+  /* Stills only: how many to make from one prompt, and the role each one
+     plays on the production — a first frame pinned to the shot, a cast
+     still standing for a face or a place, or loose. */
+  const [count, setCount] = useState(1);
+  const [useAs, setUseAs] = useState<"first" | "cast" | "loose">("loose");
+  const [castName, setCastName] = useState("");
   /** Editing or extending an existing render, rather than making a new one.
    *  Both are LOCKED tasks: the source decides the output's shape. */
   /* A locked task can now be chosen BEFORE its source, so the clip is
@@ -133,6 +158,11 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             try { setSpec(JSON.parse(carriedSpec) as ShotSpec); }
             catch { /* a spec we can't read is one we don't apply */ }
           }
+          /* A shot chosen in the Studio's builder files the next take. */
+          try {
+            const carriedShot = window.localStorage.getItem("aw_compose_shot");
+            if (carriedShot) { window.localStorage.removeItem("aw_compose_shot"); setShotId(carriedShot); }
+          } catch { /* private mode */ }
           if (setup === "0") setSetupOpen(false);
         });
       } catch { /* private mode — nothing carried, nothing lost */ }
@@ -150,6 +180,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       modelId: m.id,
       resolution: m.resolutions.includes(prefs.resolution) ? prefs.resolution : s.resolution,
       duration: m.durations.includes(prefs.duration) ? prefs.duration : s.duration,
+      generateAudio: prefs.audio,
     }));
     /* signedIn belongs here: loadDraft refuses to hand anything back
        without a session, so signing in has to re-run this or the draft
@@ -277,10 +308,10 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     if (!prompt.trim() || busy || refProblem) return;
     setBusy(true); setErr(null);
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const payload = JSON.stringify({
           prompt: composePrompt(prompt, spec),
+          useAs: isImage ? useAs : undefined,
+          castName: isImage && useAs === "cast" ? castName.replace(/^@/, "").trim() || undefined : undefined,
           model: params.modelId, ratio: params.ratio,
           resolution: params.resolution, duration: params.duration,
           watermark: params.watermark, generateAudio: params.generateAudio,
@@ -294,10 +325,16 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             ...refs.map((r) => ({ uploadId: r.id, role: r.role })),
             ...ownRefs.map((g) => ({ genId: g.id, role: "reference_image" as const })),
           ],
-        }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Submit failed");
+      /* Stills can go out as a batch of N: N rows, N prices, one press. A
+         clip is always one. */
+      const n = isImage ? count : 1;
+      let json: { id?: string; notices?: string[]; error?: string } = {};
+      for (let i = 0; i < n; i++) {
+        const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
+        json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "Submit failed");
+      }
       // Only now: a failed submit keeps the words, which is when they matter most.
       clearDraft(kind);
       setPrompt("");
@@ -356,7 +393,24 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     requestAnimationFrame(() => promptRef.current?.focus());
   }
 
+  /* The production's shots, for the foot's "files as" line: the code and
+     the next version number. The rail's filing chip fetches the same list;
+     useApi has no cache, so this is one more small request per project
+     rather than a shared one — cheap, and honest about what it is. */
+  const scopedForShots = bin !== "all" && bin !== "unfiled";
+  const { data: shotList } = useApi<{ shots: { id: string; code: string; takes: number }[] }>(
+    scopedForShots ? `/api/shots?projectId=${encodeURIComponent(bin)}` : null, 30_000);
+  const shotCodeOf = (id: string) => shotList?.shots.find((x) => x.id === id)?.code ?? null;
+  const nextVersionOf = (id: string) => (shotList?.shots.find((x) => x.id === id)?.takes ?? 0) + 1;
+
   const scopeName = bin === "all" ? "All projects" : bin === "unfiled" ? "Unfiled" : current?.name ?? "";
+  /* What the take will be called once it lands: the shot code and the next
+     version, or "unfiled" when it files against nothing. Read off the shots
+     list the rail already fetches, so it costs no extra request. */
+  const filedAs = !shotId ? "unfiled"
+    : isImage
+      ? `${shotCodeOf(shotId) ?? "shot"} · S${nextVersionOf(shotId)}${count > 1 ? `–S${nextVersionOf(shotId) + count - 1}` : ""}`
+      : `${shotCodeOf(shotId) ?? "shot"} v${nextVersionOf(shotId)}`;
   const setupCount = specCount(spec) + (shotId ? 1 : 0);
 
   /* A locked mode is not renderable until it has a clip the vendor accepts.
@@ -366,7 +420,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     : sourceProblem(getTask(taskOn.id), taskOn.gen.params as { resolution?: string; duration?: number });
 
   return (
-    <div className={`generate ${setupOpen ? "" : "generate-solo"}`}>
+    <div className="ws">
       {/* The wall draws whatever the library holds, including rows made by
           engines that have since been retired. One unreadable row must not
           take the composer down with it. */}
@@ -374,43 +428,95 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         <Feed
           gens={gens} visible={visible} activeId={activeId} onOpen={setSelected}
           filter={filter} setFilter={setFilter} scopeName={scopeName}
-          aside={<CreditStrip vendor={modelDef.provider} />}
+          projectId={bin} kind={kind}
           problem={data ? null : feedError}
+          onChanged={afterChange}
         />
       </Boundary>
 
-      <div className="island" ref={islandRef}>
-        <Composer
-          prompt={prompt}
-          setPrompt={(v) => { setPrompt(v); saveDraft(kind, v); if (err) setErr(null); }}
-          promptRef={promptRef}
-          params={params} patch={patch}
-          model={modelDef} engines={engines} writer={writer}
-          refs={refs} setRefs={setRefs} picker={picker} cite={cite}
-          taskOn={taskOn} cancelTask={() => setTaskOn(null)}
-          problem={signedIn ? (refProblem ?? sourceIssue ?? err)
-            : "Sign in to render. Everything else here is yours to look at."}
-          blocked={!signedIn || Boolean(refProblem || sourceIssue)}
-          notice={!signedIn}
-          est={est} estTokens={estTokens} dims={dims}
-          inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
-          busy={busy} onRender={render}
-          setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
-          kind={kind}
-          pickMode={pickMode}
-          onPickSource={() => setPickingSource(true)}
-          ownRefs={ownRefs}
-          dropOwnRef={(id) => setOwnRefs((prev) => prev.filter((g) => g.id !== id))}
-          onDropAsset={useAsRef}
-        />
-      </div>
-
-      <aside className="setup">
-        <SetupPanel
-          projectId={bin} shotId={shotId} setShotId={setShotId}
-          spec={spec} setSpec={setSpec} onCite={cite}
-          onClose={toggleSetup}
-        />
+      {/* The composer rail: 400px, the panel ground, its own scroll. Head
+          carries the filing chip, body the composer and the two blocks it
+          carries into every shot, foot the one button that spends. */}
+      <aside className="ws-rail">
+        <div className="ws-rail-head">
+          <span className="ws-bar-h">Composer</span>
+          <ShotRow chip projectId={bin} shotId={shotId} setShotId={setShotId} />
+        </div>
+        <div className="ws-rail-body" ref={islandRef}>
+          <Composer
+            rail
+            prompt={prompt}
+            setPrompt={(v) => { setPrompt(v); saveDraft(kind, v); if (err) setErr(null); }}
+            promptRef={promptRef}
+            params={params} patch={patch}
+            model={modelDef} engines={engines} writer={writer}
+            refs={refs} setRefs={setRefs} picker={picker} cite={cite}
+            taskOn={taskOn} cancelTask={() => setTaskOn(null)}
+            problem={signedIn ? (refProblem ?? sourceIssue ?? err)
+              : "Sign in to render. Everything else here is yours to look at."}
+            blocked={!signedIn || Boolean(refProblem || sourceIssue)}
+            notice={!signedIn}
+            est={est} estTokens={estTokens} dims={dims}
+            inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
+            busy={busy} onRender={render}
+            setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
+            kind={kind}
+            pickMode={pickMode}
+            onPickSource={() => setPickingSource(true)}
+            ownRefs={ownRefs}
+            dropOwnRef={(id) => setOwnRefs((prev) => prev.filter((g) => g.id !== id))}
+            onDropAsset={useAsRef}
+          />
+          {isImage && (
+            <div className="rail-sec">
+              <div className="rail-chips">
+                <label className="chip-dd" title="How many stills to make from this prompt">
+                  ×<select value={count} onChange={(e) => setCount(Number(e.target.value))} aria-label="How many stills">
+                    {[1, 2, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select><span className="hdr-caret" aria-hidden="true">▼</span>
+                </label>
+              </div>
+              <span className="mono">Use as</span>
+              <div className="seg is-fill" role="tablist" aria-label="Use as">
+                {([["first", "First frame"], ["cast", "Cast still"], ["loose", "Loose"]] as const).map(([k, label]) => (
+                  <button key={k} type="button" role="tab" aria-selected={useAs === k}
+                    className={`seg-opt ${useAs === k ? "is-on" : ""}`} onClick={() => setUseAs(k)}>{label}</button>
+                ))}
+              </div>
+              {useAs === "cast" && (
+                <label className="search">
+                  <span className="search-glyph" aria-hidden="true">@</span>
+                  <input value={castName} onChange={(e) => setCastName(e.target.value)} placeholder="Who or what it stands for, e.g. Cass" />
+                </label>
+              )}
+              <span className="rail-help">
+                {useAs === "first"
+                  ? `A first frame is pinned to the shot and offered in the video composer${shotId ? ` for ${shotCodeOf(shotId) ?? "it"}` : ""}.`
+                  : useAs === "cast"
+                    ? "A cast still stands for a face, a place or a prop, and rides along as a reference wherever its @name is written."
+                    : "A loose still belongs to the production and nothing more — a test, a scout, a look."}
+              </span>
+            </div>
+          )}
+          <SetupPanel projectId={bin} spec={spec} onCite={cite} />
+        </div>
+        <div className="ws-rail-foot">
+          {/* The cost is on the action, always: quoted before the button is
+              enabled, printed on it in mono, never beside it. */}
+          <button type="button" onClick={render}
+            disabled={busy || !prompt.trim() || !signedIn || Boolean(refProblem || sourceIssue)}
+            className="btn-primary !h-[46px] !rounded-[8px] !px-4 !text-[14px]" title="Render  ⌘↵">
+            <span>{busy ? "Rendering…" : isImage ? (count > 1 ? `Generate ${count} stills` : "Generate still") : "Render"}</span>
+            <span className="btn-primary-cost">
+              {est
+                ? isImage && count > 1 ? `${usd(est.net * count, 2)} · ${count} × ${usd(est.net, 2)}` : usd(est.net, 2)
+                : "—"}{!isImage && estTokens != null ? ` · ${compactTokens(estTokens)} TOK` : ""}
+            </span>
+          </button>
+          <span className="mono-s text-center" style={{ letterSpacing: 0 }}>
+            files as {filedAs} · {modelDef.label}{isImage ? ` · ${params.resolution.toUpperCase()}` : ` · ${params.duration}s · ${params.resolution.toUpperCase()}`}
+          </span>
+        </div>
       </aside>
 
       <Boundary what="This render">

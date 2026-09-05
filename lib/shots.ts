@@ -21,6 +21,19 @@ export type Shot = {
   createdBy: string;
   createdAt: number;
   updatedAt: number;
+  /** The breakdown's half: planned seconds, per-shot setup, cast tags,
+   *  render or type-only, and the sync flag the shot list reads. */
+  planned: number | null;
+  setup: Record<string, string>;
+  cast: string[];
+  kind: "render" | "type";
+  dirty: boolean;
+  syncedAt: number | null;
+};
+
+const json = <T,>(raw: unknown, fallback: T): T => {
+  if (typeof raw !== "string" || !raw) return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
 };
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -37,6 +50,12 @@ export function rowToShot(r: any): Shot {
     createdBy: r.created_by ?? "",
     createdAt: Number(r.created_at ?? 0),
     updatedAt: Number(r.updated_at ?? 0),
+    planned: r.planned == null ? null : Number(r.planned),
+    setup: json<Record<string, string>>(r.setup, {}),
+    cast: json<string[]>(r.cast, []),
+    kind: r.kind === "type" ? "type" : "render",
+    dirty: Number(r.dirty ?? 0) === 1,
+    syncedAt: r.synced_at == null ? null : Number(r.synced_at),
   };
 }
 
@@ -89,6 +108,10 @@ export async function createShot(input: {
   code?: string;
   title?: string;
   description?: string;
+  planned?: number | null;
+  setup?: Record<string, string>;
+  cast?: string[];
+  kind?: "render" | "type";
   createdBy: string;
 }): Promise<Shot> {
   await ready();
@@ -99,11 +122,14 @@ export async function createShot(input: {
   const position = siblings.length ? Math.max(...siblings.map((s) => s.position)) + 1 : 0;
   await db().execute({
     sql: `INSERT INTO shots (id, project_id, scene, code, title, description, status, position,
-                             created_by, created_at, updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+                             created_by, created_at, updated_at, planned, setup, cast, kind, dirty)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
     args: [sid, input.projectId, (input.scene ?? "").trim().slice(0, 40), code,
            (input.title ?? "").trim().slice(0, 160), (input.description ?? "").slice(0, 2000),
-           "open", position, input.createdBy, ts, ts],
+           "open", position, input.createdBy, ts, ts,
+           input.planned == null ? null : Math.max(1, Math.min(60, Math.round(input.planned))),
+           JSON.stringify(input.setup ?? {}), JSON.stringify((input.cast ?? []).slice(0, 20)),
+           input.kind === "type" ? "type" : "render"],
   });
   return (await getShot(sid))!;
 }

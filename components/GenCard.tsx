@@ -12,7 +12,7 @@ export type Gen = {
   projectId: string | null;
   projectName: string | null;
   kind?: "video" | "image" | "audio";
-  reviewState?: "" | "approved" | "changes";
+  reviewState?: "" | "approved" | "picked" | "changes";
   reviewBy?: string | null;
   model: string;
   prompt: string;

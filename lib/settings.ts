@@ -17,6 +17,12 @@ export const DEFAULTS = {
   maxRetries: "2",
   /** Whether oversized masters may be sent to an API as a derived copy. */
   deriveForApi: "1",
+  /** Cost approval rule: anyone renders, a cap per shot, or a producer approves. */
+  approvalRule: "anyone",
+  /** Warn the producer when a production's spend reaches this share of its cap. */
+  capWarnPct: "80",
+  /** What happens at the cap: the producer unlocks, rendering stops, or a warning only. */
+  atCap: "producer",
   /**
    * Container for edits and extensions: "mp4" or "mov".
    *

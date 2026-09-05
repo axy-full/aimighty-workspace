@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
-import TopBar from "@/components/TopBar";
-import TabBar from "@/components/TabBar";
+import Shell from "@/components/shell/Shell";
 import ChatDock from "@/components/ChatDock";
-import Rail from "@/components/Rail";
 import ContextMenu from "@/components/ContextMenu";
 import DialogHost from "@/components/dialog";
 import ViewportGuard from "@/components/ViewportGuard";
@@ -36,20 +34,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       email: user?.email ?? null,
     }}>
     <ProjectProvider>
-      <div className="app">
-        <TopBar />
-        <div className="app-work">
-          {/* A third child of a row that already had room: the chat dock's
-              own children are all fixed, so it contributes no width. */}
-          <Rail />
-          <div className="min-h-0 min-w-0 flex-1">{children}</div>
-          <ChatDock />
-        </div>
-        <TabBar />
-        <ContextMenu />
-        <DialogHost />
-        <ViewportGuard />
-      </div>
+      {/* The pipeline redesign puts the project and the nav in one 52px
+          header, so the top bar, the floating tab pill and the projects rail
+          all go: once the header says both things, three more places saying
+          them are noise. The chat dock stays — it is a fixed-position FAB for
+          members and contributes no width. */}
+      <Shell>
+        {children}
+        <ChatDock />
+      </Shell>
+      <ContextMenu />
+      <DialogHost />
+      <ViewportGuard />
     </ProjectProvider>
     </SessionProvider>
   );

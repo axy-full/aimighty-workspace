@@ -22,10 +22,14 @@ const KINDS = [
  * the model understands, so the same face survives from shot to shot without
  * being described again.
  */
-export default function Cast({ projectId, onCite }: {
+export default function Cast({ projectId, onCite, chips = false }: {
   projectId: string;
   onCite: (token: string) => void;
+  /** The rail form: wrapped chips with a striped thumb, the name and the
+   *  kind in mono, and a dashed + Add that asks which kind first. */
+  chips?: boolean;
 }) {
+  const [adding, setAdding] = useState(false);
   const scoped = projectId !== "all" && projectId !== "unfiled";
   const { data, refresh } = useApi<{ cast: CastMember[] }>(
     `/api/cast${scoped ? `?projectId=${encodeURIComponent(projectId)}` : ""}`, 0
@@ -84,6 +88,44 @@ export default function Cast({ projectId, onCite }: {
       { confirmLabel: "Remove", danger: true }))) return;
     await fetch(`/api/cast/${m.id}`, { method: "DELETE" });
     refresh();
+  }
+
+  if (chips) {
+    const kindTag = (k: CastMember["kind"]) =>
+      k === "character" ? "CHAR" : k === "location" ? "LOC" : k === "prop" ? "PROP" : "LOOK";
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {cast.map((m) => (
+          <button key={m.id} type="button" className="cast-chip" title={m.description || `Cite @${m.name}`}
+            onClick={() => onCite(`@${m.name}`)}
+            onContextMenu={(e) => { e.preventDefault(); void remove(m); }}>
+            <span className="cast-chip-thumb">
+              {m.uploadId && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={`/api/uploads/${m.uploadId}`} alt="" className="h-full w-full object-cover" />
+              )}
+            </span>
+            @{m.name} <span className="cast-chip-kind">{kindTag(m.kind)}</span>
+          </button>
+        ))}
+        <span className="relative">
+          <button type="button" className="btn-dashed !px-2.5 !py-[5px]" disabled={busy}
+            onClick={() => setAdding((v) => !v)}>+ Add</button>
+          {adding && (
+            <span className="menu-pop hdr-switch-menu" role="menu">
+              {KINDS.map((k) => (
+                <button key={k.id} type="button" className="menu-item"
+                  onClick={() => { setAdding(false); setPendingKind(k.id); file.current?.click(); }}>
+                  {k.label}
+                </button>
+              ))}
+            </span>
+          )}
+        </span>
+        <input ref={file} type="file" hidden accept="image/jpeg,image/png,image/webp"
+          onChange={(e) => e.target.files && addFrom(e.target.files)} />
+      </div>
+    );
   }
 
   return (

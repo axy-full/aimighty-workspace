@@ -8,10 +8,10 @@ import { DEFAULT_MODEL_ID, getModel } from "./models";
  * because it's a working preference rather than a workspace policy — two
  * people on the same team can prefer different defaults without arguing.
  */
-export type Prefs = { modelId: string; resolution: string; duration: number };
+export type Prefs = { modelId: string; resolution: string; duration: number; audio: boolean };
 
 const KEY = "aw_prefs";
-const FALLBACK: Prefs = { modelId: DEFAULT_MODEL_ID, resolution: "1080p", duration: 5 };
+const FALLBACK: Prefs = { modelId: DEFAULT_MODEL_ID, resolution: "1080p", duration: 5, audio: false };
 
 const listeners = new Set<() => void>();
 let snapshot: Prefs | null = null;
@@ -36,6 +36,7 @@ function read(): Prefs {
           ? p.resolution! : model.resolutions[model.resolutions.length - 1],
         duration: model.durations.includes(Number(p.duration))
           ? Number(p.duration) : (model.durations[0] ?? Number(p.duration)) || FALLBACK.duration,
+        audio: Boolean(p.audio),
       };
     }
   } catch { /* a corrupt or unknown preference is just a default */ }

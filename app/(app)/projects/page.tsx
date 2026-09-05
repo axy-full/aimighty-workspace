@@ -1,60 +1,74 @@
 "use client";
 
+/**
+ * Projects — the productions, as a table. From the pipeline handoff.
+ *
+ * A production exists once, in both rooms: its words live in Atomik, its
+ * renders live here. This page is the studio's list of them, and it reads
+ * like a production board rather than a shelf of covers — stage, shots
+ * approved over total, spend against cap, who is on it, what happened
+ * last. Every number is the API's; the bars are the same numbers drawn.
+ *
+ * A row opens the production's Canvas. Right-click keeps rename, paste and
+ * delete, the way it does everywhere.
+ */
 import Link from "next/link";
-
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
-import { usd } from "@/lib/format";
+import { useSession } from "@/lib/session";
+import { usd, timeAgo } from "@/lib/format";
 import { appPrompt, appAlert } from "@/components/dialog";
 import LazyMedia from "@/components/LazyMedia";
+import { Empty, Waiting } from "@/components/ParticlMark";
 import type { Gen } from "@/components/GenCard";
-import { IconSearch, IconPlus, IconTrash } from "@/components/Icons";
-import { confirmDeleteProject } from "@/lib/deleteProject";
-import { ParticlMark } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
 
-/**
- * The way in. Projects are shown as work, not as rows in a menu — each one
- * wearing its most recent render, so the shelf is recognisable at a glance.
- */
+type Row = {
+  id: string; name: string; code: string; category: string; description: string; createdAt: number;
+  genCount: number; spend: number; capUsd: number | null; kind: string | null; runtimeTarget: number | null;
+  stage: string | null; live: number; shots: number; approvedShots: number; pickedShots: number;
+  team: string[]; last: { at: number; who: string | null; what: string } | null;
+};
+type Stage = "Rendering" | "In review" | "Delivered" | "Brief only";
+
+/** The stage the production is at, from what has happened to it. */
+function stageOf(p: Row): Stage {
+  const set = p.stage as Stage | null;
+  if (set && ["Rendering", "In review", "Delivered", "Brief only"].includes(set)) return set;
+  if (p.live > 0) return "Rendering";
+  if (p.genCount === 0) return "Brief only";
+  if (p.shots > 0 && p.approvedShots >= p.shots) return "Delivered";
+  return "In review";
+}
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
 export default function ProjectsPage() {
   usePageTitle("Projects");
-  const [q, setQ] = useState("");
   const router = useRouter();
-  const { projects, selection, setSelection, refreshProjects } = useProject();
-
-  // One cheap page of recent clips supplies every cover, newest first.
-  const { data } = useApi<{ generations: Gen[] }>("/api/jobs?limit=60&sync=0", 20000);
+  const { signedIn } = useSession();
+  const { setSelection, refreshProjects } = useProject();
+  const { data, refresh } = useApi<{ projects: Row[] }>(signedIn ? "/api/projects" : null, 30_000);
+  const { data: month } = useApi<{ spentUsd: number }>(signedIn ? "/api/usage/summary" : null, 60_000);
+  // One cheap page of recent renders supplies every thumbnail, newest first.
+  const { data: recent } = useApi<{ generations: Gen[] }>(signedIn ? "/api/jobs?limit=60&sync=0" : null, 30_000);
 
   const coverFor = useMemo(() => {
     const map = new Map<string, Gen>();
-    for (const g of data?.generations ?? []) {
+    for (const g of recent?.generations ?? []) {
       if (g.status !== "succeeded" || !g.storedUrl) continue;
       const key = g.projectId ?? "unfiled";
       if (!map.has(key)) map.set(key, g);
     }
     return map;
-  }, [data]);
+  }, [recent]);
 
-  const shown = projects.filter((p) => p.name.toLowerCase().includes(q.trim().toLowerCase()));
-  const unfiled = data?.generations.filter((g) => !g.projectId).length ?? 0;
-
-  function open(id: string) {
-    // The selection still moves, so the composers land in this project when
-    // you go on to make something. But the card itself opens the project's
-    // own assets rather than the video composer, which showed one kind of
-    // four and made stills, audio and cast feel like they lived elsewhere.
-    setSelection(id);
-    router.push(`/projects/${id}/assets`);
-  }
-
-  async function remove(id: string, name: string, count: number) {
-    if (!(await confirmDeleteProject(id, name, count))) return;
-    if (selection === id) setSelection("all");
-    refreshProjects();
-  }
+  const projects = data?.projects ?? [];
+  const unfiled = recent?.generations.filter((g) => !g.projectId).length ?? 0;
+  const totalShots = projects.reduce((a, p) => a + p.shots, 0);
 
   async function create() {
     const name = await appPrompt("New project", "", "Project name");
@@ -65,105 +79,96 @@ export default function ProjectsPage() {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) { appAlert("Couldn't create the project", json.error); return; }
-    refreshProjects();
-    open(json.id);
+    refresh(); refreshProjects();
+    setSelection(json.id);
+    router.push(`/projects/${json.id}/canvas`);
   }
 
   return (
-    <div className="screen">
-      <div className="mx-auto w-full max-w-[1120px]">
-        <div className="flex items-end gap-4 pt-6">
-          <h1 className="h1">Projects</h1>
-          <button onClick={create} className="mb-2 ml-auto text-[15px] font-medium text-blue">
-            New Project
-          </button>
+    <div className="page">
+      <div className="page-inner flex flex-col gap-[22px]">
+        <div className="page-head">
+          <div>
+            <h1 className="page-h1">Projects</h1>
+            <p className="page-sub">A production exists once, in both rooms. Its words live in Atomik; its renders live here.</p>
+          </div>
+          <div className="page-acts">
+            <Link href="/all" className="btn-secondary !h-[38px] !px-3.5 !text-[13px]">Browse every render →</Link>
+            <button type="button" onClick={create} disabled={!signedIn} className="btn-primary !px-4"
+              title={signedIn ? undefined : "Sign in to start a production"}>New project</button>
+          </div>
         </div>
 
-        <div className="relative mt-6 flex items-center">
-          <span className="pointer-events-none absolute left-4 text-mute"><IconSearch /></span>
-          <input
-            value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search"
-            className="h-[46px] w-full rounded-[14px] bg-panel2 pl-11 pr-4 text-[16px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none"
-          />
-        </div>
-
-        <div className="mt-8 grid gap-x-4 gap-y-7 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))] max-[620px]:[grid-template-columns:repeat(2,minmax(0,1fr))] sm:gap-x-6">
-          {shown.map((p) => {
-            const cover = coverFor.get(p.id);
-            return (
-              <div key={p.id} className="group/card relative">
-                <button onClick={() => open(p.id)} className="group w-full text-left"
-                data-project-target={p.id} data-project-name={p.name} data-project-count={p.genCount}>
-                <div className="card-link media-well aspect-square overflow-hidden rounded-[var(--r-lg)] bg-thumb shadow-[var(--shadow-media)]">
-                  {cover?.storedUrl ? (
-                    <LazyMedia url={cover.storedUrl} kind={cover.kind === "image" ? "image" : "video"} alt={p.name} />
-                  ) : (
-                    <span className="grid h-full place-items-center">
-                      <ParticlMark size={28} className="text-mute/60" />
-                    </span>
-                  )}
-                </div>
-                <p className="mt-3 text-[17px] font-semibold tracking-[-0.01em]">{p.name}</p>
-                <p className="text-[14px] text-dim">
-                  {p.genCount > 0
-                    ? `${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${usd(p.spend, 2)}`
-                    : "Empty"}
-                </p>
-                </button>
-                {/* Tapping the card opens the work; the overview is where the
-                    job's shots, cost and people live. */}
-                <Link href={`/projects/${p.id}`}
-                  className="mt-0.5 inline-block text-[13px] text-blue">
-                  Overview
-                </Link>
-                <button type="button" onClick={() => remove(p.id, p.name, p.genCount)} title="Delete project"
-                  className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-panel/85 text-bone opacity-0 shadow-[var(--shadow-card)] backdrop-blur transition-opacity hover:bg-panel hover:text-lift focus-visible:opacity-100 group-hover/card:opacity-100 [@media(hover:none)]:opacity-100">
-                  <IconTrash />
-                </button>
-                </div>
-            );
-          })}
-
-          {/* Everything that was never filed still needs a way in. */}
-          {unfiled > 0 && !q && (
-            <button onClick={() => open("unfiled")} className="group text-left"
-              data-project-target="unfiled" data-project-name="Unfiled">
-              <div className="aspect-square overflow-hidden rounded-[var(--r-lg)] bg-thumb shadow-[var(--shadow-media)] transition-transform duration-200 group-hover:-translate-y-1">
-                {coverFor.get("unfiled")?.storedUrl ? (
-                  <LazyMedia
-                    url={coverFor.get("unfiled")!.storedUrl!}
-                    kind={coverFor.get("unfiled")!.kind === "image" ? "image" : "video"}
-                    alt="Unfiled"
-                  />
-                ) : (
-                  <span className="grid h-full place-items-center text-[13px] text-mute">Unfiled</span>
-                )}
+        {!signedIn ? (
+          <Empty title="Productions are for the team"
+            line="Sign in to see the studio's productions — their stage, their shots, what they have cost so far. Everything else on this screen is yours to look at." />
+        ) : !data ? (
+          <Waiting label="Reading the productions" />
+        ) : projects.length === 0 ? (
+          <Empty title="No productions yet" line="The first one is a good place to put a test render. Everything made inside it stays with it." />
+        ) : (
+          <div className="ptable-wrap">
+            <div className="ptable">
+              <div className="ptable-head">
+                <span>Production</span><span>Stage</span><span>Shots · approved / total</span>
+                <span>Spend / cap</span><span>Team</span><span>Last activity</span>
               </div>
-              <p className="mt-3 text-[17px] font-semibold tracking-[-0.01em]">Unfiled</p>
-              <p className="text-[14px] text-dim">Renders without a project</p>
-            </button>
-          )}
-
-          <button onClick={create} className="group text-left">
-            <div className="grid aspect-square place-items-center rounded-[var(--r-lg)] border-2 border-dashed border-line text-mute transition-colors group-hover:border-blue/50 group-hover:text-blue">
-              <IconPlus className="!h-7 !w-7" />
+              {projects.map((p) => {
+                const stage = stageOf(p);
+                const cover = coverFor.get(p.id);
+                const approvedPct = p.shots ? Math.round((p.approvedShots / p.shots) * 100) : 0;
+                const spendPct = p.capUsd ? Math.min(100, Math.round((p.spend / p.capUsd) * 100)) : 0;
+                const sub = [p.kind || p.category || "production", p.runtimeTarget ? mmss(p.runtimeTarget) : `${p.genCount} render${p.genCount === 1 ? "" : "s"}`].join(" · ");
+                return (
+                  <Link key={p.id} href={`/projects/${p.id}/canvas`} className="ptable-row"
+                    onClick={() => setSelection(p.id)}
+                    data-project-target={p.id} data-project-name={p.name} data-project-count={p.genCount}>
+                    <span className="ptable-name">
+                      <span className="ptable-thumb" aria-hidden="true">
+                        {cover?.storedUrl
+                          ? <LazyMedia url={cover.storedUrl} kind={cover.kind === "image" ? "image" : "video"} alt="" />
+                          : (p.code || p.name).toUpperCase().slice(0, 9)}
+                      </span>
+                      <span className="flex min-w-0 flex-col gap-1">
+                        <span className="ptable-title">{p.name}</span>
+                        <span className="ptable-sub">{sub}</span>
+                      </span>
+                    </span>
+                    <span className="ptable-stage">
+                      <span className={`dot ${stage === "Rendering" ? "dot-picked" : stage === "In review" ? "dot-draft" : stage === "Delivered" ? "dot-approved" : "dot-none"}`} />
+                      {stage}
+                    </span>
+                    <span className="ptable-stat">
+                      <span className="ptable-stat-l"><span>{p.approvedShots} / {p.shots}</span><span>{p.pickedShots} picked</span></span>
+                      <span className="ptable-bar is-approved"><span style={{ width: `${approvedPct}%` }} /></span>
+                    </span>
+                    <span className="ptable-stat">
+                      <span className="ptable-stat-l"><span>{usd(p.spend, 2)}</span><span>{p.capUsd ? `of $${Math.round(p.capUsd)}` : "no cap"}</span></span>
+                      <span className="ptable-bar"><span style={{ width: `${spendPct}%` }} /></span>
+                    </span>
+                    <span className="ptable-team" title={p.team.join(", ") || "Nobody has rendered here yet"}>
+                      {p.team.slice(0, 5).map((n) => <span key={n} className="ptable-av">{initials(n)}</span>)}
+                      {p.team.length === 0 && <span className="ptable-av">—</span>}
+                    </span>
+                    <span className="ptable-last">
+                      <span>{p.last ? `${timeAgo(p.last.at)} · ${p.last.who ? `${initials(p.last.who)} ` : ""}${p.last.what}` : `${day(p.createdAt)} · created`}</span>
+                      <span className="mono-s">{p.code ? `${p.code.toUpperCase()} · ` : ""}MADE IN PARTICL</span>
+                    </span>
+                  </Link>
+                );
+              })}
+              <div className="ptable-foot">
+                <span>
+                  Projects are private to the studio team. Cast added inside a project stays with that production; cast added in All projects is available everywhere.
+                  {unfiled > 0 && <> <Link href="/all" className="text-ink underline-offset-2 hover:underline">{unfiled} render{unfiled === 1 ? " sits" : "s sit"} outside any production →</Link></>}
+                </span>
+                <span className="mono-v whitespace-nowrap">
+                  {projects.length} PRODUCTION{projects.length === 1 ? "" : "S"} · {totalShots} SHOT{totalShots === 1 ? "" : "S"} · {month ? usd(month.spentUsd, 2) : "—"} THIS MONTH
+                </span>
+              </div>
             </div>
-            <p className="mt-3 text-[17px] font-semibold tracking-[-0.01em]">New Project</p>
-            <p className="text-[14px] text-dim">Start something</p>
-          </button>
-        </div>
-
-        {projects.length === 0 && (
-          <p className="mt-10 text-center text-[15px] text-dim">
-            No projects yet — the first one is a good place to put a test render.
-          </p>
+          </div>
         )}
-
-        <div className="mt-12 flex justify-center">
-          <button onClick={() => router.push("/all")} className="chip !text-[14px] !text-dim">
-            Browse every render →
-          </button>
-        </div>
       </div>
     </div>
   );

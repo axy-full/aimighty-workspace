@@ -17,7 +17,7 @@ type Note = { id: string; text: string; author: string; userId: string; createdA
  */
 export default function Review({ genId, state, reviewBy, onChanged }: {
   genId: string;
-  state: "" | "approved" | "changes";
+  state: "" | "approved" | "picked" | "changes";
   reviewBy: string | null;
   onChanged: () => void;
 }) {
@@ -26,7 +26,7 @@ export default function Review({ genId, state, reviewBy, onChanged }: {
   const [busy, setBusy] = useState(false);
   const notes = data?.notes ?? [];
 
-  async function setState(next: "" | "approved" | "changes") {
+  async function setState(next: "" | "approved" | "picked" | "changes") {
     try {
       const res = await fetch(`/api/jobs/${genId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },

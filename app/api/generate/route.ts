@@ -396,6 +396,10 @@ export async function POST(req: Request) {
     const ts = now();
     const stillParams = {
       ratio, resolution: size,
+      /* Its role on the production, chosen in the composer's USE AS row: a
+         first frame pinned to its shot, a cast still, or loose. */
+      useAs: ["first", "cast", "loose"].includes(String(body.useAs)) ? String(body.useAs) : undefined,
+      castName: body.castName ? String(body.castName).replace(/^@/, "").trim().slice(0, 40) : undefined,
       // A reference is recorded by WHICH STORE it came from, because the
       // worker rebuilds this job from the row and has to look in the right
       // place. An id alone would be ambiguous.

@@ -34,8 +34,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (typeof body.position === "number" && Number.isFinite(body.position)) {
     sets.push("position = ?"); args.push(Math.round(body.position));
   }
+  if (body.planned !== undefined) {
+    const n = body.planned == null || body.planned === "" ? null : Math.max(1, Math.min(60, Math.round(Number(body.planned))));
+    sets.push("planned = ?"); args.push(Number.isFinite(n as number) || n == null ? n : null);
+  }
+  if (body.setup && typeof body.setup === "object") { sets.push("setup = ?"); args.push(JSON.stringify(body.setup)); }
+  if (Array.isArray(body.cast)) { sets.push("cast = ?"); args.push(JSON.stringify(body.cast.map(String).slice(0, 20))); }
+  if (body.kind === "type" || body.kind === "render") { sets.push("kind = ?"); args.push(body.kind); }
   if (!sets.length) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
 
+  /* Any edit is a change the shot list has not sent across yet. */
+  sets.push("dirty = 1");
   sets.push("updated_at = ?"); args.push(now(), shotId);
   await db().execute({ sql: `UPDATE shots SET ${sets.join(", ")} WHERE id = ?`, args });
   return NextResponse.json({ shot: await getShot(shotId) });

@@ -1,12 +1,21 @@
 "use client";
 
 /**
- * Audio — a voice, a sound, or a piece of music, made the way a shot is.
+ * Audio — tracks against shots, from the pipeline handoff.
  *
- * Three doors into ElevenLabs. Every result is a render: it lands on the
- * wall and the ledger like a clip, with what it cost in credits and money.
+ * Three kinds of track, one desk: ambient (a sound from a description),
+ * music (a track from a brief) and dialogue (a line, read by a voice). Every
+ * one is a render: it is filed against a shot the way a take is, it lands
+ * on the ledger with what it cost, and it lists here as a ROW rather than a
+ * card — the thing to compare between tracks is what they belong to and
+ * what they cost, not a picture.
+ *
+ * Seedance renders its own sound when Audio is on; tracks here replace or
+ * layer it, per take. That line sits on the toolbar so nobody makes an
+ * ambient bed for a shot that already has one.
  */
-import { useMemo, useRef, useState, useEffect } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { useSession } from "@/lib/session";
@@ -15,10 +24,11 @@ import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { usd, timeAgo, downloadHref } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
-import { appConfirm } from "@/components/dialog";
-import { IconDown, IconTrash, IconSparkle, IconAudio, IconSearch } from "@/components/Icons";
-import ParticlLockup, { Empty, ParticlSpinner, Waiting, Trouble } from "@/components/ParticlMark";
-import CreditStrip from "@/components/CreditStrip";
+import type { ShotSpec } from "@/lib/studio";
+import type { Shot } from "@/lib/shots";
+import { Empty, ParticlSpinner, Waiting, Trouble } from "@/components/ParticlMark";
+import ShotRow from "@/components/ShotRow";
+import { SetupBlock, AUDIO_ROWS } from "@/components/SetupPanel";
 import type { Gen } from "@/components/GenCard";
 
 type Voice = { id: string; name: string; category: string; labels: Record<string, string>; previewUrl: string | null; description: string };
@@ -32,40 +42,68 @@ type Setup = {
   terms: { sfxCredits: number; musicCreditsPerMinute: number };
 };
 
-type Task = "speech" | "sound" | "music";
-const TASKS: { id: Task; label: string; blurb: string }[] = [
-  { id: "speech", label: "Voice", blurb: "A line, read by a voice." },
-  { id: "sound", label: "Sound", blurb: "An effect from a description." },
-  { id: "music", label: "Music", blurb: "A track from a brief." },
+/* The desk's three words for a track, and the API's task behind each. */
+type Task = "sound" | "music" | "speech";
+const KINDS: { id: Task; label: string; placeholder: string }[] = [
+  { id: "sound", label: "Ambient", placeholder: "Rain on a corrugated roof, steady, close. A single fluorescent tube humming. Far off, a road. No music." },
+  { id: "music", label: "Music", placeholder: "Slow cinematic strings building to a brass swell, 90 bpm, hopeful, no vocals." },
+  { id: "speech", label: "Dialogue", placeholder: "The line, as it should be read. With Eleven v3, direct it inline: [whispers] we shouldn't be here." },
 ];
+type Filter = "all" | Task;
 
+const kindOf = (g: Gen): Task => {
+  const t = (g.params as { task?: string }).task;
+  return t === "music" ? "music" : t === "speech" ? "speech" : "sound";
+};
+const labelOf = (t: Task) => KINDS.find((k) => k.id === t)!.label;
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+/** A track's length, when the request fixed one. */
+function lengthOf(g: Gen): number | null {
+  const p = g.params as { durationSeconds?: number | null; lengthMs?: number };
+  if (p.durationSeconds) return p.durationSeconds;
+  if (p.lengthMs) return p.lengthMs / 1000;
+  return null;
+}
+
+type Group = { key: string; code: string; title: string; meta: string; tracks: Gen[] };
 
 export default function AudioPage() {
   usePageTitle("Audio");
   const { signedIn } = useSession();
-  const { selection: bin, current } = useProject();
+  const { selection: bin } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const { data: setup, error: setupError, refresh: refreshSetup } = useApi<Setup>("/api/audio", 0);
-  const q = `/api/jobs?kind=audio&limit=60${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}`;
+  const q = `/api/jobs?kind=audio&limit=120${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}`;
   const { data: jobs, refresh } = useApi<{ generations: Gen[] }>(q, 5000);
   useOnChange(refresh);
   const gens = useMemo(() => jobs?.generations ?? [], [jobs]);
+  const { data: shotData } = useApi<{ shots: Shot[] }>(
+    scoped ? `/api/shots?projectId=${encodeURIComponent(bin)}` : null, 30_000);
+  const shots = useMemo(() => shotData?.shots ?? [], [shotData]);
 
-  const [task, setTask] = useState<Task>("speech");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [task, setTask] = useState<Task>("sound");
   const [text, setText] = useState("");
+  const [shotId, setShotId] = useState("");
   // Picked up on mount, never in the initializer: the server has no
   // localStorage and seeding at first render would hydrate wrong.
   useEffect(() => {
     const draft = loadDraft("audio", signedIn);
-    // Off the effect body, the way Workspace does it: every setState here
-    // sits behind an await, so nothing is set synchronously during the effect.
+    // Every setState here sits behind an await, so nothing is set
+    // synchronously during the effect.
     if (draft) Promise.resolve().then(() => setText(draft));
-    /* signedIn belongs here for the same reason it does in Workspace:
-       loadDraft returns nothing without a session, so signing in has to
-       re-run this. */
   }, [signedIn]);
+  /* The setup the video composer last showed — Sound, Mood, Time of day,
+     Titles are its sound half. Read back, never owned here. */
+  const [spec, setSpec] = useState<ShotSpec>({});
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("aw_last_spec");
+      if (raw) Promise.resolve().then(() => setSpec(JSON.parse(raw) as ShotSpec));
+    } catch { /* a spec we can't read is one we don't show */ }
+  }, []);
+
   const [voiceChoice, setVoiceId] = useState("");
   const [voiceQuery, setVoiceQuery] = useState("");
   const [modelChoice, setModelId] = useState("");
@@ -77,8 +115,6 @@ export default function AudioPage() {
   const [instrumental, setInstrumental] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [playing, setPlaying] = useState<string | null>(null);
-  const preview = useRef<HTMLAudioElement | null>(null);
 
   // Until someone chooses, the account's default model and first voice.
   const modelId = modelChoice || setup?.defaultSpeechModel || "";
@@ -98,24 +134,89 @@ export default function AudioPage() {
       ? (setup?.terms.sfxCredits ?? 200)
       : Math.ceil((lengthS / 60) * (setup?.terms.musicCreditsPerMinute ?? 900));
   const estUsd = estCredits * rate;
+  const lenLabel = task === "sound" ? (duration ? `${duration}s` : "auto") : task === "music" ? mmss(lengthS) : `${text.length} ch`;
 
-  function playPreview(v: Voice) {
-    if (!v.previewUrl) return;
-    if (playing === v.id) { preview.current?.pause(); setPlaying(null); return; }
-    preview.current?.pause();
-    const a = new Audio(v.previewUrl);
-    preview.current = a;
-    a.onended = () => setPlaying(null);
+  /* One player for the whole wall; a row shows the playhead while it is the
+     one playing. */
+  const player = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [pos, setPos] = useState(0);
+  function stop() { player.current?.pause(); player.current = null; setPlaying(null); setPos(0); }
+  function play(g: Gen) {
+    if (playing === g.id) { stop(); return; }
+    const url = g.storedUrl ?? g.sourceUrl;
+    if (!url) return;
+    stop();
+    const a = new Audio(url);
+    player.current = a;
+    a.ontimeupdate = () => { if (a.duration) setPos(a.currentTime / a.duration); };
+    a.onended = () => { setPlaying(null); setPos(0); };
     a.play().catch(() => setPlaying(null));
-    setPlaying(v.id);
+    setPlaying(g.id);
   }
+  // A voice preview is a different sound, on the same player.
+  const [previewing, setPreviewing] = useState<string | null>(null);
+  function preview(v: Voice) {
+    if (!v.previewUrl) return;
+    if (previewing === v.id) { stop(); setPreviewing(null); return; }
+    stop();
+    const a = new Audio(v.previewUrl);
+    player.current = a;
+    a.onended = () => setPreviewing(null);
+    a.play().catch(() => setPreviewing(null));
+    setPreviewing(v.id);
+  }
+  useEffect(() => () => { player.current?.pause(); }, []);
+
+  const counts = useMemo(() => {
+    const c = { all: gens.length, sound: 0, music: 0, speech: 0 };
+    for (const g of gens) c[kindOf(g)]++;
+    return c;
+  }, [gens]);
+
+  /* Group by shot in shot order, loose tracks last. Tracks are numbered in
+     the order they were made, before any filter, so A2 stays A2 when the
+     filter hides A1. */
+  const { groups, numbered } = useMemo(() => {
+    const numbered = new Map<string, number>();
+    const perShot = new Map<string, number>();
+    for (const g of gens.slice().sort((a, b) => a.createdAt - b.createdAt)) {
+      const key = g.shotCode ?? "";
+      const n = (perShot.get(key) ?? 0) + 1;
+      perShot.set(key, n); numbered.set(g.id, n);
+    }
+    const byShot = new Map<string, Gen[]>();
+    const loose: Gen[] = [];
+    for (const g of gens) {
+      if (filter !== "all" && kindOf(g) !== filter) continue;
+      const key = g.shotCode ?? "";
+      if (!key) { loose.push(g); continue; }
+      (byShot.get(key) ?? byShot.set(key, []).get(key)!).push(g);
+    }
+    const meta = (l: Gen[]) => `${l.length} track${l.length === 1 ? "" : "s"} · ${usd(l.reduce((a, g) => a + (g.costUsd ?? 0), 0), 2)}`;
+    const order = new Map(shots.map((s, i) => [s.code, i]));
+    const groups: Group[] = [...byShot.entries()]
+      .sort((a, b) => (order.get(a[0]) ?? 1e9) - (order.get(b[0]) ?? 1e9) || a[0].localeCompare(b[0]))
+      .map(([code, list]) => ({
+        key: code, code, title: shots.find((s) => s.code === code)?.title ?? "",
+        tracks: list.slice().sort((a, b) => a.createdAt - b.createdAt), meta: meta(list),
+      }));
+    if (loose.length) {
+      groups.push({ key: "", code: "", title: "Loose tracks", tracks: loose.slice().sort((a, b) => b.createdAt - a.createdAt), meta: meta(loose) });
+    }
+    return { groups, numbered };
+  }, [gens, filter, shots]);
+
+  const shotCode = shots.find((s) => s.id === shotId)?.code ?? null;
+  const nextN = gens.filter((g) => (g.shotCode ?? "") === (shotCode ?? "")).length + 1;
+  const filesAs = `${shotCode ? `${shotCode} · A${nextN}` : "loose"} · ${labelOf(task).toLowerCase()} · ${lenLabel}`;
 
   async function make() {
     if (!text.trim() || busy) return;
     setBusy(true); setErr(null);
     try {
       const body: Record<string, unknown> = {
-        task, text, projectId: scoped ? bin : null,
+        task, text, projectId: scoped ? bin : null, shotId: shotId || null,
         title: task === "speech" ? `${voice?.name ?? "Voice"} · ${text.trim().slice(0, 40)}` : text.trim().slice(0, 60),
       };
       if (task === "speech") Object.assign(body, { voiceId, voiceName: voice?.name, modelId, stability, similarity, speed });
@@ -131,163 +232,179 @@ export default function AudioPage() {
     finally { setBusy(false); }
   }
 
-  async function remove(g: Gen) {
-    if (!(await appConfirm(`Delete ${g.title || clipId(g.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
-    await fetch(`/api/jobs/${g.id}`, { method: "DELETE" });
+  async function refile(g: Gen, to: string | null) {
+    const res = await fetch(`/api/jobs/${g.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shotId: to }) });
+    if (!res.ok) { setErr("The track wasn't refiled."); return; }
     refresh();
   }
 
   if (!setup) return setupError ? <Trouble label="The audio desk didn't open" detail={setupError} onRetry={refreshSetup} /> : <Waiting label="Opening the audio desk" />;
 
-  const acct = setup.account;
-  const left = acct ? Math.max(0, acct.limit - acct.used) : null;
+  const canRender = signedIn && setup.configured && Boolean(text.trim()) && !busy && (task !== "speech" || Boolean(voiceId));
+  const seg: { id: Filter; label: string; n: number }[] = [
+    { id: "all", label: "All", n: counts.all }, { id: "sound", label: "Ambient", n: counts.sound },
+    { id: "music", label: "Music", n: counts.music }, { id: "speech", label: "Dialogue", n: counts.speech },
+  ];
 
   return (
-    <div className="screen">
-      <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
-          <h1><ParticlLockup /></h1>
-          <span className="text-[15px] text-dim">audio · {scoped ? current?.name ?? "this project" : "the whole workspace"}</span>
-          <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-            <CreditStrip vendor="elevenlabs" />
-            {acct && (
-              <span className="text-[12.5px] text-mute" title={`ElevenLabs ${acct.tier} plan · resets ${acct.resetAt ? timeAgo(acct.resetAt) : "monthly"}`}>
-                plan says <span className="font-medium text-dim">{left!.toLocaleString()}</span> of {acct.limit.toLocaleString()} · {acct.tier}
-              </span>
-            )}
-          </span>
+    <div className="ws">
+      <section className="ws-main">
+        <div className="ws-bar">
+          <div className="ws-bar-title">
+            <span className="ws-bar-h">Tracks</span>
+            <span className="mono-s">{gens.length} TRACKS · {shots.length} SHOTS</span>
+          </div>
+          <div className="seg ml-2" role="tablist" aria-label="Kind">
+            {seg.map((s) => (
+              <button key={s.id} type="button" role="tab" aria-selected={filter === s.id}
+                className={`seg-opt ${filter === s.id ? "is-on" : ""}`} onClick={() => setFilter(s.id)}>
+                {s.label}<span className="seg-n">{s.n}</span>
+              </button>
+            ))}
+          </div>
+          <span className="ws-bar-note">Seedance renders its own sound when Audio is on. Tracks here replace or layer it, per take.</span>
         </div>
 
-        {!setup.configured && (
-          <div className="card mt-6 px-5 py-5">
-            <p className="text-[15px] font-medium">ElevenLabs isn&rsquo;t connected yet</p>
-            <p className="mt-1.5 max-w-[64ch] text-[14px] text-dim">
-              Voices, sound effects and music run on the ElevenLabs account named <span className="font-medium text-ink">particl studio</span>.
-              An admin adds its API key as <code className="font-mono text-[12.5px]">{setup.envKey}</code> in Vercel › Settings › Environment Variables (production) and redeploys; this screen wakes up on its own. The key never leaves the server.
-            </p>
-          </div>
-        )}
-        {setup.configured && setup.accountError && (
-          <p className="mt-4 rounded-[10px] bg-lift/8 px-3 py-2 text-[13.5px] text-lift">{setup.accountError}</p>
-        )}
+        <div className="ws-scroll">
+          {groups.length === 0 && (
+            <Empty title={signedIn ? "Nothing recorded yet" : "The tracks are for the team"}
+              line={signedIn
+                ? "A voice line, a sound or a track lands here the moment it's made, filed against its shot."
+                : "Sign in to see what has been made here. Everything else on this screen is yours to look at."} />
+          )}
+          {groups.map((g) => (
+            <div key={g.key || "loose"} className="grp">
+              <div className="grp-head">
+                {g.code && <span className="grp-id">{g.code}</span>}
+                <span className="grp-title">{g.title || (g.code ? "Untitled shot" : "Loose tracks")}</span>
+                <span className="grp-meta">{g.meta}</span>
+                <span className="grp-rule" />
+                {g.code
+                  ? <Link href="/" className="hdr-mono-link">OPEN SHOT →</Link>
+                  : <span className="mono-s">NOT FILED AGAINST A SHOT</span>}
+              </div>
+              <div className="trk-list">
+                {g.tracks.map((t) => (
+                  <TrackRow key={t.id} gen={t} n={numbered.get(t.id) ?? 0} shots={shots}
+                    playing={playing === t.id} pos={playing === t.id ? pos : 0}
+                    onPlay={() => play(t)} onRefile={(to) => refile(t, to)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        {/* ── The desk ── */}
-        <section className={`card mt-6 px-5 py-5 ${setup.configured ? "" : "pointer-events-none opacity-60"}`}>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {TASKS.map((t) => (
-              <button key={t.id} type="button" onClick={() => setTask(t.id)} title={t.blurb}
-                className={`chip ${task === t.id ? "bg-blue text-on-ink" : ""}`}>{t.label}</button>
+      <aside className="ws-rail">
+        <div className="ws-rail-head">
+          <span className="ws-bar-h">Composer</span>
+          <ShotRow chip projectId={bin} shotId={shotId} setShotId={setShotId} />
+        </div>
+
+        <div className="ws-rail-body">
+          {!setup.configured && (
+            <p className="rail-help">
+              ElevenLabs isn&rsquo;t connected yet. An admin adds its API key as <code className="font-mono text-[11px]">{setup.envKey}</code> in
+              Vercel › Settings › Environment Variables and redeploys; this desk wakes up on its own.
+            </p>
+          )}
+          {setup.configured && setup.accountError && <p className="rail-help text-lift">{setup.accountError}</p>}
+
+          <div className="seg is-fill" role="tablist" aria-label="Track kind">
+            {KINDS.map((k) => (
+              <button key={k.id} type="button" role="tab" aria-selected={task === k.id}
+                className={`seg-opt ${task === k.id ? "is-on" : ""}`} onClick={() => setTask(k.id)}>{k.label}</button>
             ))}
-            <span className="ml-2 text-[13px] text-mute">{TASKS.find((t) => t.id === task)!.blurb}</span>
           </div>
 
           <textarea
-            value={text} onChange={(e) => { setText(e.target.value); saveDraft("audio", e.target.value); }} rows={task === "speech" ? 4 : 2}
+            value={text} onChange={(e) => { setText(e.target.value); saveDraft("audio", e.target.value); }}
             onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); make(); } }}
-            placeholder={task === "speech"
-              ? "The line, as it should be read. With Eleven v3, direct it inline: [whispers] we shouldn't be here. [laughs]"
-              : task === "sound"
-                ? "e.g. heavy wooden door creaks open slowly, stone hallway, distant echo"
-                : "e.g. slow cinematic strings building to a brass swell, 90 bpm, hopeful, no vocals"}
-            className="mt-4 w-full resize-none rounded-[12px] bg-chip px-3.5 py-3 text-[15px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none"
+            placeholder={KINDS.find((k) => k.id === task)!.placeholder}
+            className="rail-prompt" rows={task === "speech" ? 5 : 4} aria-label="Prompt"
           />
 
-          {task === "speech" && (
-            <div className="mt-4 grid gap-5 md:grid-cols-[1fr_260px]">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[13px] font-medium text-dim">Voice</span>
-                  {voice && <span className="text-[13px] text-mute">{voice.name}{voice.labels.accent ? ` · ${voice.labels.accent}` : ""}{voice.labels.gender ? ` · ${voice.labels.gender}` : ""}</span>}
-                  <span className="relative ml-auto">
-                    <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 !h-3.5 !w-3.5 -translate-y-1/2 text-mute" />
-                    <input value={voiceQuery} onChange={(e) => setVoiceQuery(e.target.value)} placeholder="Find a voice"
-                      className="ctl !h-[32px] w-[190px] !pl-8 !text-[13px]" />
-                  </span>
-                </div>
-                {setup.voicesError && <p className="mt-2 text-[13px] text-lift">{setup.voicesError}</p>}
-                <div className="mt-2 grid max-h-[260px] gap-1.5 overflow-y-auto pr-1 [grid-template-columns:repeat(auto-fill,minmax(170px,1fr))]">
-                  {shownVoices.map((v) => (
-                    <button key={v.id} type="button" onClick={() => setVoiceId(v.id)}
-                      className={`flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-left ${voiceId === v.id ? "bg-blue text-on-ink" : "bg-panel2 hover:bg-chip"}`}>
-                      <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); playPreview(v); }} title="Hear it"
-                        className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${voiceId === v.id ? "bg-white/20" : "bg-chip"} ${!v.previewUrl ? "opacity-40" : ""}`}>
-                        {playing === v.id ? <span className="h-2.5 w-2.5 rounded-[2px] bg-current" /> : <span className="ml-0.5 border-y-[5px] border-l-[8px] border-y-transparent border-l-current" />}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[13.5px] font-medium">{v.name}</span>
-                        <span className={`block truncate text-[11.5px] ${voiceId === v.id ? "text-white/75" : "text-mute"}`}>
-                          {[v.labels.gender, v.labels.accent, v.labels.age, v.labels.use_case ?? v.labels.description].filter(Boolean).join(" · ") || v.category}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                  {shownVoices.length === 0 && <span className="col-span-full text-[13px] text-mute">{voices.length ? "No voice by that name." : "No voices came back from the account."}</span>}
-                </div>
-              </div>
-              <div className="flex flex-col gap-3">
-                <label className="block">
-                  <span className="mb-1.5 block text-[13px] font-medium text-dim">Model</span>
-                  <select className="ctl" value={modelId} onChange={(e) => setModelId(e.target.value)}>
-                    {setup.speechModels.map((m) => <option key={m.id} value={m.id}>{m.label}{m.alpha ? " (alpha)" : ""} · {m.creditsPerChar} cr/char</option>)}
+          <div className="rail-chips">
+            {task === "sound" && (
+              <>
+                <span className="chip-dd is-muted">Sound effects</span>
+                <label className="chip-dd">
+                  Length
+                  <select value={duration} onChange={(e) => setDuration(e.target.value)} aria-label="Length">
+                    <option value="">let it decide</option>
+                    {["1", "2", "5", "10", "20"].map((d) => <option key={d} value={d}>{d}s</option>)}
                   </select>
-                  {model && <span className="mt-1 block text-[12px] leading-snug text-mute">{model.note}</span>}
+                  <span className="hdr-caret" aria-hidden="true">▼</span>
                 </label>
-                <Slider label="Stability" value={stability} onChange={setStability} hint={stability < 0.35 ? "expressive, varies take to take" : stability > 0.7 ? "steady, flatter" : "balanced"} />
-                <Slider label="Similarity" value={similarity} onChange={setSimilarity} hint={similarity > 0.85 ? "closest to the source, may carry its artefacts" : "natural"} />
-                <Slider label="Speed" value={speed} onChange={setSpeed} min={0.7} max={1.2} step={0.05} hint={speed === 1 ? "as recorded" : `${speed.toFixed(2)}×`} />
-              </div>
-            </div>
-          )}
-
-          {task === "sound" && (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="text-[13px] font-medium text-dim">Length</span>
-              {(["", "1", "2", "5", "10", "20"] as const).map((d) => (
-                <button key={d} type="button" onClick={() => setDuration(d)} className={`chip !py-1 !text-[12.5px] ${duration === d ? "bg-blue text-on-ink" : ""}`}>
-                  {d === "" ? "Let it decide" : `${d}s`}
+                <span className="chip-dd is-muted"><span className="chip-dd-sub">UP TO 30S · ONE PRICE</span></span>
+              </>
+            )}
+            {task === "music" && (
+              <>
+                <span className="chip-dd is-muted">Eleven Music</span>
+                <label className="chip-dd">
+                  Length
+                  <select value={lengthS} onChange={(e) => setLengthS(Number(e.target.value))} aria-label="Length">
+                    {[15, 30, 60, 120, 180].map((s) => <option key={s} value={s}>{mmss(s)}</option>)}
+                  </select>
+                  <span className="hdr-caret" aria-hidden="true">▼</span>
+                </label>
+                <button type="button" className={`chip-dd ${instrumental ? "" : "is-muted"}`} onClick={() => setInstrumental((v) => !v)} aria-pressed={instrumental}>
+                  Instrumental <span className={`tgl ${instrumental ? "is-on" : ""}`} aria-hidden="true" />
                 </button>
-              ))}
-              <span className="text-[12.5px] text-mute">Up to 30s; the price is the same whatever the length.</span>
-            </div>
-          )}
-
-          {task === "music" && (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="text-[13px] font-medium text-dim">Length</span>
-              {[15, 30, 60, 120, 180].map((s) => (
-                <button key={s} type="button" onClick={() => setLengthS(s)} className={`chip !py-1 !text-[12.5px] ${lengthS === s ? "bg-blue text-on-ink" : ""}`}>{mmss(s)}</button>
-              ))}
-              <button type="button" onClick={() => setInstrumental((v) => !v)} className={`chip !py-1 !text-[12.5px] ${instrumental ? "bg-blue text-on-ink" : ""}`}>Instrumental</button>
-            </div>
-          )}
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button type="button" onClick={make} disabled={!text.trim() || busy || !setup.configured || (task === "speech" && !voiceId)}
-              className="btn-render h-[38px] px-5 text-[14.5px] disabled:opacity-40">
-              <IconSparkle className="!h-4 !w-4" /> {busy ? "Sending…" : task === "speech" ? "Read it" : task === "sound" ? "Make the sound" : "Compose"}
-            </button>
-            <span className="text-[13px] text-mute">
-              {text.trim() ? <>About <span className="font-medium text-dim">{estCredits.toLocaleString()} credits</span> · {estUsd < 0.005 ? "under a cent" : usd(estUsd)}{task === "speech" ? ` · ${text.length} characters` : ""}</> : "The cost sits here before you press it."}
-            </span>
-            {err && <span className="text-[13px] text-lift">{err}</span>}
+              </>
+            )}
+            {task === "speech" && (
+              <label className="chip-dd">
+                <select value={modelId} onChange={(e) => setModelId(e.target.value)} aria-label="Model">
+                  {setup.speechModels.map((m) => <option key={m.id} value={m.id}>{m.label}{m.alpha ? " (alpha)" : ""}</option>)}
+                </select>
+                <span className="hdr-caret" aria-hidden="true">▼</span>
+                {model && <span className="chip-dd-sub">{model.creditsPerChar} CR/CH</span>}
+              </label>
+            )}
           </div>
-        </section>
 
-        {/* ── What's been made ── */}
-        <section className="mt-8">
-          <div className="flex items-baseline gap-2.5">
-            <p className="grouplabel !pb-0">Made here</p>
-            <span className="text-[13px] text-mute">{gens.length ? `${gens.length} · ${usd(gens.reduce((a, g) => a + (g.costUsd ?? 0), 0))}` : ""}</span>
-          </div>
-          {gens.length === 0 ? (
-            <div className="card mt-3"><Empty title="Nothing recorded yet" line="A voice line, a sound or a track lands here the moment it's made, and on the Library with everything else." /></div>
-          ) : (
-            <div className="mt-3 flex flex-col gap-2">
-              {gens.map((g) => <AudioRow key={g.id} gen={g} onDelete={() => remove(g)} />)}
+          {task === "speech" && (
+            <div className="rail-sec">
+              <span className="mono">Voice · dialogue only</span>
+              <label className="search">
+                <span className="search-glyph" aria-hidden="true">⌕</span>
+                <input value={voiceQuery} onChange={(e) => setVoiceQuery(e.target.value)} placeholder="Find a voice" />
+              </label>
+              {setup.voicesError && <p className="rail-help text-lift">{setup.voicesError}</p>}
+              <div className="voice-list">
+                {shownVoices.map((v) => (
+                  <button key={v.id} type="button" onClick={() => setVoiceId(v.id)} aria-pressed={voiceId === v.id}
+                    className={`voice-chip ${voiceId === v.id ? "is-on" : ""}`} title={v.description}>
+                    <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); preview(v); }} title={v.previewUrl ? "Hear it" : "No preview"}
+                      className={`voice-chip-play ${v.previewUrl ? "" : "is-off"}`}>{previewing === v.id ? "■" : "▶"}</span>
+                    {v.name}
+                    <span className="voice-chip-sub">{[v.labels.accent, v.labels.gender].filter(Boolean).join(" · ").toUpperCase() || v.category.toUpperCase()}</span>
+                  </button>
+                ))}
+                {shownVoices.length === 0 && <span className="rail-help">{voices.length ? "No voice by that name." : "No voices came back from the account."}</span>}
+              </div>
+              <span className="rail-help">A voice is learned in Studio the way a face is, and cited the same way.</span>
+              <Slider label="Stability" value={stability} onChange={setStability} hint={stability < 0.35 ? "expressive" : stability > 0.7 ? "steady" : "balanced"} />
+              <Slider label="Similarity" value={similarity} onChange={setSimilarity} hint={similarity > 0.85 ? "closest to source" : "natural"} />
+              <Slider label="Speed" value={speed} onChange={setSpeed} min={0.7} max={1.2} step={0.05} hint={speed === 1 ? "as recorded" : `${speed.toFixed(2)}×`} />
             </div>
           )}
-        </section>
-      </div>
+
+          <SetupBlock spec={spec} rows={AUDIO_ROWS} eyebrow="Sound row" />
+        </div>
+
+        <div className="ws-rail-foot">
+          {err && <p className="rail-help text-lift">{err}</p>}
+          <button type="button" className="btn-primary !h-[46px] w-full !px-4 !text-[14px]" onClick={make} disabled={!canRender}
+            title={!signedIn ? "Sign in to render" : undefined}>
+            <span>{busy ? "Sending…" : "Render"}</span>
+            <span className="btn-primary-cost">{text.trim() ? `${estUsd < 0.005 ? "<1¢" : usd(estUsd)} · ${lenLabel}` : `${estCredits.toLocaleString()} CR`}</span>
+          </button>
+          <span className="mono-s text-center">files as {filesAs}</span>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -296,50 +413,83 @@ function Slider({ label, value, onChange, hint, min = 0, max = 1, step = 0.05 }:
   label: string; value: number; onChange: (v: number) => void; hint?: string; min?: number; max?: number; step?: number;
 }) {
   return (
-    <label className="block">
-      <span className="flex items-baseline justify-between text-[13px]">
-        <span className="font-medium text-dim">{label}</span>
-        <span className="text-[12px] text-mute">{hint}</span>
-      </span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="mt-1 w-full accent-[var(--color-blue)]" />
+    <label className="rail-slider">
+      <span className="rail-slider-h"><span>{label}</span><span>{hint}</span></span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 }
 
-/** One audio render: a player, what it is, what it cost. */
-export function AudioRow({ gen, onDelete }: { gen: Gen; onDelete?: () => void }) {
+/**
+ * One track: play, what it is, the waveform, what it belongs to, the money,
+ * two small actions. Right-click carries rename and delete, as everywhere.
+ */
+function TrackRow({ gen, n, shots, playing, pos, onPlay, onRefile }: {
+  gen: Gen; n: number; shots: Shot[]; playing: boolean; pos: number;
+  onPlay: () => void; onRefile: (to: string | null) => void;
+}) {
   const url = gen.storedUrl ?? gen.sourceUrl;
   const done = gen.status === "succeeded" && Boolean(url);
   const live = gen.status === "queued" || gen.status === "running";
-  const p = gen.params as { task?: string; voiceName?: string; credits?: number; durationSeconds?: number | null; lengthMs?: number };
+  const p = gen.params as { voiceName?: string; credits?: number };
+  const len = lengthOf(gen);
+  const [menu, setMenu] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setMenu(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(false); };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [menu]);
+
+  const first = live ? (gen.status === "queued" ? "Queued" : "Making it…")
+    : gen.status === "failed" ? `Failed${gen.error ? ` · ${gen.error.slice(0, 80)}` : ""}`
+    : gen.status === "cancelled" ? "Cancelled"
+    : gen.title || gen.prompt.slice(0, 90);
+  const second = [shortLabel(gen.model), p.voiceName, gen.authorName ? `by ${gen.authorName}` : null, timeAgo(gen.createdAt)].filter(Boolean).join(" · ");
+
   return (
     <div data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)} data-gen-title={gen.title ?? ""}
-      className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-chip text-dim"><IconAudio className="!h-4 !w-4" /></span>
-      <span className="min-w-0 flex-1 basis-[240px]">
-        <span className="block truncate text-[14px] font-medium">{gen.title || (p.voiceName ? `${p.voiceName} · ` : "") + gen.prompt.slice(0, 80)}</span>
-        <span className="block truncate text-[12.5px] text-mute" title={gen.prompt}>
-          {shortLabel(gen.model)}{p.voiceName ? ` · ${p.voiceName}` : ""}{p.durationSeconds ? ` · ${p.durationSeconds}s` : p.lengthMs ? ` · ${mmss(p.lengthMs / 1000)}` : ""}
-          {gen.authorName ? ` · ${gen.authorName}` : ""} · {timeAgo(gen.createdAt)}
-          {gen.status === "failed" && gen.error ? <span className="text-lift"> · {gen.error.slice(0, 120)}</span> : ""}
+      className="trk">
+      <button type="button" className="trk-play" onClick={onPlay} disabled={!done} title={done ? (playing ? "Stop" : "Play") : undefined} aria-label={playing ? "Stop" : "Play"}>
+        {live ? <ParticlSpinner size={14} className="text-dim" /> : playing ? "■" : "▶"}
+      </button>
+      <div className="trk-type">
+        <span>{labelOf(kindOf(gen))}</span>
+        <span className="mono-s">A{n}{len ? ` · ${mmss(len)}` : ""}</span>
+      </div>
+      <div className={`trk-wave ${playing ? "is-playing" : ""} ${done ? "" : "is-empty"}`} aria-hidden="true">
+        {playing && <span className="trk-wave-pos" style={{ left: `${(pos * 100).toFixed(2)}%` }} />}
+      </div>
+      <div className="trk-att">
+        <span className={gen.status === "failed" ? "is-bad" : ""} title={gen.prompt}>{first}</span>
+        <span>{second}</span>
+      </div>
+      <span className="mono-v trk-cost" title={p.credits ? `${p.credits.toLocaleString()} credits` : undefined}>
+        {gen.costUsd == null ? "—" : gen.costUsd < 0.005 && gen.costUsd > 0 ? "<1¢" : usd(gen.costUsd)}
+      </span>
+      <div className="trk-acts" ref={wrap}>
+        <span className="relative">
+          <button type="button" className="trk-btn" onClick={() => setMenu((v) => !v)} aria-haspopup="menu" aria-expanded={menu}>
+            {gen.shotCode ? "Move" : "Attach"}
+          </button>
+          {menu && (
+            <div role="menu" className="menu-pop absolute right-0 top-full z-30 mt-1 min-w-[200px]">
+              {shots.filter((s) => s.code !== gen.shotCode).map((s) => (
+                <button key={s.id} type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(false); onRefile(s.id); }}>
+                  <span className="mono-s mr-2">{s.code}</span><span className="min-w-0 flex-1 truncate">{s.title || "Untitled shot"}</span>
+                </button>
+              ))}
+              {shots.length === 0 && <span className="menu-item text-mute">No shots in this production yet.</span>}
+              {gen.shotCode && (
+                <button type="button" role="menuitem" className="menu-item text-mute" onClick={() => { setMenu(false); onRefile(null); }}>Unfile</button>
+              )}
+            </div>
+          )}
         </span>
-      </span>
-      {done ? (
-        <audio controls preload="none" src={url!} className="h-9 w-[260px] max-w-full" onClick={(e) => e.stopPropagation()} />
-      ) : live ? (
-        <span className="flex items-center gap-2 text-[13px] text-dim"><ParticlSpinner size={16} className="text-dim" /> {gen.status === "queued" ? "Queued" : "Making it"}…</span>
-      ) : (
-        <span className="text-[13px] text-lift">{gen.status === "cancelled" ? "Cancelled" : "Failed"}</span>
-      )}
-      <span className="flex items-center gap-1 tabular-nums text-[13px]">
-        {gen.costUsd != null && <span className="font-medium" title={p.credits ? `${p.credits.toLocaleString()} credits` : ""}>{gen.costUsd < 0.005 && gen.costUsd > 0 ? "<1¢" : usd(gen.costUsd)}</span>}
-        {url && (
-          <a href={downloadHref(url)} download title="Download" className="grid h-8 w-8 place-items-center rounded-full text-dim hover:bg-chip"><IconDown /></a>
-        )}
-        {onDelete && (
-          <button type="button" onClick={onDelete} title="Delete" className="grid h-8 w-8 place-items-center rounded-full text-dim hover:bg-chip hover:text-lift"><IconTrash /></button>
-        )}
-      </span>
+        {url && <a href={downloadHref(url)} download className="trk-btn is-icon" title="Download" aria-label="Download">↓</a>}
+      </div>
     </div>
   );
 }

@@ -1,23 +1,21 @@
 import type { Metadata } from "next";
-import { Outfit, Kode_Mono, Geist } from "next/font/google";
+import { Outfit, Kode_Mono } from "next/font/google";
 import "./globals.css";
 
 /* The brand's two faces. Outfit sets the wordmark and every big title;
    Kode Mono sets the STUDIO tag and the small uppercase labels. latin-ext
    carries the dotless ı the wordmark is built on. */
+/* Two faces carry the whole interface now. The pipeline handoff sets body,
+   labels and buttons in Outfit 400/500 and headings in 600; Kode Mono does
+   every all-caps label, id, cost and nav item at 400/500. There is no third
+   face — the earlier Geist body was the previous handoff's call and this
+   one supersedes it. */
 const outfit = Outfit({
-  subsets: ["latin", "latin-ext"], weight: ["500", "600", "700"],
+  subsets: ["latin", "latin-ext"], weight: ["400", "500", "600"],
   variable: "--font-outfit", display: "swap",
 });
 const kode = Kode_Mono({
-  subsets: ["latin"], weight: ["500", "700"], variable: "--font-kode-mono", display: "swap",
-});
-/* The interface face. 300 carries lead copy and prompts, 400 body, 500
-   labels — the system asks for all three, and the weights are what make a
-   monochrome interface read as more than one voice. */
-const geist = Geist({
-  subsets: ["latin"], weight: ["300", "400", "500", "600"],
-  variable: "--font-geist", display: "swap",
+  subsets: ["latin"], weight: ["400", "500"], variable: "--font-kode-mono", display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -62,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     // suppressHydrationWarning: the script above may have stamped data-theme
     // on <html> before React compared it to the server's version.
-    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${kode.variable} ${geist.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${kode.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>

@@ -2,19 +2,21 @@
 
 import ParticlLockup from "./ParticlMark";
 
+/** The small centred card the first-run and invite screens use. */
 export function AuthCard({
   title, sub, children,
 }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="w-full max-w-[380px] rounded-[20px] bg-panel shadow-[var(--shadow-pop)]">
-      <div className="flex items-center px-6 pt-6">
-        <ParticlLockup size={22} />
-      </div>
-
-      <div className="p-6">
-        <h1 className="text-[24px] font-bold tracking-[-0.02em]">{title}</h1>
-        {sub && <p className="mt-1.5 text-[14px] leading-relaxed text-dim">{sub}</p>}
-        <div className="mt-4">{children}</div>
+    <div className="grid min-h-dvh place-items-center px-5 py-10">
+      <div className="w-full max-w-[400px] rounded-[10px] border border-line bg-panel">
+        <div className="flex items-center px-6 pt-6">
+          <ParticlLockup size={22} />
+        </div>
+        <div className="p-6">
+          <h1 className="page-h1 !text-[26px]">{title}</h1>
+          {sub && <p className="page-sub">{sub}</p>}
+          <div className="mt-5">{children}</div>
+        </div>
       </div>
     </div>
   );
@@ -22,8 +24,8 @@ export function AuthCard({
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="mb-3 block">
-      <span className="mb-1.5 block text-[13px] font-medium text-dim">{label}</span>
+    <label className="wl-field mb-4 block">
+      {label.toUpperCase()}
       {children}
     </label>
   );
@@ -31,17 +33,12 @@ export function Field({ label, children }: { label: string; children: React.Reac
 
 export function Submit({ busy, children }: { busy: boolean; children: React.ReactNode }) {
   return (
-    <button type="submit" disabled={busy}
-      className="btn-render mt-2 h-11 w-full text-[16px]">
+    <button type="submit" disabled={busy} className="btn-primary mt-1 !h-[46px] w-full justify-center !text-[14px]">
       {busy ? "…" : children}
     </button>
   );
 }
 
 export function ErrorLine({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mt-3 rounded-[10px] bg-lift/8 px-3 py-2 text-[13.5px] leading-relaxed text-lift">
-      {children}
-    </p>
-  );
+  return <p className="rail-help mt-3 text-lift">{children}</p>;
 }

@@ -5,6 +5,7 @@ import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { enqueueRender } from "@/lib/inngest";
 import { runInline } from "@/lib/renderWork";
 import { elevenConfigured, subscription, SPEECH_MODELS, DEFAULT_SPEECH_MODEL, SFX_MODEL, MUSIC_MODEL, speechCredits, sfxCredits, musicCredits, listVoices, SFX_CREDITS, MUSIC_CREDITS_PER_MINUTE } from "@/lib/elevenlabs";
+import { getShot } from "@/lib/shots";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -28,6 +29,17 @@ export async function POST(req: Request) {
   const text = String(body.text ?? "").trim().slice(0, MAX_TEXT);
   if (!text) return NextResponse.json({ error: task === "speech" ? "Write the line first." : "Describe it first." }, { status: 400 });
   const projectId = body.projectId ? String(body.projectId) : null;
+  /* Filed against a shot at birth, the way a take is. A track has no
+     version of its own — tracks read A1, A2… in the order they were made —
+     but it belongs to the shot and lists under it. */
+  const shotId = body.shotId ? String(body.shotId) : null;
+  if (shotId) {
+    const shot = await getShot(shotId);
+    if (!shot) return NextResponse.json({ error: "That shot is gone." }, { status: 400 });
+    if (projectId && shot.projectId && shot.projectId !== projectId) {
+      return NextResponse.json({ error: "That shot belongs to another production." }, { status: 400 });
+    }
+  }
 
   let modelId = SFX_MODEL;
   let estCredits = 0;
@@ -68,11 +80,11 @@ export async function POST(req: Request) {
   await db().execute({
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
-           created_at, updated_at, token_id, provider, task, title, billed_to)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           created_at, updated_at, token_id, provider, task, title, billed_to, shot_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, projectId, null, "audio", modelId, text, JSON.stringify({ ...params, estCredits }),
            "running", got.user.id, ts, ts, got.token?.id ?? null, "elevenlabs", "generate",
-           body.title ? String(body.title).slice(0, 80) : null, "elevenlabs"],
+           body.title ? String(body.title).slice(0, 80) : null, "elevenlabs", shotId],
   });
   invalidate(PROJECTS_KEY);
 

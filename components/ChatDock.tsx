@@ -99,7 +99,10 @@ function ChatDockForMembers() {
   );
 
   return (
-    <div className="flex h-full shrink-0">
+    /* display:contents — the dock is a fixed FAB and a fixed panel, and its
+       wrapper must take no room in the shell's column, or it starves the
+       screen beside it of height. */
+    <div className="contents">
       {open && (
         <ChatPanel
           feed={feed} members={members} refresh={refresh} onClose={() => toggle(false)}
@@ -271,7 +274,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files[0]) attach(e.dataTransfer.files[0]); }}
-      className={`chat-panel fixed bottom-5 right-5 top-[calc(var(--topbar)+12px)] z-40 flex w-[360px] flex-col overflow-hidden rounded-[20px] bg-panel shadow-[var(--shadow-pop)] ${drag ? "!bg-blue/5" : ""} max-[860px]:inset-x-3 max-[860px]:bottom-3 max-[860px]:w-auto`}
+      className={`chat-panel fixed bottom-5 right-5 top-16 z-40 flex w-[360px] flex-col overflow-hidden rounded-[20px] bg-panel shadow-[var(--shadow-pop)] ${drag ? "!bg-blue/5" : ""} max-[860px]:inset-x-3 max-[860px]:bottom-3 max-[860px]:w-auto`}
     >
       <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-hair px-4">
         <h2 className="text-[16px] font-semibold tracking-[-0.015em]">Team chat</h2>
