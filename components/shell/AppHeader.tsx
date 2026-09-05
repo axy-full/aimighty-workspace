@@ -114,7 +114,7 @@ function CapReadout({ studioLevel, project, spentUsd }: {
   if (studioLevel || !project) {
     return (
       <Link href="/usage" className="hdr-cap" title="This month, across the studio">
-        <span className="hdr-cap-v">{spentUsd == null ? "—" : money(spentUsd)}</span> THIS MONTH
+        <span className="hdr-cap-v">{spentUsd == null ? "—" : money(spentUsd)}</span><span className="hdr-cap-long"> THIS MONTH</span><span className="hdr-cap-short"> MO</span>
       </Link>
     );
   }
@@ -123,7 +123,8 @@ function CapReadout({ studioLevel, project, spentUsd }: {
   return (
     <Link href="/usage" className="hdr-cap" title={cap ? "Spend against this production's cap" : "This production's spend — no cap set"}>
       <span className="hdr-cap-v">{money(spent)}</span>
-      {cap ? ` OF $${Math.round(cap)} CAP` : " · NO CAP"}
+      <span className="hdr-cap-long">{cap ? ` OF $${Math.round(cap)} CAP` : " · NO CAP"}</span>
+      <span className="hdr-cap-short">{cap ? `/$${Math.round(cap)}` : ""}</span>
     </Link>
   );
 }

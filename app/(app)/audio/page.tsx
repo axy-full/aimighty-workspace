@@ -23,6 +23,7 @@ import { useProject } from "@/lib/projectContext";
 import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { usd, timeAgo, downloadHref } from "@/lib/format";
+import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import { shortLabel } from "@/lib/models";
 import type { ShotSpec } from "@/lib/studio";
 import type { Shot } from "@/lib/shots";
@@ -115,6 +116,9 @@ export default function AudioPage() {
   const [instrumental, setInstrumental] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const mobile = useIsMobile();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  useSheetLock(mobile && sheetOpen);
 
   // Until someone chooses, the account's default model and first voice.
   const modelId = modelChoice || setup?.defaultSpeechModel || "";
@@ -295,10 +299,23 @@ export default function AudioPage() {
         </div>
       </section>
 
-      <aside className="ws-rail">
+      <div className="dock">
+        <button type="button" className="dock-preview" onClick={() => setSheetOpen(true)}>
+          <span className="dock-eyebrow">COMPOSER · FILES AS {filesAs.toUpperCase()}</span>
+          <span className="dock-line">{text.trim() || KINDS.find((k) => k.id === task)!.placeholder}</span>
+        </button>
+        <button type="button" className="dock-go" onClick={make} disabled={!canRender}>
+          <span>{busy ? "…" : "Render"}</span>
+          <span className="dock-cost">{text.trim() ? (estUsd < 0.005 ? "<1¢" : usd(estUsd)) : `${estCredits} CR`}</span>
+        </button>
+      </div>
+      {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
+      <aside className={`ws-rail ${mobile ? (sheetOpen ? "is-sheet" : "is-hidden") : ""}`}>
+        <div className="sheet-grab" aria-hidden="true"><span /></div>
         <div className="ws-rail-head">
           <span className="ws-bar-h">Composer</span>
           <ShotRow chip projectId={bin} shotId={shotId} setShotId={setShotId} />
+          {mobile && <button type="button" className="btn-secondary !h-8 !px-2.5 !text-[12px] ml-auto" onClick={() => setSheetOpen(false)}>Close</button>}
         </div>
 
         <div className="ws-rail-body">

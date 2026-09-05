@@ -24,6 +24,7 @@ import LazyMedia from "@/components/LazyMedia";
 import IdentitySheet, { type IdentityView, type IdentityTerms } from "@/components/IdentitySheet";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo, usd } from "@/lib/format";
+import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import type { CastMember } from "@/lib/cast";
 import type { Gen } from "@/components/GenCard";
 
@@ -64,6 +65,10 @@ export default function StudioPage() {
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const replaceFile = useRef<HTMLInputElement>(null);
+  const mobile = useIsMobile();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  useSheetLock(mobile && sheetOpen);
+  const pick = (next: Sel) => { setSel(next); if (mobile) setSheetOpen(true); };
 
   // A face mid-training changes state without anyone touching the page.
   const anyTraining = identities.some((i) => i.status === "training");
@@ -183,7 +188,7 @@ export default function StudioPage() {
             </div>
             <div className="idgrid">
               {identities.map((i) => (
-                <button key={i.id} type="button" onClick={() => setSel({ type: "identity", id: i.id })}
+                <button key={i.id} type="button" onClick={() => pick({ type: "identity", id: i.id })}
                   className={`idcard ${sel?.type === "identity" && sel.id === i.id ? "is-on" : ""}`}>
                   <span className="idcard-face">
                     {i.coverUploadId
@@ -231,7 +236,7 @@ export default function StudioPage() {
                 const trained = identityFor(m.name)?.status === "ready";
                 const on = (cur?.id === m.id) && !curId;
                 return (
-                  <button key={m.id} type="button" onClick={() => setSel({ type: "cast", id: m.id })} className={`castcard ${on ? "is-on" : ""}`}>
+                  <button key={m.id} type="button" onClick={() => pick({ type: "cast", id: m.id })} className={`castcard ${on ? "is-on" : ""}`}>
                     <span className="castcard-still">
                       {m.uploadId && /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={`/api/uploads/${m.uploadId}`} alt="" loading="lazy" />}
@@ -268,13 +273,16 @@ export default function StudioPage() {
         </section>
 
         {/* ── Detail rail ───────────────────────────────────────── */}
-        <aside className="ws-rail">
+        {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
+        <aside className={`ws-rail ${mobile ? (sheetOpen ? "is-sheet" : "is-hidden") : ""}`}>
+          <div className="sheet-grab" aria-hidden="true"><span /></div>
           <div className="ws-rail-head">
-            <span className="flex items-baseline gap-2">
-              <span className="ws-bar-h">{railName ? (curId ? railName : `@${railName}`) : "Nothing selected"}</span>
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="ws-bar-h truncate">{railName ? (curId ? railName : `@${railName}`) : "Nothing selected"}</span>
               <span className="mono !tracking-[.08em]">{railKind}</span>
             </span>
             {railName && <span className="mono-s">{usageLine(railName)}</span>}
+            {mobile && <button type="button" className="btn-secondary !h-8 !px-2.5 !text-[12px] ml-auto" onClick={() => setSheetOpen(false)}>Close</button>}
           </div>
           <div className="ws-rail-body !gap-4">
             <div className="st-still">

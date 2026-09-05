@@ -194,7 +194,7 @@ export default function LibraryPage() {
                   <span className="grp-title">Unfiled</span>
                   <span className="grp-meta">{unfiled.length} render{unfiled.length === 1 ? "" : "s"} not filed against a shot — they have no version number and no name until they are.</span>
                 </div>
-                <div className="grp-grid is-lib">
+                <div className="grp-grid is-lib is-unfiled">
                   {unfiled.map((g) => <UnfiledCard key={g.id} gen={g} onOpen={() => open(g)} onChanged={refresh} />)}
                 </div>
               </section>

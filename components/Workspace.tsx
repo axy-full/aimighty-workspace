@@ -22,6 +22,7 @@ import SetupPanel from "./SetupPanel";
 import ShotRow from "./ShotRow";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens } from "@/lib/format";
+import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import { useOnChange } from "@/lib/changes";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -82,6 +83,11 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const [count, setCount] = useState(1);
   const [useAs, setUseAs] = useState<"first" | "cast" | "loose">("loose");
   const [castName, setCastName] = useState("");
+  /* On a phone the rail is a sheet, opened from a docked bar that always
+     shows the filing target, the first line of the prompt and the price. */
+  const mobile = useIsMobile();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  useSheetLock(mobile && sheetOpen);
   /** Editing or extending an existing render, rather than making a new one.
    *  Both are LOCKED tasks: the source decides the output's shape. */
   /* A locked task can now be chosen BEFORE its source, so the clip is
@@ -437,10 +443,24 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       {/* The composer rail: 400px, the panel ground, its own scroll. Head
           carries the filing chip, body the composer and the two blocks it
           carries into every shot, foot the one button that spends. */}
-      <aside className="ws-rail">
+      <div className="dock">
+        <button type="button" className="dock-preview" onClick={() => setSheetOpen(true)}>
+          <span className="dock-eyebrow">COMPOSER · FILES AS {filedAs.toUpperCase()}</span>
+          <span className="dock-line">{prompt.trim() || (isImage ? "Describe the still…" : "Describe the shot…")}</span>
+        </button>
+        <button type="button" className="dock-go" onClick={render}
+          disabled={busy || !prompt.trim() || !signedIn || Boolean(refProblem || sourceIssue)}>
+          <span>{busy ? "…" : isImage ? "Generate" : "Render"}</span>
+          <span className="dock-cost">{est ? usd(est.net * (isImage ? count : 1), 2) : "—"}</span>
+        </button>
+      </div>
+      {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
+      <aside className={`ws-rail ${mobile ? (sheetOpen ? "is-sheet" : "is-hidden") : ""}`}>
+        <div className="sheet-grab" aria-hidden="true"><span /></div>
         <div className="ws-rail-head">
           <span className="ws-bar-h">Composer</span>
           <ShotRow chip projectId={bin} shotId={shotId} setShotId={setShotId} />
+          {mobile && <button type="button" className="btn-secondary !h-8 !px-2.5 !text-[12px] ml-auto" onClick={() => setSheetOpen(false)}>Close</button>}
         </div>
         <div className="ws-rail-body" ref={islandRef}>
           <Composer

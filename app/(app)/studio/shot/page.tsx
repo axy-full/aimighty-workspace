@@ -118,7 +118,7 @@ function ShotBuilder() {
         </span>
       </nav>
 
-      <div className="st" style={{ "--st-rail": "400px" } as React.CSSProperties}>
+      <div className="st is-builder" style={{ "--st-rail": "400px" } as React.CSSProperties}>
         <section className="st-main !gap-[30px]">
           <div className="st-sec">
             <div className="st-sec-head">

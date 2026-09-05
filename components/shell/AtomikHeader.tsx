@@ -60,7 +60,7 @@ export default function AtomikHeader() {
 
       <div className="hdr-right">
         <Link href="/" className="hdr-mono-link hdr-cross" title="Open this production in particl">
-          OPEN IN PARTICL →
+          <span className="hdr-open-long">OPEN IN </span>PARTICL →
           <svg viewBox="30 68 140 64" width="26" height="12" fill="currentColor" aria-hidden="true">
             <circle cx="38.7" cy="120.8" r="1.8" /><circle cx="50.9" cy="100.5" r="2.8" />
             <circle cx="69.8" cy="86.3" r="4" /><circle cx="92.7" cy="80.1" r="5.5" />

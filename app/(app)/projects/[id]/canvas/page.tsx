@@ -242,6 +242,16 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
               <div className="kv-row"><span>Takes</span><span>{cur?.takes.length || "—"}</span></div>
               <div className="kv-row"><span>Cost so far</span><span className="mono-v">{cur?.takes.length ? usd(cur.spend, 2) : "—"}</span></div>
             </div>
+            {cur && cur.refs.length > 0 && (
+              <div className="rail-sec cv-refs-mobile">
+                <span className="mono">Refs</span>
+                <div className="flex gap-2">
+                  {cur.refs.slice(0, 4).map((r) => (
+                    <span key={r.id} className="cv-ref !w-16 !flex-none"><LazyMedia url={(r.storedUrl ?? r.sourceUrl)!} kind="image" alt="" /></span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="rail-sec">
               <span className="mono">Cast in this shot</span>
               <div className="flex flex-wrap gap-[5px]">

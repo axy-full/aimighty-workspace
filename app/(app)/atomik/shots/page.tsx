@@ -93,9 +93,9 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
           <p className="ak-sub !max-w-[720px]">The contract with Particl. Order, cast tags, setup and the cap go across; state, takes, cost and the master link come back. The right half of every row is Particl&rsquo;s.</p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-2">
-            <button type="button" className="btn-secondary !h-[38px]" onClick={exportCsv} disabled={!shots.length}>Export CSV ↓</button>
-            <button type="button" className="btn-primary !px-4" onClick={send} disabled={sending || !shots.length}>
+          <div className="flex gap-2 ak-cta is-list">
+            <button type="button" className="btn-secondary" onClick={exportCsv} disabled={!shots.length}>Export CSV ↓</button>
+            <button type="button" className="btn-primary" onClick={send} disabled={sending || !shots.length}>
               {sending ? "Sending…" : "Send changes to Particl"}
               <span className="ak-badge">{dirty} SHOT{dirty === 1 ? "" : "S"}</span>
             </button>

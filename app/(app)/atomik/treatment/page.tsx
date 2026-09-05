@@ -148,9 +148,9 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
           <div className="cv-bar !h-1.5">{doc.scenes.map((s) => <span key={s.n} className={plannedFor(s.n) > s.secs ? "is-over" : "is-picked"} style={{ flex: Math.max(1, s.secs) }} />)}</div>
           <span className="ak-sub !text-[11.5px]">Scene lengths are what the breakdown will have to fit.{over.length ? ` Scene ${over.map((s) => s.n).join(", ")} ${over.length === 1 ? "is" : "are"} over.` : ""}</span>
         </div>
-        <div className="mt-auto flex flex-col gap-2">
+        <div className="mt-auto flex flex-col gap-2 ak-cta is-doc">
           <button type="button" className="btn-secondary justify-center" onClick={() => save(true)} disabled={saving}>Save draft {(t?.draft ?? 1) + 1}</button>
-          <button type="button" className="btn-primary !h-10 justify-center" onClick={() => { save(false); router.push("/atomik/breakdown"); }}>Break down into shots →</button>
+          <button type="button" className="btn-primary justify-center" onClick={() => { save(false); router.push("/atomik/breakdown"); }}>Break down into shots →</button>
         </div>
       </aside>
 
