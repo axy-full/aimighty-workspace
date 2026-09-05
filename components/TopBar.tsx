@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
-import { useSession, signInHref } from "@/lib/session";
+import { useSession, useSignInHref } from "@/lib/session";
 import { RequestAccessButton } from "./RequestAccess";
 import ModeSwitch from "./ModeSwitch";
 
@@ -25,6 +25,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
   const router = useRouter();
   const { current, selection } = useProject();
   const { signedIn } = useSession();
+  const signIn = useSignInHref();
   const { data: usage } = useApi<Usage>("/api/usage/summary", 20000);
 
   const onGenerate = path === "/" || path.startsWith("/generate") || path.startsWith("/images");
@@ -61,7 +62,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
           <>
             <RequestAccessButton
               className="hidden text-[13px] text-dim transition-colors hover:text-ink min-[560px]:block" />
-            <a href={signInHref()} className="btn-render !px-4 !py-1.5 !text-[13.5px]">Sign in</a>
+            <a href={signIn} className="btn-render !px-4 !py-1.5 !text-[13.5px]">Sign in</a>
           </>
         )}
         {usage != null && usage.pending > 0 && (

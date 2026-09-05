@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useProject } from "@/lib/projectContext";
-import { useSession, signInHref } from "@/lib/session";
+import { useSession, useSignInHref } from "@/lib/session";
 import { RequestAccessButton } from "@/components/RequestAccess";
 import { announceChange } from "@/lib/changes";
 import { usd } from "@/lib/format";
@@ -45,6 +45,7 @@ export default function AtomikPage() {
   const chatId = params.get("c");
   const { selection } = useProject();
   const { signedIn } = useSession();
+  const signIn = useSignInHref();
 
   const { data: index, refresh: refreshIndex } = useApi<Index>("/api/atomik", 0);
   const { data: loaded, error: loadError, refresh: refreshChat } =
@@ -310,7 +311,7 @@ export default function AtomikPage() {
             </p>
             {!signedIn && (
               <p className="atomik-sub !text-[13px]">
-                <a href={signInHref()} className="text-ink underline underline-offset-4">Sign in</a>
+                <a href={signIn} className="text-ink underline underline-offset-4">Sign in</a>
                 {" or "}
                 <RequestAccessButton className="text-ink underline underline-offset-4"
                   label="contact management" />
@@ -400,7 +401,7 @@ export default function AtomikPage() {
                   {thinking ? "…" : "Send"}
                 </button>
               ) : (
-                <a href={signInHref()} className="btn-render !px-4 !py-2 !text-[14px]">Sign in</a>
+                <a href={signIn} className="btn-render !px-4 !py-2 !text-[14px]">Sign in</a>
               )}
             </span>
           </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Asking to be let in.
@@ -26,7 +27,12 @@ export function RequestAccessButton({ className = "", label = "Contact managemen
       <button type="button" onClick={() => setOpen(true)} className={className}>
         {label}
       </button>
-      {open && <RequestAccessDialog onClose={() => setOpen(false)} />}
+      {/* Portalled to <body>, never rendered beside the button. The button
+          lives wherever a sentence needs it — inside a <p> on the login
+          page, inside a <span> on the locked panel — and a dialog rendered
+          as its sibling puts a <div> and a <form> inside that paragraph,
+          which HTML does not allow and React refuses to hydrate. */}
+      {open && createPortal(<RequestAccessDialog onClose={() => setOpen(false)} />, document.body)}
     </>
   );
 }

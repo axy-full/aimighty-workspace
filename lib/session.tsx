@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 /**
  * Who is looking, and what that means for the rest of the app.
@@ -79,11 +80,23 @@ export function useSession(): Session {
   return useContext(SessionContext);
 }
 
-/** Where a visitor goes to get in, carrying where they were. */
-export function signInHref(): string {
-  if (typeof window === "undefined") return "/login";
-  const here = window.location.pathname + window.location.search;
-  return here && here !== "/" ? `/login?next=${encodeURIComponent(here)}` : "/login";
+/**
+ * Where a visitor goes to get in, carrying where they were.
+ *
+ * A hook, and built on usePathname rather than window.location, because the
+ * server has no window and rendered a bare "/login" while the client then
+ * rendered "/login?next=/team" — a different attribute on the same anchor,
+ * which React reports as a hydration mismatch on every screen a visitor can
+ * see. usePathname answers identically on both sides.
+ */
+export function useSignInHref(): string {
+  const path = usePathname();
+  return signInHrefFor(path);
+}
+
+/** The pure form, for anything that is not a component. */
+export function signInHrefFor(path: string | null): string {
+  return path && path !== "/" ? `/login?next=${encodeURIComponent(path)}` : "/login";
 }
 
 /* There is deliberately no contact address in this file, or in any other

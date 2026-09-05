@@ -1,6 +1,6 @@
 "use client";
 
-import { useSession, signInHref } from "@/lib/session";
+import { useSession, useSignInHref } from "@/lib/session";
 import { RequestAccessButton } from "./RequestAccess";
 
 /**
@@ -131,6 +131,7 @@ export function Waiting({ label = "Loading", what }: { label?: string; what?: st
  * everyone who does not already have an account.
  */
 export function SignedOut({ what }: { what?: string }) {
+  const signIn = useSignInHref();
   return (
     <div className="screen grid place-items-center">
       <div className="flex max-w-[42ch] flex-col items-center gap-3 text-center">
@@ -143,7 +144,7 @@ export function SignedOut({ what }: { what?: string }) {
           studio uses. What it holds is only visible once you&rsquo;re signed in.
         </p>
         <span className="mt-1 flex flex-wrap items-center justify-center gap-2">
-          <a href={signInHref()} className="btn-render !px-4 !py-2 !text-[14px]">Sign in</a>
+          <a href={signIn} className="btn-render !px-4 !py-2 !text-[14px]">Sign in</a>
           <RequestAccessButton className="chip !text-[13px]" />
         </span>
       </div>
