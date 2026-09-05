@@ -31,7 +31,7 @@ import ThemeRow from "@/components/ThemeRow";
 import { ParticlMark, Empty } from "@/components/ParticlMark";
 import { AtomikMark } from "@/components/AtomikMark";
 
-type Me = { name: string; email: string; role: string };
+type Me = { name: string; email: string; role: string; owner?: boolean };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; promptSpendUsd?: number };
 type Credits = { balanceUsd: number; usedUsd: number } | null;
 type EngineInfo = {
@@ -129,7 +129,7 @@ export default function SettingsPage() {
   };
   const engines = (engineData?.engines ?? []).map((e) => ({
     id: e.id, name: e.label, does: e.models.map((m) => m.label).join(" · ") || (e.id.toLowerCase().includes("gateway") ? "Prompt writer · Google stills" : "—"),
-    on: e.configured, key: e.envKey, via: e.via, rate: rateFor(e),
+    on: e.configured, via: e.via, rate: rateFor(e),
   }));
   const usable = MODELS.filter((m) => !m.hidden);
 
@@ -168,7 +168,7 @@ export default function SettingsPage() {
 
           {/* ── Engines & keys ── */}
           <section id="engines" className="scard">
-            <div className="scard-h"><span>Engines &amp; keys</span><span>Keys are set in Vercel by an admin and never shown here. Costs on the render button come from these routes.</span></div>
+            <div className="scard-h"><span>Engines &amp; keys</span><span>Keys live in Vercel, set by an admin, and are never shown here — not even their names. Costs on the render button come from these routes.</span></div>
             <div className="grid grid-cols-2 gap-2.5 max-[900px]:grid-cols-1">
               {engines.map((e) => (
                 <div key={e.id} className="ecard">
@@ -176,7 +176,7 @@ export default function SettingsPage() {
                     <span className="flex flex-col gap-[3px]"><span className="text-[13.5px] font-semibold">{e.name}</span><span className="text-[12px] text-dim">{e.does}</span></span>
                     <span className={`ak-state !text-[10.5px] ${e.on ? "is-approved" : ""}`}><span className={`dot !h-[7px] !w-[7px] ${e.on ? "dot-approved" : "dot-none"}`} />{e.on ? "CONNECTED" : "NOT ROUTED"}</span>
                   </div>
-                  <div className="ekey"><span>{e.via === "gateway" ? "VERCEL OIDC · NO KEY" : `${e.key} · ${e.on ? "••••••••" : "not set"}`}</span><span className="text-ink">{e.on ? "Rotate in Vercel" : "Add key in Vercel"}</span></div>
+                  <div className="ekey"><span>{e.via === "gateway" ? "SIGNED IN AS THE DEPLOYMENT · NO KEY TO KEEP" : e.on ? "KEY HELD ON THE SERVER" : "NO KEY YET"}</span>{isAdmin && <span className="text-ink">{e.on ? "Rotate in Vercel" : "Add in Vercel"}</span>}</div>
                   <span className="text-[11.5px] leading-[1.35] text-dim">{e.rate}</span>
                 </div>
               ))}
@@ -269,7 +269,7 @@ export default function SettingsPage() {
               <PushRow />
               <button className="row" onClick={() => router.push("/connect")}>Connect apps &amp; tokens<span className="row-value">Claude · ChatGPT · CLI<IconChevron className="!text-mute" /></span></button>
               <button className="row" onClick={() => router.push("/platform")}>Platform<span className="row-value">Assets · APIs · security · IP<IconChevron className="!text-mute" /></span></button>
-              {signedIn && <a className="row" href="/api/export" download title="Every prompt, cost and account record, as JSON">Export data<span className="row-value">JSON</span></a>}
+              {me?.owner && <a className="row" href="/api/export" download title="Every prompt, cost and account record, as JSON — the owner's alone">Export data<span className="row-value">JSON · owner</span></a>}
               {signedIn && <button className="row !text-lift" onClick={signOut} disabled={busy}>{busy ? "Signing out…" : "Sign out"}</button>}
             </div>
             <div className="flex items-center gap-2 text-[12px] text-mute"><ParticlMark size={12} className="text-mute/70" /><span>particl studio · Seedance on BytePlus ModelArk · Nano Banana through Vercel AI Gateway</span></div>

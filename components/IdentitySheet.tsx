@@ -237,7 +237,7 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
             )}
             {!terms.configured && (
               <p className="mt-2 text-[12.5px] text-mute">
-                Training runs on fal.ai, which isn&rsquo;t connected yet — an admin sets <code className="font-mono text-[11.5px]">FAL_KEY</code> in Vercel › Settings › Environment Variables. Photos can be gathered meanwhile.
+                Training runs on fal.ai, which isn&rsquo;t connected yet — an admin connects it from Vercel. Photos can be gathered meanwhile.
               </p>
             )}
           </div>

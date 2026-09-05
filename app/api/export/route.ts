@@ -1,5 +1,5 @@
 import { db, ready, now } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, isSuperAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -15,6 +15,10 @@ export const maxDuration = 60;
 export async function GET() {
   const got = await requireAdmin();
   if (got.response) return got.response;
+  // Every prompt, cost and account record in one file: the owner's to take, nobody else's.
+  if (!isSuperAdmin(got.user.email)) {
+    return new Response(JSON.stringify({ error: "The export is the workspace owner's." }), { status: 403, headers: { "Content-Type": "application/json" } });
+  }
   await ready();
 
   const [users, projects, generations, topups, uploads] = await Promise.all([

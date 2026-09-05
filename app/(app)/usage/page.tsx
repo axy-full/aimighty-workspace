@@ -372,7 +372,7 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
           <h2 className="text-[19px] font-semibold tracking-[-0.015em]">{v.label}</h2>
           <span className="grouplabel !pb-0 !text-[10px]">{v.serves}</span>
           <span className={`text-[12.5px] ${v.configured ? "text-ok" : "text-mute"}`}>
-            {v.configured ? (v.via === "gateway" ? "connected · gateway" : "connected") : `not connected · ${v.envKey}`}
+            {v.configured ? (v.via === "gateway" ? "connected · gateway" : "connected") : "not connected"}
           </span>
         </div>
         <p className="mt-1 text-[13px] leading-snug text-mute">{v.note}</p>

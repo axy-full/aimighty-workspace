@@ -304,8 +304,7 @@ export default function AudioPage() {
         <div className="ws-rail-body">
           {!setup.configured && (
             <p className="rail-help">
-              ElevenLabs isn&rsquo;t connected yet. An admin adds its API key as <code className="font-mono text-[11px]">{setup.envKey}</code> in
-              Vercel › Settings › Environment Variables and redeploys; this desk wakes up on its own.
+              ElevenLabs isn&rsquo;t connected yet. An admin connects it from Vercel and redeploys; this desk wakes up on its own.
             </p>
           )}
           {setup.configured && setup.accountError && <p className="rail-help text-lift">{setup.accountError}</p>}
