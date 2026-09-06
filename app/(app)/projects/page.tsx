@@ -28,7 +28,7 @@ import { useMoney } from "@/lib/price";
 
 type Row = {
   id: string; name: string; code: string; category: string; description: string; createdAt: number;
-  genCount: number; spend: number; credits?: number; capUsd: number | null; kind: string | null; runtimeTarget: number | null;
+  genCount: number; spend: number; credits?: number; capUsd: number | null; capCredits?: number | null; capUnlocked?: boolean; kind: string | null; runtimeTarget: number | null;
   stage: string | null; live: number; shots: number; approvedShots: number; pickedShots: number;
   team: string[]; last: { at: number; who: string | null; what: string } | null;
   fromAtomik?: boolean; syncedAt?: number | null; unsent?: number;
@@ -120,7 +120,9 @@ export default function ProjectsPage() {
                 const stage = stageOf(p);
                 const cover = coverFor.get(p.id);
                 const approvedPct = p.shots ? Math.round((p.approvedShots / p.shots) * 100) : 0;
-                const spendPct = p.capUsd ? Math.min(100, Math.round((p.spend / p.capUsd) * 100)) : 0;
+                const cap = money.inCredits ? p.capCredits ?? null : p.capUsd;
+                const spent = money.inCredits ? p.credits ?? 0 : p.spend;
+                const spendPct = cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0;
                 const sub = [p.kind || p.category || "production", p.runtimeTarget ? mmss(p.runtimeTarget) : `${p.genCount} render${p.genCount === 1 ? "" : "s"}`].join(" · ");
                 return (
                   <Link key={p.id} href={`/projects/${p.id}/canvas`} className="ptable-row"
@@ -146,7 +148,7 @@ export default function ProjectsPage() {
                       <span className="ptable-bar is-approved"><span style={{ width: `${approvedPct}%` }} /></span>
                     </span>
                     <span className="ptable-stat">
-                      <span className="ptable-stat-l"><span>{money.of(p)}</span><span>{money.inCredits ? "" : p.capUsd ? `of $${Math.round(p.capUsd)}` : "no cap"}</span></span>
+                      <span className="ptable-stat-l"><span>{money.of(p)}</span><span>{cap ? (money.inCredits ? `of ${Math.round(cap).toLocaleString("en-US")} cr` : `of $${Math.round(cap)}`) : "no cap"}</span></span>
                       <span className="ptable-bar"><span style={{ width: `${spendPct}%` }} /></span>
                     </span>
                     <span className="ptable-team" title={p.team.join(", ") || "Nobody has rendered here yet"}>

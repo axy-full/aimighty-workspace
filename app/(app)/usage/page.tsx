@@ -639,7 +639,7 @@ const SAMPLE_ANALYTICS: Analytics = {
 
 type Period = "month" | "30" | "quarter";
 type ProjRow = {
-  id: string; name: string; code: string; spend: number; credits?: number; capUsd: number | null;
+  id: string; name: string; code: string; spend: number; credits?: number; capUsd: number | null; capCredits?: number | null;
   shots: number; approvedShots: number; pickedShots: number; genCount: number;
 };
 const PROVIDER_NAMES: Record<string, string> = {
@@ -698,7 +698,9 @@ function ProductionTop() {
   const perApproved = p && approved ? p.spend / approved : null;
   const takesPerApproval = approved ? videoTakes / approved : null;
   const projected = perApproved != null ? perApproved * shots : null;
-  const capPct = p?.capUsd ? Math.min(100, Math.round((p.spend / p.capUsd) * 100)) : 0;
+  const cap = p ? (money.inCredits ? p.capCredits ?? null : p.capUsd) : null;
+  const capLabel = cap ? (money.inCredits ? `OF ${Math.round(cap).toLocaleString("en-US")} CR CAP` : `OF $${Math.round(cap)} CAP`) : "NO CAP";
+  const capPct = p && cap ? Math.min(100, Math.round(((money.inCredits ? p.credits ?? 0 : p.spend) / cap) * 100)) : 0;
 
   /* The shot that has cost more than any approved one and isn't approved. */
   const maxApproved = Math.max(0, ...shotRows.filter((r) => r.state === "Approved").map((r) => r.cost));
@@ -755,10 +757,10 @@ function ProductionTop() {
               <span className="tile-s">{all.byProject.length} production{all.byProject.length === 1 ? "" : "s"} · {all.totals.generations} take{all.totals.generations === 1 ? "" : "s"} · {all.totals.people} {all.totals.people === 1 ? "person" : "people"}</span>
             </div>
             <div className="tile">
-              <span className="tile-l">{p ? `${p.name.toUpperCase()} · ${p.capUsd ? `OF $${Math.round(p.capUsd)} CAP` : "NO CAP"}` : "PRODUCTION · OF CAP"}</span>
+              <span className="tile-l">{p ? `${p.name.toUpperCase()} · ${capLabel}` : "PRODUCTION · OF CAP"}</span>
               <span className="tile-v">{p ? money.of(p) : "—"}</span>
-              {p?.capUsd ? <span className="tile-bar"><span style={{ width: `${capPct}%` }} /></span> : null}
-              <span className="tile-s">{p ? `${p.capUsd ? `${capPct}% spent · ` : ""}${approved} of ${shots} shots approved` : "Pick a production in the header to see it against its cap."}</span>
+              {cap ? <span className="tile-bar"><span style={{ width: `${capPct}%` }} /></span> : null}
+              <span className="tile-s">{p ? `${cap ? `${capPct}% spent · ` : ""}${approved} of ${shots} shots approved` : "Pick a production in the header to see it against its cap."}</span>
             </div>
             <div className="tile">
               <span className="tile-l">COST PER APPROVED SHOT</span>
@@ -769,7 +771,7 @@ function ProductionTop() {
               <span className="tile-l">PROJECTED AT THIS RATE</span>
               <span className="tile-v">{projected != null ? money.approx(projected) : "—"}</span>
               <span className="tile-s">{p && projected != null
-                ? `to approve all ${shots} · ${p.capUsd && !money.inCredits ? (projected <= p.capUsd ? `under cap by ${usd(p.capUsd - projected, 0)}` : `over cap by ${usd(projected - p.capUsd, 0)}`) : money.inCredits ? "" : "no cap set"}`
+                ? `to approve all ${shots} · ${p.capUsd && !money.inCredits ? (projected <= p.capUsd ? `under cap by ${usd(p.capUsd - projected, 0)}` : `over cap by ${usd(projected - p.capUsd, 0)}`) : money.inCredits && cap ? `cap ${Math.round(cap).toLocaleString("en-US")} cr` : "no cap set"}`
                 : "Needs one approved shot to project from."}</span>
             </div>
           </div>

@@ -19,7 +19,7 @@ import { useApi } from "./useApi";
 export type Project = {
   id: string; name: string; description: string; code?: string;
   createdAt: number; genCount: number; spend: number; credits?: number;
-  capUsd?: number | null; kind?: string | null; runtimeTarget?: number | null; stage?: string | null;
+  capUsd?: number | null; capCredits?: number | null; capUnlocked?: boolean; kind?: string | null; runtimeTarget?: number | null; stage?: string | null;
 };
 
 type Ctx = {

@@ -23,9 +23,10 @@ import PickProduction from "@/components/atomik/PickProduction";
 import { takeCost } from "../breakdown/page";
 import type { Shot } from "@/lib/shots";
 import type { Treatment } from "@/lib/atomikDocs";
+import { useMoney } from "@/lib/price";
 
 type Row = Shot & { takes: number; ok: number; failed: number; spend: number; state: string; master: { id: string; version: number | null; url: string | null } | null };
-type Proj = { id: string; name: string; spend: number; capUsd: number | null };
+type Proj = { id: string; name: string; spend: number; credits?: number; capUsd: number | null; capCredits?: number | null };
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
 const sceneNo = (scene: string) => Number((scene ?? "").replace(/\D/g, "")) || 0;
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -43,6 +44,7 @@ export default function ShotListPage() {
 }
 
 function ShotList({ projectId, name }: { projectId: string; name: string }) {
+  const money = useMoney();
   const { signedIn } = useSession();
   const { data: shotData, refresh } = useApi<{ shots: Row[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 15_000);
   const { data: projects } = useApi<{ projects: Proj[] }>(signedIn ? "/api/projects" : null, 30_000);
@@ -109,8 +111,8 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
 
       <div className="ak-tiles">
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SHOTS · RUNTIME</span><span className="ak-tile-v">{shots.length} · {mmss(runtime)}</span></div>
-        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">ESTIMATE · ONE TAKE EACH</span><span className="ak-tile-v">{usd(estimate, 2)}</span></div>
-        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SPENT · FROM PARTICL</span><span className="ak-tile-v">{usd(spent, 2)} <span className="text-[13px] font-normal text-dim">{project?.capUsd ? `of $${Math.round(project.capUsd)}` : "no cap"}</span></span></div>
+        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">ESTIMATE · ONE TAKE EACH</span><span className="ak-tile-v">{money.inCredits ? money.approx(estimate) : usd(estimate, 2)}</span></div>
+        <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">SPENT · FROM PARTICL</span><span className="ak-tile-v">{project ? money.of(project) : usd(spent, 2)} <span className="text-[13px] font-normal text-dim">{money.inCredits ? (project?.capCredits ? `of ${project.capCredits.toLocaleString("en-US")} cr` : "no cap") : project?.capUsd ? `of $${Math.round(project.capUsd)}` : "no cap"}</span></span></div>
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">APPROVED · PICKED · OPEN</span><span className="ak-tile-v">{n("approved")} · {n("picked")} · {open}</span></div>
         <div className="ak-tile"><span className="mono !tracking-[.14em] !text-[10px]">TAKES PER APPROVAL</span><span className="ak-tile-v">{takesPerApproval != null ? takesPerApproval.toFixed(1) : "—"}</span></div>
       </div>

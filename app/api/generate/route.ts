@@ -24,6 +24,7 @@ import { meter } from "@/lib/meter";
 import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/held";
 import { creditState } from "@/lib/credits";
 import { submitVideoJob } from "@/lib/submitVideo";
+import { checkCap } from "@/lib/caps";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -437,6 +438,8 @@ export const POST = withTenant(async function POST(req: Request) {
     const wallStill = await allowanceCheck(vendorKeyNameFor(model.provider), estStillUsd, modelId);
     if (!wallStill.ok && wallStill.status !== 402) return NextResponse.json({ error: wallStill.error }, { status: wallStill.status });
     const holdStill = !wallStill.ok ? heldInfo(estStillUsd, "image", modelId) : null;
+    const capStill = await checkCap(stillProject, estStillUsd, modelId);
+    if (!capStill.allow) return NextResponse.json({ error: capStill.error }, { status: 409 });
     const genId = id("gen");
     const ts = now();
     const stillParams = {
@@ -489,7 +492,7 @@ export const POST = withTenant(async function POST(req: Request) {
       after(() => runInline(genId));
     }
 
-    return NextResponse.json({ id: genId, status: "running" });
+    return NextResponse.json({ id: genId, status: "running", notices: capStill.notice ? [capStill.notice] : undefined });
   }
 
   /* ── Auto-refine ─────────────────────────────────────────────────────
@@ -668,6 +671,9 @@ export const POST = withTenant(async function POST(req: Request) {
   const wall = await allowanceCheck(vendorKeyNameFor(model.provider), estUsd, modelId);
   if (!wall.ok && wall.status !== 402) return NextResponse.json({ error: wall.error }, { status: wall.status });
   const hold = !wall.ok ? heldInfo(estUsd, "video", modelId) : null;
+  const capV = await checkCap(projectId, estUsd, modelId);
+  if (!capV.allow) return NextResponse.json({ error: capV.error }, { status: 409 });
+  if (capV.notice) notices.push(capV.notice);
 
   const genId = id("gen");
   const ts = now();
