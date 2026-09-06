@@ -8,6 +8,7 @@ import { allSettings } from "@/lib/settings";
 import { db, ready } from "@/lib/db";
 import { presignedReadUrl } from "@/lib/storage";
 import { mailConfigured, mailFrom } from "@/lib/mail";
+import { engineMock } from "@/lib/mock";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -107,6 +108,7 @@ export async function GET(req: Request) {
   if (!full) {
     return NextResponse.json({
       ok: database !== "unreachable" && storage !== "blob-BROKEN",
+    mock: engineMock(),
       database: database === "unreachable" ? "unreachable" : "ok",
       storage: storage === "blob-BROKEN" ? "broken" : "ok",
     });
@@ -115,6 +117,7 @@ export async function GET(req: Request) {
   /* The rest is one workspace's briefing, answered inside that workspace. */
   return runInTenant(ctx!.workspace!, async () => NextResponse.json({
     ok: database !== "unreachable" && storage !== "blob-BROKEN",
+    mock: engineMock(),
     workspace: { id: ctx!.workspace!.id, name: ctx!.workspace!.name },
     database,
     storage,

@@ -518,6 +518,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `cap_credits INTEGER`,
         `cap_unlocked INTEGER NOT NULL DEFAULT 0`,
         `cap_warned_at INTEGER`,
+        /* The starter production a new workspace opens on (1.0). */
+        `starter INTEGER NOT NULL DEFAULT 0`,
 ]) {
         await addColumn(c, "projects", col);
       }

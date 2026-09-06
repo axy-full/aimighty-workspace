@@ -5,6 +5,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { seal, open } from "./keyring";
 import { provisionTenantDatabase } from "./provision";
 import { runInTenant, type TenantWorkspace, type WorkspaceRole } from "./tenant";
+import { seedStarterProduction } from "./starter";
 
 /**
  * The platform: what spans workspaces.
@@ -383,6 +384,12 @@ export async function createWorkspace(input: { name: string; owner: { id: string
   }
   const ws = (await getWorkspace(id))!;
   await mirrorUser(ws, { id: input.owner.id, email: input.owner.email, name: input.owner.name }, "owner", false);
+  /* The first screen has something on it: the starter production from the platform layer. */
+  try {
+    await runInTenant(ws, () => seedStarterProduction(input.owner.id));
+  } catch (e) {
+    console.warn(`[workspace ${slug}] starter production not seeded: ${(e as Error).message}`);
+  }
   return ws;
 }
 
