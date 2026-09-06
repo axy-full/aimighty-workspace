@@ -13,6 +13,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo, usd } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
+import { CATEGORIES } from "@/lib/studio";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -119,6 +120,8 @@ export default function AdminPage() {
             <TopupsCard onChanged={refresh} />
 
             <EnginesCard />
+
+            <PlatformLayerCard />
 
             <section className="scard">
               <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with ${data.signupCredits} credits (one credit is ${usd(data.creditUsd, 2)} of vendor cost) — or on its own keys once its owner switches. Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a Vercel AI Gateway key of its own."}</span></div>
@@ -331,6 +334,142 @@ function EnginesCard() {
           </table>
         </div>
       )}
+    </section>
+  );
+}
+
+type Layer = {
+  setup: Record<string, string>;
+  starter: { name: string; code: string; description: string; shots: { code: string; title: string; description: string; planned: number; setup: Record<string, string>; cast: string[] }[]; cast: { name: string; kind: "character" | "location" | "prop" | "style"; description: string }[] };
+  rules: { id: string; text: string; scope: "all" | "video" | "image"; apply: "writer" | "prompt"; on: boolean }[];
+  caps: { defaultCapCredits: number | null; signupCredits: number | null; warnPct: number };
+};
+type LayerView = { layer: Layer; stored: string[]; defaults: Layer; cameraBank: { kind: string; value: string; label: string; module: string }[] };
+
+/**
+ * The platform layer: what every new workspace inherits. Four parts, each
+ * with a default in code that the desk may override here, and put back.
+ */
+function PlatformLayerCard() {
+  const { data, refresh } = useApi<LayerView>("/api/admin/platform-layer", 60_000);
+  const [draft, setDraft] = useState<Layer | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showBank, setShowBank] = useState(false);
+  const layer = draft ?? data?.layer ?? null;
+  if (!data || !layer) return null;
+  const stored = new Set(data.stored);
+  const set = (patch: Partial<Layer>) => setDraft({ ...(draft ?? data.layer), ...patch });
+  async function save(key: keyof Layer, reset = false) {
+    setBusy(key);
+    try {
+      const res = await fetch("/api/admin/platform-layer", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reset ? { key, reset: true } : { key, value: layer![key] }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      setDraft(null); refresh();
+    } catch (e) { await appAlert("Not saved", (e as Error).message); }
+    finally { setBusy(null); }
+  }
+  const actions = (k: keyof Layer) => (
+    <span className="flex items-center gap-2">
+      {stored.has(k) && <span className="mono-s">OVERRIDDEN</span>}
+      <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy != null} onClick={() => save(k, true)}>Default</button>
+      <button type="button" className="btn-primary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => save(k)}>{busy === k ? "…" : "Save"}</button>
+    </span>
+  );
+  const shots = layer.starter.shots;
+  return (
+    <section className="scard">
+      <div className="scard-h"><span>Platform layer</span><span>What every new workspace inherits: the default Setup, the starter production, the rules the compiler applies, and the numbers a workspace starts with. Each part has a default; Save keeps your version, Default puts it back.</span></div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Default Setup</p>{actions("setup")}</div>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-3 lg:grid-cols-4">
+          {CATEGORIES.map((c) => (
+            <label key={c.key} className="flex flex-col gap-1 text-[12px] text-dim">
+              {c.label}
+              <select className="ctl !h-8 !text-[13px]" value={layer.setup[c.key] ?? ""} onChange={(e) => { const next = { ...layer.setup }; if (e.target.value) next[c.key] = e.target.value; else delete next[c.key]; set({ setup: next }); }}>
+                <option value="">—</option>
+                {c.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Starter production</p>{actions("starter")}</div>
+        <div className="grid gap-2 md:grid-cols-[1fr_120px]">
+          <input className="ctl !h-8 !text-[13px]" value={layer.starter.name} aria-label="Production name" onChange={(e) => set({ starter: { ...layer.starter, name: e.target.value } })} />
+          <input className="ctl !h-8 !text-[13px]" value={layer.starter.code} aria-label="Code" onChange={(e) => set({ starter: { ...layer.starter, code: e.target.value } })} />
+        </div>
+        <input className="ctl !h-8 !text-[13px]" value={layer.starter.description} aria-label="Description" onChange={(e) => set({ starter: { ...layer.starter, description: e.target.value } })} />
+        {shots.map((s, i) => (
+          <div key={i} className="grid gap-2 rounded-[10px] bg-panel2 p-2 md:grid-cols-[90px_1fr_70px_auto]">
+            <input className="ctl !h-8 !text-[13px]" value={s.code} aria-label="Shot code" onChange={(e) => set({ starter: { ...layer.starter, shots: shots.map((x, j) => j === i ? { ...x, code: e.target.value } : x) } })} />
+            <input className="ctl !h-8 !text-[13px]" value={s.title} aria-label="Shot title" onChange={(e) => set({ starter: { ...layer.starter, shots: shots.map((x, j) => j === i ? { ...x, title: e.target.value } : x) } })} />
+            <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={60} value={s.planned} aria-label="Planned seconds" onChange={(e) => set({ starter: { ...layer.starter, shots: shots.map((x, j) => j === i ? { ...x, planned: Number(e.target.value) } : x) } })} />
+            <button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ starter: { ...layer.starter, shots: shots.filter((_, j) => j !== i) } })}>Remove</button>
+            <textarea className="ctl !h-16 !text-[13px] md:col-span-4" value={s.description} aria-label="Shot description" onChange={(e) => set({ starter: { ...layer.starter, shots: shots.map((x, j) => j === i ? { ...x, description: e.target.value } : x) } })} />
+          </div>
+        ))}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ starter: { ...layer.starter, shots: [...shots, { code: `SH0${(shots.length + 1) * 10}`, title: "", description: "", planned: 5, setup: {}, cast: [] }] } })}>+ Shot</button>
+        </div>
+        {layer.starter.cast.map((c, i) => (
+          <div key={i} className="grid gap-2 md:grid-cols-[140px_120px_1fr_auto]">
+            <input className="ctl !h-8 !text-[13px]" value={c.name} aria-label="Cast name" onChange={(e) => set({ starter: { ...layer.starter, cast: layer.starter.cast.map((x, j) => j === i ? { ...x, name: e.target.value } : x) } })} />
+            <select className="ctl !h-8 !text-[13px]" value={c.kind} aria-label="Cast kind" onChange={(e) => set({ starter: { ...layer.starter, cast: layer.starter.cast.map((x, j) => j === i ? { ...x, kind: e.target.value as Layer["starter"]["cast"][number]["kind"] } : x) } })}>
+              {["character", "location", "prop", "style"].map((k) => <option key={k} value={k}>{k}</option>)}
+            </select>
+            <input className="ctl !h-8 !text-[13px]" value={c.description} aria-label="Cast description" onChange={(e) => set({ starter: { ...layer.starter, cast: layer.starter.cast.map((x, j) => j === i ? { ...x, description: e.target.value } : x) } })} />
+            <button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ starter: { ...layer.starter, cast: layer.starter.cast.filter((_, j) => j !== i) } })}>Remove</button>
+          </div>
+        ))}
+        <div><button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ starter: { ...layer.starter, cast: [...layer.starter.cast, { name: "", kind: "character", description: "" }] } })}>+ Cast</button></div>
+      </div>
+
+      <div className="mt-6 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Rules</p>{actions("rules")}</div>
+        <p className="text-[12.5px] text-dim">A rule for the writer steers the prompt writer; a rule for the prompt is appended to the prompt itself, in scope. Every workspace inherits these; switching one off here switches it off everywhere.</p>
+        {layer.rules.map((r, i) => (
+          <div key={r.id} className="grid items-center gap-2 md:grid-cols-[auto_110px_120px_1fr_auto]">
+            <input type="checkbox" checked={r.on} aria-label="On" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, on: e.target.checked } : x) })} />
+            <select className="ctl !h-8 !text-[13px]" value={r.scope} aria-label="Scope" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, scope: e.target.value as Layer["rules"][number]["scope"] } : x) })}>
+              <option value="all">video + stills</option><option value="video">video</option><option value="image">stills</option>
+            </select>
+            <select className="ctl !h-8 !text-[13px]" value={r.apply} aria-label="Applies to" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, apply: e.target.value as Layer["rules"][number]["apply"] } : x) })}>
+              <option value="writer">for the writer</option><option value="prompt">in the prompt</option>
+            </select>
+            <input className="ctl !h-8 !text-[13px]" value={r.text} aria-label="Rule" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, text: e.target.value } : x) })} />
+            <button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ rules: layer.rules.filter((_, j) => j !== i) })}>Remove</button>
+          </div>
+        ))}
+        <div><button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ rules: [...layer.rules, { id: `rule-${Date.now().toString(36)}`, text: "", scope: "all", apply: "writer", on: true }] })}>+ Rule</button></div>
+      </div>
+
+      <div className="mt-6 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Default caps</p>{actions("caps")}</div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="flex flex-col gap-1 text-[12px] text-dim">Welcome credits (blank = the deployment&rsquo;s)
+            <input className="ctl !h-8 !text-[13px]" type="number" min={0} value={layer.caps.signupCredits ?? ""} onChange={(e) => set({ caps: { ...layer.caps, signupCredits: e.target.value === "" ? null : Number(e.target.value) } })} /></label>
+          <label className="flex flex-col gap-1 text-[12px] text-dim">A new production&rsquo;s cap, in credits (blank = none)
+            <input className="ctl !h-8 !text-[13px]" type="number" min={0} value={layer.caps.defaultCapCredits ?? ""} onChange={(e) => set({ caps: { ...layer.caps, defaultCapCredits: e.target.value === "" ? null : Number(e.target.value) } })} /></label>
+          <label className="flex flex-col gap-1 text-[12px] text-dim">Warn the producer at, % of cap
+            <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={100} value={layer.caps.warnPct} onChange={(e) => set({ caps: { ...layer.caps, warnPct: Number(e.target.value) } })} /></label>
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Camera bank</p><button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => setShowBank((v) => !v)}>{showBank ? "Hide" : `Show ${data.cameraBank.length} modules`}</button></div>
+        <p className="text-[12.5px] text-dim">The moves and techniques every workspace renders with, as the compiler writes them today. Their wording is edited with the rule library (2.5); this is the bank as it reads.</p>
+        {showBank && (
+          <div className="flex flex-col gap-1.5">
+            {data.cameraBank.map((m) => (
+              <div key={`${m.kind}/${m.value}`} className="rounded-[10px] bg-panel2 px-3 py-2 text-[12.5px]"><span className="font-medium">{m.label}</span> <span className="mono-s">{m.kind.toUpperCase()}</span><p className="mt-1 text-dim">{m.module || "—"}</p></div>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

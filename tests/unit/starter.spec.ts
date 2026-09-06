@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { STARTER_PRODUCTION, DEFAULT_SETUP } from "../../lib/platformLayer";
+import { STARTER_PRODUCTION, DEFAULT_SETUP, DEFAULT_LAYER, starterShotsWithSetup } from "../../lib/platformLayer";
 import { CATEGORIES } from "../../lib/studio";
 
 /** The starter production is three named shots, one cast member, and a Setup the Studio recognises. */
@@ -16,10 +16,11 @@ test("the starter production has three distinct shots, each with a Setup, and on
   expect(codes).toEqual(["SH010", "SH020", "SH030"]);
   expect(new Set(codes).size).toBe(3);
   for (const s of STARTER_PRODUCTION.shots) {
-    expect(Object.keys(s.setup).length).toBeGreaterThanOrEqual(8);
+    expect(Object.keys(s.setup).length).toBeGreaterThanOrEqual(1);
     expect(s.title.length).toBeGreaterThan(0);
     expect(s.planned).toBeGreaterThan(0);
   }
+  for (const s of starterShotsWithSetup(DEFAULT_LAYER)) expect(Object.keys(s.setup).length).toBeGreaterThanOrEqual(8);
   expect(STARTER_PRODUCTION.cast.length).toBe(1);
   expect(STARTER_PRODUCTION.shots.some((s) => s.cast.includes(STARTER_PRODUCTION.cast[0].name))).toBe(true);
 });
