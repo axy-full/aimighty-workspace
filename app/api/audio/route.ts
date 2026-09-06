@@ -5,8 +5,9 @@ import { requireRender, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { enqueueRender } from "@/lib/inngest";
 import { runInline } from "@/lib/renderWork";
-import { elevenConfigured, subscription, SPEECH_MODELS, DEFAULT_SPEECH_MODEL, SFX_MODEL, MUSIC_MODEL, speechCredits, sfxCredits, musicCredits, listVoices, SFX_CREDITS, MUSIC_CREDITS_PER_MINUTE } from "@/lib/elevenlabs";
+import { elevenConfigured, subscription, usdForCredits, SPEECH_MODELS, DEFAULT_SPEECH_MODEL, SFX_MODEL, MUSIC_MODEL, speechCredits, sfxCredits, musicCredits, listVoices, SFX_CREDITS, MUSIC_CREDITS_PER_MINUTE } from "@/lib/elevenlabs";
 import { getShot } from "@/lib/shots";
+import { meter } from "@/lib/meter";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -79,6 +80,8 @@ export const POST = withTenant(async function POST(req: Request) {
   }
 
   const genId = newId("gen");
+  const wall = await allowanceCheck("elevenlabs", usdForCredits(estCredits, null), "elevenlabs");
+  if (!wall.ok) return NextResponse.json({ error: wall.error }, { status: wall.status });
   const ts = now();
   await db().execute({
     sql: `INSERT INTO generations
@@ -90,6 +93,14 @@ export const POST = withTenant(async function POST(req: Request) {
            body.title ? String(body.title).slice(0, 80) : null, "elevenlabs", shotId],
   });
   invalidate(PROJECTS_KEY);
+  try {
+    await meter({ id: genId, kind: "audio", engine: "elevenlabs", model: modelId, status: "running",
+                  engineCostUsd: usdForCredits(estCredits, null), projectId, shotId, createdBy: got.user.id });
+  } catch (e) {
+    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] });
+    invalidate(PROJECTS_KEY);
+    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+  }
 
   /* Handed to the worker so a reclaimed instance cannot lose a line the
      voice has already spoken and been paid for. No queue reachable means

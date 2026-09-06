@@ -1,5 +1,4 @@
 import { currentTenant } from "./tenant";
-import { billedTo } from "./providers";
 import { creditCheck } from "./credits";
 import { paidByPlatform, platformSpendSince } from "./platformSpend";
 import type { VendorKeyName } from "./vendorKeys";
@@ -24,17 +23,7 @@ export function defaultAllowanceUsd(): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** The vendor key a provider's renders draw on. */
-export function vendorKeyNameFor(provider: string): VendorKeyName {
-  switch (provider) {
-    case "byteplus": return "ark";
-    case "google": return billedTo("google") === "vercel" ? "gateway" : "gemini";
-    case "vercel": return "gateway";
-    case "fal": return "fal";
-    case "elevenlabs": return "elevenlabs";
-    default: return "ark";
-  }
-}
+export { vendorKeyNameFor } from "./platformSpend";
 
 /** The workspace's monthly cap on the platform's keys, or null when none applies. */
 export function allowanceUsd(): number | null {
@@ -54,10 +43,10 @@ export async function platformSpendThisMonth(): Promise<number> {
  * The gate. Call before spending on `vendor`; a refusal carries the
  * sentence to show and the status to send.
  */
-export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0): Promise<
+export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?: string | null): Promise<
   { ok: true } | { ok: false; status: number; error: string }
 > {
-  const credit = await creditCheck(vendor, estUsd);
+  const credit = await creditCheck(vendor, estUsd, engine);
   if (!credit.ok) return credit;
   if (!paidByPlatform(vendor)) return { ok: true };
   const cap = allowanceUsd();

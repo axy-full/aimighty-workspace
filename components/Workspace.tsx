@@ -478,7 +478,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         <button type="button" className="dock-go" onClick={render}
           disabled={busy || !prompt.trim() || !signedIn || Boolean(refProblem || sourceIssue)}>
           <span>{busy ? "…" : "Generate"}</span>
-          <span className="dock-cost">{est ? price(est.net * (isImage ? count : 1)) : "—"}</span>
+          <span className="dock-cost">{est ? price(est.net * (isImage ? count : 1), params.modelId) : "—"}</span>
         </button>
       </div>
       {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
@@ -556,7 +556,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             <span>{busy ? "Generating…" : isImage ? (count > 1 ? `Generate ${count} stills` : "Generate still") : "Generate"}</span>
             <span className="btn-primary-cost">
               {est
-                ? isImage && count > 1 ? `${price(est.net * count)} · ${count} × ${price(est.net)}` : price(est.net)
+                ? isImage && count > 1 ? `${price(est.net * count, params.modelId)} · ${count} × ${price(est.net, params.modelId)}` : price(est.net, params.modelId)
                 : "—"}{!isImage && estTokens != null ? ` · ${compactTokens(estTokens)} TOK` : ""}
             </span>
           </button>

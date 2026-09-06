@@ -23,7 +23,7 @@ import { usePathname } from "next/navigation";
 
 export type SessionWorkspace = { id: string; name: string; slug: string };
 /** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
-export type SessionCredits = { creditUsd: number; markup: number; granted: number; used: number; balance: number };
+export type SessionCredits = { creditUsd: number; margins: Record<string, number>; granted: number; used: number; balance: number };
 export type Session = {
   signedIn: boolean;
   name: string | null;

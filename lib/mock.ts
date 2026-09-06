@@ -1,0 +1,61 @@
+import { DEFAULT_MODEL_ID } from "./models";
+
+/**
+ * Mocked engines, for development and tests. No Node imports here: the
+ * price on a button reaches this module through lib/providers.
+ *
+ * ENGINE_MOCK=1 makes every adapter answer from a fixture instead of a
+ * vendor: a video job "renders" Big Buck Bunny, a still a gradient, a
+ * sound a sample tone, a text call a canned reply. Jobs still go through
+ * the same rows, polls, storage and metering as the real thing — that is
+ * the point — but no vendor is called and nobody's money moves.
+ *
+ * The rule behind it (docs/particl-brief.md §2, rule 1): development never
+ * bills a customer workspace. A real engine call is a deliberate act in a
+ * test workspace with the cost said out loud first.
+ */
+export const engineMock = (): boolean => process.env.ENGINE_MOCK === "1";
+
+/** A fixture URL: the adapters hand these out; storage reads them from disk. */
+export const FIXTURE = "fixture:";
+export type FixtureName = "clip.mp4" | "tone.mp3" | "still.png";
+
+export const isFixtureUrl = (url: string): boolean => url.startsWith(FIXTURE);
+export const fixtureUrl = (name: FixtureName): string => `${FIXTURE}${name}`;
+
+/* fixtureBytes and fetchBytes live in ./mockFs — they read disk, and this
+   module is also bundled for the browser. */
+
+/** A mock job id carries its birth time; the job is "done" a few seconds later. */
+export const mockJobId = (prefix: string): string => `mock_${prefix}_${Date.now()}`;
+export const isMockJob = (id: string): boolean => id.startsWith("mock_");
+export function mockDone(id: string, delayMs = 3000): boolean {
+  const ts = Number(id.split("_").pop());
+  return !Number.isFinite(ts) || Date.now() - ts >= delayMs;
+}
+export const mockStartedAt = (id: string): number => Number(id.split("_").pop()) || Date.now();
+
+/**
+ * A canned chat completion, shaped like the gateway's, for the three
+ * things the app asks a text model for.
+ */
+export function mockCompletion(kind: "prompt" | "turn" | "idea", requestBody: string): { ok: boolean; status: number; text: string } {
+  let lastUser = "";
+  try {
+    const j = JSON.parse(requestBody) as { messages?: { role: string; content: string }[] };
+    lastUser = [...(j.messages ?? [])].reverse().find((m) => m.role === "user")?.content ?? "";
+  } catch { /* an unreadable body still gets a reply */ }
+  const content =
+    kind === "turn" ? JSON.stringify({
+      title: "Mocked production",
+      say: "Mocked: one shot, so the pipeline can be watched end to end without a vendor.",
+      activity: ["read the brief", "chose one engine"],
+      propose: [{ kind: "video", title: "Mocked shot", prompt: "A mocked shot, held still for five seconds.", model: DEFAULT_MODEL_ID, seconds: 5, ratio: "16:9", resolution: "1080p" }],
+    })
+    : kind === "idea" ? JSON.stringify({ logline: `Mocked logline for: ${lastUser.replace(/^NOTE:\s*/i, "").slice(0, 120)}`, tone: ["mocked", "quiet", "30s"] })
+    : lastUser.slice(0, 2000) || "A mocked prompt.";
+  return {
+    ok: true, status: 200,
+    text: JSON.stringify({ choices: [{ message: { role: "assistant", content } }], usage: { prompt_tokens: 500, completion_tokens: 120, cost: 0.002 } }),
+  };
+}

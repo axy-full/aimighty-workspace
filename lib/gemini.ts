@@ -3,6 +3,9 @@ import type { Reference } from "./ark";
 import type { ModelDef } from "./models";
 import { gatewayReachable, gatewayAuth, GATEWAY_URL, explainGatewayFailure } from "./gateway";
 import { vendorKey } from "./vendorKeys";
+import { estimateImageCostUsd } from "./models";
+import { engineMock } from "./mock";
+import { fixtureBytes } from "./mockFs";
 
 /**
  * Google's still engines — Nano Banana Pro and Nano Banana 2 — through one
@@ -41,6 +44,7 @@ export type ImageResult = {
 };
 
 export function stillsDoor(): "gateway" | "google" | null {
+  if (engineMock()) return "gateway";
   const key = Boolean(vendorKey("gemini"));
   if (process.env.STILLS_VIA === "google" && key) return "google";
   if (gatewayReachable()) return "gateway";
@@ -123,6 +127,12 @@ export async function generateImage(opts: {
   size: string;             // "512" | "1K" | "2K" | "4K" — uppercase K is mandatory
   references: Reference[];  // images only; validated upstream
 }): Promise<ImageResult> {
+  if (engineMock()) {
+    return {
+      bytes: await fixtureBytes("still.png"), mime: "image/png", text: "", via: "gateway", totalTokens: 1120,
+      costUsd: estimateImageCostUsd(opts.model.id, opts.size, opts.references.length)?.net ?? 0.134,
+    };
+  }
   const door = stillsDoor();
   if (!door) {
     throw new Error(

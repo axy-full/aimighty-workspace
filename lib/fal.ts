@@ -1,5 +1,6 @@
 import { getProvider, providerBaseUrl } from "./providers";
 import { vendorKey } from "./vendorKeys";
+import { engineMock, mockJobId, isMockJob, mockDone, fixtureUrl } from "./mock";
 
 /**
  * fal.ai — where identities are trained and rendered.
@@ -14,6 +15,7 @@ import { vendorKey } from "./vendorKeys";
  */
 
 export function falConfigured(): boolean {
+  if (engineMock()) return true;
   return Boolean(vendorKey("fal"));
 }
 
@@ -94,6 +96,7 @@ async function call<T>(url: string, init: RequestInit, timeoutMs = 60_000): Prom
 
 /** Put a job on the queue. Returns at once with the request id. */
 export async function falSubmit(model: string, input: unknown, webhookUrl?: string): Promise<FalQueued> {
+  if (engineMock()) return { request_id: mockJobId("fal") };
   const q = webhookUrl ? `?fal_webhook=${encodeURIComponent(webhookUrl)}` : "";
   return call<FalQueued>(`${base()}/${model}${q}`, {
     method: "POST",
@@ -103,6 +106,7 @@ export async function falSubmit(model: string, input: unknown, webhookUrl?: stri
 }
 
 export async function falStatus(model: string, requestId: string, withLogs = false): Promise<FalStatus> {
+  if (isMockJob(model)) return { status: mockDone(model) ? "COMPLETED" : "IN_PROGRESS", logs: [] } as FalStatus;
   return call<FalStatus>(
     `${base()}/${model}/requests/${encodeURIComponent(requestId)}/status${withLogs ? "?logs=1" : ""}`,
     { headers: { Authorization: auth() } }
@@ -110,6 +114,14 @@ export async function falStatus(model: string, requestId: string, withLogs = fal
 }
 
 export async function falResult<T>(model: string, requestId: string): Promise<T> {
+  if (isMockJob(model)) {
+    return {
+      video: { url: fixtureUrl("clip.mp4"), content_type: "video/mp4", file_size: 991017 },
+      images: [{ url: fixtureUrl("still.png"), width: 256, height: 256, content_type: "image/png" }],
+      seed: 1, has_nsfw_concepts: [false],
+      diffusers_lora_file: { url: fixtureUrl("still.png") }, config_file: { url: fixtureUrl("still.png") },
+    } as unknown as T;
+  }
   return call<T>(`${base()}/${model}/requests/${encodeURIComponent(requestId)}`, {
     headers: { Authorization: auth() },
   });

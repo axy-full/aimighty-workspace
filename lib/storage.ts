@@ -1,6 +1,8 @@
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { currentTenant } from "./tenant";
+import { isFixtureUrl } from "./mock";
+import { fetchBytes } from "./mockFs";
 
 /**
  * Ark's video_url expires (~24h). We copy every finished render into our own
@@ -32,11 +34,7 @@ export function usingBlob(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 }
 
-export async function storeVideo(genId: string, sourceUrl: string): Promise<{ url: string; bytes: number }> {
-  /* Two minutes, and no less: a 200 MB master over a slow link legitimately
-     needs it, and abandoning one early would strand the very render the cron
-     exists to rescue. But not unbounded either — this runs 30-wide inside a
-     300s cron, where one stalled download could own the whole window. */
+async function download(sourceUrl: string): Promise<Buffer> {
   let res: Response;
   try {
     res = await fetch(sourceUrl, { signal: AbortSignal.timeout(120_000) });
@@ -48,7 +46,15 @@ export async function storeVideo(genId: string, sourceUrl: string): Promise<{ ur
     throw new Error(`Could not download the render: ${err.message}`);
   }
   if (!res.ok) throw new Error(`Could not download render (${res.status})`);
-  const buf = Buffer.from(await res.arrayBuffer());
+  return Buffer.from(await res.arrayBuffer());
+}
+
+export async function storeVideo(genId: string, sourceUrl: string): Promise<{ url: string; bytes: number }> {
+  /* Two minutes, and no less: a 200 MB master over a slow link legitimately
+     needs it, and abandoning one early would strand the very render the cron
+     exists to rescue. But not unbounded either — this runs 30-wide inside a
+     300s cron, where one stalled download could own the whole window. */
+  const buf = isFixtureUrl(sourceUrl) ? await fetchBytes(sourceUrl) : await download(sourceUrl);
 
   if (usingBlob()) {
     const { put } = await import("@vercel/blob");

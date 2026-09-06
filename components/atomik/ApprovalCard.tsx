@@ -141,7 +141,7 @@ export default function ApprovalCard({
             <>
               Approve
               <span className="approve-price">
-                {step.estCostUsd == null ? "priced at render" : price(step.estCostUsd)}
+                {step.estCostUsd == null ? "priced at render" : price(step.estCostUsd, step.model)}
               </span>
               <kbd>↵</kbd>
             </>

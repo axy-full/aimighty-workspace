@@ -1,6 +1,8 @@
 import { getProvider, providerBaseUrl } from "./providers";
 import { vendorKey } from "./vendorKeys";
 import { memoGet, memoPut } from "./memo";
+import { engineMock } from "./mock";
+import { fixtureBytes } from "./mockFs";
 
 /**
  * ElevenLabs — voices, sound effects and music.
@@ -12,6 +14,7 @@ import { memoGet, memoPut } from "./memo";
  */
 
 export function elevenConfigured(): boolean {
+  if (engineMock()) return true;
   return Boolean(vendorKey("elevenlabs"));
 }
 
@@ -189,6 +192,7 @@ export type VoiceSettings = {
 export async function textToSpeech(opts: {
   voiceId: string; text: string; modelId: string; settings?: VoiceSettings; format?: string;
 }) {
+  if (engineMock()) return { bytes: await fixtureBytes("tone.mp3"), mime: "audio/mpeg", credits: speechCredits(opts.text, opts.modelId), requestId: "mock" };
   const format = opts.format ?? "mp3_44100_128";
   const out = await callAudio(`/v1/text-to-speech/${encodeURIComponent(opts.voiceId)}?output_format=${encodeURIComponent(format)}`, {
     text: opts.text,
@@ -201,6 +205,7 @@ export async function textToSpeech(opts: {
 /* ── Sound effects ─────────────────────────────────────────────────── */
 
 export async function soundEffect(opts: { text: string; durationSeconds: number | null; promptInfluence?: number; loop?: boolean }) {
+  if (engineMock()) return { bytes: await fixtureBytes("tone.mp3"), mime: "audio/mpeg", credits: sfxCredits(), requestId: "mock" };
   const out = await callAudio(`/v1/sound-generation?output_format=mp3_44100_128`, {
     text: opts.text,
     model_id: "eleven_text_to_sound_v2",
@@ -214,6 +219,7 @@ export async function soundEffect(opts: { text: string; durationSeconds: number 
 /* ── Music ─────────────────────────────────────────────────────────── */
 
 export async function composeMusic(opts: { prompt: string; lengthMs: number; instrumental?: boolean }) {
+  if (engineMock()) return { bytes: await fixtureBytes("tone.mp3"), mime: "audio/mpeg", credits: musicCredits(opts.lengthMs), requestId: "mock" };
   const out = await callAudio(`/v1/music?output_format=mp3_44100_128`, {
     prompt: opts.prompt,
     music_length_ms: opts.lengthMs,
@@ -238,6 +244,7 @@ type SubscriptionResponse = {
 };
 
 export async function subscription(): Promise<Subscription> {
+  if (engineMock()) return { tier: "creator", status: "active", used: 0, limit: 100_000, resetAt: null, usdPerCredit: 0.0003 };
   const s = await callJson<SubscriptionResponse>("/v1/user/subscription");
   const tier = (s.tier ?? "free").toLowerCase();
   return {

@@ -182,9 +182,11 @@ export function getProvider(pid: string): ProviderDef {
 
 import { gatewayReachable } from "./gateway";
 import { vendorKey, vendorKeyForEnv } from "./vendorKeys";
+import { engineMock } from "./mock";
 
 /** Is this vendor usable right now? Reported on /api/health and in Settings. */
 export function providerConfigured(p: ProviderDef): boolean {
+  if (engineMock()) return true;
   if (p.id === "vercel") return gatewayReachable();
   /* Through vendorKey, not the raw env: a workspace's own sealed key, or
      the platform's where it is lent — the same answer the render will get. */
@@ -219,6 +221,7 @@ export function billedTo(provider: string): ProviderId {
 }
 
 export function providerVia(p: ProviderDef): "key" | "gateway" | null {
+  if (engineMock()) return "key";
   /* The gateway IS this vendor, and on Vercel it authenticates by the
      deployment's OIDC identity rather than a key — so asking whether the
      key is set would report the one vendor that is always reachable as

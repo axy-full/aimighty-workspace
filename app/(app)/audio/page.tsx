@@ -314,7 +314,7 @@ export default function AudioPage() {
         </button>
         <button type="button" className="dock-go" onClick={make} disabled={!canRender}>
           <span>{busy ? "…" : "Generate"}</span>
-          <span className="dock-cost">{text.trim() ? price(estUsd) : `${estCredits} CR`}</span>
+          <span className="dock-cost">{text.trim() ? price(estUsd, "elevenlabs") : `${estCredits} CR`}</span>
         </button>
       </div>
       {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
@@ -433,7 +433,7 @@ export default function AudioPage() {
           <button type="button" className="btn-primary !h-[46px] w-full !px-4 !text-[14px]" onClick={make} disabled={!canRender}
             title={!signedIn ? "Sign in to generate" : undefined}>
             <span>{busy ? "Sending…" : "Generate"}</span>
-            <span className="btn-primary-cost">{text.trim() ? `${price(estUsd)} · ${lenLabel}` : `${estCredits.toLocaleString()} CR`}</span>
+            <span className="btn-primary-cost">{text.trim() ? `${price(estUsd, "elevenlabs")} · ${lenLabel}` : `${estCredits.toLocaleString()} CR`}</span>
           </button>
           <span className="mono-s text-center">files as {filesAs}</span>
         </div>
