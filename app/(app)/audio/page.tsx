@@ -44,8 +44,16 @@ type Setup = {
   account: Account | null; accountError: string | null;
   terms: { sfxCredits: number; musicCreditsPerMinute: number };
 };
-/** What a visitor is shown: the desk as it is, Render gated behind sign-in. */
-const VISITOR_SETUP = { configured: true, envKey: "", terms: { sfxCredits: 200, musicCreditsPerMinute: 900 }, account: null } as unknown as Setup;
+/** What a visitor is shown: the desk as it is, Render gated behind sign-in.
+    Every field of Setup, typed rather than cast — a field missing here is a
+    crash at its first lookup, and the type check is what catches that. */
+const VISITOR_SETUP: Setup = {
+  configured: true, envKey: "",
+  speechModels: [], defaultSpeechModel: "",
+  voices: [], voicesError: null,
+  account: null, accountError: null,
+  terms: { sfxCredits: 200, musicCreditsPerMinute: 900 },
+};
 
 /* The desk's three words for a track, and the API's task behind each. */
 type Task = "sound" | "music" | "speech";
