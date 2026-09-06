@@ -219,7 +219,7 @@ export default function SettingsPage() {
                 ? `This workspace runs on the platform's engines and pays in credits${keys?.credits ? `: ${creditsNumber(keys.credits.balance)} left of ${creditsNumber(keys.credits.granted)} granted, one credit being ${usd(keys.credits.creditUsd, 2)} of vendor cost` : ""}${keys?.allowance ? `, within a ${usd(keys.allowance.usd, 0)} monthly cap (${usd(keys.allowance.spentUsd, 2)} used this month)` : ""}. Add your own key for any vendor and it takes over for that vendor; the rest stay on the platform.`
                 : mode === "own"
                   ? "This workspace's own keys, sealed on the server and shown only to its owner, and only masked. Costs on the render button come from these routes."
-                  : "Keys live in Vercel, set by an admin, and are never shown here — not even their names. Costs on the render button come from these routes."
+                  : "Keys are set by an admin and never shown here — not even their names. Costs on the render button come from these routes."
             }</span></div>
             {owner && keys && keys.mode !== "legacy" && (
               <div className="flex flex-col gap-2">
@@ -597,7 +597,7 @@ function PushRow() {
                 ? "Allow notifications for this site in your browser's settings, then come back here."
                 : state === "install"
                   ? "On iPhone, notifications only reach the installed app. Tap Share, then Add to Home Screen, open Particl from the icon, and turn this on there."
-                  : "The push keys aren't on this deployment. Add them in Vercel and redeploy."
+                  : "Push notifications aren't set up on this deployment — contact management."
             )}
           >
             Why?

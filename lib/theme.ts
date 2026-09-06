@@ -73,6 +73,10 @@ export function setTheme(pref: ThemePref): void {
     else localStorage.setItem(THEME_KEY, pref);
   } catch { /* private mode */ }
   applyTheme(pref);
+  // Auto follows the OS at runtime too, so the status bar changes with it.
+  if (typeof window !== "undefined") {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (read() === "auto") syncMeta(); });
+  }
   listeners.forEach((l) => l());
 }
 

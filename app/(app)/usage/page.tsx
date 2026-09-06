@@ -10,7 +10,7 @@ function gb(bytes: number): string {
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
-import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
+import { Waiting, Trouble } from "@/components/ParticlMark";
 import Link from "next/link";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
@@ -86,13 +86,24 @@ type Usage = {
 };
 
 export default function UsagePage() {
-  const { data, error, refresh } = useApi<Usage>("/api/usage", 20000);
+  const { signedIn } = useSession();
+  const { data, error, refresh } = useApi<Usage>(signedIn ? "/api/usage" : null, 20000);
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [vendorFilter, setVendorFilter] = useState<string>("all");
 
 
 
   usePageTitle("Usage");
+  /* A visitor sees the page's shape — the production section with sample
+     numbers — and a line where the vendor ledgers would be. */
+  if (!signedIn) {
+    return (
+      <div className="page">
+        <ProductionTop />
+        <p className="rail-help">The vendor ledgers are for the team — sign in to see what each engine has been paid and what is left.</p>
+      </div>
+    );
+  }
   if (!data) return error ? <Trouble label="The ledger didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the ledgers" />;
 
   const vendorName = (id: string) => data.vendors.find((v) => v.id === id)?.label ?? id;
@@ -595,6 +606,30 @@ function Breakdown({ title, rows }: {
    studio's numbers come from the analytics route over a period; the
    production's from the same route narrowed to it, its cap from the
    projects route, and the per-take blocks from its own renders. */
+/** Sample numbers for a visitor: a made-up production, roles rather than people, the real engines. */
+const SAMPLE_ANALYTICS: Analytics = {
+  scope: { projectId: "", days: 30 },
+  totals: { generations: 41, succeeded: 38, failed: 2, pending: 1, binned: 0, spend: 612.4, promptSpend: 1.9, prompts: 40, tokens: 9_800_000, renderMs: 0, people: 3, shots: 12, successRate: 0.93 },
+  credit: { toppedUp: 1000, spentAllTime: 612.4 },
+  byProject: [
+    { id: "sample-1", name: "Northline", n: 27, spend: 391.2, failed: 1, people: 3, renderMs: 0 },
+    { id: "sample-2", name: "Coast road", n: 11, spend: 172.6, failed: 1, people: 2, renderMs: 0 },
+    { id: null, name: "Unfiled", n: 3, spend: 48.6, failed: 0, people: 1, renderMs: 0 },
+  ],
+  byPerson: [
+    { id: "p1", name: "Director", n: 19, spend: 302.1, failed: 1, projects: 2 },
+    { id: "p2", name: "Producer", n: 14, spend: 201.7, failed: 0, projects: 2 },
+    { id: "p3", name: "Editor", n: 8, spend: 108.6, failed: 1, projects: 1 },
+  ],
+  byModel: [
+    { model: "dreamina-seedance-2-5-260628", label: "Seedance 2.5", n: 24, spend: 486.2, failed: 2, avgMs: null },
+    { model: "fal-ai/kling-video/v3/standard", label: "Kling 3.0", n: 9, spend: 41.4, failed: 0, avgMs: null },
+    { model: "gemini-3-pro-image", label: "Nano Banana Pro", n: 8, spend: 84.8, failed: 0, avgMs: null },
+  ],
+  byShot: [], byStatus: [], byDay: [], stuck: [], byCategory: [],
+  patterns: { avgPromptLength: 62, refined: 30, withCast: 18, withReferences: 12, filedToShots: 38, unfiled: 3, takesPerShot: 3.2 },
+};
+
 type Period = "month" | "30" | "quarter";
 type ProjRow = {
   id: string; name: string; code: string; spend: number; capUsd: number | null;
@@ -614,7 +649,10 @@ function ProductionTop() {
   const days = period === "month" ? new Date().getDate() : period === "30" ? 30 : 90;
   const periodLabel = period === "month" ? new Date().toLocaleDateString(undefined, { month: "long" }).toUpperCase() : period === "30" ? "30 DAYS" : "QUARTER";
 
-  const { data: all } = useApi<Analytics>(signedIn ? `/api/analytics?days=${days}` : null, 30_000);
+  const { data: fetched } = useApi<Analytics>(signedIn ? `/api/analytics?days=${days}` : null, 30_000);
+  /* A visitor sees the shape of the page with sample numbers rather than a
+     blank — the brief's promise that everything here is theirs to look at. */
+  const all = signedIn ? fetched : SAMPLE_ANALYTICS;
   const { data: proj } = useApi<Analytics>(signedIn && scoped ? `/api/analytics?days=${days}&projectId=${encodeURIComponent(selection)}` : null, 30_000);
   const { data: projects } = useApi<{ projects: ProjRow[] }>(signedIn ? "/api/projects" : null, 30_000);
   const { data: jobs } = useApi<{ generations: Gen[] }>(signedIn && scoped ? `/api/jobs?projectId=${encodeURIComponent(selection)}&limit=500&sync=0` : null, 15_000);
@@ -691,12 +729,13 @@ function ProductionTop() {
         </div>
       </div>
 
-      {!signedIn ? (
-        <Empty title="The numbers are for the team" line="Sign in to see what the studio's productions have cost, who spent it, and which shot is taking the most takes." />
-      ) : !all ? (
+      {!all ? (
         <Waiting label="Adding it up" />
       ) : (
         <>
+          {!signedIn && (
+            <p className="rail-help">Sample numbers, to show the shape of the page. Sign in to see what the studio&rsquo;s productions have cost, who spent it, and which shot is taking the most takes.</p>
+          )}
           <div className="tiles">
             <div className="tile">
               <span className="tile-l">STUDIO · {periodLabel}</span>

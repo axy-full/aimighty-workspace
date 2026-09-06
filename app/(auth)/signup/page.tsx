@@ -64,7 +64,7 @@ function Signup() {
       <AuthCard title="This invitation won't work" sub={state.dead}>
         <p className="flex items-center justify-between text-[12.5px] text-dim">
           <Link href="/login" className="hover:text-ink">← Sign in instead</Link>
-          <RequestAccessButton className="hover:text-ink" label="Contact management" />
+          <RequestAccessButton className="hover:text-ink" label="Request an invite" />
         </p>
       </AuthCard>
     );

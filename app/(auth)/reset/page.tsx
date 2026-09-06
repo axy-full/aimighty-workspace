@@ -46,7 +46,7 @@ export default function ResetRequestPage() {
           {err && <ErrorLine>{err}</ErrorLine>}
           <p className="mt-4 flex items-center justify-between text-[12.5px] text-dim">
             <Link href="/login" className="hover:text-ink">← Back to sign in</Link>
-            <RequestAccessButton className="hover:text-ink" label="Contact management" />
+            <RequestAccessButton className="hover:text-ink" label="Request an invite" />
           </p>
         </form>
       )}

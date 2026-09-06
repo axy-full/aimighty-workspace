@@ -2383,80 +2383,96 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .brand-pop-h { padding: 8px 10px 4px; margin-top: 3px; border-top: 1px solid var(--color-hair); font: 500 10px/1 var(--font-kode); letter-spacing: .14em; color: var(--color-dim); text-transform: uppercase; }
 
 /* ══════════════════════════════════════════════════════════════════════
-   MOBILE · below 768px — from the mobile handoff.
+   MOBILE · below 1024px wide or 520px tall — from the mobile handoff.
    Same tokens, copy and data; the layout becomes one column that scrolls
    as a document under a sticky header, with a tab bar at the bottom. The
    composer rail is a sheet opened from a docked bar; the wall is a strip
    of cards per shot; every tap target is at least 44px.
    ══════════════════════════════════════════════════════════════════════ */
 .tabbar, .maketabs, .dock, .sheet-scrim, .sheet-grab, .hdr-cap-short, .cv-refs-mobile { display: none; }
+/* The floor under every route: the document is never wider than the
+   viewport. A stray element still overflows its own box; it no longer pans
+   the page sideways or shrinks the layout on Android. */
+html, body { overflow-x: clip; }
 :root { --tabbar-h: calc(56px + env(safe-area-inset-bottom, 22px)); --dock-h: 70px; }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px), (max-height: 520px) {
   /* ── the frame: the document scrolls; header and bars are sticky ── */
   .shell { height: auto; min-height: 100dvh; }
   .shell-body { display: block; min-height: 0; }
   .hdr { position: sticky; top: 0; z-index: 30; padding: 0 14px; gap: 10px; }
   .hdr-nav, .hdr-rule, .hdr-cap-long { display: none; }
   .hdr-cap-short { display: inline; }
-  .hdr-cap { font-size: 10px; letter-spacing: 0; white-space: nowrap; margin-left: auto; }
-  .hdr-right { margin-left: 0; gap: 10px; }
+  .hdr-cap { font-size: 12px; letter-spacing: 0; white-space: nowrap; margin-left: auto; }
+  .hdr-right { margin-left: 0; gap: 8px; }
+  .hdr-switch:disabled { display: none; }
+  .hdr-right .hdr-mono-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; }
+  .hdr-right .btn-primary { height: 36px !important; }
   .hdr-avatar { width: 30px; height: 30px; font-size: 10px; }
   .hdr-logo svg { width: 28px; height: 13px; }
   .hdr-word { font-size: 15px; }
   .brand-switch { gap: 5px; padding: 5px 5px 5px 4px; margin-left: -4px; }
   .atomik-word { font-size: 15px !important; }
   .atomik-word-by { display: none; }
-  .hdr-switch { padding: 7px 9px; font-size: 12px; max-width: 42vw; }
+  .hdr-switch { padding: 7px 9px; font-size: 12px; max-width: 36vw; }
   .hdr-switch > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hdr-switch-kind { display: none; }
-  .hdr-cross { font-size: 9px; }
+  .hdr-cross { font-size: 11px; }
   .hdr-cross svg { width: 22px; height: 10px; }
   .chat-fab, .cv ~ .contents .chat-fab, .st ~ .contents .chat-fab { right: 14px !important; bottom: calc(var(--tabbar-h) + 12px); width: 44px; height: 44px; }
   .ws ~ .contents .chat-fab { right: 14px !important; bottom: calc(var(--tabbar-h) + var(--dock-h) + 12px); }
 
   .maketabs { display: block; position: sticky; top: 52px; z-index: 29; background: var(--color-desk); padding: 8px 14px 10px; border-bottom: 1px solid var(--color-hair); }
   .maketabs .seg { border-radius: 8px; }
-  .maketabs .seg-opt { padding: 9px 0; border-radius: 6px; font-size: 12.5px; text-align: center; }
+  .maketabs .seg-opt { min-height: 44px; padding: 9px 0; border-radius: 6px; font-size: 13px; text-align: center; }
 
   .tabbar { display: flex; position: sticky; bottom: 0; left: auto; right: auto; top: auto; transform: none; width: auto; max-width: none; margin: 0; border-radius: 0; box-shadow: none; gap: 0; z-index: 30; background: var(--color-panel); border-top: 1px solid var(--color-hair); padding: 0 6px env(safe-area-inset-bottom, 22px); backdrop-filter: none; }
   .tabbar-tab { position: static; width: auto; height: auto; border: 0; border-radius: 0; background: transparent; }
-  .tabbar-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 9px 0 6px; min-height: 56px; color: var(--color-dim); font: 500 8.5px/1 var(--font-kode); letter-spacing: .1em; transition: color .12s; }
+  .tabbar-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 9px 0 6px; min-height: 56px; color: var(--color-dim); font: 500 11px/1 var(--font-kode); letter-spacing: .1em; transition: color .12s; }
   .tabbar-tab.is-on { color: var(--color-ink); }
   .theme-light .tabbar { background: #FCFCFD; border-color: rgba(21, 23, 28, .1); }
 
   /* ── the composer: docked bar + sheet ── */
   .dock { display: flex; align-items: center; gap: 10px; position: sticky; bottom: var(--tabbar-h); z-index: 29; background: var(--color-panel); border-top: 1px solid var(--color-hair); padding: 10px 14px; }
   .dock-preview { flex: 1; min-width: 0; text-align: left; background: var(--color-desk); border: 1px solid var(--color-line); border-radius: 10px; padding: 9px 12px; color: var(--color-ink); display: flex; flex-direction: column; gap: 4px; }
-  .dock-eyebrow { font: 500 9.5px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .dock-eyebrow { font: 500 11px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .dock-line { font: 400 13px/1.3 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .dock-go { flex: none; height: 48px; min-width: 76px; border: 0; border-radius: 10px; background: var(--color-ink); color: var(--color-on-ink); padding: 0 16px; font: 600 13px/1 var(--font-display); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
-  .dock-go:disabled { opacity: .45; }
-  .dock-cost { font: 500 10px/1 var(--font-kode); color: #3A3E46; }
+  .dock-go:disabled { opacity: .55; }
+  .dock-cost { font: 500 12px/1 var(--font-kode); color: var(--color-on-ink); opacity: .85; }
   .sheet-scrim { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 40; }
   .ws-rail.is-hidden { display: none; }
-  .ws-rail.is-sheet { display: flex; position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; width: min(100%, 430px); max-height: 88vh; z-index: 41; border-left: 0; border-top: 1px solid rgba(245, 246, 248, .12); border-radius: 18px 18px 0 0; overflow: hidden; }
+  .ws-rail.is-sheet { display: flex; flex-direction: column; position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; width: min(100vw, 430px); max-width: 100vw; height: calc(100dvh - 52px); max-height: calc(100dvh - 52px); z-index: 41; border-left: 0; border-top: 1px solid rgba(245, 246, 248, .12); border-radius: 18px 18px 0 0; overflow: hidden; }
+  .ws-rail.is-sheet .ws-rail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .ws-rail.is-sheet .ws-rail-foot { flex: none; }
   .ws-rail.is-sheet .sheet-grab { display: flex; justify-content: center; padding: 8px 0 0; flex: none; }
   .sheet-grab > span { width: 36px; height: 4px; border-radius: 2px; background: rgba(245, 246, 248, .2); }
   .ws-rail.is-sheet .ws-rail-head { height: auto; padding: 10px 16px 12px; gap: 8px; flex-wrap: wrap; }
   .ws-rail.is-sheet .ws-rail-body { padding: 14px 16px; }
   .ws-rail.is-sheet .ws-rail-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 14px)); }
   .ws-rail.is-sheet .btn-primary { height: 50px; font-size: 15px; }
-  .ws-rail.is-sheet .rail-composer .island-input, .ws-rail.is-sheet .rail-prompt { font-size: 15px; min-height: 96px; border-radius: 10px; }
+  /* The textarea and the highlight layer painted under it must share a
+     size, or the box outgrows its border. 16px: iOS zooms into less. */
+  .ws-rail.is-sheet .rail-composer .island-input, .ws-rail.is-sheet .rail-composer .island-overlay, .ws-rail.is-sheet .rail-prompt { font-size: 16px; min-height: 96px; border-radius: 10px; }
   .ws-rail.is-sheet .chip-dd, .ws-rail.is-sheet .rail-composer .chip-ctl { padding: 9px 11px; font-size: 12.5px; }
   .ws-rail.is-sheet .ref-thumb { width: 56px; height: 56px; }
 
   /* ── the wall: one strip of cards per shot ── */
   /* The wall fills the viewport even when empty, so the docked bar sits at the bottom. */
+  /* An empty wall pulls the composer up rather than leaving a screen of nothing. */
   .ws { display: flex; flex-direction: column; min-height: calc(100dvh - 104px); }
+  .ws.is-empty { min-height: 0; }
   .ws-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
   .ws-scroll { flex: 1; }
   .ws-bar { height: auto; flex-wrap: wrap; gap: 8px 10px; padding: 14px 14px 10px; border-bottom: 0; }
   .ws-bar-title { flex-wrap: wrap; gap: 8px; width: 100%; }
   .ws-bar-title .hdr-mono-link:last-child { margin-left: auto; }
+  .ws-bar-title .hdr-mono-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; font-size: 11px; }
+  .ws-bar .mono-s, .ws-bar .mono { font-size: 12px; }
+  .mono { font-size: 11px; }
   .ws-bar .seg { display: flex; gap: 6px; background: transparent; border: 0; padding: 0 14px; margin: 0 -14px; width: calc(100% + 28px); overflow-x: auto; scrollbar-width: none; }
   .ws-bar .seg::-webkit-scrollbar { display: none; }
-  .ws-bar .seg-opt { flex: none; border: 1px solid var(--color-line); border-radius: 999px; padding: 8px 12px; }
+  .ws-bar .seg-opt { flex: none; border: 1px solid var(--color-line); border-radius: 999px; padding: 12px 14px; min-height: 44px; }
   .ws-bar .seg-opt.is-on { background: var(--color-fill-on); }
   .ws-bar > .ml-auto { width: 100%; margin-left: 0; }
   .ws-bar .chip-dd.is-muted { display: none; }
@@ -2550,6 +2566,11 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   .st.is-builder .ws-rail-foot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 29; padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 22px)); flex-direction: row; flex-wrap: wrap; background: var(--color-panel); border-top: 1px solid var(--color-hair); }
   .st.is-builder .ws-rail-foot .btn-primary { flex: 1 1 100%; order: 2; }
   .st.is-builder .ws-rail-foot .btn-secondary { flex: 1 1 auto; order: 1; }
+  .st.is-builder .ws-rail-foot .st-foot-line { display: block; flex: 1 1 100%; order: 0; font-size: 12px; line-height: 1.3; color: var(--color-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* A chip's options open as a sheet from the bottom, one row each, rather
+     than a popover anchored somewhere under a thumb. */
+  .island-menu { position: fixed !important; left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; width: auto !important; max-width: none !important; max-height: 70dvh; overflow-y: auto; border-radius: 18px 18px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom, 14px)); z-index: 60 !important; transform: none !important; }
+  .island-menu .menu-item { min-height: 48px; }
   .st.is-builder .ws-rail-foot .mono-s { display: none; }
   .st.is-builder .st-main { padding-bottom: 140px; }
   .st.is-builder .bank { display: flex; gap: 6px; overflow-x: auto; margin: 0 -14px; padding: 0 14px 2px; scrollbar-width: none; }
@@ -2570,7 +2591,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   /* settings: the index is a sticky pill row */
   .st-grid { display: block; }
   .st-index { position: sticky; top: 52px; z-index: 28; flex-direction: row; flex-wrap: nowrap; gap: 6px; overflow-x: auto; margin: -16px -14px 14px; padding: 8px 14px 10px; background: var(--color-desk); border-bottom: 1px solid var(--color-hair); scrollbar-width: none; }
-  .st-index-a { white-space: nowrap; }
+  .st-index-a { white-space: nowrap; min-height: 40px; display: inline-flex; align-items: center; }
+  .st-index { padding-right: 40px; mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
   .st-index-h { display: none; }
   .st-index-a { flex: none; border: 1px solid var(--color-line); border-radius: 999px; padding: 8px 12px; }
   .scard { padding: 16px 14px; scroll-margin-top: 110px; }
@@ -2659,7 +2681,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   .ak-table-foot { flex-direction: column; align-items: flex-start; gap: 8px; padding: 6px 2px; }
 }
 
-@media (min-width: 768px) and (max-width: 1179px) {
+@media (min-width: 1024px) and (min-height: 521px) and (max-width: 1179px) {
   /* Between the phone and the desktop handoff: the mobile shell with two columns where the mobile spec says one. */
   .ak-ideas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .castgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -2669,3 +2691,14 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .take[draggable="true"], .castcard[draggable="true"], article[draggable="true"] { cursor: grab; }
 .take[draggable="true"]:active, .castcard[draggable="true"]:active { cursor: grabbing; }
 .cv-tile.is-drop { outline: 2px solid var(--color-approved); outline-offset: 2px; }
+
+/* ── Phone type floor: iOS Safari zooms into any field under 16px and the
+   zoom outlives the keyboard. In Tailwind's own layer so it out-ranks the
+   !text-* utilities on a few fields. ── */
+@layer utilities {
+  @media (max-width: 1023px), (max-height: 520px) {
+    input[class]:not([type="checkbox"]):not([type="radio"]):not([type="range"]), input:not([class]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    textarea[class], textarea:not([class]), select[class], select:not([class]) { font-size: 16px !important; }
+  }
+}
+.st-foot-line { display: none; }
