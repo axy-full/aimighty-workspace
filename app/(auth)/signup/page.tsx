@@ -26,6 +26,7 @@ function Signup() {
   const [workspace, setWorkspace] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [accept, setAccept] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -46,7 +47,7 @@ function Signup() {
     try {
       const res = await fetch("/api/auth/signup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, name, email: (state as { email: string }).email, workspace, password }),
+        body: JSON.stringify({ code, name, email: (state as { email: string }).email, workspace, password, accept }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Couldn't sign up");
@@ -77,6 +78,10 @@ function Signup() {
         <Field label="Workspace"><input className="ctl" required value={workspace} onChange={(e) => setWorkspace(e.target.value)} placeholder="Your studio, company, or you" /></Field>
         <Field label="Password"><input className="ctl" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
         <Field label="Confirm"><input className="ctl" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
+        <label className="mt-3 flex items-start gap-2 text-[13px] text-dim">
+          <input type="checkbox" required checked={accept} onChange={(e) => setAccept(e.target.checked)} className="mt-[3px]" />
+          <span>I have read the <Link href="/policy" className="text-ink" target="_blank">content policy</Link> and the <Link href="/terms" className="text-ink" target="_blank">terms</Link>, and what may not be made here.</span>
+        </label>
         <Submit busy={busy}>Create the workspace</Submit>
         {err && <ErrorLine>{err}</ErrorLine>}
         <p className="mt-4 text-[12.5px] text-dim">Already have an account? <Link href="/login" className="text-ink">Sign in</Link> — you can be invited onto a workspace from there.</p>

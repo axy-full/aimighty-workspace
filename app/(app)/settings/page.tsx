@@ -370,6 +370,10 @@ export default function SettingsPage() {
               <button className="row" onClick={() => router.push("/connect")}>Connect apps &amp; tokens<span className="row-value">Claude · ChatGPT · CLI<IconChevron className="!text-mute" /></span></button>
               <button className="row" onClick={() => router.push("/platform")}>Platform<span className="row-value">Assets · APIs · security · IP<IconChevron className="!text-mute" /></span></button>
               {superAdmin && <button className="row" onClick={() => router.push("/admin")}>Sign-ups &amp; workspaces<span className="row-value">Platform owner<IconChevron className="!text-mute" /></span></button>}
+              <button className="row" onClick={() => router.push("/policy")}>Content policy<span className="row-value">What may not be made here<IconChevron className="!text-mute" /></span></button>
+              <button className="row" onClick={() => router.push("/privacy")}>Privacy &amp; retention<span className="row-value">What is kept, where, how long<IconChevron className="!text-mute" /></span></button>
+              <button className="row" onClick={() => router.push("/terms")}>Terms<span className="row-value">Credits · your work · changes<IconChevron className="!text-mute" /></span></button>
+              <button className="row" onClick={() => router.push("/report")}>Report content<span className="row-value">Anyone may<IconChevron className="!text-mute" /></span></button>
               {me?.owner && <a className="row" href="/api/export?format=csv" download title="Every take with its prompt, cost, filename and a link to its master — the owner's alone">Export takes<span className="row-value">CSV · owner<IconChevron className="!text-mute" /></span></a>}
               {me?.owner && <MastersRow />}
               {me?.owner && <a className="row" href="/api/export" download title="Every prompt, cost and account record, as JSON — the owner's alone">Export data<span className="row-value">JSON · owner</span></a>}

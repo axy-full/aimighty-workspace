@@ -27,7 +27,7 @@ test("a stranger with an invite reaches a first render inside five minutes", asy
   });
 
   const signup = await api.post("/api/auth/signup", {
-    data: { code, name: "Test Person", email, workspace: `Onboarding ${Date.now()}`, password: "a long passphrase for a test account 42" },
+    data: { code, name: "Test Person", email, workspace: `Onboarding ${Date.now()}`, password: "a long passphrase for a test account 42", accept: true },
   });
   expect(signup.ok(), await signup.text()).toBeTruthy();
 
