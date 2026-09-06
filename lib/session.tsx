@@ -36,9 +36,11 @@ export type Session = {
   superAdmin: boolean;
   workspaces: (SessionWorkspace & { role: "owner" | "admin" | "member" })[];
   credits: SessionCredits | null;
+  /** The engines the composer opens on here — the workspace's Defaults & caps, which inherit the platform's. */
+  models?: { video: string; image: string } | null;
 };
 
-const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null, workspace: null, role: null, owner: false, superAdmin: false, workspaces: [], credits: null });
+const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null, workspace: null, role: null, owner: false, superAdmin: false, workspaces: [], credits: null, models: null });
 
 /**
  * What the browser must not keep once nobody is signed in.

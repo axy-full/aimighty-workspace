@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireUser, requireAdmin, withTenant } from "@/lib/auth";
 import { allSettings, setSetting, DEFAULTS } from "@/lib/settings";
+import { getPlatformLayer } from "@/lib/platform";
+import { resolveModels, modelOfKind } from "@/lib/platformLayer";
 
 export const dynamic = "force-dynamic";
 
 export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
-  return NextResponse.json({ settings: await allSettings(), defaults: DEFAULTS });
+  const [settings, layer] = await Promise.all([allSettings(), getPlatformLayer()]);
+  return NextResponse.json({ settings, defaults: DEFAULTS, models: resolveModels(settings, layer), platformModels: layer.models });
 });
 
 /** Workspace-wide settings are the admin's to set — they change everyone's files. */
@@ -21,6 +24,9 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
     if (!keys.includes(k)) continue;
     if (k === "promptWriter" && !["none", "byteplus", "claude"].includes(String(v))) {
       return NextResponse.json({ error: "Prompt writer must be none, byteplus or claude." }, { status: 400 });
+    }
+    if ((k === "defaultVideoModel" || k === "defaultImageModel") && String(v) !== "" && !modelOfKind(String(v), k === "defaultVideoModel" ? "video" : "image")) {
+      return NextResponse.json({ error: k === "defaultVideoModel" ? "Not a video engine." : "Not a still engine." }, { status: 400 });
     }
     await setSetting(k, String(v).slice(0, 400), got.user.id);
     changed.push(k);

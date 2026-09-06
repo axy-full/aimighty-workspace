@@ -1,4 +1,5 @@
 import { CATEGORIES, type ShotSpec } from "./studio";
+import { MODELS, DEFAULT_MODEL_ID } from "./models";
 
 /**
  * The platform layer: what every new workspace inherits and may change.
@@ -80,10 +81,35 @@ export type PlatformCaps = {
 };
 export const DEFAULT_CAPS: PlatformCaps = { defaultCapCredits: null, signupCredits: null, warnPct: 80, concurrency: 4, rendersPerHour: 60, storageGb: 50 };
 
-export type PlatformLayer = { setup: ShotSpec; starter: StarterProduction; rules: PlatformRule[]; caps: PlatformCaps };
+/** The engine a composer opens on, per kind. The platform's choice; a workspace's Defaults & caps may name another. */
+export type PlatformModels = { video: string; image: string };
+const firstVisible = (kind: "video" | "image"): string => MODELS.find((m) => m.kind === kind && !m.hidden)?.id ?? DEFAULT_MODEL_ID;
+export const DEFAULT_MODELS: PlatformModels = { video: DEFAULT_MODEL_ID, image: firstVisible("image") };
+
+/** A real, visible engine of the kind — or nothing. */
+export function modelOfKind(id: unknown, kind: "video" | "image"): string | null {
+  if (typeof id !== "string" || !id) return null;
+  const m = MODELS.find((x) => x.id === id);
+  return m && m.kind === kind && !m.hidden ? m.id : null;
+}
+
+export function cleanModels(v: unknown): PlatformModels {
+  if (!isObj(v)) return { ...DEFAULT_MODELS };
+  return { video: modelOfKind(v.video, "video") ?? DEFAULT_MODELS.video, image: modelOfKind(v.image, "image") ?? DEFAULT_MODELS.image };
+}
+
+/** What a workspace's composer opens on: its own Defaults & caps when they name a real engine, else the platform's. */
+export function resolveModels(settings: Record<string, string | undefined>, layer: { models: PlatformModels }): PlatformModels {
+  return {
+    video: modelOfKind(settings.defaultVideoModel, "video") ?? layer.models.video,
+    image: modelOfKind(settings.defaultImageModel, "image") ?? layer.models.image,
+  };
+}
+
+export type PlatformLayer = { setup: ShotSpec; starter: StarterProduction; rules: PlatformRule[]; caps: PlatformCaps; models: PlatformModels };
 export type LayerKey = keyof PlatformLayer;
-export const LAYER_KEYS: LayerKey[] = ["setup", "starter", "rules", "caps"];
-export const DEFAULT_LAYER: PlatformLayer = { setup: DEFAULT_SETUP, starter: STARTER_PRODUCTION, rules: DEFAULT_RULES, caps: DEFAULT_CAPS };
+export const LAYER_KEYS: LayerKey[] = ["setup", "starter", "rules", "caps", "models"];
+export const DEFAULT_LAYER: PlatformLayer = { setup: DEFAULT_SETUP, starter: STARTER_PRODUCTION, rules: DEFAULT_RULES, caps: DEFAULT_CAPS, models: DEFAULT_MODELS };
 
 const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 const str = (v: unknown, max: number): string => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -159,7 +185,8 @@ export function mergeLayer(stored: Partial<Record<LayerKey, unknown>>): Platform
   const starter = (stored.starter !== undefined ? cleanStarter(stored.starter) : null) ?? STARTER_PRODUCTION;
   const rules = (stored.rules !== undefined ? cleanRules(stored.rules) : null) ?? DEFAULT_RULES;
   const caps = stored.caps !== undefined ? cleanCaps(stored.caps) : DEFAULT_CAPS;
-  return { setup: Object.keys(setup).length ? setup : DEFAULT_SETUP, starter, rules, caps };
+  const models = stored.models !== undefined ? cleanModels(stored.models) : DEFAULT_MODELS;
+  return { setup: Object.keys(setup).length ? setup : DEFAULT_SETUP, starter, rules, caps, models };
 }
 
 /** The starter's shots with the layer's default Setup underneath each shot's own. */

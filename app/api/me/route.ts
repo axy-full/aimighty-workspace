@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { creditState } from "@/lib/credits";
 import { requireUser, isPlatformOwner, withTenant } from "@/lib/auth";
 import { currentTenant } from "@/lib/tenant";
+import { effectiveModels } from "@/lib/defaultModels";
 
 export const dynamic = "force-dynamic";
 
@@ -18,5 +19,6 @@ export const GET = withTenant(async function GET() {
     workspace: store?.workspace ? { id: store.workspace.id, name: store.workspace.name, slug: store.workspace.slug, platformKeys: store.workspace.usesPlatformKeys, suspended: Boolean(store.workspace.suspendedAt), suspendedReason: store.workspace.suspendedReason } : null,
     workspaces: store?.workspaces ?? [],
     credits: await creditState().catch(() => null),
+    models: store?.workspace ? await effectiveModels().catch(() => null) : null,
   });
 });

@@ -24,6 +24,9 @@ export const DEFAULTS = {
   capWarnPct: "80",
   /** What happens at the cap: the producer unlocks, rendering stops, or a warning only. */
   atCap: "producer",
+  /** The engine a new composer opens on, per kind; blank inherits the platform's default. */
+  defaultVideoModel: "",
+  defaultImageModel: "",
   /**
    * Container for edits and extensions: "mp4" or "mov".
    *

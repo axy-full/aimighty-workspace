@@ -8,6 +8,8 @@ import ViewportGuard from "@/components/ViewportGuard";
 import { ProjectProvider } from "@/lib/projectContext";
 import { SessionProvider } from "@/lib/session";
 import { currentContext, userCount, isPlatformOwner } from "@/lib/auth";
+import { effectiveModels } from "@/lib/defaultModels";
+import { runInTenant } from "@/lib/tenant";
 
 /**
  * The shell, for everyone.
@@ -40,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       superAdmin: await isPlatformOwner(user),
       workspaces: ctx?.workspaces ?? [],
       credits: ctx?.workspace ? await creditStateFor(ctx.workspace).catch(() => null) : null,
+      models: ctx?.workspace ? await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null) : null,
     }}>
     <ProjectProvider>
       {/* The pipeline redesign puts the project and the nav in one 52px

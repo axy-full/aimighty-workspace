@@ -318,7 +318,7 @@ export default function Composer(p: ComposerProps) {
                     <span className="text-[12.5px] text-mute">
                       {!on
                         ? `Needs a ${engineOf(m)?.label ?? "vendor"} key — see Settings › Vendors.`
-                        : t === "generate" ? m.note : def.blurb}
+                        : t === "generate" ? (m.use ?? m.note) : def.blurb}
                     </span>
                   </span>
                   {on && t === "generate" && rowPrice(m) && <span className="text-[12.5px] text-mute">{rowPrice(m)}</span>}

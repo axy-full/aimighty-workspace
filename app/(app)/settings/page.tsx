@@ -47,7 +47,7 @@ type RefinerTest = {
 };
 type TeamMember = { id: string; email: string; name: string; role?: string; lastSeen: number | null; disabled: boolean; permanent?: boolean };
 type Team = { users: TeamMember[]; canSeeRoles?: boolean };
-type Ws = { settings: Record<string, string>; defaults: Record<string, string> };
+type Ws = { platformModels?: { video: string; image: string } | null; settings: Record<string, string>; defaults: Record<string, string> };
 type IdTerms = { terms: { configured: boolean; trainer: string; trainCostUsd: number } };
 type AudioSetup = { configured: boolean; envKey: string; terms: { sfxCredits: number; musicCreditsPerMinute: number }; account: { tier: string } | null };
 type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; monthlyUsd: number } | null };
@@ -87,7 +87,6 @@ export default function SettingsPage() {
   const { signedIn, workspace, role, owner, superAdmin, workspaces } = useSession();
   const money = useMoney();
   const prefs = usePrefs();
-  const model = getModel(prefs.modelId);
   const router = useRouter();
   const { data: me } = useApi<Me>(signedIn ? "/api/me" : null);
   const { data: usage } = useApi<Usage>(signedIn ? "/api/usage/summary" : null, 30000);
@@ -105,6 +104,7 @@ export default function SettingsPage() {
   const [modeBusy, setModeBusy] = useState(false);
   const isAdmin = me?.role === "admin";
   const setting = (k: string) => ws?.settings[k] ?? ws?.defaults[k] ?? "";
+  const model = getModel(setting("defaultVideoModel") || ws?.platformModels?.video || prefs.modelId);
 
   // The index follows the scroll.
   useEffect(() => {
@@ -152,7 +152,6 @@ export default function SettingsPage() {
     id: e.id, name: e.label, does: e.models.map((m) => m.label).join(" · ") || (e.id.toLowerCase().includes("gateway") ? "Prompt writer · Google stills" : "—"),
     on: e.configured, via: e.via, rate: rateFor(e),
   }));
-  const usable = MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate"));
 
   /* Whose key an engine runs on for this workspace: its own, the platform's
      (within the allowance), or — for the studio's own workspace — the
@@ -321,13 +320,19 @@ export default function SettingsPage() {
 
           {/* ── Defaults & caps ── */}
           <section id="defaults" className="scard">
-            <div className="scard-h"><span>Defaults &amp; caps</span><span>What a new composer opens with, and what happens when a production nears its cap. Composer defaults are per browser; the rules are the workspace&rsquo;s.</span></div>
+            <div className="scard-h"><span>Defaults &amp; caps</span><span>What a new composer opens with, and what happens when a production nears its cap. The engines and rules are the workspace&rsquo;s; resolution, duration and audio are per browser.</span></div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 max-[900px]:grid-cols-1">
-              <div className="srow"><span>Default engine</span>
-                <label className="chip-dd !py-1.5"><select value={prefs.modelId} aria-label="Default engine" onChange={(e) => {
-                  const next = getModel(e.target.value);
-                  setPrefs({ modelId: next.id, resolution: next.resolutions.includes(prefs.resolution) ? prefs.resolution : next.resolutions[next.resolutions.length - 1], duration: next.durations.includes(prefs.duration) ? prefs.duration : next.durations[0] ?? prefs.duration });
-                }}>{usable.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select><span className="hdr-caret" aria-hidden="true">▼</span></label>
+              <div className="srow"><span>Default video engine</span>
+                <label className="chip-dd !py-1.5"><select value={setting("defaultVideoModel")} disabled={!isAdmin} aria-label="Default video engine" onChange={(e) => saveSetting("defaultVideoModel", e.target.value)}>
+                  <option value="">Platform default{ws?.platformModels?.video ? ` (${getModel(ws.platformModels.video).label})` : ""}</option>
+                  {MODELS.filter((m) => m.kind === "video" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
+              </div>
+              <div className="srow"><span>Default still engine</span>
+                <label className="chip-dd !py-1.5"><select value={setting("defaultImageModel")} disabled={!isAdmin} aria-label="Default still engine" onChange={(e) => saveSetting("defaultImageModel", e.target.value)}>
+                  <option value="">Platform default{ws?.platformModels?.image ? ` (${getModel(ws.platformModels.image).label})` : ""}</option>
+                  {MODELS.filter((m) => m.kind === "image" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
               </div>
               <div className="srow"><span>Cost approval rule</span>
                 <label className="chip-dd !py-1.5"><select value={setting("approvalRule") || "anyone"} disabled={!isAdmin} aria-label="Cost approval rule" onChange={(e) => saveSetting("approvalRule", e.target.value)}>

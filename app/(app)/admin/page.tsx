@@ -15,6 +15,7 @@ import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import { CATEGORIES } from "@/lib/studio";
 import { REASON_LABELS } from "@/lib/reports";
+import { MODELS } from "@/lib/models";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -356,6 +357,7 @@ type Layer = {
   starter: { name: string; code: string; description: string; shots: { code: string; title: string; description: string; planned: number; setup: Record<string, string>; cast: string[] }[]; cast: { name: string; kind: "character" | "location" | "prop" | "style"; description: string }[] };
   rules: { id: string; text: string; scope: "all" | "video" | "image"; apply: "writer" | "prompt"; on: boolean }[];
   caps: { defaultCapCredits: number | null; signupCredits: number | null; warnPct: number; concurrency: number; rendersPerHour: number; storageGb: number };
+  models: { video: string; image: string };
 };
 type LayerView = { layer: Layer; stored: string[]; defaults: Layer; cameraBank: { kind: string; value: string; label: string; module: string }[] };
 
@@ -458,6 +460,20 @@ function PlatformLayerCard() {
           </div>
         ))}
         <div><button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ rules: [...layer.rules, { id: `rule-${Date.now().toString(36)}`, text: "", scope: "all", apply: "writer", on: true }] })}>+ Rule</button></div>
+      </div>
+
+      <div className="mt-6 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Default engines</p>{actions("models")}</div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="flex flex-col gap-1 text-[12px] text-dim">Default video engine
+            <select className="ctl !h-8 !text-[13px]" value={layer.models.video} onChange={(e) => set({ models: { ...layer.models, video: e.target.value } })}>
+              {MODELS.filter((m) => m.kind === "video" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select></label>
+          <label className="flex flex-col gap-1 text-[12px] text-dim">Default still engine
+            <select className="ctl !h-8 !text-[13px]" value={layer.models.image} onChange={(e) => set({ models: { ...layer.models, image: e.target.value } })}>
+              {MODELS.filter((m) => m.kind === "image" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select></label>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-col gap-2">
