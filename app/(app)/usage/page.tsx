@@ -125,7 +125,7 @@ export default function UsagePage() {
 
         {/* Breakdowns */}
         <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          <Breakdown title="By project" rows={data.byProject.map((p) => ({
+          <Breakdown title="By production" rows={data.byProject.map((p) => ({
             key: p.name, name: p.name, meta: `${p.n} render${p.n === 1 ? "" : "s"}`, value: p.spend,
           }))} />
           <Breakdown title="By member" rows={data.byPerson.map((p) => ({
@@ -220,7 +220,7 @@ export default function UsagePage() {
                   <span className="flex min-w-0 flex-col">
                     <span className="capitalize">{t.kind}</span>
                     <span className="mt-0.5 text-[13px] text-mute">
-                      {t.n} render{t.n === 1 ? "" : "s"} measured · median
+                      {t.n} take{t.n === 1 ? "" : "s"} measured · median
                     </span>
                     <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] tabular-nums text-mute">
                       {t.refineMs != null && <span>prompt {dur(t.refineMs)}</span>}
@@ -246,7 +246,7 @@ export default function UsagePage() {
         )}
 
         <div className="mt-12 flex flex-wrap items-center gap-2">
-          <p className="grouplabel !pb-0">Cost per render</p>
+          <p className="grouplabel !pb-0">Cost per take</p>
           <span className="ml-auto flex flex-wrap gap-1.5">
             {[["all", "All"], ...data.vendors.map((v) => [v.id, v.label] as const)].map(([k, l]) => (
               <button key={k} type="button" onClick={() => setVendorFilter(k)}
@@ -255,7 +255,7 @@ export default function UsagePage() {
           </span>
         </div>
         <div className="rows mt-3">
-          {recent.length === 0 && <div className="row text-dim">No finished renders here yet</div>}
+          {recent.length === 0 && <div className="row text-dim">No finished takes here yet</div>}
           {recent.map((r) => {
             const p = r.params as { resolution?: string; ratio?: string; duration?: number; credits?: number; steps?: number };
             const open = openRow === r.id;
@@ -516,7 +516,7 @@ function VendorCard({ v, onChanged }: { v: Vendor; onChanged: () => void }) {
             <div key={m.model} className="row !min-h-[40px] !py-2">
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-[14px]">{m.label}</span>
-                <span className="text-[12px] text-mute">{m.n} render{m.n === 1 ? "" : "s"}{m.tokens ? ` · ${compactTokens(m.tokens)}t` : ""}</span>
+                <span className="text-[12px] text-mute">{m.n} take{m.n === 1 ? "" : "s"}{m.tokens ? ` · ${compactTokens(m.tokens)}t` : ""}</span>
               </span>
               <span className="row-value tabular-nums">{usd(m.spend, 2)}</span>
             </div>
@@ -716,7 +716,7 @@ function ProductionTop() {
     <div className="flex flex-col gap-[30px]">
       <div className="page-head">
         <div>
-          <h1 className="page-h1">Production</h1>
+          <h1 className="page-h1">Usage</h1>
           <p className="page-sub">What the job cost, who spent it, and which shot is taking the most takes.</p>
         </div>
         <div className="page-acts items-center">
@@ -740,7 +740,7 @@ function ProductionTop() {
             <div className="tile">
               <span className="tile-l">STUDIO · {periodLabel}</span>
               <span className="tile-v">{usd(all.totals.spend, 2)}</span>
-              <span className="tile-s">{all.byProject.length} production{all.byProject.length === 1 ? "" : "s"} · {all.totals.generations} render{all.totals.generations === 1 ? "" : "s"} · {all.totals.people} {all.totals.people === 1 ? "person" : "people"}</span>
+              <span className="tile-s">{all.byProject.length} production{all.byProject.length === 1 ? "" : "s"} · {all.totals.generations} take{all.totals.generations === 1 ? "" : "s"} · {all.totals.people} {all.totals.people === 1 ? "person" : "people"}</span>
             </div>
             <div className="tile">
               <span className="tile-l">{p ? `${p.name.toUpperCase()} · ${p.capUsd ? `OF $${Math.round(p.capUsd)} CAP` : "NO CAP"}` : "PRODUCTION · OF CAP"}</span>
@@ -775,7 +775,7 @@ function ProductionTop() {
                   </Link>
                 ))}
               </div>
-              <span className="rail-help">Unfiled covers test renders made in All projects. File them against a shot and they move to the production.</span>
+              <span className="rail-help">Unfiled covers test takes made in All productions. File them against a shot and they move to the production.</span>
             </div>
             <div className="ucard">
               <div className="ucard-h"><span>Who spent it</span><span className="mono-s">{focusLabel} · {focus ? usd(focus.totals.spend, 2) : "—"}</span></div>
@@ -783,13 +783,13 @@ function ProductionTop() {
                 {people.length === 0 && <span className="rail-help">Nobody has rendered here in this period.</span>}
                 {people.slice().sort((a, b) => b.spend - a.spend).map((r) => (
                   <div key={r.id || r.name} className="urow is-person">
-                    <span className="flex items-center gap-2 truncate"><span className="ptable-av !ml-0 !h-[22px] !w-[22px] !text-[8.5px]">{initials(r.name)}</span>{r.name} <span className="text-dim">{r.n} render{r.n === 1 ? "" : "s"}</span></span>
+                    <span className="flex items-center gap-2 truncate"><span className="ptable-av !ml-0 !h-[22px] !w-[22px] !text-[8.5px]">{initials(r.name)}</span>{r.name} <span className="text-dim">{r.n} take{r.n === 1 ? "" : "s"}</span></span>
                     <span className="ubar"><span style={{ width: `${Math.max(1, (r.spend / maxPerson) * 100)}%` }} /></span>
                     <span className="mono-v text-right">{usd(r.spend, 2)}</span>
                   </div>
                 ))}
               </div>
-              <span className="rail-help">Anyone on the team renders; the cost is on the button before it is pressed. Change the rule in <Link href="/settings#defaults" className="text-ink">Settings</Link>.</span>
+              <span className="rail-help">Anyone on the team generates; the cost is on the button before it is pressed. Change the rule in <Link href="/settings#defaults" className="text-ink">Settings</Link>.</span>
             </div>
           </div>
 
@@ -822,7 +822,7 @@ function ProductionTop() {
                     <div className="flex flex-col gap-1.5">
                       {engines.map((m, i) => (
                         <div key={m.model} className="flex justify-between text-[12.5px]">
-                          <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-[2px]" style={{ background: shade(i) }} />{m.label} · {PROVIDER_NAMES[getModel(m.model).provider ?? ""] ?? getModel(m.model).provider ?? "—"} <span className="text-dim">{m.n} render{m.n === 1 ? "" : "s"}</span></span>
+                          <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-[2px]" style={{ background: shade(i) }} />{m.label} · {PROVIDER_NAMES[getModel(m.model).provider ?? ""] ?? getModel(m.model).provider ?? "—"} <span className="text-dim">{m.n} take{m.n === 1 ? "" : "s"}</span></span>
                           <span className="mono-v">{usd(m.spend, 2)}</span>
                         </div>
                       ))}

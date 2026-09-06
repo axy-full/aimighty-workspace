@@ -156,7 +156,7 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
           })}
           {shots.length === 0 && <div className="p-4"><span className="ak-sub !text-[12.5px]">No shots yet — break the treatment down first.</span></div>}
           <div className="ak-table-foot">
-            <span>A sent-back take returns its shot to <span className="font-medium text-ink">Draft</span> with the director&rsquo;s note attached. Type-only shots never render and never cost.</span>
+            <span>A sent-back take returns its shot to <span className="font-medium text-ink">Draft</span> with the director&rsquo;s note attached. Type-only shots never generate and never cost.</span>
             <span className="mono-v !text-[10.5px]">{shots.length} SHOTS · {mmss(runtime)} · EST. {usd(estimate, 2)} · SPENT {usd(spent, 2)}</span>
           </div>
         </div>

@@ -316,7 +316,7 @@ export default function Composer(p: ComposerProps) {
                     </span>
                     <span className="text-[12.5px] text-mute">
                       {!on
-                        ? `Needs a ${engineOf(m)?.label ?? "vendor"} key — see Settings › Engines.`
+                        ? `Needs a ${engineOf(m)?.label ?? "vendor"} key — see Settings › Vendors.`
                         : t === "generate" ? m.note : def.blurb}
                     </span>
                   </span>
@@ -415,7 +415,7 @@ export default function Composer(p: ComposerProps) {
         {!rail && (
           <button type="button" onClick={toggleSetup}
             aria-pressed={setupOpen} className={`chip-ctl ${setupOpen ? "is-on" : ""}`}
-            title="Shot filing, shot control and the cast — carried into every render">
+            title="Shot filing, shot control and the cast — carried into every take">
             <IconSliders /> Setup{setupCount > 0 ? ` · ${setupCount}` : ""}
           </button>
         )}
@@ -424,7 +424,7 @@ export default function Composer(p: ComposerProps) {
 
         {!rail && <span className="relative" ref={costRef}>
           <button type="button" onClick={() => setMenu(menu === "cost" ? null : "cost")} className="island-cost"
-            title="What this render will cost">
+            title="What this take will cost">
             <span className="font-semibold text-bone">{est ? price(est.net) : "—"}</span>
             {!isImage && estTokens != null && (
               <span className="text-mute max-[560px]:hidden"> · {compactTokens(estTokens)} tok</span>

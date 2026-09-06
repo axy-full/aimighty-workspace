@@ -25,7 +25,7 @@ export default function AppError({
         <p className="text-[20px] font-semibold tracking-[-0.02em]">This screen stopped</p>
         <p className="mt-2.5 text-[15px] leading-relaxed text-dim">
           Something on the page threw an error. Nothing you have made is affected:
-          renders already in flight carry on at the engine and land on the wall
+          renders already in flight carry on at the engine and land in Takes
           as usual, and every cost stays on the ledger.
         </p>
 

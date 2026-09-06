@@ -16,9 +16,6 @@ const ROUTES = [
   "/usage", "/settings", "/connect", "/platform",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots", "/atomik/agent",
 ];
-/** Routes that carry the app shell (header, tab bar) rather than the auth card. */
-const APP_ROUTES = ROUTES.filter((r) => !["/welcome", "/login", "/signup", "/reset"].includes(r));
-
 async function settle(page: Page) {
   await page.waitForLoadState("domcontentloaded");
   await page.waitForLoadState("networkidle").catch(() => { /* polling routes never go idle */ });

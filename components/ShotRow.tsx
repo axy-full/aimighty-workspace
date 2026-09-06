@@ -52,7 +52,7 @@ export default function ShotRow({ projectId, shotId, setShotId, chip = false }: 
     return (
       <span className="relative">
         <button type="button" className="chip-dd" disabled={!scoped || busy}
-          onClick={() => setOpen((v) => !v)} title={scoped ? "Which shot this take files against" : "Pick a project to file against a shot"}>
+          onClick={() => setOpen((v) => !v)} title={scoped ? "Which shot this take files against" : "Pick a production to file against a shot"}>
           <span className="mono" style={{ letterSpacing: ".1em" }}>Filed against</span>
           <span className="mono-v">{current ? current.code : scoped ? "—" : "NONE"}</span>
           <span className="hdr-caret">▼</span>

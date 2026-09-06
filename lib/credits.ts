@@ -62,7 +62,7 @@ export async function creditCheck(vendor: VendorKeyName, estUsd = 0): Promise<
     return {
       ok: false, status: 402,
       error: `Out of credits — ${fmtCredits(Math.max(0, st.balance))} left${need > 0 ? ` and this needs ${fmtCredits(need)}` : ""}. ` +
-             `Ask management for more, or add your own key for the vendor under Settings › Engines & keys.`,
+             `Ask management for more, or add your own key for the vendor under Settings › Vendors & keys.`,
     };
   }
   return { ok: true };

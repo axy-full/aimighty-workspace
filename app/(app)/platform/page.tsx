@@ -81,7 +81,7 @@ export default function PlatformPage() {
                 <b> delivery copy</b> is derived to fit the vendor: pixels
                 brought inside the ceiling, aspect padded rather than cropped,
                 quality reduced only as far as the byte limit demands. The copy
-                is never shown in the library, downloaded or exported. An asset
+                is never shown in All takes, downloaded or exported. An asset
                 below the vendor&rsquo;s minimum size is refused rather than
                 upscaled, because upscaling invents detail.</>
               ) : (
@@ -167,7 +167,7 @@ export default function PlatformPage() {
               written before the submit, so a failed render is visible rather
               than absent.
             </QA>
-            <QA q="Can a failed job destabilise a project?">
+            <QA q="Can a failed job destabilise a production?">
               No. Each render is an independent row; there is no shared queue
               to poison and no worker to wedge. A project that has never
               rendered and a project with a thousand renders load the same way.

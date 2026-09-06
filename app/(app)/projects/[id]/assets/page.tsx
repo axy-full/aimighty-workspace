@@ -82,23 +82,23 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
 
   if (!video) {
     return videoErr
-      ? <Trouble label="This project didn't load" detail={videoErr} onRetry={refreshAll} />
-      : <Waiting label="Reading the project" />;
+      ? <Trouble label="This production didn't load" detail={videoErr} onRetry={refreshAll} />
+      : <Waiting label="Reading the production" />;
   }
 
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <Link href="/projects" className="mt-6 inline-block text-[14px] text-blue">← Projects</Link>
+        <Link href="/projects" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
 
         <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
           <h1 className="h1">{project?.name ?? "Project"}</h1>
           <span className="text-[15px] text-dim tabular-nums">
-            {total} render{total === 1 ? "" : "s"} · {usd(spend, 2)}
+            {total} take{total === 1 ? "" : "s"} · {usd(spend, 2)}
           </span>
           <span className="ml-auto flex flex-wrap gap-2">
             <Link href={`/projects/${id}`} className="chip">Overview</Link>
-            <Link href={`/canvas/${id}`} className="chip">Canvas</Link>
+            <Link href={`/projects/${id}/canvas`} className="chip">Canvas</Link>
             <Link href="/studio" className="chip">Studio</Link>
           </span>
         </div>
@@ -108,11 +108,11 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
 
         <div className="mt-8 flex flex-col gap-10">
           <Section title="Video" items={clips} onChanged={refreshAll}
-            empty="No video in this project yet." />
+            empty="No video in this production yet." />
           <Section title="Images" items={stills} onChanged={refreshAll}
-            empty="No images in this project yet." />
+            empty="No images in this production yet." />
           <Section title="Audio" items={sounds} onChanged={refreshAll}
-            empty="No audio in this project yet." />
+            empty="No audio in this production yet." />
 
           {/* ── Characters ──────────────────────────────────────────────
               Two lists, not one merged one: the Studio shows identities and
@@ -130,7 +130,7 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
 
             {identities.length === 0 && cast.length === 0 ? (
               <div className="card">
-                <Empty compact title="Nobody cast in this project yet"
+                <Empty compact title="Nobody cast in this production yet"
                   line="Train a face or name a character in the Studio, then write @TheirName in any prompt." />
               </div>
             ) : (
@@ -166,7 +166,7 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
 
                 {cast.length > 0 && (
                   <div>
-                    <p className="grouplabel">Cast and elements</p>
+                    <p className="grouplabel">Cast</p>
                     <div className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(190px,1fr))]">
                       {cast.map((m) => (
                         <div key={m.id} className="overflow-hidden rounded-[var(--r)] bg-panel2">

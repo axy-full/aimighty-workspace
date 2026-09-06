@@ -20,10 +20,10 @@ import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
 
 const ROOMS = [
-  { eyebrow: "01 · VIDEO · IMAGES · AUDIO", name: "Generate", href: "/", line: "A prompt, a model, a duration. The cost is on the button before you press it." },
+  { eyebrow: "01 · VIDEO · IMAGES · AUDIO", name: "Generate", href: "/", line: "A prompt, an engine, a duration. The cost is on the button before you press it." },
   { eyebrow: "02 · STUDIO", name: "Studio", href: "/studio", line: "Name a face, a place or a look once. Cite it by name in every shot after." },
-  { eyebrow: "03 · PROJECT", name: "Canvas", href: "/projects", line: "The sequence on a wall, in order, next to the references it came from." },
-  { eyebrow: "04 · USAGE", name: "Production", href: "/usage", line: "What the job cost, who spent it, and which shot is taking the most takes." },
+  { eyebrow: "03 · PRODUCTIONS", name: "Productions", href: "/projects", line: "Every take under its shot, in order, next to the references it came from." },
+  { eyebrow: "04 · USAGE", name: "Usage", href: "/usage", line: "What the job cost, who spent it, and which shot is taking the most takes." },
 ];
 
 export default function WelcomeSignIn() {

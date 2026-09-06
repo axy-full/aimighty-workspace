@@ -65,14 +65,14 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   }
 
   async function remove() {
-    if (!(await confirmDeleteProject(id, project?.name ?? "this project", data?.totals?.generations ?? null))) return;
+    if (!(await confirmDeleteProject(id, project?.name ?? "this production", data?.totals?.generations ?? null))) return;
     if (selection === id) setSelection("all");
     refreshCtx();
     router.push("/projects");
   }
 
   async function setCode() {
-    const code = await appPrompt("Project code", project?.code ?? "", "NKA26");
+    const code = await appPrompt("Production code", project?.code ?? "", "NKA26");
     if (code === null) return;
     const res = await fetch(`/api/projects/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -95,7 +95,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   }
 
   usePageTitle(project?.name ?? "Project");
-  if (!data) return error ? <Trouble label="The project didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the project" />;
+  if (!data) return error ? <Trouble label="The production didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the production" />;
 
   const t = data.totals;
   const shots = shotData?.shots ?? [];
@@ -103,7 +103,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <Link href="/projects" className="mt-6 inline-block text-[14px] text-blue">← Projects</Link>
+        <Link href="/projects" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
         <Headline a={data} title={project?.name ?? "Project"} />
 
         {project?.description && (
@@ -124,10 +124,10 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
 
         <div className="mt-6 flex flex-wrap gap-2">
           <Link href="/" className="chip bg-blue text-on-ink">Open in Generate</Link>
-          <Link href={`/canvas/${id}`} className="chip">Canvas</Link>
-          <Link href="/all" className="chip">Library</Link>
+          <Link href={`/projects/${id}/canvas`} className="chip">Canvas</Link>
+          <Link href="/all" className="chip">All takes</Link>
           <Link href="/dashboard" className="chip">Production dashboard</Link>
-          <button type="button" onClick={remove} className="chip !text-lift">Delete project</button>
+          <button type="button" onClick={remove} className="chip !text-lift">Delete production</button>
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -152,7 +152,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
             <section className="card px-5 py-5">
               <p className="grouplabel">Who worked on it</p>
               <div className="mt-4">
-                <BarList empty="No renders yet."
+                <BarList empty="No takes yet."
                   rows={data.byPerson.map((p) => ({
                     key: p.id || p.name, label: p.name, value: p.spend,
                     note: `${p.n} render${p.n === 1 ? "" : "s"}`,
@@ -163,7 +163,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
             <section className="card px-5 py-5">
               <p className="grouplabel">By model</p>
               <div className="mt-4">
-                <BarList empty="No renders yet."
+                <BarList empty="No takes yet."
                   rows={data.byModel.map((m) => ({
                     key: m.model, label: m.label, value: m.spend, note: `${m.n}`,
                   }))} />
@@ -174,12 +174,12 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <section className="card px-5 py-5">
-            <p className="grouplabel">How this project was made</p>
+            <p className="grouplabel">How this production was made</p>
             <div className="mt-4"><Patterns a={data} /></div>
           </section>
 
           <section className="card px-5 py-5">
-            <p className="grouplabel">Cost of this project</p>
+            <p className="grouplabel">Cost of this production</p>
             <div className="rows mt-4">
               <div className="row"><span>Generations</span>
                 <span className="row-value tabular-nums">{t.generations}</span></div>

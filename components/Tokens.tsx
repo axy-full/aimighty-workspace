@@ -22,7 +22,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
 
   async function create(scope: "read" | "render") {
     const name = await appPrompt(
-      scope === "render" ? "New token — can render" : "New read-only token",
+      scope === "render" ? "New token — can generate" : "New read-only token",
       "", "What is it for? e.g. Claude"
     );
     if (!name?.trim()) return;
@@ -80,7 +80,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
             <span className="flex min-w-0 flex-col">
               <span className="truncate">{t.name}</span>
               <span className="text-[13px] text-mute">
-                {t.scope === "read" ? "Read-only" : "Can render"}
+                {t.scope === "read" ? "Read-only" : "Can generate"}
                 {t.capUsd != null && ` · ${usd(t.spendThisMonth, 2)} of ${usd(t.capUsd, 2)} this month`}
                 {t.capUsd == null && t.spendThisMonth > 0 && ` · ${usd(t.spendThisMonth, 2)} this month`}
                 {" · "}{t.lastUsed ? `used ${timeAgo(t.lastUsed)}` : "never used"}
@@ -92,7 +92,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
           </div>
         ))}
         {tokens.length === 0 && <div className="row text-dim">No tokens yet</div>}
-        <button className="row !text-blue" onClick={() => create("render")}>New token — can render</button>
+        <button className="row !text-blue" onClick={() => create("render")}>New token — can generate</button>
         <button className="row !text-blue" onClick={() => create("read")}>New token — read-only</button>
       </div>
     </>

@@ -26,7 +26,7 @@ export async function gatewayAuth(): Promise<Record<string, string>> {
   const key = vendorKey("gateway");
   if (key) return { Authorization: `Bearer ${key}` };
   if (!deploymentIdentityAllowed()) {
-    throw new Error("Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Engines & keys.");
+    throw new Error("Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Vendors & keys.");
   }
   let token: string | null = process.env.VERCEL_OIDC_TOKEN ?? null;
   try {
@@ -53,7 +53,7 @@ export function explainGatewayFailure(status: number, text: string): string | nu
   if (status === 401) {
     return "Vercel AI Gateway rejected this deployment's credentials." +
       (vendorKey("gateway")
-        ? " Check the gateway key under Settings › Engines & keys."
+        ? " Check the gateway key under Settings › Vendors & keys."
         : " On Vercel the OIDC identity is fresh on every request; locally, a token from `vercel env pull` expires after twelve hours.");
   }
   return null;

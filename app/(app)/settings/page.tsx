@@ -58,13 +58,13 @@ type Keys = {
 };
 
 const SECTIONS = [
-  ["workspace", "Workspace"], ["team", "Team & roles"], ["engines", "Engines & keys"], ["masters", "Storage & masters"],
+  ["workspace", "Workspace"], ["team", "Team & roles"], ["engines", "Vendors & keys"], ["masters", "Storage & masters"],
   ["atomik", "Atomik connection"], ["defaults", "Defaults & caps"], ["account", "Account"],
 ] as const;
 const CAN: Record<string, string> = {
   owner: "owns the workspace — cannot be demoted, disabled or removed · everything an admin can",
   admin: "seats · keys · model routing · Atomik connection · everything a member can",
-  member: "render · train identities · pick and approve takes · file against shots · order the canvas · download masters",
+  member: "generate · train identities · pick and approve takes · file against shots · order the canvas · download masters",
 };
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "—";
 function gb(bytes: number): string {
@@ -214,7 +214,7 @@ export default function SettingsPage() {
 
           {/* ── Engines & keys ── */}
           <section id="engines" className="scard">
-            <div className="scard-h"><span>Engines &amp; keys</span><span>{
+            <div className="scard-h"><span>Vendors &amp; keys</span><span>{
               mode === "platform"
                 ? `This workspace runs on the platform's engines and pays in credits${keys?.credits ? `: ${creditsNumber(keys.credits.balance)} left of ${creditsNumber(keys.credits.granted)} granted, one credit being ${usd(keys.credits.creditUsd, 2)} of vendor cost` : ""}${keys?.allowance ? `, within a ${usd(keys.allowance.usd, 0)} monthly cap (${usd(keys.allowance.spentUsd, 2)} used this month)` : ""}. Add your own key for any vendor and it takes over for that vendor; the rest stay on the platform.`
                 : mode === "own"
@@ -267,7 +267,7 @@ export default function SettingsPage() {
             <div className="scard-h"><span>Storage &amp; masters</span><span>Masters are stored byte-for-byte and never compressed to suit an API. What the engine returned is what you download.</span></div>
             <div className="grid grid-cols-3 gap-2.5 max-[900px]:grid-cols-1">
               <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">BUCKET</span><span className="text-[18px] font-semibold">{ledger?.storage ? gb(ledger.storage.bytes) : "—"}</span><span className="text-[12px] leading-[1.4] text-dim">private Blob · {ledger?.storage ? `${ledger.storage.counted.toLocaleString()} files${ledger.storage.unmeasured ? ` (+${ledger.storage.unmeasured} unmeasured)` : ""} · ${usd(ledger.storage.monthlyUsd, 2)} a month` : "sign in for the count"} · {setting("retentionDays") === "0" || !setting("retentionDays") ? "every take kept, nothing pruned" : `deleted takes pruned after ${setting("retentionDays")} days`}</span></div>
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">FILE NAMING</span><span className="mono-v !text-[12.5px] !leading-[1.4]">{setting("namingTemplate") || "{project}_{shot}_{version}_{w}x{h}.{ext}"}</span><span className="text-[12px] leading-[1.4] text-dim">Filing against a shot is what gives a render its number and its name.</span></div>
+              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">FILE NAMING</span><span className="mono-v !text-[12.5px] !leading-[1.4]">{setting("namingTemplate") || "{project}_{shot}_{version}_{w}x{h}.{ext}"}</span><span className="text-[12px] leading-[1.4] text-dim">Filing against a shot is what gives a take its number and its name.</span></div>
               <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">DELIVERY</span><span className="text-[18px] font-semibold">Per shot</span><span className="text-[12px] leading-[1.4] text-dim">Approved masters download one shot at a time from the Canvas. Everyone on the team can download; a derived copy travels only when an API needs one.</span></div>
             </div>
             {signedIn && <WorkspaceSettings isAdmin={isAdmin} />}
@@ -283,7 +283,7 @@ export default function SettingsPage() {
               <span className="ak-state !text-[10.5px] is-approved"><span className="dot !h-[7px] !w-[7px] dot-approved" />BUILT IN · ONE DATABASE</span>
             </div>
             <div className="grid grid-cols-2 gap-2.5 max-[900px]:grid-cols-1">
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">ARRIVES FROM ATOMIK →</span><span className="text-[12.5px] leading-[1.5] text-lead">Project and budget cap · shot list in order with planned durations · @cast tags with descriptions and stills · references pinned per shot · setup defaults (look, lens, lighting, mood).</span></div>
+              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">ARRIVES FROM ATOMIK →</span><span className="text-[12.5px] leading-[1.5] text-lead">Production and budget cap · shot list in order with planned durations · @cast tags with descriptions and stills · references pinned per shot · setup defaults (look, lens, lighting, mood).</span></div>
               <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">← GOES BACK TO ATOMIK</span><span className="text-[12.5px] leading-[1.5] text-lead">Per shot: state (draft · picked · approved) · take count · cost to date · master link once approved. Nothing else leaves; prompts and takes stay here.</span></div>
             </div>
             <div className="flex items-center justify-between gap-4 text-[12px] text-dim">
@@ -296,15 +296,15 @@ export default function SettingsPage() {
           <section id="defaults" className="scard">
             <div className="scard-h"><span>Defaults &amp; caps</span><span>What a new composer opens with, and what happens when a production nears its cap. Composer defaults are per browser; the rules are the workspace&rsquo;s.</span></div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 max-[900px]:grid-cols-1">
-              <div className="srow"><span>Default model</span>
-                <label className="chip-dd !py-1.5"><select value={prefs.modelId} aria-label="Default model" onChange={(e) => {
+              <div className="srow"><span>Default engine</span>
+                <label className="chip-dd !py-1.5"><select value={prefs.modelId} aria-label="Default engine" onChange={(e) => {
                   const next = getModel(e.target.value);
                   setPrefs({ modelId: next.id, resolution: next.resolutions.includes(prefs.resolution) ? prefs.resolution : next.resolutions[next.resolutions.length - 1], duration: next.durations.includes(prefs.duration) ? prefs.duration : next.durations[0] ?? prefs.duration });
                 }}>{usable.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select><span className="hdr-caret" aria-hidden="true">▼</span></label>
               </div>
               <div className="srow"><span>Cost approval rule</span>
                 <label className="chip-dd !py-1.5"><select value={setting("approvalRule") || "anyone"} disabled={!isAdmin} aria-label="Cost approval rule" onChange={(e) => saveSetting("approvalRule", e.target.value)}>
-                  <option value="anyone">Anyone renders</option><option value="cap">Cap per shot</option><option value="producer">Producer approves</option>
+                  <option value="anyone">Anyone generates</option><option value="cap">Cap per shot</option><option value="producer">Producer approves</option>
                 </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
               </div>
               <div className="srow"><span>Duration · resolution · ratio</span>
@@ -319,7 +319,7 @@ export default function SettingsPage() {
                   {[50, 70, 80, 90, 100].map((p) => <option key={p} value={String(p)}>{p}% OF CAP</option>)}
                 </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
               </div>
-              <div className="srow"><span>Seedance audio on new renders</span>
+              <div className="srow"><span>Seedance audio on new takes</span>
                 <button type="button" className={`tgl !h-4 !w-[30px] ${prefs.audio ? "is-on" : ""}`} role="switch" aria-checked={prefs.audio} aria-label="Seedance audio on new renders" onClick={() => setPrefs({ audio: !prefs.audio })} />
               </div>
               <div className="srow"><span>At the cap</span>
@@ -328,7 +328,7 @@ export default function SettingsPage() {
                 </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
               </div>
             </div>
-            <span className="rail-help">A production&rsquo;s cap is set on its row in Projects. The rules are recorded here now and applied at the cost check when a production has a cap.</span>
+            <span className="rail-help">A production&rsquo;s cap is set on its row in Productions. The rules are recorded here now and applied at the cost check when a production has a cap.</span>
           </section>
 
           {/* ── Account ── */}

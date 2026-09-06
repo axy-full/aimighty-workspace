@@ -67,7 +67,7 @@ export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0): Promise
     return {
       ok: false, status: 429,
       error: `This workspace has used $${spent.toFixed(2)} of its $${cap.toFixed(2)} monthly cap on the platform's engines. ` +
-             `Add your own key for the vendor under Settings › Engines & keys, or ask management to raise it.`,
+             `Add your own key for the vendor under Settings › Vendors & keys, or ask management to raise it.`,
     };
   }
   return { ok: true };

@@ -82,7 +82,7 @@ export default function TeamPage() {
     const ok = await appConfirm(
       `Delete ${u.name}?`,
       "They lose access immediately: sessions and API tokens are revoked and they leave the team. " +
-      "Their renders and spend stay on the ledger under their name. This can't be undone.",
+      "Their takes and spend stay on the ledger under their name. This can't be undone.",
       { confirmLabel: "Delete", danger: true },
     );
     if (!ok) return;
@@ -294,7 +294,7 @@ export default function TeamPage() {
                 </span>
                 <span className="truncate text-[12.5px] text-mute">{u.email}</span>
                 <span className="text-[12.5px] tabular-nums text-mute">
-                  {u.clips} render{u.clips === 1 ? "" : "s"} · {usd(u.spend, 2)} ·{" "}
+                  {u.clips} take{u.clips === 1 ? "" : "s"} · {usd(u.spend, 2)} ·{" "}
                   {u.lastSeen ? `seen ${timeAgo(u.lastSeen)}` : "never signed in"}
                 </span>
                 <span className="mt-1.5 flex flex-wrap items-center gap-1.5">

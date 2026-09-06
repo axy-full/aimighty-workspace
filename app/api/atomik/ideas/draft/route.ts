@@ -56,7 +56,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const toneIn = String(body.tone ?? "").trim().slice(0, 300);
   if (!brief) return NextResponse.json({ error: "Write a few words first." }, { status: 400 });
   if (!gatewayReachable()) {
-    return NextResponse.json({ error: "Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Engines & keys." }, { status: 503 });
+    return NextResponse.json({ error: "Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Vendors & keys." }, { status: 503 });
   }
 
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto");

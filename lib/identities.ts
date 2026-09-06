@@ -234,7 +234,7 @@ export async function startTraining(id: string): Promise<Identity> {
   const identity = await getIdentity(id);
   if (!identity) throw new Error("No such identity.");
   if (!falConfigured()) {
-    throw new Error("Identity training isn't connected for this workspace — add the fal.ai key under Settings › Engines & keys.");
+    throw new Error("Identity training isn't connected for this workspace — add the fal.ai key under Settings › Vendors & keys.");
   }
   if (identity.status === "training") throw new Error("It's already training.");
   if (identity.photos.length < MIN_PHOTOS) {

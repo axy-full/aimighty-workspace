@@ -33,7 +33,7 @@ const MAKE = [
   { href: "/audio", label: "AUDIO" },
 ];
 const MANAGE = [
-  { href: "/projects", label: "PROJECTS" },
+  { href: "/projects", label: "PRODUCTIONS" },
   { href: "/studio", label: "STUDIO" },
   { href: "/usage", label: "USAGE" },
   { href: "/settings", label: "SETTINGS" },
@@ -161,7 +161,7 @@ function ProjectSwitcher({ projects, current, onPick, disabled }: {
     <div ref={wrap} className="relative">
       <button type="button" className="hdr-switch" disabled={disabled}
         onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open}>
-        <span>{current ? current.name : "All projects"}</span>
+        <span>{current ? current.name : "All productions"}</span>
         {current?.kind && <span className="hdr-switch-kind">{current.kind}</span>}
         <span className="hdr-caret" aria-hidden="true">▼</span>
       </button>
@@ -169,7 +169,7 @@ function ProjectSwitcher({ projects, current, onPick, disabled }: {
         <div role="menu" className="menu-pop hdr-switch-menu">
           <button type="button" role="menuitemradio" aria-checked={!current}
             className={`menu-item ${!current ? "is-on" : ""}`}
-            onClick={() => { setOpen(false); onPick("all"); }}>All projects</button>
+            onClick={() => { setOpen(false); onPick("all"); }}>All productions</button>
           {projects.map((p) => (
             <button key={p.id} type="button" role="menuitemradio" aria-checked={current?.id === p.id}
               className={`menu-item ${current?.id === p.id ? "is-on" : ""}`}

@@ -54,7 +54,7 @@ function defaultModelFor(kind: "video" | "image"): string {
 }
 
 export default function Workspace({ kind = "video" }: { kind?: "video" | "image" }) {
-  usePageTitle(kind === "image" ? "Images" : "Video");
+  usePageTitle(kind === "image" ? "Generate · Images" : "Generate · Video");
   const { selection: bin, current, refreshProjects } = useProject();
   const { signedIn } = useSession();
   const prefs = usePrefs();
@@ -377,7 +377,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
 
   async function useGen(gen: Gen) {
     if (prompt.trim() &&
-        !(await appConfirm("Replace the composer?", "This render's prompt will replace what you've typed.", { confirmLabel: "Replace" }))) return;
+        !(await appConfirm("Replace the composer?", "This take's prompt will replace what you've typed.", { confirmLabel: "Replace" }))) return;
     // Hand back what was typed — cast names, not the @ImageN they became.
     const typed = (gen.params as { rawPrompt?: string }).rawPrompt;
     setPrompt(typed || gen.prompt);
@@ -434,7 +434,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const shotCodeOf = (id: string) => shotList?.shots.find((x) => x.id === id)?.code ?? null;
   const nextVersionOf = (id: string) => (shotList?.shots.find((x) => x.id === id)?.takes ?? 0) + 1;
 
-  const scopeName = bin === "all" ? "All projects" : bin === "unfiled" ? "Unfiled" : current?.name ?? "";
+  const scopeName = bin === "all" ? "All productions" : bin === "unfiled" ? "Unfiled" : current?.name ?? "";
   /* What the take will be called once it lands: the shot code and the next
      version, or "unfiled" when it files against nothing. Read off the shots
      list the rail already fetches, so it costs no extra request. */
@@ -477,7 +477,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         </button>
         <button type="button" className="dock-go" onClick={render}
           disabled={busy || !prompt.trim() || !signedIn || Boolean(refProblem || sourceIssue)}>
-          <span>{busy ? "…" : isImage ? "Generate" : "Render"}</span>
+          <span>{busy ? "…" : "Generate"}</span>
           <span className="dock-cost">{est ? price(est.net * (isImage ? count : 1)) : "—"}</span>
         </button>
       </div>
@@ -500,7 +500,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             refs={refs} setRefs={setRefs} picker={picker} cite={cite}
             taskOn={taskOn} cancelTask={() => setTaskOn(null)}
             problem={signedIn ? (refProblem ?? sourceIssue ?? err)
-              : "Sign in to render. Everything else here is yours to look at."}
+              : "Sign in to generate. Everything else here is yours to look at."}
             blocked={!signedIn || Boolean(refProblem || sourceIssue)}
             notice={!signedIn}
             est={est} estTokens={estTokens} dims={dims}
@@ -553,7 +553,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           <button type="button" onClick={render}
             disabled={busy || !prompt.trim() || !signedIn || Boolean(refProblem || sourceIssue)}
             className="btn-primary !h-[46px] !rounded-[8px] !px-4 !text-[14px]" title="Render  ⌘↵">
-            <span>{busy ? "Rendering…" : isImage ? (count > 1 ? `Generate ${count} stills` : "Generate still") : "Render"}</span>
+            <span>{busy ? "Generating…" : isImage ? (count > 1 ? `Generate ${count} stills` : "Generate still") : "Generate"}</span>
             <span className="btn-primary-cost">
               {est
                 ? isImage && count > 1 ? `${price(est.net * count)} · ${count} × ${price(est.net)}` : price(est.net)
@@ -566,7 +566,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         </div>
       </aside>
 
-      <Boundary what="This render">
+      <Boundary what="This take">
         {pickingSource && taskOn && (
         <SourcePicker
           task={taskOn.id}
