@@ -246,6 +246,15 @@ export async function requireRender(): Promise<
 > {
   const got = await requireUser();
   if (got.response) return got;
+  const ws = currentTenant()?.workspace;
+  if (ws?.suspendedAt) {
+    return {
+      response: Response.json(
+        { error: `This workspace is suspended${ws.suspendedReason ? ` — ${ws.suspendedReason}` : ""}. Rendering is paused; contact the platform.` },
+        { status: 423 }
+      ),
+    };
+  }
   if (got.token && got.token.scope !== "render") {
     return {
       response: Response.json(

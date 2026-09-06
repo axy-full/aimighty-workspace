@@ -13,7 +13,7 @@ import { test, expect, type Page } from "@playwright/test";
 const ROUTES = [
   "/welcome", "/login", "/signup", "/reset",
   "/", "/images", "/audio", "/projects", "/all", "/studio", "/studio/shot",
-  "/usage", "/settings", "/connect", "/platform", "/statements/2026-09",
+  "/usage", "/settings", "/connect", "/platform", "/statements/2026-09", "/admin",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots", "/atomik/agent",
 ];
 async function settle(page: Page) {

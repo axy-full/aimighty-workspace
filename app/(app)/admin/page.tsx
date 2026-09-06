@@ -11,7 +11,7 @@ import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo, usd } from "@/lib/format";
-import { appAlert, appConfirm } from "@/components/dialog";
+import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
 
 type Admin = {
@@ -20,7 +20,13 @@ type Admin = {
   requests: { id: string; name: string; email: string; note: string; mailed: boolean; createdAt: number }[];
   platformKeysByDefault: boolean; defaultAllowanceUsd: number | null; gatewayMint: boolean;
   creditUsd: number; signupCredits: number;
-  workspaces: { id: string; slug: string; name: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean; credits: { granted: number; used: number; balance: number } | null; createdAt: number; owner: { email: string; name: string } | null; members: number }[];
+  workspaces: Ws[];
+};
+type Ws = {
+  id: string; slug: string; name: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean;
+  credits: { granted: number; used: number; balance: number } | null; createdAt: number; owner: { email: string; name: string } | null; members: number;
+  spend30: { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number; marginUsd: number } | null;
+  suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
 };
 
 export default function AdminPage() {
@@ -112,17 +118,19 @@ export default function AdminPage() {
 
             <TopupsCard onChanged={refresh} />
 
+            <EnginesCard />
+
             <section className="scard">
               <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with ${data.signupCredits} credits (one credit is ${usd(data.creditUsd, 2)} of vendor cost) — or on its own keys once its owner switches. Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a Vercel AI Gateway key of its own."}</span></div>
               <div className="flex flex-col">
-                <div className="steam is-head !grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_100px_120px_120px]"><span>WORKSPACE</span><span>OWNER</span><span>MEMBERS</span><span>KEYS</span><span className="text-right">CREATED</span></div>
+                <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px]"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
                 {data.workspaces.map((w) => (
-                  <div key={w.id} className="steam !grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_100px_120px_120px]">
-                    <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}</span><span className="text-[11.5px] text-dim">{w.slug}{w.legacy ? " · the studio's own" : ""}</span></span>
+                  <div key={w.id} className={`steam !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px] ${w.suspended ? "opacity-70" : ""}`}>
+                    <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}{w.flagged ? <span className="ml-2 text-[11px] text-lift" title={w.flagNote ?? ""}>FLAGGED</span> : null}</span><span className="text-[11.5px] text-dim">{w.slug}{w.legacy ? " · the studio's own" : ""} · {w.members} member{w.members === 1 ? "" : "s"} · {timeAgo(w.createdAt)}</span></span>
                     <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{w.owner?.email ?? ""}</span></span>
-                    <span className="mono-v">{w.members}</span>
+                    <SpendCell s={w.spend30} />
                     <CreditsCell w={w} onChanged={refresh} />
-                    <span className="mono-s text-right">{timeAgo(w.createdAt).toUpperCase()}</span>
+                    <StateCell w={w} onChanged={refresh} />
                   </div>
                 ))}
               </div>
@@ -234,6 +242,95 @@ function TopupsCard({ onChanged }: { onChanged: () => void }) {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+/** Thirty days of a workspace on the platform's money: what the engines charged, what was billed, the margin between. */
+function SpendCell({ s }: { s: Ws["spend30"] }) {
+  if (!s || !s.jobs) return <span className="mono-s">—</span>;
+  const m = s.marginUsd;
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="mono-v">{usd(s.engineCostUsd, 2)} · {Math.round(s.billedCredits).toLocaleString()} CR</span>
+      <span className={`text-[11.5px] ${m < 0 ? "text-lift" : "text-dim"}`}>margin {m < 0 ? "−" : "+"}{usd(Math.abs(m), 2)} · {s.jobs} job{s.jobs === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}{s.running ? ` · ${s.running} running` : ""}</span>
+    </span>
+  );
+}
+
+/** Active, flagged for review, or suspended — and the two levers. */
+function StateCell({ w, onChanged }: { w: Ws; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function patch(body: Record<string, unknown>) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/workspaces/${encodeURIComponent(w.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      onChanged();
+    } catch (e) { await appAlert("Not changed", (e as Error).message); }
+    finally { setBusy(false); }
+  }
+  async function suspend() {
+    const reason = await appPrompt("Suspend this workspace? Say why — they will read it.", w.suspendedReason ?? "", "Content policy: under review");
+    if (reason === null) return;
+    await patch({ suspended: true, reason });
+  }
+  async function flag() {
+    const note = await appPrompt("Flag this workspace for review. A note for the desk; they do not see it.", w.flagNote ?? "", "Prompts refused twice today");
+    if (note === null) return;
+    await patch({ flagged: true, note });
+  }
+  if (w.legacy) return <span className="mono-s text-right">THE PLATFORM</span>;
+  return (
+    <span className="flex flex-col items-end gap-1">
+      <span className={`mono-s ${w.suspended ? "text-lift" : ""}`} title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>{w.suspended ? "SUSPENDED" : w.flagged ? "FLAGGED" : "ACTIVE"}</span>
+      <span className="flex gap-1.5">
+        {w.suspended
+          ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ suspended: false })}>Resume</button>
+          : <button type="button" className="chip !py-0.5 !text-[11.5px] !text-lift" disabled={busy} onClick={suspend}>Suspend</button>}
+        {w.flagged
+          ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
+          : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
+      </span>
+    </span>
+  );
+}
+
+type Health = { engine: string; model: string; jobs: number; failed: number; running: number; failRate: number; avgMs: number | null; maxMs: number | null; engineCostUsd: number };
+
+/** Every engine across every workspace: what ran, what failed, how long it took. */
+function EnginesCard() {
+  const { data } = useApi<{ day: Health[]; week: Health[] }>("/api/admin/engines", 60_000);
+  if (!data) return null;
+  const byKey = new Map(data.day.map((h) => [`${h.engine}/${h.model}`, h]));
+  const rows = data.week.map((w) => ({ w, d: byKey.get(`${w.engine}/${w.model}`) ?? null }));
+  const pct = (h: Health | null) => (h && h.jobs ? `${Math.round(h.failRate * 100)}%` : "—");
+  const wait = (h: Health | null) => (h?.avgMs != null ? `${Math.round(h.avgMs / 1000)}s` : "—");
+  return (
+    <section className="scard">
+      <div className="scard-h"><span>Engines</span><span>Across every workspace, from the meter: jobs, failure rate and the average wait for a finished job, over a day and a week.</span></div>
+      {rows.length === 0 ? <span className="rail-help">Nothing has run in the last week.</span> : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-[13px]">
+            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">Engine</th><th className="pb-2 font-medium">Model</th><th className="pb-2 text-right font-medium">24h jobs</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">7d jobs</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">Avg wait</th><th className="pb-2 text-right font-medium">7d cost</th></tr></thead>
+            <tbody>
+              {rows.map(({ w, d }) => (
+                <tr key={`${w.engine}/${w.model}`} className="border-t border-hair">
+                  <td className="py-2 pr-3">{w.engine}</td>
+                  <td className="py-2 pr-3 text-dim">{w.model}</td>
+                  <td className="py-2 text-right tabular-nums">{d?.jobs ?? 0}</td>
+                  <td className={`py-2 text-right tabular-nums ${d && d.failRate > 0.2 ? "text-lift" : "text-dim"}`}>{pct(d)}</td>
+                  <td className="py-2 text-right tabular-nums">{w.jobs}</td>
+                  <td className={`py-2 text-right tabular-nums ${w.failRate > 0.2 ? "text-lift" : "text-dim"}`}>{pct(w)}</td>
+                  <td className="py-2 text-right tabular-nums text-dim">{wait(w)}</td>
+                  <td className="py-2 text-right tabular-nums text-dim">{usd(w.engineCostUsd, 2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }

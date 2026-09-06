@@ -127,3 +127,55 @@ export async function meterSummary(workspaceId: string, sinceMs = 0): Promise<Me
     byEngine,
   };
 }
+
+/** The platform's margin on what it billed: credits at the rate, less what the engines charged. */
+export const marginUsd = (billedCredits: number, engineCostUsd: number, perCredit: number): number => billedCredits * perCredit - engineCostUsd;
+
+export type WorkspaceMeter = { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number };
+
+/** Since a moment, per workspace: the platform's own spend and what it billed for it. */
+export async function meterByWorkspace(sinceMs: number): Promise<Map<string, WorkspaceMeter>> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT workspace_id, COUNT(*) AS jobs, SUM(status = 'failed') AS failed, SUM(status = 'running') AS running,
+                 COALESCE(SUM(CASE WHEN paid_by_platform = 1 THEN COALESCE(engine_cost_usd, 0) ELSE 0 END), 0) AS cost,
+                 COALESCE(SUM(CASE WHEN paid_by_platform = 1 THEN COALESCE(billed_credits, 0) ELSE 0 END), 0) AS billed
+          FROM meter_events WHERE created_at >= ? GROUP BY workspace_id`,
+    args: [sinceMs],
+  });
+  const out = new Map<string, WorkspaceMeter>();
+  for (const r of rs.rows as unknown as Record<string, unknown>[]) {
+    out.set(String(r.workspace_id), {
+      jobs: Number(r.jobs ?? 0), failed: Number(r.failed ?? 0), running: Number(r.running ?? 0),
+      engineCostUsd: Number(r.cost ?? 0), billedCredits: Number(r.billed ?? 0),
+    });
+  }
+  return out;
+}
+
+export type EngineHealthRow = {
+  engine: string; model: string; jobs: number; failed: number; running: number;
+  failRate: number; avgMs: number | null; maxMs: number | null; engineCostUsd: number;
+};
+
+/** Since a moment, per engine and model, across every workspace: what ran, what failed, how long it took. */
+export async function engineHealth(sinceMs: number): Promise<EngineHealthRow[]> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT engine, model, COUNT(*) AS jobs, SUM(status = 'failed') AS failed, SUM(status = 'running') AS running,
+                 AVG(CASE WHEN status = 'succeeded' THEN duration_ms END) AS avg_ms,
+                 MAX(CASE WHEN status = 'succeeded' THEN duration_ms END) AS max_ms,
+                 COALESCE(SUM(COALESCE(engine_cost_usd, 0)), 0) AS cost
+          FROM meter_events WHERE created_at >= ? GROUP BY engine, model ORDER BY jobs DESC`,
+    args: [sinceMs],
+  });
+  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => {
+    const jobs = Number(r.jobs ?? 0); const failed = Number(r.failed ?? 0);
+    return {
+      engine: String(r.engine), model: String(r.model), jobs, failed, running: Number(r.running ?? 0),
+      failRate: jobs ? failed / jobs : 0,
+      avgMs: r.avg_ms == null ? null : Number(r.avg_ms), maxMs: r.max_ms == null ? null : Number(r.max_ms),
+      engineCostUsd: Number(r.cost ?? 0),
+    };
+  });
+}

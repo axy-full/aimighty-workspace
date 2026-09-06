@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import AppHeader from "./AppHeader";
 import AtomikHeader from "./AtomikHeader";
 import TabBar, { MakeTabs } from "./TabBar";
+import SuspendedBar from "./SuspendedBar";
 
 /**
  * One shell, two grounds.
@@ -24,6 +25,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className={`shell ${atomik ? "theme-light" : ""}`}>
       {atomik ? <AtomikHeader /> : <AppHeader />}
+      <SuspendedBar />
       {!atomik && <MakeTabs />}
       <div className="shell-body">{children}</div>
       <TabBar />

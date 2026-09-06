@@ -2726,3 +2726,6 @@ html, body { overflow-x: clip; }
   .st-table { min-width: 0; font-size: 11.5px; }
   .shell, .app-work { display: block !important; height: auto !important; overflow: visible !important; }
 }
+
+/* ── A suspended workspace ────────────────────────────────────────────── */
+.suspended-bar { padding: 8px 16px; background: color-mix(in srgb, var(--color-lift) 14%, var(--color-panel)); color: var(--color-ink); font-size: 13px; line-height: 1.4; text-align: center; }
