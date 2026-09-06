@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
-import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
+import { getModel, DEFAULT_MODEL_ID, estimateCostUsd, estimateImageCostUsd } from "@/lib/models";
 import { enqueueRender } from "@/lib/inngest";
 import { runInline } from "@/lib/renderWork";
 import {
@@ -21,6 +21,7 @@ import { submitFalVideo, falEndpointFor } from "@/lib/falVideo";
 import {
   detectMove, hasCameraModule, detectSpec, inferMove, sceneLine, craftModules,
 } from "@/lib/studio";
+import { meter } from "@/lib/meter";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -422,6 +423,11 @@ export const POST = withTenant(async function POST(req: Request) {
         error: `${model.label} accepts at most ${model.maxReferenceImages} reference images including cast stills (${stillRefs.length} attached).`,
       }, { status: 400 });
     }
+    /* The price, on the server: the wall checks the workspace can pay it,
+       and the meter opens the job with it as the estimate. */
+    const estStillUsd = estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0;
+    const wallStill = await allowanceCheck(vendorKeyNameFor(model.provider), estStillUsd, modelId);
+    if (!wallStill.ok) return NextResponse.json({ error: wallStill.error }, { status: wallStill.status });
     const genId = id("gen");
     const ts = now();
     const stillParams = {
@@ -451,6 +457,14 @@ export const POST = withTenant(async function POST(req: Request) {
              billedTo(model.provider)],
     });
     invalidate(PROJECTS_KEY);
+    try {
+      await meter({ id: genId, kind: "image", engine: billedTo(model.provider), model: modelId, status: "running",
+                    engineCostUsd: estStillUsd, projectId: stillProject, shotId: stillShot, createdBy: got.user.id });
+    } catch (e) {
+      await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] });
+      invalidate(PROJECTS_KEY);
+      return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+    }
 
     /* The render itself now belongs to the worker: the row is written, the
        event is sent, and Inngest drives the vendor call outside this request
@@ -633,6 +647,13 @@ export const POST = withTenant(async function POST(req: Request) {
     version = await nextVersion(shotId);
   }
 
+  const estUsd = estimateCostUsd(
+    modelId, params.resolution, params.ratio, params.duration, inputSeconds, references.some((r) => r.kind === "video"),
+    { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
+  )?.net ?? 0;
+  const wall = await allowanceCheck(vendorKeyNameFor(model.provider), estUsd, modelId);
+  if (!wall.ok) return NextResponse.json({ error: wall.error }, { status: wall.status });
+
   const genId = id("gen");
   const ts = now();
   const hasVideoInput = references.some((r) => r.kind === "video");
@@ -681,6 +702,14 @@ export const POST = withTenant(async function POST(req: Request) {
   });
 
   invalidate(PROJECTS_KEY);
+  try {
+    await meter({ id: genId, kind: "video", engine: billedTo(model.provider ?? "byteplus"), model: modelId, status: "running",
+                  engineCostUsd: estUsd, projectId, shotId, createdBy: got.user.id });
+  } catch (e) {
+    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] });
+    invalidate(PROJECTS_KEY);
+    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+  }
 
   /* Submitting is the one call that can fail for reasons that aren't ours.
    * A timeout or a 429 is weather and gets tried again with backoff; a

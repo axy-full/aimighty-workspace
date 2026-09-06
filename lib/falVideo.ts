@@ -24,6 +24,8 @@ import { db, now } from "./db";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import type { Reference, VideoParams } from "./ark";
 import type { Generation } from "./jobs";
+import { meter } from "./meter";
+import { getProvider } from "./providers";
 
 /** A render still "running" past this has been abandoned by the vendor. */
 const CEILING_MS = 60 * 60_000;
@@ -153,6 +155,9 @@ async function fail(gen: Generation, message: string): Promise<Generation> {
     args: [message.slice(0, 600), Math.max(0, ts - gen.createdAt), ts, gen.id],
   }).catch(() => {});
   invalidate(PROJECTS_KEY);
+  await meter({ id: gen.id, kind: "video", engine: "fal", model: gen.model, status: "failed",
+                engineCostUsd: getProvider("fal").billsFailures ? null : 0, durationMs: Math.max(0, ts - gen.createdAt),
+                projectId: gen.projectId, shotId: gen.shotId }, { critical: false }).catch(() => {});
   return { ...gen, status: "failed", error: message, updatedAt: ts };
 }
 
@@ -215,5 +220,8 @@ export async function syncFalVideo(gen: Generation): Promise<Generation> {
     args: [url, stored.url, cost, Math.max(0, ts - gen.createdAt), ts - storeStart, stored.bytes, ts, gen.id],
   });
   invalidate(PROJECTS_KEY);
+  await meter({ id: gen.id, kind: "video", engine: "fal", model: gen.model, status: "succeeded",
+                engineCostUsd: cost != null ? cost + (gen.refineCostUsd ?? 0) : null, durationMs: Math.max(0, ts - gen.createdAt),
+                projectId: gen.projectId, shotId: gen.shotId }, { critical: false });
   return { ...gen, status: "succeeded", sourceUrl: url, storedUrl: stored.url, costUsd: cost ?? gen.costUsd, error: null, updatedAt: ts };
 }

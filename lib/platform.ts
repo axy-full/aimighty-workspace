@@ -78,6 +78,24 @@ const SCHEMA = [
      created_at    INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS credit_grants_ws ON credit_grants(workspace_id)`,
+  `CREATE TABLE IF NOT EXISTS meter_events (
+     id               TEXT PRIMARY KEY,
+     workspace_id     TEXT NOT NULL,
+     project_id       TEXT,
+     shot_id          TEXT,
+     kind             TEXT NOT NULL,
+     engine           TEXT NOT NULL,
+     model            TEXT NOT NULL,
+     status           TEXT NOT NULL,
+     engine_cost_usd  REAL,
+     billed_credits   REAL,
+     paid_by_platform INTEGER NOT NULL DEFAULT 0,
+     duration_ms      INTEGER,
+     created_by       TEXT,
+     created_at       INTEGER NOT NULL,
+     updated_at       INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS meter_events_ws ON meter_events(workspace_id, created_at)`,
   `CREATE TABLE IF NOT EXISTS memberships (
      workspace_id TEXT NOT NULL,
      account_id   TEXT NOT NULL,

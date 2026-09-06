@@ -2,9 +2,10 @@ import { NextResponse, after } from "next/server";
 import { allowanceCheck } from "@/lib/allowance";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { requireRender, withTenant } from "@/lib/auth";
-import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS } from "@/lib/identities";
+import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS, RENDER_USD_PER_MP } from "@/lib/identities";
 import { falConfigured } from "@/lib/fal";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
+import { meter } from "@/lib/meter";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -59,6 +60,18 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
     });
   }
   invalidate(PROJECTS_KEY);
+  try {
+    for (const gid of ids) {
+      await meter({ id: gid, kind: "image", engine: "fal", model: RENDERER, status: "running",
+                    engineCostUsd: RENDER_USD_PER_MP, projectId, createdBy: got.user.id });
+    }
+  } catch (e) {
+    for (const gid of ids) {
+      await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), gid] }).catch(() => {});
+    }
+    invalidate(PROJECTS_KEY);
+    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+  }
 
   after(async () => {
     // Two at a time: fal queues the rest anyway, and the wall fills in as

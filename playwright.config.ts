@@ -34,9 +34,10 @@ export default defineConfig({
   outputDir: "test-results",
   use: { baseURL: base, trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [
-    { name: "phone-360x640", use: phone(360, 640) },
-    { name: "phone-390x844", use: phone(390, 844) },
-    { name: "phone-844x390", use: phone(844, 390) },
+    { name: "unit", testMatch: /tests\/unit\/.*\.spec\.ts$/ },
+    { name: "phone-360x640", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(360, 640) },
+    { name: "phone-390x844", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(390, 844) },
+    { name: "phone-844x390", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(844, 390) },
   ],
   webServer: process.env.PW_BASE_URL ? undefined : {
     command: "npm run dev -- -p 4551",

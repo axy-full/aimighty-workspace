@@ -1,4 +1,5 @@
 import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
+import { engineMock, mockCompletion } from "./mock";
 /**
  * Vercel AI Gateway — the one door this deployment can always open.
  *
@@ -13,6 +14,7 @@ export const GATEWAY_BASE = () =>
 export const GATEWAY_URL = () => `${GATEWAY_BASE()}/chat/completions`;
 
 export function gatewayReachable(): boolean {
+  if (engineMock()) return true;
   if (vendorKey("gateway")) return true;
   return deploymentIdentityAllowed() && Boolean(process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
 }
@@ -23,6 +25,7 @@ export function gatewayReachable(): boolean {
  * (and, in local development, from the token `vercel env pull` writes).
  */
 export async function gatewayAuth(): Promise<Record<string, string>> {
+  if (engineMock()) return {};
   const key = vendorKey("gateway");
   if (key) return { Authorization: `Bearer ${key}` };
   if (!deploymentIdentityAllowed()) {
@@ -83,4 +86,25 @@ export async function gatewayCredits(): Promise<{ balanceUsd: number; usedUsd: n
     console.warn(`gateway credits: ${(e as Error).message}`);
     return null;
   }
+}
+
+export type GatewayReply = { ok: boolean; status: number; text: string };
+
+/**
+ * One POST to the gateway's chat endpoint, the body already serialised.
+ * Under ENGINE_MOCK the reply is canned and nothing leaves the process.
+ */
+export async function gatewayPost(
+  body: string,
+  opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" } = {},
+): Promise<GatewayReply> {
+  if (engineMock()) return mockCompletion(opts.mock ?? "prompt", body);
+  const auth = opts.auth ?? await gatewayAuth();
+  const res = await fetch(GATEWAY_URL(), {
+    method: "POST",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body,
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 120_000),
+  });
+  return { ok: res.ok, status: res.status, text: await res.text() };
 }

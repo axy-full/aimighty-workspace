@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now, id as newId } from "@/lib/db";
-import { GATEWAY_URL, gatewayAuth, gatewayReachable, explainGatewayFailure } from "@/lib/gateway";
+import { gatewayPost, gatewayAuth, gatewayReachable, explainGatewayFailure } from "@/lib/gateway";
 import { resolveModel } from "@/lib/atomik";
 import { findModel, textCostUsd } from "@/lib/catalog";
+import { meter } from "@/lib/meter";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -62,16 +63,11 @@ export const POST = withTenant(async function POST(req: Request) {
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto");
   const auth = await gatewayAuth();
   const user = [`NOTE: ${brief}`, toneIn ? `TONE WORDS: ${toneIn}` : ""].filter(Boolean).join("\n");
-  const res = await fetch(GATEWAY_URL(), {
-    method: "POST",
-    headers: { ...auth, "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(90_000),
-    body: JSON.stringify({
-      model, max_tokens: 600,
-      messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
-    }),
-  });
-  const raw = await res.text();
+  const res = await gatewayPost(JSON.stringify({
+    model, max_tokens: 600,
+    messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
+  }), { auth, timeoutMs: 90_000, mock: "idea" });
+  const raw = res.text;
   if (!res.ok) {
     const plain = explainGatewayFailure(res.status, raw);
     let msg = raw.slice(0, 300);
@@ -95,9 +91,11 @@ export const POST = withTenant(async function POST(req: Request) {
     costUsd = (cm && textCostUsd(cm, inTok, outTok)) || 0;
   }
   await ready();
+  const spendId = newId("spend");
   await db().execute({
     sql: `INSERT INTO atomik_spend (id, kind, model, cost_usd, user_id, created_at) VALUES (?,?,?,?,?,?)`,
-    args: [newId("spend"), "idea", model, costUsd, got.user.id, now()],
+    args: [spendId, "idea", model, costUsd, got.user.id, now()],
   });
+  await meter({ id: spendId, kind: "text", engine: "vercel", model, status: "succeeded", engineCostUsd: costUsd, createdBy: got.user.id }, { critical: false });
   return NextResponse.json({ ...out, model, costUsd });
 });

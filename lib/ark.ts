@@ -13,6 +13,7 @@ import { getTask, type TaskId } from "./tasks";
 import { readUploadBytes, readImageBytes, presignedReadUrl, uploadPath, imagePath, videoPath, usingBlob } from "./storage";
 import { IMAGE_LIMITS } from "./imagemeta";
 import { vendorKey } from "./vendorKeys";
+import { engineMock, mockJobId, isMockJob, mockDone, mockStartedAt, fixtureUrl } from "./mock";
 
 const HOST =
   process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
@@ -238,6 +239,7 @@ export async function submitTask(
   p: VideoParams,
   references: Reference[] = []
 ): Promise<string> {
+  if (engineMock()) return mockJobId("ark");
   const payload = JSON.stringify(await buildRequestBody(modelId, prompt, p, references));
 
   // ModelArk caps the whole JSON body at 64MB. We never shrink an image to fit —
@@ -308,6 +310,14 @@ function sane(sec: number | undefined): number | null {
 }
 
 export async function fetchTask(taskId: string): Promise<ArkTask> {
+  if (isMockJob(taskId)) {
+    const done = mockDone(taskId);
+    return {
+      id: taskId, model: "mock", status: done ? "succeeded" : "running",
+      videoUrl: done ? fixtureUrl("clip.mp4") : null, totalTokens: done ? 244_800 : null, error: null,
+      vendorStartedAt: mockStartedAt(taskId), vendorEndedAt: done ? Date.now() : null, raw: null,
+    };
+  }
   const res = await arkFetch(`${TASKS_URL}/${encodeURIComponent(taskId)}`, {
     headers: { Authorization: `Bearer ${apiKey()}` },
     cache: "no-store",

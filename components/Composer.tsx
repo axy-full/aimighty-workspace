@@ -165,7 +165,7 @@ export default function Composer(p: ComposerProps) {
       ? estimateImageCostUsd(m.id, res, imageRefCount)
       : estimateCostUsd(m.id, res, m.ratios.includes(params.ratio) ? params.ratio : m.ratios[0],
           m.durations.includes(params.duration) ? params.duration : (m.durations[0] ?? 5), inputSeconds, hasVideoInput, estOpts);
-    return c ? price(c.net) : null;
+    return c ? price(c.net, m.id) : null;
   };
   const engineOf = (m: ModelDef) => engines.find((e) => e.id === m.provider);
 
@@ -425,7 +425,7 @@ export default function Composer(p: ComposerProps) {
         {!rail && <span className="relative" ref={costRef}>
           <button type="button" onClick={() => setMenu(menu === "cost" ? null : "cost")} className="island-cost"
             title="What this take will cost">
-            <span className="font-semibold text-bone">{est ? price(est.net) : "—"}</span>
+            <span className="font-semibold text-bone">{est ? price(est.net, params.modelId) : "—"}</span>
             {!isImage && estTokens != null && (
               <span className="text-mute max-[560px]:hidden"> · {compactTokens(estTokens)} tok</span>
             )}

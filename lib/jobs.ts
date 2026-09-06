@@ -4,6 +4,8 @@ import { storeVideo } from "./storage";
 import { costUsd, effectiveRate } from "./models";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
+import { meter } from "./meter";
+import { billedTo, getProvider } from "./providers";
 
 export type Generation = {
   id: string;
@@ -304,6 +306,15 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
     ],
   });
 
+  if (TERMINAL.has(task.status) || cost != null) {
+    await meter({
+      id: gen.id, kind: "video", engine: billedTo(gen.provider), model: gen.model,
+      status: task.status === "succeeded" ? "succeeded" : TERMINAL.has(task.status) ? "failed" : "running",
+      engineCostUsd: cost != null ? cost + (gen.refineCostUsd ?? 0)
+        : TERMINAL.has(task.status) && !getProvider(gen.provider).billsFailures ? 0 : null,
+      durationMs, projectId: gen.projectId, shotId: gen.shotId,
+    }, { critical: false });
+  }
   return {
     ...gen,
     status: task.status,

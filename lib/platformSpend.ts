@@ -1,6 +1,6 @@
 import { currentTenant } from "./tenant";
 import { db } from "./db";
-import type { ProviderId } from "./providers";
+import { billedTo, type ProviderId } from "./providers";
 import type { VendorKeyName } from "./vendorKeys";
 
 /**
@@ -56,4 +56,16 @@ export async function platformSpendSince(sinceMs: number): Promise<number> {
     spend += Number((text?.rows[0] as Record<string, unknown> | undefined)?.spend ?? 0);
   }
   return spend;
+}
+
+/** The vendor key a provider's renders draw on. */
+export function vendorKeyNameFor(provider: string): VendorKeyName {
+  switch (provider) {
+    case "byteplus": return "ark";
+    case "google": return billedTo("google") === "vercel" ? "gateway" : "gemini";
+    case "vercel": return "gateway";
+    case "fal": return "fal";
+    case "elevenlabs": return "elevenlabs";
+    default: return "ark";
+  }
 }

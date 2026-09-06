@@ -21,8 +21,10 @@
  */
 
 import { getSetting } from "./settings";
-import { gatewayReachable, gatewayAuth, GATEWAY_URL, explainGatewayFailure } from "./gateway";
+import { gatewayReachable, gatewayAuth, explainGatewayFailure } from "./gateway";
 import { vendorKey } from "./vendorKeys";
+import { gatewayPost } from "./gateway";
+import { engineMock } from "./mock";
 export { gatewayReachable, gatewayAuth, gatewayCredits, GATEWAY_BASE, GATEWAY_URL } from "./gateway";
 
 const CHAT_URL = () =>
@@ -76,6 +78,7 @@ export const TEXT_RATES: Record<string, { input: number; output: number }> = {
  */
 export type RefineProvider = "anthropic" | "gateway" | "byteplus";
 export function refineProvider(): RefineProvider {
+  if (engineMock()) return "gateway";
   const forced = process.env.REFINE_PROVIDER;
   if (forced === "anthropic" || forced === "gateway" || forced === "byteplus") return forced;
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "anthropic";
@@ -447,18 +450,13 @@ async function refineWithGateway(
 
   let lastErr = "";
   for (const model of GATEWAY_MODELS()) {
-    const send = (rich: boolean) => fetch(GATEWAY_URL(), {
-      method: "POST",
-      headers: { ...auth, "Content-Type": "application/json" },
-      body: shaped(model, rich),
-      signal: AbortSignal.timeout(120_000),
-    });
+    const send = (rich: boolean) => gatewayPost(shaped(model, rich), { auth, timeoutMs: 120_000, mock: "prompt" });
     let res = await send(true);
-    let text = await res.text();
+    let text = res.text;
     if (res.status === 400 && /cache_control|reasoning|unknown|unsupported|invalid/i.test(text)) {
       console.warn(`refine(gateway): ${model} rejected the rich shape, retrying plain — ${text.slice(0, 140)}`);
       res = await send(false);
-      text = await res.text();
+      text = res.text;
     }
     if (res.ok) {
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */

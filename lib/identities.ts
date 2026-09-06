@@ -3,7 +3,9 @@ import { falConfigured, falSubmit, falStatus, falResult, falAwait, progressFromL
 import { readUploadBytes, storeIdentityZip, storeImageBytes, presignedReadUrl, usingBlob } from "./storage";
 import { nameProblem } from "./cast";
 import { invalidate, PROJECTS_KEY } from "./cache";
-import { withRetry } from "./providers";
+import { withRetry, getProvider } from "./providers";
+import { meter } from "./meter";
+import { fetchBytes } from "./mockFs";
 
 /**
  * Identities — a real face, learned.
@@ -259,6 +261,8 @@ export async function startTraining(id: string): Promise<Identity> {
     sql: `UPDATE identities SET status='training', trainer=?, request_id=?, trigger=?, steps=?, cost_usd=?, error=NULL, updated_at=? WHERE id=?`,
     args: [TRAINER, queued.request_id, trigger, TRAIN_STEPS, trainCostUsd(TRAIN_STEPS), now(), identity.id],
   });
+  await meter({ id: identity.id, kind: "training", engine: "fal", model: TRAINER, status: "running",
+                engineCostUsd: trainCostUsd(TRAIN_STEPS), projectId: identity.projectId });
   return (await getIdentity(identity.id))!;
 }
 
@@ -304,6 +308,7 @@ export async function syncIdentity(identity: Identity): Promise<{ identity: Iden
       sql: `UPDATE identities SET status='ready', lora_url=?, config_url=?, cast_id=?, trained_at=?, updated_at=?, error=NULL WHERE id=?`,
       args: [lora, out.config_file?.url ?? null, castId, now(), now(), identity.id],
     });
+    await meter({ id: identity.id, kind: "training", engine: "fal", model: TRAINER, status: "succeeded", projectId: identity.projectId }, { critical: false });
   } catch (e) {
     await markFailed(identity.id, (e as Error).message);
   }
@@ -315,6 +320,8 @@ async function markFailed(id: string, error: string): Promise<void> {
     sql: `UPDATE identities SET status='failed', error=?, updated_at=? WHERE id=?`,
     args: [error.slice(0, 600), now(), id],
   });
+  await meter({ id, kind: "training", engine: "fal", model: TRAINER, status: "failed",
+                engineCostUsd: getProvider("fal").billsFailures ? null : 0 }, { critical: false }).catch(() => {});
 }
 
 /** A trained identity is also a cast character, so @Name works everywhere. */
@@ -397,6 +404,8 @@ async function failRender(genId: string, message: string, startedAt: number): Pr
     sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=?`,
     args: [message.slice(0, 600), Math.max(0, now() - startedAt), now(), genId],
   }).catch(() => {});
+  await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "failed",
+                engineCostUsd: getProvider("fal").billsFailures ? null : 0, durationMs: Math.max(0, now() - startedAt) }, { critical: false }).catch(() => {});
   invalidate(PROJECTS_KEY);
 }
 
@@ -409,9 +418,7 @@ async function finishRender(genId: string, out: RenderResult, startedAt: number,
   const img = out.images?.[0];
   if (!img?.url) throw new RenderRefused("fal.ai returned no image.");
   if (out.has_nsfw_concepts?.[0]) throw new RenderRefused("The safety checker flagged this render. Reword the prompt.");
-  const res = await fetch(img.url, { cache: "no-store", signal: AbortSignal.timeout(60_000) });
-  if (!res.ok) throw new Error(`Could not fetch the render (${res.status}).`);
-  let bytes = Buffer.from(await res.arrayBuffer());
+  let bytes = await fetchBytes(img.url);
   const sharp = (await import("sharp")).default;
   const meta = await sharp(bytes).metadata();
   // The library keeps PNG. A JPEG from the vendor is decoded once, losslessly.
@@ -429,6 +436,7 @@ async function finishRender(genId: string, out: RenderResult, startedAt: number,
     args: [stored.url, cost, Math.max(0, now() - startedAt), stored.bytes, out.seed ?? seed ?? null,
            img.width ?? meta.width ?? null, img.height ?? meta.height ?? null, now(), genId],
   });
+  await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "succeeded", engineCostUsd: cost, durationMs: Math.max(0, now() - startedAt) }, { critical: false });
   invalidate(PROJECTS_KEY);
 }
 

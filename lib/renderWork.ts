@@ -3,9 +3,10 @@ import { getModel, estimateImageCostUsd, imageTokens } from "./models";
 import { generateImage } from "./gemini";
 import { textToSpeech, soundEffect, composeMusic, subscription, usdForCredits } from "./elevenlabs";
 import { storeImageBytes, storeAudioBytes } from "./storage";
-import { withRetry } from "./providers";
+import { withRetry, billedTo } from "./providers";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import type { Reference, ImageRole } from "./ark";
+import { meter } from "./meter";
 
 /**
  * The work of a still or a piece of audio, lifted out of the route that
@@ -291,6 +292,8 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
              produced.via, produced.via === "google" ? "google" : "vercel",
              now(), job.genId],
     });
+    await meter({ id: job.genId, kind: "image", engine: produced.via === "google" ? "google" : "vercel", model: job.modelId,
+                  status: "succeeded", engineCostUsd: produced.cost, durationMs: ms }, { critical: false });
   } else {
     // Price from the plan the account is on; the tier is read once per render.
     let tier: string | null = null;
@@ -307,6 +310,7 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
              ms, t.queueMs, t.engineMs, t.storeMs, produced.bytes,
              credits, tier, produced.requestId, now(), job.genId],
     });
+    await meter({ id: job.genId, kind: "audio", engine: "elevenlabs", model: job.modelId, status: "succeeded", engineCostUsd: cost, durationMs: ms }, { critical: false });
   }
   invalidate(PROJECTS_KEY);
 }
@@ -337,6 +341,10 @@ export async function failJob(genId: string, message: string): Promise<void> {
           WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
     args: [message.slice(0, 600), ms, spentUsd, spentCredits, now(), genId],
   }).catch(() => {});
+  if (job) {
+    await meter({ id: genId, kind: job.kind, engine: job.kind === "audio" ? "elevenlabs" : billedTo("google"), model: job.modelId, status: "failed",
+                  engineCostUsd: job.kind === "audio" ? usdForCredits(spentCredits ?? 0, null) : (spentUsd ?? 0), durationMs: ms }, { critical: false }).catch(() => {});
+  }
   invalidate(PROJECTS_KEY);
 }
 

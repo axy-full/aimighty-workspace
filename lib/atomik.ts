@@ -1,7 +1,9 @@
 import { db, ready, now, id as newId } from "./db";
-import { GATEWAY_URL, gatewayAuth, gatewayReachable, explainGatewayFailure } from "./gateway";
+import { gatewayAuth, gatewayReachable, explainGatewayFailure } from "./gateway";
 import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd, textCostUsd } from "./catalog";
 import { MODELS, estimateCostUsd, estimateImageCostUsd } from "./models";
+import { gatewayPost } from "./gateway";
+import { meter } from "./meter";
 
 /**
  * Atomik — the studio's agent.
@@ -427,12 +429,7 @@ export async function runTurn(chatId: string, opts: { context?: string } = {}): 
   const started = Date.now();
   const auth = await gatewayAuth();
   const send = (msgs: { role: string; content: string }[]) =>
-    fetch(GATEWAY_URL(), {
-      method: "POST",
-      headers: { ...auth, "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(180_000),
-      body: JSON.stringify({ model, max_tokens: 4000, messages: msgs }),
-    });
+    gatewayPost(JSON.stringify({ model, max_tokens: 4000, messages: msgs }), { auth, timeoutMs: 180_000, mock: "turn" });
 
   const base = [
     { role: "system", content: SYSTEM },
@@ -441,7 +438,7 @@ export async function runTurn(chatId: string, opts: { context?: string } = {}): 
   ];
 
   let res = await send(base);
-  let raw = await res.text();
+  let raw = res.text;
   if (!res.ok) {
     const plain = explainGatewayFailure(res.status, raw);
     if (plain) throw new Error(plain);
@@ -465,7 +462,7 @@ export async function runTurn(chatId: string, opts: { context?: string } = {}): 
       { role: "assistant", content: text.slice(0, 4000) },
       { role: "user", content: "Return only the JSON object. No prose, no code fence." },
     ]);
-    raw = await res.text();
+    raw = res.text;
     if (res.ok) {
       try {
         j = JSON.parse(raw);
@@ -501,6 +498,8 @@ export async function runTurn(chatId: string, opts: { context?: string } = {}): 
       turn.ask ? JSON.stringify(turn.ask) : null,
       Date.now() - started, costUsd, model, ts],
   });
+  await meter({ id: messageId, kind: "text", engine: "vercel", model, status: "succeeded", engineCostUsd: costUsd,
+                projectId: chat.projectId, createdBy: chat.createdBy }, { critical: false });
 
   const saved: Step[] = [];
   let pos = 0;

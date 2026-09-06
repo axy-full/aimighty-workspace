@@ -1,8 +1,9 @@
-import { currentTenant, runInTenant, type TenantWorkspace } from "./tenant";
+import { currentTenant, type TenantWorkspace } from "./tenant";
 import { creditsGranted } from "./platform";
-import { paidByPlatform, platformSpendSince } from "./platformSpend";
-import { creditUsd, creditMarkup, usdToCredits, type CreditState } from "./creditTerms";
+import { paidByPlatform } from "./platformSpend";
+import { creditUsd, margins, billCredits, type CreditState } from "./creditTerms";
 import type { VendorKeyName } from "./vendorKeys";
+import { creditsUsed } from "./meter";
 
 export type { CreditState } from "./creditTerms";
 
@@ -25,12 +26,8 @@ export function creditsApply(ws: TenantWorkspace | null | undefined): boolean {
 
 export async function creditStateFor(ws: TenantWorkspace): Promise<CreditState | null> {
   if (!creditsApply(ws)) return null;
-  const [granted, usedUsd] = await Promise.all([
-    creditsGranted(ws.id),
-    runInTenant(ws, () => platformSpendSince(0)),
-  ]);
-  const used = usdToCredits(usedUsd);
-  return { creditUsd: creditUsd(), markup: creditMarkup(), granted, used, balance: granted - used };
+  const [granted, used] = await Promise.all([creditsGranted(ws.id), creditsUsed(ws.id)]);
+  return { creditUsd: creditUsd(), margins: margins(), granted, used, balance: granted - used };
 }
 
 export async function creditState(): Promise<CreditState | null> {
@@ -50,19 +47,20 @@ export function fmtCredits(n: number): string {
  * workspace must have credits — and enough of them when the estimate is
  * known.
  */
-export async function creditCheck(vendor: VendorKeyName, estUsd = 0): Promise<
-  { ok: true } | { ok: false; status: number; error: string }
-> {
-  const ws = currentTenant()?.workspace;
-  if (!creditsApply(ws) || !paidByPlatform(vendor)) return { ok: true };
-  const st = await creditStateFor(ws!);
-  if (!st) return { ok: true };
-  const need = usdToCredits(Math.max(0, estUsd));
-  if (st.balance <= 0 || st.balance < need) {
+export type CreditVerdict = { ok: true } | { ok: false; status: number; error: string };
+
+export async function creditCheck(vendor: VendorKeyName, estUsd = 0, engine?: string | null): Promise<CreditVerdict> {
+  if (!creditsApply(currentTenant()?.workspace) || !paidByPlatform(vendor)) return { ok: true };
+  const state = await creditState();
+  if (!state) return { ok: true };
+  const need = billCredits(estUsd, engine);
+  if (state.balance <= 0 || state.balance < need) {
+    const left = Math.max(0, Math.floor(state.balance));
     return {
       ok: false, status: 402,
-      error: `Out of credits — ${fmtCredits(Math.max(0, st.balance))} left${need > 0 ? ` and this needs ${fmtCredits(need)}` : ""}. ` +
-             `Ask management for more, or add your own key for the vendor under Settings › Vendors & keys.`,
+      error: need > 0 && left > 0
+        ? `Out of credits: this needs ${need}, ${left} left. Top up in Settings › Credits.`
+        : `Out of credits (${left} left). Top up in Settings › Credits.`,
     };
   }
   return { ok: true };
