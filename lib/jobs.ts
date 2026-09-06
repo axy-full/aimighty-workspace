@@ -6,6 +6,7 @@ import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
 import { meter } from "./meter";
 import { billedTo, getProvider } from "./providers";
+import { releaseHeldJobs } from "./held";
 
 export type Generation = {
   id: string;
@@ -306,6 +307,10 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
     ],
   });
 
+  if (TERMINAL.has(task.status)) {
+    // A slot just freed: whatever waited for one may start.
+    void releaseHeldJobs().catch(() => {});
+  }
   if (TERMINAL.has(task.status) || cost != null) {
     await meter({
       id: gen.id, kind: "video", engine: billedTo(gen.provider), model: gen.model,

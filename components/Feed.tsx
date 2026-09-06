@@ -302,7 +302,7 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
               <ParticlSpinner size={22} className="text-dim" />
             </span>
           ) : s === "held" ? (
-            <span className="well-cap is-held">held · top up to release</span>
+            <span className="well-cap is-held">{(gen.params as { held?: { why?: string } }).held?.why === "slots" ? "waiting for a slot" : "held · top up to release"}</span>
           ) : (
             <span className="well-cap">{s === "failed" ? word.toLowerCase() : `render · ${code} · ${v}`}</span>
           )}
@@ -355,7 +355,9 @@ export function HeldActions({ gen, onChanged }: { gen: Gen; onChanged?: () => vo
   const { credits } = useSession();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const needs = Number((gen.params as { held?: { needs?: number } }).held?.needs ?? 0);
+  const held = (gen.params as { held?: { needs?: number; why?: string } }).held;
+  const needs = Number(held?.needs ?? 0);
+  const slots = held?.why === "slots";
   const balance = credits?.balance ?? null;
   // The server decides who may release; here only whether the balance covers it.
   const covered = balance == null || balance >= needs;
@@ -368,6 +370,13 @@ export function HeldActions({ gen, onChanged }: { gen: Gen; onChanged?: () => vo
       onChanged?.();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
+  }
+  if (slots) {
+    return (
+      <div className="take-acts take-held">
+        <span className="text-[12.5px] text-mute">Waiting for a slot · starts when one lands</span>
+      </div>
+    );
   }
   return (
     <div className="take-acts take-held">

@@ -10,6 +10,7 @@ import { invalidate, PROJECTS_KEY } from "./cache";
 import { sendPushTo } from "./push";
 import { sendMail, mailConfigured } from "./mail";
 import { workspaceAdmins } from "./platform";
+import { workspaceLimits, standing } from "./limits";
 
 /**
  * The hard stop at zero.
@@ -23,11 +24,12 @@ import { workspaceAdmins } from "./platform";
  * hear once, when the first take is held.
  */
 export const HELD_LIMIT = 20;
-export type HeldInfo = { estUsd: number; needs: number; at: number };
+export type HeldWhy = "credits" | "slots";
+export type HeldInfo = { estUsd: number; needs: number; at: number; why: HeldWhy };
 type Defer = (fn: () => Promise<void>) => void;
 
-export function heldInfo(estUsd: number, kind: string, model: string): HeldInfo {
-  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)), at: now() };
+export function heldInfo(estUsd: number, kind: string, model: string, why: HeldWhy = "credits"): HeldInfo {
+  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)), at: now(), why };
 }
 
 export function heldMessage(needs: number, left: number): string {
@@ -58,7 +60,7 @@ export function planRelease(held: { id: string; needs: number }[], balance: numb
 type HeldRow = {
   id: string; kind: "video" | "image" | "audio"; model: string; engine: string;
   projectId: string | null; shotId: string | null; createdBy: string | null;
-  estUsd: number; needs: number;
+  estUsd: number; needs: number; why: HeldWhy;
 };
 
 async function heldRows(only?: string): Promise<HeldRow[]> {
@@ -82,6 +84,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
       projectId: (row.project_id as string | null) ?? null, shotId: (row.shot_id as string | null) ?? null,
       createdBy: (row.created_by as string | null) ?? null,
       estUsd, needs: Number(held.needs ?? billCredits(estUsd, marginKeyOf(kind, model))),
+      why: held.why === "slots" ? "slots" : "credits",
     };
   });
 }
@@ -95,11 +98,16 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
   const rows = await heldRows(opts.only);
   if (!rows.length) return { released: [], short: 0 };
   const state = await creditState();
-  const plan = planRelease(rows, state ? state.balance : null);
+  /* Credits are checked for the takes held for credits; a slot is needed by
+     every release, whatever it was held for. */
+  const plan = planRelease(rows.filter((r) => r.why === "credits"), state ? state.balance : null);
+  const [limits, st] = await Promise.all([workspaceLimits(), standing()]);
+  let running = st.running;
   const defer: Defer = opts.defer ?? ((fn) => { void fn().catch((e) => console.error("release:", (e as Error).message)); });
   const released: string[] = [];
   for (const r of rows) {
-    if (!plan.release.includes(r.id)) break;
+    if (running >= limits.concurrency) break;
+    if (r.why === "credits" && !plan.release.includes(r.id)) break;
     // The meter first: work the platform cannot bill does not start.
     try {
       await meter({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
@@ -122,6 +130,7 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
     if (r.kind === "video") defer(async () => { await submitVideoRow(r.id); });
     else if (!(await enqueueRender(r.id, r.kind))) defer(() => runInline(r.id));
     released.push(r.id);
+    running += 1;
   }
   if (released.length) invalidate(PROJECTS_KEY);
   return { released, short: rows.length - released.length };

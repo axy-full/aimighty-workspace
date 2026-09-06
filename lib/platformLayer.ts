@@ -71,8 +71,14 @@ export type PlatformCaps = {
   signupCredits: number | null;
   /** The share of a production's cap that warns the producer. */
   warnPct: number;
+  /** Renders a workspace may have going at once; past it a take waits for a slot. */
+  concurrency: number;
+  /** Renders a workspace may start in an hour. */
+  rendersPerHour: number;
+  /** What a workspace may keep, in gigabytes. */
+  storageGb: number;
 };
-export const DEFAULT_CAPS: PlatformCaps = { defaultCapCredits: null, signupCredits: null, warnPct: 80 };
+export const DEFAULT_CAPS: PlatformCaps = { defaultCapCredits: null, signupCredits: null, warnPct: 80, concurrency: 4, rendersPerHour: 60, storageGb: 50 };
 
 export type PlatformLayer = { setup: ShotSpec; starter: StarterProduction; rules: PlatformRule[]; caps: PlatformCaps };
 export type LayerKey = keyof PlatformLayer;
@@ -141,6 +147,9 @@ export function cleanCaps(v: unknown): PlatformCaps {
   const cap = n(v.defaultCapCredits); c.defaultCapCredits = cap != null && Number.isFinite(cap) && cap > 0 ? Math.round(cap) : null;
   const su = n(v.signupCredits); c.signupCredits = su != null && Number.isFinite(su) && su >= 0 ? Math.round(su) : null;
   const w = Number(v.warnPct); c.warnPct = Number.isFinite(w) && w >= 1 && w <= 100 ? Math.round(w) : DEFAULT_CAPS.warnPct;
+  const cc = Number(v.concurrency); c.concurrency = Number.isFinite(cc) && cc >= 1 && cc <= 100 ? Math.round(cc) : DEFAULT_CAPS.concurrency;
+  const rh = Number(v.rendersPerHour); c.rendersPerHour = Number.isFinite(rh) && rh >= 1 && rh <= 10_000 ? Math.round(rh) : DEFAULT_CAPS.rendersPerHour;
+  const sg = Number(v.storageGb); c.storageGb = Number.isFinite(sg) && sg >= 1 && sg <= 100_000 ? Math.round(sg * 10) / 10 : DEFAULT_CAPS.storageGb;
   return c;
 }
 

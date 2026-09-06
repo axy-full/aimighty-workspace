@@ -27,6 +27,7 @@ import { submitVideoJob } from "@/lib/submitVideo";
 import { checkCap } from "@/lib/caps";
 import { rulesBlock, DEFAULT_LAYER } from "@/lib/platformLayer";
 import { getPlatformLayer } from "@/lib/platform";
+import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -442,9 +443,14 @@ export const POST = withTenant(async function POST(req: Request) {
     const estStillUsd = estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0;
     const wallStill = await allowanceCheck(vendorKeyNameFor(model.provider), estStillUsd, modelId);
     if (!wallStill.ok && wallStill.status !== 402) return NextResponse.json({ error: wallStill.error }, { status: wallStill.status });
-    const holdStill = !wallStill.ok ? heldInfo(estStillUsd, "image", modelId) : null;
+    let holdStill = !wallStill.ok ? heldInfo(estStillUsd, "image", modelId) : null;
     const capStill = await checkCap(stillProject, estStillUsd, modelId);
     if (!capStill.allow) return NextResponse.json({ error: capStill.error }, { status: 409 });
+    const limStill = await checkLimits();
+    if (!limStill.allow && limStill.why === "rate") return NextResponse.json({ error: limStill.error }, { status: 429 });
+    if (!holdStill && !limStill.allow) holdStill = heldInfo(estStillUsd, "image", modelId, "slots");
+    const quotaStill = await checkQuota(0);
+    if (!quotaStill.allow) return NextResponse.json({ error: quotaStill.error }, { status: 507 });
     const genId = id("gen");
     const ts = now();
     const stillParams = {
@@ -475,6 +481,9 @@ export const POST = withTenant(async function POST(req: Request) {
     });
     invalidate(PROJECTS_KEY);
     if (holdStill) {
+      if (holdStill.why === "slots") {
+        return NextResponse.json({ id: genId, status: "held", held: true, why: "slots", notices: [slotsMessage(limStill.standing.running, limStill.limits.concurrency)] }, { status: 202 });
+      }
       const left = (await creditState())?.balance ?? 0;
       await notifyHeld({ id: genId, needs: holdStill.needs, left }).catch(() => {});
       return NextResponse.json({ id: genId, status: "held", held: true, needs: holdStill.needs, notices: [heldMessage(holdStill.needs, left)] }, { status: 202 });
@@ -683,10 +692,15 @@ export const POST = withTenant(async function POST(req: Request) {
   )?.net ?? 0;
   const wall = await allowanceCheck(vendorKeyNameFor(model.provider), estUsd, modelId);
   if (!wall.ok && wall.status !== 402) return NextResponse.json({ error: wall.error }, { status: wall.status });
-  const hold = !wall.ok ? heldInfo(estUsd, "video", modelId) : null;
+  let hold = !wall.ok ? heldInfo(estUsd, "video", modelId) : null;
   const capV = await checkCap(projectId, estUsd, modelId);
   if (!capV.allow) return NextResponse.json({ error: capV.error }, { status: 409 });
   if (capV.notice) notices.push(capV.notice);
+  const lim = await checkLimits();
+  if (!lim.allow && lim.why === "rate") return NextResponse.json({ error: lim.error }, { status: 429 });
+  if (!hold && !lim.allow) hold = heldInfo(estUsd, "video", modelId, "slots");
+  const quota = await checkQuota(0);
+  if (!quota.allow) return NextResponse.json({ error: quota.error }, { status: 507 });
 
   const genId = id("gen");
   const ts = now();
@@ -737,6 +751,9 @@ export const POST = withTenant(async function POST(req: Request) {
 
   invalidate(PROJECTS_KEY);
   if (hold) {
+    if (hold.why === "slots") {
+      return NextResponse.json({ id: genId, status: "held", held: true, why: "slots", notices: [slotsMessage(lim.standing.running, lim.limits.concurrency)] }, { status: 202 });
+    }
     const left = (await creditState())?.balance ?? 0;
     await notifyHeld({ id: genId, needs: hold.needs, left }).catch(() => {});
     return NextResponse.json({ id: genId, status: "held", held: true, needs: hold.needs, notices: [heldMessage(hold.needs, left)] }, { status: 202 });

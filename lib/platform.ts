@@ -207,7 +207,23 @@ export function rowToWorkspace(r: any): TenantWorkspace {
     suspendedReason: r.suspended_reason ? String(r.suspended_reason) : null,
     flaggedAt: r.flagged_at == null ? null : Number(r.flagged_at),
     flagNote: r.flag_note ? String(r.flag_note) : null,
+    concurrency: r.concurrency == null ? null : Number(r.concurrency),
+    rendersPerHour: r.renders_per_hour == null ? null : Number(r.renders_per_hour),
+    storageQuotaBytes: r.storage_quota_bytes == null ? null : Number(r.storage_quota_bytes),
   };
+}
+
+/** A workspace's own limits; null puts a number back to the platform's default. */
+export async function setWorkspaceLimits(id: string, l: { concurrency?: number | null; rendersPerHour?: number | null; storageGb?: number | null }): Promise<void> {
+  await platformReady();
+  const sets: string[] = []; const args: (number | null | string)[] = [];
+  const num = (v: number | null | undefined, lo: number, hi: number) => (v == null || !Number.isFinite(v) ? null : Math.max(lo, Math.min(hi, v)));
+  if (l.concurrency !== undefined) { sets.push("concurrency = ?"); args.push(num(l.concurrency, 1, 100) == null ? null : Math.round(num(l.concurrency, 1, 100)!)); }
+  if (l.rendersPerHour !== undefined) { sets.push("renders_per_hour = ?"); args.push(num(l.rendersPerHour, 1, 10_000) == null ? null : Math.round(num(l.rendersPerHour, 1, 10_000)!)); }
+  if (l.storageGb !== undefined) { const g = num(l.storageGb, 0.1, 100_000); sets.push("storage_quota_bytes = ?"); args.push(g == null ? null : Math.round(g * 1e9)); }
+  if (!sets.length) return;
+  sets.push("updated_at = ?"); args.push(now()); args.push(id);
+  await platformDb().execute({ sql: `UPDATE workspaces SET ${sets.join(", ")} WHERE id = ?`, args });
 }
 
 /** Pause a workspace's rendering, with a reason it will be shown — or lift it. */
@@ -241,7 +257,7 @@ export function platformReady(): Promise<void> {
       for (const stmt of SCHEMA) await p.execute(stmt);
       /* Columns added after the table first shipped reach an existing
          database only by ALTER; a duplicate is the one error to ignore. */
-      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`]) {
+      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`]) {
         try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
       }

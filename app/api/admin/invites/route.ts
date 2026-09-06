@@ -47,7 +47,8 @@ export async function GET() {
     requests: requests.rows.map((r: any) => ({ id: r.id, name: r.name, email: r.email, note: r.note, mailed: Boolean(Number(r.mailed)), createdAt: Number(r.created_at) })),
     workspaces: workspaces.rows.map((r: any, i: number) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: Number(r.uses_platform_keys) === 1, allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd), gatewayKey: Boolean(r.gateway_key_id), credits: credits[i] ? { granted: credits[i]!.granted, used: credits[i]!.used, balance: credits[i]!.balance } : null, createdAt: Number(r.created_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0),
       spend30: (() => { const m = spend.get(String(r.id)); return m ? { ...m, marginUsd: marginUsd(m.billedCredits, m.engineCostUsd, creditUsd()) } : null; })(),
-      suspended: Boolean(r.suspended_at), suspendedReason: r.suspended_reason ?? null, flagged: Boolean(r.flagged_at), flagNote: r.flag_note ?? null })),
+      suspended: Boolean(r.suspended_at), suspendedReason: r.suspended_reason ?? null, flagged: Boolean(r.flagged_at), flagNote: r.flag_note ?? null,
+      limits: { concurrency: r.concurrency == null ? null : Number(r.concurrency), rendersPerHour: r.renders_per_hour == null ? null : Number(r.renders_per_hour), storageGb: r.storage_quota_bytes == null ? null : Math.round(Number(r.storage_quota_bytes) / 1e9 * 10) / 10 } })),
   });
 }
 

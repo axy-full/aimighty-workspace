@@ -6,6 +6,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { getProvider, DEFAULT_PROVIDER } from "@/lib/providers";
 import { assess, deriveForProvider } from "@/lib/derive";
 import { getSetting } from "@/lib/settings";
+import { checkQuota } from "@/lib/limits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -36,6 +37,8 @@ export const POST = withTenant(async function POST(req: Request) {
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
+  const quota = await checkQuota(buf.length);
+  if (!quota.allow) return NextResponse.json({ error: quota.error }, { status: 507 });
   const meta = identifyImage(buf);
   if (!meta) {
     return NextResponse.json(
