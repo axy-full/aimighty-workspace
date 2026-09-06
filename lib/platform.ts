@@ -78,6 +78,23 @@ const SCHEMA = [
      created_at    INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS credit_grants_ws ON credit_grants(workspace_id)`,
+  `CREATE TABLE IF NOT EXISTS topup_requests (
+     id             TEXT PRIMARY KEY,
+     workspace_id   TEXT NOT NULL,
+     pack_id        TEXT NOT NULL,
+     label          TEXT,
+     credits        REAL NOT NULL,
+     usd            REAL NOT NULL,
+     status         TEXT NOT NULL DEFAULT 'requested',
+     note           TEXT,
+     requested_by   TEXT,
+     created_at     INTEGER NOT NULL,
+     decided_at     INTEGER,
+     decided_by     TEXT,
+     decision_note  TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS topup_requests_ws ON topup_requests(workspace_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS topup_requests_status ON topup_requests(status, created_at)`,
   `CREATE TABLE IF NOT EXISTS meter_events (
      id               TEXT PRIMARY KEY,
      workspace_id     TEXT NOT NULL,
@@ -491,5 +508,18 @@ export async function workspaceAdmins(workspaceId: string): Promise<{ id: string
   return rs.rows.map((r) => {
     const row = r as unknown as { id: string; email: string; name: string };
     return { id: String(row.id), email: String(row.email ?? ""), name: String(row.name ?? "") };
+  });
+}
+
+/** What has been added to a workspace, latest first: the top-up screen's history. */
+export async function listGrants(workspaceId: string, limit = 20): Promise<{ id: string; credits: number; note: string; createdAt: number }[]> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT id, credits, note, created_at FROM credit_grants WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?`,
+    args: [workspaceId, limit],
+  });
+  return rs.rows.map((r) => {
+    const row = r as unknown as { id: string; credits: number; note: string | null; created_at: number };
+    return { id: String(row.id), credits: Number(row.credits), note: String(row.note ?? ""), createdAt: Number(row.created_at) };
   });
 }

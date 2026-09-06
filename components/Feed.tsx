@@ -374,7 +374,7 @@ export function HeldActions({ gen, onChanged }: { gen: Gen; onChanged?: () => vo
       <span className="text-[12.5px] text-mute">Needs {needs} cr{balance != null ? ` · ${Math.max(0, Math.floor(balance))} left` : ""}</span>
       {covered
         ? <button type="button" className="btn-secondary !py-1 !text-[12.5px]" disabled={busy} onClick={release}>{busy ? "Releasing…" : "Release"}</button>
-        : <Link href="/settings" className="btn-secondary !py-1 !text-[12.5px]">Top up</Link>}
+        : <Link href="/settings#credits" className="btn-secondary !py-1 !text-[12.5px]">Top up</Link>}
       {err && <span className="text-[12px] text-lift">{err}</span>}
     </div>
   );

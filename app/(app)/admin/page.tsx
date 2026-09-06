@@ -110,6 +110,8 @@ export default function AdminPage() {
               </div>
             </section>
 
+            <TopupsCard onChanged={refresh} />
+
             <section className="scard">
               <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with ${data.signupCredits} credits (one credit is ${usd(data.creditUsd, 2)} of vendor cost) — or on its own keys once its owner switches. Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a Vercel AI Gateway key of its own."}</span></div>
               <div className="flex flex-col">
@@ -171,5 +173,67 @@ function CreditsCell({ w, onChanged }: {
     <button type="button" className="mono-s text-left hover:text-ink" title={c ? `${creditsNumber(c.used)} used of ${creditsNumber(c.granted)} granted — click to add credits` : "Click to add credits"} onClick={() => setEditing(true)}>
       PLATFORM · {c ? `${creditsNumber(c.balance)} CR` : "—"}{w.gatewayKey ? " · OWN GATEWAY KEY" : ""}
     </button>
+  );
+}
+
+type Queue = {
+  provider: "manual" | "stripe" | "razorpay";
+  open: QueueRow[]; decided: QueueRow[];
+};
+type QueueRow = {
+  id: string; workspaceId: string; workspaceName: string; workspaceSlug: string; packId: string; label: string;
+  credits: number; usd: number; status: "requested" | "approved" | "declined" | "cancelled"; note: string;
+  requesterEmail: string | null; requesterName: string | null; createdAt: number; decidedAt: number | null;
+};
+
+/** Packs asked for, waiting on an answer. Approving adds the credits and releases held takes. */
+function TopupsCard({ onChanged }: { onChanged: () => void }) {
+  const { data, refresh } = useApi<Queue>("/api/admin/topups", 30_000);
+  const [busy, setBusy] = useState<string | null>(null);
+  async function decide(id: string, action: "approve" | "decline") {
+    if (action === "decline" && !(await appConfirm("Decline this request?", "The workspace keeps its balance as it is; they can ask again.", { confirmLabel: "Decline", danger: true }))) return;
+    setBusy(id);
+    try {
+      const res = await fetch("/api/admin/topups", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }) });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not answer it");
+      if (action === "approve") await appAlert("Credits added", json.released ? `${json.request.credits.toLocaleString()} credits are in and ${json.released} held take${json.released === 1 ? "" : "s"} released.` : `${json.request.credits.toLocaleString()} credits are in.`);
+      refresh(); onChanged();
+    } catch (e) { await appAlert("Not answered", (e as Error).message); }
+    finally { setBusy(null); }
+  }
+  if (!data) return null;
+  const when = (ms: number) => timeAgo(ms).toUpperCase();
+  return (
+    <section className="scard">
+      <div className="scard-h"><span>Top-ups</span><span>{data.provider === "manual"
+        ? "Packs workspaces have asked for. Take payment your own way, then approve: the credits go in at once and anything held releases itself."
+        : `Card checkout through ${data.provider} approves these on its own; this is the record.`}</span></div>
+      <div className="flex flex-col">
+        <div className="steam is-head !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px]"><span>WORKSPACE</span><span>ASKED BY</span><span>PACK</span><span className="text-right">WHEN</span><span className="text-right">ANSWER</span></div>
+        {data.open.map((r) => (
+          <div key={r.id} className="steam !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px]">
+            <span className="flex flex-col gap-0.5"><span className="font-medium">{r.workspaceName}</span><span className="text-[11.5px] text-dim">{r.note || r.workspaceSlug}</span></span>
+            <span className="flex flex-col gap-0.5"><span>{r.requesterName ?? "—"}</span><span className="text-[11.5px] text-dim">{r.requesterEmail ?? ""}</span></span>
+            <span className="flex flex-col gap-0.5"><span className="mono-v">{r.credits.toLocaleString()} cr</span><span className="text-[11.5px] text-dim">{r.label} · ${r.usd.toLocaleString()}</span></span>
+            <span className="mono-s text-right">{when(r.createdAt)}</span>
+            <span className="flex justify-end gap-1.5">
+              <button type="button" className="btn-secondary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => decide(r.id, "decline")}>Decline</button>
+              <button type="button" className="btn-primary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => decide(r.id, "approve")}>{busy === r.id ? "…" : "Approve"}</button>
+            </span>
+          </div>
+        ))}
+        {data.open.length === 0 && <span className="rail-help pt-2">Nothing waiting.</span>}
+        {data.decided.slice(0, 8).map((r) => (
+          <div key={r.id} className="steam !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px] opacity-60">
+            <span className="flex flex-col gap-0.5"><span>{r.workspaceName}</span><span className="text-[11.5px] text-dim">{r.workspaceSlug}</span></span>
+            <span className="text-dim">{r.requesterName ?? "—"}</span>
+            <span className="mono-v">{r.credits.toLocaleString()} cr</span>
+            <span className="mono-s text-right">{r.decidedAt ? when(r.decidedAt) : ""}</span>
+            <span className="mono-s text-right">{r.status.toUpperCase()}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
