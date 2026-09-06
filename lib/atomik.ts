@@ -398,7 +398,7 @@ export type TurnResult = {
  * the first featured planner the gateway is actually serving, so a chat
  * started before a model was retired still answers.
  */
-export async function runTurn(chatId: string, opts: { context?: string } = {}): Promise<TurnResult> {
+export async function runTurn(chatId: string, opts: { context?: string; rules?: string } = {}): Promise<TurnResult> {
   await ready();
   const loaded = await getChat(chatId);
   if (!loaded) throw new Error("That chat is gone.");
@@ -424,6 +424,7 @@ export async function runTurn(chatId: string, opts: { context?: string } = {}): 
   const preamble = [
     "ENGINES YOU MAY CHOOSE (exact ids):", engineText,
     opts.context ? `\nTHIS PROJECT ALREADY HAS:\n${opts.context}` : "",
+    opts.rules ? `\nTHE PLATFORM'S RULES, BY ENGINE — write every proposal's prompt to the rules for its engine:\n${opts.rules}` : "",
   ].filter(Boolean).join("\n");
 
   const started = Date.now();

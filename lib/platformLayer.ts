@@ -51,7 +51,12 @@ export const STARTER_PRODUCTION: StarterProduction = {
   cast: [STARTER_CAST],
 };
 
-export type RuleScope = "all" | "video" | "image";
+/** Where a rule applies: a kind, or one engine family's dialect. */
+export type RuleScope = "all" | "video" | "image" | "seedance-2" | "kling-3" | "nano-banana";
+export const RULE_SCOPES: RuleScope[] = ["all", "video", "image", "seedance-2", "kling-3", "nano-banana"];
+export const RULE_SCOPE_LABELS: Record<RuleScope, string> = {
+  all: "video + stills", video: "video", image: "stills", "seedance-2": "Seedance only", "kling-3": "Kling only", "nano-banana": "Nano Banana only",
+};
 export type RuleApply = "writer" | "prompt";
 export type PlatformRule = { id: string; text: string; scope: RuleScope; apply: RuleApply; on: boolean };
 
@@ -63,6 +68,12 @@ export const DEFAULT_RULES: PlatformRule[] = [
   { id: "time-vs-light", scope: "all", apply: "writer", on: true, text: "Time of day and lighting are separate rows and never both say golden hour." },
   { id: "plain-sentences", scope: "image", apply: "writer", on: true, text: "Write camera and subject direction as plain sentences, never as headers or labels: all-caps headers leak into a still as burned-in captions." },
   { id: "no-lettering", scope: "image", apply: "prompt", on: true, text: "No lettering, captions, logos or text of any kind appears in the frame." },
+  // Each engine's dialect (brief 1.1): the Setup rows are engine-neutral; these turn them into what each engine reads.
+  { id: "kling-shape", scope: "kling-3", apply: "writer", on: true, text: "Kling reads one plain paragraph: the subject, what it does, where, then the camera and the light, in that order. Under 120 words. No timestamps, no shot numbers, no headers." },
+  { id: "kling-physics", scope: "kling-3", apply: "writer", on: true, text: "Kling's strength is physics: name the material and the force — water, cloth, hair, smoke, weight, wind — and what it does to the subject." },
+  { id: "kling-negative", scope: "kling-3", apply: "writer", on: true, text: "Anything to avoid goes to Kling's negative field, never into the prompt." },
+  { id: "nb-whole-scene", scope: "nano-banana", apply: "writer", on: true, text: "Nano Banana wants the one scene described whole — subject, setting, light, lens — as plain sentences. A still is not a shot list: no beats, no camera moves." },
+  { id: "nb-photographic", scope: "nano-banana", apply: "writer", on: true, text: "Frame and light in photographic terms — 35mm, eye level, shallow depth, soft window light — rather than film-set jargon." },
 ];
 
 export type PlatformCaps = {
@@ -159,7 +170,7 @@ export function cleanRules(v: unknown): PlatformRule[] | null {
     let id = str(r.id, 40).replace(/[^A-Za-z0-9_-]/g, "") || `rule-${out.length + 1}`;
     while (seen.has(id)) id = `${id}-x`;
     seen.add(id);
-    const scope: RuleScope = r.scope === "video" || r.scope === "image" ? r.scope : "all";
+    const scope: RuleScope = RULE_SCOPES.includes(r.scope as RuleScope) ? (r.scope as RuleScope) : "all";
     const apply: RuleApply = r.apply === "prompt" ? "prompt" : "writer";
     out.push({ id, text, scope, apply, on: r.on !== false });
   }
@@ -195,10 +206,18 @@ export function starterShotsWithSetup(layer: PlatformLayer): StarterShot[] {
 }
 
 /** The rules in scope for a kind and an audience, as one paragraph — or nothing. */
-export function rulesBlock(rules: PlatformRule[], kind: "video" | "image", apply: RuleApply): string {
+export function rulesBlock(rules: PlatformRule[], kind: "video" | "image", apply: RuleApply, family?: string | null): string {
   return rules
-    .filter((r) => r.on && r.apply === apply && (r.scope === "all" || r.scope === kind))
+    .filter((r) => r.on && r.apply === apply && (r.scope === "all" || r.scope === kind || (Boolean(family) && r.scope === family)))
     .map((r) => r.text.trim().replace(/\s+/g, " "))
     .filter(Boolean)
     .join(" ");
+}
+
+/** The writer's rules, one line per scope, for a writer that serves every engine at once (Atomik). Prompt rules are left to the render, which appends them. */
+export function writerRulesByScope(rules: PlatformRule[]): string {
+  return RULE_SCOPES.map((scope) => {
+    const text = rules.filter((r) => r.on && r.apply === "writer" && r.scope === scope).map((r) => r.text.trim().replace(/\s+/g, " ")).filter(Boolean).join(" ");
+    return text ? `${scope === "all" ? "Every engine" : RULE_SCOPE_LABELS[scope].replace(/ only$/, "")}: ${text}` : "";
+  }).filter(Boolean).join("\n");
 }

@@ -419,7 +419,7 @@ export const POST = withTenant(async function POST(req: Request) {
     const size = model.resolutions.includes(body.resolution)
       ? String(body.resolution) : model.resolutions[0];
     const isRaw = /^raw:/i.test(castPrompt);
-    const stillRules = isRaw ? "" : rulesBlock(layer.rules, "image", "prompt");
+    const stillRules = isRaw ? "" : rulesBlock(layer.rules, "image", "prompt", model.family);
     const stillPrompt = isRaw
       ? castPrompt.replace(/^raw:\s*/i, "")
       : stillRules && !castPrompt.includes(stillRules) ? `${castPrompt.trim()}\n\n${stillRules}` : castPrompt;
@@ -563,7 +563,7 @@ export const POST = withTenant(async function POST(req: Request) {
       // duration actually being paid for.
       // Show it the work this studio has actually approved, so the writing
       // converges on their taste rather than on a generic one.
-      const writerRules = rulesBlock(layer.rules, "video", "writer");
+      const writerRules = rulesBlock(layer.rules, "video", "writer", model.family);
       const style = [houseStyleBlock(await houseStyle(projectIdForCast)), writerRules ? `THE PLATFORM'S RULES\n${writerRules}` : ""].filter(Boolean).join("\n\n");
       const refineStartedAt = now();
       const r = await enhancePrompt({
@@ -658,7 +658,7 @@ export const POST = withTenant(async function POST(req: Request) {
   /* The platform's rules in scope, as plain sentences at the end — never on
      a raw: prompt, never on a clip that is itself the brief. */
   if (!/^raw:/i.test(castPrompt) && task.id !== "motion" && task.id !== "upscale") {
-    const promptRules = rulesBlock(layer.rules, "video", "prompt");
+    const promptRules = rulesBlock(layer.rules, "video", "prompt", model.family);
     if (promptRules && !finalPrompt.includes(promptRules)) finalPrompt = `${finalPrompt.trim()}\n\n${promptRules}`;
   }
 

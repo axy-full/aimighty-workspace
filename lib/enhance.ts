@@ -25,6 +25,7 @@ import { gatewayReachable, gatewayAuth, explainGatewayFailure } from "./gateway"
 import { vendorKey } from "./vendorKeys";
 import { gatewayPost } from "./gateway";
 import { engineMock } from "./mock";
+import { getModel } from "./models";
 export { gatewayReachable, gatewayAuth, gatewayCredits, GATEWAY_BASE, GATEWAY_URL } from "./gateway";
 
 const CHAT_URL = () =>
@@ -272,6 +273,17 @@ Bind each asset explicitly by its upload number and give it a ROLE — what to t
  * What changes per request. The engine split is the guide's, not ours: 2.5
  * reads integer-second timestamps, 2.0 reads only shot numbers.
  */
+/** The engine family a model id belongs to; an unknown id writes for Seedance. */
+function familyOf(modelId: string | undefined): string {
+  if (!modelId) return "seedance-2";
+  try { return getModel(modelId).family; } catch { return "seedance-2"; }
+}
+/** The dialect's name, for the instruction. */
+function dialectName(modelId: string | undefined): string {
+  const f = familyOf(modelId);
+  return f === "kling-3" ? "Kling" : f === "nano-banana" ? "Nano Banana" : "Seedance";
+}
+
 function targetBlock(
   modelId: string | undefined, durationS: number | undefined, task: string | undefined,
   words = 0
@@ -303,12 +315,14 @@ This CONTINUES an existing video, cited as @Video1. Rewrite it as a continuation
   const is25 = !modelId || /2-5|2\.5/.test(modelId);
   const dur = durationS && Number.isFinite(durationS) ? Math.round(durationS) : null;
 
-  const segments = is25
+  const segments = familyOf(modelId) === "kling-3"
+    ? `This is Kuaishou's Kling, not Seedance: it reads ONE plain paragraph. No timestamps, no "Shot 1" numbering, no headers or labels — subject, what it does, where, then the camera and the light, in that order.`
+    : is25
     ? `Segment the plot with INTEGER-SECOND TIMESTAMPS in whole-second units, continuous and without gaps — "0-3s: …", "3-8s: …". Do not use timestamps to choreograph high-frequency action ("shakes their head three times a second"); a timestamp marks a beat, not a metronome. A single moment may be pinned instead ("at the 4-second mark, …") or expressed relatively ("after three seconds of stillness, …").`
     : `This engine does NOT respond to timestamps. Segment the plot as "Shot 1: …", "Shot 2: …" instead, and never write times or seconds into the prompt.`;
 
   return `TARGET
-Engine: ${modelId ?? "Seedance 2.5"}.
+Engine: ${modelId ?? "Seedance 2.5"} (${dialectName(modelId)}).
 ${dur ? `Output duration: ${dur} seconds — pace the action to fill it, no more.` : ""}
 ${segments}
 ${budgetLine(words)}`;
@@ -521,7 +535,7 @@ export async function enhancePrompt(opts: {
     `${targetBlock(opts.model, opts.durationS, opts.task, opts.prompt.trim().split(/\s+/).filter(Boolean).length)}\n\n` +
     (opts.citations.length
       ? `Attached reference assets, in upload order: ${opts.citations.join(", ")}.\n\n`
-      : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a Seedance prompt:\n\n${opts.prompt}`;
+      : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a ${dialectName(opts.model)} prompt:\n\n${opts.prompt}`;
 
   const provider = opts.provider ?? refineProvider();
   if (provider === "anthropic") {
