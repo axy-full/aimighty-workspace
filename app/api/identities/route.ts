@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { allowanceCheck } from "@/lib/allowance";
 import { requireUser, withTenant } from "@/lib/auth";
 import {
   listIdentities, createIdentity, syncIdentity,
@@ -32,6 +33,8 @@ export const GET = withTenant(async function GET(req: Request) {
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  const allowance = await allowanceCheck("fal");
+  if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   const body = await req.json().catch(() => ({}));
   try {
     const identity = await createIdentity({

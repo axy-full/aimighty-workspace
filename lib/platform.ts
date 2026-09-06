@@ -1,4 +1,5 @@
 import { createClient, type Client } from "@libsql/client";
+import { gatewayMintConfigured, mintGatewayKey } from "./vercelKeys";
 import { randomBytes, createHash } from "node:crypto";
 import { seal, open } from "./keyring";
 import { provisionTenantDatabase } from "./provision";
@@ -58,6 +59,8 @@ const SCHEMA = [
      legacy             INTEGER NOT NULL DEFAULT 0,
      uses_platform_keys INTEGER NOT NULL DEFAULT 0,
      keys_enc           TEXT,
+     allowance_usd      REAL,
+     gateway_key_id     TEXT,
      owner_id           TEXT NOT NULL,
      created_at         INTEGER NOT NULL,
      updated_at         INTEGER NOT NULL
@@ -141,6 +144,8 @@ export function rowToWorkspace(r: any): TenantWorkspace {
     dbToken: legacy ? (process.env.TURSO_AUTH_TOKEN ?? null) : dbToken,
     keys,
     usesPlatformKeys: Number(r.uses_platform_keys ?? 0) === 1,
+    allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd),
+    gatewayKeyId: r.gateway_key_id ? String(r.gateway_key_id) : null,
     ownerId: String(r.owner_id), createdAt: Number(r.created_at ?? 0),
   };
 }
@@ -156,6 +161,12 @@ export function platformReady(): Promise<void> {
     _ready = (async () => {
       const p = platformDb();
       for (const stmt of SCHEMA) await p.execute(stmt);
+      /* Columns added after the table first shipped reach an existing
+         database only by ALTER; a duplicate is the one error to ignore. */
+      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`]) {
+        try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
+        catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
+      }
       const count = await p.execute(`SELECT COUNT(*) AS n FROM workspaces`);
       if (Number((count.rows[0] as any)?.n ?? 0) === 0) await importLegacy();
     })().catch((e) => { _ready = null; throw e; });
@@ -263,8 +274,23 @@ export async function workspacesFor(accountId: string): Promise<{ workspace: Ten
 export const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "workspace";
 
 /**
+ * Does a workspace that signs up run on the platform's keys? Yes unless the
+ * deployment says otherwise — a new workspace should render on day one,
+ * within its allowance, rather than open onto five empty key fields.
+ */
+export function platformKeysByDefault(): boolean {
+  return process.env.PLATFORM_KEYS_FOR_NEW_WORKSPACES !== "0";
+}
+
+/**
  * A new workspace: its own database, provisioned and bootstrapped, with
  * the creator as owner and mirrored into it so their renders carry a name.
+ *
+ * Its engines come with it. On the platform's keys by default (with the
+ * allowance), and — when the deployment can mint one — a Vercel AI Gateway
+ * key of its own, so its text spend sits under its own name and budget in
+ * Vercel's books. Minting is best effort: a workspace is never refused
+ * because Vercel was slow.
  */
 export async function createWorkspace(input: { name: string; owner: { id: string; email: string; name: string } }): Promise<TenantWorkspace> {
   await platformReady();
@@ -279,18 +305,46 @@ export async function createWorkspace(input: { name: string; owner: { id: string
   const db = await provisionTenantDatabase(slug);
   const id = newId("ws");
   const ts = now();
+  const platformKeys = platformKeysByDefault();
   await p.execute({
     sql: `INSERT INTO workspaces (id, slug, name, db_url, db_token_enc, db_name, legacy, uses_platform_keys, owner_id, created_at, updated_at)
-          VALUES (?,?,?,?,?,?,0,0,?,?,?)`,
-    args: [id, slug, input.name.trim().slice(0, 80), db.url, db.token ? seal(db.token) : null, db.name, input.owner.id, ts, ts],
+          VALUES (?,?,?,?,?,?,0,?,?,?,?)`,
+    args: [id, slug, input.name.trim().slice(0, 80), db.url, db.token ? seal(db.token) : null, db.name, platformKeys ? 1 : 0, input.owner.id, ts, ts],
   });
   await p.execute({
     sql: `INSERT INTO memberships (workspace_id, account_id, role, created_at) VALUES (?,?,'owner',?)`,
     args: [id, input.owner.id, ts],
   });
+  if (gatewayMintConfigured()) {
+    try {
+      const minted = await mintGatewayKey(`particl · ${slug}`);
+      await p.execute({
+        sql: `UPDATE workspaces SET keys_enc = ?, gateway_key_id = ?, updated_at = ? WHERE id = ?`,
+        args: [seal(JSON.stringify({ gateway: minted.key })), minted.id, now(), id],
+      });
+    } catch (e) {
+      console.warn(`[workspace ${slug}] no gateway key minted: ${(e as Error).message}`);
+    }
+  }
   const ws = (await getWorkspace(id))!;
   await mirrorUser(ws, { id: input.owner.id, email: input.owner.email, name: input.owner.name }, "owner", false);
   return ws;
+}
+
+/** Whose keys a workspace's engines run on. */
+export async function setWorkspaceMode(id: string, usesPlatformKeys: boolean): Promise<void> {
+  await platformDb().execute({
+    sql: `UPDATE workspaces SET uses_platform_keys = ?, updated_at = ? WHERE id = ? AND legacy = 0`,
+    args: [usesPlatformKeys ? 1 : 0, now(), id],
+  });
+}
+
+/** Dollars a month on the platform's keys; null returns it to the deployment's default. */
+export async function setWorkspaceAllowance(id: string, usd: number | null): Promise<void> {
+  await platformDb().execute({
+    sql: `UPDATE workspaces SET allowance_usd = ?, updated_at = ? WHERE id = ? AND legacy = 0`,
+    args: [usd, now(), id],
+  });
 }
 
 export async function addMember(ws: TenantWorkspace, account: { id: string; email: string; name: string }, role: WorkspaceRole): Promise<void> {

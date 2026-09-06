@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { allowanceCheck } from "@/lib/allowance";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { requireRender, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
@@ -21,8 +22,10 @@ export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
   if (got.response) return got.response;
   await ready();
+  const allowance = await allowanceCheck("elevenlabs");
+  if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   if (!elevenConfigured()) {
-    return NextResponse.json({ error: "ElevenLabs isn't connected — set ELEVENLABS_API_KEY in Vercel › Settings › Environment Variables." }, { status: 400 });
+    return NextResponse.json({ error: "ElevenLabs isn't connected for this workspace — add its key under Settings › Engines & keys." }, { status: 400 });
   }
   const body = await req.json().catch(() => ({}));
   const task = ["speech", "sound", "music"].includes(String(body.task)) ? String(body.task) as "speech" | "sound" | "music" : "speech";

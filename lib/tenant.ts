@@ -24,8 +24,14 @@ export type TenantWorkspace = {
   dbToken: string | null;
   /** Vendor keys this workspace brought, decrypted for this process only. */
   keys: Record<string, string>;
-  /** True only for the platform's own workspace, which may use the deployment's env keys. */
+  /** May the deployment's own keys pay for this workspace? True for the
+   *  platform's workspace and, by default, for every workspace that signs
+   *  up — with a monthly allowance (lib/allowance.ts). */
   usesPlatformKeys: boolean;
+  /** Dollars a month on the platform's keys; null means the deployment's default. */
+  allowanceUsd: number | null;
+  /** The Vercel AI Gateway key minted for this workspace, by id, so it can be revoked. */
+  gatewayKeyId: string | null;
   ownerId: string;
   createdAt: number;
 };

@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
 import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
@@ -98,9 +99,13 @@ export const POST = withTenant(async function POST(req: Request) {
   const vendor = getProvider(model.provider);
   if (!providerConfigured(vendor)) {
     return NextResponse.json({
-      error: `${model.label} needs a ${vendor.label} key on this deployment — set ${vendor.envKey} in Vercel and redeploy.`,
+      error: `${model.label} isn't connected for this workspace — add a ${vendor.label} key under Settings › Engines & keys.`,
     }, { status: 400 });
   }
+  // On the platform's keys, a workspace has a monthly allowance — the wall
+  // the platform's money sits behind. Checked before anything is spent.
+  const allowance = await allowanceCheck(vendorKeyNameFor(model.provider));
+  if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
 
   /* ── Task ────────────────────────────────────────────────────────────
    * generate | edit | extend. Editing and extension are LOCKED tasks: the

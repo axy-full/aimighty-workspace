@@ -49,7 +49,11 @@ type Ws = { settings: Record<string, string>; defaults: Record<string, string> }
 type IdTerms = { terms: { configured: boolean; trainer: string; trainCostUsd: number } };
 type AudioSetup = { configured: boolean; envKey: string; terms: { sfxCredits: number; musicCreditsPerMinute: number }; account: { tier: string } | null };
 type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; monthlyUsd: number } | null };
-type Keys = { usesPlatformKeys: boolean; keyring: boolean; keys: { name: string; label: string; does: string; set: boolean; masked: string | null }[] };
+type Keys = {
+  usesPlatformKeys: boolean; mode: "legacy" | "platform" | "own"; canPlatform: boolean; keyring: boolean;
+  allowance: { usd: number; spentUsd: number } | null; gatewayMinted: boolean;
+  keys: { name: string; label: string; does: string; set: boolean; masked: string | null }[];
+};
 
 const SECTIONS = [
   ["workspace", "Workspace"], ["team", "Team & roles"], ["engines", "Engines & keys"], ["masters", "Storage & masters"],
@@ -85,6 +89,7 @@ export default function SettingsPage() {
   const { data: keys, refresh: refreshKeys } = useApi<Keys>(signedIn && owner ? "/api/workspaces/keys" : null, 0);
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState<string>("team");
+  const [modeBusy, setModeBusy] = useState(false);
   const isAdmin = me?.role === "admin";
   const setting = (k: string) => ws?.settings[k] ?? ws?.defaults[k] ?? "";
 
@@ -136,6 +141,29 @@ export default function SettingsPage() {
   }));
   const usable = MODELS.filter((m) => !m.hidden);
 
+  /* Whose key an engine runs on for this workspace: its own, the platform's
+     (within the allowance), or — for the studio's own workspace — the
+     deployment's, which is not managed here at all. */
+  const KEY_OF: Record<string, string> = { byteplus: "ark", google: "gemini", vercel: "gateway", fal: "fal", elevenlabs: "elevenlabs" };
+  const mode = keys?.mode ?? "legacy";
+  const ownKeyFor = (engineId: string) => Boolean(keys?.keys.find((k) => k.name === KEY_OF[engineId])?.set);
+  const ekeyLine = (e: { id: string; on: boolean; via?: "key" | "gateway" | null }) => {
+    if (mode === "platform" && !ownKeyFor(e.id)) return e.on ? "ON THE PLATFORM'S KEY · COUNTS AGAINST THE ALLOWANCE" : "NOT ON THE PLATFORM EITHER";
+    if (e.via === "gateway" && mode !== "own" && !ownKeyFor(e.id)) return "SIGNED IN AS THE DEPLOYMENT · NO KEY TO KEEP";
+    return e.on ? "KEY HELD SEALED ON THE SERVER" : "NO KEY YET";
+  };
+  async function setMode(next: "platform" | "own") {
+    if (!keys || keys.mode === next) return;
+    setModeBusy(true);
+    try {
+      const res = await fetch("/api/workspaces/keys", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: next }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      refreshKeys(); refreshEngines();
+    } catch (e) { await appAlert("Not changed", (e as Error).message); }
+    finally { setModeBusy(false); }
+  }
+
   return (
     <div className="page">
       <div className="page-inner st-grid">
@@ -184,11 +212,28 @@ export default function SettingsPage() {
 
           {/* ── Engines & keys ── */}
           <section id="engines" className="scard">
-            <div className="scard-h"><span>Engines &amp; keys</span><span>{keys && !keys.usesPlatformKeys ? "This workspace's own keys, sealed on the server and shown only to its owner, and only masked. Costs on the render button come from these routes." : "Keys live in Vercel, set by an admin, and are never shown here — not even their names. Costs on the render button come from these routes."}</span></div>
-            {owner && keys && !keys.usesPlatformKeys && (
+            <div className="scard-h"><span>Engines &amp; keys</span><span>{
+              mode === "platform"
+                ? `This workspace runs on the platform's engines${keys?.allowance ? `, with a ${usd(keys.allowance.usd, 0)} monthly allowance — ${usd(keys.allowance.spentUsd, 2)} used this month` : ""}. Add your own key for any vendor and it takes over for that vendor; the rest stay on the platform.`
+                : mode === "own"
+                  ? "This workspace's own keys, sealed on the server and shown only to its owner, and only masked. Costs on the render button come from these routes."
+                  : "Keys live in Vercel, set by an admin, and are never shown here — not even their names. Costs on the render button come from these routes."
+            }</span></div>
+            {owner && keys && keys.mode !== "legacy" && (
               <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[12.5px] text-dim">Engines run on</span>
+                  <span className="inline-flex rounded-[10px] bg-chip p-[3px]" role="radiogroup" aria-label="Whose keys the engines run on">
+                    {([["platform", "The platform's keys"], ["own", "My own keys"]] as const).map(([m, label]) => (
+                      <button key={m} type="button" role="radio" aria-checked={keys.mode === m}
+                        disabled={modeBusy || (m === "platform" && !keys.canPlatform)} onClick={() => setMode(m)}
+                        className={`rounded-[8px] px-3 py-1 text-[13px] font-medium transition-colors disabled:cursor-default ${keys.mode === m ? "bg-panel text-ink shadow-[var(--shadow-card)]" : "text-dim"}`}>{label}</button>
+                    ))}
+                  </span>
+                  {keys.gatewayMinted && <span className="mono-s !text-[10.5px]">OWN GATEWAY KEY · MINTED AT SIGN-UP</span>}
+                </div>
                 {!keys.keyring && <p className="rail-help text-lift">The deployment can&rsquo;t hold keys yet — KEYRING_SECRET is not set.</p>}
-                {keys.keys.map((k) => <KeyRow key={k.name} k={k} onChanged={() => { refreshKeys(); refreshEngines(); }} />)}
+                {keys.keys.map((k) => <KeyRow key={k.name} k={k} platform={keys.mode === "platform"} onChanged={() => { refreshKeys(); refreshEngines(); }} />)}
                 <span className="rail-help">Keys are sealed before they are stored and never shown again in full. Only you, the owner, can see this card; the team sees only which engines are connected.</span>
               </div>
             )}
@@ -199,7 +244,7 @@ export default function SettingsPage() {
                     <span className="flex flex-col gap-[3px]"><span className="text-[13.5px] font-semibold">{e.name}</span><span className="text-[12px] text-dim">{e.does}</span></span>
                     <span className={`ak-state !text-[10.5px] ${e.on ? "is-approved" : ""}`}><span className={`dot !h-[7px] !w-[7px] ${e.on ? "dot-approved" : "dot-none"}`} />{e.on ? "CONNECTED" : "NOT ROUTED"}</span>
                   </div>
-                  <div className="ekey"><span>{e.via === "gateway" && (keys?.usesPlatformKeys ?? true) ? "SIGNED IN AS THE DEPLOYMENT · NO KEY TO KEEP" : e.on ? "KEY HELD SEALED ON THE SERVER" : "NO KEY YET"}</span>{owner && <span className="text-ink">{keys?.usesPlatformKeys ? (e.on ? "Rotate in Vercel" : "Add in Vercel") : "Managed above"}</span>}</div>
+                  <div className="ekey"><span>{ekeyLine(e)}</span>{owner && <span className="text-ink">{mode === "legacy" ? (e.on ? "Rotate in Vercel" : "Add in Vercel") : "Managed above"}</span>}</div>
                   <span className="text-[11.5px] leading-[1.35] text-dim">{e.rate}</span>
                 </div>
               ))}
@@ -305,7 +350,7 @@ export default function SettingsPage() {
 }
 
 /** One vendor's key: what it does, whether it is set, and a field to set or rotate it. */
-function KeyRow({ k, onChanged }: { k: Keys["keys"][number]; onChanged: () => void }) {
+function KeyRow({ k, platform = false, onChanged }: { k: Keys["keys"][number]; platform?: boolean; onChanged: () => void }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -331,7 +376,7 @@ function KeyRow({ k, onChanged }: { k: Keys["keys"][number]; onChanged: () => vo
     <div className="ecard !gap-2">
       <div className="flex items-center justify-between gap-3">
         <span className="flex flex-col gap-[3px]"><span className="text-[13.5px] font-semibold">{k.label}</span><span className="text-[12px] text-dim">{k.does}</span></span>
-        <span className={`ak-state !text-[10.5px] ${k.set ? "is-approved" : ""}`}><span className={`dot !h-[7px] !w-[7px] ${k.set ? "dot-approved" : "dot-none"}`} />{k.set ? `SET · ${k.masked}` : "NOT SET"}</span>
+        <span className={`ak-state !text-[10.5px] ${k.set ? "is-approved" : ""}`}><span className={`dot !h-[7px] !w-[7px] ${k.set ? "dot-approved" : "dot-none"}`} />{k.set ? `SET · ${k.masked}` : platform ? "PLATFORM'S KEY" : "NOT SET"}</span>
       </div>
       {editing ? (
         <div className="flex gap-1.5">
@@ -341,7 +386,7 @@ function KeyRow({ k, onChanged }: { k: Keys["keys"][number]; onChanged: () => vo
         </div>
       ) : (
         <div className="flex gap-1.5">
-          <button type="button" className="btn-secondary !h-8 !px-3 !text-[12px]" onClick={() => setEditing(true)}>{k.set ? "Rotate" : "Add key"}</button>
+          <button type="button" className="btn-secondary !h-8 !px-3 !text-[12px]" onClick={() => setEditing(true)}>{k.set ? "Rotate" : platform ? "Use my own" : "Add key"}</button>
           {k.set && <button type="button" className="btn-secondary !h-8 !px-3 !text-[12px] text-lift" onClick={remove} disabled={busy}>Remove</button>}
         </div>
       )}

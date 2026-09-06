@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { requireSuperAdmin } from "@/lib/auth";
-import { platformDb, platformReady, now } from "@/lib/platform";
+import { platformDb, platformReady, now, platformKeysByDefault } from "@/lib/platform";
+import { defaultAllowanceUsd } from "@/lib/allowance";
+import { gatewayMintConfigured } from "@/lib/vercelKeys";
 import { mailConfigured, sendMail, inviteOrigin } from "@/lib/mail";
 import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
@@ -22,16 +24,19 @@ export async function GET() {
   const [invites, requests, workspaces] = await Promise.all([
     p.execute({ sql: `SELECT * FROM signup_invites WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at DESC`, args: [now()] }),
     p.execute(`SELECT id, name, email, note, mailed, created_at FROM access_requests WHERE handled_at IS NULL ORDER BY created_at DESC LIMIT 100`),
-    p.execute(`SELECT w.id, w.slug, w.name, w.legacy, w.uses_platform_keys, w.created_at, a.email AS owner_email, a.name AS owner_name,
+    p.execute(`SELECT w.id, w.slug, w.name, w.legacy, w.uses_platform_keys, w.allowance_usd, w.gateway_key_id, w.created_at, a.email AS owner_email, a.name AS owner_name,
                       (SELECT COUNT(*) FROM memberships m WHERE m.workspace_id = w.id AND m.disabled = 0) AS members
                FROM workspaces w LEFT JOIN accounts a ON a.id = w.owner_id ORDER BY w.created_at`),
   ]);
   return NextResponse.json({
     ready: provisioningConfigured() && keyringConfigured(),
     mail: mailConfigured(),
+    platformKeysByDefault: platformKeysByDefault(),
+    defaultAllowanceUsd: defaultAllowanceUsd(),
+    gatewayMint: gatewayMintConfigured(),
     invites: invites.rows.map((r: any) => ({ code: r.code, email: r.email, name: r.name, note: r.note, createdAt: Number(r.created_at), expiresAt: Number(r.expires_at), sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0) })),
     requests: requests.rows.map((r: any) => ({ id: r.id, name: r.name, email: r.email, note: r.note, mailed: Boolean(Number(r.mailed)), createdAt: Number(r.created_at) })),
-    workspaces: workspaces.rows.map((r: any) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: Number(r.uses_platform_keys) === 1, createdAt: Number(r.created_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0) })),
+    workspaces: workspaces.rows.map((r: any) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: Number(r.uses_platform_keys) === 1, allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd), gatewayKey: Boolean(r.gateway_key_id), createdAt: Number(r.created_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0) })),
   });
 }
 

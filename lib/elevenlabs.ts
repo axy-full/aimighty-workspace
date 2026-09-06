@@ -19,7 +19,7 @@ function key(): string {
   const k = vendorKey("elevenlabs");
   if (!k) {
     throw new Error(
-      "ElevenLabs isn't connected — set ELEVENLABS_API_KEY in Vercel › Settings › Environment Variables and redeploy."
+      "ElevenLabs isn't connected for this workspace — add its key under Settings › Engines & keys."
     );
   }
   return k;

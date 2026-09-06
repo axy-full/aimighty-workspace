@@ -70,7 +70,7 @@ function Signup() {
     );
   }
   return (
-    <AuthCard title="Create your workspace" sub={`For ${state.email}. Your workspace gets its own database, its own keys and its own team; you own it.`}>
+    <AuthCard title="Create your workspace" sub={`For ${state.email}. Your workspace gets its own database and team, with the engines already connected on a monthly allowance — add your own vendor keys whenever you want to pay them directly. You own it.`}>
       {!state.open && <ErrorLine>Sign-up isn&rsquo;t open on this deployment yet — contact management.</ErrorLine>}
       <form onSubmit={submit}>
         <Field label="Your name"><input className="ctl" required value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>

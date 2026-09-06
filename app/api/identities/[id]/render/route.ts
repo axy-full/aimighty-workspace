@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { allowanceCheck } from "@/lib/allowance";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { requireRender, withTenant } from "@/lib/auth";
 import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS } from "@/lib/identities";
@@ -24,8 +25,10 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
     return NextResponse.json({ error: "Train the identity first." }, { status: 400 });
   }
   if (!falConfigured()) {
-    return NextResponse.json({ error: "fal.ai isn't connected — set FAL_KEY in Vercel." }, { status: 400 });
+    return NextResponse.json({ error: "fal.ai isn't connected for this workspace — add its key under Settings › Engines & keys." }, { status: 400 });
   }
+  const allowance = await allowanceCheck("fal");
+  if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   const body = await req.json().catch(() => ({}));
   const prompt = String(body.prompt ?? "").trim();
   if (!prompt) return NextResponse.json({ error: "Say what the shot is." }, { status: 400 });

@@ -186,7 +186,9 @@ import { vendorKey, vendorKeyForEnv } from "./vendorKeys";
 /** Is this vendor usable right now? Reported on /api/health and in Settings. */
 export function providerConfigured(p: ProviderDef): boolean {
   if (p.id === "vercel") return gatewayReachable();
-  return Boolean(process.env[p.envKey]) || (p.id === "google" && gatewayReachable());
+  /* Through vendorKey, not the raw env: a workspace's own sealed key, or
+     the platform's where it is lent — the same answer the render will get. */
+  return Boolean(vendorKeyForEnv(p.envKey)) || (p.id === "google" && gatewayReachable());
 }
 
 /** Which door a vendor's calls go through from this deployment. */
@@ -225,9 +227,9 @@ export function providerVia(p: ProviderDef): "key" | "gateway" | null {
   if (p.id === "google") {
     if (process.env.STILLS_VIA === "google" && vendorKeyForEnv(p.envKey)) return "key";
     if (gatewayReachable()) return "gateway";
-    return process.env[p.envKey] ? "key" : null;
+    return vendorKeyForEnv(p.envKey) ? "key" : null;
   }
-  return process.env[p.envKey] ? "key" : null;
+  return vendorKeyForEnv(p.envKey) ? "key" : null;
 }
 
 export function providerBaseUrl(p: ProviderDef): string {

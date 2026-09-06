@@ -3,12 +3,12 @@ import { currentTenant } from "./tenant";
 /**
  * Whose key pays for a render.
  *
- * Every workspace brings its own vendor keys, sealed in its record and
- * unsealed only inside the process that is about to use them. The one
- * exception is the platform's own workspace — the studio that runs the
- * deployment — which may fall back to the environment's keys. Nobody else
- * ever reaches those: a workspace without a key of its own for a vendor
- * simply has that vendor unrouted.
+ * A workspace's own key for a vendor always wins: sealed in its record,
+ * unsealed only inside the process about to use it. Where it holds none,
+ * the deployment's key steps in — for the platform's own workspace, and
+ * for every workspace that runs on the platform's keys (the default at
+ * sign-up, walled by lib/allowance.ts). A workspace on its own keys reaches
+ * nothing it has not added: that vendor is simply unrouted for it.
  */
 export type VendorKeyName = "ark" | "gemini" | "gateway" | "fal" | "elevenlabs";
 
@@ -27,7 +27,11 @@ export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[]
 
 export function vendorKey(name: VendorKeyName): string | null {
   const ws = currentTenant()?.workspace;
-  if (ws && !ws.usesPlatformKeys) return ws.keys[name] || null;
+  if (ws) {
+    const own = ws.keys[name];
+    if (own) return own;
+    if (!ws.usesPlatformKeys) return null;
+  }
   return process.env[ENV[name]] || null;
 }
 

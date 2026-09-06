@@ -21,7 +21,7 @@ function auth(): string {
   const key = vendorKey("fal");
   if (!key) {
     throw new Error(
-      "fal.ai isn't connected — set FAL_KEY in Vercel › Settings › Environment Variables and redeploy."
+      "fal.ai isn't connected for this workspace — add its key under Settings › Engines & keys."
     );
   }
   return `Key ${key}`;

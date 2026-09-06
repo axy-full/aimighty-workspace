@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireOwner, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { setWorkspaceKeys } from "@/lib/platform";
+import { setWorkspaceKeys, setWorkspaceMode, platformKeysByDefault } from "@/lib/platform";
 import { VENDOR_KEYS, type VendorKeyName } from "@/lib/vendorKeys";
 import { mask, keyringConfigured } from "@/lib/keyring";
+import { allowanceUsd, platformSpendThisMonth } from "@/lib/allowance";
 
 export const dynamic = "force-dynamic";
 const NAMES = new Set<string>(VENDOR_KEYS.map((k) => k.name));
@@ -11,17 +12,33 @@ const NAMES = new Set<string>(VENDOR_KEYS.map((k) => k.name));
 /**
  * The workspace's vendor keys — the owner's alone. Read back masked: a key
  * is shown as its last four characters, enough to tell which one it is and
- * never enough to use it. The platform's own workspace uses the
- * deployment's keys and has nothing to manage here.
+ * never enough to use it.
+ *
+ * Three modes. The studio's own workspace (`legacy`) runs on the
+ * deployment and manages nothing here. A new workspace runs on the
+ * PLATFORM's keys with a monthly allowance, and any key it adds of its own
+ * takes over for that vendor. A workspace on its OWN keys reaches only
+ * what it has added.
  */
 export const GET = withTenant(async function GET() {
   const got = await requireOwner();
   if (got.response) return got.response;
   const ws = requireTenant();
+  const mode = ws.legacy ? "legacy" : ws.usesPlatformKeys ? "platform" : "own";
+  const cap = allowanceUsd();
+  const spent = cap != null ? await platformSpendThisMonth() : 0;
   return NextResponse.json({
     usesPlatformKeys: ws.usesPlatformKeys,
+    mode,
+    canPlatform: platformKeysByDefault(),
     keyring: keyringConfigured(),
-    keys: VENDOR_KEYS.map((k) => ({ name: k.name, label: k.label, does: k.does, set: Boolean(ws.keys[k.name]), masked: ws.keys[k.name] ? mask(ws.keys[k.name]) : null })),
+    allowance: cap != null ? { usd: cap, spentUsd: spent } : null,
+    gatewayMinted: Boolean(ws.gatewayKeyId),
+    keys: VENDOR_KEYS.map((k) => ({
+      name: k.name, label: k.label, does: k.does,
+      set: Boolean(ws.keys[k.name]),
+      masked: ws.keys[k.name] ? mask(ws.keys[k.name]) : null,
+    })),
   });
 });
 
@@ -30,7 +47,7 @@ export const PUT = withTenant(async function PUT(req: Request) {
   const got = await requireOwner();
   if (got.response) return got.response;
   const ws = requireTenant();
-  if (ws.usesPlatformKeys) return NextResponse.json({ error: "This workspace runs on the deployment's keys." }, { status: 400 });
+  if (ws.legacy) return NextResponse.json({ error: "The studio's own workspace runs on the deployment's keys." }, { status: 400 });
   if (!keyringConfigured()) return NextResponse.json({ error: "The deployment can't hold keys yet — KEYRING_SECRET is not set." }, { status: 503 });
   const body = await req.json().catch(() => ({}));
   const name = String(body.name ?? "") as VendorKeyName;
@@ -52,4 +69,20 @@ export const DELETE = withTenant(async function DELETE(req: Request) {
   delete next[name];
   await setWorkspaceKeys(ws.id, next);
   return NextResponse.json({ ok: true, name });
+});
+
+/** Whose keys the engines run on: the platform's (with its allowance) or the workspace's own. */
+export const PATCH = withTenant(async function PATCH(req: Request) {
+  const got = await requireOwner();
+  if (got.response) return got.response;
+  const ws = requireTenant();
+  if (ws.legacy) return NextResponse.json({ error: "The studio's own workspace runs on the deployment." }, { status: 400 });
+  const body = await req.json().catch(() => ({}));
+  const mode = body.mode === "platform" ? "platform" : body.mode === "own" ? "own" : null;
+  if (!mode) return NextResponse.json({ error: "mode must be platform or own." }, { status: 400 });
+  if (mode === "platform" && !platformKeysByDefault()) {
+    return NextResponse.json({ error: "The platform doesn't lend its keys on this deployment." }, { status: 400 });
+  }
+  await setWorkspaceMode(ws.id, mode === "platform");
+  return NextResponse.json({ ok: true, mode });
 });
