@@ -5,6 +5,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
 import { safetyThreshold } from "@/lib/gemini";
 import { invalidateSettings } from "@/lib/settings";
+import { ENGINES } from "@/lib/engines";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export const GET = withTenant(async function GET() {
       envKey: p.envKey,
       docs: p.docs,
       configured: providerConfigured(p),
+      kinds: ENGINES[p.id]?.kinds ?? [],
       /** "key" for the vendor's own key, "gateway" for Vercel AI Gateway. */
       via: providerVia(p),
       /** Google only: where its adjustable safety thresholds sit. */
