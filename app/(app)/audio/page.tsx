@@ -44,6 +44,8 @@ type Setup = {
   account: Account | null; accountError: string | null;
   terms: { sfxCredits: number; musicCreditsPerMinute: number };
 };
+/** What a visitor is shown: the desk as it is, Render gated behind sign-in. */
+const VISITOR_SETUP = { configured: true, envKey: "", terms: { sfxCredits: 200, musicCreditsPerMinute: 900 }, account: null } as unknown as Setup;
 
 /* The desk's three words for a track, and the API's task behind each. */
 type Task = "sound" | "music" | "speech";
@@ -76,7 +78,10 @@ export default function AudioPage() {
   const { signedIn } = useSession();
   const { selection: bin } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
-  const { data: setup, error: setupError, refresh: refreshSetup } = useApi<Setup>("/api/audio", 0);
+  const { data: setupData, error: setupError, refresh: refreshSetup } = useApi<Setup>(signedIn ? "/api/audio" : null, 0);
+  /* A visitor sees the desk as it is, with Render gated behind sign-in —
+     the same deal as the video and stills composers. */
+  const setup: Setup | null = setupData ?? (signedIn ? null : VISITOR_SETUP);
   const q = `/api/jobs?kind=audio&limit=120${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}`;
   const { data: jobs, refresh } = useApi<{ generations: Gen[] }>(q, 5000);
   useOnChange(refresh);

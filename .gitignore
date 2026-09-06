@@ -46,3 +46,7 @@ next-env.d.ts
 
 # push key handoff (never commit)
 vapid-keys-for-vercel.txt
+
+# Playwright
+test-results/
+playwright-report/

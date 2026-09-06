@@ -18,7 +18,7 @@ import { createPortal } from "react-dom";
  * of who they are writing to.
  */
 
-export function RequestAccessButton({ className = "", label = "Contact management" }: {
+export function RequestAccessButton({ className = "", label = "Request an invite" }: {
   className?: string; label?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -49,6 +49,8 @@ function RequestAccessDialog({ onClose }: { onClose: () => void }) {
   const first = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Not on a phone: focusing the field opens the keyboard over the dialog.
+    if (window.matchMedia("(hover: none)").matches) return;
     const t = setTimeout(() => first.current?.focus(), 40);
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", esc);

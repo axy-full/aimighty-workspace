@@ -153,7 +153,7 @@ function ShotBuilder() {
           <div className="st-sec">
             <div className="st-sec-head">
               <span className="st-h">The shot</span>
-              <span className="st-sub">One pick per row. The prompt on the right assembles itself as you go.</span>
+              <span className="st-sub">One pick per row. The prompt assembles itself as you go.</span>
             </div>
             <div className="sr-list">
               {CATEGORIES.map((c) => (
@@ -165,6 +165,7 @@ function ShotBuilder() {
                   <div className="sr-chips">
                     {c.options.map((o) => (
                       <button key={o.value} type="button" onClick={() => toggle(c.key, o.value)} title={o.phrase}
+                        aria-pressed={spec[c.key] === o.value}
                         className={`sr-chip ${spec[c.key] === o.value ? "is-on" : ""}`}>{o.label}</button>
                     ))}
                   </div>
@@ -201,6 +202,8 @@ function ShotBuilder() {
             </p>
           </div>
           <div className="ws-rail-foot">
+            {/* On a phone the rows scroll away from the prompt; the bar keeps the line and the count in view. */}
+            <span className="st-foot-line">{n} OF {CATEGORIES.length} ROWS SET{phrase ? ` · ${phrase}` : ""}</span>
             <button type="button" className="btn-primary !h-[46px] !px-4 !text-[14px]" onClick={takeToVideo} disabled={!signedIn || (!prose.trim() && n === 0)}
               title={signedIn ? undefined : "Sign in to render"}>
               <span>Take it to Video</span>

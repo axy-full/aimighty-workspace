@@ -55,7 +55,7 @@ export default function WelcomeSignIn() {
         </div>
 
         <div className="wl-foot">
-          <p>particl studio runs Seedance on BytePlus ModelArk and Google&rsquo;s Nano Banana through Vercel AI Gateway. Masters are stored byte-for-byte and never compressed to suit an API.</p>
+          <p>particl studio runs Seedance on BytePlus ModelArk, Nano Banana on Google, Kling and Topaz on fal.ai, and ElevenLabs for sound. Masters are stored byte-for-byte and never compressed to suit an API.</p>
           <Link href="/atomik/ideas" className="wl-atomik"><AtomikMark size={16} /> IDEA TO SHOT LIST · ATOMIK →</Link>
         </div>
       </section>

@@ -213,7 +213,7 @@ export default function Feed({
             title={signedIn ? (stills ? "Your first still goes here" : "Your first shot goes here") : "The wall is private"}
             line={signedIn
               ? "Describe it in the composer. The cost sits on the button before you press it, and every render lands under its shot as it finishes."
-              : "This is where the studio's takes sit, under the shots they belong to. The composer on the right is the real one — sign in and the cost appears on the button before you press it."}
+              : "This is where the studio's takes sit, under the shots they belong to. The composer is the real one — sign in and the cost appears on the button before you press it."}
           />
         ) : groups.length === 0 ? (
           <Empty compact title={q ? `Nothing matching “${q}”` : `Nothing ${filterWord} yet`} />

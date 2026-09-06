@@ -234,7 +234,7 @@ export async function startTraining(id: string): Promise<Identity> {
   const identity = await getIdentity(id);
   if (!identity) throw new Error("No such identity.");
   if (!falConfigured()) {
-    throw new Error("Training runs on fal.ai, which isn't connected yet — set FAL_KEY in Vercel › Settings › Environment Variables.");
+    throw new Error("Identity training isn't connected for this workspace — add the fal.ai key under Settings › Engines & keys.");
   }
   if (identity.status === "training") throw new Error("It's already training.");
   if (identity.photos.length < MIN_PHOTOS) {

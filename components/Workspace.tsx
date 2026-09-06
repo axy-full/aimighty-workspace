@@ -139,8 +139,11 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const writer = engineData?.refiner ?? null;
 
   // The composer opens on whatever Settings says, then stays where you put it.
+  /* Seeded for the KIND, so the server renders the still composer for
+     /images rather than the video one the client then swaps out — a flash of
+     the wrong controls and the wrong price on a slow connection. */
   const [params, setParams] = useState<Params>(() => ({
-    modelId: DEFAULT_MODEL_ID, ratio: "16:9", resolution: "1080p", duration: 5,
+    modelId: defaultModelFor(kind), ratio: "16:9", resolution: kind === "image" ? "2K" : "1080p", duration: 5,
     watermark: false, generateAudio: false, seed: "", orientation: "video", fps60: false,
   }));
   const seeded = useRef(false);
@@ -450,7 +453,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         ? "Attach a still of the character to move — an upload, one of your renders, or a cast member." : null));
 
   return (
-    <div className="ws">
+    <div className={`ws ${data && visible.length === 0 ? "is-empty" : ""}`}>
       {/* The wall draws whatever the library holds, including rows made by
           engines that have since been retired. One unreadable row must not
           take the composer down with it. */}

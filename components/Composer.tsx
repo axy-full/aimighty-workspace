@@ -157,6 +157,16 @@ export default function Composer(p: ComposerProps) {
   }, [prompt]);
 
   const configured = (id: string) => engines.find((e) => e.id === id)?.configured ?? true;
+  /* What a row in the mode menu would cost at the current settings — one
+     number next to each engine, so the choice is made with the price. */
+  const rowPrice = (m: ModelDef): string | null => {
+    const res = m.resolutions.includes(params.resolution) ? params.resolution : m.resolutions[0];
+    const c = m.kind === "image"
+      ? estimateImageCostUsd(m.id, res, imageRefCount)
+      : estimateCostUsd(m.id, res, m.ratios.includes(params.ratio) ? params.ratio : m.ratios[0],
+          m.durations.includes(params.duration) ? params.duration : (m.durations[0] ?? 5), inputSeconds, hasVideoInput, estOpts);
+    return c ? price(c.net) : null;
+  };
   const engineOf = (m: ModelDef) => engines.find((e) => e.id === m.provider);
 
   const placeholder = taskOn
@@ -310,6 +320,7 @@ export default function Composer(p: ComposerProps) {
                         : t === "generate" ? m.note : def.blurb}
                     </span>
                   </span>
+                  {on && t === "generate" && rowPrice(m) && <span className="text-[12.5px] text-mute">{rowPrice(m)}</span>}
                   <span className={picked ? "text-blue" : "text-transparent"}>✓</span>
                 </button>
               );
@@ -328,14 +339,14 @@ export default function Composer(p: ComposerProps) {
           </ChipMenu>
         )}
 
-        <ChipMenu label={params.resolution.toUpperCase()} hint={dims ? `${dims.w}×${dims.h}` : undefined}
+        <ChipMenu label={resLabel(params.resolution, isImage)} hint={dims ? `${dims.w}×${dims.h}` : undefined}
           open={menu === "res"} onOpen={() => setMenu("res")} onClose={() => setMenu(null)}>
           {model.resolutions.map((r) => {
             const c = isImage ? estimateImageCostUsd(params.modelId, r, imageRefCount)
               : estimateCostUsd(params.modelId, r, params.ratio, billedSecs, inputSeconds, hasVideoInput, estOpts);
             return (
               <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }} className="menu-item">
-                <span className={`flex-1 ${params.resolution === r ? "text-blue" : ""}`}>{r.toUpperCase()}</span>
+                <span className={`flex-1 ${params.resolution === r ? "text-blue" : ""}`}>{resLabel(r, isImage)}</span>
                 {c && <span className="text-[13px] text-mute">{usd(c.net, 2)}</span>}
               </button>
             );
@@ -371,14 +382,14 @@ export default function Composer(p: ComposerProps) {
         )}
         {taskOn?.id === "upscale" && (
           <button type="button" onClick={() => patch({ fps60: !params.fps60 })}
-            className={`chip-ctl ${params.fps60 ? "is-on" : ""}`} title="Interpolate to 60 frames a second — doubles the price">
+            aria-pressed={params.fps60} className={`chip-ctl ${params.fps60 ? "is-on" : ""}`} title="Interpolate to 60 frames a second — doubles the price">
             {params.fps60 ? "60 fps" : "Source fps"}
           </button>
         )}
 
         {!isImage && model.supportsAudio && (
           <button type="button" onClick={() => patch({ generateAudio: !params.generateAudio })}
-            className={`chip-ctl ${params.generateAudio ? "is-on" : ""}`}
+            aria-pressed={params.generateAudio} className={`chip-ctl ${params.generateAudio ? "is-on" : ""}`}
             title={taskOn?.id === "motion" ? "Keep the reference clip's own sound" : "Native audio, generated with the picture"}>
             {taskOn?.id === "motion" ? `Clip sound${params.generateAudio ? " on" : ""}` : `Audio${params.generateAudio ? " on" : ""}`}
           </button>
@@ -403,7 +414,7 @@ export default function Composer(p: ComposerProps) {
 
         {!rail && (
           <button type="button" onClick={toggleSetup}
-            className={`chip-ctl ${setupOpen ? "is-on" : ""}`}
+            aria-pressed={setupOpen} className={`chip-ctl ${setupOpen ? "is-on" : ""}`}
             title="Shot filing, shot control and the cast — carried into every render">
             <IconSliders /> Setup{setupCount > 0 ? ` · ${setupCount}` : ""}
           </button>
@@ -480,4 +491,13 @@ function ChipMenu({ label, hint, open, onOpen, onClose, children, disabled, wide
       )}
     </span>
   );
+}
+
+/** The resolution chip's word: a video says its class and shows its pixel
+ *  size beside it; a still says its pixel size outright. */
+function resLabel(r: string, still: boolean): string {
+  if (!still) return r.toLowerCase();
+  const px: Record<string, number> = { "512": 512, "1K": 1024, "2K": 2048, "4K": 4096 };
+  const n = px[r.toUpperCase()] ?? px[r];
+  return n ? `${r.toUpperCase()} · ${n}px` : r.toUpperCase();
 }

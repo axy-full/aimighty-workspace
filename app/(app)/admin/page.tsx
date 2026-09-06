@@ -94,7 +94,7 @@ export default function AdminPage() {
             </section>
 
             <section className="scard">
-              <div className="scard-h"><span>Asked to be let in</span><span>People who pressed Contact management. Invite them, or mark the request handled.</span></div>
+              <div className="scard-h"><span>Asked to be let in</span><span>People who asked for an invite. Invite them, or mark the request handled.</span></div>
               <div className="flex flex-col">
                 {data.requests.map((r) => (
                   <div key={r.id} className="steam !grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_180px]">

@@ -220,7 +220,7 @@ export default function TeamPage() {
           <p className="mt-2.5 text-[12.5px] text-mute">
             {mail
               ? <>The invitation is emailed from {data?.mail?.from} with a link that expires on its own; you can also copy the link.</>
-              : <>No email is set up, so copy the link and share it yourself; it expires on its own. To email invitations, add RESEND_API_KEY and MAIL_FROM in Vercel.</>}
+              : <>No email is set up, so copy the link and share it yourself; it expires on its own. To email invitations, ask management to connect email for this deployment.</>}
           </p>
           {notice && (
             <p className="mt-3 rounded-[10px] bg-blue/8 px-3 py-2 text-[13.5px] text-blue">{notice}</p>
