@@ -129,7 +129,7 @@ export default function SettingsPage() {
   const rateFor = (e: EngineInfo): string => {
     const id = e.id.toLowerCase();
     if (id.includes("byteplus") || id.includes("ark")) return seed ? `${usd(seed.net, 2)} per 5s at 1080P${seedTok ? ` (${compactTokens(seedTok)} tok)` : ""}. 10s doubles.` : "Billed per token of output video.";
-    if (id.includes("fal")) return idTerms?.terms.trainCostUsd ? `~${usd(idTerms.terms.trainCostUsd, 2)} per identity trained; renders per megapixel.` : "Trains a face from ten to twenty photos.";
+    if (id.includes("fal")) return `Kling 3.0 from $0.084 a second · Topaz Astra from $0.30 a second${idTerms?.terms.trainCostUsd ? ` · ~${usd(idTerms.terms.trainCostUsd, 2)} per identity trained` : ""}.`;
     if (id.includes("eleven")) return audio?.terms ? `${audio.terms.sfxCredits} credits per sound effect · ${audio.terms.musicCreditsPerMinute} per minute of music${audio.account ? ` · ${audio.account.tier} plan` : ""}.` : "Bought in credits; the ledger counts them.";
     if (id.includes("gateway")) return "The prompt writer and Google stills bill here, on the deployment's own credit.";
     if (e.via === "gateway") return "Billed per still through Vercel AI Gateway, on the same credit as the prompt writer.";
@@ -139,7 +139,7 @@ export default function SettingsPage() {
     id: e.id, name: e.label, does: e.models.map((m) => m.label).join(" · ") || (e.id.toLowerCase().includes("gateway") ? "Prompt writer · Google stills" : "—"),
     on: e.configured, via: e.via, rate: rateFor(e),
   }));
-  const usable = MODELS.filter((m) => !m.hidden);
+  const usable = MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate"));
 
   /* Whose key an engine runs on for this workspace: its own, the platform's
      (within the allowance), or — for the studio's own workspace — the

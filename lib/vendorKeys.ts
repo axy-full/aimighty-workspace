@@ -21,7 +21,7 @@ export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[]
   { name: "ark", label: "BytePlus ModelArk", does: "Seedance video · Seedream prompt writer" },
   { name: "gateway", label: "Vercel AI Gateway", does: "Claude prompt writer · Nano Banana stills" },
   { name: "gemini", label: "Google Gemini", does: "Nano Banana stills, direct" },
-  { name: "fal", label: "fal.ai", does: "Identity training · portrait renders" },
+  { name: "fal", label: "fal.ai", does: "Kling 3.0 video · motion control · Topaz Astra upscale · identity training" },
   { name: "elevenlabs", label: "ElevenLabs", does: "Voice · sound effects · music" },
 ];
 

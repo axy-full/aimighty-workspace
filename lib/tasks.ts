@@ -20,7 +20,9 @@
  * decoration; a prompt without them is a different request.
  */
 
-export type TaskId = "generate" | "edit" | "extend";
+export type TaskId = "generate" | "edit" | "extend" | "motion" | "upscale";
+/** The tasks that work on an existing clip. */
+export type LockedTaskId = Exclude<TaskId, "generate">;
 
 export type TaskDef = {
   id: TaskId;
@@ -31,8 +33,11 @@ export type TaskDef = {
   locked: boolean;
   /** Ratio the API must receive, or null to leave the user's choice. */
   forceRatio: "adaptive" | null;
-  /** Duration the API must receive, or null for the user's choice. */
-  forceDuration: -1 | null;
+  /** Duration the API must receive: -1 for an Ark edit, "source" when the
+   *  output is as long as the clip it works on, null for the user's choice. */
+  forceDuration: -1 | "source" | null;
+  /** The task needs a still as well as the clip (motion control's character). */
+  needsImage?: boolean;
   /** The vendor recommends mov for these — it preserves colour and audio sync. */
   preferMov: boolean;
   /** At least one of these must appear for the vendor to read the intent. */
@@ -80,6 +85,35 @@ export const TASKS: TaskDef[] = [
       "continue from", "extend the story",
     ],
     defaultTrigger: "Continue",
+  },
+  /* ── On fal, not ModelArk ─────────────────────────────────────────────
+   * Kling 3.0 motion control takes a still of a character and a clip whose
+   * movement it borrows; Topaz Astra re-renders a finished clip at up to
+   * 4K. Neither reads intent from words — the clip is the brief — so they
+   * carry no triggers, and both are as long as their source.
+   * ------------------------------------------------------------------ */
+  {
+    id: "motion",
+    label: "Motion control",
+    blurb: "Give a still character the movement of a reference clip — walking, dancing, a gesture — with Kling 3.0.",
+    locked: true,
+    forceRatio: "adaptive",
+    forceDuration: "source",
+    preferMov: false,
+    triggers: [],
+    defaultTrigger: "",
+    needsImage: true,
+  },
+  {
+    id: "upscale",
+    label: "Upscale",
+    blurb: "Re-render a finished clip at up to 4K with Topaz Astra 2, inventing the fine detail the original never had.",
+    locked: true,
+    forceRatio: "adaptive",
+    forceDuration: "source",
+    preferMov: false,
+    triggers: [],
+    defaultTrigger: "",
   },
 ];
 
@@ -180,6 +214,19 @@ export function sourceProblem(
 ): string | null {
   if (!task.locked || !source) return null;
   const res = String(source.resolution ?? "").toLowerCase();
+  const seconds = typeof source.duration === "number" ? source.duration : null;
+  if (task.id === "upscale") {
+    if (seconds != null && seconds > 300) return `Topaz takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
+    return null;
+  }
+  if (task.id === "motion") {
+    if (res === "480p") {
+      return "Kling reads the movement from a 720p or 1080p clip, and this one is 480P. Render it again at 720p to use it.";
+    }
+    if (seconds != null && seconds < 2) return `The reference clip has to be at least 2 seconds; this one is ${seconds}s.`;
+    if (seconds != null && seconds > 30) return `The reference clip has to be 30 seconds or less; this one is ${seconds}s.`;
+    return null;
+  }
   if (res && res !== "480p" && res !== "720p") {
     return `ModelArk only accepts 480p or 720p as an input video, and this one is ${res.toUpperCase()}. ` +
            `Render it again at 720p to edit it — 1080p is fine as an output, just not as a source.`;

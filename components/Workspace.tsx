@@ -15,7 +15,7 @@ import type { Gen } from "./GenCard";
 import Feed, { type FeedFilter } from "./Feed";
 import Boundary from "./Boundary";
 import SourcePicker from "./SourcePicker";
-import { getTask, sourceProblem } from "@/lib/tasks";
+import { getTask, sourceProblem, type TaskId, type LockedTaskId } from "@/lib/tasks";
 import Composer, { type Engine, type WriterInfo } from "./Composer";
 import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
@@ -38,6 +38,10 @@ import { useSession } from "@/lib/session";
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
   watermark: boolean; generateAudio: boolean; seed: string;
+  /** Kling motion control: whom the character faces. */
+  orientation: "image" | "video";
+  /** Topaz: interpolate to 60 fps. */
+  fps60: boolean;
 };
 
 const SETUP_KEY = "aw_setup_open";
@@ -93,7 +97,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* A locked task can now be chosen BEFORE its source, so the clip is
      nullable: picking "Seedance 2.5 Edit" puts the composer in edit mode and
      then asks which clip. Both call sites in Composer must handle the gap. */
-  const [taskOn, setTaskOn] = useState<{ id: "edit" | "extend"; gen: Gen | null } | null>(null);
+  const [taskOn, setTaskOn] = useState<{ id: LockedTaskId; gen: Gen | null } | null>(null);
   const [pickingSource, setPickingSource] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -135,7 +139,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   // The composer opens on whatever Settings says, then stays where you put it.
   const [params, setParams] = useState<Params>(() => ({
     modelId: DEFAULT_MODEL_ID, ratio: "16:9", resolution: "1080p", duration: 5,
-    watermark: false, generateAudio: false, seed: "",
+    watermark: false, generateAudio: false, seed: "", orientation: "video", fps60: false,
   }));
   const seeded = useRef(false);
   /** Set the moment a person changes any control — from then on Settings
@@ -276,13 +280,19 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     .filter((r) => r.kind === "video")
     .reduce((a, r) => a + (r.durationS ?? 0), 0);
   const imageRefCount = refs.filter((r) => r.kind === "image").length;
+  /* A task that follows a clip is priced on the clip's length, not the
+     duration chip: Topaz and motion control bill per second of the source. */
+  const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : 0;
+  const followsSource = Boolean(taskOn && getTask(taskOn.id).forceDuration === "source");
+  const billedSecs = followsSource ? sourceSecs : params.duration;
   const est = isImage
     ? estimateImageCostUsd(params.modelId, params.resolution, imageRefCount)
     : estimateCostUsd(
-        params.modelId, params.resolution, params.ratio, params.duration,
-        inputSeconds, hasVideoInput
+        params.modelId, params.resolution, params.ratio, billedSecs,
+        inputSeconds, hasVideoInput,
+        { audio: params.generateAudio, task: taskOn?.id, fps60: params.fps60 }
       );
-  const estTokens = isImage
+  const estTokens = isImage || modelDef.secondRates
     ? null
     : estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
   const dims = isImage ? null : dimensionsFor(params.resolution, params.ratio);
@@ -322,6 +332,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           resolution: params.resolution, duration: params.duration,
           watermark: params.watermark, generateAudio: params.generateAudio,
           seed: params.seed || null,
+          characterOrientation: params.orientation, fps60: params.fps60,
           projectId: bin !== "all" && bin !== "unfiled" ? bin : null,
           task: taskOn?.id ?? "generate",
           sourceGenId: taskOn?.gen?.id ?? null,
@@ -382,19 +393,28 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
    * is how the work begins — you know you are editing before you know which
    * clip. A locked mode leaves the source empty and the banner asks for it.
    */
-  function pickMode(modelId: string, task: "generate" | "edit" | "extend") {
+  /** The words a locked mode opens with: a trigger the vendor reads, or a plain statement of the task. */
+  const seedFor = (task: LockedTaskId) =>
+    task === "edit" ? "Replace " : task === "extend" ? "Continue from the final frame: "
+    : task === "motion" ? "Move like the reference clip" : "Upscale with Topaz Astra";
+  function pickMode(modelId: string, task: TaskId) {
     switchModel(modelId);
     if (task === "generate") { setTaskOn(null); return; }
     setTaskOn((prev) => ({ id: task, gen: prev?.gen ?? null }));
-    setPrompt((v) => v.trim() ? v : (task === "edit" ? "Replace " : "Continue from the final frame: "));
+    setPrompt((v) => v.trim() ? v : seedFor(task));
     requestAnimationFrame(() => promptRef.current?.focus());
   }
 
-  /** From the theatre: the same mode, with the clip already known. */
-  function editExtend(id: "edit" | "extend", gen: Gen) {
-    if (isImage) switchModel(DEFAULT_MODEL_ID);
+  /** From the theatre: the same mode, with the clip already known. The
+   *  engine follows the task — Seedance edits and extends, Kling moves,
+   *  Topaz upscales — unless the current one already offers it. */
+  function editExtend(id: LockedTaskId, gen: Gen) {
+    if (isImage || !(modelDef.supportsTasks ?? ["generate"]).includes(id)) {
+      const engine = MODELS.find((m) => m.kind === "video" && !m.hidden && (m.supportsTasks ?? []).includes(id));
+      switchModel(engine?.id ?? DEFAULT_MODEL_ID);
+    }
     setTaskOn({ id, gen });
-    setPrompt(id === "edit" ? "Replace " : "Continue from the final frame: ");
+    setPrompt(seedFor(id));
     setSelected(null);
     requestAnimationFrame(() => promptRef.current?.focus());
   }
@@ -422,8 +442,10 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* A locked mode is not renderable until it has a clip the vendor accepts.
      Checked here rather than at submit so the button says why. */
   const sourceIssue = !taskOn ? null
-    : !taskOn.gen ? `Choose the clip you want to ${taskOn.id === "edit" ? "edit" : "continue"}.`
-    : sourceProblem(getTask(taskOn.id), taskOn.gen.params as { resolution?: string; duration?: number });
+    : !taskOn.gen ? `Choose the clip you want to ${taskOn.id === "edit" ? "edit" : taskOn.id === "extend" ? "continue" : taskOn.id === "motion" ? "borrow the movement from" : "upscale"}.`
+    : (sourceProblem(getTask(taskOn.id), taskOn.gen.params as { resolution?: string; duration?: number })
+      ?? (getTask(taskOn.id).needsImage && imageRefCount + ownRefs.filter((g) => g.kind === "image").length === 0
+        ? "Attach a still of the character to move — an upload, one of your renders, or a cast member." : null));
 
   return (
     <div className="ws">

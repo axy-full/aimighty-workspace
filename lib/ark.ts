@@ -31,6 +31,12 @@ export type VideoParams = {
   task?: TaskId;
   /** Container to ask the vendor for. See the note in buildRequestBody. */
   outputFormat?: "mp4" | "mov";
+  /** Kling motion control: whom the character faces — the still or the clip. */
+  characterOrientation?: "image" | "video";
+  /** Topaz: interpolate to 60 fps (doubles the price). */
+  fps60?: boolean;
+  /** The source clip's resolution, for tasks that follow it. */
+  sourceResolution?: string;
 };
 
 export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
@@ -200,7 +206,7 @@ export async function buildRequestBody(
     content,
     ratio: task.forceRatio ?? p.ratio,
     resolution: p.resolution,
-    duration: task.forceDuration ?? p.duration,
+    duration: typeof task.forceDuration === "number" ? task.forceDuration : p.duration,
     watermark: p.watermark,
   };
   /* ByteDance recommend mov for edits and extensions — it preserves colour

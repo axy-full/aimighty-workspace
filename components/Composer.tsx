@@ -35,14 +35,14 @@ import { Switch } from "./Panel";
 import type { Gen } from "./GenCard";
 import { ParticlSpinner } from "./ParticlMark";
 import { usd, compactTokens } from "@/lib/format";
-import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef } from "@/lib/models";
+import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef, perSecondRate } from "@/lib/models";
 import { IconArrowUp, IconCaret, IconAttach, IconSliders, IconClose } from "./Icons";
 import LazyMedia from "./LazyMedia";
 import { readDraggedAsset } from "./ProjectRail";
-import { movesFor, getTask, type EditMove } from "@/lib/tasks";
+import { movesFor, getTask, type EditMove, type TaskId, type LockedTaskId } from "@/lib/tasks";
 import type { Params } from "./Workspace";
 
-type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost";
+type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost" | "orient";
 
 export type Engine = { id: string; label: string; configured: boolean };
 export type WriterInfo = { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean };
@@ -55,9 +55,9 @@ export type ComposerProps = {
   refs: RefItem[]; setRefs: React.Dispatch<React.SetStateAction<RefItem[]>>;
   picker: React.MutableRefObject<RefPicker>; cite: (token: string) => void;
   /** The source is null until a clip is chosen — a mode can be picked first. */
-  taskOn: { id: "edit" | "extend"; gen: Gen | null } | null; cancelTask: () => void;
+  taskOn: { id: LockedTaskId; gen: Gen | null } | null; cancelTask: () => void;
   /** Choose an engine and what to do with it, in one act. */
-  pickMode: (modelId: string, task: "generate" | "edit" | "extend") => void;
+  pickMode: (modelId: string, task: TaskId) => void;
   onPickSource: () => void;
   /** The message to show, whatever its cause. */
   problem: string | null;
@@ -114,6 +114,15 @@ export default function Composer(p: ComposerProps) {
   const isImage = model.kind === "image";
   /* The chip says what you are about to do, not merely which engine. */
   const modeLabel = taskOn ? `${model.label} ${getTask(taskOn.id).label}` : model.label;
+  /* Tasks that follow a clip: no duration or ratio to choose, and the price
+     is the clip's seconds times the rate. */
+  const taskDef = taskOn ? getTask(taskOn.id) : null;
+  const followsSource = taskDef?.forceDuration === "source";
+  const falTask = taskOn?.id === "motion" || taskOn?.id === "upscale";
+  const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : 0;
+  const billedSecs = followsSource ? sourceSecs : params.duration;
+  const estOpts = { audio: params.generateAudio, task: taskOn?.id, fps60: params.fps60 };
+  const secondRate = perSecondRate(params.modelId, params.resolution, estOpts);
 
   // The prompt box grows with its text, and the highlight layer must track
   // the textarea's scroll exactly or the coloured @cites drift.
@@ -149,7 +158,10 @@ export default function Composer(p: ComposerProps) {
   const engineOf = (m: ModelDef) => engines.find((e) => e.id === m.provider);
 
   const placeholder = taskOn
-    ? (taskOn.id === "edit" ? "What changes in this shot…" : "What happens next…")
+    ? (taskOn.id === "edit" ? "What changes in this shot…"
+      : taskOn.id === "extend" ? "What happens next…"
+      : taskOn.id === "motion" ? "Describe the movement, or leave it to the clip…"
+      : "Optional — the clip is the brief.")
     : isImage ? "Describe the still…" : "Describe the shot…";
 
   return (
@@ -300,20 +312,22 @@ export default function Composer(p: ComposerProps) {
           })}
         </ChipMenu>
 
-        <ChipMenu label={params.ratio === "adaptive" ? "Auto" : params.ratio} open={menu === "ratio"} onOpen={() => setMenu("ratio")} onClose={() => setMenu(null)}>
-          {model.ratios.map((r) => (
-            <button key={r} onClick={() => { patch({ ratio: r }); setMenu(null); }}
-              className={`menu-item ${params.ratio === r ? "text-blue" : ""}`}>
-              {r === "adaptive" ? "Auto — follows the reference" : r}
-            </button>
-          ))}
-        </ChipMenu>
+        {!falTask && (
+          <ChipMenu label={params.ratio === "adaptive" ? "Auto" : params.ratio} open={menu === "ratio"} onOpen={() => setMenu("ratio")} onClose={() => setMenu(null)}>
+            {model.ratios.map((r) => (
+              <button key={r} onClick={() => { patch({ ratio: r }); setMenu(null); }}
+                className={`menu-item ${params.ratio === r ? "text-blue" : ""}`}>
+                {r === "adaptive" ? "Auto — follows the reference" : r}
+              </button>
+            ))}
+          </ChipMenu>
+        )}
 
         <ChipMenu label={params.resolution.toUpperCase()} hint={dims ? `${dims.w}×${dims.h}` : undefined}
           open={menu === "res"} onOpen={() => setMenu("res")} onClose={() => setMenu(null)}>
           {model.resolutions.map((r) => {
             const c = isImage ? estimateImageCostUsd(params.modelId, r, imageRefCount)
-              : estimateCostUsd(params.modelId, r, params.ratio, params.duration, inputSeconds, hasVideoInput);
+              : estimateCostUsd(params.modelId, r, params.ratio, billedSecs, inputSeconds, hasVideoInput, estOpts);
             return (
               <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }} className="menu-item">
                 <span className={`flex-1 ${params.resolution === r ? "text-blue" : ""}`}>{r.toUpperCase()}</span>
@@ -323,11 +337,11 @@ export default function Composer(p: ComposerProps) {
           })}
         </ChipMenu>
 
-        {!isImage && (
+        {!isImage && !followsSource && (
           <ChipMenu label={`${params.duration}s`} open={menu === "dur"} onOpen={() => setMenu("dur")} onClose={() => setMenu(null)}
             disabled={Boolean(taskOn && taskOn.id === "edit")}>
             {model.durations.map((d) => {
-              const c = estimateCostUsd(params.modelId, params.resolution, params.ratio, d, inputSeconds, hasVideoInput);
+              const c = estimateCostUsd(params.modelId, params.resolution, params.ratio, d, inputSeconds, hasVideoInput, estOpts);
               return (
                 <button key={d} onClick={() => { patch({ duration: d }); setMenu(null); }} className="menu-item">
                   <span className={`flex-1 ${params.duration === d ? "text-blue" : ""}`}>{d}s</span>
@@ -338,14 +352,34 @@ export default function Composer(p: ComposerProps) {
           </ChipMenu>
         )}
 
-        {!isImage && model.supportsAudio && (
-          <button type="button" onClick={() => patch({ generateAudio: !params.generateAudio })}
-            className={`chip-ctl ${params.generateAudio ? "is-on" : ""}`} title="Native audio, generated with the picture">
-            Audio{params.generateAudio ? " on" : ""}
+        {taskOn?.id === "motion" && (
+          <ChipMenu label={params.orientation === "image" ? "Faces the still" : "Faces the clip"} open={menu === "orient"} onOpen={() => setMenu("orient")} onClose={() => setMenu(null)} wide>
+            {([["video", "Faces the clip", "The character turns as the reference does — clips up to 30s."], ["image", "Faces the still", "The character keeps the still's orientation — clips up to 10s."]] as const).map(([v, l, note]) => (
+              <button key={v} onClick={() => { patch({ orientation: v }); setMenu(null); }} className="menu-item">
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className={`font-medium ${params.orientation === v ? "text-blue" : ""}`}>{l}</span>
+                  <span className="text-[12.5px] text-mute">{note}</span>
+                </span>
+              </button>
+            ))}
+          </ChipMenu>
+        )}
+        {taskOn?.id === "upscale" && (
+          <button type="button" onClick={() => patch({ fps60: !params.fps60 })}
+            className={`chip-ctl ${params.fps60 ? "is-on" : ""}`} title="Interpolate to 60 frames a second — doubles the price">
+            {params.fps60 ? "60 fps" : "Source fps"}
           </button>
         )}
 
-        {!isImage && (
+        {!isImage && model.supportsAudio && (
+          <button type="button" onClick={() => patch({ generateAudio: !params.generateAudio })}
+            className={`chip-ctl ${params.generateAudio ? "is-on" : ""}`}
+            title={taskOn?.id === "motion" ? "Keep the reference clip's own sound" : "Native audio, generated with the picture"}>
+            {taskOn?.id === "motion" ? `Clip sound${params.generateAudio ? " on" : ""}` : `Audio${params.generateAudio ? " on" : ""}`}
+          </button>
+        )}
+
+        {!isImage && model.provider !== "fal" && (
           <ChipMenu label="More" open={menu === "more"} onOpen={() => setMenu("more")} onClose={() => setMenu(null)} wide>
             <div className="px-3 py-2">
               <label className="flex items-center gap-3 py-1.5 text-[14px]">
@@ -385,6 +419,8 @@ export default function Composer(p: ComposerProps) {
               <span className="menu-pop island-menu island-menu-right block w-[280px] px-3.5 py-3 text-left text-[13px] leading-relaxed text-dim">
                 {isImage ? (
                   <>Flat per still on Google — {usd(est?.net ?? 0, 3)} at {params.resolution.toUpperCase()}{imageRefCount ? ` with ${imageRefCount} reference${imageRefCount === 1 ? "" : "s"}` : ""}. The model thinks before it draws; your prompt goes as written. A refusal costs nothing.</>
+                ) : secondRate != null ? (
+                  <>Billed per second on fal.ai: {usd(secondRate, 3)}/s × {billedSecs || "the clip's"}s{params.fps60 ? ", doubled for 60 fps" : ""}.{followsSource ? " The length follows the clip." : ""} {taskOn?.id === "upscale" ? "Nothing is written: the clip is the brief." : "Your words go as written."}</>
                 ) : (
                   <>Billed by frame tokens: {estTokens != null ? compactTokens(estTokens) : "—"} at {dims ? `${dims.w}×${dims.h}` : "the source size"} for {params.duration}s.{" "}
                     {!writer || writer.writer === "none"

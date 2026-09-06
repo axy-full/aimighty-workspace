@@ -3,6 +3,7 @@ import { fetchTask } from "./ark";
 import { storeVideo } from "./storage";
 import { costUsd, effectiveRate } from "./models";
 import { reconcileFalRender } from "./identities";
+import { syncFalVideo } from "./falVideo";
 
 export type Generation = {
   id: string;
@@ -213,6 +214,8 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   ) {
     return gen;
   }
+  // fal video rows carry a request id, not an Ark task: their own sync.
+  if (gen.provider === "fal" && gen.kind === "video") return syncFalVideo(gen);
   if (!gen.arkTaskId) return gen;
 
   let task;
@@ -350,7 +353,7 @@ export async function syncPending(limit = 30): Promise<void> {
    * ---------------------------------------------------------------- */
   try {
     const falRows = await db().execute({
-      sql: `SELECT id, params, created_at FROM generations
+      sql: `SELECT id, kind, params, created_at FROM generations
             WHERE provider='fal' AND status IN ('queued','running') AND deleted=0
               AND json_extract(params, '$.falRequestId') IS NOT NULL
             ORDER BY created_at DESC LIMIT ?`,
@@ -360,6 +363,11 @@ export async function syncPending(limit = 30): Promise<void> {
       let p: { falRequestId?: string; seed?: number } = {};
       try { p = JSON.parse(r.params || "{}"); } catch { /* unreadable params, no handle */ }
       if (!p.falRequestId) return Promise.resolve();
+      // A Kling or Topaz render finishes through the video sync; a
+      // portrait still through the identity path below.
+      if (String(r.kind ?? "video") !== "image") {
+        return getGeneration(r.id).then((g) => (g ? syncFalVideo(g).then(() => undefined) : undefined));
+      }
       return reconcileFalRender({
         id: r.id, requestId: p.falRequestId,
         createdAt: Number(r.created_at),

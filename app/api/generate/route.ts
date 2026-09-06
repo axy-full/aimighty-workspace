@@ -16,7 +16,8 @@ import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
 import { withRetry, classifyFailure, getProvider, providerConfigured, billedTo } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
-import { getTask, hasTrigger, sourceAdvice } from "@/lib/tasks";
+import { getTask, hasTrigger, sourceAdvice, sourceProblem } from "@/lib/tasks";
+import { submitFalVideo, falEndpointFor } from "@/lib/falVideo";
 import {
   detectMove, hasCameraModule, detectSpec, inferMove, sceneLine, craftModules,
 } from "@/lib/studio";
@@ -121,12 +122,21 @@ export const POST = withTenant(async function POST(req: Request) {
   const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
 
   let sourceRef: Reference | null = null;
+  let sourceSeconds: number | null = null;
+  let sourceResolution: string | null = null;
+  /* An engine with no generate mode (Topaz only upscales) cannot be asked
+     for a plain render, however it was reached. */
+  if (!task.locked && !(model.supportsTasks ?? ["generate"]).includes("generate")) {
+    return NextResponse.json(
+      { error: `${model.label} works on a finished clip — choose one in the composer.` }, { status: 400 });
+  }
   if (task.locked) {
-    /* An engine that cannot edit must say so here, not drop the source and
-       render something unrelated. Absent supportsTasks means generate only. */
+    /* An engine that cannot do the task must say so here, not drop the
+       source and render something unrelated. Absent supportsTasks means
+       generate only. */
     if (model.kind === "image" || !(model.supportsTasks ?? ["generate"]).includes(task.id)) {
       return NextResponse.json(
-        { error: `${model.label} can't ${task.id} — that is a Seedance 2.5 feature.` },
+        { error: `${model.label} can't ${task.label.toLowerCase()} — pick an engine that offers it.` },
         { status: 400 });
     }
     if (!sourceGenId) {
@@ -158,7 +168,12 @@ export const POST = withTenant(async function POST(req: Request) {
     // The guide's stability advice: edits get shaky past 20s. Worth saying
     // before the money goes, not after.
     try {
-      const sp = JSON.parse(src.params || "{}") as { duration?: number };
+      const sp = JSON.parse(src.params || "{}") as { duration?: number; resolution?: string };
+      if (typeof sp.duration === "number") sourceSeconds = sp.duration;
+      if (typeof sp.resolution === "string") sourceResolution = sp.resolution;
+      // The vendor's limits, applied here as well as in the picker.
+      const refused = sourceProblem(task, sp);
+      if (refused) return NextResponse.json({ error: refused }, { status: 400 });
       const advice = sourceAdvice(task, typeof sp.duration === "number" ? sp.duration : null);
       if (advice) notices.push(advice);
     } catch { /* unparseable params — no advice to give */ }
@@ -174,14 +189,18 @@ export const POST = withTenant(async function POST(req: Request) {
   const params: VideoParams = {
     ratio: model.ratios.includes(body.ratio) ? body.ratio : model.ratios[0],
     resolution: model.resolutions.includes(body.resolution) ? body.resolution : model.resolutions[0],
-    duration: model.durations.includes(Number(body.duration))
-      ? Number(body.duration) : model.durations[0],
+    duration: task.forceDuration === "source"
+      ? (sourceSeconds ?? model.durations[0] ?? 5)
+      : model.durations.includes(Number(body.duration)) ? Number(body.duration) : (model.durations[0] ?? 5),
     watermark: Boolean(body.watermark ?? false),
     seed: body.seed === "" || body.seed == null ? null : Number(body.seed),
     cameraFixed: Boolean(body.cameraFixed ?? false),
     generateAudio: model.supportsAudio ? Boolean(body.generateAudio ?? false) : false,
     task: task.id,
     outputFormat: task.preferMov && (await getSetting("editOutputFormat")) === "mov" ? "mov" : "mp4",
+    characterOrientation: body.characterOrientation === "image" ? "image" : "video",
+    fps60: Boolean(body.fps60),
+    sourceResolution: sourceResolution ?? undefined,
   };
 
   /* ── Reference images ────────────────────────────────────────────── */
@@ -366,6 +385,12 @@ export const POST = withTenant(async function POST(req: Request) {
     castUsed = expanded.used.map((m) => m.name);
   }
 
+  /* Motion control moves a character: it needs the still as well as the clip. */
+  if (task.needsImage && !references.some((r) => r.kind === "image")) {
+    return NextResponse.json(
+      { error: `${task.label} needs a still of the character — attach one, or cite a cast member.` }, { status: 400 });
+  }
+
   /* ── Still engines (Nano Banana Pro) ─────────────────────────────────
    * Google renders synchronously and thinks before it draws, so there is no
    * task id to poll: the row goes in as running, the response returns at
@@ -467,7 +492,9 @@ export const POST = withTenant(async function POST(req: Request) {
   const detectedAxes = Object.values(detected).filter(Boolean).length;
   const refineCall = shouldRefine(castPrompt, detectedAxes);
   const writer = await activeWriter();
-  if (/^raw:/i.test(castPrompt)) {
+  if (task.id === "motion" || task.id === "upscale") {
+    // The clip is the brief: nothing here for a prompt writer to improve.
+  } else if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
   } else if (writer.writer === "none") {
     // Pro: the workspace has said its prompts are not to be rewritten.
@@ -632,6 +659,7 @@ export const POST = withTenant(async function POST(req: Request) {
     shotSpec: shotSpec && Object.keys(shotSpec).length ? shotSpec : undefined,
     task: task.id !== "generate" ? task.id : undefined,
     sourceGenId: sourceGenId ?? undefined,
+    sourceSeconds: sourceSeconds ?? undefined,
     // What the vendor locked for us, so the record explains its own shape.
     locked: task.locked
       ? { ratio: task.forceRatio, duration: task.forceDuration } : undefined,
@@ -664,6 +692,10 @@ export const POST = withTenant(async function POST(req: Request) {
     const { value: taskId, attempts } = await withRetry(
       async () => {
         try {
+          if (model.provider === "fal") {
+            const q = await submitFalVideo({ model, task, prompt: finalPrompt, params, references, source: sourceRef });
+            return q.requestId;
+          }
           return await submitTask(modelId, finalPrompt, params, references);
         } catch (e) {
           /* Two very different failures wear the same coat here. "Could not
@@ -689,13 +721,26 @@ export const POST = withTenant(async function POST(req: Request) {
           console.warn(`generate ${genId}: attempt ${n} ${cls} — ${err.message}`),
       }
     );
-    await db().execute({
-      sql: `UPDATE generations
-            SET ark_task_id=?, status='running', attempts=?,
-                queue_ms=?, submit_ms=?, updated_at=?
-            WHERE id=?`,
-      args: [taskId, attempts, submitStartedAt - ts, now() - submitStartedAt, now(), genId],
-    });
+    if (model.provider === "fal") {
+      /* fal holds the job on its own queue; the request id is the handle the
+         wall's poll and the cron finish the render from (lib/falVideo.ts). */
+      await db().execute({
+        sql: `UPDATE generations
+              SET status='running', attempts=?, queue_ms=?, submit_ms=?,
+                  params=json_set(params, '$.falRequestId', ?, '$.falModel', ?), updated_at=?
+              WHERE id=?`,
+        args: [attempts, submitStartedAt - ts, now() - submitStartedAt, taskId,
+               falEndpointFor(model, task.id, references.some((r) => r.kind === "image")), now(), genId],
+      });
+    } else {
+      await db().execute({
+        sql: `UPDATE generations
+              SET ark_task_id=?, status='running', attempts=?,
+                  queue_ms=?, submit_ms=?, updated_at=?
+              WHERE id=?`,
+        args: [taskId, attempts, submitStartedAt - ts, now() - submitStartedAt, now(), genId],
+      });
+    }
     return NextResponse.json({
       id: genId, arkTaskId: taskId, status: "running", attempts,
       notices: notices.length ? notices : undefined,

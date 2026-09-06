@@ -6,7 +6,7 @@ import { useProject } from "@/lib/projectContext";
 import { IconClose, IconSearch } from "./Icons";
 import { Empty, Waiting } from "./ParticlMark";
 import LazyMedia from "./LazyMedia";
-import { getTask, sourceProblem } from "@/lib/tasks";
+import { getTask, sourceProblem, type LockedTaskId } from "@/lib/tasks";
 import type { Gen } from "./GenCard";
 
 /**
@@ -25,7 +25,7 @@ import type { Gen } from "./GenCard";
  * output and an illegal input.
  */
 export default function SourcePicker({ task, onPick, onClose }: {
-  task: "edit" | "extend";
+  task: LockedTaskId;
   onPick: (gen: Gen) => void;
   onClose: () => void;
 }) {
@@ -61,12 +61,14 @@ export default function SourcePicker({ task, onPick, onClose }: {
         <header className="sheet-head">
           <span className="flex min-w-0 flex-col">
             <span className="text-[16px] font-semibold tracking-[-0.01em]">
-              {task === "edit" ? "Which clip are you editing?" : "Which clip are you continuing?"}
+              {task === "edit" ? "Which clip are you editing?" : task === "extend" ? "Which clip are you continuing?"
+                : task === "motion" ? "Which clip's movement?" : "Which clip are you upscaling?"}
             </span>
             <span className="text-[12.5px] text-mute">
-              {task === "edit"
-                ? "The output keeps its shape and length; only what you describe changes."
-                : "The output picks up from its final frame."}
+              {task === "edit" ? "The output keeps its shape and length; only what you describe changes."
+                : task === "extend" ? "The output picks up from its final frame."
+                : task === "motion" ? "Its movement is given to the still you attach; the output is as long as the clip."
+                : "Topaz Astra re-renders it at up to 4K; the length and shape stay."}
             </span>
           </span>
           <button type="button" onClick={onClose} className="ml-auto theatre-close" title="Close"><IconClose /></button>
@@ -92,7 +94,7 @@ export default function SourcePicker({ task, onPick, onClose }: {
           ) : clips.length === 0 ? (
             <div className="card mt-4">
               <Empty compact title="No finished clips here"
-                line={query ? "Nothing matches that." : "Make a video first, then it can be edited."} />
+                line={query ? "Nothing matches that." : "Make a video first, then it can be worked on."} />
             </div>
           ) : (
             <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))]">

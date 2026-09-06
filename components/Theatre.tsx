@@ -7,6 +7,7 @@
  * portal so no screen's transform can pin it in place.
  */
 import { useEffect, useState } from "react";
+import type { LockedTaskId } from "@/lib/tasks";
 import { createPortal } from "react-dom";
 import type { Gen } from "./GenCard";
 import Review from "./Review";
@@ -35,7 +36,7 @@ export default function Theatre({
   /** Carry this render into the composer as a REFERENCE rather than a prompt. */
   onUseAsRef?: (gen: Gen) => void;
   /** Start an edit or extension from this render. */
-  onEditExtend?: (task: "edit" | "extend", gen: Gen) => void;
+  onEditExtend?: (task: LockedTaskId, gen: Gen) => void;
 }) {
   const idx = gens.findIndex((g) => g.id === activeId);
   const gen = idx >= 0 ? gens[idx] : null;
@@ -312,6 +313,10 @@ export default function Theatre({
                   title="Change something inside this shot; everything else stays">Edit</button>
                 <button type="button" onClick={() => onEditExtend("extend", gen)} className="chip !py-1.5 !text-[13px]"
                   title="Continue this shot from its final frame">Extend</button>
+                <button type="button" onClick={() => onEditExtend("motion", gen)} className="chip !py-1.5 !text-[13px]"
+                  title="Give a still character this clip's movement — Kling 3.0 motion control">Motion</button>
+                <button type="button" onClick={() => onEditExtend("upscale", gen)} className="chip !py-1.5 !text-[13px]"
+                  title="Re-render this clip at up to 4K with Topaz Astra">Upscale</button>
               </>
             )}
             {done && (

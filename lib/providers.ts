@@ -124,14 +124,14 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "fal",
     label: "fal.ai",
-    serves: "Characters",
+    serves: "Kling 3.0 · Topaz Astra · Characters",
     envKey: "FAL_KEY",
     baseUrlEnv: "FAL_BASE_URL",
     defaultBaseUrl: "https://queue.fal.run",
     docs: "https://docs.fal.ai/model-apis/model-endpoints/queue",
     limits: {
       maxImageBytes: 20 * 1024 * 1024,
-      maxVideoBytes: 0,
+      maxVideoBytes: 100 * 1024 * 1024,
       maxRequestBytes: 100 * 1024 * 1024,
       minImagePx: 256,
       maxImagePx: 4096,

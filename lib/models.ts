@@ -1,3 +1,4 @@
+import type { TaskId } from "./tasks";
 /**
  * Model catalog + pricing — Seedance 2.x.
  *
@@ -102,12 +103,19 @@ export type ModelDef = {
    *  guide. Declaring it here keeps the model id honest — an id is what is
    *  SENT to the vendor, so a synthetic "…:edit" id would be sent verbatim
    *  and rejected. */
-  supportsTasks?: ("generate" | "edit" | "extend")[];
+  supportsTasks?: TaskId[];
   /** The model's id on Vercel AI Gateway, when it is also served there. */
   gatewayId?: string;
   /** Still engines bill per image by size (USD), plus a little per reference in. */
   imagePricing?: Record<string, number>;
   imageRefInUsd?: number;
+  /** Engines that bill by the SECOND of output (Kling, Topaz on fal), by
+   *  resolution tier, with and without audio. Present instead of tiers. */
+  secondRates?: { resolutions: string[]; withoutAudio: number; withAudio: number }[];
+  /** Per-second rates for tasks priced apart from generation (motion control). */
+  taskRates?: Partial<Record<TaskId, number>>;
+  /** The fal endpoint family the engine is served at (see lib/falVideo.ts). */
+  falEndpoint?: string;
   paramStyle: ParamStyle;
   tiers: RateTier[];
   resolutions: string[];
@@ -171,6 +179,89 @@ export const MODELS: ModelDef[] = [
     maxReferenceVideos: 3,
     maxVideoSecondsTotal: 15,
     note: "Cheaper per token. 4K tier is listed but untested — verify before relying on it.",
+  },
+  /* ── Kling 3.0, on fal.ai ─────────────────────────────────────────────
+   * Kuaishou's engine, billed per second of output: $0.084 without audio and
+   * $0.126 with on Standard, $0.112 / $0.168 on Pro (fal, read 6 Sep 2026).
+   * Text-to-video as it stands; a first-frame image makes it image-to-video
+   * and a second image sets the last frame. Motion control is its locked
+   * task: a still of a character plus a clip whose movement it borrows.
+   * ------------------------------------------------------------------ */
+  {
+    id: "fal-ai/kling-video/v3/standard",
+    label: "Kling 3.0",
+    short: "KLING 3",
+    family: "kling-3",
+    provider: "fal",
+    kind: "video",
+    supportsTasks: ["generate", "motion"],
+    falEndpoint: "fal-ai/kling-video/v3/standard",
+    paramStyle: "fields",
+    tiers: [],
+    secondRates: [{ resolutions: ["1080p"], withoutAudio: 0.084, withAudio: 0.126 }],
+    taskRates: { motion: 0.126 },
+    resolutions: ["1080p"],
+    ratios: ["16:9", "9:16", "1:1"],
+    durations: seconds(3, 15),
+    supportsAudio: true,
+    supportsCameraFixed: false,
+    maxReferenceImages: 2,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "Kuaishou's Kling 3.0 on fal — native audio, 3–15s, priced per second. A first-frame image turns it into image-to-video.",
+  },
+  {
+    id: "fal-ai/kling-video/v3/pro",
+    label: "Kling 3.0 Pro",
+    short: "KLING 3 PRO",
+    family: "kling-3",
+    provider: "fal",
+    kind: "video",
+    supportsTasks: ["generate", "motion"],
+    falEndpoint: "fal-ai/kling-video/v3/pro",
+    paramStyle: "fields",
+    tiers: [],
+    secondRates: [{ resolutions: ["1080p"], withoutAudio: 0.112, withAudio: 0.168 }],
+    taskRates: { motion: 0.168 },
+    resolutions: ["1080p"],
+    ratios: ["16:9", "9:16", "1:1"],
+    durations: seconds(3, 15),
+    supportsAudio: true,
+    supportsCameraFixed: false,
+    maxReferenceImages: 2,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "The Pro tier: more detail and steadier motion, a third more per second.",
+  },
+  /* ── Topaz Astra, on fal.ai ───────────────────────────────────────────
+   * Topaz Labs' creative video upscale (Astra 2): $0.30 a second up to
+   * 1080p, $0.50 at 4K, doubled at 60 fps. It only ever works on a finished
+   * clip, so its one task is Upscale and the composer reaches it that way.
+   * ------------------------------------------------------------------ */
+  {
+    id: "topaz/upscale/video/creative",
+    label: "Topaz Astra",
+    short: "ASTRA",
+    family: "topaz",
+    provider: "fal",
+    kind: "video",
+    supportsTasks: ["upscale"],
+    falEndpoint: "topaz/upscale/video/creative",
+    paramStyle: "fields",
+    tiers: [],
+    secondRates: [
+      { resolutions: ["1080p"], withoutAudio: 0.30, withAudio: 0.30 },
+      { resolutions: ["4k"],    withoutAudio: 0.50, withAudio: 0.50 },
+    ],
+    resolutions: ["1080p", "4k"],
+    ratios: ["adaptive"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 0,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 300,
+    note: "Topaz Labs' Astra 2 — a creative upscale to 1080p or 4K that reimagines fine detail. Works on a finished clip.",
   },
   {
     // Google's Nano Banana Pro — stills, on the Gemini API (its own key).
@@ -348,10 +439,31 @@ export function estimateTokens(
   return Math.round((d.w * d.h * fps * (duration + inputSeconds)) / 1024);
 }
 
+/** USD per second of output for a per-second engine, or null for the others. */
+export function perSecondRate(
+  modelId: string, resolution: string,
+  opts: { audio?: boolean; task?: TaskId | string; fps60?: boolean } = {}
+): number | null {
+  const m = MODELS.find((x) => x.id === modelId);
+  if (!m?.secondRates?.length) return null;
+  const tier = m.secondRates.find((t) => t.resolutions.includes(resolution.toLowerCase())) ?? m.secondRates[0];
+  const taskRate = opts.task && opts.task !== "generate" ? m.taskRates?.[opts.task as TaskId] : undefined;
+  const base = taskRate ?? (opts.audio ? tier.withAudio : tier.withoutAudio);
+  return base * (opts.fps60 ? 2 : 1);
+}
+
 export function estimateCostUsd(
   modelId: string, resolution: string, ratio: string, duration: number,
-  inputSeconds = 0, hasVideoInput = false
+  inputSeconds = 0, hasVideoInput = false,
+  opts: { audio?: boolean; task?: TaskId | string; fps60?: boolean } = {}
 ): { list: number; net: number } | null {
+  /* Per-second engines: the rate times the seconds, and nothing to guess. */
+  const perSecond = perSecondRate(modelId, resolution, opts);
+  if (perSecond != null) {
+    if (!(duration > 0)) return null;
+    const c = Math.round(perSecond * duration * 10_000) / 10_000;
+    return { list: c, net: c };
+  }
   const tokens = estimateTokens(resolution, ratio, duration, inputSeconds);
   const list = listRate(modelId, resolution, hasVideoInput);
   if (tokens == null || list == null) return null;
