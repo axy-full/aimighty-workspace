@@ -15,6 +15,8 @@
  * ambient bed for a shot that already has one.
  */
 import Link from "next/link";
+import { isAssetDrag, readDraggedAsset } from "@/lib/dnd";
+import { usePrice } from "@/lib/price";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
@@ -117,6 +119,7 @@ export default function AudioPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const mobile = useIsMobile();
+  const price = usePrice();
   const [sheetOpen, setSheetOpen] = useState(false);
   useSheetLock(mobile && sheetOpen);
 
@@ -306,11 +309,20 @@ export default function AudioPage() {
         </button>
         <button type="button" className="dock-go" onClick={make} disabled={!canRender}>
           <span>{busy ? "…" : "Render"}</span>
-          <span className="dock-cost">{text.trim() ? (estUsd < 0.005 ? "<1¢" : usd(estUsd)) : `${estCredits} CR`}</span>
+          <span className="dock-cost">{text.trim() ? price(estUsd) : `${estCredits} CR`}</span>
         </button>
       </div>
       {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
-      <aside className={`ws-rail ${mobile ? (sheetOpen ? "is-sheet" : "is-hidden") : ""}`}>
+      <aside className={`ws-rail ${mobile ? (sheetOpen ? "is-sheet" : "is-hidden") : ""}`}
+        onDragOver={(e) => { if (isAssetDrag(e)) e.preventDefault(); }}
+        onDrop={(e) => {
+          /* A clip dropped on the desk sets the sound's length to the clip's. */
+          const a = readDraggedAsset(e);
+          if (!a) return;
+          e.preventDefault();
+          const secs = Number((a.gen.params as { duration?: number }).duration ?? 0);
+          if (a.gen.kind === "video" && secs > 0) setDuration(String(Math.max(1, Math.min(30, Math.round(secs)))));
+        }}>
         <div className="sheet-grab" aria-hidden="true"><span /></div>
         <div className="ws-rail-head">
           <span className="ws-bar-h">Composer</span>
@@ -416,7 +428,7 @@ export default function AudioPage() {
           <button type="button" className="btn-primary !h-[46px] w-full !px-4 !text-[14px]" onClick={make} disabled={!canRender}
             title={!signedIn ? "Sign in to render" : undefined}>
             <span>{busy ? "Sending…" : "Render"}</span>
-            <span className="btn-primary-cost">{text.trim() ? `${estUsd < 0.005 ? "<1¢" : usd(estUsd)} · ${lenLabel}` : `${estCredits.toLocaleString()} CR`}</span>
+            <span className="btn-primary-cost">{text.trim() ? `${price(estUsd)} · ${lenLabel}` : `${estCredits.toLocaleString()} CR`}</span>
           </button>
           <span className="mono-s text-center">files as {filesAs}</span>
         </div>

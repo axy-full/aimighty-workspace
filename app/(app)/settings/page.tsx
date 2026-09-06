@@ -15,6 +15,7 @@
  * what each can actually do here.
  */
 import Link from "next/link";
+import { creditsNumber } from "@/lib/price";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MODELS, getModel, estimateCostUsd, estimateTokens, DEFAULT_MODEL_ID } from "@/lib/models";
@@ -52,6 +53,7 @@ type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; m
 type Keys = {
   usesPlatformKeys: boolean; mode: "legacy" | "platform" | "own"; canPlatform: boolean; keyring: boolean;
   allowance: { usd: number; spentUsd: number } | null; gatewayMinted: boolean;
+  credits: { creditUsd: number; granted: number; used: number; balance: number } | null;
   keys: { name: string; label: string; does: string; set: boolean; masked: string | null }[];
 };
 
@@ -214,7 +216,7 @@ export default function SettingsPage() {
           <section id="engines" className="scard">
             <div className="scard-h"><span>Engines &amp; keys</span><span>{
               mode === "platform"
-                ? `This workspace runs on the platform's engines${keys?.allowance ? `, with a ${usd(keys.allowance.usd, 0)} monthly allowance — ${usd(keys.allowance.spentUsd, 2)} used this month` : ""}. Add your own key for any vendor and it takes over for that vendor; the rest stay on the platform.`
+                ? `This workspace runs on the platform's engines and pays in credits${keys?.credits ? `: ${creditsNumber(keys.credits.balance)} left of ${creditsNumber(keys.credits.granted)} granted, one credit being ${usd(keys.credits.creditUsd, 2)} of vendor cost` : ""}${keys?.allowance ? `, within a ${usd(keys.allowance.usd, 0)} monthly cap (${usd(keys.allowance.spentUsd, 2)} used this month)` : ""}. Add your own key for any vendor and it takes over for that vendor; the rest stay on the platform.`
                 : mode === "own"
                   ? "This workspace's own keys, sealed on the server and shown only to its owner, and only masked. Costs on the render button come from these routes."
                   : "Keys live in Vercel, set by an admin, and are never shown here — not even their names. Costs on the render button come from these routes."

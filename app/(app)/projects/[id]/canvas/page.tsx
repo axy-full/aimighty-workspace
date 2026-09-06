@@ -19,6 +19,7 @@
  * what has happened to it, with the one action that moves it forward.
  */
 import Link from "next/link";
+import { isAssetDrag, readDraggedAsset } from "@/lib/dnd";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
@@ -183,7 +184,18 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                       return (
                         <button key={c.shot.id} type="button" onClick={() => setSel(c.shot.id)}
                           className={`cv-tile ${c.state === "empty" ? "is-empty" : ""} ${c.state === "approved" ? "is-approved" : ""} ${on ? "is-on" : ""}`}
-                          title={c.shot.title || c.shot.description || c.shot.code}>
+                          title={c.shot.title || c.shot.description || c.shot.code}
+                          onDragOver={(e) => { if (isAssetDrag(e)) { e.preventDefault(); e.currentTarget.classList.add("is-drop"); } }}
+                          onDragLeave={(e) => e.currentTarget.classList.remove("is-drop")}
+                          onDrop={async (e) => {
+                            /* A render dropped on a shot is filed as its next take. */
+                            e.currentTarget.classList.remove("is-drop");
+                            const a = readDraggedAsset(e);
+                            if (!a || a.gen.kind === "audio") return;
+                            e.preventDefault();
+                            await fetch(`/api/jobs/${encodeURIComponent(a.gen.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shotId: c.shot.id }) });
+                            refresh(); refreshShots();
+                          }}>
                           <span className="cv-tile-well">
                             {url && c.hero ? <LazyMedia url={url} kind="video" alt="" className="media" /> : null}
                             {!url && (c.state === "empty" ? "no take" : c.hero ? `v${c.hero.version ?? 1}` : "rendering")}

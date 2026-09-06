@@ -1,6 +1,7 @@
 "use client";
 
 import { usd, timeAgo, downloadHref } from "@/lib/format";
+import { startGenDrag } from "@/lib/dnd";
 import { shortLabel } from "@/lib/models";
 import { appConfirm } from "./dialog";
 import LazyMedia from "./LazyMedia";
@@ -79,6 +80,7 @@ export default function GenCard({
     <article
       data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)}
       data-gen-title={gen.title ?? ""}
+      draggable={done} onDragStart={(e) => startGenDrag(e, gen)}
       className="group flex flex-col"
     >
       {/* The frame */}

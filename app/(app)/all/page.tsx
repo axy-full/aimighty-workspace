@@ -16,6 +16,7 @@
  * exist.
  */
 import Link from "next/link";
+import { startGenDrag } from "@/lib/dnd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Take, clipId } from "@/components/Feed";
@@ -253,7 +254,8 @@ function UnfiledCard({ gen, onOpen, onChanged }: { gen: Gen; onOpen: () => void;
   }
   const kindWord = gen.kind === "image" ? "still" : gen.kind === "audio" ? "audio" : "video";
   return (
-    <div className="take is-unfiled" data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)} data-gen-title={gen.title ?? ""}>
+    <div className="take is-unfiled" data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)} data-gen-title={gen.title ?? ""}
+      draggable={gen.status === "succeeded"} onDragStart={(e) => startGenDrag(e, gen)}>
       <button type="button" className="take-hit" onClick={onOpen} title={gen.prompt}>
         <span className="well take-well">
           <span className="well-cap">{kindWord} · unfiled</span>

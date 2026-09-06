@@ -2664,3 +2664,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   .ak-ideas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .castgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ── Drag and drop: any finished card, onto the composer, the desk, a shot ── */
+.take[draggable="true"], .castcard[draggable="true"], article[draggable="true"] { cursor: grab; }
+.take[draggable="true"]:active, .castcard[draggable="true"]:active { cursor: grabbing; }
+.cv-tile.is-drop { outline: 2px solid var(--color-approved); outline-offset: 2px; }

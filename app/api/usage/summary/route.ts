@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { creditState, type CreditState } from "@/lib/credits";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { PROVIDERS } from "@/lib/providers";
@@ -24,6 +25,7 @@ export const maxDuration = 30;
 
 type Summary = {
   pending: number; spentUsd: number; purchasedUsd: number; remainingUsd: number;
+  credits: CreditState | null;
   /** The writer's share of spentUsd. */
   promptSpendUsd: number;
   /** Each vendor's own credit position. */
@@ -80,6 +82,7 @@ export const GET = withTenant(async function GET() {
     remainingUsd: purchasedUsd - spentUsd,
     promptSpendUsd: Number(g?.prompt_spend ?? 0),
     vendors,
+    credits: await creditState().catch(() => null),
   };
 
   memoPut("usage-summary", value);

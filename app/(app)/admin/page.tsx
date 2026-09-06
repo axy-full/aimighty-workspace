@@ -6,6 +6,7 @@
  * behind it answers 403 to everyone but the platform owner.
  */
 import { useState } from "react";
+import { creditsNumber } from "@/lib/price";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -17,8 +18,9 @@ type Admin = {
   ready: boolean; mail: boolean;
   invites: { code: string; email: string; name: string; note: string; createdAt: number; expiresAt: number; sentAt: number | null; sendCount: number }[];
   requests: { id: string; name: string; email: string; note: string; mailed: boolean; createdAt: number }[];
-  platformKeysByDefault: boolean; defaultAllowanceUsd: number; gatewayMint: boolean;
-  workspaces: { id: string; slug: string; name: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean; createdAt: number; owner: { email: string; name: string } | null; members: number }[];
+  platformKeysByDefault: boolean; defaultAllowanceUsd: number | null; gatewayMint: boolean;
+  creditUsd: number; signupCredits: number;
+  workspaces: { id: string; slug: string; name: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean; credits: { granted: number; used: number; balance: number } | null; createdAt: number; owner: { email: string; name: string } | null; members: number }[];
 };
 
 export default function AdminPage() {
@@ -109,7 +111,7 @@ export default function AdminPage() {
             </section>
 
             <section className="scard">
-              <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with a monthly allowance — ${usd(data.defaultAllowanceUsd, 0)} unless set below — or on its own keys once its owner switches.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a Vercel AI Gateway key of its own."}</span></div>
+              <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with ${data.signupCredits} credits (one credit is ${usd(data.creditUsd, 2)} of vendor cost) — or on its own keys once its owner switches. Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a Vercel AI Gateway key of its own."}</span></div>
               <div className="flex flex-col">
                 <div className="steam is-head !grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_100px_120px_120px]"><span>WORKSPACE</span><span>OWNER</span><span>MEMBERS</span><span>KEYS</span><span className="text-right">CREATED</span></div>
                 {data.workspaces.map((w) => (
@@ -117,7 +119,7 @@ export default function AdminPage() {
                     <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}</span><span className="text-[11.5px] text-dim">{w.slug}{w.legacy ? " · the studio's own" : ""}</span></span>
                     <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{w.owner?.email ?? ""}</span></span>
                     <span className="mono-v">{w.members}</span>
-                    <AllowanceCell w={w} fallback={data.defaultAllowanceUsd} onChanged={refresh} />
+                    <CreditsCell w={w} onChanged={refresh} />
                     <span className="mono-s text-right">{timeAgo(w.createdAt).toUpperCase()}</span>
                   </div>
                 ))}
@@ -130,41 +132,44 @@ export default function AdminPage() {
   );
 }
 
-/** Whose keys a workspace runs on, and — on the platform's — its monthly allowance, editable in place. */
-function AllowanceCell({ w, fallback, onChanged }: {
-  w: { id: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean };
-  fallback: number; onChanged: () => void;
+/** Whose keys a workspace runs on, and — on the platform's — its credit balance, with a way to add some. */
+function CreditsCell({ w, onChanged }: {
+  w: { id: string; legacy: boolean; platformKeys: boolean; credits: { granted: number; used: number; balance: number } | null; gatewayKey: boolean };
+  onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(w.allowanceUsd == null ? "" : String(w.allowanceUsd));
+  const [val, setVal] = useState("");
   const [busy, setBusy] = useState(false);
   if (w.legacy) return <span className="mono-s">THE PLATFORM</span>;
   if (!w.platformKeys) return <span className="mono-s">ITS OWN</span>;
-  async function save() {
+  async function grant() {
+    const n = Number(val);
+    if (!Number.isFinite(n) || n === 0) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/admin/workspaces/${encodeURIComponent(w.id)}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowanceUsd: val.trim() === "" ? null : Number(val) }),
+        body: JSON.stringify({ grantCredits: n, note: "Added by management" }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
-      setEditing(false); onChanged();
-    } catch (e) { await appAlert("Not saved", (e as Error).message); }
+      setEditing(false); setVal(""); onChanged();
+    } catch (e) { await appAlert("Not added", (e as Error).message); }
     finally { setBusy(false); }
   }
+  const c = w.credits;
   if (editing) {
     return (
       <span className="flex items-center gap-1">
-        <input className="ctl !h-7 !w-[76px] !px-2 !text-[12px]" value={val} onChange={(e) => setVal(e.target.value)} placeholder={String(fallback)} autoFocus
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} aria-label="Dollars a month" />
-        <button type="button" className="btn-primary !h-7 !px-2 !text-[11px]" onClick={save} disabled={busy}>Save</button>
+        <input className="ctl !h-7 !w-[84px] !px-2 !text-[12px]" value={val} onChange={(e) => setVal(e.target.value)} placeholder="+ credits" autoFocus
+          onKeyDown={(e) => { if (e.key === "Enter") grant(); if (e.key === "Escape") setEditing(false); }} aria-label="Credits to add" />
+        <button type="button" className="btn-primary !h-7 !px-2 !text-[11px]" onClick={grant} disabled={busy || !val.trim()}>Add</button>
       </span>
     );
   }
   return (
-    <button type="button" className="mono-s text-left hover:text-ink" title="Dollars a month on the platform's keys — click to change; empty means the default" onClick={() => setEditing(true)}>
-      PLATFORM · ${(w.allowanceUsd ?? fallback).toFixed(0)}/MO{w.gatewayKey ? " · OWN GATEWAY KEY" : ""}
+    <button type="button" className="mono-s text-left hover:text-ink" title={c ? `${creditsNumber(c.used)} used of ${creditsNumber(c.granted)} granted — click to add credits` : "Click to add credits"} onClick={() => setEditing(true)}>
+      PLATFORM · {c ? `${creditsNumber(c.balance)} CR` : "—"}{w.gatewayKey ? " · OWN GATEWAY KEY" : ""}
     </button>
   );
 }

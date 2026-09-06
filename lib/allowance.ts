@@ -1,25 +1,27 @@
 import { currentTenant } from "./tenant";
-import { db } from "./db";
-import { billedTo, type ProviderId } from "./providers";
+import { billedTo } from "./providers";
+import { creditCheck } from "./credits";
+import { paidByPlatform, platformSpendSince } from "./platformSpend";
 import type { VendorKeyName } from "./vendorKeys";
 
+export { paidByPlatform, platformSpendSince } from "./platformSpend";
+
 /**
- * What a workspace may spend on the platform's keys.
+ * The walls around the platform's money.
  *
  * A workspace that signs up gets working engines at once, on the keys the
- * deployment holds — which means the platform's money. This is the wall
- * around that: a monthly allowance in dollars, checked before every paid
- * call, so a new workspace can render on day one and nobody can render the
- * platform dry. A vendor the workspace holds its own key for is not the
- * platform's money and is not counted.
- *
- * The number comes from the workspace row (set on /admin) or, failing that,
- * PLATFORM_ALLOWANCE_USD. The studio's own workspace and any workspace on
- * its own keys have no allowance to check.
+ * deployment holds. Two things stand between that and rendering the
+ * platform dry: its CREDIT balance (lib/credits.ts — the primary wall, what
+ * it bought or was granted) and, optionally, a monthly cap in dollars
+ * (PLATFORM_ALLOWANCE_USD, or a per-workspace figure set on /admin). Both
+ * are checked before every paid call; a vendor the workspace holds its own
+ * key for is not the platform's money and passes both.
  */
-export function defaultAllowanceUsd(): number {
-  const n = Number(process.env.PLATFORM_ALLOWANCE_USD ?? 25);
-  return Number.isFinite(n) && n >= 0 ? n : 25;
+export function defaultAllowanceUsd(): number | null {
+  const raw = process.env.PLATFORM_ALLOWANCE_USD;
+  if (raw == null || raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 /** The vendor key a provider's renders draw on. */
@@ -34,18 +36,7 @@ export function vendorKeyNameFor(provider: string): VendorKeyName {
   }
 }
 
-const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
-  ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], fal: ["fal"], elevenlabs: ["elevenlabs"],
-};
-
-/** Does this vendor's bill land on the platform for the current workspace? */
-export function paidByPlatform(name: VendorKeyName): boolean {
-  const ws = currentTenant()?.workspace;
-  if (!ws || ws.legacy || !ws.usesPlatformKeys) return false;
-  return !ws.keys[name];
-}
-
-/** The workspace's monthly allowance on the platform's keys, or null when none applies. */
+/** The workspace's monthly cap on the platform's keys, or null when none applies. */
 export function allowanceUsd(): number | null {
   const ws = currentTenant()?.workspace;
   if (!ws || ws.legacy || !ws.usesPlatformKeys) return null;
@@ -54,30 +45,9 @@ export function allowanceUsd(): number | null {
 
 /** Month-to-date spend that the platform paid for this workspace. */
 export async function platformSpendThisMonth(): Promise<number> {
-  const ws = currentTenant()?.workspace;
-  if (!ws) return 0;
-  const vendors = (Object.keys(PROVIDERS_OF) as VendorKeyName[]).filter((n) => !ws.keys[n]);
-  const providers = [...new Set(vendors.flatMap((n) => PROVIDERS_OF[n]))];
-  if (!providers.length) return 0;
   const start = new Date();
   start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
-  const marks = providers.map(() => "?").join(",");
-  const rs = await db().execute({
-    sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
-          FROM generations
-          WHERE created_at >= ? AND (deleted = 0 OR deleted IS NULL)
-            AND COALESCE(billed_to, provider) IN (${marks})`,
-    args: [start.getTime(), ...providers],
-  });
-  let spend = Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
-  if (!ws.keys.fal) {
-    const ids = await db().execute({
-      sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend FROM identities WHERE created_at >= ?`,
-      args: [start.getTime()],
-    }).catch(() => null);
-    spend += Number((ids?.rows[0] as Record<string, unknown> | undefined)?.spend ?? 0);
-  }
-  return spend;
+  return platformSpendSince(start.getTime());
 }
 
 /**
@@ -87,6 +57,8 @@ export async function platformSpendThisMonth(): Promise<number> {
 export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0): Promise<
   { ok: true } | { ok: false; status: number; error: string }
 > {
+  const credit = await creditCheck(vendor, estUsd);
+  if (!credit.ok) return credit;
   if (!paidByPlatform(vendor)) return { ok: true };
   const cap = allowanceUsd();
   if (cap == null) return { ok: true };
@@ -94,8 +66,8 @@ export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0): Promise
   if (spent >= cap || spent + Math.max(0, estUsd) > cap) {
     return {
       ok: false, status: 429,
-      error: `This workspace has used $${spent.toFixed(2)} of its $${cap.toFixed(2)} monthly allowance on the platform's engines. ` +
-             `Add your own key for the vendor under Settings › Engines & keys, or ask management to raise the allowance.`,
+      error: `This workspace has used $${spent.toFixed(2)} of its $${cap.toFixed(2)} monthly cap on the platform's engines. ` +
+             `Add your own key for the vendor under Settings › Engines & keys, or ask management to raise it.`,
     };
   }
   return { ok: true };

@@ -8,6 +8,7 @@
  * button before it is pressed.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { usePrice } from "@/lib/price";
 
 /**
  * Close on any pointer-down outside `ref` and on Escape. Menus used to rely
@@ -38,7 +39,7 @@ import { usd, compactTokens } from "@/lib/format";
 import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef, perSecondRate } from "@/lib/models";
 import { IconArrowUp, IconCaret, IconAttach, IconSliders, IconClose } from "./Icons";
 import LazyMedia from "./LazyMedia";
-import { readDraggedAsset } from "./ProjectRail";
+import { readDraggedAsset, readDraggedCast } from "@/lib/dnd";
 import { movesFor, getTask, type EditMove, type TaskId, type LockedTaskId } from "@/lib/tasks";
 import type { Params } from "./Workspace";
 
@@ -91,6 +92,7 @@ export default function Composer(p: ComposerProps) {
     pickMode, onPickSource, onDropAsset, rail = false,
   } = p;
   const [menu, setMenu] = useState<Menu>(null);
+  const price = usePrice();
   const [drag, setDrag] = useState(false);
   const overlayEl = useRef<HTMLDivElement>(null);
   const costRef = useRef<HTMLSpanElement>(null);
@@ -176,6 +178,9 @@ export default function Composer(p: ComposerProps) {
         // removing something from that strip deletes the file.
         const asset = readDraggedAsset(e);
         if (asset) { onDropAsset(asset.gen as Gen); return; }
+        // A cast member dropped in is cited, so the prompt can address them.
+        const cast = readDraggedCast(e);
+        if (cast) { cite(`@${cast.name}`); return; }
         if (e.dataTransfer.files.length) picker.current?.add(e.dataTransfer.files);
       }}
     >
@@ -409,7 +414,7 @@ export default function Composer(p: ComposerProps) {
         {!rail && <span className="relative" ref={costRef}>
           <button type="button" onClick={() => setMenu(menu === "cost" ? null : "cost")} className="island-cost"
             title="What this render will cost">
-            <span className="font-semibold text-bone">{est ? usd(est.net, 2) : "—"}</span>
+            <span className="font-semibold text-bone">{est ? price(est.net) : "—"}</span>
             {!isImage && estTokens != null && (
               <span className="text-mute max-[560px]:hidden"> · {compactTokens(estTokens)} tok</span>
             )}

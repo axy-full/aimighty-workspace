@@ -5,6 +5,7 @@ import { setWorkspaceKeys, setWorkspaceMode, platformKeysByDefault } from "@/lib
 import { VENDOR_KEYS, type VendorKeyName } from "@/lib/vendorKeys";
 import { mask, keyringConfigured } from "@/lib/keyring";
 import { allowanceUsd, platformSpendThisMonth } from "@/lib/allowance";
+import { creditState } from "@/lib/credits";
 
 export const dynamic = "force-dynamic";
 const NAMES = new Set<string>(VENDOR_KEYS.map((k) => k.name));
@@ -33,6 +34,7 @@ export const GET = withTenant(async function GET() {
     canPlatform: platformKeysByDefault(),
     keyring: keyringConfigured(),
     allowance: cap != null ? { usd: cap, spentUsd: spent } : null,
+    credits: await creditState().catch(() => null),
     gatewayMinted: Boolean(ws.gatewayKeyId),
     keys: VENDOR_KEYS.map((k) => ({
       name: k.name, label: k.label, does: k.does,

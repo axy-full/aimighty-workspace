@@ -9,6 +9,7 @@
  * lives here; the pieces are dumb on purpose.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePrice } from "@/lib/price";
 import { referenceProblem, type RefItem, type RefPicker } from "./References";
 import { appAlert, appConfirm } from "./dialog";
 import type { Gen } from "./GenCard";
@@ -21,7 +22,7 @@ import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
 import ShotRow from "./ShotRow";
 import { useApi } from "@/lib/useApi";
-import { usd, compactTokens } from "@/lib/format";
+import { compactTokens } from "@/lib/format";
 import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import { useOnChange } from "@/lib/changes";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
@@ -90,6 +91,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* On a phone the rail is a sheet, opened from a docked bar that always
      shows the filing target, the first line of the prompt and the price. */
   const mobile = useIsMobile();
+  const price = usePrice();
   const [sheetOpen, setSheetOpen] = useState(false);
   useSheetLock(mobile && sheetOpen);
   /** Editing or extending an existing render, rather than making a new one.
@@ -473,7 +475,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         <button type="button" className="dock-go" onClick={render}
           disabled={busy || !prompt.trim() || !signedIn || Boolean(refProblem || sourceIssue)}>
           <span>{busy ? "…" : isImage ? "Generate" : "Render"}</span>
-          <span className="dock-cost">{est ? usd(est.net * (isImage ? count : 1), 2) : "—"}</span>
+          <span className="dock-cost">{est ? price(est.net * (isImage ? count : 1)) : "—"}</span>
         </button>
       </div>
       {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
@@ -551,7 +553,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             <span>{busy ? "Rendering…" : isImage ? (count > 1 ? `Generate ${count} stills` : "Generate still") : "Render"}</span>
             <span className="btn-primary-cost">
               {est
-                ? isImage && count > 1 ? `${usd(est.net * count, 2)} · ${count} × ${usd(est.net, 2)}` : usd(est.net, 2)
+                ? isImage && count > 1 ? `${price(est.net * count)} · ${count} × ${price(est.net)}` : price(est.net)
                 : "—"}{!isImage && estTokens != null ? ` · ${compactTokens(estTokens)} TOK` : ""}
             </span>
           </button>

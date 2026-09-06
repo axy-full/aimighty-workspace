@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { startGenDrag, readDraggedAsset, type DraggedAsset } from "@/lib/dnd";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useApi } from "@/lib/useApi";
@@ -39,14 +40,10 @@ import type { Gen } from "./GenCard";
  * ContextMenu looks for.
  */
 
-const DRAG_TYPE = "application/x-particl-asset";
-
-/** What a dragged asset carries. Small on purpose: the drop only needs
- *  enough to attach it, and the composer re-reads the rest from the row. */
-export type DraggedAsset = {
-  kind: "gen";
-  gen: Pick<Gen, "id" | "kind" | "storedUrl" | "sourceUrl" | "prompt" | "title" | "status" | "params" | "projectId">;
-};
+/* The drag payload lives in lib/dnd.ts now, shared by every card in the
+   app; these re-exports keep the rail's old imports working. */
+export { readDraggedAsset };
+export type { DraggedAsset };
 
 export default function ProjectRail() {
   const path = usePathname();
@@ -310,27 +307,5 @@ function AudioRow({ g }: { g: Gen }) {
   );
 }
 
-function setDrag(e: React.DragEvent, g: Gen) {
-  const payload: DraggedAsset = {
-    kind: "gen",
-    gen: {
-      id: g.id, kind: g.kind, storedUrl: g.storedUrl, sourceUrl: g.sourceUrl,
-      prompt: g.prompt, title: g.title, status: g.status,
-      params: g.params, projectId: g.projectId,
-    },
-  };
-  e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(payload));
-  e.dataTransfer.effectAllowed = "copy";
-}
+const setDrag = startGenDrag;
 
-/** Read a rail drag out of a drop event, or null if it was something else. */
-export function readDraggedAsset(e: React.DragEvent): DraggedAsset | null {
-  try {
-    const raw = e.dataTransfer.getData(DRAG_TYPE);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as DraggedAsset;
-    return parsed?.kind === "gen" && parsed.gen?.id ? parsed : null;
-  } catch {
-    return null;   // a drag from somewhere else entirely
-  }
-}

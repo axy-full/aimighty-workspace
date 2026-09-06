@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { creditsNumber } from "@/lib/price";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useProject } from "@/lib/projectContext";
-import { useSession, useSignInHref } from "@/lib/session";
+import { useSession, useSignInHref, type SessionCredits } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
 import { RequestAccessButton } from "@/components/RequestAccess";
 import BrandSwitch from "./BrandSwitch";
@@ -41,7 +42,7 @@ const MANAGE = [
 /* Studio-level screens show the studio's month, not one production's cap. */
 const STUDIO_LEVEL = ["/projects", "/all", "/settings", "/usage"];
 
-type Summary = { spentUsd: number; pending: number };
+type Summary = { spentUsd: number; credits?: SessionCredits | null; pending: number };
 
 export default function AppHeader() {
   const path = usePathname();
@@ -85,7 +86,7 @@ export default function AppHeader() {
       <div className="hdr-right">
         {signedIn ? (
           <>
-            <CapReadout studioLevel={showAll} project={showAll ? null : current} spentUsd={usage?.spentUsd ?? null} />
+            <CapReadout studioLevel={showAll} project={showAll ? null : current} spentUsd={usage?.spentUsd ?? null} credits={usage?.credits ?? null} />
             <Link href="/settings" className="hdr-avatar" title={name ?? "Settings"}>{initials}</Link>
           </>
         ) : (
@@ -107,10 +108,20 @@ type Proj = { id: string; name: string; kind?: string | null; runtime?: string |
  * MONTH` on studio-level screens. Value in ink, the rest muted; the whole
  * thing is a link to Usage because that is where the number is explained.
  */
-function CapReadout({ studioLevel, project, spentUsd }: {
-  studioLevel: boolean; project: Proj | null; spentUsd: number | null;
+function CapReadout({ studioLevel, project, spentUsd, credits }: {
+  studioLevel: boolean; project: Proj | null; spentUsd: number | null; credits?: SessionCredits | null;
 }) {
   const money = (n: number) => `$${n.toFixed(2)}`;
+  const { credits: sessionCredits } = useSession();
+  const cr = credits ?? sessionCredits;
+  /* A workspace that pays in credits sees its balance, whatever the screen. */
+  if (cr) {
+    return (
+      <Link href="/usage" className="hdr-cap" title={`Credits on the platform's engines — ${creditsNumber(cr.used)} used of ${creditsNumber(cr.granted)} granted`}>
+        <span className="hdr-cap-v">{creditsNumber(cr.balance)}</span><span className="hdr-cap-long"> CREDITS LEFT</span><span className="hdr-cap-short"> CR</span>
+      </Link>
+    );
+  }
   if (studioLevel || !project) {
     return (
       <Link href="/usage" className="hdr-cap" title="This month, across the studio">

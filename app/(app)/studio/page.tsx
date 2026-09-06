@@ -13,6 +13,7 @@
  * it, and how to write it into a prompt. Selection is ink on the card.
  */
 import Link from "next/link";
+import { startCastDrag } from "@/lib/dnd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
@@ -236,7 +237,8 @@ export default function StudioPage() {
                 const trained = identityFor(m.name)?.status === "ready";
                 const on = (cur?.id === m.id) && !curId;
                 return (
-                  <button key={m.id} type="button" onClick={() => pick({ type: "cast", id: m.id })} className={`castcard ${on ? "is-on" : ""}`}>
+                  <button key={m.id} type="button" onClick={() => pick({ type: "cast", id: m.id })} className={`castcard ${on ? "is-on" : ""}`}
+                    draggable onDragStart={(e) => startCastDrag(e, m)} title={`Drag @${m.name} into a prompt`}>
                     <span className="castcard-still">
                       {m.uploadId && /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={`/api/uploads/${m.uploadId}`} alt="" loading="lazy" />}

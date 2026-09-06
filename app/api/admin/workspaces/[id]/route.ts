@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/auth";
-import { getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault } from "@/lib/platform";
+import { getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     await setWorkspaceAllowance(id, usd);
     out.allowanceUsd = usd;
+  }
+  if ("grantCredits" in body) {
+    const n = Number(body.grantCredits);
+    if (!Number.isFinite(n) || n === 0 || Math.abs(n) > 1_000_000) {
+      return NextResponse.json({ error: "Credits to add: a number, negative to take some away." }, { status: 400 });
+    }
+    await grantCredits(id, n, String(body.note ?? "Added by management"), got.user.id);
+    out.granted = n;
   }
   if ("mode" in body) {
     const mode = body.mode === "platform" ? "platform" : body.mode === "own" ? "own" : null;

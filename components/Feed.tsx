@@ -20,6 +20,7 @@
  * groups that empty out, and the counts on the segments are live.
  */
 import { useEffect, useMemo, useState } from "react";
+import { startGenDrag } from "@/lib/dnd";
 import Link from "next/link";
 import type { Gen } from "./GenCard";
 import LazyMedia from "./LazyMedia";
@@ -285,6 +286,7 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
     <div
       data-gen-id={gen.id} data-gen-prompt={gen.prompt} data-gen-label={gen.title || clipId(gen.id)}
       data-gen-title={gen.title ?? ""}
+      draggable={done} onDragStart={(e) => startGenDrag(e, gen)}
       className={`take ${s === "approved" ? "is-approved" : ""} ${active ? "is-selected" : ""}`}>
       <button type="button" onClick={onOpen} className="take-hit"
         title={gen.title ? `${gen.title} — ${gen.prompt}` : gen.prompt}>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usd } from "@/lib/format";
+import { usePrice } from "@/lib/price";
 import { appConfirm } from "@/components/dialog";
 import type { Step, Engine } from "@/lib/atomik";
 
@@ -37,6 +37,7 @@ type Props = {
 export default function ApprovalCard({
   step, engines, busy, onApprove, onReject, onEdit, onAlwaysAllow,
 }: Props) {
+  const price = usePrice();
   const [instead, setInstead] = useState("");
   const [expanded, setExpanded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -140,7 +141,7 @@ export default function ApprovalCard({
             <>
               Approve
               <span className="approve-price">
-                {step.estCostUsd == null ? "priced at render" : usd(step.estCostUsd, 2)}
+                {step.estCostUsd == null ? "priced at render" : price(step.estCostUsd)}
               </span>
               <kbd>↵</kbd>
             </>

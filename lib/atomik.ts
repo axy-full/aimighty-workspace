@@ -323,7 +323,9 @@ export type Engine = {
  * would be offering a button that fails.
  */
 export async function engines(): Promise<Engine[]> {
-  const own = MODELS.filter((m) => !m.hidden);
+  /* An engine with no generate mode (Topaz only upscales) cannot make a
+     shot from a prompt, so the planner is never offered it. */
+  const own = MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate"));
   const out: Engine[] = own.map((m) => ({
     id: m.id, label: m.label, kind: m.kind as StepKind, own: true,
     note: m.kind === "video"

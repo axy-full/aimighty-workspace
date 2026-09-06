@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { creditStateFor } from "@/lib/credits";
 import Shell from "@/components/shell/Shell";
 import ChatDock from "@/components/ChatDock";
 import ContextMenu from "@/components/ContextMenu";
@@ -38,6 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       owner: Boolean(ctx?.role === "owner"),
       superAdmin: await isPlatformOwner(user),
       workspaces: ctx?.workspaces ?? [],
+      credits: ctx?.workspace ? await creditStateFor(ctx.workspace).catch(() => null) : null,
     }}>
     <ProjectProvider>
       {/* The pipeline redesign puts the project and the nav in one 52px

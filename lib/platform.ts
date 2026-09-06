@@ -1,4 +1,5 @@
 import { createClient, type Client } from "@libsql/client";
+import { signupCredits } from "./creditTerms";
 import { gatewayMintConfigured, mintGatewayKey } from "./vercelKeys";
 import { randomBytes, createHash } from "node:crypto";
 import { seal, open } from "./keyring";
@@ -65,6 +66,18 @@ const SCHEMA = [
      created_at         INTEGER NOT NULL,
      updated_at         INTEGER NOT NULL
    )`,
+  /* Credits added to a workspace: the welcome grant, and whatever
+     management adds. The balance is these minus the spend read off the
+     workspace's own tables (lib/credits.ts). */
+  `CREATE TABLE IF NOT EXISTS credit_grants (
+     id            TEXT PRIMARY KEY,
+     workspace_id  TEXT NOT NULL,
+     credits       REAL NOT NULL,
+     note          TEXT,
+     created_by    TEXT,
+     created_at    INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS credit_grants_ws ON credit_grants(workspace_id)`,
   `CREATE TABLE IF NOT EXISTS memberships (
      workspace_id TEXT NOT NULL,
      account_id   TEXT NOT NULL,
@@ -315,6 +328,13 @@ export async function createWorkspace(input: { name: string; owner: { id: string
     sql: `INSERT INTO memberships (workspace_id, account_id, role, created_at) VALUES (?,?,'owner',?)`,
     args: [id, input.owner.id, ts],
   });
+  /* Something to spend on day one. */
+  if (platformKeys && signupCredits() > 0) {
+    await p.execute({
+      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, created_by, created_at) VALUES (?,?,?,?,?,?)`,
+      args: [newId("cg"), id, signupCredits(), "Welcome credits", input.owner.id, ts],
+    });
+  }
   if (gatewayMintConfigured()) {
     try {
       const minted = await mintGatewayKey(`particl · ${slug}`);
@@ -345,6 +365,21 @@ export async function setWorkspaceAllowance(id: string, usd: number | null): Pro
     sql: `UPDATE workspaces SET allowance_usd = ?, updated_at = ? WHERE id = ? AND legacy = 0`,
     args: [usd, now(), id],
   });
+}
+
+/** Credits added to a workspace, by management. Negative takes them away. */
+export async function grantCredits(workspaceId: string, credits: number, note: string, by: string | null): Promise<void> {
+  await platformReady();
+  await platformDb().execute({
+    sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, created_by, created_at) VALUES (?,?,?,?,?,?)`,
+    args: [newId("cg"), workspaceId, credits, note.slice(0, 200), by, now()],
+  });
+}
+
+export async function creditsGranted(workspaceId: string): Promise<number> {
+  await platformReady();
+  const rs = await platformDb().execute({ sql: `SELECT COALESCE(SUM(credits),0) AS n FROM credit_grants WHERE workspace_id = ?`, args: [workspaceId] });
+  return Number((rs.rows[0] as any)?.n ?? 0);
 }
 
 export async function addMember(ws: TenantWorkspace, account: { id: string; email: string; name: string }, role: WorkspaceRole): Promise<void> {

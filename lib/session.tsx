@@ -22,6 +22,8 @@ import { usePathname } from "next/navigation";
  */
 
 export type SessionWorkspace = { id: string; name: string; slug: string };
+/** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
+export type SessionCredits = { creditUsd: number; markup: number; granted: number; used: number; balance: number };
 export type Session = {
   signedIn: boolean;
   name: string | null;
@@ -33,9 +35,10 @@ export type Session = {
   /** The platform's owner — the one account that administers sign-ups. */
   superAdmin: boolean;
   workspaces: (SessionWorkspace & { role: "owner" | "admin" | "member" })[];
+  credits: SessionCredits | null;
 };
 
-const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null, workspace: null, role: null, owner: false, superAdmin: false, workspaces: [] });
+const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null, workspace: null, role: null, owner: false, superAdmin: false, workspaces: [], credits: null });
 
 /**
  * What the browser must not keep once nobody is signed in.

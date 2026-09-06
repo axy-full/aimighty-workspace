@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { creditState } from "@/lib/credits";
 import { requireUser, isPlatformOwner, withTenant } from "@/lib/auth";
 import { currentTenant } from "@/lib/tenant";
 
@@ -16,5 +17,6 @@ export const GET = withTenant(async function GET() {
     owner: got.user.owner, superAdmin: await isPlatformOwner(got.user),
     workspace: store?.workspace ? { id: store.workspace.id, name: store.workspace.name, slug: store.workspace.slug, platformKeys: store.workspace.usesPlatformKeys } : null,
     workspaces: store?.workspaces ?? [],
+    credits: await creditState().catch(() => null),
   });
 });
