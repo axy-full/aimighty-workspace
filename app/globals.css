@@ -2702,3 +2702,10 @@ html, body { overflow-x: clip; }
   }
 }
 .st-foot-line { display: none; }
+
+/* ── Held takes: parked for credits, released when they arrive ─────────── */
+.dot-held { background: #f0b429; }
+.ublk.is-held { background: #f0b429; }
+.well-cap.is-held { color: #f0b429; }
+.tile-held .tile-face { border: 1px dashed color-mix(in srgb, #f0b429 55%, transparent); }
+.take-held { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

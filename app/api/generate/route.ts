@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
-import { submitTask, type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
+import { type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import { getModel, DEFAULT_MODEL_ID, estimateCostUsd, estimateImageCostUsd } from "@/lib/models";
 import { enqueueRender } from "@/lib/inngest";
 import { runInline } from "@/lib/renderWork";
@@ -14,14 +14,16 @@ import { listCast, expandCast } from "@/lib/cast";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
-import { withRetry, classifyFailure, getProvider, providerConfigured, billedTo } from "@/lib/providers";
+import { getProvider, providerConfigured, billedTo } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice, sourceProblem } from "@/lib/tasks";
-import { submitFalVideo, falEndpointFor } from "@/lib/falVideo";
 import {
   detectMove, hasCameraModule, detectSpec, inferMove, sceneLine, craftModules,
 } from "@/lib/studio";
 import { meter } from "@/lib/meter";
+import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/held";
+import { creditState } from "@/lib/credits";
+import { submitVideoJob } from "@/lib/submitVideo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -107,7 +109,13 @@ export const POST = withTenant(async function POST(req: Request) {
   // On the platform's keys, a workspace has a monthly allowance — the wall
   // the platform's money sits behind. Checked before anything is spent.
   const allowance = await allowanceCheck(vendorKeyNameFor(model.provider));
-  if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
+  /* Out of credits is not a refusal any more: the take is parked as held and
+     released the moment credits arrive (lib/held.ts). A cap or a key problem
+     still stops here. */
+  if (!allowance.ok && allowance.status !== 402) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
+  if (!allowance.ok && (await heldCount()) >= HELD_LIMIT) {
+    return NextResponse.json({ error: `${HELD_LIMIT} takes are already held for credits. Top up to release them before adding more.` }, { status: 402 });
+  }
 
   /* ── Task ────────────────────────────────────────────────────────────
    * generate | edit | extend. Editing and extension are LOCKED tasks: the
@@ -427,7 +435,8 @@ export const POST = withTenant(async function POST(req: Request) {
        and the meter opens the job with it as the estimate. */
     const estStillUsd = estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0;
     const wallStill = await allowanceCheck(vendorKeyNameFor(model.provider), estStillUsd, modelId);
-    if (!wallStill.ok) return NextResponse.json({ error: wallStill.error }, { status: wallStill.status });
+    if (!wallStill.ok && wallStill.status !== 402) return NextResponse.json({ error: wallStill.error }, { status: wallStill.status });
+    const holdStill = !wallStill.ok ? heldInfo(estStillUsd, "image", modelId) : null;
     const genId = id("gen");
     const ts = now();
     const stillParams = {
@@ -452,11 +461,16 @@ export const POST = withTenant(async function POST(req: Request) {
              created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       args: [genId, stillProject, null, "image", modelId, stillPrompt,
-             JSON.stringify(stillParams), "running", got.user.id, ts, ts,
+             JSON.stringify(holdStill ? { ...stillParams, held: holdStill } : stillParams), holdStill ? "held" : "running", got.user.id, ts, ts,
              got.token?.id ?? null, stillShot, stillVersion, model.provider, "generate",
              billedTo(model.provider)],
     });
     invalidate(PROJECTS_KEY);
+    if (holdStill) {
+      const left = (await creditState())?.balance ?? 0;
+      await notifyHeld({ id: genId, needs: holdStill.needs, left }).catch(() => {});
+      return NextResponse.json({ id: genId, status: "held", held: true, needs: holdStill.needs, notices: [heldMessage(holdStill.needs, left)] }, { status: 202 });
+    }
     try {
       await meter({ id: genId, kind: "image", engine: billedTo(model.provider), model: modelId, status: "running",
                     engineCostUsd: estStillUsd, projectId: stillProject, shotId: stillShot, createdBy: got.user.id });
@@ -652,7 +666,8 @@ export const POST = withTenant(async function POST(req: Request) {
     { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
   )?.net ?? 0;
   const wall = await allowanceCheck(vendorKeyNameFor(model.provider), estUsd, modelId);
-  if (!wall.ok) return NextResponse.json({ error: wall.error }, { status: wall.status });
+  if (!wall.ok && wall.status !== 402) return NextResponse.json({ error: wall.error }, { status: wall.status });
+  const hold = !wall.ok ? heldInfo(estUsd, "video", modelId) : null;
 
   const genId = id("gen");
   const ts = now();
@@ -693,7 +708,7 @@ export const POST = withTenant(async function POST(req: Request) {
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
            shot_id, version, provider, task, source_gen_id, refine_ms, billed_to)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(storedParams), "queued",
+    args: [genId, projectId, null, modelId, finalPrompt, JSON.stringify(hold ? { ...storedParams, held: hold } : storedParams), hold ? "held" : "queued",
            got.user.id, ts, ts,
            refineModel, refineModel ? refineIn : null, refineModel ? refineOut : null, refineCost,
            got.token?.id ?? null,
@@ -702,6 +717,11 @@ export const POST = withTenant(async function POST(req: Request) {
   });
 
   invalidate(PROJECTS_KEY);
+  if (hold) {
+    const left = (await creditState())?.balance ?? 0;
+    await notifyHeld({ id: genId, needs: hold.needs, left }).catch(() => {});
+    return NextResponse.json({ id: genId, status: "held", held: true, needs: hold.needs, notices: [heldMessage(hold.needs, left)] }, { status: 202 });
+  }
   try {
     await meter({ id: genId, kind: "video", engine: billedTo(model.provider ?? "byteplus"), model: modelId, status: "running",
                   engineCostUsd: estUsd, projectId, shotId, createdBy: got.user.id });
@@ -711,79 +731,10 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json({ error: (e as Error).message }, { status: 503 });
   }
 
-  /* Submitting is the one call that can fail for reasons that aren't ours.
-   * A timeout or a 429 is weather and gets tried again with backoff; a
-   * rejected prompt is a decision and fails immediately with the vendor's
-   * own words. Either way the row already exists, so nothing disappears. */
-  const maxRetries = Math.max(0, Math.min(5, Number(await getSetting("maxRetries")) || 0));
-  const submitStartedAt = now();
-  try {
-    const { value: taskId, attempts } = await withRetry(
-      async () => {
-        try {
-          if (model.provider === "fal") {
-            const q = await submitFalVideo({ model, task, prompt: finalPrompt, params, references, source: sourceRef });
-            return q.requestId;
-          }
-          return await submitTask(modelId, finalPrompt, params, references);
-        } catch (e) {
-          /* Two very different failures wear the same coat here. "Could not
-             reach ModelArk" means the request never landed, and trying again
-             is free. But an error CARRYING a status — "Ark submit failed
-             (500)" — means they received it, and may well have accepted and
-             billed the task before failing to tell us. Retrying that buys a
-             second paid render nobody asked for. So it is re-thrown in words
-             classifyFailure reads as fatal. (lib/fal.ts carries the same
-             reasoning for the same reason.) */
-          const msg = (e as Error).message;
-          if (/^Ark submit failed \(/.test(msg)) {
-            throw new Error(
-              `${msg} The task may already have been accepted, so it was not sent again.`
-            );
-          }
-          throw e;
-        }
-      },
-      {
-        max: maxRetries,
-        onRetry: (n, cls, err) =>
-          console.warn(`generate ${genId}: attempt ${n} ${cls} — ${err.message}`),
-      }
-    );
-    if (model.provider === "fal") {
-      /* fal holds the job on its own queue; the request id is the handle the
-         wall's poll and the cron finish the render from (lib/falVideo.ts). */
-      await db().execute({
-        sql: `UPDATE generations
-              SET status='running', attempts=?, queue_ms=?, submit_ms=?,
-                  params=json_set(params, '$.falRequestId', ?, '$.falModel', ?), updated_at=?
-              WHERE id=?`,
-        args: [attempts, submitStartedAt - ts, now() - submitStartedAt, taskId,
-               falEndpointFor(model, task.id, references.some((r) => r.kind === "image")), now(), genId],
-      });
-    } else {
-      await db().execute({
-        sql: `UPDATE generations
-              SET ark_task_id=?, status='running', attempts=?,
-                  queue_ms=?, submit_ms=?, updated_at=?
-              WHERE id=?`,
-        args: [taskId, attempts, submitStartedAt - ts, now() - submitStartedAt, now(), genId],
-      });
-    }
-    return NextResponse.json({
-      id: genId, arkTaskId: taskId, status: "running", attempts,
+  const out = await submitVideoJob({ genId, model, task, prompt: finalPrompt, params, references, source: sourceRef, ts });
+  if (!out.ok) return NextResponse.json({ id: genId, status: "failed", error: out.error }, { status: 502 });
+  return NextResponse.json({
+    id: genId, arkTaskId: out.taskId, status: "running", attempts: out.attempts,
       notices: notices.length ? notices : undefined,
-    });
-  } catch (e) {
-    const msg = (e as Error).message;
-    const cls = classifyFailure(e);
-    const shown = cls === "rate-limited"
-      ? `The provider is rate-limiting us — try again shortly. (${msg})`
-      : msg;
-    await db().execute({
-      sql: `UPDATE generations SET status='failed', error=?, attempts=?, updated_at=? WHERE id=?`,
-      args: [shown, maxRetries + 1, now(), genId],
-    });
-    return NextResponse.json({ id: genId, status: "failed", error: shown }, { status: 502 });
-  }
+  });
 });

@@ -193,7 +193,14 @@ export default function Theatre({
           )
         ) : (
           <div className="theatre-face">
-            {live ? (
+            {gen.status === "held" ? (
+              <>
+                <p className="text-[15px] font-medium text-white/90">Held</p>
+                <p className="mt-1 text-[13px] text-white/60">
+                  Needs {Number((gen.params as { held?: { needs?: number } }).held?.needs ?? 0)} credits. Top up to release it — nothing is lost.
+                </p>
+              </>
+            ) : live ? (
               <>
                 <ParticlSpinner size={34} className="text-white/80" />
                 <p className="mt-3 text-[15px] font-medium text-white/90">{gen.status === "queued" ? "Queued" : "Rendering"}…</p>

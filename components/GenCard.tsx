@@ -61,6 +61,7 @@ export default function GenCard({
   const p = gen.params as { resolution?: string; ratio?: string; duration?: number };
   const done = gen.status === "succeeded" && Boolean(url);
   const live = gen.status === "queued" || gen.status === "running";
+  const held = gen.status === "held";
   const still = gen.kind === "image";
   const audio = gen.kind === "audio";
 
@@ -95,7 +96,7 @@ export default function GenCard({
           if (e.target !== e.currentTarget) return;
           if (onOpen && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(); }
         }}
-        className={`tile aspect-video ${live ? "tile-live" : ""} ${gen.status === "failed" ? "tile-failed" : ""} ${onOpen ? "cursor-pointer" : ""}`}
+        className={`tile aspect-video ${live ? "tile-live" : ""} ${held ? "tile-held" : ""} ${gen.status === "failed" ? "tile-failed" : ""} ${onOpen ? "cursor-pointer" : ""}`}
       >
         {done && audio ? (
           <span className="tile-face tile-audio">
@@ -107,8 +108,8 @@ export default function GenCard({
         ) : (
           <span className="tile-face">
             {live && <ParticlSpinner size={24} className="text-dim" />}
-            <span className={`tile-face-label ${live ? "" : "text-lift"}`}>
-              {live ? (gen.status === "queued" ? "Queued…" : "Rendering…") : gen.status === "cancelled" ? "Cancelled" : "Failed"}
+            <span className={`tile-face-label ${live ? "" : held ? "text-dim" : "text-lift"}`}>
+              {live ? (gen.status === "queued" ? "Queued…" : "Rendering…") : held ? "Held · top up to release" : gen.status === "cancelled" ? "Cancelled" : "Failed"}
             </span>
             {gen.error && <span className="tile-face-error">{gen.error.slice(0, 150)}</span>}
           </span>

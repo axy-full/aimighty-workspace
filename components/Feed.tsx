@@ -49,8 +49,9 @@ export function aspectOf(g: Gen): string {
 
 type Shot = { id: string; code: string; scene: string; title: string; description?: string; takes: number; spend: number };
 
-export function stateOf(g: Gen): "rendering" | "approved" | "picked" | "draft" | "failed" {
+export function stateOf(g: Gen): "rendering" | "held" | "approved" | "picked" | "draft" | "failed" {
   if (g.status === "queued" || g.status === "running") return "rendering";
+  if (g.status === "held") return "held";
   if (g.status === "failed" || g.status === "cancelled") return "failed";
   if (g.reviewState === "approved") return "approved";
   if (g.reviewState === "picked") return "picked";
@@ -112,7 +113,7 @@ export default function Feed({
       const s = stateOf(g);
       if (s === "approved") c.approved++;
       else if (s === "picked") c.picked++;
-      else if (s === "draft" || s === "rendering") c.draft++;
+      else if (s === "draft" || s === "rendering" || s === "held") c.draft++;
       c[roleOf(g)]++;
     }
     return c;
@@ -127,7 +128,7 @@ export default function Feed({
         if (role !== "all" && roleOf(g) !== role) return false;
       } else if (take !== "all") {
         const s = stateOf(g);
-        if (take === "draft" ? !(s === "draft" || s === "rendering") : s !== take) return false;
+        if (take === "draft" ? !(s === "draft" || s === "rendering" || s === "held") : s !== take) return false;
       }
       if (!needle) return true;
       return [g.prompt, g.title ?? "", g.shotCode ?? ""].join(" ").toLowerCase().includes(needle);
@@ -300,6 +301,8 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
             <span className="flex flex-col items-center gap-2">
               <ParticlSpinner size={22} className="text-dim" />
             </span>
+          ) : s === "held" ? (
+            <span className="well-cap is-held">held · top up to release</span>
           ) : (
             <span className="well-cap">{s === "failed" ? word.toLowerCase() : `render · ${code} · ${v}`}</span>
           )}
@@ -321,6 +324,7 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
               {s === "approved" && <span className="dot dot-approved" />}
               {s === "picked" && <span className="dot dot-picked" />}
               {(s === "draft" || s === "rendering") && <span className="dot dot-draft" />}
+              {s === "held" && <span className="dot dot-held" />}
               {s === "failed" && <span className="dot dot-none" />}
               {badge ? `${code} ${v} · ${word.toLowerCase()}` : word}
             </span>
@@ -332,6 +336,7 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
           </span>
         </span>
       </button>
+      {s === "held" && <HeldActions gen={gen} onChanged={onChanged} />}
       {still && done && (
         <div className="take-acts">
           <button type="button" className={`trk-btn ${role === "first" ? "is-on" : ""}`} onClick={() => setRole(role === "first" ? "loose" : "first")}
@@ -341,6 +346,36 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
           <a href={downloadHref(url!)} download className="trk-btn is-icon" title="Download" aria-label="Download" onClick={(e) => e.stopPropagation()}>↓</a>
         </div>
       )}
+    </div>
+  );
+}
+
+/** A held take: what it needs, and the way out — release when the balance covers it, top up when it doesn't. */
+export function HeldActions({ gen, onChanged }: { gen: Gen; onChanged?: () => void }) {
+  const { credits } = useSession();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const needs = Number((gen.params as { held?: { needs?: number } }).held?.needs ?? 0);
+  const balance = credits?.balance ?? null;
+  // The server decides who may release; here only whether the balance covers it.
+  const covered = balance == null || balance >= needs;
+  async function release() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(`/api/jobs/${gen.id}/release`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not release it");
+      onChanged?.();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="take-acts take-held">
+      <span className="text-[12.5px] text-mute">Needs {needs} cr{balance != null ? ` · ${Math.max(0, Math.floor(balance))} left` : ""}</span>
+      {covered
+        ? <button type="button" className="btn-secondary !py-1 !text-[12.5px]" disabled={busy} onClick={release}>{busy ? "Releasing…" : "Release"}</button>
+        : <Link href="/settings" className="btn-secondary !py-1 !text-[12.5px]">Top up</Link>}
+      {err && <span className="text-[12px] text-lift">{err}</span>}
     </div>
   );
 }

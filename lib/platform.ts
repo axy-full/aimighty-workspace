@@ -479,3 +479,17 @@ export async function sessionLookup(token: string): Promise<{ account: any; work
   }
   return { account: r, workspaceId: r.s_ws ?? null };
 }
+
+/** The owner and admins of a workspace: who hears when its renders are held. */
+export async function workspaceAdmins(workspaceId: string): Promise<{ id: string; email: string; name: string }[]> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT a.id, a.email, a.name FROM memberships m JOIN accounts a ON a.id = m.account_id
+          WHERE m.workspace_id = ? AND m.disabled = 0 AND m.role IN ('owner','admin')`,
+    args: [workspaceId],
+  });
+  return rs.rows.map((r) => {
+    const row = r as unknown as { id: string; email: string; name: string };
+    return { id: String(row.id), email: String(row.email ?? ""), name: String(row.name ?? "") };
+  });
+}
