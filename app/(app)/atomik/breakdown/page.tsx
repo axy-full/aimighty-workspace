@@ -12,7 +12,7 @@
  * Shots written here ARE the production's shots — the same rows the shot
  * list sends across and Particl files takes against.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
@@ -157,6 +157,14 @@ function ShotCard({ shot, castNames, scenes, onPatch, onRemove }: {
 }) {
   const [desc, setDesc] = useState(shot.description);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* The patch waiting on the timer, so unmounting sends it instead of
+     dropping the last keystrokes. */
+  const pending = useRef<(() => void) | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+    const flush = pending.current; pending.current = null;
+    flush?.();
+  }, []);
   const cast = [...new Set([...shot.cast, ...mentionsIn(desc, castNames)])];
   const type = shot.kind === "type";
   return (
@@ -176,7 +184,8 @@ function ShotCard({ shot, castNames, scenes, onPatch, onRemove }: {
             setDesc(e.target.value);
             if (timer.current) clearTimeout(timer.current);
             const v = e.target.value;
-            timer.current = setTimeout(() => onPatch({ description: v, cast: [...new Set([...shot.cast, ...mentionsIn(v, castNames)])] }), 800);
+            pending.current = () => onPatch({ description: v, cast: [...new Set([...shot.cast, ...mentionsIn(v, castNames)])] });
+            timer.current = setTimeout(() => { const f = pending.current; pending.current = null; f?.(); }, 800);
           }} />
         <div className="flex flex-wrap gap-1">
           {SETUP.map((k) => {

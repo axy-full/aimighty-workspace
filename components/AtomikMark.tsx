@@ -37,6 +37,22 @@ export function AtomikMark({ size = 16, className = "" }: {
 }
 
 /**
+ * The atomik loader: the ring's own motion. Each dot breathes in turn
+ * around the circle — opacity and scale, never rotation, which the mark's
+ * rules forbid. Same CSS as particl's trail loader, on the ring.
+ */
+export function AtomikSpinner({ size = 24, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="20 20 160 160" fill="currentColor"
+      className={`atomik-spin ${className}`} role="status" aria-label="Loading">
+      {ATOMIK_RING.map(([cx, cy, r], i) => (
+        <circle key={i} cx={cx} cy={cy} r={r} style={{ animationDelay: `${i * 80}ms` }} />
+      ))}
+    </svg>
+  );
+}
+
+/**
  * `at◯mık` — the wordmark recipe, verbatim.
  *
  * A baseline-aligned flex row in Outfit 500 at +0.005em: `at`, the ring

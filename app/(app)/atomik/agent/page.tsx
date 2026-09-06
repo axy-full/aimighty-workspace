@@ -10,10 +10,11 @@ import { RequestAccessButton } from "@/components/RequestAccess";
 import { announceChange } from "@/lib/changes";
 import { usd } from "@/lib/format";
 import Boundary from "@/components/Boundary";
-import { ParticlSpinner } from "@/components/ParticlMark";
+import { AtomikSpinner } from "@/components/AtomikMark";
 import { AtomikStacked } from "@/components/AtomikMark";
 import ApprovalCard from "@/components/atomik/ApprovalCard";
 import ModelMenu, { type PlannerModel } from "@/components/atomik/ModelMenu";
+import { useDraft } from "@/lib/useDraft";
 import type { Chat, Message, Step, Engine, AgentMode } from "@/lib/atomik";
 
 /**
@@ -51,7 +52,8 @@ export default function AtomikPage() {
   const { data: loaded, error: loadError, refresh: refreshChat } =
     useApi<Loaded>(chatId ? `/api/atomik/${encodeURIComponent(chatId)}` : null, 0);
 
-  const [draft, setDraft] = useState("");
+  /* What is being typed survives leaving the room; cleared only when sent. */
+  const { value: draft, set: setDraft, clear: clearDraft } = useDraft("atomik-agent", "");
   const [thinking, setThinking] = useState(false);
   const [busyStep, setBusyStep] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +62,12 @@ export default function AtomikPage() {
      state instead would mean an effect that writes state on every load —
      a cascading render, and a choice that silently follows you into the
      next conversation. */
-  const [picked, setPicked] = useState<{ id: string | null; model: string; mode: AgentMode } | null>(null);
+  const [picked, setPicked] = useState<{ id: string | null; model: string; mode: AgentMode } | null>(() => {
+    /* An idea card hands its reasoning model over in the URL for the chat
+       it is about to start; an existing chat keeps its own. */
+    const want = params.get("model");
+    return want && !chatId ? { id: null, model: want, mode: "ask" } : null;
+  });
   const mine = picked && picked.id === chatId ? picked : null;
   const bottom = useRef<HTMLDivElement>(null);
 
@@ -112,7 +119,7 @@ export default function AtomikPage() {
         id = j.id as string;
         router.replace(`/atomik/agent?c=${encodeURIComponent(id)}`);
       }
-      setDraft("");
+      clearDraft();
       const res = await fetch(`/api/atomik/${encodeURIComponent(id)}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: body }),
@@ -126,7 +133,7 @@ export default function AtomikPage() {
     } finally {
       setThinking(false);
     }
-  }, [chatId, thinking, model, mode, selection, router, refreshIndex]);
+  }, [chatId, thinking, model, mode, selection, router, refreshIndex, clearDraft]);
 
   /* ── the gate ── */
 
@@ -335,7 +342,7 @@ export default function AtomikPage() {
             </Boundary>
             {thinking && (
               <p className="atomik-working">
-                <ParticlSpinner size={15} className="text-blue" />
+                <AtomikSpinner size={15} className="text-blue" />
                 Working…
               </p>
             )}

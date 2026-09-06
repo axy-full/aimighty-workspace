@@ -1,6 +1,8 @@
 "use client";
 
 import { useSession, useSignInHref } from "@/lib/session";
+import { usePathname } from "next/navigation";
+import { AtomikMark, AtomikSpinner } from "@/components/AtomikMark";
 import { RequestAccessButton } from "./RequestAccess";
 
 /**
@@ -110,11 +112,12 @@ export function ParticlSpinner({ size = 24, className = "" }: { size?: number; c
  */
 export function Waiting({ label = "Loading", what }: { label?: string; what?: string }) {
   const { signedIn } = useSession();
+  const atomik = useInAtomik();
   if (!signedIn) return <SignedOut what={what} />;
   return (
     <div className="screen grid place-items-center">
       <div className="flex flex-col items-center gap-3 text-dim">
-        <ParticlSpinner size={26} />
+        {atomik ? <AtomikSpinner size={26} /> : <ParticlSpinner size={26} />}
         <p className="text-[14px]">{label}</p>
       </div>
     </div>
@@ -181,12 +184,21 @@ export function Trouble({ label = "This didn't load", detail, onRetry }: {
 export function Empty({ title, line, action, compact = false }: {
   title: string; line?: string; action?: React.ReactNode; compact?: boolean;
 }) {
+  const atomik = useInAtomik();
   return (
     <div className={`flex flex-col items-center text-center ${compact ? "py-6" : "py-10"}`}>
-      <ParticlMark size={compact ? 18 : 26} className="text-mute/70" />
+      {atomik
+        ? <AtomikMark size={compact ? 18 : 26} className="text-mute/70" />
+        : <ParticlMark size={compact ? 18 : 26} className="text-mute/70" />}
       <p className={`mt-3 font-medium text-dim ${compact ? "text-[14px]" : "text-[15px]"}`}>{title}</p>
       {line && <p className="mt-1 max-w-[40ch] text-[13px] leading-relaxed text-mute">{line}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
+}
+
+/** Atomik's screens carry atomik's mark in their waits and empties. */
+function useInAtomik(): boolean {
+  const path = usePathname();
+  return Boolean(path?.startsWith("/atomik"));
 }

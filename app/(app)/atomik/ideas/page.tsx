@@ -7,6 +7,15 @@
  * one becomes a production it keeps its card, and the card keeps pointing
  * at it: the state is read off what happened — a card with a production
  * that has shots is IN PRODUCTION whatever anyone set.
+ *
+ * The new card carries a REASONING row: which model does the thinking,
+ * chosen from what Vercel AI Gateway is serving today (the same menu the
+ * agent uses), and a button that has that model write the note up into a
+ * logline and tone list. The pick is saved on the idea and carried into
+ * "Ask the agent", so a production planned from this card is planned by
+ * the model that was chosen for it.
+ *
+ * Everything typed here is a draft that survives leaving the page.
  */
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -15,18 +24,28 @@ import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
 import { uploadFile } from "@/lib/uploadClient";
+import { useDraft } from "@/lib/useDraft";
+import { usd } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
+import ModelMenu, { type PlannerModel } from "@/components/atomik/ModelMenu";
 import { usePageTitle } from "@/lib/usePageTitle";
 import type { Idea, IdeaState } from "@/lib/atomikDocs";
 
 type Row = Idea & { projectName: string | null; shots: number; byName: string | null; parkedByName: string | null };
 type Filter = "all" | "pinned" | "production" | "parked";
+type Models = { featured: PlannerModel[]; rest: PlannerModel[] };
+type IdeaDraft = { logline: string; tone: string; refs: string[]; model: string };
+
+const EMPTY_DRAFT: IdeaDraft = { logline: "", tone: "", refs: [], model: "auto" };
+const NO_MODELS: Models = { featured: [], rest: [] };
 
 const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const initials = (name: string | null) => (name ?? "—").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "—";
 /** The card's state is what happened to it, not only what was set. */
 const shownState = (i: Row): IdeaState => (i.projectId && i.shots > 0 ? "production" : i.state === "production" ? "pinned" : i.state);
+/** The tail of a gateway model id — `anthropic/claude-opus-5` reads as `claude-opus-5`. */
+const modelTail = (id: string | null) => (id ?? "auto").split("/").pop() ?? "auto";
 
 export default function IdeasPage() {
   usePageTitle("Atomik · Ideas");
@@ -34,12 +53,21 @@ export default function IdeasPage() {
   const { signedIn } = useSession();
   const { setSelection, refreshProjects } = useProject();
   const { data, refresh } = useApi<{ ideas: Row[] }>(signedIn ? "/api/atomik/ideas" : null, 15_000);
+  /* The planner menu rides along with the agent's index — a cached read of
+     the gateway's catalogue, not a query worth its own endpoint. */
+  const { data: index } = useApi<{ models: Models }>(signedIn ? "/api/atomik" : null, 0);
+  const models = index?.models ?? NO_MODELS;
   const [filter, setFilter] = useState<Filter>("all");
-  const [composing, setComposing] = useState(false);
+  const draft = useDraft<IdeaDraft>("atomik-idea", EMPTY_DRAFT);
+  const [composingChoice, setComposingChoice] = useState<boolean | null>(null);
+  /* The card is open when someone opened it — or when a draft came back
+     from the last visit, so the words are on screen rather than in storage. */
+  const composing = composingChoice ?? draft.restored;
   const ideas = data?.ideas ?? [];
   const shown = ideas.filter((i) => filter === "all" || shownState(i) === filter);
   const counts = { all: ideas.length, pinned: 0, production: 0, parked: 0 };
   for (const i of ideas) { const s = shownState(i); if (s !== "open") counts[s]++; }
+  const agentHref = draft.value.model !== "auto" ? `/atomik/agent?model=${encodeURIComponent(draft.value.model)}` : "/atomik/agent";
 
   async function patch(i: Row, body: Record<string, unknown>) {
     const res = await fetch(`/api/atomik/ideas/${i.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -83,8 +111,8 @@ export default function IdeasPage() {
               <button key={k} type="button" role="tab" aria-selected={filter === k} className={`seg-opt ${filter === k ? "is-on" : ""}`} onClick={() => setFilter(k)}>{l}<span className="seg-n">{counts[k]}</span></button>
             ))}
           </div>
-          <Link href="/atomik/agent" className="btn-secondary !h-[38px]">Ask the agent →</Link>
-          <button type="button" className="btn-primary !px-4" onClick={() => setComposing(true)} disabled={!signedIn}>New idea</button>
+          <Link href={agentHref} className="btn-secondary !h-[38px]">Ask the agent →</Link>
+          <button type="button" className="btn-primary !px-4" onClick={() => setComposingChoice(true)} disabled={!signedIn}>New idea</button>
         </div>
       </div>
 
@@ -94,7 +122,11 @@ export default function IdeasPage() {
         <Waiting label="Opening the ideas" />
       ) : (
         <div className="ak-ideas">
-          {composing && <NewIdea onDone={() => { setComposing(false); refresh(); }} onCancel={() => setComposing(false)} />}
+          {composing && (
+            <NewIdea draft={draft.value} set={draft.set} models={models}
+              onDone={() => { draft.clear(); setComposingChoice(false); refresh(); }}
+              onCancel={() => { draft.clear(); setComposingChoice(false); }} />
+          )}
           {shown.map((i) => {
             const s = shownState(i);
             return (
@@ -119,7 +151,7 @@ export default function IdeasPage() {
                 </div>
                 <div className="ak-idea-foot">
                   <span className="ak-sub !text-[12px]">
-                    {initials(i.byName)} · {i.pins.length} pin{i.pins.length === 1 ? "" : "s"}{s === "parked" && i.parkedByName ? ` · parked by ${initials(i.parkedByName)}` : ""}
+                    {initials(i.byName)} · {i.pins.length} pin{i.pins.length === 1 ? "" : "s"}{s === "parked" && i.parkedByName ? ` · parked by ${initials(i.parkedByName)}` : ""}{i.model ? ` · ${modelTail(i.model)}` : ""}
                   </span>
                   <span className="flex items-center gap-3">
                     {s === "production" && i.projectId && (
@@ -150,53 +182,103 @@ export default function IdeasPage() {
   );
 }
 
-/** The new card: a logline, tones, up to three references, then Save. */
-function NewIdea({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
-  const [logline, setLogline] = useState("");
-  const [tone, setTone] = useState("");
-  const [refs, setRefs] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+/**
+ * The new card: a logline, tones, up to three references, the reasoning
+ * model, then Save. The words live in the page's draft, so they are still
+ * here after a detour to another screen.
+ */
+function NewIdea({ draft: d, set, models, onDone, onCancel }: {
+  draft: IdeaDraft; set: (next: IdeaDraft | ((prev: IdeaDraft) => IdeaDraft)) => void; models: Models;
+  onDone: () => void; onCancel: () => void;
+}) {
+  const [busy, setBusy] = useState<"" | "refs" | "write" | "save">("");
+  /* What the model replaced, so one click brings the person's own words back. */
+  const [written, setWritten] = useState<{ before: { logline: string; tone: string }; model: string; costUsd: number } | null>(null);
   const file = useRef<HTMLInputElement>(null);
+  const patch = (p: Partial<IdeaDraft>) => set((x) => ({ ...x, ...p }));
+
   async function addRefs(files: FileList) {
-    setBusy(true);
+    setBusy("refs");
     try {
       const ids: string[] = [];
-      for (const f of Array.from(files).slice(0, 3 - refs.length)) ids.push((await uploadFile(f, "reference")).id);
-      setRefs((r) => [...r, ...ids].slice(0, 3));
+      for (const f of Array.from(files).slice(0, 3 - d.refs.length)) ids.push((await uploadFile(f, "reference")).id);
+      set((x) => ({ ...x, refs: [...x.refs, ...ids].slice(0, 3) }));
     } catch (e) { await appAlert("The reference didn't upload", (e as Error).message); }
-    finally { setBusy(false); }
+    finally { setBusy(""); }
+  }
+  async function write() {
+    if (!d.logline.trim()) return;
+    setBusy("write");
+    try {
+      const res = await fetch("/api/atomik/ideas/draft", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brief: d.logline, tone: d.tone, model: d.model }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      setWritten({ before: { logline: d.logline, tone: d.tone }, model: String(j.model ?? d.model), costUsd: Number(j.costUsd ?? 0) });
+      patch({
+        logline: typeof j.logline === "string" && j.logline ? j.logline : d.logline,
+        tone: Array.isArray(j.tone) && j.tone.length ? j.tone.join(", ") : d.tone,
+      });
+    } catch (e) { await appAlert("The model didn't answer", (e as Error).message); }
+    finally { setBusy(""); }
+  }
+  function restore() {
+    if (!written) return;
+    patch(written.before);
+    setWritten(null);
   }
   async function save() {
-    if (!logline.trim()) return;
-    setBusy(true);
+    if (!d.logline.trim()) return;
+    setBusy("save");
     try {
       const res = await fetch("/api/atomik/ideas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logline: logline.trim(), tone: tone.split(",").map((t) => t.trim()).filter(Boolean), refs }),
+        body: JSON.stringify({
+          logline: d.logline.trim(),
+          tone: d.tone.split(",").map((t) => t.trim()).filter(Boolean),
+          refs: d.refs,
+          model: d.model === "auto" ? null : d.model,
+        }),
       });
       if (!res.ok) throw new Error(`The server answered ${res.status}.`);
       onDone();
-    } catch (e) { await appAlert("Not saved", (e as Error).message); setBusy(false); }
+    } catch (e) { await appAlert("Not saved", (e as Error).message); setBusy(""); }
   }
   return (
     <article className="ak-idea is-new">
       <span className="mono !tracking-[.14em] !text-[10px]">NEW IDEA</span>
-      <textarea className="ak-idea-input" rows={4} value={logline} onChange={(e) => setLogline(e.target.value)} autoFocus
-        placeholder="The logline. One or two sentences: who, what happens, and what it should feel like." />
-      <input className="ak-idea-input !min-h-0" value={tone} onChange={(e) => setTone(e.target.value)} placeholder="Tone, comma-separated — Tense, Practicals, Bleach bypass, 30s" />
+      <textarea className="ak-idea-input" rows={4} value={d.logline} onChange={(e) => patch({ logline: e.target.value })} autoFocus
+        placeholder="The logline. One or two sentences: who, what happens, and what it should feel like — or just a note, and let the model write it up." />
+      <input className="ak-idea-input !min-h-0" value={d.tone} onChange={(e) => patch({ tone: e.target.value })} placeholder="Tone, comma-separated — Tense, Practicals, Bleach bypass, 30s" />
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mono !tracking-[.14em] !text-[10px]">REASONING</span>
+        <ModelMenu value={d.model} models={models} onPick={(id) => patch({ model: id })} disabled={busy !== ""} />
+        <button type="button" className="ak-act" onClick={write} disabled={busy !== "" || !d.logline.trim()}
+          title="The model turns what you typed into a logline and a tone list. Your own words stay one click away.">
+          {busy === "write" ? "WRITING…" : "WRITE IT WITH THE MODEL →"}
+        </button>
+        {written && (
+          <span className="ak-sub !text-[11px] inline-flex items-center gap-2">
+            {modelTail(written.model)} · {usd(written.costUsd, 3)}
+            <button type="button" className="ak-act is-muted" onClick={restore}>MY WORDS</button>
+          </span>
+        )}
+      </div>
       <div className="grid grid-cols-3 gap-1.5">
-        {refs.map((r) => (
+        {d.refs.map((r) => (
           <span key={r} className="ak-ref">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={`/api/uploads/${r}`} alt="" />
           </span>
         ))}
-        {refs.length < 3 && <button type="button" className="ak-ref is-add" onClick={() => file.current?.click()} disabled={busy}>+ ref</button>}
+        {d.refs.length < 3 && <button type="button" className="ak-ref is-add" onClick={() => file.current?.click()} disabled={busy !== ""}>+ ref</button>}
       </div>
       <input ref={file} type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files) addRefs(e.target.files); e.target.value = ""; }} />
       <div className="ak-idea-foot">
         <button type="button" className="ak-act is-muted" onClick={onCancel}>CANCEL</button>
-        <button type="button" className="btn-primary !h-[34px] !px-3.5 !text-[12.5px]" onClick={save} disabled={busy || !logline.trim()}>{busy ? "Saving…" : "Save idea"}</button>
+        <button type="button" className="btn-primary !h-[34px] !px-3.5 !text-[12.5px]" onClick={save} disabled={busy !== "" || !d.logline.trim()}>{busy === "save" ? "Saving…" : "Save idea"}</button>
       </div>
     </article>
   );

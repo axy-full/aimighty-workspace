@@ -5,6 +5,7 @@ import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { timeAgo } from "@/lib/format";
 import { uploadFile } from "@/lib/uploadClient";
+import { useDraft } from "@/lib/useDraft";
 import { IconClose, IconPlus } from "./Icons";
 
 type Member = { id: string; name: string };
@@ -137,7 +138,7 @@ function ChatGlyph() {
 function ChatPanel({ feed, members, refresh, onClose }: {
   feed: ChatResp | null; members: Member[]; refresh: () => void; onClose: () => void;
 }) {
-  const [text, setText] = useState("");
+  const { value: text, set: setText, clear: clearText } = useDraft("chat", "");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
@@ -220,7 +221,7 @@ function ChatPanel({ feed, members, refresh, onClose }: {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not send");
-      setText(""); mentionIds.current.clear();
+      clearText(); mentionIds.current.clear();
       nearBottom.current = true;
       refresh();
     } catch (e) {

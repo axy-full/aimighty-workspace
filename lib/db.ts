@@ -352,6 +352,16 @@ const SCHEMA = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_atomik_messages_chat ON atomik_messages(chat_id, created_at)`,
+  /* Text spend that belongs to no chat: a model writing an idea up. It is
+     summed into the Atomik line of the ledger with the chats. */
+  `CREATE TABLE IF NOT EXISTS atomik_spend (
+     id          TEXT PRIMARY KEY,
+     kind        TEXT NOT NULL DEFAULT 'idea',
+     model       TEXT,
+     cost_usd    REAL NOT NULL DEFAULT 0,
+     user_id     TEXT NOT NULL DEFAULT '',
+     created_at  INTEGER NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS atomik_steps (
      id           TEXT PRIMARY KEY,
      chat_id      TEXT NOT NULL,
@@ -580,6 +590,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       ]) {
         await addColumn(c, "shots", col);
       }
+      /* An idea remembers which reasoning model was chosen for it. */
+      await addColumn(c, "ideas", `model TEXT`);
       await addColumn(c, "topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */
       await addColumn(c, "topups", `credits INTEGER`);

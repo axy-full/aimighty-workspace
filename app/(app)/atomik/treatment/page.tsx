@@ -23,6 +23,7 @@ import { CATEGORIES } from "@/lib/studio";
 import { mentionsIn } from "@/lib/mentions";
 import { appAlert } from "@/components/dialog";
 import { Waiting } from "@/components/ParticlMark";
+import { useDraft } from "@/lib/useDraft";
 import MentionText from "@/components/atomik/MentionText";
 import PickProduction from "@/components/atomik/PickProduction";
 import type { Treatment, Scene, Note } from "@/lib/atomikDocs";
@@ -89,6 +90,18 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc]);
+  // Leaving mid-sentence used to cancel that timer and lose the sentence.
+  // The unmount now flushes instead: whatever is unsaved goes out with the
+  // page, on a request that outlives it.
+  const docRef = useRef<Doc | null>(null);
+  useEffect(() => { docRef.current = doc; }, [doc]);
+  useEffect(() => () => {
+    if (!dirty.current || !docRef.current) return;
+    void fetch("/api/atomik/treatment", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, keepalive: true,
+      body: JSON.stringify({ projectId, ...docRef.current, bump: false }),
+    }).catch(() => { /* the next visit re-reads the server's copy */ });
+  }, [projectId]);
   const edit = (fn: (d: Doc) => Doc) => { dirty.current = true; setDoc((d) => (d ? fn(d) : d)); };
 
   const castNames = useMemo(() => (data?.cast ?? []).map((c) => c.name), [data]);
@@ -230,7 +243,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
               <a href="/studio" className="hdr-mono-link self-start">GIVE THEM STILLS IN THE STUDIO →</a>
             </>
           ) : (
-            <NotesTab doc={doc} me={me ?? "—"} onChange={(notes) => edit((d) => ({ ...d, notes }))} />
+            <NotesTab doc={doc} me={me ?? "—"} projectId={projectId} onChange={(notes) => edit((d) => ({ ...d, notes }))} />
           )}
         </div>
       </aside>
@@ -239,13 +252,14 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
 }
 
 /** Notes in the margin: who, which scene, what. */
-function NotesTab({ doc, me, onChange }: { doc: Doc; me: string; onChange: (n: Note[]) => void }) {
-  const [text, setText] = useState("");
+function NotesTab({ doc, me, projectId, onChange }: { doc: Doc; me: string; projectId: string; onChange: (n: Note[]) => void }) {
+  /* A half-written note survives switching to the Cast tab or leaving. */
+  const { value: text, set: setText, clear: clearText } = useDraft(`atomik-note:${projectId}`, "");
   const [scene, setScene] = useState(1);
   function add() {
     if (!text.trim()) return;
     onChange([{ id: `n_${Date.now().toString(36)}`, by: me, scene, text: text.trim(), at: Date.now() }, ...doc.notes]);
-    setText("");
+    clearText();
   }
   return (
     <>

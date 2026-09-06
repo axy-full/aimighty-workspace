@@ -23,6 +23,7 @@ import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { CATEGORIES, specToPhrase, specCount, type ShotSpec } from "@/lib/studio";
 import { Waiting } from "@/components/ParticlMark";
+import { useDraft, peekDraft } from "@/lib/useDraft";
 import { usePageTitle } from "@/lib/usePageTitle";
 import type { Gen } from "@/components/GenCard";
 import type { Shot } from "@/lib/shots";
@@ -43,25 +44,34 @@ function ShotBuilder() {
   usePageTitle("Shot builder");
   const router = useRouter();
   const search = useSearchParams();
-  const { signedIn } = useSession();
+  const { signedIn, workspace } = useSession();
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const { data: shotData } = useApi<{ shots: ShotRow[] }>(signedIn && scoped ? `/api/shots?projectId=${encodeURIComponent(bin)}` : null, 30_000);
   const { data: recent } = useApi<{ generations: Gen[] }>(signedIn ? `/api/jobs?limit=200&sync=0${scoped ? `&projectId=${encodeURIComponent(bin)}` : ""}` : null, 0);
 
-  const [spec, setSpec] = useState<ShotSpec>({});
-  const [prose, setProse] = useState("");
+  /* Both halves of the builder are drafts: the picks and the subject line
+     come back after a detour to the wall, and go when they are taken to Video. */
+  const specDraft = useDraft<ShotSpec>(`studio-spec:${bin}`, {});
+  const proseDraft = useDraft(`studio-prose:${bin}`, "");
+  const spec = specDraft.value, setSpec = specDraft.set;
+  const prose = proseDraft.value, setProse = proseDraft.set;
   const [saved, setSaved] = useState(false);
   const shotId = search.get("shot");
   const shot = shotData?.shots.find((s) => s.id === shotId) ?? null;
 
-  // The production's saved setup opens the builder already set.
+  // The production's saved setup opens the builder already set — unless
+  // there is unfinished work here, which wins over the saved starting point.
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(`aw_setup_${bin}`);
-      if (raw) Promise.resolve().then(() => setSpec(JSON.parse(raw) as ShotSpec));
+      if (raw && !peekDraft<ShotSpec>(workspace?.id, `studio-spec:${bin}`)) {
+        const saved = JSON.parse(raw) as ShotSpec;
+        Promise.resolve().then(() => setSpec(saved));
+      }
     } catch { /* private mode */ }
-  }, [bin]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bin, workspace?.id]);
 
   /* Which renders used each move or technique — the bank's usage line. */
   const used = useMemo(() => {
@@ -89,6 +99,7 @@ function ShotBuilder() {
       if (shot) window.localStorage.setItem("aw_compose_shot", shot.id);
       else window.localStorage.removeItem("aw_compose_shot");
     } catch { /* private mode — the composer just opens empty */ }
+    proseDraft.clear(); specDraft.clear();
     router.push("/");
   }
   function saveSetup() {

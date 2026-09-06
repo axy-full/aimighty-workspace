@@ -121,7 +121,9 @@ export const GET = withTenant(async function GET() {
        attached to a render — a conversation costs money whether or not
        anything is ever approved out of it — so it has to be summed from
        its own table or it simply would not appear on any ledger. */
-    db().execute(`SELECT COALESCE(SUM(COALESCE(text_cost_usd,0)),0) AS spend, COUNT(*) AS chats
+    db().execute(`SELECT COALESCE(SUM(COALESCE(text_cost_usd,0)),0)
+                         + (SELECT COALESCE(SUM(cost_usd),0) FROM atomik_spend) AS spend,
+                         COUNT(*) AS chats
                   FROM atomik_chats WHERE deleted = 0`),
   ]);
   const atomikRow = atomikText.rows[0] as Record<string, unknown> | undefined;

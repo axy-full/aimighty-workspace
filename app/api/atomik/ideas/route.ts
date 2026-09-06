@@ -36,6 +36,7 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!logline) return NextResponse.json({ error: "Write the logline first." }, { status: 400 });
   const tone = Array.isArray(body.tone) ? body.tone.map((t: unknown) => String(t).trim().slice(0, 30)).filter(Boolean) : [];
   const refs = Array.isArray(body.refs) ? body.refs.map(String).slice(0, 3) : [];
-  const idea = await createIdea({ logline, tone, refs, createdBy: got.user.id });
+  const model = typeof body.model === "string" && body.model && body.model !== "auto" ? body.model.slice(0, 120) : null;
+  const idea = await createIdea({ logline, tone, refs, model, createdBy: got.user.id });
   return NextResponse.json({ idea });
 });
