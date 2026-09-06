@@ -52,7 +52,7 @@ const specOf = (g: Gen) => {
 };
 
 export default function LibraryPage() {
-  usePageTitle("Library");
+  usePageTitle("All takes");
   const router = useRouter();
   const { signedIn } = useSession();
   const { projects } = useProject();
@@ -144,13 +144,13 @@ export default function LibraryPage() {
 
   return (
     <>
-      <nav className="subnav !h-[52px] !px-6 !gap-3.5" aria-label="Library">
-        <Link href="/projects" className="subnav-item">All projects</Link>
-        <span className="subnav-item is-on" aria-current="page">Library</span>
+      <nav className="subnav !h-[52px] !px-6 !gap-3.5" aria-label="All takes">
+        <Link href="/projects" className="subnav-item">All productions</Link>
+        <span className="subnav-item is-on" aria-current="page">All takes</span>
         <span className="h-4 w-px bg-line" />
         <div className="flex gap-1.5">
           <label className="chip-dd !py-1.5 !px-2.5">Project
-            <select value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project" className="!text-dim">
+            <select value={project} onChange={(e) => setProject(e.target.value)} aria-label="Production" className="!text-dim">
               <option value="any">any</option><option value="unfiled">unfiled</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select><span className="hdr-caret" aria-hidden="true">▼</span>
@@ -182,9 +182,9 @@ export default function LibraryPage() {
 
       <div className="page !p-[22px_24px_48px] flex flex-col gap-7">
         {!signedIn ? (
-          <Empty title="The library is private" line="Every render the studio has made lives here, newest first, filed under its production and shot. Sign in to see it." />
+          <Empty title="The takes are private" line="Every take the studio has made lives here, newest first, filed under its production and shot. Sign in to see it." />
         ) : !data ? (
-          <Waiting label="Opening the library" />
+          <Waiting label="Opening the takes" />
         ) : gens.length === 0 ? (
           <Empty title={query ? `Nothing matching “${query}”` : "Nothing here yet"} line={query ? "Try fewer words, or a shot code." : "Renders land here the moment they are made."} />
         ) : (
@@ -193,7 +193,7 @@ export default function LibraryPage() {
               <section className="flex flex-col gap-2.5">
                 <div className="grp-head">
                   <span className="grp-title">Unfiled</span>
-                  <span className="grp-meta">{unfiled.length} render{unfiled.length === 1 ? "" : "s"} not filed against a shot — they have no version number and no name until they are.</span>
+                  <span className="grp-meta">{unfiled.length} take{unfiled.length === 1 ? "" : "s"} not filed against a shot — they have no version number and no name until they are.</span>
                 </div>
                 <div className="grp-grid is-lib is-unfiled">
                   {unfiled.map((g) => <UnfiledCard key={g.id} gen={g} onOpen={() => open(g)} onChanged={refresh} />)}
@@ -268,7 +268,7 @@ function UnfiledCard({ gen, onOpen, onChanged }: { gen: Gen; onOpen: () => void;
           <span className="take-meta"><span>{gen.authorName ? `${gen.authorName} · ` : ""}{timeAgo(gen.createdAt)}</span></span>
           <div ref={wrap} className="relative">
             <button type="button" className="trk-btn" onClick={() => {
-              if (!gen.projectId) { appAlert("Move it into a production first", "Right-click the render → Move to project…, then file it against one of that production's shots."); return; }
+              if (!gen.projectId) { appAlert("Move it into a production first", "Right-click the take → Move to production…, then file it against one of that production's shots."); return; }
               setMenu((v) => !v);
             }}>File against a shot</button>
             {menu && (

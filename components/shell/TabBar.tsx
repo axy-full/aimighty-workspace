@@ -10,8 +10,8 @@ import { usePathname } from "next/navigation";
  * (the shot builder), which carry their own action bar instead.
  */
 const PARTICL = [
-  { href: "/", label: "MAKE", match: (p: string) => p === "/" || p.startsWith("/images") || p.startsWith("/audio") || p.startsWith("/generate"), d: "M8 5.5v13l10-6.5z" },
-  { href: "/projects", label: "PROJECTS", match: (p: string) => p.startsWith("/projects") || p.startsWith("/all") || p.startsWith("/canvas"), d: "M4 6.5h16a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1zm0 7h16a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1z" },
+  { href: "/", label: "GENERATE", match: (p: string) => p === "/" || p.startsWith("/images") || p.startsWith("/audio") || p.startsWith("/generate"), d: "M8 5.5v13l10-6.5z" },
+  { href: "/projects", label: "PRODUCTIONS", match: (p: string) => p.startsWith("/projects") || p.startsWith("/all") || p.startsWith("/canvas"), d: "M4 6.5h16a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1zm0 7h16a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1z" },
   { href: "/studio", label: "STUDIO", match: (p: string) => p.startsWith("/studio"), d: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0" },
   { href: "/usage", label: "USAGE", match: (p: string) => p.startsWith("/usage"), d: "M4 20V12M9.5 20V6M15 20v-9M20.5 20v-5" },
   { href: "/settings", label: "SETTINGS", match: (p: string) => p.startsWith("/settings") || p.startsWith("/team") || p.startsWith("/admin"), d: "M4 7h16M4 12h16M4 17h16M9 5v4M15 10v4M7 15v4" },

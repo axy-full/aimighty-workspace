@@ -19,7 +19,7 @@ function key(): string {
   const k = vendorKey("elevenlabs");
   if (!k) {
     throw new Error(
-      "ElevenLabs isn't connected for this workspace — add its key under Settings › Engines & keys."
+      "ElevenLabs isn't connected for this workspace — add its key under Settings › Vendors & keys."
     );
   }
   return k;

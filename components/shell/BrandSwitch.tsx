@@ -47,7 +47,7 @@ export default function BrandSwitch({ side }: { side: "particl" | "atomik" }) {
   }
   async function create() {
     setOpen(false);
-    const name = await appPrompt("Name the new workspace", "", "A studio, a client, a project");
+    const name = await appPrompt("Name the new workspace", "", "A studio, a client, a production");
     if (!name?.trim()) return;
     const res = await fetch("/api/workspaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
     const json = await res.json().catch(() => ({}));

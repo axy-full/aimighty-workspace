@@ -35,8 +35,8 @@ export default function AtomikRail() {
   async function remove(c: Row) {
     const ok = await appConfirm(
       `Delete “${c.title}”?`,
-      "The conversation goes. Anything it already rendered stays in the project — " +
-      "those are ordinary renders now.",
+      "The conversation goes. Anything it already rendered stays in the production — " +
+      "those are ordinary takes now.",
       { confirmLabel: "Delete", danger: true },
     );
     if (!ok) return;

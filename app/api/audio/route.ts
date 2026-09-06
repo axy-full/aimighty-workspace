@@ -25,7 +25,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const allowance = await allowanceCheck("elevenlabs");
   if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   if (!elevenConfigured()) {
-    return NextResponse.json({ error: "ElevenLabs isn't connected for this workspace — add its key under Settings › Engines & keys." }, { status: 400 });
+    return NextResponse.json({ error: "ElevenLabs isn't connected for this workspace — add its key under Settings › Vendors & keys." }, { status: 400 });
   }
   const body = await req.json().catch(() => ({}));
   const task = ["speech", "sound", "music"].includes(String(body.task)) ? String(body.task) as "speech" | "sound" | "music" : "speech";

@@ -33,7 +33,7 @@ type ShotRow = Shot & { takes: number };
 const HELP: Record<string, string> = {
   mood: "The feeling the frame should carry — one word the engine can act on.",
   pace: "Real time, slow motion, a ramp, a timelapse. The clock the shot runs on.",
-  sound: "What the engine renders for sound when Audio is on. Tracks replace or layer it, per take.",
+  sound: "What the engine generates for sound when Audio is on. Tracks replace or layer it, per take.",
 };
 
 export default function ShotBuilderPage() {
@@ -41,7 +41,7 @@ export default function ShotBuilderPage() {
 }
 
 function ShotBuilder() {
-  usePageTitle("Shot builder");
+  usePageTitle("Studio · Setup");
   const router = useRouter();
   const search = useSearchParams();
   const { signedIn, workspace } = useSession();
@@ -119,8 +119,8 @@ function ShotBuilder() {
   return (
     <>
       <nav className="subnav !px-6" aria-label="Studio">
-        <Link href="/studio" className="subnav-item">Cast &amp; identities</Link>
-        <span className="subnav-item is-on" aria-current="page">Camera &amp; shot builder</span>
+        <Link href="/studio" className="subnav-item">Cast</Link>
+        <span className="subnav-item is-on" aria-current="page">Setup</span>
         <span className="subnav-note">
           {shot
             ? <>Building for <span className="text-ink">{shot.code} · {shot.title || "Untitled shot"}</span> · from the shot list</>
@@ -133,8 +133,8 @@ function ShotBuilder() {
         <section className="st-main !gap-[30px]">
           <div className="st-sec">
             <div className="st-sec-head">
-              <span className="st-h">The camera</span>
-              <span className="st-sub">The bank — every move, written so the engine can&rsquo;t mistake it. Where a render used one, it shows.</span>
+              <span className="st-h">Camera</span>
+              <span className="st-sub">The bank — every move, written so the engine can&rsquo;t mistake it. Where a take used one, it shows.</span>
             </div>
             <div className="bank">
               {bank.map((m) => (
@@ -152,7 +152,7 @@ function ShotBuilder() {
 
           <div className="st-sec">
             <div className="st-sec-head">
-              <span className="st-h">The shot</span>
+              <span className="st-h">Setup</span>
               <span className="st-sub">One pick per row. The prompt assembles itself as you go.</span>
             </div>
             <div className="sr-list">
@@ -177,7 +177,7 @@ function ShotBuilder() {
 
         <aside className="ws-rail">
           <div className="ws-rail-head">
-            <span className="ws-bar-h">The prompt</span>
+            <span className="ws-bar-h">Prompt</span>
             <span className="mono-s">{n} OF {CATEGORIES.length} ROWS SET</span>
           </div>
           <div className="ws-rail-body !gap-4">
@@ -205,7 +205,7 @@ function ShotBuilder() {
             {/* On a phone the rows scroll away from the prompt; the bar keeps the line and the count in view. */}
             <span className="st-foot-line">{n} OF {CATEGORIES.length} ROWS SET{phrase ? ` · ${phrase}` : ""}</span>
             <button type="button" className="btn-primary !h-[46px] !px-4 !text-[14px]" onClick={takeToVideo} disabled={!signedIn || (!prose.trim() && n === 0)}
-              title={signedIn ? undefined : "Sign in to render"}>
+              title={signedIn ? undefined : "Sign in to generate"}>
               <span>Take it to Video</span>
               <span className="btn-primary-cost">{shot ? `${shot.code} · V${(shot.takes ?? 0) + 1}` : "UNFILED"}</span>
             </button>

@@ -25,7 +25,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
     return NextResponse.json({ error: "Train the identity first." }, { status: 400 });
   }
   if (!falConfigured()) {
-    return NextResponse.json({ error: "fal.ai isn't connected for this workspace — add its key under Settings › Engines & keys." }, { status: 400 });
+    return NextResponse.json({ error: "fal.ai isn't connected for this workspace — add its key under Settings › Vendors & keys." }, { status: 400 });
   }
   const allowance = await allowanceCheck("fal");
   if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });

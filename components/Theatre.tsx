@@ -278,7 +278,7 @@ export default function Theatre({
               the writer charged, and the sum that appears everywhere else. */}
           {gen.costUsd != null && (
             <div className="theatre-ledger">
-              <span><span className="text-mute">Render</span> {usd(gen.costUsd)}</span>
+              <span><span className="text-mute">Engine</span> {usd(gen.costUsd)}</span>
               <span>
                 <span className="text-mute">Prompt</span>{" "}
                 {gen.refineCostUsd != null && gen.refineModel

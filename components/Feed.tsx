@@ -167,14 +167,14 @@ export default function Feed({
     <section className={`ws-main ${className}`}>
       <div className="ws-bar">
         <div className="ws-bar-title">
-          <span className="ws-bar-h">{stills ? "Stills" : "The wall"}</span>
+          <span className="ws-bar-h">Takes</span>
           <span className="mono-s">{visible.length} {noun} · {shotCount} SHOTS</span>
           {stills ? (
             <Link href="/studio" className="hdr-mono-link ml-1.5">CAST →</Link>
           ) : (
             <>
               {scoped && <Link href={`/projects/${encodeURIComponent(projectId)}/canvas`} className="hdr-mono-link ml-1.5">CANVAS →</Link>}
-              <Link href="/all" className="hdr-mono-link">LIBRARY →</Link>
+              <Link href="/all" className="hdr-mono-link">ALL TAKES →</Link>
             </>
           )}
         </div>
@@ -199,20 +199,20 @@ export default function Feed({
           <span className="chip-dd is-muted" title="Grouped by the shot they file against">Group by shot <span className="hdr-caret">▼</span></span>
           <label className="search w-[200px]">
             <span className="search-glyph" aria-hidden>⌕</span>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search renders, @cast…" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search takes, @cast…" />
           </label>
         </div>
       </div>
 
       <div className="ws-scroll">
         {gens.length === 0 && problem ? (
-          <Empty title="The library didn't load"
+          <Empty title="The takes didn't load"
             line={`${problem} Anything rendering carries on; this wall fills in as soon as the connection does.`} />
         ) : gens.length === 0 ? (
           <Empty
-            title={signedIn ? (stills ? "Your first still goes here" : "Your first shot goes here") : "The wall is private"}
+            title={signedIn ? (stills ? "Your first still goes here" : "Your first shot goes here") : "The takes are private"}
             line={signedIn
-              ? "Describe it in the composer. The cost sits on the button before you press it, and every render lands under its shot as it finishes."
+              ? "Describe it in the composer. The cost sits on the button before you press it, and every take lands under its shot as it finishes."
               : "This is where the studio's takes sit, under the shots they belong to. The composer is the real one — sign in and the cost appears on the button before you press it."}
           />
         ) : groups.length === 0 ? (

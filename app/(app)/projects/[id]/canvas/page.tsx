@@ -136,7 +136,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
       <div className="cv">
         <section className="cv-main">
           <div className="cv-head">
-            <span className="cv-h">The sequence</span>
+            <span className="cv-h">{project?.name ?? "Canvas"}</span>
             <span className="mono-s">
               {cols.length} SHOTS · {mmss(done)} OF {mmss(total)} · {n("approved")} APPROVED · {n("picked")} PICKED · {n("draft") + n("empty")} OPEN
             </span>
@@ -153,9 +153,9 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
 
           <div className="cv-body">
             {!signedIn ? (
-              <Empty title="The sequence is for the team" line="Sign in to see this production's shots in order, with the references they came from." />
+              <Empty title="The canvas is for the team" line="Sign in to see this production's shots in order, with the references they came from." />
             ) : !shotData || !jobs ? (
-              <Waiting label="Laying out the sequence" />
+              <Waiting label="Laying out the canvas" />
             ) : cols.length === 0 ? (
               <Empty title="No shots yet" line="Add shots on the Shots tab, or bring a shot list across from Atomik. Every take then hangs under its shot here, in order." />
             ) : (
@@ -176,7 +176,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                   </div>
                 </div>
                 <div className="cv-row">
-                  <span className="cv-lbl">WALL</span>
+                  <span className="cv-lbl">TAKES</span>
                   <div className="cv-grid" style={{ "--n": cols.length } as React.CSSProperties}>
                     {cols.map((c) => {
                       const on = cur?.shot.id === c.shot.id;
@@ -224,7 +224,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                   </div>
                 </div>
                 <p className="cv-note">
-                  Only approved takes play in the sequence. A picked take holds its slot and shows as a still; an open shot shows as a gap the length of its planned duration. References come from the Atomik breakdown and stay pinned to their shot.
+                  Only approved takes play in the canvas. A picked take holds its slot and shows as a still; an open shot shows as a gap the length of its planned duration. References come from the Atomik breakdown and stay pinned to their shot.
                 </p>
               </>
             )}

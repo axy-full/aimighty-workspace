@@ -130,7 +130,7 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
 
   async function remove() {
     if (!identity) return;
-    if (!(await appConfirm(`Remove ${identity.name}?`, "Renders made with them stay in the library.", { confirmLabel: "Remove", danger: true }))) return;
+    if (!(await appConfirm(`Remove ${identity.name}?`, "Takes made with them stay in All takes.", { confirmLabel: "Remove", danger: true }))) return;
     await fetch(`/api/identities/${identity.id}`, { method: "DELETE" });
     onChanged(); onClose();
   }
@@ -252,7 +252,7 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
 
         <footer className="sheet-foot">
           <span className="text-[12.5px] text-mute">
-            {busy ?? (isNew ? `Saved to ${projectId ? "this project" : "the whole workspace"}` : !enough ? `${terms.minPhotos - photos.length} more photo${terms.minPhotos - photos.length === 1 ? "" : "s"} before it can train` : "")}
+            {busy ?? (isNew ? `Saved to ${projectId ? "this production" : "the whole workspace"}` : !enough ? `${terms.minPhotos - photos.length} more photo${terms.minPhotos - photos.length === 1 ? "" : "s"} before it can train` : "")}
           </span>
           <span className="ml-auto flex flex-wrap gap-2">
             {identity && !training && <button type="button" onClick={remove} className="chip !text-lift">Remove</button>}
@@ -333,7 +333,7 @@ function IdentityComposer({ identity, projectId }: { identity: IdentityView; pro
         ))}
         <button type="button" onClick={render} disabled={!prompt.trim() || busy}
           className="btn-render ml-auto h-[34px] px-4 text-[13.5px] disabled:opacity-50">
-          {busy ? "Sending…" : "Render"}
+          {busy ? "Sending…" : "Generate"}
         </button>
       </div>
       {err && <p className="mt-2 rounded-[10px] bg-lift/8 px-3 py-2 text-[13px] text-lift">{err}</p>}
@@ -358,7 +358,7 @@ function IdentityComposer({ identity, projectId }: { identity: IdentityView; pro
           })}
         </div>
       )}
-      <Boundary what="This render">
+      <Boundary what="This take">
         <Theatre gens={renders} activeId={open && renders.some((g) => g.id === open) ? open : null}
           onClose={() => setOpen(null)} onSelect={setOpen} onChanged={refresh} />
       </Boundary>

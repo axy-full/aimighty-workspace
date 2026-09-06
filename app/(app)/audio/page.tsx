@@ -74,7 +74,7 @@ function lengthOf(g: Gen): number | null {
 type Group = { key: string; code: string; title: string; meta: string; tracks: Gen[] };
 
 export default function AudioPage() {
-  usePageTitle("Audio");
+  usePageTitle("Generate · Audio");
   const { signedIn } = useSession();
   const { selection: bin } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
@@ -263,7 +263,7 @@ export default function AudioPage() {
       <section className="ws-main">
         <div className="ws-bar">
           <div className="ws-bar-title">
-            <span className="ws-bar-h">Tracks</span>
+            <span className="ws-bar-h">Takes</span>
             <span className="mono-s">{gens.length} TRACKS · {shots.length} SHOTS</span>
           </div>
           <div className="seg ml-2" role="tablist" aria-label="Kind">
@@ -274,7 +274,7 @@ export default function AudioPage() {
               </button>
             ))}
           </div>
-          <span className="ws-bar-note">Seedance renders its own sound when Audio is on. Tracks here replace or layer it, per take.</span>
+          <span className="ws-bar-note">Seedance generates its own sound when Audio is on. Tracks here replace or layer it, per take.</span>
         </div>
 
         <div className="ws-scroll">
@@ -313,7 +313,7 @@ export default function AudioPage() {
           <span className="dock-line">{text.trim() || KINDS.find((k) => k.id === task)!.placeholder}</span>
         </button>
         <button type="button" className="dock-go" onClick={make} disabled={!canRender}>
-          <span>{busy ? "…" : "Render"}</span>
+          <span>{busy ? "…" : "Generate"}</span>
           <span className="dock-cost">{text.trim() ? price(estUsd) : `${estCredits} CR`}</span>
         </button>
       </div>
@@ -431,8 +431,8 @@ export default function AudioPage() {
         <div className="ws-rail-foot">
           {err && <p className="rail-help text-lift">{err}</p>}
           <button type="button" className="btn-primary !h-[46px] w-full !px-4 !text-[14px]" onClick={make} disabled={!canRender}
-            title={!signedIn ? "Sign in to render" : undefined}>
-            <span>{busy ? "Sending…" : "Render"}</span>
+            title={!signedIn ? "Sign in to generate" : undefined}>
+            <span>{busy ? "Sending…" : "Generate"}</span>
             <span className="btn-primary-cost">{text.trim() ? `${price(estUsd)} · ${lenLabel}` : `${estCredits.toLocaleString()} CR`}</span>
           </button>
           <span className="mono-s text-center">files as {filesAs}</span>

@@ -43,7 +43,7 @@ export default function GenGrid({
           <GenCard key={g.id} gen={g} projects={projects} onChanged={onChanged} onOpen={() => setOpen(g.id)} />
         ))}
       </div>
-      <Boundary what="This render">
+      <Boundary what="This take">
         <Theatre
           gens={gens} activeId={open && gens.some((g) => g.id === open) ? open : null}
           onClose={() => setOpen(null)} onSelect={setOpen}

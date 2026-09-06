@@ -30,7 +30,7 @@ import type { CastMember } from "@/lib/cast";
 import type { Gen } from "@/components/GenCard";
 
 const KINDS: { id: CastMember["kind"]; label: string; badge: string; blurb: string }[] = [
-  { id: "character", label: "Character", badge: "CHARACTER", blurb: "A face the project returns to." },
+  { id: "character", label: "Character", badge: "CHARACTER", blurb: "A face the production returns to." },
   { id: "location", label: "Location", badge: "LOCATION", blurb: "A place that has to stay the same place." },
   { id: "prop", label: "Prop", badge: "PROP", blurb: "An object that must be the same object." },
   { id: "style", label: "Look", badge: "LOOK", blurb: "A treatment you keep reaching for." },
@@ -42,7 +42,7 @@ const NO_TERMS: IdentityTerms = {
 type Sel = { type: "cast"; id: string } | { type: "identity"; id: string } | null;
 
 export default function StudioPage() {
-  usePageTitle("Studio");
+  usePageTitle("Studio · Cast");
   const { signedIn } = useSession();
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
@@ -163,11 +163,11 @@ export default function StudioPage() {
   return (
     <>
       <nav className="subnav !px-6" aria-label="Studio">
-        <span className="subnav-item is-on" aria-current="page">Cast &amp; identities</span>
-        <Link href="/studio/shot" className="subnav-item">Camera &amp; shot builder</Link>
+        <span className="subnav-item is-on" aria-current="page">Cast</span>
+        <Link href="/studio/shot" className="subnav-item">Setup</Link>
         <span className="subnav-note">
           {scoped ? <>You&rsquo;re in <span className="text-ink">{current?.name ?? "this production"}</span> — cast added here stays with this production.</>
-            : "All projects — cast added here is available everywhere."}
+            : "All productions — cast added here is available everywhere."}
         </span>
       </nav>
 
@@ -183,7 +183,7 @@ export default function StudioPage() {
           {/* ── Identities ─────────────────────────────────────── */}
           <div className="st-sec">
             <div className="st-sec-head">
-              <span className="st-h">Identities</span>
+              <span className="st-h">Trained identities</span>
               <span className="st-sub">a real face, learned from photos{!terms.configured && signedIn ? " · training runs on fal.ai, not connected yet" : ""}</span>
               <button type="button" className="btn-secondary ml-auto !min-h-[40px]" onClick={() => setOpenId("new")} disabled={!signedIn}>+ New identity</button>
             </div>
@@ -224,7 +224,7 @@ export default function StudioPage() {
           {/* ── Cast and elements ──────────────────────────────── */}
           <div className="st-sec">
             <div className="st-sec-head">
-              <span className="st-h">Cast and elements</span>
+              <span className="st-h">Cast</span>
               <span className="st-sub">A face, a place, a prop or a look, defined once. Open one to see everything made with it.</span>
             </div>
             <div className="seg self-start" role="tablist">

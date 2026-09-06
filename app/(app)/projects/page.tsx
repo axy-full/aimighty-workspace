@@ -48,7 +48,7 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, 
 const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 export default function ProjectsPage() {
-  usePageTitle("Projects");
+  usePageTitle("Productions");
   const router = useRouter();
   const { signedIn } = useSession();
   const { setSelection, refreshProjects } = useProject();
@@ -72,14 +72,14 @@ export default function ProjectsPage() {
   const totalShots = projects.reduce((a, p) => a + p.shots, 0);
 
   async function create() {
-    const name = await appPrompt("New project", "", "Project name");
+    const name = await appPrompt("New production", "", "Production name");
     if (!name?.trim()) return;
     const res = await fetch("/api/projects", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) { appAlert("Couldn't create the project", json.error); return; }
+    if (!res.ok) { appAlert("Couldn't create the production", json.error); return; }
     refresh(); refreshProjects();
     setSelection(json.id);
     router.push(`/projects/${json.id}/canvas`);
@@ -90,13 +90,13 @@ export default function ProjectsPage() {
       <div className="page-inner flex flex-col gap-[22px]">
         <div className="page-head">
           <div>
-            <h1 className="page-h1">Projects</h1>
+            <h1 className="page-h1">Productions</h1>
             <p className="page-sub">A production exists once, in both rooms. Its words live in Atomik; its renders live here.</p>
           </div>
           <div className="page-acts">
-            <Link href="/all" className="btn-secondary !h-[38px] !px-3.5 !text-[13px]">Browse every render →</Link>
+            <Link href="/all" className="btn-secondary !h-[38px] !px-3.5 !text-[13px]">All takes →</Link>
             <button type="button" onClick={create} disabled={!signedIn} className="btn-primary !px-4"
-              title={signedIn ? undefined : "Sign in to start a production"}>New project</button>
+              title={signedIn ? undefined : "Sign in to start a production"}>New production</button>
           </div>
         </div>
 
@@ -161,7 +161,7 @@ export default function ProjectsPage() {
               <div className="ptable-foot">
                 <span>
                   Projects are private to the studio team. Cast added inside a project stays with that production; cast added in All projects is available everywhere.
-                  {unfiled > 0 && <> <Link href="/all" className="text-ink underline-offset-2 hover:underline">{unfiled} render{unfiled === 1 ? " sits" : "s sit"} outside any production →</Link></>}
+                  {unfiled > 0 && <> <Link href="/all" className="text-ink underline-offset-2 hover:underline">{unfiled} take{unfiled === 1 ? " sits" : "s sit"} outside any production →</Link></>}
                 </span>
                 <span className="mono-v whitespace-nowrap">
                   {projects.length} PRODUCTION{projects.length === 1 ? "" : "S"} · {totalShots} SHOT{totalShots === 1 ? "" : "S"} · {month ? usd(month.spentUsd, 2) : "—"} THIS MONTH

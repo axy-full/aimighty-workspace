@@ -82,7 +82,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
     refresh();
   }
   async function remove(s: Shot) {
-    if (!(await appConfirm(`Remove ${s.code}?`, "Takes filed against it stay in the library, unfiled.", { confirmLabel: "Remove", danger: true }))) return;
+    if (!(await appConfirm(`Remove ${s.code}?`, "Takes filed against it stay in All takes, unfiled.", { confirmLabel: "Remove", danger: true }))) return;
     await fetch(`/api/shots/${s.id}`, { method: "DELETE" });
     refresh();
   }

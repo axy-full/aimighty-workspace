@@ -102,14 +102,14 @@ export default function ProjectRail() {
   const empty = loaded && assets.length === 0 && cast.length === 0;
 
   async function create() {
-    const name = await appPrompt("New project", "", "Project name");
+    const name = await appPrompt("New production", "", "Production name");
     if (!name?.trim()) return;
     const res = await fetch("/api/projects", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) { await appAlert("Couldn't create the project", json.error); return; }
+    if (!res.ok) { await appAlert("Couldn't create the production", json.error); return; }
     refreshProjects();
     setSelection(json.id);
     setOpen(json.id);
@@ -123,9 +123,9 @@ export default function ProjectRail() {
   return (
     <aside className="rail" aria-label="Projects">
       <div className="rail-head">
-        <span className="grouplabel !pb-0">Projects</span>
-        <button type="button" onClick={create} className="rail-new" title="New project"
-          aria-label="New project">
+        <span className="grouplabel !pb-0">Productions</span>
+        <button type="button" onClick={create} className="rail-new" title="New production"
+          aria-label="New production">
           <IconPlus className="!h-3.5 !w-3.5" />
         </button>
       </div>
@@ -134,8 +134,8 @@ export default function ProjectRail() {
         {projects.length === 0 && (
           <p className="px-3 py-2 text-[12.5px] leading-relaxed text-mute">
             {signedIn
-              ? "No projects yet. Everything you make lands in Unfiled until there is one."
-              : "Projects are private. Sign in and yours appear here."}
+              ? "No productions yet. Everything you make lands in Unfiled until there is one."
+              : "Productions are private. Sign in and yours appear here."}
           </p>
         )}
 
@@ -161,9 +161,9 @@ export default function ProjectRail() {
               </button>
 
               {isOpen && (
-                <Boundary what="This project's assets" compact resetKey={p.id}>
+                <Boundary what="This production's assets" compact resetKey={p.id}>
                   <div className="rail-shelves">
-                    {!loaded && <p className="rail-note">Reading the project…</p>}
+                    {!loaded && <p className="rail-note">Reading the production…</p>}
                     {empty && <p className="rail-note">Nothing in here yet.</p>}
 
                     <Shelf title="Video" n={shelves.video.length}>
@@ -215,7 +215,7 @@ export default function ProjectRail() {
           ambient, not live, and the top bar already asks every 20 seconds
           for the thing that IS live. */}
       <div className="rail-foot">
-        <Link href="/projects" className={`rail-link ${path === "/projects" ? "text-ink" : ""}`}>All projects</Link>
+        <Link href="/projects" className={`rail-link ${path === "/projects" ? "text-ink" : ""}`}>All productions</Link>
         {open && (
           <button type="button" onClick={() => router.push(`/projects/${open}/assets`)} className="rail-link">
             Open

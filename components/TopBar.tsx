@@ -30,7 +30,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
 
   const onGenerate = path === "/" || path.startsWith("/generate") || path.startsWith("/images");
   const title = onGenerate
-    ? (selection === "all" ? "All projects" : selection === "unfiled" ? "Unfiled" : current?.name ?? "")
+    ? (selection === "all" ? "All productions" : selection === "unfiled" ? "Unfiled" : current?.name ?? "")
     : "";
 
   return (
@@ -46,7 +46,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
           <button
             onClick={() => router.push("/projects")}
             className="min-w-0 truncate text-[15px] font-medium text-dim transition-colors hover:text-ink"
-            title="Back to projects"
+            title="Back to productions"
           >
             {title}
           </button>
