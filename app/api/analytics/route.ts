@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { modelLabel } from "@/lib/models";
 import { requireUser, withTenant } from "@/lib/auth";
+import { billedCreditsSum } from "@/lib/creditSql";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -39,6 +40,7 @@ export const GET = withTenant(async function GET(req: Request) {
   const W = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const SPEND = `COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0)`;
+  const CREDITS = billedCreditsSum("g");
 
   const [totals, byProject, byPerson, byModel, byShot, byStatus, byDay, stuck, byCategory, iteration] =
     await Promise.all([
@@ -50,7 +52,7 @@ export const GET = withTenant(async function GET(req: Request) {
                SUM(g.status='failed')    AS failed,
                SUM(g.status NOT IN ('succeeded','failed','cancelled')) AS pending,
                SUM(g.deleted=1)          AS binned,
-               ${SPEND} AS spend,
+               ${SPEND} AS spend, ${CREDITS} AS credits,
                COALESCE(SUM(COALESCE(g.refine_cost_usd,0)),0) AS prompt_spend,
                SUM(g.refine_model IS NOT NULL) AS prompts,
                COALESCE(SUM(g.total_tokens),0) AS tokens,
@@ -61,7 +63,7 @@ export const GET = withTenant(async function GET(req: Request) {
 
       db().execute({ sql: `
         SELECT COALESCE(p.name,'Unfiled') AS name, p.id AS id,
-               COUNT(*) AS n, ${SPEND} AS spend,
+               COUNT(*) AS n, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='failed') AS failed,
                COUNT(DISTINCT g.created_by) AS people,
                COALESCE(SUM(g.duration_ms),0) AS render_ms
@@ -70,14 +72,14 @@ export const GET = withTenant(async function GET(req: Request) {
 
       db().execute({ sql: `
         SELECT COALESCE(u.name,'Unknown') AS name, g.created_by AS id,
-               COUNT(*) AS n, ${SPEND} AS spend,
+               COUNT(*) AS n, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='failed') AS failed,
                COUNT(DISTINCT g.project_id) AS projects
         FROM generations g LEFT JOIN users u ON u.id = g.created_by ${W}
         GROUP BY g.created_by ORDER BY spend DESC LIMIT 60`, args }),
 
       db().execute({ sql: `
-        SELECT g.model AS model, COUNT(*) AS n, ${SPEND} AS spend,
+        SELECT g.model AS model, COUNT(*) AS n, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='failed') AS failed,
                AVG(NULLIF(g.duration_ms,0)) AS avg_ms
         FROM generations g ${W}
@@ -88,7 +90,7 @@ export const GET = withTenant(async function GET(req: Request) {
       db().execute({ sql: `
         SELECT s.id AS id, s.code AS code, s.scene AS scene, s.title AS title,
                s.status AS status,
-               COUNT(*) AS takes, ${SPEND} AS spend,
+               COUNT(*) AS takes, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='succeeded') AS ok,
                SUM(g.status='failed')    AS failed,
                MAX(g.version) AS latest
@@ -101,7 +103,7 @@ export const GET = withTenant(async function GET(req: Request) {
 
       db().execute({ sql: `
         SELECT CAST(g.created_at/86400000 AS INTEGER) AS day,
-               COUNT(*) AS n, ${SPEND} AS spend
+               COUNT(*) AS n, ${SPEND} AS spend, ${CREDITS} AS credits
         FROM generations g ${W}
         GROUP BY day ORDER BY day DESC LIMIT 60`, args }),
 
@@ -123,7 +125,7 @@ export const GET = withTenant(async function GET(req: Request) {
       db().execute({ sql: `
         SELECT CASE WHEN p.category IS NULL OR p.category = '' THEN 'Uncategorised'
                     ELSE p.category END AS category,
-               COUNT(*) AS n, ${SPEND} AS spend,
+               COUNT(*) AS n, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='failed') AS failed,
                AVG(NULLIF(g.duration_ms,0)) AS avg_ms,
                COUNT(DISTINCT g.project_id) AS projects,
@@ -166,6 +168,7 @@ export const GET = withTenant(async function GET(req: Request) {
       pending: num(t?.pending),
       binned: num(t?.binned),
       spend: num(t?.spend),
+      credits: num(t?.credits),
       /** The prompt writer's share of `spend`, and how many prompts it wrote. */
       promptSpend: num(t?.prompt_spend),
       prompts: num(t?.prompts),
@@ -181,25 +184,25 @@ export const GET = withTenant(async function GET(req: Request) {
       spentAllTime: num((allSpend.rows[0] as any)?.s),
     },
     byProject: byProject.rows.map((r: any) => ({
-      id: r.id ?? null, name: r.name, n: num(r.n), spend: num(r.spend),
+      id: r.id ?? null, name: r.name, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
       failed: num(r.failed), people: num(r.people), renderMs: num(r.render_ms),
     })),
     byPerson: byPerson.rows.map((r: any) => ({
-      id: r.id, name: r.name, n: num(r.n), spend: num(r.spend),
+      id: r.id, name: r.name, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
       failed: num(r.failed), projects: num(r.projects),
     })),
     byModel: byModel.rows.map((r: any) => ({
-      model: r.model, label: label(r.model), n: num(r.n), spend: num(r.spend),
+      model: r.model, label: label(r.model), n: num(r.n), spend: num(r.spend), credits: num(r.credits),
       failed: num(r.failed), avgMs: r.avg_ms == null ? null : num(r.avg_ms),
     })),
     byShot: byShot.rows.map((r: any) => ({
       id: r.id, code: r.code, scene: r.scene, title: r.title, status: r.status,
-      takes: num(r.takes), spend: num(r.spend), ok: num(r.ok),
+      takes: num(r.takes), spend: num(r.spend), credits: num(r.credits), ok: num(r.ok),
       failed: num(r.failed), latest: num(r.latest),
     })),
     byStatus: byStatus.rows.map((r: any) => ({ status: r.status, n: num(r.n) })),
     byDay: byDay.rows.map((r: any) => ({
-      day: num(r.day) * 86400000, n: num(r.n), spend: num(r.spend),
+      day: num(r.day) * 86400000, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
     })).reverse(),
     stuck: stuck.rows.map((r: any) => ({
       model: label(r.model), resolution: r.resolution ?? "—", n: num(r.n),
@@ -207,7 +210,7 @@ export const GET = withTenant(async function GET(req: Request) {
       failed: num(r.failed), retried: num(r.retried),
     })),
     byCategory: byCategory.rows.map((r: any) => ({
-      category: r.category, n: num(r.n), spend: num(r.spend), failed: num(r.failed),
+      category: r.category, n: num(r.n), spend: num(r.spend), credits: num(r.credits), failed: num(r.failed),
       avgMs: r.avg_ms == null ? null : num(r.avg_ms),
       projects: num(r.projects), shots: num(r.shots),
     })),

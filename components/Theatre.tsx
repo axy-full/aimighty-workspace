@@ -20,6 +20,7 @@ import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { prettyModel } from "@/lib/enhance";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
+import { useMoney } from "@/lib/price";
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
@@ -47,6 +48,7 @@ export default function Theatre({
   const [saveMenu, setSaveMenu] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const { selection } = useProject();
+  const money = useMoney();
   const projectScope = selection !== "all" && selection !== "unfiled" ? selection : null;
 
   useEffect(() => {
@@ -269,14 +271,20 @@ export default function Theatre({
             )}
             {gen.costUsd != null && (
               <span className="font-semibold text-bone" title="Render plus prompt">
-                {usd(gen.costUsd + (gen.refineCostUsd ?? 0))}
+                {money.take(gen)}
               </span>
             )}
           </div>
 
           {/* The ledger for this one render: what the engine charged, what
               the writer charged, and the sum that appears everywhere else. */}
-          {gen.costUsd != null && (
+          {gen.costUsd != null && money.inCredits && (
+            <div className="theatre-ledger">
+              <span><span className="text-mute">Charged</span> {money.take(gen)}</span>
+              <span className="text-mute">{gen.refineModel ? "prompt writing included" : "prompt as written"}</span>
+            </div>
+          )}
+          {gen.costUsd != null && !money.inCredits && (
             <div className="theatre-ledger">
               <span><span className="text-mute">Engine</span> {usd(gen.costUsd)}</span>
               <span>

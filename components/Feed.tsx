@@ -29,7 +29,8 @@ import { appPrompt } from "./dialog";
 import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
 import { shortLabel } from "@/lib/models";
-import { usd, downloadHref } from "@/lib/format";
+import { downloadHref } from "@/lib/format";
+import { useMoney } from "@/lib/price";
 
 /** Kept for the callers that still speak it; the wall itself shows one kind. */
 export type FeedFilter = "all" | "video" | "image" | "audio";
@@ -85,6 +86,7 @@ export default function Feed({
   filter?: FeedFilter; setFilter?: (f: FeedFilter) => void; aside?: React.ReactNode;
 }) {
   const { signedIn } = useSession();
+  const money = useMoney();
   const stills = kind === "image";
   const [take, setTake] = useState<TakeState>("all");
   const [role, setRole] = useState<"all" | StillRole>("all");
@@ -138,7 +140,7 @@ export default function Feed({
       if (!key) { loose.push(g); continue; }
       (byShot.get(key) ?? byShot.set(key, []).get(key)!).push(g);
     }
-    const spendOf = (list: Gen[]) => list.reduce((a, g) => a + (g.costUsd ?? 0), 0);
+    const spendOf = (list: Gen[]) => money.sum(list);
     const order = new Map(shots.map((s, i) => [s.code, i]));
     const out = [...byShot.entries()]
       .sort((a, b) => (order.get(a[0]) ?? 1e9) - (order.get(b[0]) ?? 1e9) || a[0].localeCompare(b[0]))
@@ -147,17 +149,17 @@ export default function Feed({
         const takes = list.slice().sort((a, b) => (a.version ?? 0) - (b.version ?? 0));
         return {
           key: code, code, title: shot?.title || shot?.description?.slice(0, 80) || "", shotId: shot?.id ?? null, takes,
-          meta: `${list.length} ${stills ? "still" : "take"}${list.length === 1 ? "" : "s"} · ${usd(spendOf(list), 2)}`,
+          meta: `${list.length} ${stills ? "still" : "take"}${list.length === 1 ? "" : "s"} · ${spendOf(list)}`,
         };
       });
     if (loose.length) {
       out.push({
         key: "__unfiled", code: "UNFILED", title: "Not filed against a shot", shotId: null,
-        takes: loose, meta: `${loose.length} render${loose.length === 1 ? "" : "s"} · ${usd(spendOf(loose), 2)}`,
+        takes: loose, meta: `${loose.length} render${loose.length === 1 ? "" : "s"} · ${spendOf(loose)}`,
       });
     }
     return out;
-  }, [visible, shots, take, role, q, stills]);
+  }, [money, visible, shots, take, role, q, stills]);
 
   const noun = stills ? "STILLS" : "TAKES";
   const shotCount = scoped ? shots.length : new Set(visible.map((g) => g.shotCode).filter(Boolean)).size;
@@ -253,6 +255,7 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
   gen: Gen; code: string; active: boolean; now: number; onOpen: () => void;
   onChanged?: () => void; badge?: string;
 }) {
+  const money = useMoney();
   const url = gen.storedUrl ?? gen.sourceUrl;
   const done = gen.status === "succeeded" && Boolean(url);
   const s = stateOf(gen);
@@ -321,7 +324,7 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
               {s === "failed" && <span className="dot dot-none" />}
               {badge ? `${code} ${v} · ${word.toLowerCase()}` : word}
             </span>
-            <span className="mono-v">{gen.costUsd != null ? usd(gen.costUsd, 2) : "—"}</span>
+            <span className="mono-v">{gen.costUsd != null ? money.take(gen) : "—"}</span>
           </span>
           <span className="take-meta">
             <span>{shortLabel(gen.model)}{p.resolution ? ` · ${String(p.resolution).toUpperCase()}` : ""}{!still && dur ? ` · ${dur}` : ""}</span>

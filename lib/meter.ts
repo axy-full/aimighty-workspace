@@ -1,6 +1,6 @@
 import { platformDb, platformReady, now } from "./platform";
 import { currentTenant } from "./tenant";
-import { billCredits } from "./creditTerms";
+import { billCredits, marginKeyOf } from "./creditTerms";
 import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
 
 /**
@@ -40,9 +40,6 @@ export type MeterEvent = {
   workspaceId?: string;
 };
 
-/** The margin key: the engine id for renders, a class for the rest. */
-const marginKey = (e: MeterEvent): string =>
-  e.kind === "training" ? "identity-training" : e.kind === "audio" ? "elevenlabs" : e.kind === "text" ? "text" : e.model;
 
 /**
  * Write or update one event. A `critical` write (the default for a job
@@ -56,7 +53,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
   if (!workspaceId) return;
   const paid = paidByPlatform(vendorKeyNameFor(e.engine));
   const cost = typeof e.engineCostUsd === "number" && Number.isFinite(e.engineCostUsd) ? Math.max(0, e.engineCostUsd) : null;
-  const billed = cost == null ? null : paid ? billCredits(cost, marginKey(e)) : 0;
+  const billed = cost == null ? null : paid ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
   const ts = now();
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {

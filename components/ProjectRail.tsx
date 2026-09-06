@@ -15,6 +15,7 @@ import { IconChevron, IconPlus } from "./Icons";
 import { appPrompt, appAlert } from "./dialog";
 import type { CastMember } from "@/lib/cast";
 import type { Gen } from "./GenCard";
+import { useMoney } from "@/lib/price";
 
 /**
  * The projects, always to hand.
@@ -50,6 +51,7 @@ export default function ProjectRail() {
   const router = useRouter();
   const { projects, selection, setSelection, refreshProjects } = useProject();
   const { signedIn } = useSession();
+  const money = useMoney();
   const [open, setOpen] = useState<string | null>(null);
 
   useOnChange(refreshProjects);
@@ -154,7 +156,7 @@ export default function ProjectRail() {
                 data-project-target={p.id} data-project-name={p.name} data-project-count={p.genCount}
                 className={`rail-row ${selection === p.id ? "is-on" : ""}`}
                 aria-expanded={isOpen}
-                title={`${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${usd(p.spend, 2)}`}>
+                title={`${p.genCount} render${p.genCount === 1 ? "" : "s"} · ${money.of(p)}`}>
                 <IconChevron className={`rail-caret ${isOpen ? "is-open" : ""}`} />
                 <span className="min-w-0 flex-1 truncate">{p.name}</span>
                 <span className="rail-count">{p.genCount}</span>
@@ -221,7 +223,7 @@ export default function ProjectRail() {
             Open
           </button>
         )}
-        {spend != null && (
+        {spend != null && !money.inCredits && (
           <Link href="/usage" className="rail-spend"
             title={spend.remainingUsd >= 0
               ? `${usd(spend.remainingUsd, 2)} of recorded credit left`

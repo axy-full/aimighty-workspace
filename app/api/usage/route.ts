@@ -8,6 +8,8 @@ import { elevenConfigured, subscription, FALLBACK_USD_PER_CREDIT } from "@/lib/e
 import { requireUser, withTenant } from "@/lib/auth";
 import { listChecks, spendSince, computedSpendUpTo } from "@/lib/reconcile";
 import { storageLedger } from "@/lib/storageCost";
+import { billedCreditsSum } from "@/lib/creditSql";
+import { billCredits, marginKeyOf } from "@/lib/creditTerms";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -49,6 +51,7 @@ export const GET = withTenant(async function GET() {
              SUM(status='failed')    AS failed,
              SUM(status NOT IN ('succeeded','failed','cancelled')) AS pending,
              COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend,
+             ${billedCreditsSum()} AS credits,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS prompt_spend,
              SUM(refine_model IS NOT NULL) AS prompts,
              COALESCE(SUM(total_tokens),0) AS tokens
@@ -60,24 +63,28 @@ export const GET = withTenant(async function GET() {
     db().execute(`
       SELECT model, provider, SUM(status='succeeded') AS n,
              COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend,
+             ${billedCreditsSum()} AS credits,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS prompt_spend,
              COALESCE(SUM(total_tokens),0) AS tokens
       FROM generations
       GROUP BY model, provider HAVING spend > 0 OR n > 0 ORDER BY spend DESC`),
     db().execute(`
       SELECT COALESCE(p.name,'Unfiled') AS name, SUM(g.status='succeeded') AS n,
-             COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0) AS spend
+             COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0) AS spend,
+             ${billedCreditsSum("g")} AS credits
       FROM generations g LEFT JOIN projects p ON p.id = g.project_id
       GROUP BY g.project_id HAVING spend > 0 OR n > 0 ORDER BY spend DESC`),
     db().execute(`
       SELECT COALESCE(u.name,'Unknown') AS name, SUM(g.status='succeeded') AS n,
-             COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0) AS spend
+             COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0) AS spend,
+             ${billedCreditsSum("g")} AS credits
       FROM generations g LEFT JOIN users u ON u.id = g.created_by
       GROUP BY g.created_by HAVING spend > 0 OR n > 0 ORDER BY spend DESC`),
     db().execute(`
       SELECT strftime('%Y-%m', datetime(created_at/1000,'unixepoch')) AS month,
              SUM(status='succeeded') AS n,
-             COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
+             COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend,
+             ${billedCreditsSum()} AS credits
       FROM generations
       GROUP BY month HAVING spend > 0 OR n > 0 ORDER BY month DESC LIMIT 12`),
     db().execute(`
@@ -270,6 +277,7 @@ export const GET = withTenant(async function GET() {
   return NextResponse.json({
     purchasedUsd: purchased,
     spentUsd: spend,
+    spentCredits: Number(t.credits ?? 0),
     remainingUsd: purchased - spend,
     /* One ledger per vendor: what was added, what it has cost, what's left. */
     vendors,
@@ -285,23 +293,24 @@ export const GET = withTenant(async function GET() {
     promptCount: Number(t.prompts ?? 0),
     byModel: byModel.rows.map((r: any) => ({
       model: r.model, label: label(r.model),
-      n: Number(r.n), spend: Number(r.spend), promptSpend: Number(r.prompt_spend ?? 0),
+      n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0), promptSpend: Number(r.prompt_spend ?? 0),
       tokens: Number(r.tokens),
     })),
     byProject: byProject.rows.map((r: any) => ({
-      name: r.name, n: Number(r.n), spend: Number(r.spend),
+      name: r.name, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
     })),
     byPerson: byPerson.rows.map((r: any) => ({
-      name: r.name, n: Number(r.n), spend: Number(r.spend),
+      name: r.name, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
     })),
     byMonth: byMonth.rows.map((r: any) => ({
-      month: r.month, n: Number(r.n), spend: Number(r.spend),
+      month: r.month, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
     })),
     recent: recent.rows.map((r: any) => ({
       id: r.id, model: r.model, label: label(r.model),
       provider: r.provider ?? "byteplus", kind: r.kind ?? "video", title: r.title ?? null,
       prompt: r.prompt,
       costUsd: Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0),
+      credits: billCredits(Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0), marginKeyOf(r.kind ?? "video", r.model)),
       renderCostUsd: Number(r.cost_usd),
       refineCostUsd: r.refine_cost_usd == null ? null : Number(r.refine_cost_usd),
       refineModel: r.refine_model ?? null,
@@ -343,7 +352,7 @@ export const GET = withTenant(async function GET() {
       model: r.model, label: prettyModel(r.model), n: Number(r.n),
       inTokens: Number(r.in_tokens), outTokens: Number(r.out_tokens),
       tokens: Number(r.in_tokens) + Number(r.out_tokens),
-      spend: Number(r.spend),
+      spend: Number(r.spend), credits: Number(r.credits ?? 0),
       free: hasFreeTier(r.model),
       freeLeft: hasFreeTier(r.model) ? Math.max(0, 500000 - Number(r.in_tokens) - Number(r.out_tokens)) : 0,
     })),

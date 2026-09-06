@@ -18,7 +18,7 @@ import { useApi } from "./useApi";
 
 export type Project = {
   id: string; name: string; description: string; code?: string;
-  createdAt: number; genCount: number; spend: number;
+  createdAt: number; genCount: number; spend: number; credits?: number;
   capUsd?: number | null; kind?: string | null; runtimeTarget?: number | null; stage?: string | null;
 };
 
