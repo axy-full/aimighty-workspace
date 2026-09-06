@@ -40,6 +40,8 @@ export type TenantWorkspace = {
   concurrency: number | null;
   rendersPerHour: number | null;
   storageQuotaBytes: number | null;
+  /** Set once the owner deleted it; the purge follows (lib/purge.ts). */
+  deletedAt: number | null;
   /** The Vercel AI Gateway key minted for this workspace, by id, so it can be revoked. */
   gatewayKeyId: string | null;
   ownerId: string;

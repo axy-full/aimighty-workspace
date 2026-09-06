@@ -210,6 +210,7 @@ export function rowToWorkspace(r: any): TenantWorkspace {
     concurrency: r.concurrency == null ? null : Number(r.concurrency),
     rendersPerHour: r.renders_per_hour == null ? null : Number(r.renders_per_hour),
     storageQuotaBytes: r.storage_quota_bytes == null ? null : Number(r.storage_quota_bytes),
+    deletedAt: r.deleted_at == null ? null : Number(r.deleted_at),
   };
 }
 
@@ -257,7 +258,7 @@ export function platformReady(): Promise<void> {
       for (const stmt of SCHEMA) await p.execute(stmt);
       /* Columns added after the table first shipped reach an existing
          database only by ALTER; a duplicate is the one error to ignore. */
-      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`]) {
+      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`]) {
         try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
       }
@@ -343,7 +344,7 @@ export async function legacyWorkspace(): Promise<TenantWorkspace | null> {
 }
 export async function listWorkspaces(): Promise<TenantWorkspace[]> {
   await platformReady();
-  const rs = await platformDb().execute(`SELECT * FROM workspaces ORDER BY created_at`);
+  const rs = await platformDb().execute(`SELECT * FROM workspaces WHERE deleted_at IS NULL ORDER BY created_at`);
   return rs.rows.map(rowToWorkspace);
 }
 export async function membershipRole(workspaceId: string, accountId: string): Promise<WorkspaceRole | null> {
@@ -359,7 +360,7 @@ export async function workspacesFor(accountId: string): Promise<{ workspace: Ten
   await platformReady();
   const rs = await platformDb().execute({
     sql: `SELECT w.*, m.role AS m_role FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
-          WHERE m.account_id = ? AND m.disabled = 0 ORDER BY w.created_at`,
+          WHERE m.account_id = ? AND m.disabled = 0 AND w.deleted_at IS NULL ORDER BY w.created_at`,
     args: [accountId],
   });
   return rs.rows.map((r: any) => ({ workspace: rowToWorkspace(r), role: r.m_role }));
