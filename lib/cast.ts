@@ -21,6 +21,8 @@ export type CastMember = {
   kind: "character" | "location" | "prop" | "style";
   description: string;
   uploadId: string | null;
+  /** A ready, trained identity stands behind this name (brief 1.3). */
+  trained?: boolean;
   createdAt: number;
 };
 
@@ -33,6 +35,7 @@ export function rowToCast(r: any): CastMember {
     kind: r.kind === "location" ? "location" : r.kind === "prop" ? "prop" : r.kind === "style" ? "style" : "character",
     description: r.description ?? "",
     uploadId: r.upload_id ?? null,
+    trained: Number(r.trained ?? 0) === 1,
     createdAt: Number(r.created_at),
   };
 }
@@ -42,12 +45,12 @@ export async function listCast(projectId?: string | null): Promise<CastMember[]>
   await ready();
   const rs = projectId
     ? await db().execute({
-        sql: `SELECT * FROM cast_members WHERE project_id = ? OR project_id IS NULL
+        sql: `SELECT cast_members.*, EXISTS(SELECT 1 FROM identities i WHERE i.cast_id = cast_members.id AND i.status = 'ready' AND i.lora_url IS NOT NULL) AS trained FROM cast_members WHERE project_id = ? OR project_id IS NULL
               ORDER BY kind, LOWER(name)`,
         args: [projectId],
       })
     : await db().execute(
-        `SELECT * FROM cast_members ORDER BY kind, LOWER(name)`
+        `SELECT cast_members.*, EXISTS(SELECT 1 FROM identities i WHERE i.cast_id = cast_members.id AND i.status = 'ready' AND i.lora_url IS NOT NULL) AS trained FROM cast_members ORDER BY kind, LOWER(name)`
       );
   return rs.rows.map(rowToCast);
 }

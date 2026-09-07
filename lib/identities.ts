@@ -46,6 +46,9 @@ export type Identity = {
   createdAt: number;
   updatedAt: number;
   trainedAt: number | null;
+  /** Who confirmed they have the right to train on this face, and when (brief 1.3). */
+  consentBy: string | null;
+  consentAt: number | null;
 };
 
 /* ── The trainer and its terms ─────────────────────────────────────── */
@@ -110,6 +113,8 @@ export function rowToIdentity(r: any): Identity {
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
     trainedAt: r.trained_at == null ? null : Number(r.trained_at),
+    consentBy: r.consent_by ?? null,
+    consentAt: r.consent_at == null ? null : Number(r.consent_at),
   };
 }
 
@@ -232,13 +237,15 @@ async function buildTrainingZip(identity: Identity): Promise<Buffer> {
   return Buffer.from(zipSync(files, { level: 0 }));
 }
 
-export async function startTraining(id: string): Promise<Identity> {
+export async function startTraining(id: string, consent?: { by: string }): Promise<Identity> {
   const identity = await getIdentity(id);
   if (!identity) throw new Error("No such identity.");
   if (!falConfigured()) {
     throw new Error("Identity training isn't connected for this workspace — add the fal.ai key under Settings › Vendors & keys.");
   }
   if (identity.status === "training") throw new Error("It's already training.");
+  // The person pressing Train confirms the right to train on this face; it is stored with the identity.
+  if (!consent?.by && !identity.consentAt) throw new Error("Confirm you have the right to train on this person's face.");
   if (identity.photos.length < MIN_PHOTOS) {
     throw new Error(`Add at least ${MIN_PHOTOS} photos first — ${RECOMMENDED_PHOTOS} is the sweet spot.`);
   }
@@ -258,8 +265,9 @@ export async function startTraining(id: string): Promise<Identity> {
     create_masks: false,
   });
   await db().execute({
-    sql: `UPDATE identities SET status='training', trainer=?, request_id=?, trigger=?, steps=?, cost_usd=?, error=NULL, updated_at=? WHERE id=?`,
-    args: [TRAINER, queued.request_id, trigger, TRAIN_STEPS, trainCostUsd(TRAIN_STEPS), now(), identity.id],
+    sql: `UPDATE identities SET status='training', trainer=?, request_id=?, trigger=?, steps=?, cost_usd=?, error=NULL,
+                                consent_by=COALESCE(?, consent_by), consent_at=COALESCE(consent_at, ?), updated_at=? WHERE id=?`,
+    args: [TRAINER, queued.request_id, trigger, TRAIN_STEPS, trainCostUsd(TRAIN_STEPS), consent?.by ?? null, now(), now(), identity.id],
   });
   await meter({ id: identity.id, kind: "training", engine: "fal", model: TRAINER, status: "running",
                 engineCostUsd: trainCostUsd(TRAIN_STEPS), projectId: identity.projectId });
@@ -531,4 +539,51 @@ export async function reconcileFalRender(row: {
       await failRender(row.id, err.message, row.createdAt);
     }
   }
+}
+
+/* ── A cited name that is a trained likeness (brief 1.3) ────────────── */
+
+/** The ready identity behind any of these cast members, newest trained first — or none. */
+export async function identityForCast(castIds: string[]): Promise<Identity | null> {
+  if (!castIds.length) return null;
+  await ready();
+  const rs = await db().execute({
+    sql: `SELECT * FROM identities WHERE status='ready' AND lora_url IS NOT NULL AND cast_id IN (${castIds.map(() => "?").join(",")}) ORDER BY trained_at DESC LIMIT 1`,
+    args: castIds,
+  });
+  return rs.rows.length ? rowToIdentity(rs.rows[0]) : null;
+}
+
+/**
+ * A still from the composer whose prompt cites a trained name: the same row
+ * and meter as the Studio's own render, filed against the shot the composer
+ * was on. The caller starts the render after the response (runIdentityRender).
+ */
+export async function startIdentityStill(opts: {
+  identity: Identity; prompt: string; ratio: string; projectId: string | null; shotId: string | null; version: number;
+  createdBy: string; tokenId: string | null;
+}): Promise<{ genId: string; finalPrompt: string; ts: number }> {
+  await ready();
+  const genId = newId("gen");
+  const ts = now();
+  const finalPrompt = promptWithTrigger(opts.prompt, opts.identity);
+  await db().execute({
+    sql: `INSERT INTO generations
+          (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
+           created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [genId, opts.projectId, null, "image", RENDERER, finalPrompt,
+           JSON.stringify({ ratio: opts.ratio, resolution: "1K", rawPrompt: opts.prompt, identity: { id: opts.identity.id, name: opts.identity.name }, cast: [opts.identity.name] }),
+           "running", opts.createdBy, ts, ts, opts.tokenId, opts.shotId, opts.version, "fal", "generate", "fal"],
+  });
+  invalidate(PROJECTS_KEY);
+  try {
+    await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "running",
+                  engineCostUsd: RENDER_USD_PER_MP, projectId: opts.projectId, shotId: opts.shotId, createdBy: opts.createdBy });
+  } catch (e) {
+    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] }).catch(() => {});
+    invalidate(PROJECTS_KEY);
+    throw e;
+  }
+  return { genId, finalPrompt, ts };
 }

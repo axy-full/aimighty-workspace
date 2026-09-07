@@ -17,12 +17,14 @@ type Ctx = { params: Promise<{ id: string }> };
  * this in a loop. The paid route beside it (../render) already guards this
  * way; this one was the outlier, and it costs more per call.
  */
-export const POST = withTenant(async function POST(_req: Request, { params }: Ctx) {
+export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
   const { id } = await params;
+  const body = await req.json().catch(() => ({}));
+  if (body.consent !== true) return NextResponse.json({ error: "Confirm you have the right to train on this person's face." }, { status: 400 });
   try {
-    const identity = await startTraining(id);
+    const identity = await startTraining(id, { by: got.user.id });
     return NextResponse.json({ identity: { ...identity, loraUrl: undefined, configUrl: undefined, trained: false } }, { status: 202 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

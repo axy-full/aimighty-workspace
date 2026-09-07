@@ -293,8 +293,14 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const followsSource = Boolean(taskOn && getTask(taskOn.id).forceDuration === "source");
   const promptOptional = Boolean(taskOn && getTask(taskOn.id).promptOptional);
   const billedSecs = followsSource ? sourceSecs : params.duration;
+  /* A still whose prompt cites a trained name renders through Flux with that
+     identity (brief 1.3), so the button prices that render, not the engine's. */
+  const { data: castList } = useApi<{ cast: { name: string; trained?: boolean }[] }>(signedIn && isImage ? "/api/cast" : null, 0);
+  const trainedCited = isImage && !taskOn
+    ? (castList?.cast ?? []).find((m) => m.trained && new RegExp(`@${m.name}\\b`, "i").test(prompt))?.name ?? null
+    : null;
   const est = isImage
-    ? estimateImageCostUsd(params.modelId, params.resolution, imageRefCount)
+    ? estimateImageCostUsd(trainedCited ? "fal-ai/flux-lora" : params.modelId, trainedCited ? "1K" : params.resolution, imageRefCount)
     : estimateCostUsd(
         params.modelId, params.resolution, params.ratio, billedSecs,
         inputSeconds, hasVideoInput,
@@ -529,7 +535,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
               : "Sign in to generate. Everything else here is yours to look at."}
             blocked={!signedIn || Boolean(refProblem || sourceIssue)}
             notice={!signedIn}
-            est={est} estTokens={estTokens} dims={dims}
+            est={est} estTokens={estTokens} dims={dims} trainedCited={trainedCited}
             inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
             busy={busy} onRender={render}
             setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
