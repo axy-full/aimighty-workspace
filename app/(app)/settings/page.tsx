@@ -32,6 +32,7 @@ import ThemeRow from "@/components/ThemeRow";
 import { ParticlMark, Empty } from "@/components/ParticlMark";
 import { AtomikMark } from "@/components/AtomikMark";
 import { useMoney } from "@/lib/price";
+import Runway from "@/components/Runway";
 
 type Me = { name: string; email: string; role: string; owner?: boolean };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; promptSpendUsd?: number };
@@ -695,6 +696,7 @@ function CreditsCard({ view, onChanged }: { view: TopupsView; onChanged: () => v
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums">{creditsNumber(cr.balance)} credits</span>
           <span className="text-[13px] text-dim">left · {creditsNumber(cr.used)} used of {creditsNumber(cr.granted)} added</span>
+          <Runway className="basis-full text-[13px] text-mute" />
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-3">
