@@ -48,3 +48,17 @@ export async function provisionTenantDatabase(slug: string): Promise<{ url: stri
   if (!jwt) throw new Error("Turso minted no token for the database.");
   return { url: `libsql://${hostname}`, token: jwt, name };
 }
+
+/** Drop a workspace's database at Turso, by the name it was created under. Locally there is no API; the caller removes the file. */
+export async function deleteTenantDatabase(ws: { dbUrl: string; slug: string }): Promise<void> {
+  const apiToken = process.env.TURSO_API_TOKEN;
+  const org = process.env.TURSO_ORG;
+  if (!apiToken || !org) throw new Error("no Turso API on this deployment");
+  const rs = await import("./platform").then((m) => m.platformDb().execute({ sql: `SELECT db_name FROM workspaces WHERE slug = ?`, args: [ws.slug] }));
+  const name = (rs.rows[0] as { db_name?: string } | undefined)?.db_name;
+  if (!name) throw new Error("the database's name is not on the record");
+  const res = await fetch(`${API()}/v1/organizations/${encodeURIComponent(org)}/databases/${encodeURIComponent(name)}`, {
+    method: "DELETE", headers: { Authorization: `Bearer ${apiToken}` }, signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`Turso would not delete the database (${res.status}): ${(await res.text()).slice(0, 200)}`);
+}

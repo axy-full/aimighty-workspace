@@ -1,5 +1,8 @@
 import { db, ready, now } from "@/lib/db";
 import { requireOwner, withTenant } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { exportRows, takesCsv } from "@/lib/exportRows";
+import { requireTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -12,7 +15,21 @@ export const maxDuration = 60;
  * object storage and are referenced by URL. Password hashes are deliberately
  * excluded: an export is a record, not a credential store.
  */
-export const GET = withTenant(async function GET() {
+export const GET = withTenant(async function GET(req: Request) {
+  const url = new URL(req.url);
+  const format = url.searchParams.get("format");
+  if (format === "csv" || format === "manifest") {
+    const got = await requireOwner();
+    if (got.response) return got.response;
+    const { rows, unit } = await exportRows();
+    if (format === "csv") {
+      return new Response(takesCsv(rows, unit), {
+        headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="takes-${requireTenant().slug}.csv"`, "Cache-Control": "no-store" },
+      });
+    }
+    const masters = rows.filter((r) => r.url).map((r) => ({ id: r.id, filename: r.filename, bytes: r.bytes, url: r.url, kind: r.kind }));
+    return NextResponse.json({ exportedAt: new Date(now()).toISOString(), workspace: requireTenant().slug, count: masters.length, expiresInHours: 24, masters });
+  }
   // Every prompt, cost and account record in one file: the workspace owner's to take, nobody else's.
   const got = await requireOwner();
   if (got.response) return got.response;

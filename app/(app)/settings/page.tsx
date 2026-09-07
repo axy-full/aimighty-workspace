@@ -22,7 +22,7 @@ import { MODELS, getModel, estimateCostUsd, estimateTokens, DEFAULT_MODEL_ID } f
 import { usePrefs, setPrefs } from "@/lib/prefs";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo } from "@/lib/format";
-import { appAlert } from "@/components/dialog";
+import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Switch } from "@/components/Panel";
 import { IconChevron } from "@/components/Icons";
 import WorkspaceSettings from "@/components/WorkspaceSettings";
@@ -370,8 +370,11 @@ export default function SettingsPage() {
               <button className="row" onClick={() => router.push("/connect")}>Connect apps &amp; tokens<span className="row-value">Claude · ChatGPT · CLI<IconChevron className="!text-mute" /></span></button>
               <button className="row" onClick={() => router.push("/platform")}>Platform<span className="row-value">Assets · APIs · security · IP<IconChevron className="!text-mute" /></span></button>
               {superAdmin && <button className="row" onClick={() => router.push("/admin")}>Sign-ups &amp; workspaces<span className="row-value">Platform owner<IconChevron className="!text-mute" /></span></button>}
+              {me?.owner && <a className="row" href="/api/export?format=csv" download title="Every take with its prompt, cost, filename and a link to its master — the owner's alone">Export takes<span className="row-value">CSV · owner<IconChevron className="!text-mute" /></span></a>}
+              {me?.owner && <MastersRow />}
               {me?.owner && <a className="row" href="/api/export" download title="Every prompt, cost and account record, as JSON — the owner's alone">Export data<span className="row-value">JSON · owner</span></a>}
               {signedIn && <button className="row !text-lift" onClick={signOut} disabled={busy}>{busy ? "Signing out…" : "Sign out"}</button>}
+              {me?.owner && keys && keys.mode !== "legacy" && <DeleteWorkspaceRow name={workspace?.name ?? ""} />}
             </div>
             <div className="flex items-center gap-2 text-[12px] text-mute"><ParticlMark size={12} className="text-mute/70" /><span>particl studio · Seedance on BytePlus ModelArk · Nano Banana through Vercel AI Gateway</span></div>
           </section>
@@ -753,5 +756,54 @@ function StatementsCard() {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Every master, one after another, straight from the manifest: the browser does the saving. */
+function MastersRow() {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  async function run() {
+    setBusy(true); setDone(null);
+    try {
+      const res = await fetch("/api/export?format=manifest");
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? "Could not read the manifest");
+      const masters = (j.masters ?? []) as { filename: string; url: string }[];
+      if (!masters.length) { setDone("Nothing to download yet."); return; }
+      const ok = await appConfirm(`Download ${masters.length} master${masters.length === 1 ? "" : "s"}?`, "They come one after another; the browser may ask once to allow several downloads. The links are good for 24 hours.", { confirmLabel: "Download" });
+      if (!ok) return;
+      for (const m of masters) {
+        const a = document.createElement("a"); a.href = m.url; a.download = m.filename; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
+        await new Promise((r) => setTimeout(r, 700));
+      }
+      setDone(`${masters.length} sent to the browser.`);
+    } catch (e) { setDone((e as Error).message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <button className="row" onClick={run} disabled={busy} title="Every finished master, named by the filename protocol — the owner's alone">
+      Export masters<span className="row-value">{busy ? "Working…" : done ?? "Every file · owner"}<IconChevron className="!text-mute" /></span>
+    </button>
+  );
+}
+
+/** The end of a workspace: its exact name to confirm, then the record goes at once and the purge follows. */
+function DeleteWorkspaceRow({ name }: { name: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  async function remove() {
+    const typed = await appPrompt(`Delete "${name}"? Every take, upload, identity and its database will be purged; the platform keeps only its billing record. Type the workspace's name to confirm.`, "", name);
+    if (typed === null) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/workspaces", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: typed }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? "Could not delete it");
+      router.push("/"); router.refresh();
+    } catch (e) { await appAlert("Not deleted", (e as Error).message); setBusy(false); }
+  }
+  return (
+    <button className="row !text-lift" onClick={remove} disabled={busy}>Delete this workspace<span className="row-value">{busy ? "Deleting…" : "Owner · purges everything"}<IconChevron className="!text-mute" /></span></button>
   );
 }
