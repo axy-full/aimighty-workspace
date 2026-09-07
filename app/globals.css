@@ -2709,3 +2709,20 @@ html, body { overflow-x: clip; }
 .well-cap.is-held { color: #f0b429; }
 .tile-held .tile-face { border: 1px dashed color-mix(in srgb, #f0b429 55%, transparent); }
 .take-held { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* ── Statements: a page on paper, printable ──────────────────────────── */
+.statement { min-height: 100dvh; padding: 24px clamp(16px, 4vw, 48px) 48px; background: var(--color-desk); color: var(--color-ink); }
+.statement-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.statement-head { margin-bottom: 20px; }
+.statement-project { margin-top: 22px; }
+.st-table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; min-width: 520px; color: var(--color-ink); }
+.st-th { text-align: left; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-mute); padding: 6px 8px 6px 0; border-bottom: 1px solid var(--color-line); font-weight: 500; }
+.st-td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--color-hair); vertical-align: top; color: var(--color-ink); }
+.st-mono { font-family: var(--font-kode); font-variant-numeric: tabular-nums; color: var(--color-ink); }
+.statement-foot { margin-top: 26px; padding-top: 12px; border-top: 2px solid var(--color-ink); color: var(--color-ink); }
+@media print {
+  .hdr, .tabbar, .chat-fab, .statement-actions, .atomik-header { display: none !important; }
+  .statement { padding: 0; background: #fff; min-height: 0; }
+  .st-table { min-width: 0; font-size: 11.5px; }
+  .shell, .app-work { display: block !important; height: auto !important; overflow: visible !important; }
+}

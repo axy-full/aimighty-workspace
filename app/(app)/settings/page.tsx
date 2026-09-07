@@ -66,7 +66,7 @@ type Keys = {
 };
 
 const SECTIONS = [
-  ["workspace", "Workspace"], ["team", "Team & roles"], ["credits", "Credits"], ["engines", "Vendors & keys"], ["masters", "Storage & masters"],
+  ["workspace", "Workspace"], ["team", "Team & roles"], ["credits", "Credits"], ["statements", "Statements"], ["engines", "Vendors & keys"], ["masters", "Storage & masters"],
   ["atomik", "Atomik connection"], ["defaults", "Defaults & caps"], ["account", "Account"],
 ] as const;
 const CAN: Record<string, string> = {
@@ -230,6 +230,12 @@ export default function SettingsPage() {
                 : "This workspace pays its vendors directly, so there is nothing to top up here."
             }</span></div>
             {topups?.applies && <CreditsCard view={topups} onChanged={refreshTopups} />}
+          </section>
+
+          {/* ── Statements ── */}
+          <section id="statements" className="scard">
+            <div className="scard-h"><span>Statements</span><span>One a month, itemised by production, shot and take — how this workspace bills its own client. Print it, or take the CSV.</span></div>
+            {isAdmin ? <StatementsCard /> : <span className="rail-help">The owner and admins read statements.</span>}
           </section>
 
           {/* ── Engines & keys ── */}
@@ -717,6 +723,31 @@ function CreditsCard({ view, onChanged }: { view: TopupsView; onChanged: () => v
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The months with anything on them, each a page to print and a CSV to take. */
+function StatementsCard() {
+  const { data } = useApi<{ months: { month: string; takes: number }[] }>("/api/statements", 60_000);
+  const label = (month: string) => {
+    const [y, m] = month.split("-").map(Number);
+    return new Date(Date.UTC(y, (m || 1) - 1, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  };
+  if (!data) return null;
+  if (!data.months.length) return <span className="rail-help">Nothing billed yet.</span>;
+  return (
+    <div className="flex flex-col">
+      {data.months.map((m) => (
+        <div key={m.month} className="steam !grid-cols-[minmax(0,1.5fr)_90px_160px]">
+          <span className="font-medium">{label(m.month)}</span>
+          <span className="mono-v">{m.takes} take{m.takes === 1 ? "" : "s"}</span>
+          <span className="flex justify-end gap-3 text-[13px]">
+            <Link href={`/statements/${m.month}`} className="text-blue">View</Link>
+            <a href={`/api/statements?month=${m.month}&format=csv`} className="text-blue">CSV</a>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
