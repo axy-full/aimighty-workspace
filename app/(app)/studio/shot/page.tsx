@@ -97,6 +97,7 @@ function ShotBuilder() {
     return { usedProd: scoped ? count(recent?.generations) : new Map<string, number>(), usedWs: count(scoped ? recentWs?.generations : recent?.generations), lastTake: last };
   }, [recent, recentWs, scoped]);
   const [query, setQuery] = useState("");
+  const { data: previewData } = useApi<{ previews: Record<string, string> }>(signedIn ? "/api/platform/previews" : null, 0);
   /* A production with no setup saved yet starts from the platform's defaults, not from nothing. */
   useEffect(() => {
     if (!signedIn || !platformSetup || specCount(spec) > 0) return;
@@ -171,10 +172,10 @@ function ShotBuilder() {
             <div className="bank">
               {bank.map((m) => (
                 <button key={`${m.key}-${m.value}`} type="button" onClick={() => toggle(m.key, m.value)} title={m.title}
-                  className={`bank-tile ${spec[m.key] === m.value ? "is-on" : ""} ${m.last ? "has-take" : ""}`}>
-                  {m.last && (
+                  className={`bank-tile ${spec[m.key] === m.value ? "is-on" : ""} ${m.last ? "has-take" : previewData?.previews[`${m.key}:${m.value}`] ? "has-preview" : ""}`}>
+                  {(m.last?.storedUrl ?? previewData?.previews[`${m.key}:${m.value}`]) && (
                     <span className="bank-thumb" aria-hidden="true">
-                      <LazyMedia url={m.last.storedUrl!} kind="video" hoverPlay className="h-full w-full object-cover" />
+                      <LazyMedia url={m.last?.storedUrl ?? previewData!.previews[`${m.key}:${m.value}`]} kind="video" hoverPlay className="h-full w-full object-cover" />
                     </span>
                   )}
                   <span className="flex items-baseline justify-between gap-1.5">

@@ -29,6 +29,28 @@ export const identityZipPath = (identityId: string) => `${prefix()}identities/${
 export const uploadPath = (uploadId: string, ext: string) => `${prefix()}uploads/${uploadId}.${ext}`;
 
 const LOCAL_DIR = path.join(process.cwd(), ".data", "generations");
+/* Platform assets (brief 1.4): the bank's neutral previews. No tenant prefix — every workspace reads them. */
+const PLATFORM_DIR = path.join(process.cwd(), ".data", "platform");
+export const platformPath = (file: string) => `platform/${file}`;
+
+export async function storePlatformBytes(file: string, buf: Buffer, contentType: string): Promise<string> {
+  if (!/^[A-Za-z0-9_\-:./]+$/.test(file) || file.includes("..")) throw new Error("bad platform path");
+  if (usingBlob()) {
+    const { put } = await import("@vercel/blob");
+    await put(platformPath(file), buf, { access: "private", contentType, addRandomSuffix: false, allowOverwrite: true });
+    return platformPath(file);
+  }
+  const full = path.join(PLATFORM_DIR, file);
+  await mkdir(path.dirname(full), { recursive: true });
+  await writeFile(full, buf);
+  return platformPath(file);
+}
+
+export async function readPlatformBytes(file: string): Promise<Buffer> {
+  if (!/^[A-Za-z0-9_\-:./]+$/.test(file) || file.includes("..")) throw new Error("bad platform path");
+  if (usingBlob()) return readBlob(platformPath(file));
+  return readFile(path.join(PLATFORM_DIR, file));
+}
 
 export function usingBlob(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN);

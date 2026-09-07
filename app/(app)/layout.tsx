@@ -37,7 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       signedIn: Boolean(user),
       name: user?.name ?? null,
       email: user?.email ?? null,
-      workspace: ctx?.workspace ? { id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason } : null,
+      workspace: ctx?.workspace ? { id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest) } : null,
       role: ctx?.role ?? null,
       owner: Boolean(ctx?.role === "owner"),
       superAdmin: await isPlatformOwner(user),
