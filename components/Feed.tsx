@@ -28,11 +28,12 @@ import { Empty, ParticlSpinner } from "./ParticlMark";
 import { appPrompt } from "./dialog";
 import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
-import { shortLabel } from "@/lib/models";
+import { DEFAULT_MODEL_ID, shortLabel } from "@/lib/models";
 import { downloadHref } from "@/lib/format";
 import { useMoney } from "@/lib/price";
 import QueueStrip from "@/components/QueueStrip";
 import { groupSiblings } from "@/lib/variations";
+import { plannedLine } from "@/lib/shotBudget";
 
 /** Kept for the callers that still speak it; the wall itself shows one kind. */
 export type FeedFilter = "all" | "video" | "image" | "audio";
@@ -49,7 +50,7 @@ export function aspectOf(g: Gen): string {
   return m ? `${m[1]} / ${m[2]}` : "16 / 9";
 }
 
-type Shot = { id: string; code: string; scene: string; title: string; description?: string; takes: number; spend: number };
+type Shot = { id: string; code: string; scene: string; title: string; description?: string; takes: number; spend: number; planned?: number | null; kind?: string };
 
 export function stateOf(g: Gen): "rendering" | "held" | "approved" | "picked" | "draft" | "failed" {
   if (g.status === "queued" || g.status === "running") return "rendering";
@@ -155,6 +156,21 @@ export default function Feed({
           meta: `${list.length} ${stills ? "still" : "take"}${list.length === 1 ? "" : "s"} · ${spendOf(list)}`,
         };
       });
+    /* A shot written in Atomik and not yet rendered belongs on the wall too
+       (brief 2.6): in its own place in the order, with what one take of it
+       is expected to cost, so the plan and the work are one list. Only in a
+       production's own view, and only for video — a still or a track files
+       against a shot without being what the shot is. */
+    if (scoped && !stills && take === "all" && !q.trim()) {
+      for (const s of shots) {
+        if (s.kind === "type" || byShot.has(s.code)) continue;
+        out.push({
+          key: s.code, code: s.code, title: s.title || s.description?.slice(0, 80) || "", shotId: s.id,
+          takes: [], meta: plannedLine(s.planned, (usd) => money.price(usd, DEFAULT_MODEL_ID)),
+        });
+      }
+      out.sort((a, b) => (order.get(a.code) ?? 1e9) - (order.get(b.code) ?? 1e9) || a.code.localeCompare(b.code));
+    }
     if (loose.length) {
       out.push({
         key: "__unfiled", code: "UNFILED", title: "Not filed against a shot", shotId: null,
@@ -162,7 +178,7 @@ export default function Feed({
       });
     }
     return out;
-  }, [money, visible, shots, take, role, q, stills]);
+  }, [money, visible, shots, take, role, q, stills, scoped]);
 
   const noun = stills ? "STILLS" : "TAKES";
   const shotCount = scoped ? shots.length : new Set(visible.map((g) => g.shotCode).filter(Boolean)).size;
@@ -235,6 +251,9 @@ export default function Feed({
                   className="hdr-mono-link">OPEN SHOT →</Link>
               )}
             </div>
+            {g.takes.length === 0 && (
+              <p className="grp-empty">Written in Atomik, not yet rendered. Its rows and cast come with it when you file a take against it.</p>
+            )}
             <div className={`grp-grid ${stills ? "is-stills" : ""}`}>
               {groupSiblings(g.takes).map((s) => s.kind === "one" ? (
                 <Take key={s.take.id} gen={s.take} code={g.code} active={s.take.id === activeId} now={now}

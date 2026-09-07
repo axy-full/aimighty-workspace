@@ -2836,3 +2836,6 @@ html, body { overflow-x: clip; }
 .rvl-new code { background: var(--color-chip); border-radius: 6px; padding: 3px 7px; word-break: break-all; }
 .rvl-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; font-size: 13.5px; }
 .rvl-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+
+/* A shot written in Atomik that nobody has rendered yet (brief 2.6). */
+.grp-empty { font-size: 13px; color: var(--color-mute); border: 1px dashed var(--color-line); border-radius: 10px; padding: 12px 14px; }
