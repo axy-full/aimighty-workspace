@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { requireSuperAdmin } from "@/lib/auth";
-import { getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits } from "@/lib/platform";
+import { getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 
@@ -20,6 +20,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (ws.legacy) return NextResponse.json({ error: "The studio's own workspace has no allowance — it is the platform." }, { status: 400 });
   const body = await req.json().catch(() => ({}));
   const out: Record<string, unknown> = { ok: true };
+  if ("suspended" in body) {
+    const on = Boolean(body.suspended);
+    await setWorkspaceSuspended(id, on, on ? String(body.reason ?? "") : null);
+    out.suspended = on;
+  }
+  if ("flagged" in body) {
+    const on = Boolean(body.flagged);
+    await setWorkspaceFlag(id, on, on ? String(body.note ?? "") : null);
+    out.flagged = on;
+  }
 
   if ("allowanceUsd" in body) {
     const raw = body.allowanceUsd;

@@ -196,7 +196,29 @@ export function rowToWorkspace(r: any): TenantWorkspace {
     allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd),
     gatewayKeyId: r.gateway_key_id ? String(r.gateway_key_id) : null,
     ownerId: String(r.owner_id), createdAt: Number(r.created_at ?? 0),
+    suspendedAt: r.suspended_at == null ? null : Number(r.suspended_at),
+    suspendedReason: r.suspended_reason ? String(r.suspended_reason) : null,
+    flaggedAt: r.flagged_at == null ? null : Number(r.flagged_at),
+    flagNote: r.flag_note ? String(r.flag_note) : null,
   };
+}
+
+/** Pause a workspace's rendering, with a reason it will be shown — or lift it. */
+export async function setWorkspaceSuspended(id: string, suspended: boolean, reason: string | null): Promise<void> {
+  await platformReady();
+  await platformDb().execute({
+    sql: `UPDATE workspaces SET suspended_at = ?, suspended_reason = ?, updated_at = ? WHERE id = ?`,
+    args: [suspended ? now() : null, suspended ? (reason ?? "").slice(0, 300) || null : null, now(), id],
+  });
+}
+
+/** Mark a workspace for review — a content-policy flag with a note — or clear it. */
+export async function setWorkspaceFlag(id: string, flagged: boolean, note: string | null): Promise<void> {
+  await platformReady();
+  await platformDb().execute({
+    sql: `UPDATE workspaces SET flagged_at = ?, flag_note = ?, updated_at = ? WHERE id = ?`,
+    args: [flagged ? now() : null, flagged ? (note ?? "").slice(0, 300) || null : null, now(), id],
+  });
 }
 
 let _ready: Promise<void> | null = null;
@@ -212,7 +234,7 @@ export function platformReady(): Promise<void> {
       for (const stmt of SCHEMA) await p.execute(stmt);
       /* Columns added after the table first shipped reach an existing
          database only by ALTER; a duplicate is the one error to ignore. */
-      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`]) {
+      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`]) {
         try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
       }

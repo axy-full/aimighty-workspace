@@ -30,6 +30,12 @@ export type TenantWorkspace = {
   usesPlatformKeys: boolean;
   /** Dollars a month on the platform's keys; null means the deployment's default. */
   allowanceUsd: number | null;
+  /** Set while the platform has paused this workspace's rendering; the reason is shown to it. */
+  suspendedAt: number | null;
+  suspendedReason: string | null;
+  /** A content-policy flag for the platform's own review; the workspace does not see it. */
+  flaggedAt: number | null;
+  flagNote: string | null;
   /** The Vercel AI Gateway key minted for this workspace, by id, so it can be revoked. */
   gatewayKeyId: string | null;
   ownerId: string;

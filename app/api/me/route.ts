@@ -15,7 +15,7 @@ export const GET = withTenant(async function GET() {
   return NextResponse.json({
     id, name, email, role,
     owner: got.user.owner, superAdmin: await isPlatformOwner(got.user),
-    workspace: store?.workspace ? { id: store.workspace.id, name: store.workspace.name, slug: store.workspace.slug, platformKeys: store.workspace.usesPlatformKeys } : null,
+    workspace: store?.workspace ? { id: store.workspace.id, name: store.workspace.name, slug: store.workspace.slug, platformKeys: store.workspace.usesPlatformKeys, suspended: Boolean(store.workspace.suspendedAt), suspendedReason: store.workspace.suspendedReason } : null,
     workspaces: store?.workspaces ?? [],
     credits: await creditState().catch(() => null),
   });

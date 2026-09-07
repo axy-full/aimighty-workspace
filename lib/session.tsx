@@ -21,7 +21,7 @@ import { usePathname } from "next/navigation";
  * than an error.
  */
 
-export type SessionWorkspace = { id: string; name: string; slug: string };
+export type SessionWorkspace = { id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null };
 /** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
 export type SessionCredits = { creditUsd: number; margins: Record<string, number>; granted: number; used: number; balance: number };
 export type Session = {
