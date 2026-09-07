@@ -88,6 +88,8 @@ export const GET = withTenant(async function GET() {
       spend: Number(r.spend),
       credits: Number(r.credits ?? 0),
       capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
+      capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
+      capUnlocked: Number(r.cap_unlocked ?? 0) === 1,
       kind: r.kind ?? null,
       runtimeTarget: r.runtime_target == null ? null : Number(r.runtime_target),
       stage: r.stage ?? null,

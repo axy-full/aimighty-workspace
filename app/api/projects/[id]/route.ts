@@ -12,6 +12,27 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  /* The cap, in the workspace's unit, and the unlock past it: an admin's alone. */
+  if ("capCredits" in body || "capUsd" in body || "capUnlocked" in body) {
+    if (got.user.role !== "admin") return NextResponse.json({ error: "An admin sets a production's cap." }, { status: 403 });
+    if ("capCredits" in body) {
+      const n = body.capCredits == null || body.capCredits === "" ? null : Math.round(Number(body.capCredits));
+      if (n != null && (!Number.isFinite(n) || n < 0)) return NextResponse.json({ error: "A cap is a whole number of credits, or none." }, { status: 400 });
+      await db().execute({ sql: `UPDATE projects SET cap_credits = ?, cap_warned_at = NULL WHERE id = ?`, args: [n, id] });
+    }
+    if ("capUsd" in body) {
+      const n = body.capUsd == null || body.capUsd === "" ? null : Number(body.capUsd);
+      if (n != null && (!Number.isFinite(n) || n < 0)) return NextResponse.json({ error: "A cap is an amount, or none." }, { status: 400 });
+      await db().execute({ sql: `UPDATE projects SET cap_usd = ?, cap_warned_at = NULL WHERE id = ?`, args: [n, id] });
+    }
+    if ("capUnlocked" in body) {
+      await db().execute({ sql: `UPDATE projects SET cap_unlocked = ? WHERE id = ?`, args: [body.capUnlocked ? 1 : 0, id] });
+    }
+    invalidate(PROJECTS_KEY);
+    if (body.name === undefined && body.description === undefined && body.code === undefined && body.category === undefined) {
+      return NextResponse.json({ ok: true });
+    }
+  }
   const code = typeof body.code === "string"
     ? body.code.trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16)
     : null;

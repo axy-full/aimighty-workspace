@@ -348,7 +348,7 @@ export default function SettingsPage() {
                 </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
               </div>
             </div>
-            <span className="rail-help">A production&rsquo;s cap is set on its row in Productions. The rules are recorded here now and applied at the cost check when a production has a cap.</span>
+            <span className="rail-help">A production&rsquo;s cap is set on its page, in {money.inCredits ? "credits" : "dollars"}. These rules apply at the cost check whenever a production has one; the workspace balance is the hard stop above them.</span>
           </section>
 
           {/* ── Account ── */}

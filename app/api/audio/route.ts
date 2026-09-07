@@ -10,6 +10,7 @@ import { getShot } from "@/lib/shots";
 import { meter } from "@/lib/meter";
 import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/held";
 import { creditState } from "@/lib/credits";
+import { checkCap } from "@/lib/caps";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -88,6 +89,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const wall = await allowanceCheck("elevenlabs", usdForCredits(estCredits, null), "elevenlabs");
   if (!wall.ok && wall.status !== 402) return NextResponse.json({ error: wall.error }, { status: wall.status });
   const hold = !wall.ok ? heldInfo(usdForCredits(estCredits, null), "audio", modelId) : null;
+  const capV = await checkCap(projectId, usdForCredits(estCredits, null), "elevenlabs");
+  if (!capV.allow) return NextResponse.json({ error: capV.error }, { status: 409 });
   const ts = now();
   await db().execute({
     sql: `INSERT INTO generations
@@ -120,7 +123,7 @@ export const POST = withTenant(async function POST(req: Request) {
     after(() => runInline(genId));
   }
 
-  return NextResponse.json({ id: genId, status: "running", estCredits });
+  return NextResponse.json({ id: genId, status: "running", estCredits, notices: capV.notice ? [capV.notice] : undefined });
 });
 
 /** What the Audio screen needs to draw itself: engines, terms, and — when

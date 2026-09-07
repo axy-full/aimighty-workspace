@@ -21,8 +21,12 @@ import { appPrompt, appAlert } from "@/components/dialog";
 import { Waiting, Trouble } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useMoney } from "@/lib/price";
+import { useSession } from "@/lib/session";
 
-type Project = { id: string; name: string; description: string; code?: string; category?: string };
+type Project = {
+  id: string; name: string; description: string; code?: string; category?: string;
+  spend?: number; credits?: number; capUsd?: number | null; capCredits?: number | null; capUnlocked?: boolean;
+};
 type ShotRow = {
   id: string; code: string; scene: string; title: string; status: string;
   takes: number; ok: number; failed: number; spend: number; credits?: number;
@@ -32,6 +36,8 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const router = useRouter();
   const { selection, setSelection, refreshProjects: refreshCtx } = useProject();
+  const { role } = useSession();
+  const isAdmin = role === "owner" || role === "admin";
   const money = useMoney();
   const { data, error, refresh } = useApi<Analytics>(`/api/analytics?projectId=${encodeURIComponent(id)}`, 30000);
   const { data: projects, refresh: refreshProjects } =
@@ -123,6 +129,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
           </button>{" "}
           — how this job is grouped on the production dashboard.
         </p>
+        {project && <CapLine project={project} spentCredits={t.credits} spentUsd={t.spend} isAdmin={isAdmin} onChanged={() => { refreshProjects(); refresh(); }} />}
 
         <div className="mt-6 flex flex-wrap gap-2">
           <Link href="/" className="chip bg-blue text-on-ink">Open in Generate</Link>
@@ -215,5 +222,45 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The production's cap, in the workspace's unit: what it is, how much of
+ * it is spent, and — for an admin — the two ways past it: raise it, or
+ * unlock it and let the take through.
+ */
+function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { project: Project; spentCredits: number; spentUsd: number; isAdmin: boolean; onChanged: () => void }) {
+  const money = useMoney();
+  const cap = money.inCredits ? project.capCredits ?? null : project.capUsd ?? null;
+  // The page's own totals, which are fresh; the production list behind `project` is a cache.
+  const spent = money.inCredits ? spentCredits : spentUsd;
+  const unit = money.inCredits ? "cr" : "$";
+  const show = (n: number) => (money.inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${Math.round(n)}`);
+  const pct = cap ? Math.round((spent / cap) * 100) : null;
+  async function patch(body: Record<string, unknown>) {
+    const res = await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { await appAlert("Not changed", json.error ?? "Could not change the cap"); return; }
+    onChanged();
+  }
+  async function setCap() {
+    const raw = await appPrompt(money.inCredits ? "Cap for this production, in credits" : "Cap for this production, in dollars", cap ? String(Math.round(cap)) : "", money.inCredits ? "2000" : "250");
+    if (raw === null) return;
+    const v = raw.trim() === "" ? null : Number(raw.replace(/[^0-9.]/g, ""));
+    if (v != null && !(v >= 0)) { await appAlert("Not a cap", "A cap is a number, or blank for none."); return; }
+    await patch(money.inCredits ? { capCredits: v } : { capUsd: v });
+  }
+  return (
+    <p className="mt-2 text-[14px] text-mute">
+      Cap{" "}
+      {isAdmin
+        ? <button onClick={setCap} className="text-blue">{cap ? show(cap) : "set one"}</button>
+        : <span className="text-ink">{cap ? show(cap) : "none"}</span>}
+      {cap ? <> — {show(spent)} spent{pct != null ? ` · ${pct}%` : ""}{project.capUnlocked ? " · unlocked past the cap" : ""}</> : <> — {unit === "cr" ? "credits" : "dollars"} this production may spend before the rule at the cap applies.</>}
+      {isAdmin && cap ? (
+        <>{" "}<button onClick={() => patch({ capUnlocked: !project.capUnlocked })} className="text-blue">{project.capUnlocked ? "Lock again" : "Unlock"}</button></>
+      ) : null}
+    </p>
   );
 }
