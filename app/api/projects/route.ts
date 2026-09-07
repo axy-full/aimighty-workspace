@@ -3,6 +3,9 @@ import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { cached, putCache, invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { billedCreditsSum } from "@/lib/creditSql";
+import { getPlatformLayer } from "@/lib/platform";
+import { creditsApply } from "@/lib/credits";
+import { requireTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -120,11 +123,13 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
   const pid = id("prj");
+  // A new production starts at the platform layer's default cap, when the workspace pays in credits.
+  const defaultCap = creditsApply(requireTenant()) ? ((await getPlatformLayer().catch(() => null))?.caps.defaultCapCredits ?? null) : null;
   await db().execute({
-    sql: `INSERT INTO projects (id, name, description, created_at, code) VALUES (?,?,?,?,?)`,
+    sql: `INSERT INTO projects (id, name, description, created_at, code, cap_credits) VALUES (?,?,?,?,?,?)`,
     args: [pid, name.slice(0, 120), String(body.description ?? "").slice(0, 500), now(),
            // A short code is what makes {projectcode} usable in a filename.
-           String(body.code ?? "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16)],
+           String(body.code ?? "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16), defaultCap],
   });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ id: pid, name });

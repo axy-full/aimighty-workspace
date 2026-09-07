@@ -6,6 +6,7 @@ import { seal, open } from "./keyring";
 import { provisionTenantDatabase } from "./provision";
 import { runInTenant, type TenantWorkspace, type WorkspaceRole } from "./tenant";
 import { seedStarterProduction } from "./starter";
+import { mergeLayer, LAYER_KEYS, type PlatformLayer, type LayerKey } from "./platformLayer";
 
 /**
  * The platform: what spans workspaces.
@@ -96,6 +97,12 @@ const SCHEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS topup_requests_ws ON topup_requests(workspace_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS topup_requests_status ON topup_requests(status, created_at)`,
+  `CREATE TABLE IF NOT EXISTS platform_layer (
+     key         TEXT PRIMARY KEY,
+     value       TEXT NOT NULL,
+     updated_at  INTEGER NOT NULL,
+     updated_by  TEXT
+   )`,
   `CREATE TABLE IF NOT EXISTS meter_events (
      id               TEXT PRIMARY KEY,
      workspace_id     TEXT NOT NULL,
@@ -386,11 +393,12 @@ export async function createWorkspace(input: { name: string; owner: { id: string
     sql: `INSERT INTO memberships (workspace_id, account_id, role, created_at) VALUES (?,?,'owner',?)`,
     args: [id, input.owner.id, ts],
   });
-  /* Something to spend on day one. */
-  if (platformKeys && signupCredits() > 0) {
+  /* Something to spend on day one: the layer's number, or the deployment's. */
+  const welcome = (await getPlatformLayer().catch(() => null))?.caps.signupCredits ?? signupCredits();
+  if (platformKeys && welcome > 0) {
     await p.execute({
       sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, created_by, created_at) VALUES (?,?,?,?,?,?)`,
-      args: [newId("cg"), id, signupCredits(), "Welcome credits", input.owner.id, ts],
+      args: [newId("cg"), id, welcome, "Welcome credits", input.owner.id, ts],
     });
   }
   if (gatewayMintConfigured()) {
@@ -551,4 +559,46 @@ export async function listGrants(workspaceId: string, limit = 20): Promise<{ id:
     const row = r as unknown as { id: string; credits: number; note: string | null; created_at: number };
     return { id: String(row.id), credits: Number(row.credits), note: String(row.note ?? ""), createdAt: Number(row.created_at) };
   });
+}
+
+/* ── the platform layer ───────────────────────────────────────────────── */
+
+let _layer: { at: number; value: PlatformLayer; stored: LayerKey[] } | null = null;
+
+/** The layer as it stands: the defaults with whatever the desk has overridden. Cached briefly. */
+export async function getPlatformLayer(): Promise<PlatformLayer> {
+  return (await platformLayerState()).value;
+}
+
+export async function platformLayerState(): Promise<{ value: PlatformLayer; stored: LayerKey[] }> {
+  if (_layer && Date.now() - _layer.at < 10_000) return _layer;
+  await platformReady();
+  const rs = await platformDb().execute(`SELECT key, value FROM platform_layer`);
+  const stored: Partial<Record<LayerKey, unknown>> = {};
+  for (const r of rs.rows as unknown as { key: string; value: string }[]) {
+    if (!(LAYER_KEYS as string[]).includes(r.key)) continue;
+    try { stored[r.key as LayerKey] = JSON.parse(r.value); } catch { /* an unreadable row loses to the default */ }
+  }
+  _layer = { at: Date.now(), value: mergeLayer(stored), stored: Object.keys(stored) as LayerKey[] };
+  return _layer;
+}
+
+/** Override one part of the layer; what is stored is the cleaned value, so the record can never hold junk. */
+export async function setPlatformLayer(key: LayerKey, value: unknown, by: string | null): Promise<PlatformLayer> {
+  await platformReady();
+  const cleaned = mergeLayer({ [key]: value })[key];
+  await platformDb().execute({
+    sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES (?,?,?,?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+    args: [key, JSON.stringify(cleaned), now(), by],
+  });
+  _layer = null;
+  return getPlatformLayer();
+}
+
+export async function resetPlatformLayer(key: LayerKey): Promise<PlatformLayer> {
+  await platformReady();
+  await platformDb().execute({ sql: `DELETE FROM platform_layer WHERE key = ?`, args: [key] });
+  _layer = null;
+  return getPlatformLayer();
 }

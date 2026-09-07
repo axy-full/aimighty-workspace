@@ -25,6 +25,8 @@ import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/
 import { creditState } from "@/lib/credits";
 import { submitVideoJob } from "@/lib/submitVideo";
 import { checkCap } from "@/lib/caps";
+import { rulesBlock, DEFAULT_LAYER } from "@/lib/platformLayer";
+import { getPlatformLayer } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -409,14 +411,17 @@ export const POST = withTenant(async function POST(req: Request) {
    * raw: prefix honoured); the model reasons about it itself. A refusal
    * fails the row in Google's own words and is never charged.
    * ------------------------------------------------------------------ */
+  /* The platform layer: its rules apply to every prompt in scope (lib/platformLayer.ts). */
+  const layer = await getPlatformLayer().catch(() => DEFAULT_LAYER);
   if (model.kind === "image") {
     const ratio = model.ratios.includes(body.ratio) ? String(body.ratio) : model.ratios[0];
     const size = model.resolutions.includes(body.resolution)
       ? String(body.resolution) : model.resolutions[0];
     const isRaw = /^raw:/i.test(castPrompt);
+    const stillRules = isRaw ? "" : rulesBlock(layer.rules, "image", "prompt");
     const stillPrompt = isRaw
       ? castPrompt.replace(/^raw:\s*/i, "")
-      : castPrompt;
+      : stillRules && !castPrompt.includes(stillRules) ? `${castPrompt.trim()}\n\n${stillRules}` : castPrompt;
     const stillProject = body.projectId ? String(body.projectId) : null;
     const stillShot = body.shotId ? String(body.shotId) : null;
     let stillVersion = 1;
@@ -549,7 +554,8 @@ export const POST = withTenant(async function POST(req: Request) {
       // duration actually being paid for.
       // Show it the work this studio has actually approved, so the writing
       // converges on their taste rather than on a generic one.
-      const style = houseStyleBlock(await houseStyle(projectIdForCast));
+      const writerRules = rulesBlock(layer.rules, "video", "writer");
+      const style = [houseStyleBlock(await houseStyle(projectIdForCast)), writerRules ? `THE PLATFORM'S RULES\n${writerRules}` : ""].filter(Boolean).join("\n\n");
       const refineStartedAt = now();
       const r = await enhancePrompt({
         prompt: castPrompt, citations,
@@ -638,6 +644,13 @@ export const POST = withTenant(async function POST(req: Request) {
       });
       if (craft) finalPrompt = `${finalPrompt.trim()}\n\n${craft}`;
     }
+  }
+
+  /* The platform's rules in scope, as plain sentences at the end — never on
+     a raw: prompt, never on a clip that is itself the brief. */
+  if (!/^raw:/i.test(castPrompt) && task.id !== "motion" && task.id !== "upscale") {
+    const promptRules = rulesBlock(layer.rules, "video", "prompt");
+    if (promptRules && !finalPrompt.includes(promptRules)) finalPrompt = `${finalPrompt.trim()}\n\n${promptRules}`;
   }
 
   /* The vendor reads the intent from the prompt it actually receives, which

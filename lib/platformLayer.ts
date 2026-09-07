@@ -1,13 +1,20 @@
-import type { ShotSpec } from "./studio";
+import { CATEGORIES, type ShotSpec } from "./studio";
 
 /**
  * The platform layer: what every new workspace inherits and may change.
  *
- * A default Setup that reads as a finished frame rather than "0 of 12 rows
- * set", and a starter production — three shots pre-named, one cast member
- * — so the first screen a stranger sees already has something to render
- * against. Generic and rights-clear by construction: no client, no real
- * person, no studio. A workspace edits or deletes all of it.
+ * Four things, each with a default in code and an override in the platform
+ * record (lib/platform.ts), edited from the admin console:
+ *   setup   — the default Setup, real Studio options, so "0 of 12 rows set"
+ *             is never the starting state;
+ *   starter — the production a new workspace opens on: three shots pre-named,
+ *             one cast member, generic and rights-clear by construction;
+ *   rules   — what working teams have learned, as sentences: some for the
+ *             prompt writer, some appended to the prompt itself, each in scope
+ *             for video, stills or both (the platform half of 2.5);
+ *   caps    — the numbers a workspace starts with: welcome credits, a default
+ *             cap for a new production, the share of a cap that warns.
+ * Pure: no database here, so the browser can validate what it edits.
  */
 export const DEFAULT_SETUP: ShotSpec = {
   shot: "ws", angle: "eye", move: "static", lens: "35", light: "natural",
@@ -24,26 +31,138 @@ export const STARTER_CAST: StarterCast = {
   description: "A courier in her thirties. Cropped dark hair, a weathered orange jacket, a canvas bag across the chest. Always mid-errand, never posed.",
 };
 
+/** A starter shot's `setup` holds only what differs from the default Setup; the seed merges them. */
 export const STARTER_PRODUCTION: StarterProduction = {
   name: "Starter production",
   code: "START",
   description: "Three shots to render against, so the first take is a minute away. Rename it, change anything, or delete it.",
   shots: [
-    {
-      code: "SH010", title: "The city, first light", planned: 5,
+    { code: "SH010", title: "The city, first light", planned: 5,
       description: "An establishing shot: a quiet street at dawn, wet from the night, the first light along the rooftops.",
-      setup: { ...DEFAULT_SETUP, shot: "evs", time: "dawn" }, cast: [],
-    },
-    {
-      code: "SH020", title: "The courier", planned: 5,
+      setup: { shot: "evs", time: "dawn" }, cast: [] },
+    { code: "SH020", title: "The courier", planned: 5,
       description: "@Mara crosses the street with the bag held close, the camera pushing in as she passes.",
-      setup: { ...DEFAULT_SETUP, shot: "ms", move: "push" }, cast: [STARTER_CAST.name],
-    },
-    {
-      code: "SH030", title: "The hand-off", planned: 5,
+      setup: { shot: "ms", move: "push" }, cast: [STARTER_CAST.name] },
+    { code: "SH030", title: "The hand-off", planned: 5,
       description: "A close-up: the package changes hands on a doorstep, soft light, nothing said.",
-      setup: { ...DEFAULT_SETUP, shot: "cu", light: "soft" }, cast: [STARTER_CAST.name],
-    },
+      setup: { shot: "cu", light: "soft" }, cast: [STARTER_CAST.name] },
   ],
   cast: [STARTER_CAST],
 };
+
+export type RuleScope = "all" | "video" | "image";
+export type RuleApply = "writer" | "prompt";
+export type PlatformRule = { id: string; text: string; scope: RuleScope; apply: RuleApply; on: boolean };
+
+/** The seed from the brief (2.5): what one team learned, for everyone. */
+export const DEFAULT_RULES: PlatformRule[] = [
+  { id: "one-move", scope: "video", apply: "writer", on: true, text: "One camera move per shot; a travelling technique replaces the move row rather than adding to it." },
+  { id: "niche-terms", scope: "all", apply: "writer", on: true, text: "A niche term goes out as the term plus what actually happens in frame." },
+  { id: "positive", scope: "all", apply: "writer", on: true, text: "Describe everything positively; only subtitles and audio reliably take a NO." },
+  { id: "time-vs-light", scope: "all", apply: "writer", on: true, text: "Time of day and lighting are separate rows and never both say golden hour." },
+  { id: "plain-sentences", scope: "image", apply: "writer", on: true, text: "Write camera and subject direction as plain sentences, never as headers or labels: all-caps headers leak into a still as burned-in captions." },
+  { id: "no-lettering", scope: "image", apply: "prompt", on: true, text: "No lettering, captions, logos or text of any kind appears in the frame." },
+];
+
+export type PlatformCaps = {
+  /** Credits a new production starts capped at; null means no cap. */
+  defaultCapCredits: number | null;
+  /** Credits a new workspace opens with; null means the deployment's SIGNUP_CREDITS. */
+  signupCredits: number | null;
+  /** The share of a production's cap that warns the producer. */
+  warnPct: number;
+};
+export const DEFAULT_CAPS: PlatformCaps = { defaultCapCredits: null, signupCredits: null, warnPct: 80 };
+
+export type PlatformLayer = { setup: ShotSpec; starter: StarterProduction; rules: PlatformRule[]; caps: PlatformCaps };
+export type LayerKey = keyof PlatformLayer;
+export const LAYER_KEYS: LayerKey[] = ["setup", "starter", "rules", "caps"];
+export const DEFAULT_LAYER: PlatformLayer = { setup: DEFAULT_SETUP, starter: STARTER_PRODUCTION, rules: DEFAULT_RULES, caps: DEFAULT_CAPS };
+
+const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
+const str = (v: unknown, max: number): string => (typeof v === "string" ? v.trim().slice(0, max) : "");
+
+/** A Setup keeps only real Studio categories with real options; anything else is dropped. */
+export function cleanSetup(v: unknown): ShotSpec {
+  const out: ShotSpec = {};
+  if (!isObj(v)) return out;
+  for (const [k, val] of Object.entries(v)) {
+    const cat = CATEGORIES.find((c) => c.key === k);
+    if (!cat || typeof val !== "string") continue;
+    if (cat.options.some((o) => o.value === val)) out[k] = val;
+  }
+  return out;
+}
+
+export function cleanStarter(v: unknown): StarterProduction | null {
+  if (!isObj(v)) return null;
+  const name = str(v.name, 80); if (!name) return null;
+  const code = str(v.code, 16).replace(/[^A-Za-z0-9_-]/g, "");
+  const description = str(v.description, 500);
+  const cast: StarterCast[] = (Array.isArray(v.cast) ? v.cast : []).map((c) => {
+    if (!isObj(c)) return null;
+    const n = str(c.name, 40).replace(/^@/, ""); if (!n) return null;
+    const kind = ["character", "location", "prop", "style"].includes(String(c.kind)) ? (c.kind as StarterCast["kind"]) : "character";
+    return { name: n, kind, description: str(c.description, 600) };
+  }).filter((c): c is StarterCast => Boolean(c)).slice(0, 6);
+  const names = new Set(cast.map((c) => c.name));
+  const shots: StarterShot[] = (Array.isArray(v.shots) ? v.shots : []).map((s) => {
+    if (!isObj(s)) return null;
+    const c = str(s.code, 16).replace(/[^A-Za-z0-9_-]/g, ""); if (!c) return null;
+    const planned = Number(s.planned); const p = Number.isFinite(planned) && planned > 0 ? Math.min(60, Math.round(planned)) : 5;
+    const sc = (Array.isArray(s.cast) ? s.cast : []).map((x) => String(x).replace(/^@/, "")).filter((x) => names.has(x));
+    return { code: c, title: str(s.title, 160), description: str(s.description, 2000), planned: p, setup: cleanSetup(s.setup), cast: sc };
+  }).filter((s): s is StarterShot => Boolean(s)).slice(0, 12);
+  if (!shots.length) return null;
+  return { name, code, description, shots, cast };
+}
+
+export function cleanRules(v: unknown): PlatformRule[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: PlatformRule[] = [];
+  const seen = new Set<string>();
+  for (const r of v) {
+    if (!isObj(r)) continue;
+    const text = str(r.text, 400); if (!text) continue;
+    let id = str(r.id, 40).replace(/[^A-Za-z0-9_-]/g, "") || `rule-${out.length + 1}`;
+    while (seen.has(id)) id = `${id}-x`;
+    seen.add(id);
+    const scope: RuleScope = r.scope === "video" || r.scope === "image" ? r.scope : "all";
+    const apply: RuleApply = r.apply === "prompt" ? "prompt" : "writer";
+    out.push({ id, text, scope, apply, on: r.on !== false });
+  }
+  return out.slice(0, 40);
+}
+
+export function cleanCaps(v: unknown): PlatformCaps {
+  const c = { ...DEFAULT_CAPS };
+  if (!isObj(v)) return c;
+  const n = (x: unknown) => (x == null || x === "" ? null : Number(x));
+  const cap = n(v.defaultCapCredits); c.defaultCapCredits = cap != null && Number.isFinite(cap) && cap > 0 ? Math.round(cap) : null;
+  const su = n(v.signupCredits); c.signupCredits = su != null && Number.isFinite(su) && su >= 0 ? Math.round(su) : null;
+  const w = Number(v.warnPct); c.warnPct = Number.isFinite(w) && w >= 1 && w <= 100 ? Math.round(w) : DEFAULT_CAPS.warnPct;
+  return c;
+}
+
+/** Stored overrides on top of the defaults; an unreadable override loses to the default. */
+export function mergeLayer(stored: Partial<Record<LayerKey, unknown>>): PlatformLayer {
+  const setup = stored.setup !== undefined ? cleanSetup(stored.setup) : DEFAULT_SETUP;
+  const starter = (stored.starter !== undefined ? cleanStarter(stored.starter) : null) ?? STARTER_PRODUCTION;
+  const rules = (stored.rules !== undefined ? cleanRules(stored.rules) : null) ?? DEFAULT_RULES;
+  const caps = stored.caps !== undefined ? cleanCaps(stored.caps) : DEFAULT_CAPS;
+  return { setup: Object.keys(setup).length ? setup : DEFAULT_SETUP, starter, rules, caps };
+}
+
+/** The starter's shots with the layer's default Setup underneath each shot's own. */
+export function starterShotsWithSetup(layer: PlatformLayer): StarterShot[] {
+  return layer.starter.shots.map((s) => ({ ...s, setup: { ...layer.setup, ...s.setup } }));
+}
+
+/** The rules in scope for a kind and an audience, as one paragraph — or nothing. */
+export function rulesBlock(rules: PlatformRule[], kind: "video" | "image", apply: RuleApply): string {
+  return rules
+    .filter((r) => r.on && r.apply === apply && (r.scope === "all" || r.scope === kind))
+    .map((r) => r.text.trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .join(" ");
+}
