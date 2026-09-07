@@ -37,7 +37,7 @@ export type Session = {
   workspaces: (SessionWorkspace & { role: "owner" | "admin" | "member" })[];
   credits: SessionCredits | null;
   /** The engines the composer opens on here — the workspace's Defaults & caps, which inherit the platform's. */
-  models?: { video: string; image: string } | null;
+  models?: { video: string; image: string; text?: Record<string, string> } | null;
   /** The platform layer's default Setup — what a new production starts from (brief 1.4). */
   setup?: Record<string, string> | null;
 };

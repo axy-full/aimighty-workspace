@@ -32,6 +32,7 @@ import type { Shot } from "@/lib/shots";
 import { billCredits } from "@/lib/creditTerms";
 import { estimateRefineUsd } from "@/lib/refineGate";
 import { useMoney } from "@/lib/price";
+import { textModelFor } from "@/lib/platformLayer";
 
 type Loaded = { versions?: { version: number; by: string; at: number }[]; snapshot?: { draft: number; title: string; logline: string; setup: Record<string, string>; scenes: Scene[]; notes: Note[]; updatedBy: string; at: number } | null; treatment: Treatment | null; cast: CastMember[]; identities: { name: string; status: string }[] };
 type Doc = { title: string; logline: string; setup: Record<string, string>; scenes: Scene[]; notes: Note[] };
@@ -52,7 +53,7 @@ export default function TreatmentPage() {
 
 function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: string; runtimeTarget: number | null }) {
   const router = useRouter();
-  const { signedIn, name: me } = useSession();
+  const { signedIn, name: me , models: sessionModels } = useSession();
   const { data, refresh } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
   const { data: shotData } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
   const [doc, setDoc] = useState<Doc | null>(null);
@@ -111,7 +112,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   /* Regenerate one scene: a proposal, priced before pressing, shown beside the scene; "Use this" is the only way it lands (brief 1.8). */
   const [regen, setRegen] = useState<number | null>(null);
   const [proposal, setProposal] = useState<{ n: number; scene: Scene; model: string; credits: string } | null>(null);
-  const regenCr = billCredits(estimateRefineUsd("anthropic/claude-sonnet-5", 900, 500) ?? 0.01, "text");
+  const regenCr = billCredits(estimateRefineUsd(textModelFor(sessionModels ?? null, "idea"), 900, 500) ?? 0.01, "text");
   async function regenerate(idx: number) {
     if (!doc) return;
     const s = doc.scenes[idx];

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mergeLayer, cleanSetup, cleanRules, cleanCaps, cleanModels, resolveModels, rulesBlock, writerRulesByScope, starterShotsWithSetup, DEFAULT_LAYER, DEFAULT_SETUP, DEFAULT_MODELS, DEFAULT_RULES } from "../../lib/platformLayer";
+import { mergeLayer, cleanSetup, cleanRules, cleanCaps, cleanModels, resolveModels, rulesBlock, writerRulesByScope, starterShotsWithSetup, textModelFor, DEFAULT_LAYER, DEFAULT_SETUP, DEFAULT_MODELS, DEFAULT_RULES, DEFAULT_TEXT_MODELS } from "../../lib/platformLayer";
 
 /** The platform layer: defaults in code, overrides validated, nothing unreadable survives. */
 test("a Setup keeps only real Studio options", () => {
@@ -67,4 +67,16 @@ test("an engine-scoped rule is that engine's dialect: picked for its family only
   expect(digest).toContain("Nano Banana: Nano Banana wants the one scene");
   expect(digest).not.toContain("No lettering"); // a prompt rule is the render's job, not the writer's
   expect(rulesBlock(DEFAULT_RULES, "image", "prompt", "nano-banana")).toContain("No lettering");
+});
+
+test("text jobs route to known models: enhancement fast and cheap by default, ideas and shots stronger; an unknown id loses to the default", () => {
+  expect(DEFAULT_TEXT_MODELS.enhance).toBe("anthropic/claude-sonnet-5");
+  expect(DEFAULT_TEXT_MODELS.idea).toBe("anthropic/claude-opus-5");
+  const m = cleanModels({ text: { enhance: "anthropic/claude-haiku-4.5", idea: "not-a-model", shot: 7 } });
+  expect(m.text).toEqual({ enhance: "anthropic/claude-haiku-4.5", idea: DEFAULT_TEXT_MODELS.idea, shot: DEFAULT_TEXT_MODELS.shot });
+  expect(cleanModels("junk").text).toEqual(DEFAULT_TEXT_MODELS);
+  expect(textModelFor(m, "enhance")).toBe("anthropic/claude-haiku-4.5");
+  expect(textModelFor(null, "shot")).toBe(DEFAULT_TEXT_MODELS.shot);
+  expect(mergeLayer({ models: { video: "fal-ai/kling-video/v3/standard" } }).models.text).toEqual(DEFAULT_TEXT_MODELS);
+  expect(resolveModels({}, { models: DEFAULT_MODELS }).text).toEqual(DEFAULT_TEXT_MODELS);
 });
