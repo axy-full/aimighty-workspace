@@ -58,6 +58,8 @@ export type ComposerProps = {
   picker: React.MutableRefObject<RefPicker>; cite: (token: string) => void;
   /** The source is null until a clip is chosen — a mode can be picked first. */
   taskOn: { id: LockedTaskId; gen: Gen | null } | null; cancelTask: () => void;
+  /** The uploaded clip standing in as the task's source, when the tray's one video is it. */
+  uploadSource?: { filename: string } | null;
   /** Choose an engine and what to do with it, in one act. */
   pickMode: (modelId: string, task: TaskId) => void;
   onPickSource: () => void;
@@ -93,7 +95,7 @@ export type ComposerProps = {
 export default function Composer(p: ComposerProps) {
   const {
     prompt, setPrompt, promptRef, params, patch, model, engines, writer,
-    refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked, notice,
+    refs, setRefs, picker, cite, taskOn, cancelTask, uploadSource = null, problem, blocked, notice,
     est, estTokens, dims, trainedCited = null, count = 1, setCount, writerUsd = 0, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
     pickMode, onPickSource, onDropAsset, rail = false,
@@ -213,10 +215,11 @@ export default function Composer(p: ComposerProps) {
             {/* The one place on the island already conditional on a mode, so
                 the one place the missing clip belongs. */}
             <button type="button" onClick={onPickSource}
-              className={`min-w-0 truncate ${taskOn.gen ? "text-dim hover:text-ink" : "font-medium text-blue"}`}
-              title={taskOn.gen ? "Choose a different clip" : "Choose the clip to work on"}>
+              className={`min-w-0 truncate ${taskOn.gen || uploadSource ? "text-dim hover:text-ink" : "font-medium text-blue"}`}
+              title={taskOn.gen || uploadSource ? "Choose a different clip" : "Choose the clip to work on, or upload one"}>
               {taskOn.gen
                 ? (taskOn.gen.title || (taskOn.gen.shotCode ? `${taskOn.gen.shotCode} v${taskOn.gen.version}` : "this render"))
+                : uploadSource ? uploadSource.filename
                 : "Choose a clip →"}
             </button>
             <span className="text-[12px] text-mute">

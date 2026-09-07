@@ -39,6 +39,7 @@ import { stillToolModel } from "@/lib/stillTools";
 import { useMoney } from "@/lib/price";
 import { clampCount, newBatchId } from "@/lib/variations";
 import { shouldRefine } from "@/lib/refineGate";
+import { uploadSource, uploadSourceParams } from "@/lib/sourceClip";
 
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
@@ -285,7 +286,10 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const modelDef = getModel(params.modelId);
   const isImage = modelDef.kind === "image";
   // The locked task's source is a reference video the strip cannot see.
-  const refProblem = referenceProblem(refs, modelDef, prompt, taskOn?.gen ? 1 : 0);
+  /* An uploaded clip is a source too: with a locked task on and no render chosen, the tray's one video is what the task works on. */
+  const sourceUpload = uploadSource(taskOn, refs);
+  const trayRefs = sourceUpload ? refs.filter((r) => r.id !== sourceUpload.id) : refs;
+  const refProblem = referenceProblem(trayRefs, modelDef, prompt, taskOn?.gen || sourceUpload ? 1 : 0);
   const hasVideoInput = refs.some((r) => r.kind === "video");
   const inputSeconds = refs
     .filter((r) => r.kind === "video")
@@ -293,7 +297,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const imageRefCount = refs.filter((r) => r.kind === "image").length;
   /* A task that follows a clip is priced on the clip's length, not the
      duration chip: Topaz and motion control bill per second of the source. */
-  const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : 0;
+  const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : sourceUpload?.durationS ?? 0;
   const followsSource = Boolean(taskOn && getTask(taskOn.id).forceDuration === "source");
   const promptOptional = Boolean(taskOn && getTask(taskOn.id).promptOptional);
   /* Whether the writer will run for this prompt is knowable here (the gate is pure), so the button says what it adds (brief 1.8). */
@@ -357,10 +361,11 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           projectId: bin !== "all" && bin !== "unfiled" ? bin : null,
           task: taskOn?.id ?? "generate",
           sourceGenId: taskOn?.gen?.id ?? null,
+          sourceUploadId: sourceUpload?.id ?? null,
           shotId: shotId || null,
           shotSpec: spec,
           references: [
-            ...refs.map((r) => ({ uploadId: r.id, role: r.role })),
+            ...trayRefs.map((r) => ({ uploadId: r.id, role: r.role })),
             ...ownRefs.map((g) => ({ genId: g.id, role: "reference_image" as const })),
           ],
       });
@@ -507,6 +512,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* A locked mode is not renderable until it has a clip the vendor accepts.
      Checked here rather than at submit so the button says why. */
   const sourceIssue = !taskOn ? null
+    : !taskOn.gen && sourceUpload ? sourceProblem(getTask(taskOn.id), uploadSourceParams(sourceUpload), "upload")
     : !taskOn.gen ? `Choose the clip you want to ${taskOn.id === "edit" ? "edit" : taskOn.id === "extend" ? "continue" : taskOn.id === "motion" ? "borrow the movement from" : taskOn.id === "upscale" ? "upscale" : "reframe"}.`
     : (sourceProblem(getTask(taskOn.id), taskOn.gen.params as { resolution?: string; duration?: number })
       ?? (getTask(taskOn.id).needsImage && imageRefCount + ownRefs.filter((g) => g.kind === "image").length === 0
@@ -558,7 +564,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             params={params} patch={patch}
             model={modelDef} engines={engines} writer={writer}
             refs={refs} setRefs={setRefs} picker={picker} cite={cite}
-            taskOn={taskOn} cancelTask={() => setTaskOn(null)}
+            taskOn={taskOn} cancelTask={() => setTaskOn(null)} uploadSource={sourceUpload ? { filename: sourceUpload.filename } : null}
             problem={signedIn ? (refProblem ?? sourceIssue ?? err)
               : "Sign in to generate. Everything else here is yours to look at."}
             blocked={!signedIn || Boolean(refProblem || sourceIssue)}

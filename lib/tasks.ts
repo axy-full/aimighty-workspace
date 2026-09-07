@@ -229,7 +229,7 @@ export function sourceAdvice(task: TaskDef, sourceSeconds: number | null): strin
  * Returns null when the clip is usable.
  */
 export function sourceProblem(
-  task: TaskDef, source: { resolution?: string; duration?: number } | null
+  task: TaskDef, source: { resolution?: string; duration?: number } | null, origin: "render" | "upload" = "render"
 ): string | null {
   if (!task.locked || !source) return null;
   const res = String(source.resolution ?? "").toLowerCase();
@@ -245,7 +245,7 @@ export function sourceProblem(
   }
   if (task.id === "motion") {
     if (res === "480p") {
-      return "Kling reads the movement from a 720p or 1080p clip, and this one is 480P. Render it again at 720p to use it.";
+      return `Kling reads the movement from a 720p or 1080p clip, and this one is 480P. ${origin === "upload" ? "Upload it at 720p or 1080p" : "Render it again at 720p"} to use it.`;
     }
     if (seconds != null && seconds < 2) return `The reference clip has to be at least 2 seconds; this one is ${seconds}s.`;
     if (seconds != null && seconds > 30) return `The reference clip has to be 30 seconds or less; this one is ${seconds}s.`;
@@ -253,7 +253,7 @@ export function sourceProblem(
   }
   if (res && res !== "480p" && res !== "720p") {
     return `ModelArk only accepts 480p or 720p as an input video, and this one is ${res.toUpperCase()}. ` +
-           `Render it again at 720p to edit it — 1080p is fine as an output, just not as a source.`;
+           `${origin === "upload" ? "Upload a 720p version" : "Render it again at 720p"} to edit it — 1080p is fine as an output, just not as a source.`;
   }
   const secs = typeof source.duration === "number" ? source.duration : null;
   if (secs != null && secs < 4) {
