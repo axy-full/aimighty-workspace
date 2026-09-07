@@ -7,7 +7,8 @@ import { test, expect, type Page } from "@playwright/test";
  *   • no visible text field is under 16px (iOS zooms into anything smaller);
  *   • the app's tab bar is padded by the safe-area inset;
  *   • the composer sheet opens with Close and Render inside the viewport;
- *   • opening the engine picker commits no long task over 50ms.
+ *   • opening the engine picker commits no long task over 50ms;
+ *   • every screen renders itself, never the error boundary.
  */
 
 const ROUTES = [
@@ -57,6 +58,14 @@ for (const route of ROUTES) {
       await settle(page);
       const small = await page.evaluate(smallFields);
       expect(small, `fields under 16px on ${route}: ${small.map((f) => `${f.tag}.${f.cls}=${f.size}`).join(", ")}`).toEqual([]);
+    });
+
+    // A screen that throws lands on the error boundary, which passes both
+    // checks above — so this one says the screen itself has to be there.
+    test("shows its screen, not the error boundary", async ({ page }) => {
+      await page.goto(route);
+      await settle(page);
+      await expect(page.getByText(/^This (screen|page) stopped$/)).toHaveCount(0);
     });
   });
 }
@@ -135,5 +144,28 @@ test.describe("the app shell", () => {
     await page.waitForTimeout(600);
     const long = await page.evaluate(() => (window as unknown as { __long: number[] }).__long.filter((d) => d > 50));
     expect(long, `long tasks while opening the picker (ms): ${long.join(", ")}`).toEqual([]);
+  });
+});
+
+test.describe("the audio desk", () => {
+  /* A visitor's desk is a stand-in Setup with no models and no voices. Every
+     track kind has to open on it: Dialogue reads the model list, which is
+     the lookup that used to throw. */
+  test("every track kind opens for a visitor", async ({ page }) => {
+    await page.goto("/audio");
+    await settle(page);
+    await page.locator(".dock-preview").click();
+    const sheet = page.locator(".ws-rail.is-sheet");
+    await expect(sheet).toBeVisible();
+    const kinds = sheet.getByRole("tablist", { name: "Track kind" });
+    for (const kind of ["Ambient", "Music", "Dialogue"]) {
+      await kinds.getByRole("tab", { name: kind, exact: true }).click();
+      await expect(kinds.getByRole("tab", { name: kind, exact: true })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByText(/^This (screen|page) stopped$/)).toHaveCount(0);
+    }
+    // A visitor has no models, so the select is there with nothing in it;
+    // the voice search beside it is the visible proof the tab rendered.
+    await expect(sheet.getByRole("combobox", { name: "Model" })).toHaveCount(1);
+    await expect(sheet.getByPlaceholder("Find a voice")).toBeVisible();
   });
 });
