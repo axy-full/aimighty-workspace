@@ -20,7 +20,7 @@
  * decoration; a prompt without them is a different request.
  */
 
-export type TaskId = "generate" | "edit" | "extend" | "motion" | "upscale";
+export type TaskId = "generate" | "edit" | "extend" | "motion" | "upscale" | "reframe";
 /** The tasks that work on an existing clip. */
 export type LockedTaskId = Exclude<TaskId, "generate">;
 
@@ -38,6 +38,8 @@ export type TaskDef = {
   forceDuration: -1 | "source" | null;
   /** The task needs a still as well as the clip (motion control's character). */
   needsImage?: boolean;
+  /** The clip is the brief: a prompt may guide the engine but nothing has to be written. */
+  promptOptional?: boolean;
   /** The vendor recommends mov for these — it preserves colour and audio sync. */
   preferMov: boolean;
   /** At least one of these must appear for the vendor to read the intent. */
@@ -110,6 +112,23 @@ export const TASKS: TaskDef[] = [
     blurb: "Re-render a finished clip at up to 4K with Topaz Astra 2, inventing the fine detail the original never had.",
     locked: true,
     forceRatio: "adaptive",
+    forceDuration: "source",
+    preferMov: false,
+    triggers: [],
+    defaultTrigger: "",
+  },
+  /* Reframe (brief 1.2, first of the post tools): a finished clip re-cut
+     to another aspect — 9:16, 1:1 — with what the wider or taller frame
+     reveals painted in. Luma's Ray 2 on fal does the fill; the one control
+     that matters is the target ratio, so it is the one left open. Its
+     output is a take under the same shot, like every post tool. */
+  {
+    id: "reframe",
+    label: "Reframe",
+    blurb: "Re-cut a finished clip to another aspect — 9:16, 1:1 — with Luma Ray 2 filling what the new frame reveals.",
+    locked: true,
+    promptOptional: true,
+    forceRatio: null,
     forceDuration: "source",
     preferMov: false,
     triggers: [],
@@ -217,6 +236,11 @@ export function sourceProblem(
   const seconds = typeof source.duration === "number" ? source.duration : null;
   if (task.id === "upscale") {
     if (seconds != null && seconds > 300) return `Topaz takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
+    return null;
+  }
+  if (task.id === "reframe") {
+    // Any finished clip: Luma reads the resolution it is given, 1080p included.
+    if (seconds != null && seconds > 300) return `Reframe takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
     return null;
   }
   if (task.id === "motion") {

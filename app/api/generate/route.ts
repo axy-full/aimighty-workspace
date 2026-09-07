@@ -96,7 +96,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
 
   const prompt = String(body.prompt ?? "").trim();
-  if (!prompt) return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+  if (!prompt && !getTask(String(body.task ?? "generate")).promptOptional) return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
   if (prompt.length > 10000)
     return NextResponse.json({ error: "Prompt is too long (10000 char max)" }, { status: 400 });
 
@@ -540,7 +540,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const detectedAxes = Object.values(detected).filter(Boolean).length;
   const refineCall = shouldRefine(castPrompt, detectedAxes);
   const writer = await activeWriter();
-  if (task.id === "motion" || task.id === "upscale") {
+  if (task.id === "motion" || task.id === "upscale" || task.id === "reframe") {
     // The clip is the brief: nothing here for a prompt writer to improve.
   } else if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
@@ -660,7 +660,7 @@ export const POST = withTenant(async function POST(req: Request) {
 
   /* The platform's rules in scope, as plain sentences at the end — never on
      a raw: prompt, never on a clip that is itself the brief. */
-  if (!/^raw:/i.test(castPrompt) && task.id !== "motion" && task.id !== "upscale") {
+  if (!/^raw:/i.test(castPrompt) && task.id !== "motion" && task.id !== "upscale" && task.id !== "reframe") {
     const promptRules = rulesBlock(rules, "video", "prompt", model.family);
     if (promptRules && !finalPrompt.includes(promptRules)) finalPrompt = `${finalPrompt.trim()}\n\n${promptRules}`;
   }

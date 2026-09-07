@@ -288,6 +288,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
      duration chip: Topaz and motion control bill per second of the source. */
   const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : 0;
   const followsSource = Boolean(taskOn && getTask(taskOn.id).forceDuration === "source");
+  const promptOptional = Boolean(taskOn && getTask(taskOn.id).promptOptional);
   const billedSecs = followsSource ? sourceSecs : params.duration;
   const est = isImage
     ? estimateImageCostUsd(params.modelId, params.resolution, imageRefCount)
@@ -325,7 +326,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     // rather than only on the button, because Cmd/Ctrl+Enter calls render()
     // directly — it was posting reference payloads the UI had already
     // declared invalid, producing a failed render from a blocked control.
-    if (!prompt.trim() || busy || refProblem) return;
+    if (!(prompt.trim() || promptOptional) || busy || refProblem) return;
     setBusy(true); setErr(null);
     try {
       const payload = JSON.stringify({
@@ -400,7 +401,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /** The words a locked mode opens with: a trigger the vendor reads, or a plain statement of the task. */
   const seedFor = (task: LockedTaskId) =>
     task === "edit" ? "Replace " : task === "extend" ? "Continue from the final frame: "
-    : task === "motion" ? "Move like the reference clip" : "Upscale with Topaz Astra";
+    : task === "motion" ? "Move like the reference clip" : task === "reframe" ? "" : "Upscale with Topaz Astra";
   function pickMode(modelId: string, task: TaskId) {
     switchModel(modelId);
     if (task === "generate") { setTaskOn(null); return; }
@@ -418,6 +419,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       switchModel(engine?.id ?? DEFAULT_MODEL_ID);
     }
     setTaskOn({ id, gen });
+    // A reframe starts at 9:16: the point is a new aspect, and the source's own would be a no-op.
+    if (id === "reframe") setParams((s) => ({ ...s, ratio: "9:16" }));
     setPrompt(seedFor(id));
     setSelected(null);
     requestAnimationFrame(() => promptRef.current?.focus());
@@ -446,7 +449,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* A locked mode is not renderable until it has a clip the vendor accepts.
      Checked here rather than at submit so the button says why. */
   const sourceIssue = !taskOn ? null
-    : !taskOn.gen ? `Choose the clip you want to ${taskOn.id === "edit" ? "edit" : taskOn.id === "extend" ? "continue" : taskOn.id === "motion" ? "borrow the movement from" : "upscale"}.`
+    : !taskOn.gen ? `Choose the clip you want to ${taskOn.id === "edit" ? "edit" : taskOn.id === "extend" ? "continue" : taskOn.id === "motion" ? "borrow the movement from" : taskOn.id === "upscale" ? "upscale" : "reframe"}.`
     : (sourceProblem(getTask(taskOn.id), taskOn.gen.params as { resolution?: string; duration?: number })
       ?? (getTask(taskOn.id).needsImage && imageRefCount + ownRefs.filter((g) => g.kind === "image").length === 0
         ? "Attach a still of the character to move — an upload, one of your renders, or a cast member." : null));
@@ -475,7 +478,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           <span className="dock-line">{prompt.trim() || (isImage ? "Describe the still…" : "Describe the shot…")}</span>
         </button>
         <button type="button" className="dock-go" onClick={render}
-          disabled={busy || !prompt.trim() || !signedIn || Boolean(refProblem || sourceIssue)}>
+          disabled={busy || !(prompt.trim() || promptOptional) || !signedIn || Boolean(refProblem || sourceIssue)}>
           <span>{busy ? "…" : "Generate"}</span>
           <span className="dock-cost">{est ? price(est.net * (isImage ? count : 1), params.modelId) : "—"}</span>
         </button>
@@ -550,7 +553,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           {/* The cost is on the action, always: quoted before the button is
               enabled, printed on it in mono, never beside it. */}
           <button type="button" onClick={render}
-            disabled={busy || !prompt.trim() || !signedIn || Boolean(refProblem || sourceIssue)}
+            disabled={busy || !(prompt.trim() || promptOptional) || !signedIn || Boolean(refProblem || sourceIssue)}
             className="btn-primary !h-[46px] !rounded-[8px] !px-4 !text-[14px]" title="Render  ⌘↵">
             <span>{busy ? "Generating…" : isImage ? (count > 1 ? `Generate ${count} stills` : "Generate still") : "Generate"}</span>
             <span className="btn-primary-cost">

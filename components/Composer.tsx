@@ -121,7 +121,8 @@ export default function Composer(p: ComposerProps) {
      is the clip's seconds times the rate. */
   const taskDef = taskOn ? getTask(taskOn.id) : null;
   const followsSource = taskDef?.forceDuration === "source";
-  const falTask = taskOn?.id === "motion" || taskOn?.id === "upscale";
+  const promptOptional = Boolean(taskDef?.promptOptional);
+  const falTask = taskOn?.id === "motion" || taskOn?.id === "upscale" || taskOn?.id === "reframe";
   const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : 0;
   const billedSecs = followsSource ? sourceSecs : params.duration;
   const estOpts = { audio: params.generateAudio, task: taskOn?.id, fps60: params.fps60 };
@@ -198,7 +199,7 @@ export default function Composer(p: ComposerProps) {
       {taskOn && (
         <>
           <div className="island-task">
-            <span className="font-medium text-blue">{taskOn.id === "edit" ? "Editing" : "Continuing"}</span>
+            <span className="font-medium text-blue">{taskOn.id === "edit" ? "Editing" : taskOn.id === "extend" ? "Continuing" : taskOn.id === "motion" ? "Moving" : taskOn.id === "upscale" ? "Upscaling" : "Reframing"}</span>
             {/* The one place on the island already conditional on a mode, so
                 the one place the missing clip belongs. */}
             <button type="button" onClick={onPickSource}
@@ -209,7 +210,7 @@ export default function Composer(p: ComposerProps) {
                 : "Choose a clip →"}
             </button>
             <span className="text-[12px] text-mute">
-              {taskOn.id === "edit" ? "aspect and length follow the source" : "aspect follows the source"}
+              {taskOn.id === "edit" ? "aspect and length follow the source" : taskOn.id === "reframe" ? "length follows the source — pick the aspect" : "aspect follows the source"}
             </span>
             <button type="button" onClick={cancelTask} className="ml-auto text-[12px] text-lift">Cancel</button>
           </div>
@@ -329,7 +330,7 @@ export default function Composer(p: ComposerProps) {
           })}
         </ChipMenu>
 
-        {!falTask && (
+        {(!falTask || taskDef?.forceRatio === null) && (
           <ChipMenu label={params.ratio === "adaptive" ? "Auto" : params.ratio} open={menu === "ratio"} onOpen={() => setMenu("ratio")} onClose={() => setMenu(null)}>
             {model.ratios.map((r) => (
               <button key={r} onClick={() => { patch({ ratio: r }); setMenu(null); }}
@@ -437,7 +438,7 @@ export default function Composer(p: ComposerProps) {
                 {isImage ? (
                   <>Flat per still on Google — {price(est?.net ?? 0, params.modelId)} at {params.resolution.toUpperCase()}{imageRefCount ? ` with ${imageRefCount} reference${imageRefCount === 1 ? "" : "s"}` : ""}. The model thinks before it draws; your prompt goes as written. A refusal costs nothing.</>
                 ) : secondRate != null ? (
-                  <>Billed per second on fal.ai: {money.rate(secondRate, params.modelId)}/s × {billedSecs || "the clip's"}s{params.fps60 ? ", doubled for 60 fps" : ""}.{followsSource ? " The length follows the clip." : ""} {taskOn?.id === "upscale" ? "Nothing is written: the clip is the brief." : "Your words go as written."}</>
+                  <>Billed per second on fal.ai: {money.rate(secondRate, params.modelId)}/s × {billedSecs || "the clip's"}s{params.fps60 ? ", doubled for 60 fps" : ""}.{followsSource ? " The length follows the clip." : ""} {taskOn?.id === "upscale" || taskOn?.id === "reframe" ? "Nothing has to be written: the clip is the brief." : "Your words go as written."}</>
                 ) : (
                   <>Billed by frame tokens: {estTokens != null ? compactTokens(estTokens) : "—"} at {dims ? `${dims.w}×${dims.h}` : "the source size"} for {params.duration}s.{" "}
                     {!writer || writer.writer === "none"
@@ -452,7 +453,7 @@ export default function Composer(p: ComposerProps) {
 
         {!rail && (
           <button type="button" onClick={onRender}
-            disabled={busy || !prompt.trim() || blocked}
+            disabled={busy || !(prompt.trim() || promptOptional) || blocked}
             title="Render  ⌘↵"
             className="btn-render island-send">
             {busy ? <ParticlSpinner size={18} className="text-on-ink" /> : <IconArrowUp />}

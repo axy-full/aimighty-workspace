@@ -334,6 +334,8 @@ export default function Theatre({
                   title="Give a still character this clip's movement — Kling 3.0 motion control">Motion</button>
                 <button type="button" onClick={() => onEditExtend("upscale", gen)} className="chip !py-1.5 !text-[13px]"
                   title="Re-render this clip at up to 4K with Topaz Astra">Upscale</button>
+                <button type="button" onClick={() => onEditExtend("reframe", gen)} className="chip !py-1.5 !text-[13px]"
+                  title="Re-cut this clip to another aspect — 9:16, 1:1 — with Luma Ray 2">Reframe</button>
               </>
             )}
             {done && (

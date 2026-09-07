@@ -36,6 +36,7 @@ export const DEFAULT_MARGINS: Record<string, number> = {
   "fal-ai/kling-video/v3/standard": 1.42,
   "fal-ai/kling-video/v3/pro": 1.42,
   "topaz/upscale/video/creative": 1.33,
+  "fal-ai/luma-dream-machine/ray-2-flash/reframe": 1.4,
   "gemini-3-pro-image": 1.49,
   "gemini-3.1-flash-image": 1.49,
   "fal-ai/flux-lora": 1.5,

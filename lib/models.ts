@@ -270,6 +270,35 @@ export const MODELS: ModelDef[] = [
     maxVideoSecondsTotal: 300,
     note: "Topaz Labs' Astra 2 — a creative upscale to 1080p or 4K that reimagines fine detail. Works on a finished clip.",
   },
+  /* ── Luma Ray 2 Flash Reframe, on fal.ai ─────────────────────────────
+   * Luma's reframe: a finished clip re-cut to another aspect, the missing
+   * regions painted in. $0.06 a second, read off fal's model page on
+   * 7 September 2026. Its one task is Reframe; the ratios are the seven
+   * the endpoint accepts.
+   * ------------------------------------------------------------------ */
+  {
+    id: "fal-ai/luma-dream-machine/ray-2-flash/reframe",
+    use: "Re-cut a finished clip to 9:16 or 1:1.",
+    label: "Luma Ray 2",
+    short: "RAY2",
+    family: "luma-ray-2",
+    provider: "fal",
+    kind: "video",
+    supportsTasks: ["reframe"],
+    falEndpoint: "fal-ai/luma-dream-machine/ray-2-flash/reframe",
+    paramStyle: "fields",
+    tiers: [],
+    secondRates: [{ resolutions: ["adaptive"], withoutAudio: 0.06, withAudio: 0.06 }],
+    resolutions: ["adaptive"],
+    ratios: ["9:16", "1:1", "16:9", "4:3", "3:4", "21:9", "9:21"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 0,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 300,
+    note: "Luma's Ray 2 Flash reframe on fal — a finished clip re-cut to another aspect, the new frame's edges painted in. $0.06 a second.",
+  },
   {
     // Google's Nano Banana Pro — stills, on the Gemini API (its own key).
     // Pricing read off ai.google.dev/gemini-api/docs/pricing on 2026-08-27:

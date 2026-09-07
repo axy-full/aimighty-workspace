@@ -36,7 +36,7 @@ const UNREACHABLE_CEILING_MS = 6 * 60 * 60_000;
 /** The exact fal endpoint a render goes to. */
 export function falEndpointFor(model: ModelDef, task: TaskId, hasStartImage: boolean): string {
   const base = model.falEndpoint ?? model.id;
-  if (task === "upscale") return base;
+  if (task === "upscale" || task === "reframe") return base;
   if (task === "motion") return `${base}/motion-control`;
   return `${base}/${hasStartImage ? "image-to-video" : "text-to-video"}`;
 }
@@ -93,6 +93,19 @@ export async function buildFalInput(opts: {
         upscale_factor: factor, creativity: 0.5, sharp: 0.5,
         ...(params.fps60 ? { target_fps: 60 } : {}),
         H264_output: true,
+      },
+    };
+  }
+
+  if (task.id === "reframe") {
+    if (!source) throw new Error("Reframe needs a finished clip to re-cut.");
+    const ratio = model.ratios.includes(params.ratio) ? params.ratio : "9:16";
+    return {
+      endpoint: falEndpointFor(model, "reframe", false),
+      input: {
+        video_url: await mediaUrl(source),
+        aspect_ratio: ratio,
+        ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
       },
     };
   }
