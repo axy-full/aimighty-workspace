@@ -32,6 +32,7 @@ import { shortLabel } from "@/lib/models";
 import { downloadHref } from "@/lib/format";
 import { useMoney } from "@/lib/price";
 import QueueStrip from "@/components/QueueStrip";
+import { groupSiblings } from "@/lib/variations";
 
 /** Kept for the callers that still speak it; the wall itself shows one kind. */
 export type FeedFilter = "all" | "video" | "image" | "audio";
@@ -235,9 +236,19 @@ export default function Feed({
               )}
             </div>
             <div className={`grp-grid ${stills ? "is-stills" : ""}`}>
-              {g.takes.map((t) => (
-                <Take key={t.id} gen={t} code={g.code} active={t.id === activeId} now={now}
-                  onOpen={() => onOpen(t.id)} onChanged={onChanged} />
+              {groupSiblings(g.takes).map((s) => s.kind === "one" ? (
+                <Take key={s.take.id} gen={s.take} code={g.code} active={s.take.id === activeId} now={now}
+                  onOpen={() => onOpen(s.take.id)} onChanged={onChanged} />
+              ) : (
+                <div key={s.batchId} className="var-strip">
+                  <span className="var-label">{s.takes.length} variations · one press · pick one</span>
+                  <div className={`var-grid ${stills ? "is-stills" : ""}`}>
+                    {s.takes.map((t) => (
+                      <Take key={t.id} gen={t} code={g.code} active={t.id === activeId} now={now}
+                        onOpen={() => onOpen(t.id)} onChanged={onChanged} />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>

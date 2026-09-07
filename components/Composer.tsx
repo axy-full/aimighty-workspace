@@ -42,6 +42,7 @@ import LazyMedia from "./LazyMedia";
 import { readDraggedAsset, readDraggedCast } from "@/lib/dnd";
 import { movesFor, getTask, type EditMove, type TaskId, type LockedTaskId } from "@/lib/tasks";
 import type { Params } from "./Workspace";
+import { COUNTS } from "@/lib/variations";
 
 type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost" | "orient";
 
@@ -70,6 +71,8 @@ export type ComposerProps = {
   est: { net: number } | null; estTokens: number | null; dims: { w: number; h: number } | null;
   /** The trained cast name the prompt cites, when one does (brief 1.3). */
   trainedCited?: string | null;
+  /** How many variations one press makes (brief 1.6): 1–4 for video, 1–8 for stills. */
+  count?: number; setCount?: (n: number) => void;
   inputSeconds: number; hasVideoInput: boolean; imageRefCount: number;
   busy: boolean; onRender: () => void;
   /** Our own renders attached to this one, and how to take one off. */
@@ -89,7 +92,7 @@ export default function Composer(p: ComposerProps) {
   const {
     prompt, setPrompt, promptRef, params, patch, model, engines, writer,
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked, notice,
-    est, estTokens, dims, trainedCited = null, inputSeconds, hasVideoInput, imageRefCount,
+    est, estTokens, dims, trainedCited = null, count = 1, setCount, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
     pickMode, onPickSource, onDropAsset, rail = false,
   } = p;
@@ -387,6 +390,13 @@ export default function Composer(p: ComposerProps) {
             ))}
           </ChipMenu>
         )}
+        {!taskOn && setCount && (
+          <label className="chip-dd" title={isImage ? "How many stills from this prompt, filed as siblings" : "How many takes from this prompt, filed as siblings under the same shot"}>
+            ×<select value={count} onChange={(e) => setCount(Number(e.target.value))} aria-label="How many variations">
+              {COUNTS[isImage ? "image" : "video"].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select><span className="hdr-caret" aria-hidden="true">▼</span>
+          </label>
+        )}
         {taskOn?.id === "upscale" && (
           <button type="button" onClick={() => patch({ fps60: !params.fps60 })}
             aria-pressed={params.fps60} className={`chip-ctl ${params.fps60 ? "is-on" : ""}`} title="Interpolate to 60 frames a second — doubles the price">
@@ -432,7 +442,7 @@ export default function Composer(p: ComposerProps) {
         {!rail && <span className="relative" ref={costRef}>
           <button type="button" onClick={() => setMenu(menu === "cost" ? null : "cost")} className="island-cost"
             title="What this take will cost">
-            <span className="font-semibold text-bone">{est ? price(est.net, priceModelId) : "—"}</span>
+            <span className="font-semibold text-bone">{est ? (count > 1 && !taskOn ? `${price(est.net * count, priceModelId)} · ${count} × ${price(est.net, priceModelId)}` : price(est.net, priceModelId)) : "—"}</span>
             {!isImage && estTokens != null && (
               <span className="text-mute max-[560px]:hidden"> · {compactTokens(estTokens)} tok</span>
             )}
