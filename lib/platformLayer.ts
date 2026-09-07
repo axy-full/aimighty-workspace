@@ -48,7 +48,7 @@ export const STARTER_PRODUCTION: StarterProduction = {
       description: "A close-up: the package changes hands on a doorstep, soft light, nothing said.",
       setup: { shot: "cu", light: "soft" }, cast: [STARTER_CAST.name] },
   ],
-  cast: [STARTER_CAST],
+  cast: [STARTER_CAST, { name: "Mule", kind: "prop", description: "A battered cargo bicycle, orange frame, canvas panniers, a bell that does not work." }],
 };
 
 /** Where a rule applies: a kind, or one engine family's dialect. */

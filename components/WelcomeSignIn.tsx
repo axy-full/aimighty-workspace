@@ -18,6 +18,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { RequestAccessButton } from "@/components/RequestAccess";
 import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
+import DemoWall from "@/components/DemoWall";
 
 const ROOMS = [
   { eyebrow: "01 · VIDEO · IMAGES · AUDIO", name: "Generate", href: "/", line: "A prompt, an engine, a duration. The cost is on the button before you press it." },
@@ -65,6 +66,7 @@ export default function WelcomeSignIn() {
           <SignIn />
         </Suspense>
       </aside>
+      <DemoWall />
     </div>
   );
 }

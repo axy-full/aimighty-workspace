@@ -215,7 +215,7 @@ export default function Feed({
           <Empty title="The takes didn't load"
             line={`${problem} Anything rendering carries on; this wall fills in as soon as the connection does.`} />
         ) : gens.length === 0 ? (
-          <Empty
+          <Empty demo={!signedIn}
             title={signedIn ? (stills ? "Your first still goes here" : "Your first shot goes here") : "The takes are private"}
             line={signedIn
               ? "Describe it in the composer. The cost sits on the button before you press it, and every take lands under its shot as it finishes."

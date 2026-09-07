@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireUser, withTenant } from "@/lib/auth";
+import { withTenant } from "@/lib/auth";
 import { listPlatformAssets } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
 /** The bank's neutral previews, by key — platform assets every workspace reads. */
 export const GET = withTenant(async function GET() {
-  const got = await requireUser();
-  if (got.response) return got.response;
   const assets = await listPlatformAssets("previews/");
   const previews: Record<string, string> = {};
   for (const a of assets) {
