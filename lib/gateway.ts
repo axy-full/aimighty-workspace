@@ -96,7 +96,7 @@ export type GatewayReply = { ok: boolean; status: number; text: string };
  */
 export async function gatewayPost(
   body: string,
-  opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" } = {},
+  opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" } = {},
 ): Promise<GatewayReply> {
   if (engineMock()) return mockCompletion(opts.mock ?? "prompt", body);
   const auth = opts.auth ?? await gatewayAuth();

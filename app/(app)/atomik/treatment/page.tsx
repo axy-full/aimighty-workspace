@@ -21,7 +21,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo } from "@/lib/format";
 import { CATEGORIES } from "@/lib/studio";
 import { mentionsIn } from "@/lib/mentions";
-import { appAlert } from "@/components/dialog";
+import { appAlert, appConfirm } from "@/components/dialog";
 import { Waiting } from "@/components/ParticlMark";
 import { useDraft } from "@/lib/useDraft";
 import MentionText from "@/components/atomik/MentionText";
@@ -29,8 +29,11 @@ import PickProduction from "@/components/atomik/PickProduction";
 import type { Treatment, Scene, Note } from "@/lib/atomikDocs";
 import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
+import { billCredits } from "@/lib/creditTerms";
+import { estimateRefineUsd } from "@/lib/refineGate";
+import { useMoney } from "@/lib/price";
 
-type Loaded = { treatment: Treatment | null; cast: CastMember[]; identities: { name: string; status: string }[] };
+type Loaded = { versions?: { version: number; by: string; at: number }[]; snapshot?: { draft: number; title: string; logline: string; setup: Record<string, string>; scenes: Scene[]; notes: Note[]; updatedBy: string; at: number } | null; treatment: Treatment | null; cast: CastMember[]; identities: { name: string; status: string }[] };
 type Doc = { title: string; logline: string; setup: Record<string, string>; scenes: Scene[]; notes: Note[] };
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
 const sceneNo = (scene: string) => Number((scene ?? "").replace(/\D/g, "")) || 0;
@@ -53,6 +56,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   const { data, refresh } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
   const { data: shotData } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
   const [doc, setDoc] = useState<Doc | null>(null);
+  const money = useMoney();
   const [tab, setTab] = useState<"cast" | "notes">("cast");
   const [active, setActive] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -104,6 +108,40 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   }, [projectId]);
   const edit = (fn: (d: Doc) => Doc) => { dirty.current = true; setDoc((d) => (d ? fn(d) : d)); };
 
+  /* Regenerate one scene: a proposal, priced before pressing, shown beside the scene; "Use this" is the only way it lands (brief 1.8). */
+  const [regen, setRegen] = useState<number | null>(null);
+  const [proposal, setProposal] = useState<{ n: number; scene: Scene; model: string; credits: string } | null>(null);
+  const regenCr = billCredits(estimateRefineUsd("anthropic/claude-sonnet-5", 900, 500) ?? 0.01, "text");
+  async function regenerate(idx: number) {
+    if (!doc) return;
+    const s = doc.scenes[idx];
+    await save(false);
+    setRegen(s.n); setProposal(null);
+    try {
+      const res = await fetch("/api/atomik/treatment/scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, n: s.n }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      setProposal({ n: s.n, scene: j.scene as Scene, model: String(j.model), credits: money.price(Number(j.costUsd ?? 0), "text") });
+    } catch (e) { await appAlert("Not rewritten", (e as Error).message); }
+    finally { setRegen(null); }
+  }
+  async function acceptProposal(idx: number) {
+    if (!doc || !proposal) return;
+    const cur = doc.scenes[idx];
+    if (cur.by === "you" && cur.prose.trim() && !(await appConfirm("Replace your words?", "This scene was written by you. The proposal replaces it; Save draft keeps the old one as a version.", { confirmLabel: "Replace" }))) return;
+    edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, title: proposal.scene.title || x.title, secs: proposal.scene.secs || x.secs, prose: proposal.scene.prose, by: proposal.model, at: Date.now() } : x)) }));
+    setProposal(null);
+  }
+  /* Earlier drafts: pick one to read it; restore it as the next draft. */
+  const [viewing, setViewing] = useState<number | null>(null);
+  const { data: snap } = useApi<Loaded>(signedIn && viewing ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}&version=${viewing}` : null, 0);
+  async function restore() {
+    const v = snap?.snapshot; if (!v) return;
+    edit((d) => ({ ...d, title: v.title, logline: v.logline, setup: v.setup, scenes: v.scenes, notes: v.notes }));
+    setViewing(null);
+    await save(true);
+  }
+
   const castNames = useMemo(() => (data?.cast ?? []).map((c) => c.name), [data]);
   const mentions = useMemo(() => {
     const count = new Map<string, number>();
@@ -146,6 +184,20 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
       <aside className="ak-trt-outline">
         <div className="flex flex-col gap-1">
           <span className="mono !tracking-[.14em] !text-[10px]">TREATMENT · DRAFT {t?.draft ?? 1}</span>
+          {(data?.versions?.length ?? 0) > 0 && (
+            <label className="chip-dd !py-1 self-start"><select value={viewing ?? ""} aria-label="Earlier drafts" onChange={(e) => setViewing(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Earlier drafts</option>
+              {data!.versions!.map((v) => <option key={v.version} value={v.version}>Draft {v.version} · {v.by ? initials(v.by) : "—"}</option>)}
+            </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
+          )}
+          {viewing && snap?.snapshot && (
+            <div className="ak-snapshot">
+              <span className="mono-s">DRAFT {snap.snapshot.draft} · READ-ONLY</span>
+              <span className="text-[13px] font-medium">{snap.snapshot.title || "Untitled"}</span>
+              <span className="ak-sub !text-[12px]">{snap.snapshot.scenes.length} scene{snap.snapshot.scenes.length === 1 ? "" : "s"} · {snap.snapshot.logline.slice(0, 120)}</span>
+              <div className="flex gap-2"><button type="button" className="chip" onClick={restore}>Restore as draft {(t?.draft ?? 1) + 1}</button><button type="button" className="chip" onClick={() => setViewing(null)}>Close</button></div>
+            </div>
+          )}
           <span className="text-[15px] font-semibold leading-[1.2]">{doc.title || name}</span>
           <span className="ak-sub !text-[12px]">{mmss(total)} · {doc.scenes.length} scene{doc.scenes.length === 1 ? "" : "s"} · {t?.updatedBy ? initials(t.updatedBy) : me ? initials(me) : "—"} · {saving ? "saving…" : savedAt ? `saved ${timeAgo(savedAt)}` : t ? `edited ${timeAgo(t.updatedAt)}` : "unsaved"}</span>
         </div>
@@ -192,17 +244,33 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
               <div className="flex items-baseline gap-3">
                 <span className="mono !tracking-[.12em] !text-[10.5px]">SCENE {s.n} ·</span>
                 <input type="number" min={0} max={600} value={s.secs} aria-label="Seconds" className="ak-secs"
-                  onChange={(e) => edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, secs: Number(e.target.value) || 0 } : x)) }))} />
+                  onChange={(e) => edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, secs: Number(e.target.value) || 0, by: "you", at: Date.now() } : x)) }))} />
                 <span className="mono-s">S</span>
                 <input className="ak-scene-title" value={s.title} placeholder="Scene title" aria-label="Scene title"
-                  onChange={(e) => edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, title: e.target.value } : x)) }))} />
+                  onChange={(e) => edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, title: e.target.value, by: "you", at: Date.now() } : x)) }))} />
                 {doc.scenes.length > 1 && (
                   <button type="button" className="ak-act is-muted ml-auto" title="Remove this scene"
                     onClick={() => edit((d) => ({ ...d, scenes: d.scenes.filter((_, i) => i !== idx).map((x, i) => ({ ...x, n: i + 1 })) }))}>×</button>
                 )}
               </div>
               <MentionText value={s.prose} known={castNames} rows={3} placeholder="What happens. Write @Name for anyone or anything the cast should carry."
-                onChange={(v) => edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, prose: v } : x)) }))} />
+                onChange={(v) => edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, prose: v, by: "you", at: Date.now() } : x)) }))} />
+              {/* Who wrote this scene's words, and a way to have the model try again — as a proposal, never over your edit (brief 1.8). */}
+              <div className="ak-scene-foot">
+                <span className="mono-s">{s.by ? (s.by === "you" ? "BY YOU" : `BY ${s.by.split("/").pop()}`) : ""}</span>
+                <button type="button" className="ak-act" disabled={regen != null} onClick={() => regenerate(idx)}>{regen === s.n ? "Rewriting…" : `Regenerate · ≈ ${regenCr} cr`}</button>
+              </div>
+              {proposal && proposal.n === s.n && (
+                <div className="ak-proposal">
+                  <span className="mono-s">PROPOSED BY {proposal.model.split("/").pop()} · {proposal.scene.secs}s · {proposal.credits}</span>
+                  {proposal.scene.title && <span className="font-medium">{proposal.scene.title}</span>}
+                  <p className="text-[13.5px] leading-relaxed">{proposal.scene.prose}</p>
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-primary !h-8 !px-3 !text-[12.5px]" onClick={() => acceptProposal(idx)}>Use this</button>
+                    <button type="button" className="chip" onClick={() => setProposal(null)}>Keep mine</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
           <button type="button" className="btn-dashed self-start !px-3 !py-2" onClick={() => edit((d) => ({ ...d, scenes: [...d.scenes, { n: d.scenes.length + 1, title: "", secs: 5, prose: "" }] }))}>+ Scene</button>
