@@ -35,6 +35,7 @@ export type Gen = {
   authorName?: string | null;
   /** Shot filing, as returned by /api/jobs. */
   shotCode?: string | null;
+  shotId?: string | null;
   version?: number;
   task?: string;
   sourceGenId?: string | null;

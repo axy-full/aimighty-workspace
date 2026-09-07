@@ -25,7 +25,7 @@ import { useMoney } from "@/lib/price";
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
 export default function Theatre({
-  gens, activeId, onClose, onSelect, onChanged, onUse, onUseAsRef, onEditExtend,
+  gens, activeId, onClose, onSelect, onChanged, onUse, onUseAsRef, onEditExtend, onStillTool,
 }: {
   gens: Gen[];
   activeId: string | null;
@@ -38,6 +38,8 @@ export default function Theatre({
   onUseAsRef?: (gen: Gen) => void;
   /** Start an edit or extension from this render. */
   onEditExtend?: (task: LockedTaskId, gen: Gen) => void;
+  /** A still post tool (outpaint to an aspect, or a cutout), confirmed with its price by the caller. */
+  onStillTool?: (tool: "outpaint" | "cutout", gen: Gen, ratio?: string) => void;
 }) {
   const idx = gens.findIndex((g) => g.id === activeId);
   const gen = idx >= 0 ? gens[idx] : null;
@@ -318,6 +320,16 @@ export default function Theatre({
             {onUseAsRef && done && still && (
               <button type="button" onClick={() => onUseAsRef(gen)} className="chip !py-1.5 !text-[13px]"
                 title="Attach this still to the next render">Use as reference</button>
+            )}
+            {onStillTool && done && still && (
+              <>
+                {["9:16", "1:1", "4:5"].map((r) => (
+                  <button key={r} type="button" onClick={() => onStillTool("outpaint", gen, r)} className="chip !py-1.5 !text-[13px]"
+                    title={`Outpaint this still to ${r} with Bria — the new frame painted in`}>Outpaint {r}</button>
+                ))}
+                <button type="button" onClick={() => onStillTool("cutout", gen)} className="chip !py-1.5 !text-[13px]"
+                  title="Lift the subject off its background with Bria — transparent behind it">Cut out</button>
+              </>
             )}
             {onUse && (
               <button type="button" onClick={() => onUse(gen)} className="chip !py-1.5 !text-[13px]" title="Load into the composer">

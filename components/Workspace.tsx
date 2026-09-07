@@ -35,6 +35,8 @@ import {
 import { usePrefs } from "@/lib/prefs";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
+import { stillToolModel } from "@/lib/stillTools";
+import { useMoney } from "@/lib/price";
 
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
@@ -57,6 +59,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   usePageTitle(kind === "image" ? "Generate · Images" : "Generate · Video");
   const { selection: bin, current, refreshProjects } = useProject();
   const { signedIn, models } = useSession();
+  const money = useMoney();
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -413,6 +416,27 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /** From the theatre: the same mode, with the clip already known. The
    *  engine follows the task — Seedance edits and extends, Kling moves,
    *  Topaz upscales — unless the current one already offers it. */
+  /** A still post tool from the theatre: the price first, then a take under the same shot. */
+  async function stillTool(tool: "outpaint" | "cutout", gen: Gen, ratio?: string) {
+    const model = stillToolModel(tool);
+    const usd = estimateImageCostUsd(model.id, "adaptive", 0)?.net ?? 0;
+    const what = tool === "outpaint" ? `Outpaint to ${ratio ?? "9:16"}` : "Cut out the subject";
+    const ok = await appConfirm(`${what} for ${money.price(usd, model.id)}?`, "A new take, filed under the same shot.");
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        prompt: "", model: model.id, ratio: ratio ?? "adaptive", resolution: "adaptive", task: "generate",
+        projectId: gen.projectId ?? (bin !== "all" && bin !== "unfiled" ? bin : null), shotId: gen.shotId ?? null,
+        references: [{ genId: gen.id, role: "reference_image", kind: "image" }],
+      }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      afterChange();
+    } catch (e) { await appAlert("Not started", (e as Error).message); }
+    finally { setBusy(false); }
+  }
+
   function editExtend(id: LockedTaskId, gen: Gen) {
     if (isImage || !(modelDef.supportsTasks ?? ["generate"]).includes(id)) {
       const engine = MODELS.find((m) => m.kind === "video" && !m.hidden && (m.supportsTasks ?? []).includes(id));
@@ -580,7 +604,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       <Theatre
           gens={visible} activeId={activeId}
           onClose={() => setSelected(null)} onSelect={setSelected}
-          onChanged={afterChange} onUse={useGen} onUseAsRef={useAsRef} onEditExtend={editExtend}
+          onChanged={afterChange} onUse={useGen} onUseAsRef={useAsRef} onEditExtend={editExtend} onStillTool={stillTool}
         />
       </Boundary>
     </div>

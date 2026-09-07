@@ -4,6 +4,7 @@ import { estimateCostUsd } from "../models";
 import { submitFalVideo } from "../falVideo";
 import { falStatus, falResult } from "../fal";
 import { fetchBytes } from "../mockFs";
+import { renderFalStill } from "../falImage";
 
 /**
  * fal.ai: one adapter, several media models behind it — Kling 3.0 and its
@@ -22,7 +23,11 @@ export const fal: EngineAdapter = {
       { audio: p.generateAudio, task: req.task.id, fps60: p.fps60 })?.net ?? null;
   },
   async render(req) {
-    if (req.kind !== "video") throw new Error("Stills and identities on fal are driven from lib/identities.ts.");
+    if (req.kind === "image") {
+      const out = await renderFalStill({ model: req.model, ratio: req.ratio, prompt: req.prompt, references: req.references });
+      return { produced: { bytes: out.bytes, mime: out.mime, costUsd: out.costUsd, totalTokens: null, via: "fal" } };
+    }
+    if (req.kind !== "video") throw new Error("Identities on fal are driven from lib/identities.ts.");
     const q = await submitFalVideo({ model: req.model, task: req.task, prompt: req.prompt, params: req.params, references: req.references, source: req.source });
     return { handle: { provider: "fal", ref: q.requestId, model: req.model.id, endpoint: q.endpoint } };
   },

@@ -116,6 +116,8 @@ export type ModelDef = {
   taskRates?: Partial<Record<TaskId, number>>;
   /** The fal endpoint family the engine is served at (see lib/falVideo.ts). */
   falEndpoint?: string;
+  /** A still tool rather than a still engine: works on one still of ours (see lib/falImage.ts). */
+  stillTask?: "outpaint" | "cutout";
   paramStyle: ParamStyle;
   tiers: RateTier[];
   resolutions: string[];
@@ -298,6 +300,61 @@ export const MODELS: ModelDef[] = [
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 300,
     note: "Luma's Ray 2 Flash reframe on fal — a finished clip re-cut to another aspect, the new frame's edges painted in. $0.06 a second.",
+  },
+  /* ── Bria on fal.ai: the still post tools (brief 1.2) ───────────────
+   * Flat per image, read off fal's model pages on 7 September 2026:
+   * Expand $0.04, RMBG 2.0 $0.018. Hidden from the Images menu — each is
+   * reached from a still in the theatre, never asked to draw from nothing.
+   * ------------------------------------------------------------------ */
+  {
+    id: "fal-ai/bria/expand",
+    use: "Outpaint a still to another aspect.",
+    label: "Bria Expand",
+    short: "EXPAND",
+    family: "bria",
+    provider: "fal",
+    kind: "image",
+    hidden: true,
+    stillTask: "outpaint",
+    falEndpoint: "fal-ai/bria/expand",
+    paramStyle: "fields",
+    tiers: [],
+    imagePricing: { adaptive: 0.04 },
+    imageRefInUsd: 0,
+    resolutions: ["adaptive"],
+    ratios: ["9:16", "1:1", "16:9", "4:5", "5:4", "3:4", "4:3", "2:3", "3:2"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 1,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "Bria's Expand on fal — a still extended to another aspect, the new frame painted in. $0.04 an image.",
+  },
+  {
+    id: "fal-ai/bria/background/remove",
+    use: "Cut a still's subject out of its background.",
+    label: "Bria Cutout",
+    short: "CUTOUT",
+    family: "bria",
+    provider: "fal",
+    kind: "image",
+    hidden: true,
+    stillTask: "cutout",
+    falEndpoint: "fal-ai/bria/background/remove",
+    paramStyle: "fields",
+    tiers: [],
+    imagePricing: { adaptive: 0.018 },
+    imageRefInUsd: 0,
+    resolutions: ["adaptive"],
+    ratios: ["adaptive"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 1,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "Bria's RMBG 2.0 on fal — the subject lifted off its background, transparent behind it. $0.018 an image.",
   },
   {
     // Google's Nano Banana Pro — stills, on the Gemini API (its own key).
