@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
-import { getTreatment, upsertTreatment, type Scene, type Note } from "@/lib/atomikDocs";
+import { getTreatment, upsertTreatment, listTreatmentVersions, getTreatmentVersion, type Scene, type Note } from "@/lib/atomikDocs";
 import { listCast } from "@/lib/cast";
 
 export const dynamic = "force-dynamic";
@@ -13,11 +13,15 @@ export const GET = withTenant(async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "Which production?" }, { status: 400 });
   await ready();
-  const [treatment, cast] = await Promise.all([getTreatment(projectId), listCast(projectId)]);
+  const versionWanted = Number(new URL(req.url).searchParams.get("version") ?? NaN);
+  const [treatment, cast, versions, snapshot] = await Promise.all([
+    getTreatment(projectId), listCast(projectId), listTreatmentVersions(projectId),
+    Number.isInteger(versionWanted) && versionWanted > 0 ? getTreatmentVersion(projectId, versionWanted) : Promise.resolve(null),
+  ]);
   const ids = await db().execute({ sql: `SELECT name, status FROM identities WHERE project_id = ? OR project_id IS NULL`, args: [projectId] });
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const identities = (ids.rows as any[]).map((r) => ({ name: String(r.name), status: String(r.status) }));
-  return NextResponse.json({ treatment, cast, identities });
+  return NextResponse.json({ treatment, cast, identities, versions, snapshot });
 });
 
 /** Save the whole document. `bump` starts a new draft number. */

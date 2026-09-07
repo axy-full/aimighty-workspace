@@ -39,7 +39,7 @@ export const mockStartedAt = (id: string): number => Number(id.split("_").pop())
  * A canned chat completion, shaped like the gateway's, for the three
  * things the app asks a text model for.
  */
-export function mockCompletion(kind: "prompt" | "turn" | "idea", requestBody: string): { ok: boolean; status: number; text: string } {
+export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene", requestBody: string): { ok: boolean; status: number; text: string } {
   let lastUser = "";
   try {
     const j = JSON.parse(requestBody) as { messages?: { role: string; content: string }[] };
@@ -53,6 +53,7 @@ export function mockCompletion(kind: "prompt" | "turn" | "idea", requestBody: st
       propose: [{ kind: "video", title: "Mocked shot", prompt: "A mocked shot, held still for five seconds.", model: DEFAULT_MODEL_ID, seconds: 5, ratio: "16:9", resolution: "1080p" }],
     })
     : kind === "idea" ? JSON.stringify({ logline: `Mocked logline for: ${lastUser.replace(/^NOTE:\s*/i, "").slice(0, 120)}`, tone: ["mocked", "quiet", "30s"] })
+    : kind === "scene" ? JSON.stringify({ title: "Mocked scene", secs: 6, prose: "Mocked: the scene, rewritten — the same beat, one clear action, the cast where they were." })
     : lastUser.slice(0, 2000) || "A mocked prompt.";
   return {
     ok: true, status: 200,

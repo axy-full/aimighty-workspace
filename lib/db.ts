@@ -176,6 +176,22 @@ const SCHEMA = [
      created_at INTEGER NOT NULL,
      updated_at INTEGER NOT NULL
    )`,
+  /* A treatment's earlier drafts (brief 1.8): the document as it was when a
+     draft number was saved, so each pass is a versioned document rather
+     than a chat transcript. Read-only; restoring one makes a new draft. */
+  `CREATE TABLE IF NOT EXISTS treatment_versions (
+     id         TEXT PRIMARY KEY,
+     project_id TEXT NOT NULL,
+     version    INTEGER NOT NULL,
+     title      TEXT NOT NULL DEFAULT '',
+     logline    TEXT NOT NULL DEFAULT '',
+     setup      TEXT NOT NULL DEFAULT '{}',
+     scenes     TEXT NOT NULL DEFAULT '[]',
+     notes      TEXT NOT NULL DEFAULT '[]',
+     by         TEXT NOT NULL DEFAULT '',
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_treatment_versions ON treatment_versions(project_id, version)`,
   `CREATE TABLE IF NOT EXISTS notes (
      id         TEXT PRIMARY KEY,
      gen_id     TEXT NOT NULL,

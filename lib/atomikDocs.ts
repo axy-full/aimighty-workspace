@@ -12,7 +12,9 @@ export type Idea = {
   model: string | null;
   createdBy: string; createdAt: number; updatedAt: number;
 };
-export type Scene = { n: number; title: string; secs: number; prose: string };
+/** A scene; `by` says who wrote its current words — "you", or the model id — and `at` when (brief 1.8). */
+export type Scene = { n: number; title: string; secs: number; prose: string; by?: string; at?: number };
+export type TreatmentVersion = { version: number; by: string; at: number };
 export type Note = { id: string; by: string; scene: number; text: string; at: number };
 export type Treatment = {
   id: string; projectId: string; ideaId: string | null; draft: number;
@@ -87,7 +89,16 @@ export async function upsertTreatment(input: {
   const scenes = input.scenes.slice(0, 40).map((s, i) => ({
     n: i + 1, title: String(s.title ?? "").slice(0, 120),
     secs: Math.max(0, Math.min(600, Math.round(Number(s.secs) || 0))), prose: String(s.prose ?? "").slice(0, 8000),
+    ...(typeof s.by === "string" && s.by ? { by: s.by.slice(0, 80) } : {}),
+    ...(Number.isFinite(Number(s.at)) && Number(s.at) > 0 ? { at: Number(s.at) } : {}),
   }));
+  // Saving a new draft number keeps the previous draft as it was — a versioned document, not a transcript.
+  if (existing && input.bump) {
+    await db().execute({
+      sql: `INSERT INTO treatment_versions (id, project_id, version, title, logline, setup, scenes, notes, by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      args: [newId("tv"), input.projectId, existing.draft, existing.title, existing.logline, JSON.stringify(existing.setup), JSON.stringify(existing.scenes), JSON.stringify(existing.notes), existing.updatedBy, ts],
+    });
+  }
   const notes = input.notes.slice(0, 200);
   if (!existing) {
     const tid = newId("trt");
@@ -106,4 +117,38 @@ export async function upsertTreatment(input: {
     });
   }
   return (await getTreatment(input.projectId))!;
+}
+
+/** The drafts kept for a production, newest first. */
+export async function listTreatmentVersions(projectId: string): Promise<TreatmentVersion[]> {
+  await ready();
+  const rs = await db().execute({ sql: `SELECT version, by, created_at FROM treatment_versions WHERE project_id = ? ORDER BY version DESC`, args: [projectId] });
+  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({ version: Number(r.version), by: String(r.by ?? ""), at: Number(r.created_at ?? 0) }));
+}
+
+/** One earlier draft, as the document it was. */
+export async function getTreatmentVersion(projectId: string, version: number): Promise<(Omit<Treatment, "id" | "ideaId" | "createdAt"> & { at: number }) | null> {
+  await ready();
+  const rs = await db().execute({ sql: `SELECT * FROM treatment_versions WHERE project_id = ? AND version = ? ORDER BY created_at DESC LIMIT 1`, args: [projectId, version] });
+  if (!rs.rows.length) return null;
+  const r = rs.rows[0] as Record<string, unknown>;
+  return {
+    projectId, draft: Number(r.version), title: String(r.title ?? ""), logline: String(r.logline ?? ""), setup: json<Record<string, string>>(r.setup, {}),
+    scenes: json<Scene[]>(r.scenes, []), notes: json<Note[]>(r.notes, []), updatedBy: String(r.by ?? ""), updatedAt: Number(r.created_at ?? 0), at: Number(r.created_at ?? 0),
+  };
+}
+
+/** A model's reply as one scene, or nothing: JSON with or without a fence, prose around it tolerated, lengths clamped. */
+export function sceneFromReply(text: string): { title: string; secs: number; prose: string } | null {
+  const body = String(text ?? "").replace(/```(?:json)?/gi, "").trim();
+  const start = body.indexOf("{"), end = body.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const j = JSON.parse(body.slice(start, end + 1)) as { title?: unknown; secs?: unknown; prose?: unknown };
+    const prose = typeof j.prose === "string" ? j.prose.trim().slice(0, 8000) : "";
+    if (!prose) return null;
+    const title = typeof j.title === "string" ? j.title.trim().slice(0, 120) : "";
+    const secs = Math.max(0, Math.min(600, Math.round(Number(j.secs) || 0)));
+    return { title, secs, prose };
+  } catch { return null; }
 }
