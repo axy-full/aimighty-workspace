@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits } from "@/lib/platform";
+import { runInTenant } from "@/lib/tenant";
+import { releaseHeldJobs } from "@/lib/held";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: "Credits to add: a number, negative to take some away." }, { status: 400 });
     }
     await grantCredits(id, n, String(body.note ?? "Added by management"), got.user.id);
+    // Credits arriving release what they cover, oldest take first.
+    try {
+      const ws = await getWorkspace(id);
+      if (ws) out.released = (await runInTenant(ws, () => releaseHeldJobs({ defer: (fn) => after(fn) }))).released.length;
+    } catch (e) { console.error("release after grant:", (e as Error).message); }
     out.granted = n;
   }
   if ("mode" in body) {

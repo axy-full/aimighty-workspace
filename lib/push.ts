@@ -54,7 +54,7 @@ export async function sendChatPush(opts: {
 
   const webpush = (await import("web-push")).default;
   webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT ?? "mailto:team@aimighty.studio",
+    process.env.VAPID_SUBJECT ?? "mailto:support@particlstudio.com",
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
     process.env.VAPID_PRIVATE_KEY!
   );
@@ -86,6 +86,35 @@ export async function sendChatPush(opts: {
         } else {
           console.error("push failed:", e?.statusCode ?? e?.message);
         }
+      }
+    })
+  );
+}
+
+/** A banner to particular people — the owner and admins when renders are held. */
+export async function sendPushTo(userIds: string[], payload: { title: string; body: string; url?: string }): Promise<void> {
+  if (!configured() || !userIds.length) return;
+  await ready();
+  const rs = await db().execute({
+    sql: `SELECT s.endpoint, s.p256dh, s.auth FROM push_subs s JOIN users u ON u.id = s.user_id
+          WHERE u.disabled = 0 AND s.user_id IN (${userIds.map(() => "?").join(",")})`,
+    args: userIds,
+  });
+  if (!rs.rows.length) return;
+  const webpush = (await import("web-push")).default;
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT ?? "mailto:support@particlstudio.com",
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  );
+  const body = JSON.stringify({ title: payload.title, body: payload.body, url: payload.url ?? "/" });
+  await Promise.allSettled(
+    rs.rows.map(async (r: any) => {
+      try {
+        await webpush.sendNotification({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }, body, { TTL: 3600 });
+      } catch (e: any) {
+        if (e?.statusCode === 404 || e?.statusCode === 410) await removeSubscription(String(r.endpoint));
+        else console.error("push failed:", e?.statusCode ?? e?.message);
       }
     })
   );

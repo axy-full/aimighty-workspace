@@ -8,6 +8,8 @@ import { runInline } from "@/lib/renderWork";
 import { elevenConfigured, subscription, usdForCredits, SPEECH_MODELS, DEFAULT_SPEECH_MODEL, SFX_MODEL, MUSIC_MODEL, speechCredits, sfxCredits, musicCredits, listVoices, SFX_CREDITS, MUSIC_CREDITS_PER_MINUTE } from "@/lib/elevenlabs";
 import { getShot } from "@/lib/shots";
 import { meter } from "@/lib/meter";
+import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/held";
+import { creditState } from "@/lib/credits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -24,7 +26,10 @@ export const POST = withTenant(async function POST(req: Request) {
   if (got.response) return got.response;
   await ready();
   const allowance = await allowanceCheck("elevenlabs");
-  if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
+  if (!allowance.ok && allowance.status !== 402) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
+  if (!allowance.ok && (await heldCount()) >= HELD_LIMIT) {
+    return NextResponse.json({ error: `${HELD_LIMIT} takes are already held for credits. Top up to release them before adding more.` }, { status: 402 });
+  }
   if (!elevenConfigured()) {
     return NextResponse.json({ error: "ElevenLabs isn't connected for this workspace — add its key under Settings › Vendors & keys." }, { status: 400 });
   }
@@ -81,18 +86,24 @@ export const POST = withTenant(async function POST(req: Request) {
 
   const genId = newId("gen");
   const wall = await allowanceCheck("elevenlabs", usdForCredits(estCredits, null), "elevenlabs");
-  if (!wall.ok) return NextResponse.json({ error: wall.error }, { status: wall.status });
+  if (!wall.ok && wall.status !== 402) return NextResponse.json({ error: wall.error }, { status: wall.status });
+  const hold = !wall.ok ? heldInfo(usdForCredits(estCredits, null), "audio", modelId) : null;
   const ts = now();
   await db().execute({
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
            created_at, updated_at, token_id, provider, task, title, billed_to, shot_id)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    args: [genId, projectId, null, "audio", modelId, text, JSON.stringify({ ...params, estCredits }),
-           "running", got.user.id, ts, ts, got.token?.id ?? null, "elevenlabs", "generate",
+    args: [genId, projectId, null, "audio", modelId, text, JSON.stringify({ ...params, estCredits, ...(hold ? { held: hold } : {}) }),
+           hold ? "held" : "running", got.user.id, ts, ts, got.token?.id ?? null, "elevenlabs", "generate",
            body.title ? String(body.title).slice(0, 80) : null, "elevenlabs", shotId],
   });
   invalidate(PROJECTS_KEY);
+  if (hold) {
+    const left = (await creditState())?.balance ?? 0;
+    await notifyHeld({ id: genId, needs: hold.needs, left }).catch(() => {});
+    return NextResponse.json({ id: genId, status: "held", held: true, needs: hold.needs, notices: [heldMessage(hold.needs, left)] }, { status: 202 });
+  }
   try {
     await meter({ id: genId, kind: "audio", engine: "elevenlabs", model: modelId, status: "running",
                   engineCostUsd: usdForCredits(estCredits, null), projectId, shotId, createdBy: got.user.id });

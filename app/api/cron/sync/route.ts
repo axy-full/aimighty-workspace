@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after as afterResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncPending } from "@/lib/jobs";
 import { syncTrainingIdentities } from "@/lib/identities";
@@ -6,6 +6,7 @@ import { backfillSizes } from "@/lib/storageCost";
 import { setSetting } from "@/lib/settings";
 import { listWorkspaces } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
+import { releaseHeldJobs } from "@/lib/held";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -60,6 +61,7 @@ export async function GET(req: Request) {
           await syncPending(30);
           await syncTrainingIdentities(10).catch(() => {});
           await backfillSizes().catch(() => {});
+          await releaseHeldJobs({ defer: (fn) => afterResponse(fn) }).catch(() => {});
         } catch (e) {
           console.error(`cron sync failed for ${ws.slug}:`, (e as Error).message);
         }
