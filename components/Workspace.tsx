@@ -37,6 +37,7 @@ import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { stillToolModel } from "@/lib/stillTools";
 import { useMoney } from "@/lib/price";
+import { clampCount, newBatchId } from "@/lib/variations";
 
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
@@ -89,6 +90,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
      plays on the production — a first frame pinned to the shot, a cast
      still standing for a face or a place, or loose. */
   const [count, setCount] = useState(1);
+  // The options differ by kind (1–4 for video, 1–8 for stills): a count the kind does not offer reads as one.
+  const countNow = clampCount(kind, count);
   const [useAs, setUseAs] = useState<"first" | "cast" | "loose">("loose");
   const [castName, setCastName] = useState("");
   /* On a phone the rail is a sheet, opened from a docked bar that always
@@ -357,12 +360,14 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             ...ownRefs.map((g) => ({ genId: g.id, role: "reference_image" as const })),
           ],
       });
-      /* Stills can go out as a batch of N: N rows, N prices, one press. A
-         clip is always one. */
-      const n = isImage ? count : 1;
+      /* A batch of N (brief 1.6): N rows, N prices, one press, one batch id
+         so the wall shows them as siblings. A locked task is always one. */
+      const n = taskOn ? 1 : countNow;
+      const batchId = n > 1 ? newBatchId() : undefined;
       let json: { id?: string; notices?: string[]; error?: string; held?: boolean; why?: string } = {};
       for (let i = 0; i < n; i++) {
-        const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
+        const body = batchId ? JSON.stringify({ ...JSON.parse(payload), batchId, variation: i + 1, count: n }) : payload;
+        const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body });
         json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Submit failed");
       }
@@ -491,7 +496,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
      list the rail already fetches, so it costs no extra request. */
   const filedAs = !shotId ? "unfiled"
     : isImage
-      ? `${shotCodeOf(shotId) ?? "shot"} · S${nextVersionOf(shotId)}${count > 1 ? `–S${nextVersionOf(shotId) + count - 1}` : ""}`
+      ? `${shotCodeOf(shotId) ?? "shot"} · S${nextVersionOf(shotId)}${countNow > 1 ? `–S${nextVersionOf(shotId) + countNow - 1}` : ""}`
       : `${shotCodeOf(shotId) ?? "shot"} v${nextVersionOf(shotId)}`;
   const setupCount = specCount(spec) + (shotId ? 1 : 0);
 
@@ -529,7 +534,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         <button type="button" className="dock-go" onClick={render}
           disabled={busy || !(prompt.trim() || promptOptional) || !signedIn || Boolean(refProblem || sourceIssue)}>
           <span>{busy ? "…" : "Generate"}</span>
-          <span className="dock-cost">{est ? price(est.net * (isImage ? count : 1), params.modelId) : "—"}</span>
+          <span className="dock-cost">{est ? price(est.net * (taskOn ? 1 : countNow), params.modelId) : "—"}</span>
         </button>
       </div>
       {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
@@ -555,6 +560,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             blocked={!signedIn || Boolean(refProblem || sourceIssue)}
             notice={!signedIn}
             est={est} estTokens={estTokens} dims={dims} trainedCited={trainedCited}
+            count={countNow} setCount={setCount}
             inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
             busy={busy} onRender={render}
             setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
@@ -568,11 +574,6 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           {isImage && (
             <div className="rail-sec">
               <div className="rail-chips">
-                <label className="chip-dd" title="How many stills to make from this prompt">
-                  ×<select value={count} onChange={(e) => setCount(Number(e.target.value))} aria-label="How many stills">
-                    {[1, 2, 4].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select><span className="hdr-caret" aria-hidden="true">▼</span>
-                </label>
               </div>
               <span className="mono">Use as</span>
               <div className="seg is-fill" role="tablist" aria-label="Use as">
@@ -604,10 +605,10 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           <button type="button" onClick={render}
             disabled={busy || !(prompt.trim() || promptOptional) || !signedIn || Boolean(refProblem || sourceIssue)}
             className="btn-primary !h-[46px] !rounded-[8px] !px-4 !text-[14px]" title="Render  ⌘↵">
-            <span>{busy ? "Generating…" : isImage ? (count > 1 ? `Generate ${count} stills` : "Generate still") : "Generate"}</span>
+            <span>{busy ? "Generating…" : isImage ? (countNow > 1 ? `Generate ${countNow} stills` : "Generate still") : countNow > 1 && !taskOn ? `Generate ${countNow} takes` : "Generate"}</span>
             <span className="btn-primary-cost">
               {est
-                ? isImage && count > 1 ? `${price(est.net * count, params.modelId)} · ${count} × ${price(est.net, params.modelId)}` : price(est.net, params.modelId)
+                ? countNow > 1 && !taskOn ? `${price(est.net * countNow, params.modelId)} · ${countNow} × ${price(est.net, params.modelId)}` : price(est.net, params.modelId)
                 : "—"}{!isImage && estTokens != null ? ` · ${compactTokens(estTokens)} TOK` : ""}
             </span>
           </button>

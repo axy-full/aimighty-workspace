@@ -31,6 +31,7 @@ import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 import { effectiveRules } from "@/lib/rules";
 import { stillToolFor } from "@/lib/stillTools";
 import { identityForCast, startIdentityStill, runIdentityRender, RENDER_USD_PER_MP, RENDER_RATIOS } from "@/lib/identities";
+import { isBatchId } from "@/lib/variations";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -485,6 +486,8 @@ export const POST = withTenant(async function POST(req: Request) {
         : { uploadId: r.id, role: r.role, kind: r.kind })),
       rawPrompt: castPrompt !== prompt ? prompt : undefined,
       cast: castUsed.length ? castUsed : undefined,
+      batchId: isBatchId(body.batchId) ? body.batchId : undefined,
+      variation: isBatchId(body.batchId) && Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8 ? body.variation : undefined,
     };
 
     await db().execute({
@@ -743,6 +746,9 @@ export const POST = withTenant(async function POST(req: Request) {
     inputSeconds: hasVideoInput ? inputSeconds : undefined,
     rawPrompt,
     cast: castUsed.length ? castUsed : undefined,
+    // Siblings of one press (brief 1.6), so the wall shows them as one strip.
+    batchId: isBatchId(body.batchId) ? body.batchId : undefined,
+    variation: isBatchId(body.batchId) && Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8 ? body.variation : undefined,
     shotSpec: shotSpec && Object.keys(shotSpec).length ? shotSpec : undefined,
     // The bank's neutral preview this clip is for, when the console rendered it for one (brief 1.4).
     previewFor: typeof body.previewFor === "string" && /^[a-z]+:[a-z0-9_-]+$/i.test(body.previewFor) ? body.previewFor : undefined,
