@@ -4,6 +4,8 @@ import {
   getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext,
   type AgentMode,
 } from "@/lib/atomik";
+import { getPlatformLayer } from "@/lib/platform";
+import { writerRulesByScope } from "@/lib/platformLayer";
 
 export const dynamic = "force-dynamic";
 /* A turn is a model call with a 180s ceiling of its own, so this route needs
@@ -71,7 +73,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   await addUserMessage(id, text);
   try {
     const context = await projectContext(loaded.chat.projectId);
-    await runTurn(id, { context });
+    await runTurn(id, { context, rules: writerRulesByScope((await getPlatformLayer()).rules) });
   } catch (e) {
     await patchChat(id, { status: "failed" });
     return NextResponse.json(

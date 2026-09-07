@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mergeLayer, cleanSetup, cleanRules, cleanCaps, cleanModels, resolveModels, rulesBlock, starterShotsWithSetup, DEFAULT_LAYER, DEFAULT_SETUP, DEFAULT_MODELS } from "../../lib/platformLayer";
+import { mergeLayer, cleanSetup, cleanRules, cleanCaps, cleanModels, resolveModels, rulesBlock, writerRulesByScope, starterShotsWithSetup, DEFAULT_LAYER, DEFAULT_SETUP, DEFAULT_MODELS, DEFAULT_RULES } from "../../lib/platformLayer";
 
 /** The platform layer: defaults in code, overrides validated, nothing unreadable survives. */
 test("a Setup keeps only real Studio options", () => {
@@ -49,4 +49,22 @@ test("the default engine per kind: only a real, visible engine of that kind surv
   expect(resolveModels({ defaultVideoModel: "fal-ai/kling-video/v3/pro" }, layer).video).toBe("fal-ai/kling-video/v3/pro");
   expect(resolveModels({ defaultVideoModel: "gemini-3-pro-image" }, layer).video).toBe("dreamina-seedance-2-0-260128");
   expect(resolveModels({ defaultImageModel: "fal-ai/flux-lora" }, layer).image).toBe(DEFAULT_MODELS.image);
+});
+
+test("an engine-scoped rule is that engine's dialect: picked for its family only, and Atomik gets one line per scope", () => {
+  const rules = cleanRules([
+    { id: "k", text: "Kling only.", scope: "kling-3", apply: "writer" },
+    { id: "v", text: "Every video.", scope: "video", apply: "writer" },
+    { id: "z", text: "Typo scope.", scope: "nope", apply: "writer" },
+  ])!;
+  expect(rules.map((r) => r.scope)).toEqual(["kling-3", "video", "all"]);
+  expect(rulesBlock(rules, "video", "writer", "kling-3")).toBe("Kling only. Every video. Typo scope.");
+  expect(rulesBlock(rules, "video", "writer", "seedance-2")).toBe("Every video. Typo scope.");
+  expect(rulesBlock(rules, "video", "writer")).toBe("Every video. Typo scope.");
+  expect(rulesBlock(rules, "image", "writer", "kling-3")).toBe("Kling only. Typo scope.");
+  const digest = writerRulesByScope(DEFAULT_RULES);
+  expect(digest).toContain("Kling: Kling reads one plain paragraph");
+  expect(digest).toContain("Nano Banana: Nano Banana wants the one scene");
+  expect(digest).not.toContain("No lettering"); // a prompt rule is the render's job, not the writer's
+  expect(rulesBlock(DEFAULT_RULES, "image", "prompt", "nano-banana")).toContain("No lettering");
 });

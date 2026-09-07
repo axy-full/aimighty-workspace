@@ -16,6 +16,7 @@ import { Empty, Waiting } from "@/components/ParticlMark";
 import { CATEGORIES } from "@/lib/studio";
 import { REASON_LABELS } from "@/lib/reports";
 import { MODELS } from "@/lib/models";
+import { RULE_SCOPES, RULE_SCOPE_LABELS } from "@/lib/platformLayer";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -355,7 +356,7 @@ function EnginesCard() {
 type Layer = {
   setup: Record<string, string>;
   starter: { name: string; code: string; description: string; shots: { code: string; title: string; description: string; planned: number; setup: Record<string, string>; cast: string[] }[]; cast: { name: string; kind: "character" | "location" | "prop" | "style"; description: string }[] };
-  rules: { id: string; text: string; scope: "all" | "video" | "image"; apply: "writer" | "prompt"; on: boolean }[];
+  rules: { id: string; text: string; scope: string; apply: "writer" | "prompt"; on: boolean }[];
   caps: { defaultCapCredits: number | null; signupCredits: number | null; warnPct: number; concurrency: number; rendersPerHour: number; storageGb: number };
   models: { video: string; image: string };
 };
@@ -445,12 +446,12 @@ function PlatformLayerCard() {
 
       <div className="mt-6 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Rules</p>{actions("rules")}</div>
-        <p className="text-[12.5px] text-dim">A rule for the writer steers the prompt writer; a rule for the prompt is appended to the prompt itself, in scope. Every workspace inherits these; switching one off here switches it off everywhere.</p>
+        <p className="text-[12.5px] text-dim">A rule for the writer steers the prompt writer; a rule for the prompt is appended to the prompt itself, in scope. An engine-only rule is that engine&rsquo;s dialect. Every workspace inherits these; switching one off here switches it off everywhere.</p>
         {layer.rules.map((r, i) => (
           <div key={r.id} className="grid items-center gap-2 md:grid-cols-[auto_110px_120px_1fr_auto]">
             <input type="checkbox" checked={r.on} aria-label="On" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, on: e.target.checked } : x) })} />
-            <select className="ctl !h-8 !text-[13px]" value={r.scope} aria-label="Scope" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, scope: e.target.value as Layer["rules"][number]["scope"] } : x) })}>
-              <option value="all">video + stills</option><option value="video">video</option><option value="image">stills</option>
+            <select className="ctl !h-8 !text-[13px]" value={r.scope} aria-label="Scope" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, scope: e.target.value } : x) })}>
+              {RULE_SCOPES.map((s) => <option key={s} value={s}>{RULE_SCOPE_LABELS[s]}</option>)}
             </select>
             <select className="ctl !h-8 !text-[13px]" value={r.apply} aria-label="Applies to" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, apply: e.target.value as Layer["rules"][number]["apply"] } : x) })}>
               <option value="writer">for the writer</option><option value="prompt">in the prompt</option>
