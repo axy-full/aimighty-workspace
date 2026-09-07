@@ -2729,3 +2729,10 @@ html, body { overflow-x: clip; }
 
 /* ── A suspended workspace ────────────────────────────────────────────── */
 .suspended-bar { padding: 8px 16px; background: color-mix(in srgb, var(--color-lift) 14%, var(--color-panel)); color: var(--color-ink); font-size: 13px; line-height: 1.4; text-align: center; }
+
+/* The camera bank's search and a used move's own last take as its tile (brief 1.4). */
+.bank-search { height: 32px; font-size: 13px; max-width: 280px; margin-left: auto; }
+.bank-tile { position: relative; }
+.bank-tile .bank-thumb { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; margin-bottom: 6px; background: var(--color-panel, #111); }
+.bank-tile .bank-thumb video, .bank-tile .bank-thumb img { width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 767px) { .bank-search { max-width: 100%; margin-left: 0; } }

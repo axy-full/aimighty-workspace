@@ -42,6 +42,8 @@ export type Category = {
      * These are written here, in that shape. None is copied.
      */
     module?: string;
+    /** Other names a filmmaker searches by ("dolly in"), for the bank's search. */
+    aka?: string;
   }[];
 };
 
@@ -83,9 +85,9 @@ export const CATEGORIES: Category[] = [
     options: [
       { value: "static", label: "Locked off", phrase: "the camera locked off",
         module: "The camera is locked on a tripod and does not move at any point: no push, no drift, no handheld breath, no stabiliser float, no reframing. Angle, height and distance to the subject are fixed from first frame to last, so every bit of movement in the shot belongs to the subject and none to the camera. The final framing is identical to the opening framing."  },
-      { value: "push", label: "Push in", phrase: "the camera pushing slowly in",
+      { value: "push", label: "Push in", aka: "dolly in", phrase: "the camera pushing slowly in",
         module: "The camera travels forward along its axis toward the subject in one continuous move, closing roughly a third of the distance across the shot and easing to a stop at the end. This is physical travel, not a zoom: the field of view never changes, so foreground edges sweep out past the frame with real parallax. No pan, no tilt, no zoom, no handheld drift; lens height stays constant throughout."  },
-      { value: "pull", label: "Pull out", phrase: "the camera pulling slowly out",
+      { value: "pull", label: "Pull out", aka: "dolly out", phrase: "the camera pulling slowly out",
         module: "The camera travels backward along its axis away from the subject in one continuous move, opening the frame to reveal the space around them, and decelerates into a held final composition. Physical travel only: the field of view is fixed, so the surroundings enter by parallax rather than by zooming. No pan, no tilt, no zoom, no crane; lens height stays constant."  },
       { value: "pan", label: "Pan", phrase: "the camera panning across",
         module: "The camera rotates horizontally from a single fixed position, like a head turning, sweeping across the scene at one smooth constant speed and easing gently to rest on its final composition. The camera body does not travel: no dolly, no truck, no arc, no slide, no zoom, no tilt. The horizon stays level and new space enters from the leading edge of frame purely through rotation."  },
@@ -226,7 +228,7 @@ export const CATEGORIES: Category[] = [
     options: [
       { value: "oner", label: "One-shot", phrase: "shot as a single continuous take, no cuts",
         module: "The entire shot is one continuous take: no cuts, no hidden transitions, no jump in time or position at any point. The camera and the action run unbroken from first frame to last."  },
-      { value: "dollyzoom", label: "Dolly zoom", phrase: "a dolly zoom: the camera tracks back while the lens zooms in, so the subject holds its size and the background swells behind it",
+      { value: "dollyzoom", label: "Dolly zoom", aka: "vertigo effect, zolly", phrase: "a dolly zoom: the camera tracks back while the lens zooms in, so the subject holds its size and the background swells behind it",
         module: "The camera physically travels toward the subject while the lens simultaneously widens, the two motions perfectly synchronised and starting and ending together. The subject's size in frame stays exactly constant throughout; the background behind them visibly stretches and recedes into depth. Constant lens height, no pan, no tilt, no handheld drift."  },
       { value: "rackfocus", label: "Rack focus", phrase: "a rack focus: the foreground falls out of focus as the subject behind it sharpens",
         module: "The camera is locked off and the only change in the shot is focus. It holds sharp on the far plane, then racks once, smoothly and continuously with no hunting and no overshoot, to the near subject. Exactly one plane is sharp at any moment and the other falls to clean bokeh. The composition itself never changes."  },
@@ -602,4 +604,35 @@ export function composePrompt(prose: string, spec: ShotSpec): string {
   // The camera block sits on its own, after the scene it applies to.
   if (camera) parts.push(camera);
   return parts.join("\n\n");
+}
+
+/* ── The bank's search and order (brief 1.4) ─────────────────────────── */
+
+/** A module's text with what the move is NOT taken out: "no dolly, no truck" must not make a pan match "dolly". */
+export function positiveText(text: string): string {
+  return text.replace(/\b(?:no|never|not|without)\b[^.;:,]*/gi, " ");
+}
+
+type SearchableOption = { value: string; label: string; phrase?: string; module?: string; aka?: string };
+
+export function searchText(o: SearchableOption): string {
+  return [o.label, o.phrase ?? "", o.aka ?? "", positiveText(o.module ?? "")].join(" ").toLowerCase();
+}
+
+/** Every term of the query appears in the option's own words. */
+export function matchesStudio(o: SearchableOption, query: string): boolean {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const hay = searchText(o);
+  return terms.every((t) => hay.includes(t));
+}
+
+/** Used in this production first, then used in this workspace, then alphabetical. Stable. */
+export function orderByUse<T extends { label: string }>(
+  items: T[], key: (t: T) => string, inProduction: Map<string, number>, inWorkspace: Map<string, number>
+): T[] {
+  return items
+    .map((t, i) => ({ t, i, p: inProduction.get(key(t)) ?? 0, w: inWorkspace.get(key(t)) ?? 0 }))
+    .sort((a, b) => (b.p - a.p) || (b.w - a.w) || a.t.label.localeCompare(b.t.label) || (a.i - b.i))
+    .map((x) => x.t);
 }

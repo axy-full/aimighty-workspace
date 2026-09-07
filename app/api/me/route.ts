@@ -3,6 +3,7 @@ import { creditState } from "@/lib/credits";
 import { requireUser, isPlatformOwner, withTenant } from "@/lib/auth";
 import { currentTenant } from "@/lib/tenant";
 import { effectiveModels } from "@/lib/defaultModels";
+import { getPlatformLayer } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
@@ -20,5 +21,6 @@ export const GET = withTenant(async function GET() {
     workspaces: store?.workspaces ?? [],
     credits: await creditState().catch(() => null),
     models: store?.workspace ? await effectiveModels().catch(() => null) : null,
+    setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
   });
 });
