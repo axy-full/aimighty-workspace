@@ -8,12 +8,12 @@
  *        -> { id, model, status, content:{video_url}, usage:{total_tokens}, created_at, updated_at }
  */
 
-import { getModel, type ModelDef } from "./models";
+import { estimateTokens, getModel, type ModelDef } from "./models";
 import { getTask, type TaskId } from "./tasks";
 import { readUploadBytes, readImageBytes, presignedReadUrl, uploadPath, imagePath, videoPath, usingBlob } from "./storage";
 import { IMAGE_LIMITS } from "./imagemeta";
 import { vendorKey } from "./vendorKeys";
-import { engineMock, mockJobId, isMockJob, mockDone, mockStartedAt, fixtureUrl } from "./mock";
+import { engineMock, mockJobId, mockTag, isMockJob, mockDone, mockStartedAt, fixtureUrl } from "./mock";
 
 const HOST =
   process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
@@ -233,13 +233,33 @@ export async function buildRequestBody(
   return body;
 }
 
+/* ── The mock charges for what was asked, not for a fixed clip ──────────
+ * The mock id carries resolution, ratio, length and input seconds; the poll
+ * reads them back and reports the catalogue's own token estimate, so a
+ * mocked render costs what the button said it would. An id without the tag
+ * (from before this) keeps the old fixed count. */
+function mockVideoTag(p: VideoParams, references: Reference[]): string {
+  const inputSeconds = references.filter((r) => r.kind === "video").reduce((a, r) => a + (Number((r as { duration?: number }).duration) || 0), 0)
+    || Number((p as { inputSeconds?: number }).inputSeconds ?? 0) || 0;
+  return `${p.resolution}-${String(p.ratio).replace(":", "x")}-${p.duration}-${Math.round(inputSeconds)}`;
+}
+
+const LEGACY_MOCK_TOKENS = 244_800;
+
+export function mockTokensFor(taskId: string): number {
+  const tag = mockTag(taskId);
+  if (!tag) return LEGACY_MOCK_TOKENS;
+  const [res, ratio, dur, inp] = tag.split("-");
+  return estimateTokens(res, (ratio ?? "16x9").replace("x", ":"), Number(dur) || 0, Number(inp) || 0) ?? LEGACY_MOCK_TOKENS;
+}
+
 export async function submitTask(
   modelId: string,
   prompt: string,
   p: VideoParams,
   references: Reference[] = []
 ): Promise<string> {
-  if (engineMock()) return mockJobId("ark");
+  if (engineMock()) return mockJobId("ark", mockVideoTag(p, references));
   const payload = JSON.stringify(await buildRequestBody(modelId, prompt, p, references));
 
   // ModelArk caps the whole JSON body at 64MB. We never shrink an image to fit —
@@ -314,7 +334,7 @@ export async function fetchTask(taskId: string): Promise<ArkTask> {
     const done = mockDone(taskId);
     return {
       id: taskId, model: "mock", status: done ? "succeeded" : "running",
-      videoUrl: done ? fixtureUrl("clip.mp4") : null, totalTokens: done ? 244_800 : null, error: null,
+      videoUrl: done ? fixtureUrl("clip.mp4") : null, totalTokens: done ? mockTokensFor(taskId) : null, error: null,
       vendorStartedAt: mockStartedAt(taskId), vendorEndedAt: done ? Date.now() : null, raw: null,
     };
   }
