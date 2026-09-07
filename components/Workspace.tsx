@@ -27,7 +27,7 @@ import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import { useOnChange } from "@/lib/changes";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { composePrompt, specCount, type ShotSpec } from "@/lib/studio";
+import { detectSpec, specCount, composePrompt, type ShotSpec } from "@/lib/studio";
 import {
   DEFAULT_MODEL_ID, MODELS, getModel, dimensionsFor,
   estimateCostUsd, estimateTokens, estimateImageCostUsd,
@@ -38,6 +38,7 @@ import { useSession } from "@/lib/session";
 import { stillToolModel } from "@/lib/stillTools";
 import { useMoney } from "@/lib/price";
 import { clampCount, newBatchId } from "@/lib/variations";
+import { shouldRefine } from "@/lib/refineGate";
 
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
@@ -295,6 +296,9 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : 0;
   const followsSource = Boolean(taskOn && getTask(taskOn.id).forceDuration === "source");
   const promptOptional = Boolean(taskOn && getTask(taskOn.id).promptOptional);
+  /* Whether the writer will run for this prompt is knowable here (the gate is pure), so the button says what it adds (brief 1.8). */
+  const willRefine = !isImage && !taskOn && Boolean(writer && writer.writer !== "none" && writer.configured) && shouldRefine(prompt, specCount(detectSpec(prompt))).refine;
+  const writerUsd = willRefine ? (writer?.usdPerCall ?? 0) : 0;
   const billedSecs = followsSource ? sourceSecs : params.duration;
   /* A still whose prompt cites a trained name renders through Flux with that
      identity (brief 1.3), so the button prices that render, not the engine's. */
@@ -534,7 +538,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         <button type="button" className="dock-go" onClick={render}
           disabled={busy || !(prompt.trim() || promptOptional) || !signedIn || Boolean(refProblem || sourceIssue)}>
           <span>{busy ? "…" : "Generate"}</span>
-          <span className="dock-cost">{est ? price(est.net * (taskOn ? 1 : countNow), params.modelId) : "—"}</span>
+          <span className="dock-cost">{est ? `${price(est.net * (taskOn ? 1 : countNow), params.modelId)}${writerUsd > 0 ? ` + ${price(writerUsd * countNow, "text")}` : ""}` : "—"}</span>
         </button>
       </div>
       {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
@@ -560,7 +564,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             blocked={!signedIn || Boolean(refProblem || sourceIssue)}
             notice={!signedIn}
             est={est} estTokens={estTokens} dims={dims} trainedCited={trainedCited}
-            count={countNow} setCount={setCount}
+            count={countNow} setCount={setCount} writerUsd={writerUsd}
             inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
             busy={busy} onRender={render}
             setupCount={setupCount} setupOpen={setupOpen} toggleSetup={toggleSetup}
@@ -608,7 +612,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             <span>{busy ? "Generating…" : isImage ? (countNow > 1 ? `Generate ${countNow} stills` : "Generate still") : countNow > 1 && !taskOn ? `Generate ${countNow} takes` : "Generate"}</span>
             <span className="btn-primary-cost">
               {est
-                ? countNow > 1 && !taskOn ? `${price(est.net * countNow, params.modelId)} · ${countNow} × ${price(est.net, params.modelId)}` : price(est.net, params.modelId)
+                ? `${countNow > 1 && !taskOn ? `${price(est.net * countNow, params.modelId)} · ${countNow} × ${price(est.net, params.modelId)}` : price(est.net, params.modelId)}${writerUsd > 0 ? ` + ${price(writerUsd * countNow, "text")} writer` : ""}`
                 : "—"}{!isImage && estTokens != null ? ` · ${compactTokens(estTokens)} TOK` : ""}
             </span>
           </button>

@@ -42,6 +42,13 @@ export type PollResult = {
 
 export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" };
 
+/** Prompt enhancement (brief 1.8): an idea, the engine it is for, and what the compiler knows — Setup, cast, rules — in; a prompt in that engine's dialect out. */
+export type EnhanceRequest = {
+  prompt: string; targetEngine: string; durationS?: number; task?: string; citations?: string[];
+  setup?: Record<string, string>; cast?: string[]; rules?: string; style?: string;
+};
+export type EnhanceResult = { text: string; model: string; inTokens: number; outTokens: number; costUsd: number | null; move?: string | null };
+
 export type EngineAdapter = {
   id: ProviderId;
   kinds: EngineKind[];
@@ -56,4 +63,7 @@ export type EngineAdapter = {
   fetchMaster?(url: string): Promise<Buffer>;
   /** A text call — the thinking engine's shape. */
   run?(req: TextRun): Promise<{ ok: boolean; status: number; text: string }>;
+  /** Prompt enhancement, priced like any render: estimateText says what a call costs at list price. */
+  enhance?(req: EnhanceRequest): Promise<EnhanceResult>;
+  estimateText?(model: string, promptChars: number, styleChars?: number): number | null;
 };

@@ -6,6 +6,7 @@ import { activeWriter, gatewayCredits } from "@/lib/enhance";
 import { safetyThreshold } from "@/lib/gemini";
 import { invalidateSettings } from "@/lib/settings";
 import { ENGINES } from "@/lib/engines";
+import { estimateRefineUsd } from "@/lib/refineGate";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,8 @@ export const GET = withTenant(async function GET() {
     gatewayCredits: credits,
     /* Who writes the prompts too thin to film — the workspace's choice on
        Settings › Prompt, resolved to what this deployment can reach. */
-    refiner: writer,
+    /* And what one of its calls costs at list price — a typical idea, the house style along — so the button can say it. */
+    refiner: { ...writer, usdPerCall: writer.writer === "none" ? 0 : (estimateRefineUsd(writer.model, 60, 1500) ?? 0) },
     engines: PROVIDERS.map((p) => ({
       id: p.id,
       label: p.label,
