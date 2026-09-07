@@ -41,6 +41,8 @@ export type PollResult = {
 };
 
 export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
+/** A chat call by its parts, so the instruction can be marked cacheable (brief 1.8). */
+export type ChatRun = { model: string; system: string; user: string; maxTokens?: number; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
 
 /** Prompt enhancement (brief 1.8): an idea, the engine it is for, and what the compiler knows — Setup, cast, rules — in; a prompt in that engine's dialect out. */
 export type EnhanceRequest = {
@@ -63,6 +65,8 @@ export type EngineAdapter = {
   fetchMaster?(url: string): Promise<Buffer>;
   /** A text call — the thinking engine's shape. */
   run?(req: TextRun): Promise<{ ok: boolean; status: number; text: string }>;
+  /** A chat call whose instruction is cached between calls. */
+  chat?(req: ChatRun): Promise<{ ok: boolean; status: number; text: string }>;
   /** Prompt enhancement, priced like any render: estimateText says what a call costs at list price. */
   enhance?(req: EnhanceRequest): Promise<EnhanceResult>;
   estimateText?(model: string, promptChars: number, styleChars?: number): number | null;

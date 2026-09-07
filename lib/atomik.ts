@@ -431,8 +431,21 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
 
   const started = Date.now();
   const auth = await gatewayAuth();
-  const send = (msgs: { role: string; content: string }[]) =>
-    gatewayPost(JSON.stringify({ model, max_tokens: 4000, messages: msgs }), { auth, timeoutMs: 180_000, mock: "turn" });
+  /* The planner's instruction is the same on every turn, so it is marked
+     cacheable (brief 1.8); a model that refuses the mark is asked plain. */
+  const shaped = (msgs: { role: string; content: string }[], cacheable: boolean) => JSON.stringify({
+    model, max_tokens: 4000,
+    messages: msgs.map((m, i) => (cacheable && i === 0 && m.role === "system" ? { ...m, cache_control: { type: "ephemeral" } } : m)),
+  });
+  const send = async (msgs: { role: string; content: string }[]) => {
+    const post = (cacheable: boolean) => gatewayPost(shaped(msgs, cacheable), { auth, timeoutMs: 180_000, mock: "turn" });
+    const r = await post(true);
+    if (r.status === 400 && /cache_control|unknown|unsupported|invalid/i.test(r.text)) {
+      console.warn(`atomik: ${model} rejected the cache mark, retrying plain — ${r.text.slice(0, 140)}`);
+      return post(false);
+    }
+    return r;
+  };
 
   const base = [
     { role: "system", content: SYSTEM },

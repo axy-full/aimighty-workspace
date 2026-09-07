@@ -108,3 +108,43 @@ export async function gatewayPost(
   });
   return { ok: res.ok, status: res.status, text: await res.text() };
 }
+
+/**
+ * A chat call whose instruction is marked cacheable (brief 1.8).
+ *
+ * Atomik sends the same system prompt, the same rule library and the same
+ * Setup on every call; a cache read costs a fraction of a fresh one. Not
+ * every model on the gateway accepts the mark, so one that refuses is asked
+ * again plain rather than failing the person's press.
+ */
+export type ChatCall = {
+  model: string; system: string; user: string; maxTokens?: number;
+  auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots";
+};
+
+/** The body of one chat call. Pure, so the shape can be read in a test. */
+export function chatBody(c: ChatCall, cacheable = true): string {
+  return JSON.stringify({
+    model: c.model,
+    max_tokens: c.maxTokens ?? 1200,
+    messages: [
+      cacheable
+        ? { role: "system", content: c.system, cache_control: { type: "ephemeral" } }
+        : { role: "system", content: c.system },
+      { role: "user", content: c.user },
+    ],
+  });
+}
+
+const REFUSED_THE_MARK = /cache_control|unknown|unsupported|invalid/i;
+
+export async function gatewayChat(c: ChatCall): Promise<GatewayReply> {
+  const send = (cacheable: boolean) =>
+    gatewayPost(chatBody(c, cacheable), { auth: c.auth, timeoutMs: c.timeoutMs, mock: c.mock });
+  const res = await send(true);
+  if (res.status === 400 && REFUSED_THE_MARK.test(res.text)) {
+    console.warn(`gatewayChat: ${c.model} rejected the cache mark, retrying plain — ${res.text.slice(0, 140)}`);
+    return send(false);
+  }
+  return res;
+}

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now, id as newId } from "@/lib/db";
-import { gatewayPost, gatewayAuth, gatewayReachable, explainGatewayFailure } from "@/lib/gateway";
+import { gatewayAuth, gatewayReachable, explainGatewayFailure } from "@/lib/gateway";
 import { resolveModel } from "@/lib/atomik";
 import { findModel, textCostUsd } from "@/lib/catalog";
 import { meter } from "@/lib/meter";
+import { engineFor } from "@/lib/engines";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -63,10 +64,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
   const auth = await gatewayAuth();
   const user = [`NOTE: ${brief}`, toneIn ? `TONE WORDS: ${toneIn}` : ""].filter(Boolean).join("\n");
-  const res = await gatewayPost(JSON.stringify({
-    model, max_tokens: 600,
-    messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
-  }), { auth, timeoutMs: 90_000, mock: "idea" });
+  const res = await engineFor("vercel").chat!({ model, system: SYSTEM, user, maxTokens: 600, auth, timeoutMs: 90_000, mock: "idea" });
   const raw = res.text;
   if (!res.ok) {
     const plain = explainGatewayFailure(res.status, raw);
