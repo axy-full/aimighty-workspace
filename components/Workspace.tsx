@@ -394,6 +394,25 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     requestAnimationFrame(() => promptRef.current?.focus());
   }
 
+  /** Render a failed take again, with its own parameters — the same shot, the next version (brief 1.5). */
+  async function retryGen(gen: Gen) {
+    const p = gen.params as Record<string, unknown>;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        prompt: (p.rawPrompt as string | undefined) || gen.prompt, model: gen.model,
+        ratio: p.ratio, resolution: p.resolution, duration: p.duration, generateAudio: Boolean(p.generateAudio), fps60: Boolean(p.fps60),
+        projectId: gen.projectId ?? null, shotId: gen.shotId ?? null,
+        task: (p.task as string | undefined) ?? "generate", sourceGenId: (p.sourceGenId as string | undefined) ?? null,
+        references: Array.isArray(p.references) ? p.references : [], shotSpec: p.shotSpec ?? undefined,
+      }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      setSelected(null); afterChange();
+    } catch (e) { await appAlert("Not started", (e as Error).message); }
+    finally { setBusy(false); }
+  }
+
   /** Attach one of ours to the next render, without leaving the room. */
   function useAsRef(gen: Gen) {
     setOwnRefs((prev) => (prev.some((g) => g.id === gen.id) ? prev : [...prev, gen]));
@@ -610,7 +629,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       <Theatre
           gens={visible} activeId={activeId}
           onClose={() => setSelected(null)} onSelect={setSelected}
-          onChanged={afterChange} onUse={useGen} onUseAsRef={useAsRef} onEditExtend={editExtend} onStillTool={stillTool}
+          onChanged={afterChange} onUse={useGen} onUseAsRef={useAsRef} onEditExtend={editExtend} onStillTool={stillTool} onRetry={retryGen}
         />
       </Boundary>
     </div>
