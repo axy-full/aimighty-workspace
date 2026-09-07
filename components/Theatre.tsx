@@ -390,7 +390,9 @@ export default function Theatre({
             </span>
           </div>
 
-          <Review key={gen.id} genId={gen.id} state={gen.reviewState ?? ""} reviewBy={gen.reviewBy ?? null} onChanged={onChanged} />
+          <Review key={gen.id} genId={gen.id} state={gen.reviewState ?? ""} reviewBy={gen.reviewBy ?? null}
+            trail={{ pickedBy: gen.pickedBy ?? null, pickedAt: gen.pickedAt ?? null, approvedBy: gen.approvedBy ?? null, approvedAt: gen.approvedAt ?? null }}
+            reason={(gen.params as { reason?: string }).reason ?? null} onChanged={onChanged} />
         </div>
       </aside>
     </div>,
