@@ -351,7 +351,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       /* Stills can go out as a batch of N: N rows, N prices, one press. A
          clip is always one. */
       const n = isImage ? count : 1;
-      let json: { id?: string; notices?: string[]; error?: string; held?: boolean } = {};
+      let json: { id?: string; notices?: string[]; error?: string; held?: boolean; why?: string } = {};
       for (let i = 0; i < n; i++) {
         const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
         json = await res.json();
@@ -364,7 +364,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       setRefs([]);
       setTaskOn(null);
       if (Array.isArray(json?.notices) && json.notices.length) {
-        await appAlert(json.held ? "Held" : "Sent", json.notices.join("\n\n"));
+        await appAlert(json.held ? (json.why === "slots" ? "Waiting" : "Held") : "Sent", json.notices.join("\n\n"));
       }
       // The spec and the shot deliberately survive: the reason to have shot
       // control at all is changing one chip and running the take again.

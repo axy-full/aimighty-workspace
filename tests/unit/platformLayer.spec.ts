@@ -24,8 +24,8 @@ test("rules are cleaned, deduplicated and scoped; the block picks by kind and au
 });
 
 test("caps are numbers or nothing", () => {
-  expect(cleanCaps({ defaultCapCredits: "2000", signupCredits: 100, warnPct: 250 })).toEqual({ defaultCapCredits: 2000, signupCredits: 100, warnPct: 80 });
-  expect(cleanCaps({ defaultCapCredits: -5, signupCredits: null, warnPct: 70 })).toEqual({ defaultCapCredits: null, signupCredits: null, warnPct: 70 });
+  expect(cleanCaps({ defaultCapCredits: "2000", signupCredits: 100, warnPct: 250 })).toMatchObject({ defaultCapCredits: 2000, signupCredits: 100, warnPct: 80, concurrency: 4, rendersPerHour: 60, storageGb: 50 });
+  expect(cleanCaps({ defaultCapCredits: -5, signupCredits: null, warnPct: 70, concurrency: 8, rendersPerHour: 0, storageGb: 2.5 })).toMatchObject({ defaultCapCredits: null, signupCredits: null, warnPct: 70, concurrency: 8, rendersPerHour: 60, storageGb: 2.5 });
 });
 
 test("the starter's shots inherit the default Setup under their own", () => {

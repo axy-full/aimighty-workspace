@@ -28,6 +28,7 @@ type Ws = {
   credits: { granted: number; used: number; balance: number } | null; createdAt: number; owner: { email: string; name: string } | null; members: number;
   spend30: { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number; marginUsd: number } | null;
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
+  limits: { concurrency: number | null; rendersPerHour: number | null; storageGb: number | null };
 };
 
 export default function AdminPage() {
@@ -279,6 +280,14 @@ function StateCell({ w, onChanged }: { w: Ws; onChanged: () => void }) {
     if (reason === null) return;
     await patch({ suspended: true, reason });
   }
+  async function setLimits() {
+    const cur = `${w.limits.concurrency ?? ""} / ${w.limits.rendersPerHour ?? ""} / ${w.limits.storageGb ?? ""}`;
+    const raw = await appPrompt("This workspace's own limits: renders at once / renders an hour / GB kept. Leave a number blank for the platform's default.", cur.trim() === "/ /" ? "" : cur, "4 / 60 / 50");
+    if (raw === null) return;
+    const parts = raw.split("/").map((s) => s.trim());
+    const num = (s: string | undefined) => (s == null || s === "" ? null : Number(s));
+    await patch({ limits: { concurrency: num(parts[0]), rendersPerHour: num(parts[1]), storageGb: num(parts[2]) } });
+  }
   async function flag() {
     const note = await appPrompt("Flag this workspace for review. A note for the desk; they do not see it.", w.flagNote ?? "", "Prompts refused twice today");
     if (note === null) return;
@@ -295,6 +304,7 @@ function StateCell({ w, onChanged }: { w: Ws; onChanged: () => void }) {
         {w.flagged
           ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
           : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
+        <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
       </span>
     </span>
   );
@@ -342,7 +352,7 @@ type Layer = {
   setup: Record<string, string>;
   starter: { name: string; code: string; description: string; shots: { code: string; title: string; description: string; planned: number; setup: Record<string, string>; cast: string[] }[]; cast: { name: string; kind: "character" | "location" | "prop" | "style"; description: string }[] };
   rules: { id: string; text: string; scope: "all" | "video" | "image"; apply: "writer" | "prompt"; on: boolean }[];
-  caps: { defaultCapCredits: number | null; signupCredits: number | null; warnPct: number };
+  caps: { defaultCapCredits: number | null; signupCredits: number | null; warnPct: number; concurrency: number; rendersPerHour: number; storageGb: number };
 };
 type LayerView = { layer: Layer; stored: string[]; defaults: Layer; cameraBank: { kind: string; value: string; label: string; module: string }[] };
 
@@ -456,6 +466,12 @@ function PlatformLayerCard() {
             <input className="ctl !h-8 !text-[13px]" type="number" min={0} value={layer.caps.defaultCapCredits ?? ""} onChange={(e) => set({ caps: { ...layer.caps, defaultCapCredits: e.target.value === "" ? null : Number(e.target.value) } })} /></label>
           <label className="flex flex-col gap-1 text-[12px] text-dim">Warn the producer at, % of cap
             <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={100} value={layer.caps.warnPct} onChange={(e) => set({ caps: { ...layer.caps, warnPct: Number(e.target.value) } })} /></label>
+          <label className="flex flex-col gap-1 text-[12px] text-dim">Renders at once (past it a take waits)
+            <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={100} value={layer.caps.concurrency} onChange={(e) => set({ caps: { ...layer.caps, concurrency: Number(e.target.value) } })} /></label>
+          <label className="flex flex-col gap-1 text-[12px] text-dim">Renders an hour
+            <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={10000} value={layer.caps.rendersPerHour} onChange={(e) => set({ caps: { ...layer.caps, rendersPerHour: Number(e.target.value) } })} /></label>
+          <label className="flex flex-col gap-1 text-[12px] text-dim">Storage kept, GB
+            <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={100000} value={layer.caps.storageGb} onChange={(e) => set({ caps: { ...layer.caps, storageGb: Number(e.target.value) } })} /></label>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { requireSuperAdmin } from "@/lib/auth";
-import { getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag } from "@/lib/platform";
+import { getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 
@@ -24,6 +24,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const on = Boolean(body.suspended);
     await setWorkspaceSuspended(id, on, on ? String(body.reason ?? "") : null);
     out.suspended = on;
+  }
+  if ("limits" in body && body.limits && typeof body.limits === "object") {
+    const l = body.limits as Record<string, unknown>;
+    const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
+    await setWorkspaceLimits(id, { concurrency: num(l.concurrency), rendersPerHour: num(l.rendersPerHour), storageGb: num(l.storageGb) });
+    out.limits = true;
   }
   if ("flagged" in body) {
     const on = Boolean(body.flagged);

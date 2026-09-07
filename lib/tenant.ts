@@ -36,6 +36,10 @@ export type TenantWorkspace = {
   /** A content-policy flag for the platform's own review; the workspace does not see it. */
   flaggedAt: number | null;
   flagNote: string | null;
+  /** This workspace's own limits; null means the platform's default (lib/limits.ts). */
+  concurrency: number | null;
+  rendersPerHour: number | null;
+  storageQuotaBytes: number | null;
   /** The Vercel AI Gateway key minted for this workspace, by id, so it can be revoked. */
   gatewayKeyId: string | null;
   ownerId: string;

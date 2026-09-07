@@ -11,6 +11,7 @@ import { meter } from "@/lib/meter";
 import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/held";
 import { creditState } from "@/lib/credits";
 import { checkCap } from "@/lib/caps";
+import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -88,9 +89,14 @@ export const POST = withTenant(async function POST(req: Request) {
   const genId = newId("gen");
   const wall = await allowanceCheck("elevenlabs", usdForCredits(estCredits, null), "elevenlabs");
   if (!wall.ok && wall.status !== 402) return NextResponse.json({ error: wall.error }, { status: wall.status });
-  const hold = !wall.ok ? heldInfo(usdForCredits(estCredits, null), "audio", modelId) : null;
+  let hold = !wall.ok ? heldInfo(usdForCredits(estCredits, null), "audio", modelId) : null;
   const capV = await checkCap(projectId, usdForCredits(estCredits, null), "elevenlabs");
   if (!capV.allow) return NextResponse.json({ error: capV.error }, { status: 409 });
+  const lim = await checkLimits();
+  if (!lim.allow && lim.why === "rate") return NextResponse.json({ error: lim.error }, { status: 429 });
+  if (!hold && !lim.allow) hold = heldInfo(usdForCredits(estCredits, null), "audio", modelId, "slots");
+  const quota = await checkQuota(0);
+  if (!quota.allow) return NextResponse.json({ error: quota.error }, { status: 507 });
   const ts = now();
   await db().execute({
     sql: `INSERT INTO generations
@@ -103,6 +109,9 @@ export const POST = withTenant(async function POST(req: Request) {
   });
   invalidate(PROJECTS_KEY);
   if (hold) {
+    if (hold.why === "slots") {
+      return NextResponse.json({ id: genId, status: "held", held: true, why: "slots", notices: [slotsMessage(lim.standing.running, lim.limits.concurrency)] }, { status: 202 });
+    }
     const left = (await creditState())?.balance ?? 0;
     await notifyHeld({ id: genId, needs: hold.needs, left }).catch(() => {});
     return NextResponse.json({ id: genId, status: "held", held: true, needs: hold.needs, notices: [heldMessage(hold.needs, left)] }, { status: 202 });

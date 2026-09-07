@@ -93,6 +93,7 @@ export default function SettingsPage() {
   const { data: usage } = useApi<Usage>(signedIn ? "/api/usage/summary" : null, 30000);
   const { data: engineData, refresh: refreshEngines } = useApi<{ engines: EngineInfo[]; refiner?: Refiner; gatewayCredits?: Credits }>("/api/engines");
   const { data: topups, refresh: refreshTopups } = useApi<TopupsView>(signedIn ? "/api/workspaces/topups" : null, 30_000);
+  const { data: limits } = useApi<{ limits: { concurrency: number; rendersPerHour: number; storageBytes: number }; standing: { running: number; startedLastHour: number; usedBytes: number } }>(signedIn ? "/api/limits" : null, 60_000);
   const { data: team } = useApi<Team>(signedIn ? "/api/team" : null, 60000);
   const { data: ws, refresh: refreshWs } = useApi<Ws>(signedIn ? "/api/settings" : null, 0);
   const { data: idTerms } = useApi<IdTerms>(signedIn ? "/api/identities" : null, 0);
@@ -292,7 +293,7 @@ export default function SettingsPage() {
           <section id="masters" className="scard">
             <div className="scard-h"><span>Storage &amp; masters</span><span>Masters are stored byte-for-byte and never compressed to suit an API. What the engine returned is what you download.</span></div>
             <div className="grid grid-cols-3 gap-2.5 max-[900px]:grid-cols-1">
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">BUCKET</span><span className="text-[18px] font-semibold">{ledger?.storage ? gb(ledger.storage.bytes) : "—"}</span><span className="text-[12px] leading-[1.4] text-dim">private Blob · {ledger?.storage ? `${ledger.storage.counted.toLocaleString()} files${ledger.storage.unmeasured ? ` (+${ledger.storage.unmeasured} unmeasured)` : ""}${money.inCredits ? "" : ` · ${usd(ledger.storage.monthlyUsd, 2)} a month`}` : "sign in for the count"} · {setting("retentionDays") === "0" || !setting("retentionDays") ? "every take kept, nothing pruned" : `deleted takes pruned after ${setting("retentionDays")} days`}</span></div>
+              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">BUCKET</span><span className="text-[18px] font-semibold">{ledger?.storage ? gb(ledger.storage.bytes) : "—"}{limits ? <span className="text-[13px] font-normal text-dim"> of {gb(limits.limits.storageBytes)}</span> : null}</span><span className="text-[12px] leading-[1.4] text-dim">private Blob · {ledger?.storage ? `${ledger.storage.counted.toLocaleString()} files${ledger.storage.unmeasured ? ` (+${ledger.storage.unmeasured} unmeasured)` : ""}${money.inCredits ? "" : ` · ${usd(ledger.storage.monthlyUsd, 2)} a month`}` : "sign in for the count"} · {setting("retentionDays") === "0" || !setting("retentionDays") ? "every take kept, nothing pruned" : `deleted takes pruned after ${setting("retentionDays")} days`}</span></div>
               <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">FILE NAMING</span><span className="mono-v !text-[12.5px] !leading-[1.4]">{setting("namingTemplate") || "{project}_{shot}_{version}_{w}x{h}.{ext}"}</span><span className="text-[12px] leading-[1.4] text-dim">Filing against a shot is what gives a take its number and its name.</span></div>
               <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">DELIVERY</span><span className="text-[18px] font-semibold">Per shot</span><span className="text-[12px] leading-[1.4] text-dim">Approved masters download one shot at a time from the Canvas. Everyone on the team can download; a derived copy travels only when an API needs one.</span></div>
             </div>
@@ -355,6 +356,9 @@ export default function SettingsPage() {
               </div>
             </div>
             <span className="rail-help">A production&rsquo;s cap is set on its page, in {money.inCredits ? "credits" : "dollars"}. These rules apply at the cost check whenever a production has one; the workspace balance is the hard stop above them.</span>
+            {limits && (
+              <span className="rail-help">Limits: {limits.limits.concurrency} renders at once ({limits.standing.running} going) · {limits.limits.rendersPerHour} an hour ({limits.standing.startedLastHour} started this hour) · {gb(limits.limits.storageBytes)} kept ({gb(limits.standing.usedBytes)} used). A take past the first waits for a slot; the platform sets these.</span>
+            )}
           </section>
 
           {/* ── Account ── */}

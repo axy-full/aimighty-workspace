@@ -13,7 +13,7 @@ process.env.CREDIT_USD = "0.10";
 const workspace = (id: string, own = false) => ({
   id, slug: id, name: id, legacy: false, dbUrl: process.env.TURSO_DATABASE_URL, dbToken: null,
   keys: own ? { ark: "own" } : {}, usesPlatformKeys: !own, allowanceUsd: null, gatewayKeyId: null, ownerId: "u", createdAt: 0,
-  suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null,
+  suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null,
 });
 
 test("spend, billed and failures are summed per workspace, engine health per engine", async () => {

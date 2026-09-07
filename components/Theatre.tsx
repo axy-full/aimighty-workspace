@@ -195,9 +195,11 @@ export default function Theatre({
           <div className="theatre-face">
             {gen.status === "held" ? (
               <>
-                <p className="text-[15px] font-medium text-white/90">Held</p>
+                <p className="text-[15px] font-medium text-white/90">{(gen.params as { held?: { why?: string } }).held?.why === "slots" ? "Waiting for a slot" : "Held"}</p>
                 <p className="mt-1 text-[13px] text-white/60">
-                  Needs {Number((gen.params as { held?: { needs?: number } }).held?.needs ?? 0)} credits. Top up to release it — nothing is lost.
+                  {(gen.params as { held?: { why?: string } }).held?.why === "slots"
+                    ? "It starts the moment a render lands."
+                    : `Needs ${Number((gen.params as { held?: { needs?: number } }).held?.needs ?? 0)} credits. Top up to release it — nothing is lost.`}
                 </p>
               </>
             ) : live ? (

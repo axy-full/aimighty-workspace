@@ -109,7 +109,7 @@ export default function GenCard({
           <span className="tile-face">
             {live && <ParticlSpinner size={24} className="text-dim" />}
             <span className={`tile-face-label ${live ? "" : held ? "text-dim" : "text-lift"}`}>
-              {live ? (gen.status === "queued" ? "Queued…" : "Rendering…") : held ? "Held · top up to release" : gen.status === "cancelled" ? "Cancelled" : "Failed"}
+              {live ? (gen.status === "queued" ? "Queued…" : "Rendering…") : held ? ((gen.params as { held?: { why?: string } }).held?.why === "slots" ? "Waiting for a slot" : "Held · top up to release") : gen.status === "cancelled" ? "Cancelled" : "Failed"}
             </span>
             {gen.error && <span className="tile-face-error">{gen.error.slice(0, 150)}</span>}
           </span>
