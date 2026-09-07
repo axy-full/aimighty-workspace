@@ -52,7 +52,7 @@ export const POST = withTenant(async function POST(req: Request) {
     `SCENE ${n} — ${scene.title || "Untitled"} (${scene.secs}s):\n${scene.prose || "(empty)"}`,
     `THE RULE SAYS: ${hint.engine} (${hint.why}). Follow it unless a shot is clearly otherwise, and say why.`,
   ].filter(Boolean).join("\n\n");
-  const res = await engineFor("vercel").run!({ body: JSON.stringify({ model, max_tokens: 2400, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }] }), auth, timeoutMs: 120_000, mock: "shots" });
+  const res = await engineFor("vercel").chat!({ model, system: SYSTEM, user, maxTokens: 2400, auth, timeoutMs: 120_000, mock: "shots" });
   const raw = res.text;
   if (!res.ok) {
     const plain = explainGatewayFailure(res.status, raw);
