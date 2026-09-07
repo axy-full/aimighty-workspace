@@ -97,6 +97,19 @@ const SCHEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS topup_requests_ws ON topup_requests(workspace_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS topup_requests_status ON topup_requests(status, created_at)`,
+  `CREATE TABLE IF NOT EXISTS platform_assets (
+     key                 TEXT PRIMARY KEY,
+     path                TEXT NOT NULL,
+     bytes               INTEGER NOT NULL DEFAULT 0,
+     mime                TEXT NOT NULL DEFAULT 'video/mp4',
+     source_workspace_id TEXT,
+     source_gen_id       TEXT,
+     model               TEXT,
+     cost_usd            REAL,
+     created_by          TEXT,
+     created_at          INTEGER NOT NULL,
+     updated_at          INTEGER NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS reports (
      id            TEXT PRIMARY KEY,
      url           TEXT NOT NULL,
@@ -223,6 +236,7 @@ export function rowToWorkspace(r: any): TenantWorkspace {
     concurrency: r.concurrency == null ? null : Number(r.concurrency),
     rendersPerHour: r.renders_per_hour == null ? null : Number(r.renders_per_hour),
     storageQuotaBytes: r.storage_quota_bytes == null ? null : Number(r.storage_quota_bytes),
+    internalTest: Number(r.internal_test ?? 0) === 1,
     deletedAt: r.deleted_at == null ? null : Number(r.deleted_at),
   };
 }
@@ -271,7 +285,7 @@ export function platformReady(): Promise<void> {
       for (const stmt of SCHEMA) await p.execute(stmt);
       /* Columns added after the table first shipped reach an existing
          database only by ALTER; a duplicate is the one error to ignore. */
-      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`]) {
+      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`, `internal_test INTEGER`]) {
         try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
       }
@@ -635,4 +649,34 @@ export async function resetPlatformLayer(key: LayerKey): Promise<PlatformLayer> 
   await platformDb().execute({ sql: `DELETE FROM platform_layer WHERE key = ?`, args: [key] });
   _layer = null;
   return getPlatformLayer();
+}
+
+/** Mark a workspace as the platform's own internal test workspace — the one place a real engine call may be made for the platform's sake (brief 1.4). */
+export async function setWorkspaceInternalTest(id: string, on: boolean): Promise<void> {
+  await platformReady();
+  await platformDb().execute({ sql: `UPDATE workspaces SET internal_test = ?, updated_at = ? WHERE id = ?`, args: [on ? 1 : 0, now(), id] });
+}
+
+export type PlatformAsset = { key: string; path: string; bytes: number; mime: string; sourceWorkspaceId: string | null; sourceGenId: string | null; model: string | null; costUsd: number | null; createdAt: number };
+
+export async function listPlatformAssets(prefix: string): Promise<PlatformAsset[]> {
+  await platformReady();
+  const rs = await platformDb().execute({ sql: `SELECT * FROM platform_assets WHERE key LIKE ? ORDER BY key`, args: [`${prefix}%`] });
+  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+    key: String(r.key), path: String(r.path), bytes: Number(r.bytes ?? 0), mime: String(r.mime ?? "video/mp4"),
+    sourceWorkspaceId: r.source_workspace_id == null ? null : String(r.source_workspace_id), sourceGenId: r.source_gen_id == null ? null : String(r.source_gen_id),
+    model: r.model == null ? null : String(r.model), costUsd: r.cost_usd == null ? null : Number(r.cost_usd), createdAt: Number(r.created_at),
+  }));
+}
+
+export async function putPlatformAsset(a: { key: string; path: string; bytes: number; mime: string; sourceWorkspaceId: string; sourceGenId: string; model: string; costUsd: number | null; by: string }): Promise<void> {
+  await platformReady();
+  const ts = now();
+  await platformDb().execute({
+    sql: `INSERT INTO platform_assets (key, path, bytes, mime, source_workspace_id, source_gen_id, model, cost_usd, created_by, created_at, updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(key) DO UPDATE SET path = excluded.path, bytes = excluded.bytes, mime = excluded.mime, source_workspace_id = excluded.source_workspace_id,
+            source_gen_id = excluded.source_gen_id, model = excluded.model, cost_usd = excluded.cost_usd, created_by = excluded.created_by, updated_at = excluded.updated_at`,
+    args: [a.key, a.path, a.bytes, a.mime, a.sourceWorkspaceId, a.sourceGenId, a.model, a.costUsd, a.by, ts, ts],
+  });
 }

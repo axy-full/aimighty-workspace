@@ -40,6 +40,8 @@ export type TenantWorkspace = {
   concurrency: number | null;
   rendersPerHour: number | null;
   storageQuotaBytes: number | null;
+  /** The platform's own internal test workspace (brief 1.4): the one place a real engine call may be made for the platform's sake. */
+  internalTest?: boolean;
   /** Set once the owner deleted it; the purge follows (lib/purge.ts). */
   deletedAt: number | null;
   /** The Vercel AI Gateway key minted for this workspace, by id, so it can be revoked. */

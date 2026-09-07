@@ -15,8 +15,10 @@ import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import { CATEGORIES } from "@/lib/studio";
 import { REASON_LABELS } from "@/lib/reports";
-import { MODELS } from "@/lib/models";
+import { getModel, MODELS } from "@/lib/models";
 import { RULE_SCOPES, RULE_SCOPE_LABELS } from "@/lib/platformLayer";
+import { PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
+import { billCredits } from "@/lib/creditTerms";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -32,6 +34,7 @@ type Ws = {
   spend30: { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number; marginUsd: number } | null;
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
   limits: { concurrency: number | null; rendersPerHour: number | null; storageGb: number | null };
+  internalTest?: boolean;
 };
 
 export default function AdminPage() {
@@ -128,6 +131,8 @@ export default function AdminPage() {
             <EnginesCard />
 
             <PlatformLayerCard />
+
+            <PreviewsCard />
 
             <section className="scard">
               <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with ${data.signupCredits} credits (one credit is ${usd(data.creditUsd, 2)} of vendor cost) — or on its own keys once its owner switches. Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a Vercel AI Gateway key of its own."}</span></div>
@@ -310,6 +315,7 @@ function StateCell({ w, onChanged }: { w: Ws; onChanged: () => void }) {
           ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
           : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
         <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
+        <button type="button" className={`chip !py-0.5 !text-[11.5px] ${w.internalTest ? "is-on" : ""}`} disabled={busy} onClick={() => patch({ internalTest: !w.internalTest })} title="The platform's own internal test workspace: the one place a real engine call may be made for the platform's sake">{w.internalTest ? "Test workspace" : "Make test"}</button>
       </span>
     </span>
   );
@@ -545,6 +551,102 @@ function ReportsCard() {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+/* ── The bank's neutral previews: one costed batch, from the test workspace (brief 1.4) ── */
+type PreviewsView = {
+  plan: { modelId: string; resolution: string; duration: number; count: number; perClipUsd: number; totalUsd: number; items: { key: string; label: string; kind: string }[] };
+  scene: string;
+  workspace: { id: string; name: string; internalTest: boolean } | null;
+  candidates: { genId: string; key: string; model: string; costUsd: number | null; status: string; createdAt: number }[];
+  assets: { key: string; bytes: number; model: string | null; costUsd: number | null; createdAt: number }[];
+};
+
+function PreviewsCard() {
+  const [model, setModel] = useState<string>(PREVIEW_MODELS[0]);
+  const [resolution, setResolution] = useState<string>(PREVIEW_RESOLUTIONS[0]);
+  const [duration, setDuration] = useState<number>(PREVIEW_DURATIONS[0]);
+  const q = `model=${encodeURIComponent(model)}&resolution=${resolution}&duration=${duration}`;
+  const { data, refresh } = useApi<PreviewsView>(`/api/admin/previews?${q}`, 0);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; failed: number } | null>(null);
+  if (!data) return null;
+  const { plan, workspace, candidates, assets } = data;
+  const ready = candidates.filter((c) => c.status === "succeeded").length;
+  const running = candidates.filter((c) => c.status === "running" || c.status === "held").length;
+  const testOk = Boolean(workspace?.internalTest);
+  const credits = billCredits(plan.perClipUsd, plan.modelId) * plan.count;
+
+  async function generate() {
+    if (!workspace || !testOk) return;
+    const ok = await appConfirm(
+      `Render ${plan.count} previews in ${workspace.name} for $${plan.totalUsd.toFixed(2)}?`,
+      `${plan.count} clips × $${plan.perClipUsd.toFixed(3)} at ${getModel(plan.modelId).label}, ${plan.resolution}, ${plan.duration}s, silent. ${assets.length ? `${assets.length} previews are already published; publishing again replaces them.` : "This runs once for the whole platform."}`,
+      { confirmLabel: `Spend $${plan.totalUsd.toFixed(2)}`, danger: true },
+    );
+    if (!ok) return;
+    setBusy("generate"); setProgress({ done: 0, failed: 0 });
+    let done = 0, failed = 0;
+    for (const item of plan.items) {
+      try {
+        const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          prompt: data!.scene, model: plan.modelId, resolution: plan.resolution, ratio: "16:9", duration: plan.duration, generateAudio: false,
+          shotSpec: { [item.kind]: item.key.split(":")[1] }, previewFor: item.key, projectId: null,
+        }) });
+        if (!res.ok) failed++; else done++;
+      } catch { failed++; }
+      setProgress({ done, failed });
+    }
+    setBusy(null); refresh();
+  }
+
+  async function publish() {
+    setBusy("publish");
+    try {
+      const res = await fetch("/api/admin/previews", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "publish" }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      await appAlert("Published", `${(j.published ?? []).length} previews are now the platform's.${(j.failed ?? []).length ? ` ${(j.failed ?? []).length} did not copy.` : ""}`);
+      refresh();
+    } catch (e) { await appAlert("Not published", (e as Error).message); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <section className="scard">
+      <div className="scard-h"><span>Camera previews</span><span>One neutral clip per move and technique, rendered once from the test workspace and served to every workspace.</span></div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="flex flex-col gap-1 text-[12px] text-dim">Engine
+          <select className="ctl !h-8 !text-[13px]" value={model} onChange={(e) => setModel(e.target.value)}>
+            {PREVIEW_MODELS.map((m) => <option key={m} value={m}>{getModel(m).label}</option>)}
+          </select></label>
+        <label className="flex flex-col gap-1 text-[12px] text-dim">Resolution
+          <select className="ctl !h-8 !text-[13px]" value={resolution} onChange={(e) => setResolution(e.target.value)}>
+            {PREVIEW_RESOLUTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select></label>
+        <label className="flex flex-col gap-1 text-[12px] text-dim">Seconds
+          <select className="ctl !h-8 !text-[13px]" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+            {PREVIEW_DURATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select></label>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+        <span className="font-semibold text-ink">{plan.count} clips × ${plan.perClipUsd.toFixed(3)} = ${plan.totalUsd.toFixed(2)}</span>
+        <span className="text-mute">≈ {credits.toLocaleString("en-US")} cr at the engine&rsquo;s margin</span>
+        <span className="text-mute">{workspace ? (testOk ? `From ${workspace.name} (test workspace)` : `${workspace.name} is not a test workspace — switch to one, or mark one above`) : "No workspace"}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button type="button" className="btn-primary !h-8 !px-3 !text-[12.5px]" disabled={!testOk || busy != null} onClick={generate}>
+          {busy === "generate" && progress ? `Rendering… ${progress.done + progress.failed} of ${plan.count}` : `Render ${plan.count} previews`}
+        </button>
+        <button type="button" className="chip" disabled={!testOk || busy != null || !ready} onClick={publish}>{busy === "publish" ? "Publishing…" : `Publish ${ready} ready`}</button>
+        {running > 0 && <span className="text-[12.5px] text-mute">{running} still rendering</span>}
+        <span className="ml-auto text-[12.5px] text-mute">{assets.length} of {plan.count} published</span>
+      </div>
+      {assets.length > 0 && (
+        <p className="mt-2 text-[12px] text-mute">Published: {assets.map((a) => a.key).join(" · ")}</p>
+      )}
     </section>
   );
 }

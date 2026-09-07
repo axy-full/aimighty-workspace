@@ -744,6 +744,8 @@ export const POST = withTenant(async function POST(req: Request) {
     rawPrompt,
     cast: castUsed.length ? castUsed : undefined,
     shotSpec: shotSpec && Object.keys(shotSpec).length ? shotSpec : undefined,
+    // The bank's neutral preview this clip is for, when the console rendered it for one (brief 1.4).
+    previewFor: typeof body.previewFor === "string" && /^[a-z]+:[a-z0-9_-]+$/i.test(body.previewFor) ? body.previewFor : undefined,
     task: task.id !== "generate" ? task.id : undefined,
     sourceGenId: sourceGenId ?? undefined,
     sourceSeconds: sourceSeconds ?? undefined,
