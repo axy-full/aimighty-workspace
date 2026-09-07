@@ -19,6 +19,7 @@ import { useMoney } from "@/lib/price";
  */
 
 export type IdentityView = {
+  consentAt?: number | null; consentBy?: string | null;
   id: string; projectId: string | null; name: string; description: string;
   photos: string[]; status: "draft" | "training" | "ready" | "failed";
   trigger: string | null; steps: number | null; costUsd: number | null; error: string | null;
@@ -120,7 +121,7 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
     setErr(null);
     setBusy("Handing the photos to the trainer…");
     try {
-      const res = await fetch(`/api/identities/${target.id}/train`, { method: "POST" });
+      const res = await fetch(`/api/identities/${target.id}/train`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consent: true }) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Couldn't start training");
       setIdentity(json.identity); setProgress(null);
@@ -138,7 +139,9 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
   }
 
   const enough = photos.length >= terms.minPhotos;
-  const canTrain = terms.configured && enough && !training && !busy;
+  const [consent, setConsent] = useState(false);
+  const consented = consent || Boolean(identity?.consentAt);
+  const canTrain = (terms.configured && enough && !training && !busy) && consented;
 
   return (
     <div className="sheet-veil" onClick={onClose}>
@@ -264,11 +267,17 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
               </button>
             )}
             {!ready && (
+              <>
+              <label className="flex items-start gap-2 text-[12.5px] text-dim">
+                <input type="checkbox" className="mt-0.5" checked={consented} disabled={Boolean(identity?.consentAt) || busy != null} onChange={(e) => setConsent(e.target.checked)} aria-label="Consent to train" />
+                <span>{identity?.consentAt ? "Consent on record." : "I have the right to train on this person\u2019s face."}</span>
+              </label>
               <button type="button" onClick={() => (isNew || dirty ? save(true) : train())} disabled={!canTrain}
                 className="btn-render h-[36px] px-5 text-[14px] disabled:opacity-50"
                 title={!terms.configured ? "fal.ai isn't connected" : !enough ? `Needs ${terms.minPhotos} photos` : ""}>
                 <IconSparkle className="!h-4 !w-4" /> {identity?.status === "failed" ? "Train again" : "Train"}
               </button>
+              </>
             )}
           </span>
         </footer>

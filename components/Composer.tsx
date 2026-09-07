@@ -68,6 +68,8 @@ export type ComposerProps = {
    *  disables the button. A failed submit is shown, never locked in. */
   blocked: boolean;
   est: { net: number } | null; estTokens: number | null; dims: { w: number; h: number } | null;
+  /** The trained cast name the prompt cites, when one does (brief 1.3). */
+  trainedCited?: string | null;
   inputSeconds: number; hasVideoInput: boolean; imageRefCount: number;
   busy: boolean; onRender: () => void;
   /** Our own renders attached to this one, and how to take one off. */
@@ -87,7 +89,7 @@ export default function Composer(p: ComposerProps) {
   const {
     prompt, setPrompt, promptRef, params, patch, model, engines, writer,
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked, notice,
-    est, estTokens, dims, inputSeconds, hasVideoInput, imageRefCount,
+    est, estTokens, dims, trainedCited = null, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
     pickMode, onPickSource, onDropAsset, rail = false,
   } = p;
@@ -121,6 +123,9 @@ export default function Composer(p: ComposerProps) {
      is the clip's seconds times the rate. */
   const taskDef = taskOn ? getTask(taskOn.id) : null;
   const followsSource = taskDef?.forceDuration === "source";
+  /* A still whose prompt cites a trained name renders through Flux with that
+     identity (brief 1.3): the parent priced it so; the margin key follows. */
+  const priceModelId = trainedCited ? "fal-ai/flux-lora" : params.modelId;
   const promptOptional = Boolean(taskDef?.promptOptional);
   const falTask = taskOn?.id === "motion" || taskOn?.id === "upscale" || taskOn?.id === "reframe";
   const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : 0;
@@ -427,7 +432,7 @@ export default function Composer(p: ComposerProps) {
         {!rail && <span className="relative" ref={costRef}>
           <button type="button" onClick={() => setMenu(menu === "cost" ? null : "cost")} className="island-cost"
             title="What this take will cost">
-            <span className="font-semibold text-bone">{est ? price(est.net, params.modelId) : "—"}</span>
+            <span className="font-semibold text-bone">{est ? price(est.net, priceModelId) : "—"}</span>
             {!isImage && estTokens != null && (
               <span className="text-mute max-[560px]:hidden"> · {compactTokens(estTokens)} tok</span>
             )}
@@ -436,6 +441,7 @@ export default function Composer(p: ComposerProps) {
             <>
               <span className="menu-pop island-menu island-menu-right block w-[280px] px-3.5 py-3 text-left text-[13px] leading-relaxed text-dim">
                 {isImage ? (
+                  trainedCited ? <>Rendered by Flux with @{trainedCited}&rsquo;s trained likeness — {price(est?.net ?? 0, priceModelId)} a still. Your prompt goes as written.</> :
                   <>Flat per still on Google — {price(est?.net ?? 0, params.modelId)} at {params.resolution.toUpperCase()}{imageRefCount ? ` with ${imageRefCount} reference${imageRefCount === 1 ? "" : "s"}` : ""}. The model thinks before it draws; your prompt goes as written. A refusal costs nothing.</>
                 ) : secondRate != null ? (
                   <>Billed per second on fal.ai: {money.rate(secondRate, params.modelId)}/s × {billedSecs || "the clip's"}s{params.fps60 ? ", doubled for 60 fps" : ""}.{followsSource ? " The length follows the clip." : ""} {taskOn?.id === "upscale" || taskOn?.id === "reframe" ? "Nothing has to be written: the clip is the brief." : "Your words go as written."}</>

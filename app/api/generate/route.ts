@@ -30,6 +30,7 @@ import { getPlatformLayer } from "@/lib/platform";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 import { effectiveRules } from "@/lib/rules";
 import { stillToolFor } from "@/lib/stillTools";
+import { identityForCast, startIdentityStill, runIdentityRender, RENDER_USD_PER_MP, RENDER_RATIOS } from "@/lib/identities";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -367,6 +368,7 @@ export const POST = withTenant(async function POST(req: Request) {
    * ------------------------------------------------------------------ */
   let castPrompt = prompt;
   let castUsed: string[] = [];
+  let castIds: string[] = [];
   if (/@[A-Za-z]/.test(prompt)) {
     const roster = await listCast(projectIdForCast);
     const startIndex = references.filter(
@@ -398,6 +400,7 @@ export const POST = withTenant(async function POST(req: Request) {
     }
     castPrompt = expanded.prompt;
     castUsed = expanded.used.map((m) => m.name);
+    castIds = expanded.used.map((m) => m.id);
   }
 
   /* Motion control moves a character: it needs the still as well as the clip. */
@@ -445,7 +448,10 @@ export const POST = withTenant(async function POST(req: Request) {
     }
     /* The price, on the server: the wall checks the workspace can pay it,
        and the meter opens the job with it as the estimate. */
-    const estStillUsd = estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0;
+    /* A cited name that is a trained likeness: the still renders through Flux
+       with the identity's own model (brief 1.3), priced as that render. */
+    const trained = !model.stillTask && castIds.length ? await identityForCast(castIds) : null;
+    const estStillUsd = trained ? RENDER_USD_PER_MP : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0);
     const wallStill = await allowanceCheck(vendorKeyNameFor(model.provider), estStillUsd, modelId);
     if (!wallStill.ok && wallStill.status !== 402) return NextResponse.json({ error: wallStill.error }, { status: wallStill.status });
     let holdStill = !wallStill.ok ? heldInfo(estStillUsd, "image", modelId) : null;
@@ -456,6 +462,13 @@ export const POST = withTenant(async function POST(req: Request) {
     if (!holdStill && !limStill.allow) holdStill = heldInfo(estStillUsd, "image", modelId, "slots");
     const quotaStill = await checkQuota(0);
     if (!quotaStill.allow) return NextResponse.json({ error: quotaStill.error }, { status: 507 });
+    if (trained) {
+      if (holdStill) return NextResponse.json({ error: !wallStill.ok ? wallStill.error : "Every render slot is busy; try again in a moment." }, { status: !wallStill.ok ? 402 : 429 });
+      const idRatio = (RENDER_RATIOS as readonly string[]).includes(ratio) ? ratio : "16:9";
+      const started = await startIdentityStill({ identity: trained, prompt, ratio: idRatio, projectId: stillProject, shotId: stillShot, version: stillVersion, createdBy: got.user.id, tokenId: got.token?.id ?? null });
+      after(() => runIdentityRender(started.genId, trained, { prompt: started.finalPrompt, ratio: idRatio, seed: null, startedAt: started.ts }));
+      return NextResponse.json({ id: started.genId, status: "running", identity: trained.name });
+    }
     const genId = id("gen");
     const ts = now();
     const stillParams = {

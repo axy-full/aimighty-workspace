@@ -501,6 +501,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       // A deleted member is retired, not erased: their renders and spend keep
       // their name on the ledger, while access and listings treat them as gone.
       await addColumn(c, "users", `deleted_at INTEGER`);
+      // Consent to train on a face, stored with the identity (brief 1.3).
+      await addColumn(c, "identities", `consent_by TEXT`);
+      await addColumn(c, "identities", `consent_at INTEGER`);
       // Looks: a category, a cover, a blurb, a style block, references,
       // and whether the product shipped it.
       for (const col of [
