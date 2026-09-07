@@ -2786,3 +2786,6 @@ html, body { overflow-x: clip; }
 
 /* The shot builder's proposals on the breakdown (brief 1.8). */
 .ak-prop-shot { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--color-line); }
+
+/* A name called out in a note (brief 2.1). */
+.note-at { color: var(--color-blue); font-weight: 500; }
