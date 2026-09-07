@@ -26,8 +26,15 @@ export const fixtureUrl = (name: FixtureName): string => `${FIXTURE}${name}`;
 /* fixtureBytes and fetchBytes live in ./mockFs — they read disk, and this
    module is also bundled for the browser. */
 
-/** A mock job id carries its birth time; the job is "done" a few seconds later. */
-export const mockJobId = (prefix: string): string => `mock_${prefix}_${Date.now()}`;
+/** A mock job id carries its birth time — and, when given, a tag of what was
+ *  asked for (no underscores in it), so the mock can charge for THAT and not
+ *  for some fixed clip; the job is "done" a few seconds later. */
+export const mockJobId = (prefix: string, tag?: string): string => `mock_${prefix}_${tag ? `${tag.replace(/_/g, "-")}_` : ""}${Date.now()}`;
+/** The tag a mock id was given, or null for an id without one. */
+export function mockTag(id: string): string | null {
+  const parts = id.split("_");
+  return parts.length >= 4 ? parts.slice(2, -1).join("_") : null;
+}
 export const isMockJob = (id: string): boolean => id.startsWith("mock_");
 export function mockDone(id: string, delayMs = 3000): boolean {
   const ts = Number(id.split("_").pop());
