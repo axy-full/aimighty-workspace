@@ -40,7 +40,7 @@ export type PollResult = {
   vendorStartedAt: number | null; vendorEndedAt: number | null; raw: unknown;
 };
 
-export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" };
+export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" };
 
 /** Prompt enhancement (brief 1.8): an idea, the engine it is for, and what the compiler knows — Setup, cast, rules — in; a prompt in that engine's dialect out. */
 export type EnhanceRequest = {
