@@ -103,7 +103,7 @@ export default function ProjectsPage() {
         </div>
 
         {!signedIn ? (
-          <Empty title="Productions are for the team"
+          <Empty demo title="Productions are for the team"
             line="Sign in to see the studio's productions — their stage, their shots, what they have cost so far. Everything else on this screen is yours to look at." />
         ) : !data ? (
           <Waiting label="Reading the productions" />

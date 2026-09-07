@@ -1,12 +1,10 @@
-import { requireUser, withTenant } from "@/lib/auth";
+import { withTenant } from "@/lib/auth";
 import { usingBlob, presignedReadUrl, platformPath, readPlatformBytes } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
 /** One neutral preview clip: a short-lived redirect to storage, or the bytes locally. */
 export const GET = withTenant(async function GET(req: Request, ctx: { params: Promise<{ key: string }> }) {
-  const got = await requireUser();
-  if (got.response) return got.response;
   const { key } = await ctx.params;
   const k = decodeURIComponent(key);
   if (!/^[a-z]+:[a-z0-9_-]+$/i.test(k)) return new Response("bad key", { status: 400 });

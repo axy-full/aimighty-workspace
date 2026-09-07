@@ -182,7 +182,7 @@ export default function LibraryPage() {
 
       <div className="page !p-[22px_24px_48px] flex flex-col gap-7">
         {!signedIn ? (
-          <Empty title="The takes are private" line="Every take the studio has made lives here, newest first, filed under its production and shot. Sign in to see it." />
+          <Empty demo title="The takes are private" line="Every take the studio has made lives here, newest first, filed under its production and shot. Sign in to see it." />
         ) : !data ? (
           <Waiting label="Opening the takes" />
         ) : gens.length === 0 ? (

@@ -4,6 +4,7 @@ import { useSession, useSignInHref } from "@/lib/session";
 import { usePathname } from "next/navigation";
 import { AtomikMark, AtomikSpinner } from "@/components/AtomikMark";
 import { RequestAccessButton } from "./RequestAccess";
+import Link from "next/link";
 
 /**
  * particl studio — the logo system, in code.
@@ -181,8 +182,10 @@ export function Trouble({ label = "This didn't load", detail, onRetry }: {
   );
 }
 
-export function Empty({ title, line, action, compact = false }: {
+export function Empty({ title, line, action, compact = false, demo = false }: {
   title: string; line?: string; action?: React.ReactNode; compact?: boolean;
+  /** Signed out: point at the demo production instead of at nothing (brief 1.7). */
+  demo?: boolean;
 }) {
   const atomik = useInAtomik();
   return (
@@ -193,6 +196,7 @@ export function Empty({ title, line, action, compact = false }: {
       <p className={`mt-3 font-medium text-dim ${compact ? "text-[14px]" : "text-[15px]"}`}>{title}</p>
       {line && <p className="mt-1 max-w-[40ch] text-[13px] leading-relaxed text-mute">{line}</p>}
       {action && <div className="mt-4">{action}</div>}
+    {demo && <Link href="/welcome#demo" className="hdr-mono-link mt-3">SEE THE DEMO PRODUCTION →</Link>}
     </div>
   );
 }
