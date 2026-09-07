@@ -17,7 +17,7 @@ import Feed, { type FeedFilter } from "./Feed";
 import Boundary from "./Boundary";
 import SourcePicker from "./SourcePicker";
 import { getTask, sourceProblem, type TaskId, type LockedTaskId } from "@/lib/tasks";
-import Composer, { type Engine, type WriterInfo } from "./Composer";
+import Composer, { type Engine, type WriterInfo, type ApprovalInfo } from "./Composer";
 import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
 import ShotRow from "./ShotRow";
@@ -39,6 +39,7 @@ import { stillToolModel } from "@/lib/stillTools";
 import { useMoney } from "@/lib/price";
 import { clampCount, newBatchId } from "@/lib/variations";
 import { shouldRefine } from "@/lib/refineGate";
+import { ruleLine } from "@/lib/approvalRule";
 import { uploadSource, uploadSourceParams } from "@/lib/sourceClip";
 
 export type Params = {
@@ -142,7 +143,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   }, []);
 
   // Which vendors have keys — decides which engines the menu will offer.
-  const { data: engineData } = useApi<{ engines: Engine[]; refiner?: WriterInfo }>("/api/engines", 0);
+  const { data: engineData } = useApi<{ engines: Engine[]; refiner?: WriterInfo; approval?: ApprovalInfo }>("/api/engines", 0);
   const engines = useMemo(() => engineData?.engines ?? [], [engineData]);
   const writer = engineData?.refiner ?? null;
 
@@ -303,6 +304,10 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* Whether the writer will run for this prompt is knowable here (the gate is pure), so the button says what it adds (brief 1.8). */
   const willRefine = !isImage && !taskOn && Boolean(writer && writer.writer !== "none" && writer.configured) && shouldRefine(prompt, specCount(detectSpec(prompt))).refine;
   const writerUsd = willRefine ? (writer?.usdPerCall ?? 0) : 0;
+  /* What the workspace's cost approval rule asks of this press, said under the button rather than inside a menu. */
+  const approvalNote = engineData?.approval
+    ? ruleLine(engineData.approval.rule, engineData.approval.shotCapCredits, (n) => `${n} cr`).toLowerCase().replace(/\.$/, "")
+    : "";
   const billedSecs = followsSource ? sourceSecs : params.duration;
   /* A still whose prompt cites a trained name renders through Flux with that
      identity (brief 1.3), so the button prices that render, not the engine's. */
@@ -562,7 +567,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             setPrompt={(v) => { setPrompt(v); saveDraft(kind, v); if (err) setErr(null); }}
             promptRef={promptRef}
             params={params} patch={patch}
-            model={modelDef} engines={engines} writer={writer}
+            model={modelDef} engines={engines} writer={writer} approval={engineData?.approval ?? null}
             refs={refs} setRefs={setRefs} picker={picker} cite={cite}
             taskOn={taskOn} cancelTask={() => setTaskOn(null)} uploadSource={sourceUpload ? { filename: sourceUpload.filename } : null}
             problem={signedIn ? (refProblem ?? sourceIssue ?? err)
@@ -625,6 +630,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           <span className="mono-s text-center" style={{ letterSpacing: 0 }}>
             files as {filedAs} · {modelDef.label}{isImage ? ` · ${params.resolution.toUpperCase()}` : ` · ${params.duration}s · ${params.resolution.toUpperCase()}`}
           </span>
+          {/* The workspace's cost approval rule, where the press is (brief 2.2). */}
+          {approvalNote && <span className="mono-s text-center !text-mute" style={{ letterSpacing: 0 }}>{approvalNote}</span>}
         </div>
       </aside>
 

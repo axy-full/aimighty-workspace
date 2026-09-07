@@ -33,6 +33,7 @@ import { stillToolFor } from "@/lib/stillTools";
 import { identityForCast, startIdentityStill, runIdentityRender, RENDER_USD_PER_MP, RENDER_RATIOS } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
 import { uploadSourceParams } from "@/lib/sourceClip";
+import { shotCapGate } from "@/lib/shotCap";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -458,9 +459,11 @@ export const POST = withTenant(async function POST(req: Request) {
     const stillProject = body.projectId ? String(body.projectId) : null;
     const stillShot = body.shotId ? String(body.shotId) : null;
     let stillVersion = 1;
+    let stillShotCode: string | null = null;
     if (stillShot) {
       const shot = await getShot(stillShot);
       if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 400 });
+      stillShotCode = shot.code;
       stillVersion = await nextVersion(stillShot);
     }
     const stillRefs = references.filter((r) => r.kind === "image");
@@ -477,6 +480,11 @@ export const POST = withTenant(async function POST(req: Request) {
        with the identity's own model (brief 1.3), priced as that render. */
     const trained = !model.stillTask && castIds.length ? await identityForCast(castIds) : null;
     const estStillUsd = trained ? RENDER_USD_PER_MP : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0);
+    /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
+    if (stillShot && stillShotCode) {
+      const stop = await shotCapGate({ shotId: stillShot, code: stillShotCode, takeUsd: estStillUsd, modelId, isAdmin: got.user.role === "admin" });
+      if (stop) return NextResponse.json({ error: stop, needsAdmin: true }, { status: 403 });
+    }
     const wallStill = await allowanceCheck(vendorKeyNameFor(model.provider), estStillUsd, modelId);
     if (!wallStill.ok && wallStill.status !== 402) return NextResponse.json({ error: wallStill.error }, { status: wallStill.status });
     let holdStill = !wallStill.ok ? heldInfo(estStillUsd, "image", modelId) : null;
@@ -725,9 +733,11 @@ export const POST = withTenant(async function POST(req: Request) {
    * ------------------------------------------------------------------ */
   const shotId = body.shotId ? String(body.shotId) : null;
   let version = 1;
+  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 400 });
+    shotCode = shot.code;
     version = await nextVersion(shotId);
   }
 
@@ -735,6 +745,11 @@ export const POST = withTenant(async function POST(req: Request) {
     modelId, params.resolution, params.ratio, params.duration, inputSeconds, references.some((r) => r.kind === "video"),
     { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
   )?.net ?? 0;
+  /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
+  if (shotId && shotCode) {
+    const stop = await shotCapGate({ shotId: shotId, code: shotCode, takeUsd: estUsd, modelId, isAdmin: got.user.role === "admin" });
+    if (stop) return NextResponse.json({ error: stop, needsAdmin: true }, { status: 403 });
+  }
   const wall = await allowanceCheck(vendorKeyNameFor(model.provider), estUsd, modelId);
   if (!wall.ok && wall.status !== 402) return NextResponse.json({ error: wall.error }, { status: wall.status });
   let hold = !wall.ok ? heldInfo(estUsd, "video", modelId) : null;

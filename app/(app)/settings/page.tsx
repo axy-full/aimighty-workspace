@@ -338,6 +338,12 @@ export default function SettingsPage() {
                 <label className="chip-dd !py-1.5"><select value={setting("approvalRule") || "anyone"} disabled={!isAdmin} aria-label="Cost approval rule" onChange={(e) => saveSetting("approvalRule", e.target.value)}>
                   <option value="anyone">Anyone generates</option><option value="cap">Cap per shot</option><option value="producer">Producer approves</option>
                 </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
+                {(setting("approvalRule") || "anyone") === "cap" && (
+                  <label className="chip-dd !py-1.5" title="Credits a shot may take before a member needs an admin to press">
+                    <input type="number" min={1} step={1} className="w-16 bg-transparent text-right tabular-nums" aria-label="Shot cap in credits"
+                      value={setting("shotCapCredits") || "50"} disabled={!isAdmin} onChange={(e) => saveSetting("shotCapCredits", e.target.value)} /> cr a shot
+                  </label>
+                )}
               </div>
               <div className="srow"><span>Duration · resolution · ratio</span>
                 <span className="flex gap-1.5">
