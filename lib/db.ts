@@ -163,6 +163,19 @@ const SCHEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_identities_project ON identities(project_id)`,
   /* Notes on a specific shot, as opposed to the workspace-wide chat. */
+  /* The workspace's own rules (brief 2.5): plain sentences the team writes,
+     appended to every prompt in scope; the platform's rules they switched
+     off live in settings.rulesOff. */
+  `CREATE TABLE IF NOT EXISTS workspace_rules (
+     id         TEXT PRIMARY KEY,
+     text       TEXT NOT NULL,
+     scope      TEXT NOT NULL DEFAULT 'all',
+     apply      TEXT NOT NULL DEFAULT 'prompt',
+     "on"       INTEGER NOT NULL DEFAULT 1,
+     created_by TEXT NOT NULL DEFAULT '',
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS notes (
      id         TEXT PRIMARY KEY,
      gen_id     TEXT NOT NULL,

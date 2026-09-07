@@ -29,6 +29,7 @@ import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import type { CastMember } from "@/lib/cast";
 import type { Gen } from "@/components/GenCard";
 import { useMoney } from "@/lib/price";
+import RulesSection from "@/components/RulesSection";
 
 const KINDS: { id: CastMember["kind"]; label: string; badge: string; blurb: string }[] = [
   { id: "character", label: "Character", badge: "CHARACTER", blurb: "A face the production returns to." },
@@ -274,6 +275,8 @@ export default function StudioPage() {
           </div>
           <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { if (e.target.files) addFrom(e.target.files); e.target.value = ""; }} />
           <input ref={replaceFile} type="file" accept="image/*" hidden onChange={(e) => { if (e.target.files && cur) replaceStill(cur, e.target.files); e.target.value = ""; }} />
+          <RulesSection signedIn={signedIn} />
+
         </section>
 
         {/* ── Detail rail ───────────────────────────────────────── */}

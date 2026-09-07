@@ -221,3 +221,20 @@ export function writerRulesByScope(rules: PlatformRule[]): string {
     return text ? `${scope === "all" ? "Every engine" : RULE_SCOPE_LABELS[scope].replace(/ only$/, "")}: ${text}` : "";
   }).filter(Boolean).join("\n");
 }
+
+/** Where a rule came from: inherited from the platform, or written by this workspace. */
+export type RuleSource = "platform" | "workspace";
+export type EffectiveRule = PlatformRule & { source: RuleSource };
+
+/**
+ * The rules in force in one workspace: the platform's, each switched off
+ * here when its id is in `off`, then the workspace's own. A switched-off
+ * rule is listed (so the team sees what it turned off) but is not `on`.
+ */
+export function mergeRules(platform: PlatformRule[], workspace: PlatformRule[], off: string[]): EffectiveRule[] {
+  const offSet = new Set(off);
+  return [
+    ...platform.map((r) => ({ ...r, on: r.on && !offSet.has(r.id), source: "platform" as const })),
+    ...workspace.map((r) => ({ ...r, source: "workspace" as const })),
+  ];
+}
