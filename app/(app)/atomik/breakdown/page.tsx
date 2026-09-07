@@ -20,7 +20,7 @@ import { useSession } from "@/lib/session";
 import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { usd } from "@/lib/format";
-import { CATEGORIES } from "@/lib/studio";
+import { specToPhrase, CATEGORIES } from "@/lib/studio";
 import { DEFAULT_MODEL_ID, estimateCostUsd } from "@/lib/models";
 import { mentionsIn } from "@/lib/mentions";
 import { appAlert, appConfirm } from "@/components/dialog";
@@ -29,6 +29,11 @@ import PickProduction from "@/components/atomik/PickProduction";
 import type { Treatment, Scene } from "@/lib/atomikDocs";
 import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
+import { shotCostUsd, ENGINE_LABEL, ENGINE_MODEL, type ShotProposal as BaseShotProposal } from "@/lib/shotBuilder";
+type ShotProposal = BaseShotProposal & { takeUsd?: number };
+import { billCredits } from "@/lib/creditTerms";
+import { estimateRefineUsd } from "@/lib/refineGate";
+import { useMoney } from "@/lib/price";
 
 type Loaded = { treatment: Treatment | null; cast: CastMember[] };
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
@@ -36,7 +41,8 @@ const sceneNo = (scene: string) => Number((scene ?? "").replace(/\D/g, "")) || 0
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 const SETUP = ["shot", "angle", "move", "lens"];
 /** One take of a shot: Seedance bills 5s minimum, so shorter shots price at 5s. */
-export function takeCost(planned: number | null): number {
+export function takeCost(planned: number | null, engine?: string | null): number {
+  if (engine === "kling" || engine === "nano-banana") return shotCostUsd(engine, planned);
   return estimateCostUsd(DEFAULT_MODEL_ID, "1080p", "16:9", Math.max(5, planned ?? 5))?.net ?? 0;
 }
 
@@ -50,6 +56,7 @@ export default function BreakdownPage() {
 
 function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTarget: number | null }) {
   const router = useRouter();
+  const money = useMoney();
   const { signedIn } = useSession();
   const { data } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
   const { data: shotData, refresh } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 15_000);
@@ -63,7 +70,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   const billable = shots.filter((s) => s.kind !== "type");
   const runtime = billable.reduce((a, s) => a + (s.planned ?? 0), 0);
   const target = runtimeTarget ?? scenes.reduce((a, s) => a + s.secs, 0);
-  const estimate = billable.reduce((a, s) => a + takeCost(s.planned), 0);
+  const estimate = billable.reduce((a, s) => a + takeCost(s.planned, s.engine), 0);
 
   async function patch(s: Shot, body: Record<string, unknown>) {
     const res = await fetch(`/api/shots/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -79,6 +86,28 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
       }),
     });
     if (!res.ok) { const j = await res.json().catch(() => ({})); await appAlert("No shot added", j.error ?? `The server answered ${res.status}.`); return; }
+    refresh();
+  }
+  /* The shot builder (brief 1.8): a scene's shots proposed with every row filled, cast tagged, an engine and its credits each — added one by one, never over what is here. */
+  const [drafting, setDrafting] = useState<number | null>(null);
+  const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; sceneUsd: number; model: string; costUsd: number } | null>(null);
+  const draftCr = billCredits(estimateRefineUsd("anthropic/claude-sonnet-5", 1800, 900) ?? 0.01, "text");
+  async function draftShots(scene: Scene) {
+    setDrafting(scene.n); setProposals(null);
+    try {
+      const res = await fetch("/api/atomik/shots/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, scene: scene.n }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      setProposals({ scene: scene.n, shots: j.shots as ShotProposal[], sceneUsd: Number(j.sceneUsd ?? 0), model: String(j.model), costUsd: Number(j.costUsd ?? 0) });
+    } catch (e) { await appAlert("No shots drafted", (e as Error).message); }
+    finally { setDrafting(null); }
+  }
+  async function addProposal(scene: number, p: ShotProposal) {
+    const res = await fetch("/api/shots", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      projectId, scene: String(scene), title: p.title, description: p.description, planned: p.planned, setup: { ...(data?.treatment?.setup ?? {}), ...p.setup }, cast: p.cast, engine: p.engine,
+    }) });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); await appAlert("No shot added", j.error ?? `The server answered ${res.status}.`); return; }
+    setProposals((cur) => (cur ? { ...cur, shots: cur.shots.filter((x) => x !== p) } : cur));
     refresh();
   }
   async function remove(s: Shot) {
@@ -124,7 +153,30 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
                 <span className="text-[18px] font-semibold leading-[1.2] tracking-[-0.01em]">{sc.title || "Untitled"}</span>
                 <p className="ak-sub m-0 !text-[13px]">{sc.prose.slice(0, 160)}{sc.prose.length > 160 ? "…" : ""}</p>
                 <div className="flex flex-wrap gap-1">{sceneCast.map((c) => <span key={c} className="ak-tag">@{c}</span>)}</div>
-                <button type="button" className="btn-dashed self-start !px-2.5 !py-1.5" onClick={() => add(sc)}>+ Shot in this scene</button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className="btn-dashed self-start !px-2.5 !py-1.5" onClick={() => add(sc)}>+ Shot in this scene</button>
+                  <button type="button" className="btn-dashed self-start !px-2.5 !py-1.5" disabled={drafting != null} onClick={() => draftShots(sc)}>{drafting === sc.n ? "Drafting…" : `Draft shots · ≈ ${draftCr} cr`}</button>
+                </div>
+                {proposals && proposals.scene === sc.n && (
+                  <div className="ak-proposal">
+                    <span className="mono-s">PROPOSED BY {proposals.model.split("/").pop()} · {proposals.shots.length} SHOT{proposals.shots.length === 1 ? "" : "S"} · SCENE {money.inCredits ? money.approx(proposals.sceneUsd) : `≈ ${usd(proposals.sceneUsd, 2)}`} AT ONE TAKE EACH · WRITING {money.price(proposals.costUsd, "text")}</span>
+                    {proposals.shots.map((p, i) => (
+                      <div key={`${sc.n}-${i}`} className="ak-prop-shot">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="font-medium">{p.title || "Untitled"}</span>
+                          <span className="mono-s">{p.planned}s · {ENGINE_LABEL[p.engine]} · {money.price(p.takeUsd ?? shotCostUsd(p.engine, p.planned), ENGINE_MODEL[p.engine])}</span>
+                          {p.cast.length > 0 && <span className="mono-s">{p.cast.map((c) => `@${c}`).join(" ")}</span>}
+                        </div>
+                        <p className="text-[13px] leading-relaxed text-dim">{p.description}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[12px] text-mute">{specToPhrase(p.setup) || "no rows set"} · {p.why}</span>
+                          <button type="button" className="chip ml-auto" onClick={() => addProposal(sc.n, p)}>Add</button>
+                        </div>
+                      </div>
+                    ))}
+                    <div><button type="button" className="chip" onClick={() => setProposals(null)}>Close</button></div>
+                  </div>
+                )}
               </div>
               <div className="ak-bd-shots">
                 {list.map((s) => <ShotCard key={s.id} shot={s} castNames={castNames} onPatch={(b) => patch(s, b)} onRemove={() => remove(s)} />)}

@@ -100,6 +100,7 @@ export const POST = withTenant(async function POST(req: Request) {
     setup: body.setup && typeof body.setup === "object" ? body.setup : undefined,
     cast: Array.isArray(body.cast) ? body.cast.map(String) : undefined,
     kind: body.kind === "type" ? "type" : undefined,
+    engine: ["seedance", "kling", "nano-banana"].includes(String(body.engine)) ? String(body.engine) : undefined,
     description: String(body.description ?? ""),
     createdBy: got.user.id,
   });

@@ -623,7 +623,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `planned INTEGER`,
         `setup TEXT NOT NULL DEFAULT '{}'`,
         `cast TEXT NOT NULL DEFAULT '[]'`,
-        `kind TEXT NOT NULL DEFAULT 'render'`,
+        `kind TEXT NOT NULL DEFAULT 'render'`, `engine TEXT`,
         `dirty INTEGER NOT NULL DEFAULT 0`,
         `synced_at INTEGER`,
       ]) {

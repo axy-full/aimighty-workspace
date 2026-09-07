@@ -27,6 +27,8 @@ export type Shot = {
   setup: Record<string, string>;
   cast: string[];
   kind: "render" | "type";
+  /** The engine the shot builder recommended for it (brief 1.8), when one was. */
+  engine: string | null;
   dirty: boolean;
   syncedAt: number | null;
 };
@@ -51,6 +53,7 @@ export function rowToShot(r: any): Shot {
     createdAt: Number(r.created_at ?? 0),
     updatedAt: Number(r.updated_at ?? 0),
     planned: r.planned == null ? null : Number(r.planned),
+    engine: r.engine == null ? null : String(r.engine),
     setup: json<Record<string, string>>(r.setup, {}),
     cast: json<string[]>(r.cast, []),
     kind: r.kind === "type" ? "type" : "render",
@@ -112,6 +115,7 @@ export async function createShot(input: {
   setup?: Record<string, string>;
   cast?: string[];
   kind?: "render" | "type";
+  engine?: string | null;
   createdBy: string;
 }): Promise<Shot> {
   await ready();
@@ -122,14 +126,14 @@ export async function createShot(input: {
   const position = siblings.length ? Math.max(...siblings.map((s) => s.position)) + 1 : 0;
   await db().execute({
     sql: `INSERT INTO shots (id, project_id, scene, code, title, description, status, position,
-                             created_by, created_at, updated_at, planned, setup, cast, kind, dirty)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
+                             created_by, created_at, updated_at, planned, setup, cast, kind, dirty, engine)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
     args: [sid, input.projectId, (input.scene ?? "").trim().slice(0, 40), code,
            (input.title ?? "").trim().slice(0, 160), (input.description ?? "").slice(0, 2000),
            "open", position, input.createdBy, ts, ts,
            input.planned == null ? null : Math.max(1, Math.min(60, Math.round(input.planned))),
            JSON.stringify(input.setup ?? {}), JSON.stringify((input.cast ?? []).slice(0, 20)),
-           input.kind === "type" ? "type" : "render"],
+           input.kind === "type" ? "type" : "render", input.engine ?? null],
   });
   return (await getShot(sid))!;
 }
