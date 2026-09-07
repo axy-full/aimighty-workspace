@@ -36,6 +36,10 @@ export function failureCopy(kind: FailureKind): { why: string; action: FailureAc
   }
 }
 
+/** An identity being trained: asynchronous work that belongs in the queue beside the renders (brief 1.3). */
+export type TrainingRow = { id: string; name: string; status: string; costUsd: number | null; steps: number | null };
+export const inTraining = <T extends { status: string }>(rows: T[]): T[] => rows.filter((r) => r.status === "training");
+
 export type QueueCounts = { rendering: number; queued: number; held: number; failed: number };
 
 /** The queue's four numbers: rendering (running or queued at the vendor), queued for a slot, held for credits, failed. */

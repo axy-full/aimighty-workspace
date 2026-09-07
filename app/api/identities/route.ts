@@ -13,8 +13,19 @@ export const dynamic = "force-dynamic";
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
-  const projectId = new URL(req.url).searchParams.get("projectId");
+  const url = new URL(req.url);
+  const projectId = url.searchParams.get("projectId");
   const identities = await listIdentities(projectId && projectId !== "all" && projectId !== "unfiled" ? projectId : null);
+  /* The queue strip (brief 1.3) asks every few seconds only to know what is
+     training. It reads the rows as they stand — asking fal about each one on
+     every poll would be a vendor call per wall, per person, per fifteen
+     seconds. The Studio, which shows progress, still syncs. */
+  if (url.searchParams.get("live") === "1") {
+    return NextResponse.json({
+      identities: identities.filter((i) => i.status === "training")
+        .map((i) => ({ id: i.id, name: i.name, status: i.status, costUsd: i.costUsd, steps: i.steps, createdAt: i.createdAt })),
+    });
+  }
   // Anything mid-training gets asked about while the list is being read, so
   // the grid never shows a face as training after the trainer has finished.
   const synced = await Promise.all(identities.map(async (i) =>
