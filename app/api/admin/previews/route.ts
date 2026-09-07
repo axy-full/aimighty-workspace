@@ -66,8 +66,16 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!ws?.internalTest) return NextResponse.json({ error: "Previews are published from an internal test workspace only." }, { status: 400 });
   const body = await req.json().catch(() => ({}));
   if (body.action !== "publish") return NextResponse.json({ error: "action must be publish." }, { status: 400 });
+  /* Copying a clip means reading it and writing it again, and a request has
+     a ceiling: publish what is missing, a slice at a time, and say what is
+     left so the console can ask again. `force` redoes one that is already
+     there — for a batch rendered a second time. */
+  const already = new Set((await listPlatformAssets("previews/")).map((a) => a.key.replace(/^previews\//, "")));
+  const force = body.force === true;
+  const todo = (await candidates()).filter((c) => c.status === "succeeded" && (force || !already.has(c.key)));
+  const slice = Math.max(1, Math.min(24, Number(body.limit) || 10));
   const published: string[] = []; const failed: { key: string; error: string }[] = [];
-  for (const c of (await candidates()).filter((c) => c.status === "succeeded")) {
+  for (const c of todo.slice(0, slice)) {
     try {
       const buf = await readVideoBytes(c.genId);
       const path = await storePlatformBytes(`previews/${c.key}.mp4`, buf, "video/mp4");
@@ -75,5 +83,5 @@ export const POST = withTenant(async function POST(req: Request) {
       published.push(c.key);
     } catch (e) { failed.push({ key: c.key, error: (e as Error).message }); }
   }
-  return NextResponse.json({ published, failed });
+  return NextResponse.json({ published, failed, remaining: Math.max(0, todo.length - published.length - failed.length) });
 });
