@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { cached, putCache, invalidate, PROJECTS_KEY } from "@/lib/cache";
+import { billedCreditsSum } from "@/lib/creditSql";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,8 @@ export const GET = withTenant(async function GET() {
       SELECT project_id,
              SUM(CASE WHEN deleted = 0 THEN 1 ELSE 0 END) AS n,
              SUM(CASE WHEN status IN ('queued','running') THEN 1 ELSE 0 END) AS live,
-             COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)), 0) AS spend
+             COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)), 0) AS spend,
+             ${billedCreditsSum()} AS credits
       FROM generations GROUP BY project_id
     ) g ON g.project_id = p.id
     ORDER BY p.created_at DESC
@@ -84,6 +86,7 @@ export const GET = withTenant(async function GET() {
       createdAt: Number(r.created_at),
       genCount: Number(r.gen_count),
       spend: Number(r.spend),
+      credits: Number(r.credits ?? 0),
       capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
       kind: r.kind ?? null,
       runtimeTarget: r.runtime_target == null ? null : Number(r.runtime_target),

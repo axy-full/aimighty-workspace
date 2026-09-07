@@ -5,30 +5,31 @@
  * dashboard (R2). One shape of data, two framings: a project asks "what did
  * this cost us", the dashboard asks "where is production getting stuck".
  */
-import { usd, compactTokens, hours, dur, pct } from "@/lib/format";
+import { compactTokens, hours, dur, pct } from "@/lib/format";
+import { useMoney } from "@/lib/price";
 
 export type Analytics = {
   scope: { projectId: string; days: number };
   totals: {
     generations: number; succeeded: number; failed: number; pending: number;
-    binned: number; spend: number; promptSpend: number; prompts: number;
+    binned: number; spend: number; credits: number; promptSpend: number; prompts: number;
     tokens: number; renderMs: number;
     people: number; shots: number; successRate: number;
   };
   credit: { toppedUp: number; spentAllTime: number };
-  byProject: { id: string | null; name: string; n: number; spend: number;
+  byProject: { id: string | null; name: string; n: number; spend: number; credits: number;
                failed: number; people: number; renderMs: number }[];
-  byPerson: { id: string; name: string; n: number; spend: number;
+  byPerson: { id: string; name: string; n: number; spend: number; credits: number;
               failed: number; projects: number }[];
-  byModel: { model: string; label: string; n: number; spend: number;
+  byModel: { model: string; label: string; n: number; spend: number; credits: number;
              failed: number; avgMs: number | null }[];
   byShot: { id: string; code: string; scene: string; title: string; status: string;
-            takes: number; spend: number; ok: number; failed: number; latest: number }[];
+            takes: number; spend: number; credits?: number; ok: number; failed: number; latest: number }[];
   byStatus: { status: string; n: number }[];
-  byDay: { day: number; n: number; spend: number }[];
+  byDay: { day: number; n: number; spend: number; credits: number }[];
   stuck: { model: string; resolution: string; n: number; avgMs: number | null;
            maxMs: number; failed: number; retried: number }[];
-  byCategory: { category: string; n: number; spend: number; failed: number;
+  byCategory: { category: string; n: number; spend: number; credits: number; failed: number;
                 avgMs: number | null; projects: number; shots: number }[];
   patterns: {
     avgPromptLength: number; refined: number; withCast: number;
@@ -51,9 +52,10 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
 
 /** A labelled bar list — the same shape for projects, people and models. */
 export function BarList({ rows, empty }: {
-  rows: { key: string; label: string; value: number; note?: string }[];
+  rows: { key: string; label: string; value: number; credits?: number; note?: string }[];
   empty: string;
 }) {
+  const money = useMoney();
   if (!rows.length) return <p className="px-4 py-6 text-center text-[14px] text-mute">{empty}</p>;
   const max = Math.max(...rows.map((r) => r.value), 0.000001);
   return (
@@ -63,7 +65,7 @@ export function BarList({ rows, empty }: {
           <div className="flex items-baseline gap-3 text-[14px]">
             <span className="min-w-0 flex-1 truncate text-ink">{r.label}</span>
             {r.note && <span className="text-[12px] tabular-nums text-mute">{r.note}</span>}
-            <span className="tabular-nums text-dim">{usd(r.value, 2)}</span>
+            <span className="tabular-nums text-dim">{money.of({ spend: r.value, credits: r.credits })}</span>
           </div>
           <div className="mt-1.5 h-[6px] overflow-hidden rounded-full bg-chip">
             <span className="block h-full rounded-full bg-blue"
@@ -77,6 +79,7 @@ export function BarList({ rows, empty }: {
 
 export function Headline({ a, title }: { a: Analytics; title: string }) {
   const t = a.totals;
+  const money = useMoney();
   return (
     <>
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pt-6">
@@ -86,7 +89,7 @@ export function Headline({ a, title }: { a: Analytics; title: string }) {
         )}
       </div>
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Cost" value={usd(t.spend, 2)}
+        <Stat label="Cost" value={money.of(t)}
               sub={`${compactTokens(t.tokens)} tokens · all-in, refinement included`} />
         <Stat label="Generations" value={String(t.generations)}
               sub={`${t.succeeded} delivered · ${t.failed} failed${t.binned ? ` · ${t.binned} binned` : ""}`} />
@@ -142,6 +145,7 @@ export function StuckTable({ rows }: { rows: Analytics["stuck"] }) {
 
 /** Revisions per shot — which setup is fighting us. */
 export function ShotTable({ rows }: { rows: Analytics["byShot"] }) {
+  const money = useMoney();
   if (!rows.length) {
     return (
       <p className="px-4 py-6 text-center text-[14px] text-mute">
@@ -174,7 +178,7 @@ export function ShotTable({ rows }: { rows: Analytics["byShot"] }) {
               <td className={`py-2.5 text-right tabular-nums ${r.failed ? "text-lift" : "text-mute"}`}>
                 {r.failed || "—"}
               </td>
-              <td className="py-2.5 text-right tabular-nums text-dim">{usd(r.spend, 2)}</td>
+              <td className="py-2.5 text-right tabular-nums text-dim">{money.of(r)}</td>
             </tr>
           ))}
         </tbody>

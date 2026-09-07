@@ -20,17 +20,19 @@ import { type Analytics, Headline, BarList, ShotTable, Patterns } from "@/compon
 import { appPrompt, appAlert } from "@/components/dialog";
 import { Waiting, Trouble } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
+import { useMoney } from "@/lib/price";
 
 type Project = { id: string; name: string; description: string; code?: string; category?: string };
 type ShotRow = {
   id: string; code: string; scene: string; title: string; status: string;
-  takes: number; ok: number; failed: number; spend: number;
+  takes: number; ok: number; failed: number; spend: number; credits?: number;
 };
 
 export default function ProjectOverview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { selection, setSelection, refreshProjects: refreshCtx } = useProject();
+  const money = useMoney();
   const { data, error, refresh } = useApi<Analytics>(`/api/analytics?projectId=${encodeURIComponent(id)}`, 30000);
   const { data: projects, refresh: refreshProjects } =
     useApi<{ projects: Project[] }>("/api/projects", 60000);
@@ -143,7 +145,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
             <div className="mt-4">
               <ShotTable rows={shots.map((s) => ({
                 id: s.id, code: s.code, scene: s.scene, title: s.title, status: s.status,
-                takes: s.takes, spend: s.spend, ok: s.ok, failed: s.failed, latest: 0,
+                takes: s.takes, spend: s.spend, credits: s.credits, ok: s.ok, failed: s.failed, latest: 0,
               }))} />
             </div>
           </section>
@@ -154,7 +156,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
               <div className="mt-4">
                 <BarList empty="No takes yet."
                   rows={data.byPerson.map((p) => ({
-                    key: p.id || p.name, label: p.name, value: p.spend,
+                    key: p.id || p.name, label: p.name, value: p.spend, credits: p.credits,
                     note: `${p.n} render${p.n === 1 ? "" : "s"}`,
                   }))} />
               </div>
@@ -165,7 +167,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
               <div className="mt-4">
                 <BarList empty="No takes yet."
                   rows={data.byModel.map((m) => ({
-                    key: m.model, label: m.label, value: m.spend, note: `${m.n}`,
+                    key: m.model, label: m.label, value: m.spend, credits: m.credits, note: `${m.n}`,
                   }))} />
               </div>
             </section>
@@ -190,7 +192,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
               <div className="row"><span>Render time</span>
                 <span className="row-value tabular-nums">{hours(t.renderMs)}</span></div>
               <div className="row"><span>Renders</span>
-                <span className="row-value tabular-nums">{usd(t.spend - t.promptSpend, 2)}</span></div>
+                <span className="row-value tabular-nums">{money.inCredits ? money.of(t) : usd(t.spend - t.promptSpend, 2)}</span></div>
               <div className="row">
                 <span className="flex flex-col">
                   Prompt writing
@@ -198,9 +200,9 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
                     {t.prompts} prompt{t.prompts === 1 ? "" : "s"} finished by the writer
                   </span>
                 </span>
-                <span className="row-value tabular-nums">{usd(t.promptSpend, 3)}</span></div>
+                <span className="row-value tabular-nums">{money.inCredits ? "included" : usd(t.promptSpend, 3)}</span></div>
               <div className="row"><span className="font-medium">Total cost</span>
-                <span className="row-value font-semibold tabular-nums !text-bone">{usd(t.spend, 2)}</span></div>
+                <span className="row-value font-semibold tabular-nums !text-bone">{money.of(t)}</span></div>
             </div>
             <p className="mt-4 text-[13px] text-mute">
               All-in: the render plus what the prompt writer charged. Binned takes still

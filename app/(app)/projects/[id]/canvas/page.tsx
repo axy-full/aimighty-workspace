@@ -27,19 +27,20 @@ import { useOnChange } from "@/lib/changes";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { usd, timeAgo, downloadHref } from "@/lib/format";
+import { timeAgo, downloadHref } from "@/lib/format";
 import { AtomikMark } from "@/components/AtomikMark";
 import LazyMedia from "@/components/LazyMedia";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import { stateOf, roleOf } from "@/components/Feed";
 import type { Gen } from "@/components/GenCard";
 import type { Shot } from "@/lib/shots";
+import { useMoney } from "@/lib/price";
 
 type ShotRow = Shot & { takes: number; ok: number; failed: number; spend: number };
 type ShotState = "approved" | "picked" | "draft" | "empty";
 type Col = {
   shot: ShotRow; takes: Gen[]; hero: Gen | null; state: ShotState; secs: number;
-  refs: Gen[]; cast: string[]; spend: number;
+  refs: Gen[]; cast: string[]; spend: number; mine: Gen[];
 };
 
 const DEFAULT_SECS = 5;
@@ -52,6 +53,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
   const search = useSearchParams();
   const { signedIn } = useSession();
   const { projects, selection, setSelection } = useProject();
+  const money = useMoney();
   const project = projects.find((p) => p.id === id) ?? null;
   usePageTitle(project ? `${project.name} · Canvas` : "Canvas");
 
@@ -77,7 +79,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
         ?? (takes[0]?.params as { duration?: number } | undefined)?.duration ?? DEFAULT_SECS) || DEFAULT_SECS;
       const refs = mine.filter((g) => g.kind === "image" && g.status === "succeeded" && roleOf(g) !== "loose");
       const cast = [...new Set([...(shot.cast ?? []), ...mine.flatMap((g) => ((g.params as { cast?: string[] }).cast ?? []))])];
-      return { shot, takes, hero, state, secs, refs, cast, spend: mine.reduce((a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0) };
+      return { shot, takes, hero, state, secs, refs, cast, spend: mine.reduce((a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0), mine };
     });
   }, [shotData, jobs]);
 
@@ -252,7 +254,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
               <div className="kv-row"><span>State</span><span>{cur ? (cur.state === "empty" ? "No take yet" : `${cur.state[0].toUpperCase()}${cur.state.slice(1)}${cur.hero ? ` · v${cur.hero.version ?? 1}` : ""}`) : "—"}</span></div>
               <div className="kv-row"><span>Planned</span><span>{cur ? mmss(cur.secs) : "—"}</span></div>
               <div className="kv-row"><span>Takes</span><span>{cur?.takes.length || "—"}</span></div>
-              <div className="kv-row"><span>Cost so far</span><span className="mono-v">{cur?.takes.length ? usd(cur.spend, 2) : "—"}</span></div>
+              <div className="kv-row"><span>Cost so far</span><span className="mono-v">{cur?.takes.length ? money.sum(cur.mine) : "—"}</span></div>
             </div>
             {cur && cur.refs.length > 0 && (
               <div className="rail-sec cv-refs-mobile">

@@ -8,7 +8,7 @@
  * button before it is pressed.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { usePrice } from "@/lib/price";
+import { useMoney } from "@/lib/price";
 
 /**
  * Close on any pointer-down outside `ref` and on Escape. Menus used to rely
@@ -35,7 +35,7 @@ import References, { type RefItem, type RefPicker } from "./References";
 import { Switch } from "./Panel";
 import type { Gen } from "./GenCard";
 import { ParticlSpinner } from "./ParticlMark";
-import { usd, compactTokens } from "@/lib/format";
+import { compactTokens } from "@/lib/format";
 import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef, perSecondRate } from "@/lib/models";
 import { IconArrowUp, IconCaret, IconAttach, IconSliders, IconClose } from "./Icons";
 import LazyMedia from "./LazyMedia";
@@ -92,7 +92,8 @@ export default function Composer(p: ComposerProps) {
     pickMode, onPickSource, onDropAsset, rail = false,
   } = p;
   const [menu, setMenu] = useState<Menu>(null);
-  const price = usePrice();
+  const money = useMoney();
+  const price = money.price;
   const [drag, setDrag] = useState(false);
   const overlayEl = useRef<HTMLDivElement>(null);
   const costRef = useRef<HTMLSpanElement>(null);
@@ -347,7 +348,7 @@ export default function Composer(p: ComposerProps) {
             return (
               <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }} className="menu-item">
                 <span className={`flex-1 ${params.resolution === r ? "text-blue" : ""}`}>{resLabel(r, isImage)}</span>
-                {c && <span className="text-[13px] text-mute">{usd(c.net, 2)}</span>}
+                {c && <span className="text-[13px] text-mute">{price(c.net, params.modelId)}</span>}
               </button>
             );
           })}
@@ -361,7 +362,7 @@ export default function Composer(p: ComposerProps) {
               return (
                 <button key={d} onClick={() => { patch({ duration: d }); setMenu(null); }} className="menu-item">
                   <span className={`flex-1 ${params.duration === d ? "text-blue" : ""}`}>{d}s</span>
-                  <span className="text-[13px] text-mute">{c ? usd(c.net, 2) : ""}</span>
+                  <span className="text-[13px] text-mute">{c ? price(c.net, params.modelId) : ""}</span>
                 </button>
               );
             })}
@@ -434,9 +435,9 @@ export default function Composer(p: ComposerProps) {
             <>
               <span className="menu-pop island-menu island-menu-right block w-[280px] px-3.5 py-3 text-left text-[13px] leading-relaxed text-dim">
                 {isImage ? (
-                  <>Flat per still on Google — {usd(est?.net ?? 0, 3)} at {params.resolution.toUpperCase()}{imageRefCount ? ` with ${imageRefCount} reference${imageRefCount === 1 ? "" : "s"}` : ""}. The model thinks before it draws; your prompt goes as written. A refusal costs nothing.</>
+                  <>Flat per still on Google — {price(est?.net ?? 0, params.modelId)} at {params.resolution.toUpperCase()}{imageRefCount ? ` with ${imageRefCount} reference${imageRefCount === 1 ? "" : "s"}` : ""}. The model thinks before it draws; your prompt goes as written. A refusal costs nothing.</>
                 ) : secondRate != null ? (
-                  <>Billed per second on fal.ai: {usd(secondRate, 3)}/s × {billedSecs || "the clip's"}s{params.fps60 ? ", doubled for 60 fps" : ""}.{followsSource ? " The length follows the clip." : ""} {taskOn?.id === "upscale" ? "Nothing is written: the clip is the brief." : "Your words go as written."}</>
+                  <>Billed per second on fal.ai: {money.rate(secondRate, params.modelId)}/s × {billedSecs || "the clip's"}s{params.fps60 ? ", doubled for 60 fps" : ""}.{followsSource ? " The length follows the clip." : ""} {taskOn?.id === "upscale" ? "Nothing is written: the clip is the brief." : "Your words go as written."}</>
                 ) : (
                   <>Billed by frame tokens: {estTokens != null ? compactTokens(estTokens) : "—"} at {dims ? `${dims.w}×${dims.h}` : "the source size"} for {params.duration}s.{" "}
                     {!writer || writer.writer === "none"

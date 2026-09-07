@@ -55,6 +55,14 @@ export function margins(): Record<string, number> {
   return _margins;
 }
 
+/** The margin key for a job: the engine id for renders, a class for the rest. */
+export function marginKeyOf(kind: string | null | undefined, model: string | null | undefined): string {
+  if (kind === "training") return "identity-training";
+  if (kind === "audio") return "elevenlabs";
+  if (kind === "text") return "text";
+  return model || "*";
+}
+
 export function marginFor(engine: string | null | undefined, table: Record<string, number> = margins()): number {
   const m = engine ? table[engine] : undefined;
   return typeof m === "number" && m > 0 ? m : (table["*"] ?? 1);

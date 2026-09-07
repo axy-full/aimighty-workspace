@@ -1,12 +1,13 @@
 "use client";
 
-import { usd, timeAgo, downloadHref } from "@/lib/format";
+import { timeAgo, downloadHref } from "@/lib/format";
 import { startGenDrag } from "@/lib/dnd";
 import { shortLabel } from "@/lib/models";
 import { appConfirm } from "./dialog";
 import LazyMedia from "./LazyMedia";
 import { ParticlSpinner } from "./ParticlMark";
 import { IconDown, IconTrash, IconAudio } from "./Icons";
+import { useMoney } from "@/lib/price";
 
 export type Gen = {
   id: string;
@@ -55,6 +56,7 @@ export default function GenCard({
   onChanged?: () => void;
   onOpen?: () => void;
 }) {
+  const money = useMoney();
   const url = gen.storedUrl ?? gen.sourceUrl;
   const p = gen.params as { resolution?: string; ratio?: string; duration?: number };
   const done = gen.status === "succeeded" && Boolean(url);
@@ -157,9 +159,9 @@ export default function GenCard({
         {gen.costUsd != null && (
           <span className="font-medium text-dim"
             title={gen.refineModel
-              ? `Render ${usd(gen.costUsd)} + prompt ${gen.refineCostUsd ? usd(gen.refineCostUsd) : "free"}`
-              : `Render ${usd(gen.costUsd)} · prompt as written`}>
-            · {usd(gen.costUsd + (gen.refineCostUsd ?? 0), 2)}
+              ? `${money.take(gen)} all-in, prompt writing included`
+              : `${money.take(gen)} · prompt as written`}>
+            · {money.take(gen)}
           </span>
         )}
         <span>· {timeAgo(gen.createdAt)}</span>

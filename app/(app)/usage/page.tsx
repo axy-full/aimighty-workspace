@@ -14,13 +14,14 @@ import { Waiting, Trouble } from "@/components/ParticlMark";
 import Link from "next/link";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
-import { getModel } from "@/lib/models";
+import { MODELS } from "@/lib/models";
 import { stateOf } from "@/components/Feed";
 import type { Analytics } from "@/components/Analytics";
 import type { Gen } from "@/components/GenCard";
 import { IconClose } from "@/components/Icons";
 import { appConfirm } from "@/components/dialog";
 import { usePageTitle } from "@/lib/usePageTitle";
+import { useMoney } from "@/lib/price";
 
 /**
  * Usage — four ledgers, one per vendor.
@@ -52,12 +53,12 @@ type Vendor = {
     sinceUsd: number; sinceCredits: number; sinceRenders: number;
     driftUsd: number | null; driftCredits: number | null;
   } | null;
-  models: { model: string; label: string; n: number; spend: number; tokens: number }[];
+  models: { model: string; label: string; n: number; spend: number; credits?: number; tokens: number }[];
   topups: { id: string; amountUsd: number; credits: number | null; note: string; createdAt: number }[];
 };
 
 type Usage = {
-  purchasedUsd: number; spentUsd: number; remainingUsd: number;
+  purchasedUsd: number; spentUsd: number; spentCredits?: number; remainingUsd: number;
   totalGenerations: number; succeeded: number; failed: number; pending: number;
   totalTokens: number; avgCostUsd: number;
   promptSpendUsd: number; promptCount: number;
@@ -70,16 +71,16 @@ type Usage = {
     largest: { id: string; title: string | null; kind: string; bytes: number }[];
     perGbMonthUsd: number; perGbTransferUsd: number;
   } | null;
-  byProject: { name: string; n: number; spend: number }[];
-  byPerson: { name: string; n: number; spend: number }[];
+  byProject: { name: string; n: number; spend: number; credits?: number }[];
+  byPerson: { name: string; n: number; spend: number; credits?: number }[];
   timing: { kind: string; n: number; totalMs: number | null; queueMs: number | null;
             refineMs: number | null; submitMs: number | null; engineMs: number | null;
             noticeMs: number | null; storeMs: number | null }[];
   refines: { model: string; label: string; n: number; inTokens: number; outTokens: number;
              tokens: number; spend: number; free: boolean; freeLeft: number }[];
-  byMonth: { month: string; n: number; spend: number }[];
+  byMonth: { month: string; n: number; spend: number; credits?: number }[];
   recent: { id: string; label: string; provider: string; kind: string; title: string | null;
-            prompt: string; costUsd: number; renderCostUsd: number;
+            prompt: string; costUsd: number; credits?: number; renderCostUsd: number;
             refineCostUsd: number | null; refineModel: string | null; refineLabel: string | null;
             refineInTokens: number | null; refineOutTokens: number | null;
             totalTokens: number; params: Record<string, unknown>; createdAt: number }[];
@@ -87,6 +88,7 @@ type Usage = {
 
 export default function UsagePage() {
   const { signedIn } = useSession();
+  const money = useMoney();
   const { data, error, refresh } = useApi<Usage>(signedIn ? "/api/usage" : null, 20000);
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [vendorFilter, setVendorFilter] = useState<string>("all");
@@ -114,6 +116,7 @@ export default function UsagePage() {
       <div className="page-inner">
         <ProductionTop />
 
+        {!money.inCredits && (<>
         {/* ── The ledgers ── */}
         <p className="mt-16 text-[13px] text-dim">
           Below: the ledgers behind the numbers — each vendor&rsquo;s own count, prompt writing, storage rent, where the time goes, and every render&rsquo;s price.
@@ -122,21 +125,22 @@ export default function UsagePage() {
         <div className="grid gap-5 md:grid-cols-2">
           {data.vendors.map((v) => <VendorCard key={v.id} v={v} onChanged={refresh} />)}
         </div>
+        </>)}
 
         {/* Breakdowns */}
         <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           <Breakdown title="By production" rows={data.byProject.map((p) => ({
-            key: p.name, name: p.name, meta: `${p.n} render${p.n === 1 ? "" : "s"}`, value: p.spend,
+            key: p.name, name: p.name, meta: `${p.n} render${p.n === 1 ? "" : "s"}`, value: p.spend, credits: p.credits,
           }))} />
           <Breakdown title="By member" rows={data.byPerson.map((p) => ({
-            key: p.name, name: p.name, meta: `${p.n} render${p.n === 1 ? "" : "s"}`, value: p.spend,
+            key: p.name, name: p.name, meta: `${p.n} render${p.n === 1 ? "" : "s"}`, value: p.spend, credits: p.credits,
           }))} />
           <Breakdown title="By month" rows={data.byMonth.map((m) => ({
-            key: m.month, name: m.month, meta: `${m.n} render${m.n === 1 ? "" : "s"}`, value: m.spend,
+            key: m.month, name: m.month, meta: `${m.n} render${m.n === 1 ? "" : "s"}`, value: m.spend, credits: m.credits,
           }))} />
         </div>
 
-        {data.refines.length > 0 && (
+        {data.refines.length > 0 && !money.inCredits && (
           <>
             <p className="grouplabel mt-12">Prompt writing</p>
             <div className="rows">
@@ -166,7 +170,7 @@ export default function UsagePage() {
         )}
 
         {/* ── Storage ─────────────────────────────────────────────── */}
-        {data.storage && data.storage.counted > 0 && (
+        {data.storage && data.storage.counted > 0 && !money.inCredits && (
           <>
             <p className="grouplabel mt-12">Storage</p>
             <div className="rows">
@@ -270,13 +274,15 @@ export default function UsagePage() {
                     {" "}· {timeAgo(r.createdAt)}
                   </span>
                   <span className="mt-0.5 text-[12.5px] tabular-nums text-mute">
-                    render {usd(r.renderCostUsd)}
-                    {r.refineLabel
-                      ? <> + prompt {r.refineCostUsd ? usd(r.refineCostUsd) : "free"} <span className="text-mute/80">({r.refineLabel})</span></>
-                      : <> · prompt as written</>}
+                    {money.inCredits
+                      ? <>charged {money.of({ spend: r.costUsd, credits: r.credits })}{r.refineLabel ? " · prompt writing included" : " · prompt as written"}</>
+                      : <>render {usd(r.renderCostUsd)}
+                        {r.refineLabel
+                          ? <> + prompt {r.refineCostUsd ? usd(r.refineCostUsd) : "free"} <span className="text-mute/80">({r.refineLabel})</span></>
+                          : <> · prompt as written</>}</>}
                   </span>
                 </span>
-                <span className="row-value shrink-0 font-medium !text-bone tabular-nums">{usd(r.costUsd)}</span>
+                <span className="row-value shrink-0 font-medium !text-bone tabular-nums">{money.of({ spend: r.costUsd, credits: r.credits })}</span>
               </button>
             );
           })}
@@ -571,8 +577,9 @@ function Figure({ label, value, sub, tone }: { label: string; value: string; sub
 
 function Breakdown({ title, rows }: {
   title: string;
-  rows: { key: string; name: string; meta: string; value: number }[];
+  rows: { key: string; name: string; meta: string; value: number; credits?: number }[];
 }) {
+  const money = useMoney();
   const max = Math.max(...rows.map((r) => r.value), 0.0001);
   return (
     <section>
@@ -584,7 +591,7 @@ function Breakdown({ title, rows }: {
             <li key={r.key}>
               <div className="flex items-baseline gap-3">
                 <span className="truncate text-[15px]">{r.name}</span>
-                <span className="ml-auto shrink-0 text-[14px] font-medium tabular-nums">{usd(r.value, 2)}</span>
+                <span className="ml-auto shrink-0 text-[14px] font-medium tabular-nums">{money.of({ spend: r.value, credits: r.credits })}</span>
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel2">
                 <div className="h-full rounded-full bg-blue transition-[width] duration-500"
@@ -609,22 +616,22 @@ function Breakdown({ title, rows }: {
 /** Sample numbers for a visitor: a made-up production, roles rather than people, the real engines. */
 const SAMPLE_ANALYTICS: Analytics = {
   scope: { projectId: "", days: 30 },
-  totals: { generations: 41, succeeded: 38, failed: 2, pending: 1, binned: 0, spend: 612.4, promptSpend: 1.9, prompts: 40, tokens: 9_800_000, renderMs: 0, people: 3, shots: 12, successRate: 0.93 },
+  totals: { generations: 41, succeeded: 38, failed: 2, pending: 1, binned: 0, spend: 612.4, credits: 8574, promptSpend: 1.9, prompts: 40, tokens: 9_800_000, renderMs: 0, people: 3, shots: 12, successRate: 0.93 },
   credit: { toppedUp: 1000, spentAllTime: 612.4 },
   byProject: [
-    { id: "sample-1", name: "Northline", n: 27, spend: 391.2, failed: 1, people: 3, renderMs: 0 },
-    { id: "sample-2", name: "Coast road", n: 11, spend: 172.6, failed: 1, people: 2, renderMs: 0 },
-    { id: null, name: "Unfiled", n: 3, spend: 48.6, failed: 0, people: 1, renderMs: 0 },
+    { id: "sample-1", name: "Northline", n: 27, spend: 391.2, credits: 5477, failed: 1, people: 3, renderMs: 0 },
+    { id: "sample-2", name: "Coast road", n: 11, spend: 172.6, credits: 2416, failed: 1, people: 2, renderMs: 0 },
+    { id: null, name: "Unfiled", n: 3, spend: 48.6, credits: 680, failed: 0, people: 1, renderMs: 0 },
   ],
   byPerson: [
-    { id: "p1", name: "Director", n: 19, spend: 302.1, failed: 1, projects: 2 },
-    { id: "p2", name: "Producer", n: 14, spend: 201.7, failed: 0, projects: 2 },
-    { id: "p3", name: "Editor", n: 8, spend: 108.6, failed: 1, projects: 1 },
+    { id: "p1", name: "Director", n: 19, spend: 302.1, credits: 4229, failed: 1, projects: 2 },
+    { id: "p2", name: "Producer", n: 14, spend: 201.7, credits: 2824, failed: 0, projects: 2 },
+    { id: "p3", name: "Editor", n: 8, spend: 108.6, credits: 1520, failed: 1, projects: 1 },
   ],
   byModel: [
-    { model: "dreamina-seedance-2-5-260628", label: "Seedance 2.5", n: 24, spend: 486.2, failed: 2, avgMs: null },
-    { model: "fal-ai/kling-video/v3/standard", label: "Kling 3.0", n: 9, spend: 41.4, failed: 0, avgMs: null },
-    { model: "gemini-3-pro-image", label: "Nano Banana Pro", n: 8, spend: 84.8, failed: 0, avgMs: null },
+    { model: "dreamina-seedance-2-5-260628", label: "Seedance 2.5", n: 24, spend: 486.2, credits: 6807, failed: 2, avgMs: null },
+    { model: "fal-ai/kling-video/v3/standard", label: "Kling 3.0", n: 9, spend: 41.4, credits: 580, failed: 0, avgMs: null },
+    { model: "gemini-3-pro-image", label: "Nano Banana Pro", n: 8, spend: 84.8, credits: 1187, failed: 0, avgMs: null },
   ],
   byShot: [], byStatus: [], byDay: [], stuck: [], byCategory: [],
   patterns: { avgPromptLength: 62, refined: 30, withCast: 18, withReferences: 12, filedToShots: 38, unfiled: 3, takesPerShot: 3.2 },
@@ -632,7 +639,7 @@ const SAMPLE_ANALYTICS: Analytics = {
 
 type Period = "month" | "30" | "quarter";
 type ProjRow = {
-  id: string; name: string; code: string; spend: number; capUsd: number | null;
+  id: string; name: string; code: string; spend: number; credits?: number; capUsd: number | null;
   shots: number; approvedShots: number; pickedShots: number; genCount: number;
 };
 const PROVIDER_NAMES: Record<string, string> = {
@@ -641,9 +648,13 @@ const PROVIDER_NAMES: Record<string, string> = {
 };
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
 
+/** A model's vendor, or nothing: audio engines are not in the video table. */
+const providerOf = (id: string): string | null => MODELS.find((m) => m.id === id)?.provider ?? null;
+
 function ProductionTop() {
   const { signedIn } = useSession();
   const { selection, current } = useProject();
+  const money = useMoney();
   const scoped = selection !== "all" && selection !== "unfiled";
   const [period, setPeriod] = useState<Period>("month");
   const days = period === "month" ? new Date().getDate() : period === "30" ? 30 : 90;
@@ -676,9 +687,10 @@ function ProductionTop() {
         code, n: takes.length, blocks: st, state,
         back: st.filter((x) => x === "back").length,
         cost: takes.reduce((a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0),
+        paid: money.sum(takes),
       };
     }).sort((a, b) => b.n - a.n || b.cost - a.cost);
-  }, [jobs]);
+  }, [jobs, money]);
 
   const approved = p?.approvedShots ?? 0;
   const shots = p?.shots ?? 0;
@@ -739,53 +751,53 @@ function ProductionTop() {
           <div className="tiles">
             <div className="tile">
               <span className="tile-l">STUDIO · {periodLabel}</span>
-              <span className="tile-v">{usd(all.totals.spend, 2)}</span>
+              <span className="tile-v">{money.of(all.totals)}</span>
               <span className="tile-s">{all.byProject.length} production{all.byProject.length === 1 ? "" : "s"} · {all.totals.generations} take{all.totals.generations === 1 ? "" : "s"} · {all.totals.people} {all.totals.people === 1 ? "person" : "people"}</span>
             </div>
             <div className="tile">
               <span className="tile-l">{p ? `${p.name.toUpperCase()} · ${p.capUsd ? `OF $${Math.round(p.capUsd)} CAP` : "NO CAP"}` : "PRODUCTION · OF CAP"}</span>
-              <span className="tile-v">{p ? usd(p.spend, 2) : "—"}</span>
+              <span className="tile-v">{p ? money.of(p) : "—"}</span>
               {p?.capUsd ? <span className="tile-bar"><span style={{ width: `${capPct}%` }} /></span> : null}
               <span className="tile-s">{p ? `${p.capUsd ? `${capPct}% spent · ` : ""}${approved} of ${shots} shots approved` : "Pick a production in the header to see it against its cap."}</span>
             </div>
             <div className="tile">
               <span className="tile-l">COST PER APPROVED SHOT</span>
-              <span className="tile-v">{perApproved != null ? usd(perApproved, 2) : "—"}</span>
+              <span className="tile-v">{perApproved != null && p ? money.each(p, approved) : "—"}</span>
               <span className="tile-s">{p ? (approved ? `${p.name} · all takes counted, ${takesPerApproval!.toFixed(1)} takes per approval` : `${p.name} · nothing approved yet`) : "Per production, once one is picked."}</span>
             </div>
             <div className="tile">
               <span className="tile-l">PROJECTED AT THIS RATE</span>
-              <span className="tile-v">{projected != null ? usd(projected, 0) : "—"}</span>
+              <span className="tile-v">{projected != null ? money.approx(projected) : "—"}</span>
               <span className="tile-s">{p && projected != null
-                ? `to approve all ${shots} · ${p.capUsd ? (projected <= p.capUsd ? `under cap by ${usd(p.capUsd - projected, 0)}` : `over cap by ${usd(projected - p.capUsd, 0)}`) : "no cap set"}`
+                ? `to approve all ${shots} · ${p.capUsd && !money.inCredits ? (projected <= p.capUsd ? `under cap by ${usd(p.capUsd - projected, 0)}` : `over cap by ${usd(projected - p.capUsd, 0)}`) : money.inCredits ? "" : "no cap set"}`
                 : "Needs one approved shot to project from."}</span>
             </div>
           </div>
 
           <div className="ugrid">
             <div className="ucard">
-              <div className="ucard-h"><span>By production</span><span className="mono-s">{periodLabel} · {usd(all.totals.spend, 2)}</span></div>
+              <div className="ucard-h"><span>By production</span><span className="mono-s">{periodLabel} · {money.of(all.totals)}</span></div>
               <div className="flex flex-col gap-[9px]">
                 {all.byProject.length === 0 && <span className="rail-help">Nothing rendered in this period.</span>}
                 {all.byProject.slice().sort((a, b) => b.spend - a.spend).map((r) => (
                   <Link key={r.id ?? "unfiled"} href={r.id ? `/projects/${r.id}/canvas` : "/all"} className="urow">
                     <span className="truncate">{r.id ? r.name : "Unfiled"}</span>
                     <span className="ubar"><span style={{ width: `${Math.max(1, (r.spend / maxProd) * 100)}%`, opacity: r.id ? 1 : .35 }} /></span>
-                    <span className="mono-v text-right">{usd(r.spend, 2)}</span>
+                    <span className="mono-v text-right">{money.of(r)}</span>
                   </Link>
                 ))}
               </div>
               <span className="rail-help">Unfiled covers test takes made in All productions. File them against a shot and they move to the production.</span>
             </div>
             <div className="ucard">
-              <div className="ucard-h"><span>Who spent it</span><span className="mono-s">{focusLabel} · {focus ? usd(focus.totals.spend, 2) : "—"}</span></div>
+              <div className="ucard-h"><span>Who spent it</span><span className="mono-s">{focusLabel} · {focus ? money.of(focus.totals) : "—"}</span></div>
               <div className="flex flex-col gap-[9px]">
                 {people.length === 0 && <span className="rail-help">Nobody has rendered here in this period.</span>}
                 {people.slice().sort((a, b) => b.spend - a.spend).map((r) => (
                   <div key={r.id || r.name} className="urow is-person">
                     <span className="flex items-center gap-2 truncate"><span className="ptable-av !ml-0 !h-[22px] !w-[22px] !text-[8.5px]">{initials(r.name)}</span>{r.name} <span className="text-dim">{r.n} take{r.n === 1 ? "" : "s"}</span></span>
                     <span className="ubar"><span style={{ width: `${Math.max(1, (r.spend / maxPerson) * 100)}%` }} /></span>
-                    <span className="mono-v text-right">{usd(r.spend, 2)}</span>
+                    <span className="mono-v text-right">{money.of(r)}</span>
                   </div>
                 ))}
               </div>
@@ -808,7 +820,7 @@ function ProductionTop() {
                   </span>
                   <span className={`text-right ${r.state === "Approved" ? "text-approved" : r.state === "Draft" ? "text-dim" : ""}`}>{r.state}</span>
                   <span className="text-right text-dim">{r.back || "—"}</span>
-                  <span className="mono-v text-right">{usd(r.cost, 2)}</span>
+                  <span className="mono-v text-right">{r.paid}</span>
                 </Link>
               ))}
               {worry && <span className="rail-help">{worry.code} has cost more than any approved shot and isn&rsquo;t approved yet{worry.back ? ` — ${worry.back} take${worry.back === 1 ? " was" : "s were"} sent back with a note` : ""}.</span>}
@@ -822,8 +834,8 @@ function ProductionTop() {
                     <div className="flex flex-col gap-1.5">
                       {engines.map((m, i) => (
                         <div key={m.model} className="flex justify-between text-[12.5px]">
-                          <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-[2px]" style={{ background: shade(i) }} />{m.label} · {PROVIDER_NAMES[getModel(m.model).provider ?? ""] ?? getModel(m.model).provider ?? "—"} <span className="text-dim">{m.n} take{m.n === 1 ? "" : "s"}</span></span>
-                          <span className="mono-v">{usd(m.spend, 2)}</span>
+                          <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-[2px]" style={{ background: shade(i) }} />{m.label} · {PROVIDER_NAMES[providerOf(m.model) ?? ""] ?? providerOf(m.model) ?? "—"} <span className="text-dim">{m.n} take{m.n === 1 ? "" : "s"}</span></span>
+                          <span className="mono-v">{money.of(m)}</span>
                         </div>
                       ))}
                     </div>

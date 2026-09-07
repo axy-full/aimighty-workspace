@@ -20,12 +20,13 @@ import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { usd, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { Section } from "@/components/GenGrid";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
 import type { Gen } from "@/components/GenCard";
 import type { CastMember } from "@/lib/cast";
 import type { IdentityView } from "@/components/IdentitySheet";
+import { useMoney } from "@/lib/price";
 
 type Project = { id: string; name: string; description: string; code?: string; category?: string };
 
@@ -76,8 +77,8 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
     Promise.resolve().then(() => setLive(anyLive));
   }, [anyLive, live]);
 
-  const spend = [...clips, ...stills, ...sounds]
-    .reduce((a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0);
+  const money = useMoney();
+  const spend = money.sum([...clips, ...stills, ...sounds]);
   const total = clips.length + stills.length + sounds.length;
 
   if (!video) {
@@ -94,7 +95,7 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
         <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
           <h1 className="h1">{project?.name ?? "Project"}</h1>
           <span className="text-[15px] text-dim tabular-nums">
-            {total} take{total === 1 ? "" : "s"} · {usd(spend, 2)}
+            {total} take{total === 1 ? "" : "s"} · {spend}
           </span>
           <span className="ml-auto flex flex-wrap gap-2">
             <Link href={`/projects/${id}`} className="chip">Overview</Link>

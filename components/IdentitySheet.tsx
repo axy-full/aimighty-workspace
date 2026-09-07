@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { uploadFile } from "@/lib/uploadClient";
-import { timeAgo, usd } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { appConfirm } from "./dialog";
 import { IconClose, IconPlus, IconSparkle } from "./Icons";
 import { ParticlSpinner, Empty } from "./ParticlMark";
@@ -11,6 +11,7 @@ import LazyMedia from "./LazyMedia";
 import Theatre from "./Theatre";
 import Boundary from "./Boundary";
 import type { Gen } from "./GenCard";
+import { useMoney } from "@/lib/price";
 
 /**
  * One identity, opened: its photos, its training, and — once trained — a
@@ -40,6 +41,7 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const money = useMoney();
   const [identity, setIdentity] = useState<IdentityView | null>(initial);
   const [progress, setProgress] = useState<number | null>(null);
   const [name, setName] = useState(initial?.name ?? "");
@@ -213,7 +215,7 @@ export default function IdentitySheet({ identity: initial, projectId, terms, onC
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="text-[13px] font-medium text-dim">Training</span>
               <span className="text-[12.5px] text-mute">
-                About {usd(terms.trainCostUsd)} for {terms.steps.toLocaleString()} steps, a few minutes on fal.ai. Renders afterwards are ~{usd(terms.renderUsdPerMp)} a still.
+                About {money.price(terms.trainCostUsd, "identity-training")} for {terms.steps.toLocaleString()} steps, a few minutes on fal.ai. Renders afterwards are ~{money.price(terms.renderUsdPerMp, "fal-ai/flux-lora")} a still.
               </span>
             </div>
             {training && (

@@ -6,8 +6,8 @@ import GenCard, { type Gen } from "./GenCard";
 import Theatre from "./Theatre";
 import Boundary from "./Boundary";
 import { Empty } from "./ParticlMark";
-import { usd } from "@/lib/format";
 import { useProject } from "@/lib/projectContext";
+import { useMoney } from "@/lib/price";
 
 export default function GenGrid({
   gens, projects, onChanged, empty = "No clips.",
@@ -98,15 +98,14 @@ export function Section({ title, items, projects, onChanged, empty }: {
    *  "No clips.", which is wrong under an Images or Audio heading. */
   empty?: string;
 }) {
-  const spend = items.reduce(
-    (a, g) => a + (g.costUsd ?? 0) + (g.refineCostUsd ?? 0), 0
-  );
+  const money = useMoney();
+  const spend = money.sum(items);
   return (
     <section>
       <div className="mb-3 flex items-baseline gap-2.5">
         <h2 className="text-[19px] font-semibold tracking-[-0.015em]">{title}</h2>
         <span className="text-[13.5px] tabular-nums text-mute">
-          {items.length} · {usd(spend, 2)}
+          {items.length} · {spend}
         </span>
       </div>
       <GenGrid gens={items} projects={projects} onChanged={onChanged} empty={empty} />

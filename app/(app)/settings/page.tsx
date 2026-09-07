@@ -31,6 +31,7 @@ import { useSession, clearPrivateLocal } from "@/lib/session";
 import ThemeRow from "@/components/ThemeRow";
 import { ParticlMark, Empty } from "@/components/ParticlMark";
 import { AtomikMark } from "@/components/AtomikMark";
+import { useMoney } from "@/lib/price";
 
 type Me = { name: string; email: string; role: string; owner?: boolean };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; promptSpendUsd?: number };
@@ -77,6 +78,7 @@ function gb(bytes: number): string {
 export default function SettingsPage() {
   usePageTitle("Settings");
   const { signedIn, workspace, role, owner, superAdmin, workspaces } = useSession();
+  const money = useMoney();
   const prefs = usePrefs();
   const model = getModel(prefs.modelId);
   const router = useRouter();
@@ -130,8 +132,8 @@ export default function SettingsPage() {
      the rate line is the same estimate the render button shows. */
   const rateFor = (e: EngineInfo): string => {
     const id = e.id.toLowerCase();
-    if (id.includes("byteplus") || id.includes("ark")) return seed ? `${usd(seed.net, 2)} per 5s at 1080P${seedTok ? ` (${compactTokens(seedTok)} tok)` : ""}. 10s doubles.` : "Billed per token of output video.";
-    if (id.includes("fal")) return `Kling 3.0 from $0.084 a second · Topaz Astra from $0.30 a second${idTerms?.terms.trainCostUsd ? ` · ~${usd(idTerms.terms.trainCostUsd, 2)} per identity trained` : ""}.`;
+    if (id.includes("byteplus") || id.includes("ark")) return seed ? `${money.price(seed.net, DEFAULT_MODEL_ID)} per 5s at 1080P${seedTok && !money.inCredits ? ` (${compactTokens(seedTok)} tok)` : ""}. 10s doubles.` : "Billed per token of output video.";
+    if (id.includes("fal")) return `Kling 3.0 from ${money.rate(0.084, "fal-ai/kling-video/v3/standard")} a second · Topaz Astra from ${money.rate(0.30, "topaz/upscale/video/creative")} a second${idTerms?.terms.trainCostUsd ? ` · ~${money.price(idTerms.terms.trainCostUsd, "identity-training")} per identity trained` : ""}.`;
     if (id.includes("eleven")) return audio?.terms ? `${audio.terms.sfxCredits} credits per sound effect · ${audio.terms.musicCreditsPerMinute} per minute of music${audio.account ? ` · ${audio.account.tier} plan` : ""}.` : "Bought in credits; the ledger counts them.";
     if (id.includes("gateway")) return "The prompt writer and Google stills bill here, on the deployment's own credit.";
     if (e.via === "gateway") return "Billed per still through Vercel AI Gateway, on the same credit as the prompt writer.";
@@ -257,7 +259,7 @@ export default function SettingsPage() {
                 ? <WriterRow writer={engineData.refiner} credits={engineData.gatewayCredits ?? null} isAdmin={isAdmin} onChanged={refreshEngines} />
                 : <div className="row"><span className="text-[14px] text-mute">{signedIn ? "Reading the workspace's choice…" : "Sign in to see who writes the prompts."}</span></div>}
             </div>
-            {usage && (
+            {usage && !money.inCredits && (
               <span className="rail-help">Credit: spent {usd(usage.spentUsd, 2)} all time · added {usd(usage.purchasedUsd, 2)} · remaining {usd(usage.remainingUsd, 2)}. Each vendor&rsquo;s own count is on <Link href="/usage" className="text-ink">Usage</Link>.</span>
             )}
           </section>
@@ -266,7 +268,7 @@ export default function SettingsPage() {
           <section id="masters" className="scard">
             <div className="scard-h"><span>Storage &amp; masters</span><span>Masters are stored byte-for-byte and never compressed to suit an API. What the engine returned is what you download.</span></div>
             <div className="grid grid-cols-3 gap-2.5 max-[900px]:grid-cols-1">
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">BUCKET</span><span className="text-[18px] font-semibold">{ledger?.storage ? gb(ledger.storage.bytes) : "—"}</span><span className="text-[12px] leading-[1.4] text-dim">private Blob · {ledger?.storage ? `${ledger.storage.counted.toLocaleString()} files${ledger.storage.unmeasured ? ` (+${ledger.storage.unmeasured} unmeasured)` : ""} · ${usd(ledger.storage.monthlyUsd, 2)} a month` : "sign in for the count"} · {setting("retentionDays") === "0" || !setting("retentionDays") ? "every take kept, nothing pruned" : `deleted takes pruned after ${setting("retentionDays")} days`}</span></div>
+              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">BUCKET</span><span className="text-[18px] font-semibold">{ledger?.storage ? gb(ledger.storage.bytes) : "—"}</span><span className="text-[12px] leading-[1.4] text-dim">private Blob · {ledger?.storage ? `${ledger.storage.counted.toLocaleString()} files${ledger.storage.unmeasured ? ` (+${ledger.storage.unmeasured} unmeasured)` : ""}${money.inCredits ? "" : ` · ${usd(ledger.storage.monthlyUsd, 2)} a month`}` : "sign in for the count"} · {setting("retentionDays") === "0" || !setting("retentionDays") ? "every take kept, nothing pruned" : `deleted takes pruned after ${setting("retentionDays")} days`}</span></div>
               <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">FILE NAMING</span><span className="mono-v !text-[12.5px] !leading-[1.4]">{setting("namingTemplate") || "{project}_{shot}_{version}_{w}x{h}.{ext}"}</span><span className="text-[12px] leading-[1.4] text-dim">Filing against a shot is what gives a take its number and its name.</span></div>
               <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">DELIVERY</span><span className="text-[18px] font-semibold">Per shot</span><span className="text-[12px] leading-[1.4] text-dim">Approved masters download one shot at a time from the Canvas. Everyone on the team can download; a derived copy travels only when an API needs one.</span></div>
             </div>
@@ -409,6 +411,7 @@ const WRITERS: { id: Refiner["writer"]; label: string; blurb: string }[] = [
 ];
 
 function WriterRow({ writer, credits, isAdmin, onChanged }: { writer: Refiner; credits: Credits; isAdmin: boolean; onChanged: () => void }) {
+  const money = useMoney();
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<RefinerTest | null>(null);
@@ -447,7 +450,7 @@ function WriterRow({ writer, credits, isAdmin, onChanged }: { writer: Refiner; c
           Prompt writer
           <span className="mt-0.5 block text-[12px] leading-snug text-mute">
             {current.blurb}{writer.writer !== "none" ? ` Currently ${writer.label} · ${writer.via}.` : ""}
-            {credits && writer.writer === "claude" && (
+            {credits && writer.writer === "claude" && !money.inCredits && (
               <> Gateway credit: <span className="text-dim">{usd(credits.balanceUsd, 2)}</span> left, {usd(credits.usedUsd, 3)} used.</>
             )}
           </span>

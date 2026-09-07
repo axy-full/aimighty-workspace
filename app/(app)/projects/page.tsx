@@ -18,16 +18,17 @@ import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
-import { usd, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { appPrompt, appAlert } from "@/components/dialog";
 import LazyMedia from "@/components/LazyMedia";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import type { Gen } from "@/components/GenCard";
 import { usePageTitle } from "@/lib/usePageTitle";
+import { useMoney } from "@/lib/price";
 
 type Row = {
   id: string; name: string; code: string; category: string; description: string; createdAt: number;
-  genCount: number; spend: number; capUsd: number | null; kind: string | null; runtimeTarget: number | null;
+  genCount: number; spend: number; credits?: number; capUsd: number | null; kind: string | null; runtimeTarget: number | null;
   stage: string | null; live: number; shots: number; approvedShots: number; pickedShots: number;
   team: string[]; last: { at: number; who: string | null; what: string } | null;
   fromAtomik?: boolean; syncedAt?: number | null; unsent?: number;
@@ -51,9 +52,10 @@ export default function ProjectsPage() {
   usePageTitle("Productions");
   const router = useRouter();
   const { signedIn } = useSession();
+  const money = useMoney();
   const { setSelection, refreshProjects } = useProject();
   const { data, refresh } = useApi<{ projects: Row[] }>(signedIn ? "/api/projects" : null, 30_000);
-  const { data: month } = useApi<{ spentUsd: number }>(signedIn ? "/api/usage/summary" : null, 60_000);
+  const { data: month } = useApi<{ spentUsd: number; spentCredits?: number }>(signedIn ? "/api/usage/summary" : null, 60_000);
   // One cheap page of recent renders supplies every thumbnail, newest first.
   const { data: recent } = useApi<{ generations: Gen[] }>(signedIn ? "/api/jobs?limit=60&sync=0" : null, 30_000);
 
@@ -144,7 +146,7 @@ export default function ProjectsPage() {
                       <span className="ptable-bar is-approved"><span style={{ width: `${approvedPct}%` }} /></span>
                     </span>
                     <span className="ptable-stat">
-                      <span className="ptable-stat-l"><span>{usd(p.spend, 2)}</span><span>{p.capUsd ? `of $${Math.round(p.capUsd)}` : "no cap"}</span></span>
+                      <span className="ptable-stat-l"><span>{money.of(p)}</span><span>{money.inCredits ? "" : p.capUsd ? `of $${Math.round(p.capUsd)}` : "no cap"}</span></span>
                       <span className="ptable-bar"><span style={{ width: `${spendPct}%` }} /></span>
                     </span>
                     <span className="ptable-team" title={p.team.join(", ") || "Nobody has rendered here yet"}>
@@ -164,7 +166,7 @@ export default function ProjectsPage() {
                   {unfiled > 0 && <> <Link href="/all" className="text-ink underline-offset-2 hover:underline">{unfiled} take{unfiled === 1 ? " sits" : "s sit"} outside any production →</Link></>}
                 </span>
                 <span className="mono-v whitespace-nowrap">
-                  {projects.length} PRODUCTION{projects.length === 1 ? "" : "S"} · {totalShots} SHOT{totalShots === 1 ? "" : "S"} · {month ? usd(month.spentUsd, 2) : "—"} THIS MONTH
+                  {projects.length} PRODUCTION{projects.length === 1 ? "" : "S"} · {totalShots} SHOT{totalShots === 1 ? "" : "S"} · {month ? money.of({ spend: month.spentUsd, credits: month.spentCredits }) : "—"} THIS MONTH
                 </span>
               </div>
             </div>

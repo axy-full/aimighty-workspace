@@ -24,10 +24,11 @@ import { Empty, ParticlSpinner } from "@/components/ParticlMark";
 import LazyMedia from "@/components/LazyMedia";
 import IdentitySheet, { type IdentityView, type IdentityTerms } from "@/components/IdentitySheet";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { timeAgo, usd } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import type { CastMember } from "@/lib/cast";
 import type { Gen } from "@/components/GenCard";
+import { useMoney } from "@/lib/price";
 
 const KINDS: { id: CastMember["kind"]; label: string; badge: string; blurb: string }[] = [
   { id: "character", label: "Character", badge: "CHARACTER", blurb: "A face the production returns to." },
@@ -44,6 +45,7 @@ type Sel = { type: "cast"; id: string } | { type: "identity"; id: string } | nul
 export default function StudioPage() {
   usePageTitle("Studio · Cast");
   const { signedIn } = useSession();
+  const money = useMoney();
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const q = scoped ? `?projectId=${encodeURIComponent(bin)}` : "";
@@ -208,7 +210,7 @@ export default function StudioPage() {
                       {i.status === "ready"
                         ? `Used in ${usageLine(i.name).toLowerCase()}. Stills carry the face itself; @${i.name} carries a still into video.`
                         : i.status === "training"
-                          ? `${i.photos.length} photos · started ${timeAgo(i.updatedAt)}${i.authorName ? ` by ${i.authorName}` : ""}${i.costUsd != null ? ` · ${usd(i.costUsd, 2)} training cost` : terms.trainCostUsd ? ` · ~${usd(terms.trainCostUsd, 2)} training cost` : ""}`
+                          ? `${i.photos.length} photos · started ${timeAgo(i.updatedAt)}${i.authorName ? ` by ${i.authorName}` : ""}${i.costUsd != null ? ` · ${money.price(i.costUsd, "identity-training")} training cost` : terms.trainCostUsd ? ` · ~${money.price(terms.trainCostUsd, "identity-training")} training cost` : ""}`
                           : `${terms.recommended} photos of one person, then Train.`}
                     </span>
                   </span>
