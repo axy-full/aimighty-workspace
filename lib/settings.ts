@@ -27,6 +27,8 @@ export const DEFAULTS = {
   /** The engine a new composer opens on, per kind; blank inherits the platform's default. */
   defaultVideoModel: "",
   defaultImageModel: "",
+  /** Platform rule ids this workspace has switched off, comma-separated. */
+  rulesOff: "",
   /**
    * Container for edits and extensions: "mp4" or "mov".
    *
