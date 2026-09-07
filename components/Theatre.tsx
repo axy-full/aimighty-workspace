@@ -21,11 +21,13 @@ import { shortLabel } from "@/lib/models";
 import { prettyModel } from "@/lib/enhance";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
 import { useMoney } from "@/lib/price";
+import { failureKind, failureCopy } from "@/lib/jobState";
+import Link from "next/link";
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
 export default function Theatre({
-  gens, activeId, onClose, onSelect, onChanged, onUse, onUseAsRef, onEditExtend, onStillTool,
+  gens, activeId, onClose, onSelect, onChanged, onUse, onUseAsRef, onEditExtend, onStillTool, onRetry,
 }: {
   gens: Gen[];
   activeId: string | null;
@@ -40,6 +42,8 @@ export default function Theatre({
   onEditExtend?: (task: LockedTaskId, gen: Gen) => void;
   /** A still post tool (outpaint to an aspect, or a cutout), confirmed with its price by the caller. */
   onStillTool?: (tool: "outpaint" | "cutout", gen: Gen, ratio?: string) => void;
+  /** Render this take again with its own parameters (brief 1.5). */
+  onRetry?: (gen: Gen) => void;
 }) {
   const idx = gens.findIndex((g) => g.id === activeId);
   const gen = idx >= 0 ? gens[idx] : null;
@@ -213,6 +217,18 @@ export default function Theatre({
             ) : (
               <>
                 <p className="text-[15px] font-medium text-[#FF6B60]">{gen.status === "cancelled" ? "Cancelled" : "Failed"}</p>
+                {gen.status === "failed" && (() => {
+                  const f = failureCopy(failureKind(gen.error, gen.params));
+                  return (
+                    <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                      <span className="text-[13px] text-white/80">{f.why}</span>
+                      {f.action === "retry" && onRetry && <button type="button" className="chip !py-1 !text-[12.5px]" onClick={() => onRetry(gen)}>{f.label}</button>}
+                      {f.action === "edit" && onUse && <button type="button" className="chip !py-1 !text-[12.5px]" onClick={() => onUse(gen)}>{f.label}</button>}
+                      {f.action === "unlock" && gen.projectId && <Link href={`/projects/${encodeURIComponent(gen.projectId)}`} className="chip !py-1 !text-[12.5px]">{f.label}</Link>}
+                      {f.action === "topup" && <Link href="/settings#credits" className="chip !py-1 !text-[12.5px]">{f.label}</Link>}
+                    </div>
+                  );
+                })()}
                 {gen.error && (
                   <>
                     {/* Monospace, selectable and scrollable: a vendor refusal

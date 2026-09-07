@@ -31,6 +31,7 @@ import { useApi } from "@/lib/useApi";
 import { shortLabel } from "@/lib/models";
 import { downloadHref } from "@/lib/format";
 import { useMoney } from "@/lib/price";
+import QueueStrip from "@/components/QueueStrip";
 
 /** Kept for the callers that still speak it; the wall itself shows one kind. */
 export type FeedFilter = "all" | "video" | "image" | "audio";
@@ -206,6 +207,7 @@ export default function Feed({
           </label>
         </div>
       </div>
+      <QueueStrip gens={gens} onOpen={onOpen} />
 
       <div className="ws-scroll">
         {gens.length === 0 && problem ? (

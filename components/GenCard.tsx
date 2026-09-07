@@ -8,6 +8,7 @@ import LazyMedia from "./LazyMedia";
 import { ParticlSpinner } from "./ParticlMark";
 import { IconDown, IconTrash, IconAudio } from "./Icons";
 import { useMoney } from "@/lib/price";
+import { failureKind, failureCopy } from "@/lib/jobState";
 
 export type Gen = {
   id: string;
@@ -112,6 +113,7 @@ export default function GenCard({
             <span className={`tile-face-label ${live ? "" : held ? "text-dim" : "text-lift"}`}>
               {live ? (gen.status === "queued" ? "Queued…" : "Rendering…") : held ? ((gen.params as { held?: { why?: string } }).held?.why === "slots" ? "Waiting for a slot" : "Held · top up to release") : gen.status === "cancelled" ? "Cancelled" : "Failed"}
             </span>
+            {gen.status === "failed" && <span className="tile-face-why">{failureCopy(failureKind(gen.error, gen.params)).why}</span>}
             {gen.error && <span className="tile-face-error">{gen.error.slice(0, 150)}</span>}
           </span>
         )}
