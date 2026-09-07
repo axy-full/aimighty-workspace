@@ -27,6 +27,8 @@ import { gatewayPost } from "./gateway";
 import { engineMock } from "./mock";
 import { getModel } from "./models";
 import { TEXT_RATES, promptRichness, shouldRefine, type Richness } from "./refineGate";
+import { getPlatformLayer } from "./platform";
+import { textModelFor } from "./platformLayer";
 export { TEXT_RATES, promptRichness, shouldRefine };
 export type { Richness };
 export { gatewayReachable, gatewayAuth, gatewayCredits, GATEWAY_BASE, GATEWAY_URL } from "./gateway";
@@ -123,7 +125,9 @@ export async function activeWriter(): Promise<ActiveWriter> {
     return { writer: "claude", provider: "anthropic", model: CLAUDE_MODEL(),
              label: prettyModel(CLAUDE_MODEL()), via: "Anthropic", configured: true };
   }
-  const m = GATEWAY_MODELS()[0];
+  // The platform routes enhancement to a fast, cheap model (brief 1.8); the deployment's own list is the fallback.
+  const routed = textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, "enhance");
+  const m = TEXT_RATES[routed] ? routed : GATEWAY_MODELS()[0];
   return {
     writer: "claude", provider: "gateway", model: m, label: prettyModel(m),
     via: vendorKey("gateway") ? "Vercel AI Gateway (API key)" : "Vercel AI Gateway (OIDC)",

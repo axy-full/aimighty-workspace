@@ -1,5 +1,6 @@
 import { CATEGORIES, type ShotSpec } from "./studio";
 import { MODELS, DEFAULT_MODEL_ID } from "./models";
+import { TEXT_RATES } from "./refineGate";
 
 /**
  * The platform layer: what every new workspace inherits and may change.
@@ -92,10 +93,35 @@ export type PlatformCaps = {
 };
 export const DEFAULT_CAPS: PlatformCaps = { defaultCapCredits: null, signupCredits: null, warnPct: 80, concurrency: 4, rendersPerHour: 60, storageGb: 50 };
 
-/** The engine a composer opens on, per kind. The platform's choice; a workspace's Defaults & caps may name another. */
-export type PlatformModels = { video: string; image: string };
+/** The text jobs Atomik and the writer run, each routed to a model (brief 1.8): enhancement is high-volume and runs fast and cheap; ideas and shots can afford a stronger one. */
+export type TextJob = "enhance" | "idea" | "shot";
+export const TEXT_JOBS: TextJob[] = ["enhance", "idea", "shot"];
+export const TEXT_JOB_LABELS: Record<TextJob, string> = { enhance: "Prompt enhancement", idea: "Ideas and treatments", shot: "Shot lists" };
+export type TextModels = Record<TextJob, string>;
+export const DEFAULT_TEXT_MODELS: TextModels = { enhance: "anthropic/claude-sonnet-5", idea: "anthropic/claude-opus-5", shot: "anthropic/claude-opus-5" };
+/** The text models a console may name: the gateway-prefixed ids the rates table knows. */
+export const TEXT_MODEL_IDS: string[] = Object.keys(TEXT_RATES).filter((k) => k.includes("/"));
+
+/** The engine a composer opens on, per kind, and the model per text job. The platform's choice; a workspace's Defaults & caps may name another engine. */
+export type PlatformModels = { video: string; image: string; text: TextModels };
 const firstVisible = (kind: "video" | "image"): string => MODELS.find((m) => m.kind === kind && !m.hidden)?.id ?? DEFAULT_MODEL_ID;
-export const DEFAULT_MODELS: PlatformModels = { video: DEFAULT_MODEL_ID, image: firstVisible("image") };
+export const DEFAULT_MODELS: PlatformModels = { video: DEFAULT_MODEL_ID, image: firstVisible("image"), text: { ...DEFAULT_TEXT_MODELS } };
+
+function cleanTextModels(v: unknown): TextModels {
+  const out = { ...DEFAULT_TEXT_MODELS };
+  if (!isObj(v)) return out;
+  for (const job of TEXT_JOBS) {
+    const id = (v as Record<string, unknown>)[job];
+    if (typeof id === "string" && TEXT_MODEL_IDS.includes(id)) out[job] = id;
+  }
+  return out;
+}
+
+/** The model a text job runs on, from the layer's pair — never empty. */
+export function textModelFor(models: { text?: Partial<TextModels> } | null | undefined, job: TextJob): string {
+  const id = models?.text?.[job];
+  return typeof id === "string" && id ? id : DEFAULT_TEXT_MODELS[job];
+}
 
 /** A real, visible engine of the kind — or nothing. */
 export function modelOfKind(id: unknown, kind: "video" | "image"): string | null {
@@ -105,8 +131,8 @@ export function modelOfKind(id: unknown, kind: "video" | "image"): string | null
 }
 
 export function cleanModels(v: unknown): PlatformModels {
-  if (!isObj(v)) return { ...DEFAULT_MODELS };
-  return { video: modelOfKind(v.video, "video") ?? DEFAULT_MODELS.video, image: modelOfKind(v.image, "image") ?? DEFAULT_MODELS.image };
+  if (!isObj(v)) return { ...DEFAULT_MODELS, text: { ...DEFAULT_TEXT_MODELS } };
+  return { video: modelOfKind(v.video, "video") ?? DEFAULT_MODELS.video, image: modelOfKind(v.image, "image") ?? DEFAULT_MODELS.image, text: cleanTextModels(v.text) };
 }
 
 /** What a workspace's composer opens on: its own Defaults & caps when they name a real engine, else the platform's. */
@@ -114,6 +140,7 @@ export function resolveModels(settings: Record<string, string | undefined>, laye
   return {
     video: modelOfKind(settings.defaultVideoModel, "video") ?? layer.models.video,
     image: modelOfKind(settings.defaultImageModel, "image") ?? layer.models.image,
+    text: { ...DEFAULT_TEXT_MODELS, ...(layer.models.text ?? {}) },
   };
 }
 

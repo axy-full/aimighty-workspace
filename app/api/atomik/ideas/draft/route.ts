@@ -60,7 +60,7 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json({ error: "Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Vendors & keys." }, { status: 503 });
   }
 
-  const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto");
+  const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
   const auth = await gatewayAuth();
   const user = [`NOTE: ${brief}`, toneIn ? `TONE WORDS: ${toneIn}` : ""].filter(Boolean).join("\n");
   const res = await gatewayPost(JSON.stringify({

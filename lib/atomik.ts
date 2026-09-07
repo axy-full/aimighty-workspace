@@ -4,6 +4,8 @@ import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd, textCostUsd }
 import { MODELS, estimateCostUsd, estimateImageCostUsd } from "./models";
 import { gatewayPost } from "./gateway";
 import { meter } from "./meter";
+import { getPlatformLayer } from "./platform";
+import { textModelFor } from "./platformLayer";
 
 /**
  * Atomik — the studio's agent.
@@ -410,7 +412,7 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
     );
   }
 
-  const model = await resolveModel(chat.model);
+  const model = await resolveModel(chat.model, "shot");
   const list = await engines();
   const engineText = list.map((e) => `  ${e.id} — ${e.label} (${e.kind}). ${e.note}`).join("\n");
 
@@ -536,9 +538,12 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
 }
 
 /** "auto" → the first featured planner the gateway is actually serving. */
-export async function resolveModel(want: string): Promise<string> {
+export async function resolveModel(want: string, job: "idea" | "shot" = "idea"): Promise<string> {
   if (want && want !== "auto") return want;
   const cat = await catalog();
+  // "auto" is the platform's routing (brief 1.8): the layer names a model per job; the catalogue must know it.
+  const routed = textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, job);
+  if (cat.some((m) => m.id === routed)) return routed;
   const first = FEATURED.planner.find((id) => cat.some((m) => m.id === id));
   return first ?? "anthropic/claude-sonnet-5";
 }

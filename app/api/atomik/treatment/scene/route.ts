@@ -37,7 +37,7 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!t || !scene) return NextResponse.json({ error: "No such scene." }, { status: 404 });
   if (!gatewayReachable()) return NextResponse.json({ error: "Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Vendors & keys." }, { status: 503 });
 
-  const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto");
+  const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
   const auth = await gatewayAuth();
   const user = [
     `LOGLINE: ${t.logline || "(none yet)"}`,

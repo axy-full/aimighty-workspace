@@ -34,6 +34,7 @@ type ShotProposal = BaseShotProposal & { takeUsd?: number };
 import { billCredits } from "@/lib/creditTerms";
 import { estimateRefineUsd } from "@/lib/refineGate";
 import { useMoney } from "@/lib/price";
+import { textModelFor } from "@/lib/platformLayer";
 
 type Loaded = { treatment: Treatment | null; cast: CastMember[] };
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
@@ -57,7 +58,7 @@ export default function BreakdownPage() {
 function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTarget: number | null }) {
   const router = useRouter();
   const money = useMoney();
-  const { signedIn } = useSession();
+  const { signedIn , models: sessionModels } = useSession();
   const { data } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
   const { data: shotData, refresh } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 15_000);
   useOnChange(refresh);
@@ -91,7 +92,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   /* The shot builder (brief 1.8): a scene's shots proposed with every row filled, cast tagged, an engine and its credits each — added one by one, never over what is here. */
   const [drafting, setDrafting] = useState<number | null>(null);
   const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; sceneUsd: number; model: string; costUsd: number } | null>(null);
-  const draftCr = billCredits(estimateRefineUsd("anthropic/claude-sonnet-5", 1800, 900) ?? 0.01, "text");
+  const draftCr = billCredits(estimateRefineUsd(textModelFor(sessionModels ?? null, "shot"), 1800, 900) ?? 0.01, "text");
   async function draftShots(scene: Scene) {
     setDrafting(scene.n); setProposals(null);
     try {

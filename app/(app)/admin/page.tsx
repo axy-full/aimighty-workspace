@@ -16,7 +16,7 @@ import { Empty, Waiting } from "@/components/ParticlMark";
 import { CATEGORIES } from "@/lib/studio";
 import { REASON_LABELS } from "@/lib/reports";
 import { getModel, MODELS } from "@/lib/models";
-import { RULE_SCOPES, RULE_SCOPE_LABELS } from "@/lib/platformLayer";
+import { TEXT_JOBS, TEXT_JOB_LABELS, TEXT_MODEL_IDS, textModelFor, RULE_SCOPES, RULE_SCOPE_LABELS } from "@/lib/platformLayer";
 import { PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
 import { billCredits } from "@/lib/creditTerms";
 
@@ -364,7 +364,7 @@ type Layer = {
   starter: { name: string; code: string; description: string; shots: { code: string; title: string; description: string; planned: number; setup: Record<string, string>; cast: string[] }[]; cast: { name: string; kind: "character" | "location" | "prop" | "style"; description: string }[] };
   rules: { id: string; text: string; scope: string; apply: "writer" | "prompt"; on: boolean }[];
   caps: { defaultCapCredits: number | null; signupCredits: number | null; warnPct: number; concurrency: number; rendersPerHour: number; storageGb: number };
-  models: { video: string; image: string };
+  models: { video: string; image: string; text?: Record<string, string> };
 };
 type LayerView = { layer: Layer; stored: string[]; defaults: Layer; cameraBank: { kind: string; value: string; label: string; module: string }[] };
 
@@ -480,6 +480,12 @@ function PlatformLayerCard() {
             <select className="ctl !h-8 !text-[13px]" value={layer.models.image} onChange={(e) => set({ models: { ...layer.models, image: e.target.value } })}>
               {MODELS.filter((m) => m.kind === "image" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select></label>
+          {TEXT_JOBS.map((job) => (
+            <label key={job} className="flex flex-col gap-1 text-[12px] text-dim">{TEXT_JOB_LABELS[job]} — model
+              <select className="ctl !h-8 !text-[13px]" value={textModelFor(layer.models, job)} onChange={(e) => set({ models: { ...layer.models, text: { ...(layer.models.text ?? {}), [job]: e.target.value } } })}>
+                {TEXT_MODEL_IDS.map((id) => <option key={id} value={id}>{id.split("/").pop()}</option>)}
+              </select></label>
+          ))}
         </div>
       </div>
 
