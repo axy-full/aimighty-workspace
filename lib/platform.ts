@@ -97,6 +97,19 @@ const SCHEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS topup_requests_ws ON topup_requests(workspace_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS topup_requests_status ON topup_requests(status, created_at)`,
+  `CREATE TABLE IF NOT EXISTS reports (
+     id            TEXT PRIMARY KEY,
+     url           TEXT NOT NULL,
+     reason        TEXT NOT NULL,
+     details       TEXT,
+     email         TEXT,
+     account_id    TEXT,
+     workspace_id  TEXT,
+     created_at    INTEGER NOT NULL,
+     handled_at    INTEGER,
+     handled_by    TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS reports_open ON reports(handled_at, created_at)`,
   `CREATE TABLE IF NOT EXISTS platform_layer (
      key         TEXT PRIMARY KEY,
      value       TEXT NOT NULL,
@@ -260,6 +273,10 @@ export function platformReady(): Promise<void> {
          database only by ALTER; a duplicate is the one error to ignore. */
       for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`]) {
         try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
+        catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
+      }
+      for (const col of [`accepted_policy_at INTEGER`]) {
+        try { await p.execute(`ALTER TABLE accounts ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
       }
       const count = await p.execute(`SELECT COUNT(*) AS n FROM workspaces`);

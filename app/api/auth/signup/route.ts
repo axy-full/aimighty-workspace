@@ -4,6 +4,7 @@ import { SESSION_COOKIE, createSession, passwordProblem, hashPassword } from "@/
 import { platformDb, platformReady, findAccountByEmail, createAccount, createWorkspace, now } from "@/lib/platform";
 import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
+import { policyAccepted } from "@/lib/policyAccept";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
   if (!code) return NextResponse.json({ error: "Sign-up is by invitation." }, { status: 400 });
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
   if (!workspace) return NextResponse.json({ error: "Name your workspace — your studio, your company, or you." }, { status: 400 });
+  if (!policyAccepted(body)) return NextResponse.json({ error: "Read the content policy and the terms, and tick the box." }, { status: 400 });
   const pw = passwordProblem(password);
   if (pw) return NextResponse.json({ error: pw }, { status: 400 });
   if (!provisioningConfigured() || !keyringConfigured()) {
@@ -54,6 +56,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
   await platformDb().execute({ sql: `UPDATE signup_invites SET used_at = ? WHERE code = ?`, args: [now(), code] });
+  await platformDb().execute({ sql: `UPDATE accounts SET accepted_policy_at = ? WHERE id = ?`, args: [now(), account.id] });
   const token = await createSession(account.id, ws.id);
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 30 * 86400,

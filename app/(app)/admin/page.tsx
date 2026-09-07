@@ -14,6 +14,7 @@ import { timeAgo, usd } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import { CATEGORIES } from "@/lib/studio";
+import { REASON_LABELS } from "@/lib/reports";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -117,6 +118,8 @@ export default function AdminPage() {
                 {data.requests.length === 0 && <span className="rail-help pt-2">Nobody waiting.</span>}
               </div>
             </section>
+
+            <ReportsCard />
 
             <TopupsCard onChanged={refresh} />
 
@@ -485,6 +488,45 @@ function PlatformLayerCard() {
             ))}
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+type Report = { id: string; url: string; reason: string; details: string; email: string | null; workspace: { id: string; name: string; slug: string } | null; accountEmail: string | null; createdAt: number; handledAt: number | null };
+
+/** What was reported, open first. Handling it is the desk's; suspending is on the workspace's row below. */
+function ReportsCard() {
+  const { data, refresh } = useApi<{ open: Report[]; handled: Report[] }>("/api/admin/reports", 30_000);
+  const [busy, setBusy] = useState<string | null>(null);
+  async function handled(id: string) {
+    setBusy(id);
+    try { await fetch("/api/admin/reports", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }); refresh(); }
+    finally { setBusy(null); }
+  }
+  if (!data) return null;
+  const label = (r: string) => (REASON_LABELS as Record<string, string>)[r] ?? r;
+  return (
+    <section className="scard">
+      <div className="scard-h"><span>Reports</span><span>What people reported, open first. Read it, act on the workspace&rsquo;s row below if it needs it, then mark it handled.</span></div>
+      <div className="flex flex-col">
+        {data.open.map((r) => (
+          <div key={r.id} className="steam !grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_90px_110px]">
+            <span className="flex flex-col gap-0.5"><span className="font-medium">{label(r.reason)}</span><span className="break-all text-[11.5px] text-dim">{r.url}</span>{r.details && <span className="text-[12px] text-dim">{r.details}</span>}</span>
+            <span className="flex flex-col gap-0.5"><span>{r.workspace?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{r.email ?? r.accountEmail ?? "no reply address"}</span></span>
+            <span className="mono-s text-right">{timeAgo(r.createdAt).toUpperCase()}</span>
+            <span className="flex justify-end"><button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy != null} onClick={() => handled(r.id)}>{busy === r.id ? "…" : "Handled"}</button></span>
+          </div>
+        ))}
+        {data.open.length === 0 && <span className="rail-help pt-2">Nothing reported.</span>}
+        {data.handled.slice(0, 5).map((r) => (
+          <div key={r.id} className="steam !grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_90px_110px] opacity-60">
+            <span className="flex flex-col gap-0.5"><span>{label(r.reason)}</span><span className="break-all text-[11.5px] text-dim">{r.url}</span></span>
+            <span>{r.workspace?.name ?? "—"}</span>
+            <span className="mono-s text-right">{r.handledAt ? timeAgo(r.handledAt).toUpperCase() : ""}</span>
+            <span className="mono-s text-right">HANDLED</span>
+          </div>
+        ))}
       </div>
     </section>
   );
