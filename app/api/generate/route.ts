@@ -29,6 +29,7 @@ import { rulesBlock, DEFAULT_LAYER } from "@/lib/platformLayer";
 import { getPlatformLayer } from "@/lib/platform";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 import { effectiveRules } from "@/lib/rules";
+import { stillToolFor } from "@/lib/stillTools";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -96,7 +97,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
 
   const prompt = String(body.prompt ?? "").trim();
-  if (!prompt && !getTask(String(body.task ?? "generate")).promptOptional) return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+  if (!prompt && !getTask(String(body.task ?? "generate")).promptOptional && !stillToolFor(String(body.model ?? ""))) return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
   if (prompt.length > 10000)
     return NextResponse.json({ error: "Prompt is too long (10000 char max)" }, { status: 400 });
 
@@ -422,7 +423,7 @@ export const POST = withTenant(async function POST(req: Request) {
     const size = model.resolutions.includes(body.resolution)
       ? String(body.resolution) : model.resolutions[0];
     const isRaw = /^raw:/i.test(castPrompt);
-    const stillRules = isRaw ? "" : rulesBlock(rules, "image", "prompt", model.family);
+    const stillRules = isRaw || model.stillTask ? "" : rulesBlock(rules, "image", "prompt", model.family);
     const stillPrompt = isRaw
       ? castPrompt.replace(/^raw:\s*/i, "")
       : stillRules && !castPrompt.includes(stillRules) ? `${castPrompt.trim()}\n\n${stillRules}` : castPrompt;
@@ -435,6 +436,7 @@ export const POST = withTenant(async function POST(req: Request) {
       stillVersion = await nextVersion(stillShot);
     }
     const stillRefs = references.filter((r) => r.kind === "image");
+    if (model.stillTask && stillRefs.length !== 1) return NextResponse.json({ error: "Pick the still to work on." }, { status: 400 });
     // The cast just added its stills — the vendor's ceiling counts those too.
     if (stillRefs.length > model.maxReferenceImages) {
       return NextResponse.json({
@@ -479,7 +481,7 @@ export const POST = withTenant(async function POST(req: Request) {
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       args: [genId, stillProject, null, "image", modelId, stillPrompt,
              JSON.stringify(holdStill ? { ...stillParams, held: holdStill } : stillParams), holdStill ? "held" : "running", got.user.id, ts, ts,
-             got.token?.id ?? null, stillShot, stillVersion, model.provider, "generate",
+             got.token?.id ?? null, stillShot, stillVersion, model.provider, model.stillTask ?? "generate",
              billedTo(model.provider)],
     });
     invalidate(PROJECTS_KEY);

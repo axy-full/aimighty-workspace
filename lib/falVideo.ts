@@ -46,7 +46,7 @@ export function falEndpointFor(model: ModelDef, task: TaskId, hasStartImage: boo
  * on the private blob; locally, with nothing presignable, the bytes go
  * inline as a data URI (a transport encoding, bit-identical).
  */
-async function mediaUrl(ref: Reference): Promise<string> {
+export async function mediaUrl(ref: Reference): Promise<string> {
   if (ref.kind === "video") {
     if (usingBlob()) return presignedReadUrl(ref.fromGeneration ? videoPath(ref.id) : uploadPath(ref.id, ref.ext));
     const bytes = ref.fromGeneration ? await readVideoBytes(ref.id) : await readUploadBytes(ref.id, ref.ext, ref.storedUrl);
