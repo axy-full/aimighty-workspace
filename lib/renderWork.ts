@@ -1,12 +1,12 @@
 import { db, ready, now } from "./db";
 import { getModel, estimateImageCostUsd, imageTokens } from "./models";
-import { generateImage } from "./gemini";
-import { textToSpeech, soundEffect, composeMusic, subscription, usdForCredits } from "./elevenlabs";
 import { storeImageBytes, storeAudioBytes } from "./storage";
 import { withRetry, billedTo } from "./providers";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import type { Reference, ImageRole } from "./ark";
 import { meter } from "./meter";
+import { engineFor } from "./engines";
+import { subscription, usdForCredits } from "./elevenlabs";
 
 /**
  * The work of a still or a piece of audio, lifted out of the route that
@@ -203,9 +203,9 @@ async function produceStill(job: StillJob): Promise<Produced> {
   const model = getModel(job.modelId);
   const queueMs = Math.max(0, now() - job.startedAt);
   const engineStart = now();
-  const img = await generateImage({
-    model, prompt: job.prompt, ratio: job.ratio, size: job.size, references: job.references,
-  });
+  const out = await engineFor(model.provider).render({ kind: "image", genId: job.genId, model, prompt: job.prompt, ratio: job.ratio, size: job.size, references: job.references });
+  if (!("produced" in out)) throw new Error("The still engine answered with a job where bytes were expected.");
+  const img = out.produced;
   const engineMs = now() - engineStart;
   // Google can only emit JPEG; the library keeps PNG. Decode once and
   // re-encode LOSSLESSLY — pixel-identical, and nothing downstream can add
@@ -225,7 +225,7 @@ async function produceStill(job: StillJob): Promise<Produced> {
     ?? (estimateImageCostUsd(job.modelId, job.size, job.references.length)?.net ?? 0);
   const tokens = img.totalTokens ?? imageTokens(job.size, job.references.length);
   return {
-    kind: "image", storedUrl: stored.url, bytes: stored.bytes, cost, tokens, via: img.via,
+    kind: "image", storedUrl: stored.url, bytes: stored.bytes, cost, tokens, via: img.via ?? "direct",
     // The transcode sits between the two, and is counted with the store:
     // it is our work, not the engine's.
     timings: { queueMs, engineMs, storeMs: now() - storeStart },
@@ -237,23 +237,9 @@ async function produceAudio(job: AudioJob): Promise<Produced> {
   const queueMs = Math.max(0, now() - job.startedAt);
   const engineStart = now();
   const { value: out } = await withRetry(async () => {
-    if (job.task === "speech") {
-      return textToSpeech({
-        voiceId: String(p.voiceId), text: job.text, modelId: job.modelId,
-        settings: Object.fromEntries(
-          Object.entries((p.settings ?? {}) as Record<string, unknown>).filter(([, v]) => v !== undefined)
-        ),
-      });
-    }
-    if (job.task === "sound") {
-      return soundEffect({
-        text: job.text, durationSeconds: p.durationSeconds as number | null,
-        promptInfluence: p.promptInfluence as number | undefined, loop: Boolean(p.loop),
-      });
-    }
-    return composeMusic({
-      prompt: job.text, lengthMs: p.lengthMs as number, instrumental: Boolean(p.instrumental),
-    });
+    const res = await engineFor("elevenlabs").render({ kind: "audio", genId: job.genId, modelId: job.modelId, task: job.task, text: job.text, params: p as Record<string, unknown> });
+    if (!("produced" in res)) throw new Error("The sound engine answered with a job where bytes were expected.");
+    return res.produced;
   }, { max: 2 });
   const engineMs = now() - engineStart;
   /* ElevenLabs has already spoken the line and taken the credits. A Blob
@@ -262,7 +248,7 @@ async function produceAudio(job: AudioJob): Promise<Produced> {
   const { value: stored } = await withRetry(() => storeAudioBytes(job.genId, out.bytes), { max: 3 });
   return {
     kind: "audio", storedUrl: stored.url, bytes: stored.bytes,
-    credits: out.credits, requestId: out.requestId,
+    credits: out.credits ?? 0, requestId: out.requestId ?? null,
     timings: { queueMs, engineMs, storeMs: now() - storeStart },
   };
 }

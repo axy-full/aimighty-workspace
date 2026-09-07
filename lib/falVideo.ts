@@ -13,7 +13,7 @@
  * is known before the render and sealed from the row's own params after —
  * there is no token count to wait for.
  */
-import { falSubmit, falStatus, falResult } from "./fal";
+import { falSubmit, } from "./fal";
 import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
   readImageBytes, readUploadBytes, readVideoBytes, storeVideo,
@@ -26,6 +26,7 @@ import type { Reference, VideoParams } from "./ark";
 import type { Generation } from "./jobs";
 import { meter } from "./meter";
 import { getProvider } from "./providers";
+import { engineFor } from "./engines";
 
 /** A render still "running" past this has been abandoned by the vendor. */
 const CEILING_MS = 60 * 60_000;
@@ -171,33 +172,25 @@ export async function syncFalVideo(gen: Generation): Promise<Generation> {
   const p = gen.params as FalVideoParams & { falRequestId?: string; falModel?: string; task?: string };
   if (!p.falRequestId || !p.falModel) return gen;
 
-  let st;
+  let polled;
   try {
-    st = await falStatus(p.falModel, p.falRequestId);
+    polled = await engineFor("fal").poll!({ provider: "fal", ref: p.falRequestId, model: gen.model, endpoint: p.falModel });
   } catch (e) {
     const msg = (e as Error).message;
     if (/\b404\b|not found/i.test(msg)) return fail(gen, "fal.ai no longer has this job. Render again.");
+    // A refusal (422) is final; anything else gets another pass, until the ceiling.
+    if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg)) return fail(gen, msg);
     if (now() - gen.createdAt > UNREACHABLE_CEILING_MS) {
       return fail(gen, `Could not reach fal.ai to find out how this render went: ${msg} If it did complete, fal will still have charged for it.`);
     }
     return { ...gen, error: msg };
   }
-  if (st.status !== "COMPLETED") {
+  if (polled.status === "failed") return fail(gen, polled.error ?? "fal.ai could not finish this render.");
+  if (polled.status !== "succeeded") {
     if (now() - gen.createdAt > CEILING_MS) return fail(gen, "The render never came back from fal.ai. Render again.");
     return gen;
   }
-
-  let out: { video?: { url?: string; file_size?: number }; detail?: unknown };
-  try {
-    out = await falResult(p.falModel, p.falRequestId);
-  } catch (e) {
-    const msg = (e as Error).message;
-    // A refusal (422) is final; anything else gets another pass, until the ceiling.
-    if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg) || now() - gen.createdAt > UNREACHABLE_CEILING_MS) return fail(gen, msg);
-    return { ...gen, error: msg };
-  }
-  const url = out?.video?.url;
-  if (!url) return fail(gen, "fal.ai finished but returned no video.");
+  const url = polled.videoUrl!;
 
   const storeStart = now();
   let stored: { url: string; bytes: number };

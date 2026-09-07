@@ -1,11 +1,12 @@
 import { db, now } from "./db";
-import { submitTask, type VideoParams, type Reference, type ImageRole } from "./ark";
-import { submitFalVideo, falEndpointFor } from "./falVideo";
+import { type VideoParams, type Reference, type ImageRole } from "./ark";
+import { falEndpointFor } from "./falVideo";
 import { withRetry, classifyFailure, billedTo } from "./providers";
 import { getSetting } from "./settings";
 import { getModel, type ModelDef } from "./models";
 import { getTask, type TaskDef } from "./tasks";
 import { meter } from "./meter";
+import { engineFor } from "./engines";
 
 /**
  * The one call that can fail for reasons that aren't ours, in one place:
@@ -39,11 +40,9 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
     const { value: taskId, attempts } = await withRetry(
       async () => {
         try {
-          if (model.provider === "fal") {
-            const q = await submitFalVideo({ model, task, prompt, params, references, source });
-            return q.requestId;
-          }
-          return await submitTask(model.id, prompt, params, references);
+          const out = await engineFor(model.provider).render({ kind: "video", genId, model, task, prompt, params, references, source });
+          if (!("handle" in out)) throw new Error("The engine answered with bytes where a job was expected.");
+          return out.handle.ref;
         } catch (e) {
           /* Two very different failures wear the same coat here. "Could not
              reach ModelArk" means the request never landed, and trying again

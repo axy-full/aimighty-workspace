@@ -106,7 +106,7 @@ export async function falSubmit(model: string, input: unknown, webhookUrl?: stri
 }
 
 export async function falStatus(model: string, requestId: string, withLogs = false): Promise<FalStatus> {
-  if (isMockJob(model)) return { status: mockDone(model) ? "COMPLETED" : "IN_PROGRESS", logs: [] } as FalStatus;
+  if (isMockJob(requestId)) return { status: mockDone(requestId) ? "COMPLETED" : "IN_PROGRESS", logs: [] } as FalStatus;
   return call<FalStatus>(
     `${base()}/${model}/requests/${encodeURIComponent(requestId)}/status${withLogs ? "?logs=1" : ""}`,
     { headers: { Authorization: auth() } }
@@ -114,7 +114,7 @@ export async function falStatus(model: string, requestId: string, withLogs = fal
 }
 
 export async function falResult<T>(model: string, requestId: string): Promise<T> {
-  if (isMockJob(model)) {
+  if (isMockJob(requestId)) {
     return {
       video: { url: fixtureUrl("clip.mp4"), content_type: "video/mp4", file_size: 991017 },
       images: [{ url: fixtureUrl("still.png"), width: 256, height: 256, content_type: "image/png" }],

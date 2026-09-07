@@ -1,5 +1,4 @@
 import { db, ready, now } from "./db";
-import { fetchTask } from "./ark";
 import { storeVideo } from "./storage";
 import { costUsd, effectiveRate } from "./models";
 import { reconcileFalRender } from "./identities";
@@ -7,6 +6,7 @@ import { syncFalVideo } from "./falVideo";
 import { meter } from "./meter";
 import { billedTo, getProvider } from "./providers";
 import { releaseHeldJobs } from "./held";
+import { engineFor } from "./engines";
 
 export type Generation = {
   id: string;
@@ -223,7 +223,7 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
 
   let task;
   try {
-    task = await fetchTask(gen.arkTaskId);
+    task = await engineFor(gen.provider ?? "byteplus").poll!({ provider: "byteplus", ref: gen.arkTaskId, model: gen.model });
   } catch (e) {
     // Transient poll failure: leave the row alone, report it upward.
     return { ...gen, error: (e as Error).message };
