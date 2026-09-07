@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:mobile": "playwright test tests/mobile.spec.ts",
+    "test:onboarding": "PW_BASE_URL=${PW_BASE_URL:-http://localhost:4550} playwright test --project=onboarding",
     "test:unit": "PW_BASE_URL=${PW_BASE_URL:-http://localhost:4550} playwright test --project=unit",
     "test:screens": "playwright test tests/screens.spec.ts"
   },

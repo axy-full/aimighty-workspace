@@ -19,7 +19,7 @@ import { useApi } from "./useApi";
 export type Project = {
   id: string; name: string; description: string; code?: string;
   createdAt: number; genCount: number; spend: number; credits?: number;
-  capUsd?: number | null; capCredits?: number | null; capUnlocked?: boolean; kind?: string | null; runtimeTarget?: number | null; stage?: string | null;
+  capUsd?: number | null; capCredits?: number | null; capUnlocked?: boolean; starter?: boolean; kind?: string | null; runtimeTarget?: number | null; stage?: string | null;
 };
 
 type Ctx = {
@@ -40,18 +40,21 @@ function subscribe(cb: () => void) {
   return () => { listeners.delete(cb); window.removeEventListener("storage", cb); };
 }
 function readStored() {
-  try { return localStorage.getItem(KEY) ?? "all"; } catch { return "all"; }
+  // Empty means never chosen: a new workspace then opens on its starter production.
+  try { return localStorage.getItem(KEY) ?? ""; } catch { return ""; }
 }
 
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
-  const stored = useSyncExternalStore(subscribe, readStored, () => "all");
+  const stored = useSyncExternalStore(subscribe, readStored, () => "");
   const { data, refresh } = useApi<{ projects: Project[] }>("/api/projects", 30000);
   const projects = useMemo(() => data?.projects ?? [], [data]);
 
   // A deleted project can't stay selected — derive the fallback rather than
   // writing state back, so there's no effect and no cascade.
+  const starter = projects.find((p) => p.starter)?.id ?? null;
   const selection =
-    stored === "all" || stored === "unfiled" || !data || projects.some((p) => p.id === stored)
+    stored === "" ? (starter ?? "all")
+    : stored === "all" || stored === "unfiled" || !data || projects.some((p) => p.id === stored)
       ? stored
       : "all";
 

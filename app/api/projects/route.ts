@@ -29,6 +29,7 @@ export const GET = withTenant(async function GET() {
     SELECT p.*,
            COALESCE(g.n, 0)     AS gen_count,
            COALESCE(g.spend, 0) AS spend,
+           COALESCE(g.credits, 0) AS credits,
            COALESCE(g.live, 0)  AS live,
            (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.id) AS shots,
            (SELECT COUNT(DISTINCT x.shot_id) FROM generations x
@@ -89,6 +90,7 @@ export const GET = withTenant(async function GET() {
       credits: Number(r.credits ?? 0),
       capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
       capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
+      starter: Number(r.starter ?? 0) === 1,
       capUnlocked: Number(r.cap_unlocked ?? 0) === 1,
       kind: r.kind ?? null,
       runtimeTarget: r.runtime_target == null ? null : Number(r.runtime_target),

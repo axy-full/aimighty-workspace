@@ -28,7 +28,7 @@ import { useMoney } from "@/lib/price";
 
 type Row = {
   id: string; name: string; code: string; category: string; description: string; createdAt: number;
-  genCount: number; spend: number; credits?: number; capUsd: number | null; capCredits?: number | null; capUnlocked?: boolean; kind: string | null; runtimeTarget: number | null;
+  genCount: number; spend: number; credits?: number; capUsd: number | null; capCredits?: number | null; capUnlocked?: boolean; starter?: boolean; kind: string | null; runtimeTarget: number | null;
   stage: string | null; live: number; shots: number; approvedShots: number; pickedShots: number;
   team: string[]; last: { at: number; who: string | null; what: string } | null;
   fromAtomik?: boolean; syncedAt?: number | null; unsent?: number;
@@ -123,7 +123,7 @@ export default function ProjectsPage() {
                 const cap = money.inCredits ? p.capCredits ?? null : p.capUsd;
                 const spent = money.inCredits ? p.credits ?? 0 : p.spend;
                 const spendPct = cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0;
-                const sub = [p.kind || p.category || "production", p.runtimeTarget ? mmss(p.runtimeTarget) : `${p.genCount} render${p.genCount === 1 ? "" : "s"}`].join(" · ");
+                const sub = [p.starter ? "starter production" : p.kind || p.category || "production", p.runtimeTarget ? mmss(p.runtimeTarget) : `${p.genCount} render${p.genCount === 1 ? "" : "s"}`].join(" · ");
                 return (
                   <Link key={p.id} href={`/projects/${p.id}/canvas`} className="ptable-row"
                     onClick={() => setSelection(p.id)}
