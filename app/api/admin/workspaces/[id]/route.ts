@@ -17,8 +17,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const ws = await getWorkspace(id);
   if (!ws) return NextResponse.json({ error: "No such workspace." }, { status: 404 });
-  if (ws.legacy) return NextResponse.json({ error: "The studio's own workspace has no allowance — it is the platform." }, { status: 400 });
   const body = await req.json().catch(() => ({}));
+  /* The studio's own workspace pays its vendors directly, so an allowance, a
+     mode or a credit grant means nothing there. Everything else — suspending
+     it, its limits, its flags, and whether it is the platform's test
+     workspace — applies to it like any other. */
+  const moneyKeys = ["allowanceUsd", "grantCredits", "mode"];
+  if (ws.legacy && moneyKeys.some((k) => k in body)) {
+    return NextResponse.json({ error: "The studio's own workspace has no allowance — it is the platform." }, { status: 400 });
+  }
   const out: Record<string, unknown> = { ok: true };
   if ("suspended" in body) {
     const on = Boolean(body.suspended);
