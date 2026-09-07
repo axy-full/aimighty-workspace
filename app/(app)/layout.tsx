@@ -10,6 +10,7 @@ import { SessionProvider } from "@/lib/session";
 import { currentContext, userCount, isPlatformOwner } from "@/lib/auth";
 import { effectiveModels } from "@/lib/defaultModels";
 import { runInTenant } from "@/lib/tenant";
+import { getPlatformLayer } from "@/lib/platform";
 
 /**
  * The shell, for everyone.
@@ -43,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       workspaces: ctx?.workspaces ?? [],
       credits: ctx?.workspace ? await creditStateFor(ctx.workspace).catch(() => null) : null,
       models: ctx?.workspace ? await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null) : null,
+      setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
     }}>
     <ProjectProvider>
       {/* The pipeline redesign puts the project and the nav in one 52px

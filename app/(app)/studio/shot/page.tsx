@@ -21,12 +21,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
-import { CATEGORIES, specToPhrase, specCount, type ShotSpec } from "@/lib/studio";
+import { matchesStudio, orderByUse, CATEGORIES, specToPhrase, specCount, type ShotSpec } from "@/lib/studio";
 import { Waiting } from "@/components/ParticlMark";
 import { useDraft, peekDraft } from "@/lib/useDraft";
 import { usePageTitle } from "@/lib/usePageTitle";
 import type { Gen } from "@/components/GenCard";
 import type { Shot } from "@/lib/shots";
+import LazyMedia from "@/components/LazyMedia";
 
 type ShotRow = Shot & { takes: number };
 /* Helpers for the rows whose category carries none. */
@@ -44,7 +45,7 @@ function ShotBuilder() {
   usePageTitle("Studio · Setup");
   const router = useRouter();
   const search = useSearchParams();
-  const { signedIn, workspace } = useSession();
+  const { signedIn, workspace, setup: platformSetup } = useSession();
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const { data: shotData } = useApi<{ shots: ShotRow[] }>(signedIn && scoped ? `/api/shots?projectId=${encodeURIComponent(bin)}` : null, 30_000);
@@ -74,14 +75,36 @@ function ShotBuilder() {
   }, [bin, workspace?.id]);
 
   /* Which renders used each move or technique — the bank's usage line. */
-  const used = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const g of recent?.generations ?? []) {
-      const sp = (g.params as { shotSpec?: ShotSpec }).shotSpec;
-      for (const k of [sp?.move, sp?.technique]) if (k) map.set(k, (map.get(k) ?? 0) + 1);
+  /* What this production has used, what the workspace has used, and the
+     last take that used each pick — for the order of the bank and the rows,
+     and for a used move's tile (brief 1.4). */
+  const { data: recentWs } = useApi<{ generations: Gen[] }>(signedIn && scoped ? "/api/jobs?limit=200&sync=0" : null, 0);
+  const { usedProd, usedWs, lastTake } = useMemo(() => {
+    const count = (gens: Gen[] | undefined) => {
+      const map = new Map<string, number>();
+      for (const g of gens ?? []) {
+        const sp = (g.params as { shotSpec?: ShotSpec }).shotSpec ?? {};
+        for (const [k, v] of Object.entries(sp)) if (v) map.set(`${k}:${v}`, (map.get(`${k}:${v}`) ?? 0) + 1);
+      }
+      return map;
+    };
+    const last = new Map<string, Gen>();
+    for (const g of [...(recent?.generations ?? []), ...(recentWs?.generations ?? [])]) {
+      if (!g.storedUrl || g.kind !== "video") continue;
+      const sp = (g.params as { shotSpec?: ShotSpec }).shotSpec ?? {};
+      for (const [k, v] of Object.entries(sp)) if (v && !last.has(`${k}:${v}`)) last.set(`${k}:${v}`, g);
     }
-    return map;
-  }, [recent]);
+    return { usedProd: scoped ? count(recent?.generations) : new Map<string, number>(), usedWs: count(scoped ? recentWs?.generations : recent?.generations), lastTake: last };
+  }, [recent, recentWs, scoped]);
+  const [query, setQuery] = useState("");
+  /* A production with no setup saved yet starts from the platform's defaults, not from nothing. */
+  useEffect(() => {
+    if (!signedIn || !platformSetup || specCount(spec) > 0) return;
+    let hasSaved = false;
+    try { hasSaved = Boolean(window.localStorage.getItem(`aw_setup_${bin}`)); } catch { /* private mode */ }
+    if (!hasSaved) setSpec({ ...platformSetup });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bin, platformSetup, signedIn]);
 
   const toggle = (cat: string, value: string) =>
     setSpec((s) => ({ ...s, [cat]: s[cat] === value && cat !== "titles" ? "" : value }));
@@ -110,10 +133,17 @@ function ShotBuilder() {
     } catch { /* private mode */ }
   }
 
-  const bank = (["move", "technique"] as const).flatMap((key) => {
+  const bankAll = (["move", "technique"] as const).flatMap((key) => {
     const cat = CATEGORIES.find((c) => c.key === key)!;
-    return cat.options.map((o) => ({ key, value: o.value, label: o.label, title: o.module || o.phrase, n: used.get(o.value) ?? 0 }));
+    return cat.options.map((o) => ({
+      key, value: o.value, label: o.label, title: o.module || o.phrase, option: o,
+      n: (scoped ? usedProd : usedWs).get(`${key}:${o.value}`) ?? 0, last: lastTake.get(`${key}:${o.value}`) ?? null,
+    }));
   });
+  const bank = orderByUse(bankAll.filter((m) => matchesStudio(m.option, query)), (m) => `${m.key}:${m.value}`, usedProd, usedWs);
+  const rows = CATEGORIES.map((c) => ({
+    ...c, options: orderByUse(c.options.filter((o) => matchesStudio(o, query)), (o) => `${c.key}:${o.value}`, usedProd, usedWs),
+  })).filter((c) => !query || c.options.length);
   const setupName = scoped ? current?.name ?? "this production" : "workspace";
 
   return (
@@ -135,11 +165,18 @@ function ShotBuilder() {
             <div className="st-sec-head">
               <span className="st-h">Camera</span>
               <span className="st-sub">The bank — every move, written so the engine can&rsquo;t mistake it. Where a take used one, it shows.</span>
+              <input className="ctl bank-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search — dolly, handheld, dusk…" aria-label="Search the bank and the rows" />
             </div>
             <div className="bank">
               {bank.map((m) => (
                 <button key={`${m.key}-${m.value}`} type="button" onClick={() => toggle(m.key, m.value)} title={m.title}
-                  className={`bank-tile ${spec[m.key] === m.value ? "is-on" : ""}`}>
+                  className={`bank-tile ${spec[m.key] === m.value ? "is-on" : ""} ${m.last ? "has-take" : ""}`}>
+                  {m.last && (
+                    <span className="bank-thumb" aria-hidden="true">
+                      <LazyMedia url={m.last.storedUrl!} kind="video" hoverPlay className="h-full w-full object-cover" />
+                    </span>
+                  )}
                   <span className="flex items-baseline justify-between gap-1.5">
                     <span className="bank-name">{m.label}</span>
                     <span className="bank-kind">{m.key === "technique" ? "TECHNIQUE" : "MOVE"}</span>
@@ -156,7 +193,7 @@ function ShotBuilder() {
               <span className="st-sub">One pick per row. The prompt assembles itself as you go.</span>
             </div>
             <div className="sr-list">
-              {CATEGORIES.map((c) => (
+              {rows.map((c) => (
                 <div key={c.key} className="sr">
                   <div className="flex flex-col gap-[5px]">
                     <span className="sr-label">{c.label}</span>
