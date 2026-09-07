@@ -56,7 +56,7 @@ function defaultModelFor(kind: "video" | "image"): string {
 export default function Workspace({ kind = "video" }: { kind?: "video" | "image" }) {
   usePageTitle(kind === "image" ? "Generate · Images" : "Generate · Video");
   const { selection: bin, current, refreshProjects } = useProject();
-  const { signedIn } = useSession();
+  const { signedIn, models } = useSession();
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -143,7 +143,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
      /images rather than the video one the client then swaps out — a flash of
      the wrong controls and the wrong price on a slow connection. */
   const [params, setParams] = useState<Params>(() => ({
-    modelId: defaultModelFor(kind), ratio: "16:9", resolution: kind === "image" ? "2K" : "1080p", duration: 5,
+    modelId: models?.[kind] ?? defaultModelFor(kind), ratio: "16:9", resolution: kind === "image" ? "2K" : "1080p", duration: 5,
     watermark: false, generateAudio: false, seed: "", orientation: "video", fps60: false,
   }));
   const seeded = useRef(false);
@@ -186,10 +186,9 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     // browser's saved defaults in a later pass, so this has to follow `prefs`
     // rather than run once — until the person touches a control.
     if (touched.current) return;
-    // Settings' default applies only when it is this kind of engine;
-    // otherwise the kind's own default.
-    const preferred = getModel(prefs.modelId);
-    const m = preferred.kind === kind && !preferred.hidden ? preferred : getModel(defaultModelFor(kind));
+    // The workspace's Defaults & caps name the engine (they inherit the
+    // platform's); the browser keeps resolution, duration and audio.
+    const m = getModel(models?.[kind] ?? defaultModelFor(kind));
     setParams((s) => ({
       ...s,
       modelId: m.id,
@@ -200,7 +199,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     /* signedIn belongs here: loadDraft refuses to hand anything back
        without a session, so signing in has to re-run this or the draft
        stays lost until a reload. */
-  }, [prefs, kind, signedIn]);
+  }, [models, prefs, kind, signedIn]);
 
   const patch = (p: Partial<Params>) => { touched.current = true; setParams((s) => ({ ...s, ...p })); };
 

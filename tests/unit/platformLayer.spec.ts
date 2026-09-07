@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mergeLayer, cleanSetup, cleanRules, cleanCaps, rulesBlock, starterShotsWithSetup, DEFAULT_LAYER, DEFAULT_SETUP } from "../../lib/platformLayer";
+import { mergeLayer, cleanSetup, cleanRules, cleanCaps, cleanModels, resolveModels, rulesBlock, starterShotsWithSetup, DEFAULT_LAYER, DEFAULT_SETUP, DEFAULT_MODELS } from "../../lib/platformLayer";
 
 /** The platform layer: defaults in code, overrides validated, nothing unreadable survives. */
 test("a Setup keeps only real Studio options", () => {
@@ -36,4 +36,17 @@ test("the starter's shots inherit the default Setup under their own", () => {
   expect(shots[1].setup.move).toBe("push");
   const bad = mergeLayer({ starter: { name: "", shots: [] } });
   expect(bad.starter.name).toBe(DEFAULT_LAYER.starter.name);
+});
+
+test("the default engine per kind: only a real, visible engine of that kind survives, and a workspace's own choice wins", () => {
+  expect(cleanModels({ video: "gemini-3-pro-image", image: "dreamina-seedance-2-5-260628" })).toEqual(DEFAULT_MODELS);
+  expect(cleanModels({ video: "fal-ai/kling-video/v3/standard" })).toEqual({ ...DEFAULT_MODELS, video: "fal-ai/kling-video/v3/standard" });
+  expect(cleanModels("junk")).toEqual(DEFAULT_MODELS);
+  expect(mergeLayer({ models: { video: "fal-ai/kling-video/v3/standard" } }).models.image).toBe(DEFAULT_MODELS.image);
+  const layer = { models: { ...DEFAULT_MODELS, video: "dreamina-seedance-2-0-260128" } };
+  expect(resolveModels({}, layer)).toEqual(layer.models);
+  expect(resolveModels({ defaultVideoModel: "", defaultImageModel: "" }, layer)).toEqual(layer.models);
+  expect(resolveModels({ defaultVideoModel: "fal-ai/kling-video/v3/pro" }, layer).video).toBe("fal-ai/kling-video/v3/pro");
+  expect(resolveModels({ defaultVideoModel: "gemini-3-pro-image" }, layer).video).toBe("dreamina-seedance-2-0-260128");
+  expect(resolveModels({ defaultImageModel: "fal-ai/flux-lora" }, layer).image).toBe(DEFAULT_MODELS.image);
 });

@@ -129,11 +129,14 @@ export type ModelDef = {
   maxReferenceVideos: number;
   maxVideoSecondsTotal: number;
   note?: string;
+  /** One line on what the engine is for, next to it in the composer's menu. */
+  use?: string;
 };
 
 export const MODELS: ModelDef[] = [
   {
     id: "dreamina-seedance-2-5-260628",
+    use: "Standard video. Highest fidelity, native audio.",
     label: "Seedance 2.5",
     supportsTasks: ["generate", "edit", "extend"],
     short: "SD 2.5",
@@ -158,6 +161,7 @@ export const MODELS: ModelDef[] = [
   },
   {
     id: "dreamina-seedance-2-0-260128",
+    use: "Cheaper drafts and roughs.",
     label: "Seedance 2.0",
     short: "SD 2.0",
     family: "seedance-2",
@@ -189,6 +193,7 @@ export const MODELS: ModelDef[] = [
    * ------------------------------------------------------------------ */
   {
     id: "fal-ai/kling-video/v3/standard",
+    use: "Water, cloth, physics-heavy motion.",
     label: "Kling 3.0",
     short: "KLING 3",
     family: "kling-3",
@@ -212,6 +217,7 @@ export const MODELS: ModelDef[] = [
   },
   {
     id: "fal-ai/kling-video/v3/pro",
+    use: "The same motion, steadier, for finals.",
     label: "Kling 3.0 Pro",
     short: "KLING 3 PRO",
     family: "kling-3",
@@ -240,6 +246,7 @@ export const MODELS: ModelDef[] = [
    * ------------------------------------------------------------------ */
   {
     id: "topaz/upscale/video/creative",
+    use: "Upscale a finished clip to 4K.",
     label: "Topaz Astra",
     short: "ASTRA",
     family: "topaz",
@@ -272,6 +279,7 @@ export const MODELS: ModelDef[] = [
     // Retired once for Google's moderation locks; back by request, with
     // refusals surfaced in Google's own words and never charged.
     id: "gemini-3-pro-image",
+    use: "Stills with legible text; up to 14 refs.",
     gatewayId: "google/gemini-3-pro-image",
     label: "Nano Banana Pro",
     short: "NB PRO",
@@ -297,6 +305,7 @@ export const MODELS: ModelDef[] = [
     // Nano Banana 2 (Gemini 3.1 Flash Image): the fast, cheaper still engine.
     // Prices per image from the gateway catalogue, read 2026-09-03.
     id: "gemini-3.1-flash-image",
+    use: "Quick stills at half the price.",
     gatewayId: "google/gemini-3.1-flash-image",
     label: "Nano Banana 2",
     short: "NB 2",
@@ -323,6 +332,7 @@ export const MODELS: ModelDef[] = [
     // prompt has to carry the identity's trigger, which that screen adds.
     // Price per megapixel from fal's listing; a 1K frame is ~1 MP.
     id: "fal-ai/flux-lora",
+    use: "A trained face, from the Studio.",
     label: "Flux · Identity",
     short: "FLUX ID",
     family: "flux",
