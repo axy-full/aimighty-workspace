@@ -42,6 +42,7 @@ import { shouldRefine } from "@/lib/refineGate";
 import { ruleLine } from "@/lib/approvalRule";
 import { uploadSource, uploadSourceParams } from "@/lib/sourceClip";
 import { layerSetup, setupDiff, appliedSetup } from "@/lib/setupLayers";
+import { engineSuggestion, editDepth, lineageOf, freshPrompt, PLATEAU_AFTER } from "@/lib/uiRules";
 
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
@@ -305,6 +306,18 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* Whether the writer will run for this prompt is knowable here (the gate is pure), so the button says what it adds (brief 1.8). */
   const willRefine = !isImage && !taskOn && Boolean(writer && writer.writer !== "none" && writer.configured) && shouldRefine(prompt, specCount(detectSpec(prompt))).refine;
   const writerUsd = willRefine ? (writer?.usdPerCall ?? 0) : 0;
+  /* The two rules that live here (brief 2.5): the engine suggestion, and the plateau on a still edited twice already. */
+  const suggestion = engineSuggestion({ prompt, kind, family: modelDef.family, task: taskOn?.id ?? null });
+  const plateauRef = isImage && ownRefs.length === 1 ? ownRefs[0] : null;
+  const plateauDepth = plateauRef ? editDepth(plateauRef, gens) : 0;
+  const plateau = plateauDepth >= PLATEAU_AFTER ? { passes: plateauDepth } : null;
+  const takeSuggestion = () => { if (suggestion) switchModel(suggestion.modelId); };
+  const regenerateFresh = () => {
+    if (!plateauRef) return;
+    const fresh = freshPrompt([...lineageOf(plateauRef, gens), { id: "next", prompt }]);
+    if (fresh) setPrompt(fresh);
+    setOwnRefs([]);
+  };
   /* What the workspace's cost approval rule asks of this press, said under the button rather than inside a menu. */
   const approvalNote = engineData?.approval
     ? ruleLine(engineData.approval.rule, engineData.approval.shotCapCredits, (n) => `${n} cr`).toLowerCase().replace(/\.$/, "")
@@ -584,6 +597,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             promptRef={promptRef}
             params={params} patch={patch}
             model={modelDef} engines={engines} writer={writer} approval={engineData?.approval ?? null}
+            suggestion={suggestion} onSuggestion={takeSuggestion} plateau={plateau} onFresh={regenerateFresh}
             refs={refs} setRefs={setRefs} picker={picker} cite={cite}
             taskOn={taskOn} cancelTask={() => setTaskOn(null)} uploadSource={sourceUpload ? { filename: sourceUpload.filename } : null}
             problem={signedIn ? (refProblem ?? sourceIssue ?? err)
