@@ -41,6 +41,7 @@ import { clampCount, newBatchId } from "@/lib/variations";
 import { shouldRefine } from "@/lib/refineGate";
 import { ruleLine } from "@/lib/approvalRule";
 import { uploadSource, uploadSourceParams } from "@/lib/sourceClip";
+import { layerSetup, setupDiff, appliedSetup } from "@/lib/setupLayers";
 
 export type Params = {
   modelId: string; ratio: string; resolution: string; duration: number;
@@ -62,7 +63,7 @@ function defaultModelFor(kind: "video" | "image"): string {
 export default function Workspace({ kind = "video" }: { kind?: "video" | "image" }) {
   usePageTitle(kind === "image" ? "Generate · Images" : "Generate · Video");
   const { selection: bin, current, refreshProjects } = useProject();
-  const { signedIn, models } = useSession();
+  const { signedIn, models, setup: platformSetup } = useSession();
   const money = useMoney();
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
@@ -78,14 +79,14 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* The production's saved setup (Studio › Save as … setup) opens the
      composer already set — unless a spec was carried in, or one is being
      edited; a saved setup never overwrites work in progress. */
+  /* The saved Setups are layers now (brief 2.3): the workspace's, then the
+     production's, read here and folded under the shot's own rows rather
+     than copied into them — so the composer can say which is which. */
+  const [savedLayers, setSavedLayers] = useState<{ workspace: ShotSpec; production: ShotSpec }>({ workspace: {}, production: {} });
   useEffect(() => {
-    if (specCount(spec) > 0) return;
-    try {
-      const saved = window.localStorage.getItem(`aw_setup_${bin}`);
-      if (saved) Promise.resolve().then(() => setSpec(JSON.parse(saved) as ShotSpec));
-    } catch { /* private mode */ }
-    // The spec is read, not depended on: this runs when the production changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const read = (key: string): ShotSpec => { try { const raw = window.localStorage.getItem(key); return raw ? (JSON.parse(raw) as ShotSpec) : {}; } catch { return {}; } };
+    const production = bin !== "all" && bin !== "unfiled" ? read(`aw_setup_${bin}`) : {};
+    Promise.resolve().then(() => setSavedLayers({ workspace: read("aw_setup_all"), production }));
   }, [bin]);
   /** Which shot this take belongs to — what makes it v3 of SH110. */
   const [shotId, setShotId] = useState<string>("");
@@ -355,7 +356,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     setBusy(true); setErr(null);
     try {
       const payload = JSON.stringify({
-          prompt: composePrompt(prompt, spec),
+          prompt: composePrompt(prompt, applied),
           useAs: isImage ? useAs : undefined,
           castName: isImage && useAs === "cast" ? castName.replace(/^@/, "").trim() || undefined : undefined,
           model: params.modelId, ratio: params.ratio,
@@ -368,7 +369,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
           sourceGenId: taskOn?.gen?.id ?? null,
           sourceUploadId: sourceUpload?.id ?? null,
           shotId: shotId || null,
-          shotSpec: spec,
+          shotSpec: applied,
           references: [
             ...trayRefs.map((r) => ({ uploadId: r.id, role: r.role })),
             ...ownRefs.map((g) => ({ genId: g.id, role: "reference_image" as const })),
@@ -499,7 +500,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
      useApi has no cache, so this is one more small request per project
      rather than a shared one — cheap, and honest about what it is. */
   const scopedForShots = bin !== "all" && bin !== "unfiled";
-  const { data: shotList } = useApi<{ shots: { id: string; code: string; takes: number }[] }>(
+  const { data: shotList, refresh: refreshShots } = useApi<{ shots: { id: string; code: string; takes: number; setup?: ShotSpec }[] }>(
     scopedForShots ? `/api/shots?projectId=${encodeURIComponent(bin)}` : null, 30_000);
   const shotCodeOf = (id: string) => shotList?.shots.find((x) => x.id === id)?.code ?? null;
   const nextVersionOf = (id: string) => (shotList?.shots.find((x) => x.id === id)?.takes ?? 0) + 1;
@@ -512,7 +513,22 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     : isImage
       ? `${shotCodeOf(shotId) ?? "shot"} · S${nextVersionOf(shotId)}${countNow > 1 ? `–S${nextVersionOf(shotId) + countNow - 1}` : ""}`
       : `${shotCodeOf(shotId) ?? "shot"} v${nextVersionOf(shotId)}`;
-  const setupCount = specCount(spec) + (shotId ? 1 : 0);
+  /* The four layers, what the prompt says against them, and what the render carries (brief 2.3). */
+  const shotSetup = (shotId && shotList?.shots.find((x) => x.id === shotId)?.setup) || {};
+  const layered = layerSetup({ platform: platformSetup ?? {}, workspace: savedLayers.workspace, production: savedLayers.production, shot: { ...shotSetup, ...spec } });
+  const detectedNow = detectSpec(prompt);
+  const setupDiffNow = setupDiff(layered, detectedNow, ["shot", "angle", "move", "lens", "light", "time", "look", "mood"]);
+  const applied = appliedSetup(layered, detectedNow);
+  const setupCount = specCount(layered.effective) + (shotId ? 1 : 0);
+  async function patchShotSetup(setup: ShotSpec) {
+    if (!shotId) return;
+    const res = await fetch(`/api/shots/${shotId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ setup }) });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); await appAlert("Not saved", j.error ?? `The server answered ${res.status}.`); return; }
+    setSpec({}); refreshShots();
+  }
+  /* A per-shot override without touching the workspace's Setup: the rows in hand become the shot's own; one tap clears them. */
+  const saveToShot = shotId && specCount(spec) > 0 ? () => patchShotSetup({ ...shotSetup, ...spec }) : null;
+  const clearShot = shotId && Object.keys(shotSetup).length > 0 ? () => patchShotSetup({}) : null;
 
   /* A locked mode is not renderable until it has a clip the vendor accepts.
      Checked here rather than at submit so the button says why. */
@@ -612,7 +628,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
               </span>
             </div>
           )}
-          <SetupPanel projectId={bin} spec={spec} onCite={cite} />
+          <SetupPanel projectId={bin} spec={layered.effective} sources={layered.sources} diff={setupDiffNow} shotCode={shotId ? shotCodeOf(shotId) : null} onSaveToShot={saveToShot} onClearShot={clearShot} onCite={cite} />
         </div>
         <div className="ws-rail-foot">
           {/* The cost is on the action, always: quoted before the button is
