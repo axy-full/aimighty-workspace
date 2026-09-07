@@ -51,6 +51,13 @@ type Ws = { settings: Record<string, string>; defaults: Record<string, string> }
 type IdTerms = { terms: { configured: boolean; trainer: string; trainCostUsd: number } };
 type AudioSetup = { configured: boolean; envKey: string; terms: { sfxCredits: number; musicCreditsPerMinute: number }; account: { tier: string } | null };
 type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; monthlyUsd: number } | null };
+type TopupsView = {
+  applies: boolean; provider: "manual" | "stripe" | "razorpay"; canRequest: boolean; openLimit: number;
+  credits: { creditUsd: number; granted: number; used: number; balance: number } | null;
+  packs: { id: string; label: string; credits: number; usd: number }[];
+  requests: { id: string; packId: string; label: string; credits: number; usd: number; status: "requested" | "approved" | "declined" | "cancelled"; note: string; createdAt: number; decidedAt: number | null }[];
+  history: { id: string; credits: number; note: string; createdAt: number }[];
+};
 type Keys = {
   usesPlatformKeys: boolean; mode: "legacy" | "platform" | "own"; canPlatform: boolean; keyring: boolean;
   allowance: { usd: number; spentUsd: number } | null; gatewayMinted: boolean;
@@ -59,7 +66,7 @@ type Keys = {
 };
 
 const SECTIONS = [
-  ["workspace", "Workspace"], ["team", "Team & roles"], ["engines", "Vendors & keys"], ["masters", "Storage & masters"],
+  ["workspace", "Workspace"], ["team", "Team & roles"], ["credits", "Credits"], ["engines", "Vendors & keys"], ["masters", "Storage & masters"],
   ["atomik", "Atomik connection"], ["defaults", "Defaults & caps"], ["account", "Account"],
 ] as const;
 const CAN: Record<string, string> = {
@@ -85,6 +92,7 @@ export default function SettingsPage() {
   const { data: me } = useApi<Me>(signedIn ? "/api/me" : null);
   const { data: usage } = useApi<Usage>(signedIn ? "/api/usage/summary" : null, 30000);
   const { data: engineData, refresh: refreshEngines } = useApi<{ engines: EngineInfo[]; refiner?: Refiner; gatewayCredits?: Credits }>("/api/engines");
+  const { data: topups, refresh: refreshTopups } = useApi<TopupsView>(signedIn ? "/api/workspaces/topups" : null, 30_000);
   const { data: team } = useApi<Team>(signedIn ? "/api/team" : null, 60000);
   const { data: ws, refresh: refreshWs } = useApi<Ws>(signedIn ? "/api/settings" : null, 0);
   const { data: idTerms } = useApi<IdTerms>(signedIn ? "/api/identities" : null, 0);
@@ -212,6 +220,16 @@ export default function SettingsPage() {
                 {team && team.users.length === 0 && <span className="rail-help">Nobody yet.</span>}
               </div>
             )}
+          </section>
+
+          {/* ── Credits ── */}
+          <section id="credits" className="scard">
+            <div className="scard-h"><span>Credits</span><span>{
+              topups?.applies
+                ? "What this workspace renders with. Held takes release themselves the moment a pack arrives."
+                : "This workspace pays its vendors directly, so there is nothing to top up here."
+            }</span></div>
+            {topups?.applies && <CreditsCard view={topups} onChanged={refreshTopups} />}
           </section>
 
           {/* ── Engines & keys ── */}
@@ -613,6 +631,92 @@ function PushRow() {
           />
         )}
       </span>
+    </div>
+  );
+}
+
+/**
+ * The top-up screen: the balance, the packs, and the one dollar figure the
+ * product ever shows a workspace — the price of a pack. Asking for one
+ * queues a request for the platform; the credits arrive when it is answered.
+ */
+function CreditsCard({ view, onChanged }: { view: TopupsView; onChanged: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const open = view.requests.filter((r) => r.status === "requested");
+  const cr = view.credits;
+  async function ask(packId: string) {
+    setBusy(packId); setErr(null);
+    try {
+      const res = await fetch("/api/workspaces/topups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ packId }) });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not ask for it");
+      if (json.checkout?.kind === "redirect" && json.checkout.url) { window.location.assign(json.checkout.url); return; }
+      onChanged();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  }
+  async function cancel(id: string) {
+    setBusy(id); setErr(null);
+    try {
+      const res = await fetch(`/api/workspaces/topups?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not cancel it");
+      onChanged();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  }
+  const when = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return (
+    <div className="flex flex-col gap-4">
+      {cr && (
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums">{creditsNumber(cr.balance)} credits</span>
+          <span className="text-[13px] text-dim">left · {creditsNumber(cr.used)} used of {creditsNumber(cr.granted)} added</span>
+        </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-3">
+        {view.packs.map((p) => (
+          <div key={p.id} className="ecard !gap-1.5">
+            <span className="mono !tracking-[.12em] !text-[10px]">{p.label.toUpperCase()}</span>
+            <span className="text-[20px] font-semibold tabular-nums">{p.credits.toLocaleString("en-US")} credits</span>
+            <span className="text-[13px] text-dim">${p.usd.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+            {view.canRequest && (
+              <button type="button" className="btn-primary mt-1 !h-8 !px-3.5 !text-[12.5px]" disabled={busy != null || open.length >= view.openLimit} onClick={() => ask(p.id)}>
+                {busy === p.id ? "Asking…" : view.provider === "manual" ? "Request" : "Buy"}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {!view.canRequest && <span className="rail-help">The owner or an admin asks for a pack.</span>}
+      {view.provider === "manual" && view.canRequest && (
+        <span className="rail-help">A request goes to the platform; the credits arrive once it is answered, and anything held releases itself.</span>
+      )}
+      {err && <span className="text-[13px] text-lift">{err}</span>}
+      {open.length > 0 && (
+        <div className="flex flex-col">
+          {open.map((r) => (
+            <div key={r.id} className="steam !grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_90px]">
+              <span className="flex flex-col gap-0.5"><span className="font-medium">{r.label} · {r.credits.toLocaleString("en-US")} credits</span><span className="text-[11.5px] text-dim">asked {when(r.createdAt)} · waiting for the platform</span></span>
+              <span className="mono-v">${r.usd.toLocaleString("en-US")}</span>
+              <button type="button" className="btn-secondary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => cancel(r.id)}>Cancel</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {view.history.length > 0 && (
+        <div className="flex flex-col">
+          <div className="steam is-head !grid-cols-[minmax(0,1.5fr)_110px_90px]"><span>ADDED</span><span className="text-right">CREDITS</span><span className="text-right">WHEN</span></div>
+          {view.history.map((g) => (
+            <div key={g.id} className="steam !grid-cols-[minmax(0,1.5fr)_110px_90px]">
+              <span className="truncate">{g.note || "Credits"}</span>
+              <span className={`mono-v text-right ${g.credits < 0 ? "text-lift" : ""}`}>{g.credits > 0 ? "+" : ""}{Math.round(g.credits).toLocaleString("en-US")}</span>
+              <span className="mono-s text-right">{when(g.createdAt).toUpperCase()}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

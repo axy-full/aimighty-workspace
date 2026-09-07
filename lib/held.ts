@@ -143,9 +143,9 @@ export async function notifyHeld(gen: { id: string; needs: number; left: number 
   if (!admins.length) return;
   const title = "Renders are being held";
   const body = `A take needs ${gen.needs} credits and ${Math.max(0, Math.floor(gen.left))} are left. Top up to release it — nothing is lost.`;
-  await sendPushTo(admins.map((a) => a.id), { title, body, url: "/settings" }).catch(() => {});
+  await sendPushTo(admins.map((a) => a.id), { title, body, url: "/settings#credits" }).catch(() => {});
   if (!mailConfigured()) return;
-  const link = `${siteUrl()}/settings`;
+  const link = `${siteUrl()}/settings#credits`;
   await Promise.allSettled(admins.filter((a) => a.email).map((a) => sendMail({
     to: a.email,
     subject: `${ws.name}: ${title}`,

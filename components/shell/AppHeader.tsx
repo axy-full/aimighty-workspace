@@ -117,7 +117,7 @@ function CapReadout({ studioLevel, project, spentUsd, credits }: {
   /* A workspace that pays in credits sees its balance, whatever the screen. */
   if (cr) {
     return (
-      <Link href="/usage" className="hdr-cap" title={`Credits on the platform's engines — ${creditsNumber(cr.used)} used of ${creditsNumber(cr.granted)} granted`}>
+      <Link href="/settings#credits" className="hdr-cap" title={`${creditsNumber(cr.used)} used of ${creditsNumber(cr.granted)} added — tap to top up`}>
         <span className="hdr-cap-v">{creditsNumber(cr.balance)}</span><span className="hdr-cap-long"> CREDITS LEFT</span><span className="hdr-cap-short"> CR</span>
       </Link>
     );
