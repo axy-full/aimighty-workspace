@@ -47,7 +47,7 @@ import { COUNTS } from "@/lib/variations";
 type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost" | "orient";
 
 export type Engine = { id: string; label: string; configured: boolean };
-export type WriterInfo = { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean };
+export type WriterInfo = { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean; usdPerCall?: number };
 
 export type ComposerProps = {
   prompt: string; setPrompt: (v: string) => void;
@@ -73,6 +73,8 @@ export type ComposerProps = {
   trainedCited?: string | null;
   /** How many variations one press makes (brief 1.6): 1–4 for video, 1–8 for stills. */
   count?: number; setCount?: (n: number) => void;
+  /** What the prompt writer will add to this press, in dollars — zero when it will not run (brief 1.8). */
+  writerUsd?: number;
   inputSeconds: number; hasVideoInput: boolean; imageRefCount: number;
   busy: boolean; onRender: () => void;
   /** Our own renders attached to this one, and how to take one off. */
@@ -92,7 +94,7 @@ export default function Composer(p: ComposerProps) {
   const {
     prompt, setPrompt, promptRef, params, patch, model, engines, writer,
     refs, setRefs, picker, cite, taskOn, cancelTask, problem, blocked, notice,
-    est, estTokens, dims, trainedCited = null, count = 1, setCount, inputSeconds, hasVideoInput, imageRefCount,
+    est, estTokens, dims, trainedCited = null, count = 1, setCount, writerUsd = 0, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
     pickMode, onPickSource, onDropAsset, rail = false,
   } = p;
@@ -442,7 +444,7 @@ export default function Composer(p: ComposerProps) {
         {!rail && <span className="relative" ref={costRef}>
           <button type="button" onClick={() => setMenu(menu === "cost" ? null : "cost")} className="island-cost"
             title="What this take will cost">
-            <span className="font-semibold text-bone">{est ? (count > 1 && !taskOn ? `${price(est.net * count, priceModelId)} · ${count} × ${price(est.net, priceModelId)}` : price(est.net, priceModelId)) : "—"}</span>
+            <span className="font-semibold text-bone">{est ? (count > 1 && !taskOn ? `${price(est.net * count, priceModelId)} · ${count} × ${price(est.net, priceModelId)}` : price(est.net, priceModelId)) : "—"}{writerUsd > 0 && <span className="font-normal text-mute"> + {price(writerUsd * (taskOn ? 1 : count), "text")} writer</span>}</span>
             {!isImage && estTokens != null && (
               <span className="text-mute max-[560px]:hidden"> · {compactTokens(estTokens)} tok</span>
             )}
@@ -459,7 +461,7 @@ export default function Composer(p: ComposerProps) {
                   <>Billed by frame tokens: {estTokens != null ? compactTokens(estTokens) : "—"} at {dims ? `${dims.w}×${dims.h}` : "the source size"} for {params.duration}s.{" "}
                     {!writer || writer.writer === "none"
                       ? <>Pro mode: your words go as written, the camera as a module from the bank.</>
-                      : <>Your words go as written; an idea too thin to film is finished by {writer.label}{writer.configured ? "" : " (not reachable right now, so it goes raw)"}. The camera comes from the bank.</>}
+                      : <>Your words go as written; an idea too thin to film is finished by {writer.label}{writer.usdPerCall ? ` for ${price(writer.usdPerCall, "text")} a call` : ""}{writer.configured ? "" : " (not reachable right now, so it goes raw)"}{writerUsd > 0 ? " — this one is that thin, so it will run" : ""}. The camera comes from the bank.</>}
                     {" "}Start with <span className="font-medium text-blue">raw:</span> to bypass everything.</>
                 )}
               </span>

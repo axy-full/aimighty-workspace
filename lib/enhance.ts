@@ -26,6 +26,9 @@ import { vendorKey } from "./vendorKeys";
 import { gatewayPost } from "./gateway";
 import { engineMock } from "./mock";
 import { getModel } from "./models";
+import { TEXT_RATES, promptRichness, shouldRefine, type Richness } from "./refineGate";
+export { TEXT_RATES, promptRichness, shouldRefine };
+export type { Richness };
 export { gatewayReachable, gatewayAuth, gatewayCredits, GATEWAY_BASE, GATEWAY_URL } from "./gateway";
 
 const CHAT_URL = () =>
@@ -48,22 +51,6 @@ export const TEXT_MODEL = () => TEXT_MODELS()[0];
 
 /** USD per million tokens, from the ModelArk pricing page. Unknown models
  *  bill at pro's rates — conservative beats silently free. */
-export const TEXT_RATES: Record<string, { input: number; output: number }> = {
-  "dola-seed-2-1-turbo-260628": { input: 0.5, output: 2.5 },
-  "seed-2-0-pro-260328": { input: 0.5, output: 3.0 },
-  // Anthropic first-party rates. A refine costs ~$0.04 against a 1080p render
-  // at $3.67 — around 1% of the thing it steers.
-  "claude-opus-5": { input: 5.0, output: 25.0 },
-  "claude-sonnet-5": { input: 2.0, output: 10.0 },
-  "claude-haiku-4-5": { input: 1.0, output: 5.0 },
-  // The same models through Vercel AI Gateway, at the gateway's list prices
-  // (read off ai-gateway.vercel.sh/v1/models on 2026-09-03 — identical to
-  // Anthropic's own). Cache reads bill at a tenth of input.
-  "anthropic/claude-opus-5": { input: 5.0, output: 25.0 },
-  "anthropic/claude-sonnet-5": { input: 2.0, output: 10.0 },
-  "anthropic/claude-haiku-4.5": { input: 1.0, output: 5.0 },
-  "google/gemini-3.1-pro-preview": { input: 2.0, output: 12.0 },
-};
 
 /**
  * Which model writes the prompt.
@@ -176,50 +163,6 @@ export type RefineResult = {
  * invented detail. So we look for the marks of a prompt that was written
  * rather than typed, and leave those alone.
  */
-const SIGNALS: Record<string, RegExp> = {
-  camera: /\b(wide|close[- ]?up|medium shot|establishing|over[- ]the[- ]shoulder|pov|insert shot|push(?:es|ing)? in|pull(?:s|ing)? out|pan(?:s|ning)?|tilt(?:s|ing)?|track(?:s|ing)?|dolly|crane|handheld|orbit(?:s|ing)?|steadicam|locked[- ]off|eye level|low angle|overhead)\b/i,
-  light:  /\b(golden hour|blue hour|dawn|dusk|sunset|sunrise|night|noon|midday|backlit|rim[- ]lit|rim light|overcast|neon|practicals?|chiaroscuro|firelight|moonlight|sunlight|hard light|soft light|silhouette)\b/i,
-  look:   /\b(\d{2}mm|anamorphic|film grain|black and white|monochrome|desaturated|muted|bleach bypass|teal and orange|vhs|super ?8|cinematic|documentary)\b/i,
-  audio:  /\b(no music|no bgm|no audio|no subtitles|ambient|diegetic|dialogue|voice ?over|sound design|score|silence)\b/i,
-  beats:  /(\b\d+\s*[-–]\s*\d+\s*s\b|\bshot\s*\d|\bat the \d+[- ]second)/i,
-};
-
-export type Richness = { score: number; signals: string[]; words: number };
-
-export function promptRichness(prompt: string): Richness {
-  const words = prompt.trim().split(/\s+/).filter(Boolean).length;
-  const signals = Object.entries(SIGNALS)
-    .filter(([, re]) => re.test(prompt))
-    .map(([k]) => k);
-  return { score: signals.length, signals, words };
-}
-
-/**
- * A prompt that already carries three of the five marks AND enough words to
- * have said something is left exactly as written. Measured against the cases
- * that prompted this: a 24-word handheld/35mm/no-music prompt scores 3 and is
- * passed through; "a woman walks into a bar" scores 0 and is refined.
- */
-export function shouldRefine(prompt: string, detectedAxes = 0): { refine: boolean; why: string } {
-  const p = prompt.trim();
-  if (/^raw:/i.test(p)) return { refine: false, why: "raw: prefix" };
-  if (p.includes("【")) return { refine: false, why: "already structured" };
-
-  const r = promptRichness(p);
-  // LIBRARY-FIRST. The bank supplies the craft and the author's words stay
-  // the author's words, so a model is only worth calling when there is not
-  // enough prompt to film at all — a bare sketch with nothing for detection
-  // to work with. Everything else composes deterministically, instantly and
-  // for nothing.
-  const tooThinToFilm = r.words <= 10 && detectedAxes === 0 && r.score === 0;
-  if (!tooThinToFilm) {
-    return {
-      refine: false,
-      why: r.words > 10 ? `enough to film (${r.words} words)` : `library covers it (${detectedAxes} axes)`,
-    };
-  }
-  return { refine: true, why: "too thin to film" };
-}
 
 /**
  * Distilled from the official guide. Every rule below is one the guide
