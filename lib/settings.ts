@@ -19,6 +19,8 @@ export const DEFAULTS = {
   /** Whether oversized masters may be sent to an API as a derived copy. */
   deriveForApi: "1",
   /** Cost approval rule: anyone renders, a cap per shot, or a producer approves. */
+  /** The workspace's own mark, shown on a client review page (brief 2.6). */
+  brandLogoUploadId: "",
   approvalRule: "anyone",
   /** With "cap": a shot may take this many credits before a member needs an admin to press (brief 2.2). */
   shotCapCredits: "50",

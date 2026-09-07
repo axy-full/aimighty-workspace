@@ -2799,3 +2799,40 @@ html, body { overflow-x: clip; }
 
 /* A rule surfaced as a one-tap hint beside the engine (brief 2.5). */
 .chip-ctl.is-hint { border-style: dashed; color: var(--color-blue); }
+
+/* A client review page (brief 2.6): the studio's own page, no app chrome. */
+.rv { max-width: 900px; margin: 0 auto; padding: 28px 20px 60px; display: flex; flex-direction: column; gap: 22px; }
+.rv-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.rv-logo { height: 40px; width: auto; object-fit: contain; }
+.rv-name { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.rv-title h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+.rv-title p { font-size: 13.5px; color: var(--color-dim); margin-top: 2px; }
+.rv-gone { color: var(--color-dim); font-size: 15px; padding: 40px 0; }
+.rv-list { display: flex; flex-direction: column; gap: 26px; }
+.rv-take { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.rv-media { border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 16 / 9; }
+.rv-media video, .rv-media img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.rv-body h2 { font-size: 15px; font-weight: 600; }
+.rv-prompt { font-size: 13.5px; color: var(--color-dim); margin-top: 4px; line-height: 1.5; }
+.rv-notes { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.rv-notes li { color: var(--color-ink); }
+.rv-who { font-weight: 600; margin-right: 6px; }
+.rv-who.is-guest { color: var(--color-blue); }
+.rv-say { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.rv-in { border: 1px solid var(--color-line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13.5px; background: transparent; color: inherit; }
+.rv-in { flex: 1 1 140px; min-height: 40px; }
+.rv-text { flex: 1 1 100%; resize: vertical; }
+.rv-send { min-height: 40px; padding: 0 14px; border-radius: 8px; background: var(--color-blue); color: var(--color-on-ink, #fff); font-size: 13.5px; font-weight: 600; }
+.rv-send:disabled { opacity: .5; }
+.rv-err { flex: 1 1 100%; font-size: 12.5px; color: var(--color-lift, #d9a441); }
+.rv-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--color-line); padding-top: 14px; font-size: 12.5px; color: var(--color-mute); }
+@media (max-width: 767px) { .rv-take { grid-template-columns: minmax(0, 1fr); } .rv { padding: 20px 14px 48px; } }
+
+/* The production's client review links (brief 2.6). */
+.rvl { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; }
+.rvl-head { display: flex; align-items: baseline; gap: 12px; }
+.rvl-note { font-size: 13px; color: var(--color-mute); max-width: 62ch; }
+.rvl-new { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; }
+.rvl-new code { background: var(--color-chip); border-radius: 6px; padding: 3px 7px; word-break: break-all; }
+.rvl-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; font-size: 13.5px; }
+.rvl-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }

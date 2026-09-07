@@ -200,6 +200,18 @@ const SCHEMA = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_notes_gen ON notes(gen_id, created_at)`,
+  /* A client's comment from a review link (brief 2.6). Its own table because
+     a note belongs to a user and a client has no account here; the take's
+     notes read both, so the team sees one conversation. */
+  `CREATE TABLE IF NOT EXISTS review_notes (
+     id         TEXT PRIMARY KEY,
+     gen_id     TEXT NOT NULL,
+     share_id   TEXT NOT NULL,
+     guest      TEXT NOT NULL DEFAULT '',
+     text       TEXT NOT NULL,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_review_notes_gen ON review_notes(gen_id)`,
   `CREATE TABLE IF NOT EXISTS api_tokens (
      id          TEXT PRIMARY KEY,
      token_hash  TEXT NOT NULL UNIQUE,

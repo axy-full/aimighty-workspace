@@ -14,16 +14,24 @@ export const GET = withTenant(async function GET(req: Request) {
   const genId = new URL(req.url).searchParams.get("genId");
   if (!genId) return NextResponse.json({ error: "Which render?" }, { status: 400 });
 
+  /* The team's notes and the client's comments from a review link, as one
+     conversation on the take (brief 2.6): a note belongs to a user and a
+     client has no account here, so they are kept apart and read together. */
   const rs = await db().execute({
-    sql: `SELECT n.*, u.name AS author FROM notes n
-          JOIN users u ON u.id = n.user_id
-          WHERE n.gen_id = ? ORDER BY n.created_at`,
-    args: [genId],
+    sql: `SELECT n.id, n.gen_id, n.user_id, n.text, n.created_at, u.name AS author, 0 AS guest
+          FROM notes n JOIN users u ON u.id = n.user_id WHERE n.gen_id = ?
+          UNION ALL
+          SELECT r.id, r.gen_id, '' AS user_id, r.text, r.created_at, r.guest AS author, 1 AS guest
+          FROM review_notes r WHERE r.gen_id = ?
+          ORDER BY created_at`,
+    args: [genId, genId],
   });
   return NextResponse.json({
     notes: rs.rows.map((r: any) => ({
       id: r.id, text: r.text, author: r.author,
       userId: r.user_id, createdAt: Number(r.created_at),
+      /** A comment from a client review link, not one of the team's own. */
+      guest: Number(r.guest) === 1,
     })),
   });
 });
