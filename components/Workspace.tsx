@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrice } from "@/lib/price";
 import { referenceProblem, type RefItem, type RefPicker } from "./References";
-import { appAlert, appConfirm } from "./dialog";
+import { appAlert, appConfirm, appPrompt } from "./dialog";
 import type { Gen } from "./GenCard";
 import Feed, { type FeedFilter } from "./Feed";
 import Boundary from "./Boundary";
@@ -378,11 +378,22 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
          so the wall shows them as siblings. A locked task is always one. */
       const n = taskOn ? 1 : countNow;
       const batchId = n > 1 ? newBatchId() : undefined;
-      let json: { id?: string; notices?: string[]; error?: string; held?: boolean; why?: string } = {};
+      let json: { id?: string; notices?: string[]; error?: string; held?: boolean; why?: string; needsReason?: boolean; line?: string } = {};
+      /* A shot with an approved take is locked (brief 2.1): the server asks
+         why before it takes another, and the answer rides with every take of
+         this press. */
+      let reason: string | null = null;
       for (let i = 0; i < n; i++) {
-        const body = batchId ? JSON.stringify({ ...JSON.parse(payload), batchId, variation: i + 1, count: n }) : payload;
-        const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+        const withBatch = batchId ? { ...JSON.parse(payload), batchId, variation: i + 1, count: n } : JSON.parse(payload);
+        let res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reason ? { ...withBatch, reason } : withBatch) });
         json = await res.json();
+        if (res.status === 409 && json.needsReason) {
+          const said = await appPrompt(json.error ?? "Why render another?", "", json.line ?? "");
+          if (!said?.trim()) { setBusy(false); return; }
+          reason = said.trim();
+          res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...withBatch, reason }) });
+          json = await res.json();
+        }
         if (!res.ok) throw new Error(json.error ?? "Submit failed");
       }
       // Only now: a failed submit keeps the words, which is when they matter most.
