@@ -42,7 +42,7 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 4. **Don't redesign what works.** Shot/take, draft → picked → approved, cost-on-the-button, Setup carried into every shot, `@cast`, file naming, caps. Extend; don't replace.
 5. **One vocabulary.** Enforced in code, decided once. Current state on particl.app is close: Takes / Productions / Generate. Remaining drift: the dock says `GENERATE` while the segmented control says Video / Images / Audio.
 6. **Five minutes.** A stranger with an invite gets from email to first render in five minutes without reading a paragraph. Every screen is judged against that person.
-7. **Mobile is first-class.** Producers approve from a phone. Every change ships with Playwright checks at 360×640, 390×844, 844×390. No horizontal overflow, all primary actions reachable without panning, dock and sheets clear of the home indicator.
+7. **Two first-class surfaces, different jobs.** Desktop is where work is made: composing, wiring Rig, reviewing at speed, bulk actions, admin. Mobile is where work is judged: watch a run, compare, approve, unlock a cap. Neither is a shrunken version of the other. Every change ships with Playwright checks at 360×640, 390×844, 844×390, 1440×900 and 1920×1080. No horizontal overflow at any width; primary actions reachable without panning; dock and sheets clear of the home indicator; no fixed-width layout stranding whitespace above 1600px.
 8. **Small PRs**, one concern each, in phase order.
 9. **Prose in the product is a cost.** The copy voice is good; there's too much of it. Where a paragraph explains what the UI should make obvious, fix the UI and cut the paragraph.
 
@@ -52,14 +52,22 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 
 Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-screen) and `README.md` (node-graph surfaces, light tokens). Both are **high-fidelity and final-intent** — colours, type, spacing, radii, copy and geometry. The graph geometry in the canvas surfaces is exact: node positions, port centres and wire endpoints were measured. Keep port-to-slot alignment when rebuilding; a wire that misses its port breaks the one idea the screen exists to show.
 
-**Theme — resolved 8 September 2026: both themes are first-class.** Appearance
-is already Auto / Light / Dark per browser, stamped before first paint, and the
-token set is emitted twice. Every Rig surface built so far uses those tokens
-rather than the handoff's absolute values, so it follows whichever theme the
-reader is in instead of being a light screen dropped into a dark app or the
-reverse. The handoff's light values are read as the light-mode expression of
-one system, not as a second system. The cost of this decision is that no
-surface may hard-code a colour: a literal hex in a Rig component is a bug.
+**Open decision — theme. STILL OPEN, and now cheap to settle.** The handoff
+describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light
+(`#FCFCFD`). The live site is light with an Auto appearance setting and
+per-scheme `theme-color`. §13.2 adds that dark is the convention for desktop
+suites, which points at dark rather than at both.
+
+**Where the code stands:** every Rig surface built so far uses the app's own
+tokens rather than the handoff's absolute values, so each already renders
+correctly in both themes and follows whatever the reader has chosen. That was
+done to avoid pre-empting this decision, and it means choosing dark now costs a
+default change, not a rework — the expensive outcome the original note warned
+about has been avoided either way.
+
+The remaining question is only what a *new* workspace opens on, and whether
+Auto stays. Answer it and the default flips in one place. The standing rule
+meanwhile: no Rig component hard-codes a colour; a literal hex in one is a bug.
 
 **Type.** Outfit for UI and body; Kode Mono 11px/0.12em tracking for eyebrows, costs, states and IDs. **Radius** 4–10 by component. **No motion, no shadows** — hover raises border alpha only.
 
@@ -94,9 +102,8 @@ usage         { byProduction[], byPerson[], byShot[], byEngine[], period }
 settings      { team[], engines[], storage, atomikConnection, defaults }
 ```
 
-Added by Rig (Phase 3). **As shipped** — this block was updated against the code
-on 8 September 2026 per §12.4; the differences from the original sketch are
-called out because each was a decision, not a slip.
+Added by Rig (Phase 3). **As shipped**, updated against the code per §13.4.
+Each difference from the original sketch was a decision, so each is named.
 
 ```
 recipes        { id, projectId, name, draft }
@@ -122,33 +129,32 @@ take_ports     { takeId, elementId, attributeId, versionId, slot, ordinal }
 **What changed from the sketch, and why:**
 
 - **`element` is its own row with a link back to the cast member**, not the cast
-  row grown. Decided so a migration here cannot take the composer down with it,
-  while `castId` keeps the two from being two truths about one face.
+  row grown, so a migration here cannot take the composer down with it. `castId`
+  keeps the two from becoming two truths about one face.
 - **`binding.overridden: bool` is gone.** `versionId` carries it: null means
   *follow current*, a value means *pinned*. One nullable column replaces a flag
   plus a value that could disagree, and it is what draws the inherited wire and
   the override wire on the canvas.
 - **`binding.ordinal`**, because a shot can hold two characters and a wire lands
   on a slot, not a node (rule 6).
-- **`binding.attributeId` may be null** — the bundle: every current version at
-  once. A swap must ask "which ports FOLLOW current", which is a different
-  question from "which ports does this version reach", and conflating them
-  prices shots a change cannot touch.
+- **`binding.attributeId` may be null** — the bundle, every current version at
+  once. A swap must ask "which ports FOLLOW current", a different question from
+  "which ports does this version reach"; conflating them prices shots the change
+  cannot touch.
 - **`version` has no `thumbUrl` or `usedByShotIds`.** Its source is exactly one
-  of an upload, a take or a trained identity; what uses it is the reverse
-  lookup on `bindings` and `take_ports`, which cannot go stale.
+  of an upload, a take or a trained identity; what uses it is the reverse lookup
+  on `bindings` and `take_ports`, which cannot go stale.
 - **`provenance` is two tables.** The blob is one statement about one moment,
-  read whole or not at all; `take_ports` is the one thing asked across takes —
-  which takes used a given version — and the blob cannot answer it.
-- **`failure` is JSON on `stage_runs`**, not a table: it is the reason this
-  attempt stopped, replaced whole on the next, and it never outlives it.
-- **`impact` and `quote` are computed, never stored.** Storing a quote would
-  create a second ledger that could disagree with the first. A quote carries
-  `pricedAt` and a stamp of its inputs, and a stale one is re-taken before
-  anything is charged.
-- **Not yet recorded:** the seed. The vendor path does not return one on the
-  render route, so provenance stores it as absent rather than as zero, and the
-  card says "not recorded" and drops the word *exactly* from its own button.
+  read whole or not at all; `take_ports` answers the one question asked across
+  takes — which takes used a given version — that the blob cannot.
+- **`failure` is JSON on `stage_runs`**, not a table: it is why this attempt
+  stopped, replaced whole on the next, and never outlives it.
+- **`impact` and `quote` are computed, never stored.** A stored quote is a
+  second ledger that can disagree with the first. A quote carries `pricedAt` and
+  a stamp of its inputs; a stale one is re-taken before anything is charged.
+- **Not recorded: the seed.** The vendor path does not return one on the render
+  route, so provenance stores it as absent, and the card says "not recorded" and
+  drops the word *exactly* from its own button.
 
 **Port identity is `elementId:attributeId:versionId`.** That triple is what a wire carries and what provenance records. It is the single most important line in this document; everything else in Rig is bookkeeping on top of it.
 
@@ -163,21 +169,21 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 **Outstanding:**
 
 - ~~**Safe area.**~~ **Resolved — not a bug.** The dock already carries
-  `padding: 0 6px env(safe-area-inset-bottom, 22px)` and `viewport-fit=cover` is
-  set. The 0px reading is emulation: a probe with
+  `padding: 0 6px env(safe-area-inset-bottom, 22px)`, and `viewport-fit=cover`
+  is set. The 0px reading is emulation: a probe with
   `padding-bottom: env(safe-area-inset-bottom, 99px)` also computes to 0px, so
   Chrome defines the variable as zero and the fallback is never reached. A Face
   ID iPhone reports 34px. The mobile suite asserts the *declaration* for exactly
-  this reason. Nothing to do; re-check on device before the iOS build if you
-  want belt and braces.
-- **Credits not in the composer — established: neither partial nor absent.** The
-  conversion works and is gated on `creditsApply(ws)`, which needs a workspace on
-  the platform's keys. Signed out there is no workspace, so it falls through to
-  dollars; the same button in a platform-keys workspace reads
-  `Generate 40 cr + 1 cr writer`. **The part that matters is what those dollars
-  are:** $2.86 is the platform's *vendor* cost against a 40 cr charge, so the
-  margin is a subtraction away for anyone who opens the page. Fix: price the
-  signed-out composer in credits at the platform's default margin. Still open.
+  this reason. Re-check on device before the iOS build if you want certainty.
+- **Credits not in the composer — established: neither partial nor absent.** It
+  works, gated on `creditsApply(ws)`, which needs a workspace on the platform's
+  keys. Signed out there is no workspace, so it falls through to dollars; the
+  same button inside a platform-keys workspace reads
+  `Generate 40 cr + 1 cr writer`. **What matters is what those dollars are:**
+  $2.86 is the platform's *vendor* cost against a 40 cr charge, so the margin is
+  a subtraction away for anyone who opens the page — and §2 says margin is never
+  shown. Fix: price the signed-out composer in credits at the platform default
+  margin. Still open.
 - **Token count on the button** — noise once it's credits. Remove.
 - **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.
 - **Sticky context in the shot builder** — the assembled prompt and the `N OF 12 ROWS SET` counter scroll away, so tapping a chip far down the page gives no feedback. Put a one-line preview and the counter in the sticky bar.
@@ -186,7 +192,23 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 - **Audio tab** — if ElevenLabs is wired, show its composer signed out like Video and Images; if not, hide the tab.
 - **Usage signed out** is blank while the copy promises otherwise. Show the shape with placeholder numbers.
 
-**Acceptance suite** (keep it green for every later phase): visits every route at three viewports signed out; asserts `scrollWidth === clientWidth`; opens the composer sheet and asserts Close and the primary are in-viewport; asserts dock `padding-bottom ≥` safe-area inset; asserts no input under 16px.
+**Acceptance suite** (keep it green for every later phase). Rule 7 makes this
+**five viewports, not three** — 360×640, 390×844, 844×390, 1440×900, 1920×1080
+— because a desktop-only defect is invisible to a phone sweep and two of them
+had already shipped unseen.
+
+*Phone*: visits every route signed out; asserts `scrollWidth === clientWidth`;
+opens the composer sheet and asserts Close and the primary are in-viewport;
+asserts dock `padding-bottom ≥` safe-area inset; asserts no input under 16px.
+
+*Desktop* (`tests/desktop.spec.ts`, built 8 September): the same overflow
+assertion at every width; **prose under ~95 characters a line**, measured with a
+probe in the element's own font because `1ch` is ~0.65em here and the obvious
+`width / (fontSize/2)` fails a correctly capped paragraph; no error boundary;
+and at 2560, that a wall's card is *larger* than the laptop-sized floor. That
+last one exists because every grid was `auto-fill` with one fixed minimum, which
+sawtooths: a library thumbnail measured 237px at 1280 and **217px at 2560**, a
+4K monitor showing smaller frames than a laptop.
 
 ---
 
@@ -332,37 +354,85 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 **Locks.** Any node can be locked (identity, voice, look, Setup). A locked node cannot drift between stages or scenes; the compiler re-asserts it at every stage. Unlocking is explicit and logged.
 
 **Build order — data model first, mobile before desktop, canvas last:**
-1. Schema and the migration from what 1.0 shipped. Be specific about how existing takes get backfilled with provenance, or why they can't. **Done.** Version history is recovered from the takes themselves — the compiler wrote each citation into the prompt, so a take names which upload stood behind which name — and accepted only where the mapping is positionally sound. Seed and rule ids are recorded from that PR forward and never backfilled.
-2. The quote/impact engine — what a change costs before it happens. Everything visible depends on it. **Done.**
-3. Mobile: `1a` **done** → `1b` **done** → `1c` **done** → `2c` → `2b`.
-4. Desktop: `1d` **done** → `2a` **done**. Built ahead of `2c` and `2b` under a desktop-first instruction on 8 September; this document's rule 7 stands and the two remaining mobile surfaces are next.
+1. Schema and the migration from what 1.0 shipped. Be specific about how existing takes get backfilled with provenance, or why they can't.
+2. The quote/impact engine — what a change costs before it happens. Everything visible depends on it.
+3. Mobile: `1a` **built** → `1b` **built** → `1c` **built** → `2c` → `2b`.
+4. Desktop: `1d` **built** → `2a` **built**. Both were brought forward on
+   8 September under a desktop-first instruction, which rule 7 has since made
+   the settled shape rather than a detour.
 5. Chat drives the graph; the canvas is a view of what chat did, never the only way to edit.
 
 **Where it lives.** Recipe authoring and the canvas belong in Atomik (planning); running recipes and their outputs belong in particl (rendering). Same graph, same scoping, one database.
 
 **Constraints that don't relax:** rule 6 — a new user must never need to open Rig to make a first render. Rule 7 — five of seven surfaces are 390×844 and must pass the Phase 0 suite. Desktop canvas is min-width 1180px and may be hidden below that; the mobile surfaces may not.
 
-**Geometry — resolved 8 September 2026: neither, because the positions are
-computed.** The trade-off assumed the handoff's fixed coordinates and a fixed
-1040px graph. `lib/graph.ts` derives positions from the recipe's own shape on
-the handoff's grid instead — a stage sits one column right of the furthest
-thing feeding it, and a branch drops a row when two want the same column — so
-the graph is exactly as wide as the recipe needs and the canvas scrolls. The
-inspector keeps its 272px, the columns keep their spacing, and nothing is
-pulled in. When the chat panel lands it takes its 288px from the graph's
-scrollable area, which costs viewport rather than layout.
+**Geometry — resolved: neither option, because the positions are computed.** The
+trade-off assumed the handoff's fixed coordinates and a fixed 1040px graph.
+`lib/graph.ts` derives positions from the recipe's own shape on the handoff's
+grid — a stage sits one column right of the furthest thing feeding it, and a
+branch drops a row when two want the same column — so the graph is exactly as
+wide as the recipe needs and the canvas scrolls. The inspector keeps its 272px
+and no column is pulled in. When the chat panel lands it takes its 288px from
+the scrollable area, costing viewport rather than layout.
 
-One consequence worth naming: the asset layer draws Audio under **Keyframes**
-where the handoff draws it under **Motion**, because Audio depends only on the
-shot list. The placement follows the dependency rather than the drawing, and it
-says something truer — Audio can start as soon as the shot list is done, which
-is what the handoff's own copy ("runs alongside Post") means.
+One consequence to know: the stage layer draws Audio under **Keyframes** where
+the handoff draws it under **Motion**, because Audio depends only on the shot
+list. The placement follows the dependency rather than the drawing, and says
+something truer — Audio can start as soon as the shot list is done, which is
+what the handoff's own "runs alongside Post" means.
 
 ---
 
-## 10. Phase 4 — iOS app
+## 10. Phase 4 — Desktop depth
 
-Only after Phase 0's safe-area fix and 2.7's push service. Prerequisites: Apple Developer Program enrolment, Xcode, and push working server-side.
+particl is a workstation tool that happens to have a phone client. Everything below assumes a 27" display, a keyboard, a mouse and a user who is in the app for six hours. None of it exists yet.
+
+### 4.1 Breakpoints and density
+Three layouts, not two: **mobile** (<768), **compact desktop** (1024–1439, two-pane), **full desktop** (≥1440, three-pane — library, work surface, rail). Above 1920 the layout gains columns rather than margins; a 400px composer rail on a 2560px display is wasted real estate. Rig canvas requires ≥1180. Panes are **resizable and persisted per user per surface**; a director and an artist do not want the same split.
+
+### 4.2 Keyboard-first
+A production tool lives on shortcuts. Minimum set, discoverable through a `?` overlay:
+- `⌘K` command palette — jump to a shot, production, cast member or setting; run an action by name. This is the single highest-value desktop feature and it makes every later addition discoverable for free.
+- Review: `J K L` shuttle, `space` play/pause, `←/→` frame step, `↑/↓` between takes, `[ ]` between shots, `P` pick, `A` approve, `S` send back with a note.
+- Compose: `⌘↵` generate, `⌘⇧↵` generate batch, `/` focus search, `⌘` + backslash toggles the rail, `esc` closes any sheet.
+- Rig: `⌘1/2/3` switch Assets / Stages / Runs, `space` pan, `⌘0` fit graph, `⌘F` find node.
+Every shortcut has a menu-bar equivalent in the Mac app.
+
+### 4.3 Review at speed
+The desktop version of 2.1, and the reason an editor keeps the app open.
+- **Player**: scrub, frame-step, loop, in/out, and a comparison mode with synced playhead across two to four takes — side by side, or A/B wipe for two.
+- **Filmstrip** of every take on the shot under the player; arrow through them without leaving playback.
+- **Pop-out review window** to a second display. Studios review on a reference monitor; the grading suite is not a laptop screen.
+- **Notes with a timecode** — click on the scrub bar to attach a note at 0:03. This is what a director actually gives back, and it feeds the send-back note in 2.1.
+
+### 4.4 Bulk operations
+Desktop is where someone acts on forty things at once. Multi-select with click, shift-click ranges and `⌘A`; a persistent selection bar showing count and total credits. Bulk: approve, send back, file against shots, download masters, add to a review link, delete drafts. Every bulk action that spends credits quotes the total before enabling, same as a single action.
+
+### 4.5 Drag and drop, and local files
+Drag references into the composer; drag a folder of stills into Studio to create cast entries; drag a take onto a shot to file it; drag to reorder the sequence canvas; drag a plate onto a slot in Rig. Batch upload with per-file progress and resumable failures. Download: pick a destination folder once and remember it; masters land named by the convention without a Save dialog each time.
+
+### 4.6 Scale
+A production reaches thousands of takes. Virtualised lists and grids, thumbnail sprite sheets or a poster-frame service rather than loading video, lazy provenance, and a Rig canvas that stays responsive at 200+ nodes. Set a budget: the library at 2,000 takes scrolls at 60fps and first paint stays under 1.5s on a cold load.
+
+### 4.7 Desktop-only surfaces
+Already listed elsewhere but spec'd as desktop-first and never shrunk: the platform admin console, Usage's full charts and tables, Settings, the Rig canvas layers, and Atomik's three-pane Treatment and Breakdown. On mobile these are read-only summaries or absent, and say so plainly rather than rendering a broken grid.
+
+### 4.8 Colour and output correctness
+Review happens on calibrated displays. At minimum: tag masters with their colour space, don't let the browser silently transform on playback, and state the delivery spec on the take card. A director who approves something that looks different in Resolve stops trusting the tool.
+
+---
+
+## 11. Phase 5 — Native apps
+
+Only after Phase 0's safe-area fix, 2.7's push service, and Phase 4's keyboard and review work.
+
+### 5.1 Mac — the one that matters more
+The desktop surfaces are where the work happens, so ship Mac alongside or before iOS. **Tauri** wrapping the live URL: ~10MB against Electron's 150, WKWebView, native menus carrying every shortcut from 4.2, a dock badge for running jobs, deep links (`particl://shot/SH04`), native notifications, background download of masters to a watched folder, and multi-window so the review player can live on a second display. Minimum window 1440×900. Ship as a signed, notarised `.dmg` from your own site — no store review, no commission, and for an invite-only product with no in-app purchases that's the easier path. Mac App Store later if it's ever worth it. **Not Mac Catalyst** — it gives an iPad-shaped window, which is wrong for Rig.
+
+### 5.2 iOS
+
+
+Prerequisites: Apple Developer Program enrolment, Xcode, and push working server-side.
 
 Capacitor shell pointing at the live site (`server.url`), since the app is server-rendered and won't export statically. Native plugins that make it an app rather than a wrapper and avoid a Guideline 4.2 rejection: push notifications (the actual reason for the app), camera (identity photos and references), share (review links), filesystem (masters to Files), haptics.
 
@@ -370,23 +440,25 @@ Capacitor shell pointing at the live site (`server.url`), since the app is serve
 
 **Submission needs:** a demo account with a seeded workspace, a demo production with takes and enough credits that Generate works — invite-only apps are rejected under Guideline 2.1 without it, plus a note explaining the invite model. Privacy labels covering face and voice if identity training is reachable on mobile, a public privacy policy URL, screenshots, a 1024px icon. Budget one to two weeks of review round-trips.
 
-Mac is deferred. When it comes, Tauri wrapping the same URL, minimum window 1440×900 for the Rig surfaces — not Mac Catalyst, which gives an iPad-shaped window.
+The iOS app deliberately does less than the web: watch a run, compare, approve, unlock, top-up prompt. Composing and Rig authoring stay on desktop.
 
 ---
 
-## 11. Screen inventory
+## 12. Screen inventory
 
 **particl** — `/welcome`, `/login`, `/` (Video), `/images`, `/audio`, `/projects`, `/projects/:id/canvas` (sequence wall), `/projects/:id/rig` (new), `/all` (Library), `/studio` (Cast & identities), `/studio/shot` (Camera & shot builder), `/usage`, `/settings` (Team & roles · Engines & keys · Storage & masters · Atomik connection · Defaults & caps · Account), plus the platform admin console on its own gated route.
 
 **Atomik** — Ideas, Treatment, Breakdown, Shot list. Plus the workflow map artboard, which is a product map and not a UI.
 
+Per surface, state which of the three layouts it supports and what the mobile version is: full, read-only summary, or absent. A surface with no declared mobile behaviour ships broken on a phone.
+
 ---
 
-## 12. How to work
+## 13. How to work
 
 1. Confirm or correct every assumption in sections 2 and 5 against the code before changing anything. Specifically: where keys live, whether `workspace_id` is on every table, whether the metering layer exists and **which call paths bypass it**, how Atomik shares auth and data, and what "its own database" means in the schema. Report back.
-2. Resolve the two open decisions in section 4 (theme) and section 9 (graph geometry), and bring back the 1.0 pricing decisions with trade-offs.
-3. Phase order: finish Phase 0 → 1.0 → 1.1 → the rest of Phase 1 → Phase 2 (2.1 and 2.2 first, they're what a paying team feels) → Phase 3 → Phase 4.
+2. Resolve the two open decisions in section 4 (theme — and note that dark is the convention for desktop suites) and section 9 (graph geometry), and bring back the 1.0 pricing decisions with trade-offs.
+3. Phase order: finish Phase 0 → 1.0 → 1.1 → the rest of Phase 1 → Phase 2 (2.1 and 2.2 first, they're what a paying team feels) → Phase 3 → Phase 4 → Phase 5. Two things from Phase 4 can jump the queue because everything after them gets easier: the ⌘K command palette (4.2) and resizable persisted panes (4.1).
 4. For anything schema-touching, summarise what changed as a diff against this document and update it. A scope of work that drifts from the code is worse than none.
 5. Each PR states: what it costs a workspace to use, how it's mocked in tests, what changed in the prompt compiler, and where the new code is workspace-scoped.
 6. Every mobile change keeps the Phase 0 suite green.
