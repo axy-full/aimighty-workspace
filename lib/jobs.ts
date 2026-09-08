@@ -17,6 +17,10 @@ export type Generation = {
   kind: "video" | "image" | "audio";
   reviewState: "" | "approved" | "picked" | "changes";
   reviewBy: string | null;
+  pickedBy: string | null;
+  pickedAt: number | null;
+  approvedBy: string | null;
+  approvedAt: number | null;
   model: string;
   prompt: string;
   /** The name the team gave it, if any — shown in place of the clip id. */
@@ -82,6 +86,10 @@ export function rowToGeneration(r: any): Generation {
       : r.review_state === "picked" ? "picked"
       : r.review_state === "changes" ? "changes" : "",
     reviewBy: r.review_by ?? null,
+    pickedBy: r.picked_by ?? null,
+    pickedAt: r.picked_at == null ? null : Number(r.picked_at),
+    approvedBy: r.approved_by ?? null,
+    approvedAt: r.approved_at == null ? null : Number(r.approved_at),
     model: r.model,
     prompt: r.prompt,
     title: r.title ?? null,

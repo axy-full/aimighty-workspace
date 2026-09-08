@@ -47,9 +47,21 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
        director approves it or sends it back. */
     const state = ["approved", "picked", "changes", ""].includes(String(body.reviewState))
       ? String(body.reviewState) : "";
+    /* The trail keeps both marks: who picked and who approved, each with its
+       own moment (brief 2.1). Clearing a state clears that mark alone, so a
+       take sent back for changes still says who had picked it. */
+    const ts = Date.now();
     await db().execute({
-      sql: `UPDATE generations SET review_state=?, review_by=?, reviewed_at=?, updated_at=? WHERE id=?`,
-      args: [state, state ? got.user.name : null, state ? Date.now() : null, Date.now(), id],
+      sql: `UPDATE generations SET review_state=?, review_by=?, reviewed_at=?,
+                   picked_by = CASE WHEN ? THEN ? ELSE picked_by END,
+                   picked_at = CASE WHEN ? THEN ? ELSE picked_at END,
+                   approved_by = CASE WHEN ? THEN ? ELSE approved_by END,
+                   approved_at = CASE WHEN ? THEN ? ELSE approved_at END,
+                   updated_at=? WHERE id=?`,
+      args: [state, state ? got.user.name : null, state ? ts : null,
+             state === "picked" ? 1 : 0, got.user.name, state === "picked" ? 1 : 0, ts,
+             state === "approved" ? 1 : 0, got.user.name, state === "approved" ? 1 : 0, ts,
+             ts, id],
     });
     /* Picking a take asks someone for a decision: tell the admins who want
        to be asked (brief 2.7). Approving it, or sending it back, is the
