@@ -52,7 +52,14 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 
 Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-screen) and `README.md` (node-graph surfaces, light tokens). Both are **high-fidelity and final-intent** — colours, type, spacing, radii, copy and geometry. The graph geometry in the canvas surfaces is exact: node positions, port centres and wire endpoints were measured. Keep port-to-slot alignment when rebuilding; a wire that misses its port breaks the one idea the screen exists to show.
 
-**Open decision — theme.** The handoff describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light (`#FCFCFD`). The live site is light with an Auto appearance setting and per-scheme `theme-color`. Resolve this before building Rig: either particl is dark and the live light theme is the exception, or both themes are first-class and every new surface ships in both. Don't let it stay ambiguous — the node surfaces are token-heavy and reworking them later is expensive.
+**Theme — resolved 8 September 2026: both themes are first-class.** Appearance
+is already Auto / Light / Dark per browser, stamped before first paint, and the
+token set is emitted twice. Every Rig surface built so far uses those tokens
+rather than the handoff's absolute values, so it follows whichever theme the
+reader is in instead of being a light screen dropped into a dark app or the
+reverse. The handoff's light values are read as the light-mode expression of
+one system, not as a second system. The cost of this decision is that no
+surface may hard-code a colour: a literal hex in a Rig component is a bug.
 
 **Type.** Outfit for UI and body; Kode Mono 11px/0.12em tracking for eyebrows, costs, states and IDs. **Radius** 4–10 by component. **No motion, no shadows** — hover raises border alpha only.
 
@@ -87,25 +94,61 @@ usage         { byProduction[], byPerson[], byShot[], byEngine[], period }
 settings      { team[], engines[], storage, atomikConnection, defaults }
 ```
 
-Added by Rig (Phase 3):
+Added by Rig (Phase 3). **As shipped** — this block was updated against the code
+on 8 September 2026 per §12.4; the differences from the original sketch are
+called out because each was a decision, not a slip.
 
 ```
-recipe        { id, projectId, draft, stages[], estimateCredits }
-stage         { id, num, name, engineId, params{}, inputs[ref], state, credits, perUnit, results[] }
-run           { id, recipeId, startedAt, state, spentCredits, estimateCredits,
-                stageRuns[{ stageId, state, progress, spent, failure }] }
-failure       { stageId, unit, reason, fixes[{ id, label, note, credits, kind }] }
-element       { id, kind: character|location|prop|look|voice, name, locked, lockedBy, lockedAt,
-                attributes[], plates[], views[], createdFrom{shotId,takeId}|null }
-attribute     { id, elementId, kind: face|hair|wardrobe|voice, versions[], currentVersionId, locked }
-version       { id, label, thumbUrl, createdAt, usedByShotIds[] }
-binding       { shotId, slot: character|background|element|look|keyframe,
-                elementId, versionId, overridden: bool }
-provenance    { takeId, bindings[], setup{}, engineId, engineParams{}, seed, rules[], credits, by, at }
-impact        { elementId, versionId, dependents[{shotId,state}],
-                options[{key, shotCount, credits, consequence}] }
-quote         { unitCredits, units, totalCredits }   // resolved before any action enables
+recipes        { id, projectId, name, draft }
+recipe_stages  { id, recipeId, num, name, kind: write|render|assemble, engine, params{},
+                 inputs[stageId], locks[elementId], position }
+runs           { id, recipeId, projectId, num, state: running|paused|done,
+                 estimateCredits, startedBy, startedAt, finishedAt }
+stage_runs     { id, runId, stageId, state: queued|running|done|needs_you|skipped,
+                 doneUnits, totalUnits, spentCredits, estimateCredits,
+                 failure{unit,reason,fixes[]}|null, fixedWith, fixedLabel, fixedBy, fixedAt }
+elements       { id, projectId|null, castId|null, kind, name, description,
+                 locked, lockedBy, lockedAt, fromShotId, fromGenId, mirroredAt }
+element_attributes { id, elementId, kind, label, currentId|null, locked, position }
+attribute_versions { id, attributeId, elementId, label, status: pending|ready|failed,
+                     uploadId | genId | identityId }        // exactly one source
+bindings       { id, shotId, projectId, slot, ordinal, elementId,
+                 attributeId|null, versionId|null }
+take_provenance{ takeId, shotId, recorded{ engine, model, provider, ports[], cast[],
+                 setup{}, rules[], conditions{...}, by, at } }
+take_ports     { takeId, elementId, attributeId, versionId, slot, ordinal }
 ```
+
+**What changed from the sketch, and why:**
+
+- **`element` is its own row with a link back to the cast member**, not the cast
+  row grown. Decided so a migration here cannot take the composer down with it,
+  while `castId` keeps the two from being two truths about one face.
+- **`binding.overridden: bool` is gone.** `versionId` carries it: null means
+  *follow current*, a value means *pinned*. One nullable column replaces a flag
+  plus a value that could disagree, and it is what draws the inherited wire and
+  the override wire on the canvas.
+- **`binding.ordinal`**, because a shot can hold two characters and a wire lands
+  on a slot, not a node (rule 6).
+- **`binding.attributeId` may be null** — the bundle: every current version at
+  once. A swap must ask "which ports FOLLOW current", which is a different
+  question from "which ports does this version reach", and conflating them
+  prices shots a change cannot touch.
+- **`version` has no `thumbUrl` or `usedByShotIds`.** Its source is exactly one
+  of an upload, a take or a trained identity; what uses it is the reverse
+  lookup on `bindings` and `take_ports`, which cannot go stale.
+- **`provenance` is two tables.** The blob is one statement about one moment,
+  read whole or not at all; `take_ports` is the one thing asked across takes —
+  which takes used a given version — and the blob cannot answer it.
+- **`failure` is JSON on `stage_runs`**, not a table: it is the reason this
+  attempt stopped, replaced whole on the next, and it never outlives it.
+- **`impact` and `quote` are computed, never stored.** Storing a quote would
+  create a second ledger that could disagree with the first. A quote carries
+  `pricedAt` and a stamp of its inputs, and a stale one is re-taken before
+  anything is charged.
+- **Not yet recorded:** the seed. The vendor path does not return one on the
+  render route, so provenance stores it as absent rather than as zero, and the
+  card says "not recorded" and drops the word *exactly* from its own button.
 
 **Port identity is `elementId:attributeId:versionId`.** That triple is what a wire carries and what provenance records. It is the single most important line in this document; everything else in Rig is bookkeeping on top of it.
 
@@ -119,8 +162,22 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 
 **Outstanding:**
 
-- **Safe area.** Dock `padding-bottom` reads 0px despite `viewport-fit=cover`. Apply `env(safe-area-inset-bottom)` to the dock, composer bar and every bottom sheet. Blocking for the iOS app.
-- **Credits not in the composer.** The Generate button still reads `$2.86 · 244.8k TOK`. Should read `29 cr`. A Balance link to `/settings#credits` exists, so credits exist somewhere — establish whether the conversion is partial or absent.
+- ~~**Safe area.**~~ **Resolved — not a bug.** The dock already carries
+  `padding: 0 6px env(safe-area-inset-bottom, 22px)` and `viewport-fit=cover` is
+  set. The 0px reading is emulation: a probe with
+  `padding-bottom: env(safe-area-inset-bottom, 99px)` also computes to 0px, so
+  Chrome defines the variable as zero and the fallback is never reached. A Face
+  ID iPhone reports 34px. The mobile suite asserts the *declaration* for exactly
+  this reason. Nothing to do; re-check on device before the iOS build if you
+  want belt and braces.
+- **Credits not in the composer — established: neither partial nor absent.** The
+  conversion works and is gated on `creditsApply(ws)`, which needs a workspace on
+  the platform's keys. Signed out there is no workspace, so it falls through to
+  dollars; the same button in a platform-keys workspace reads
+  `Generate 40 cr + 1 cr writer`. **The part that matters is what those dollars
+  are:** $2.86 is the platform's *vendor* cost against a 40 cr charge, so the
+  margin is a subtraction away for anyone who opens the page. Fix: price the
+  signed-out composer in credits at the platform's default margin. Still open.
 - **Token count on the button** — noise once it's credits. Remove.
 - **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.
 - **Sticky context in the shot builder** — the assembled prompt and the `N OF 12 ROWS SET` counter scroll away, so tapping a chip far down the page gives no feedback. Put a one-line preview and the counter in the sticky bar.
@@ -275,17 +332,31 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 **Locks.** Any node can be locked (identity, voice, look, Setup). A locked node cannot drift between stages or scenes; the compiler re-asserts it at every stage. Unlocking is explicit and logged.
 
 **Build order — data model first, mobile before desktop, canvas last:**
-1. Schema and the migration from what 1.0 shipped. Be specific about how existing takes get backfilled with provenance, or why they can't.
-2. The quote/impact engine — what a change costs before it happens. Everything visible depends on it.
-3. Mobile: `1a` → `1b` → `1c` → `2c` → `2b`.
-4. Desktop: `1d` → `2a`.
+1. Schema and the migration from what 1.0 shipped. Be specific about how existing takes get backfilled with provenance, or why they can't. **Done.** Version history is recovered from the takes themselves — the compiler wrote each citation into the prompt, so a take names which upload stood behind which name — and accepted only where the mapping is positionally sound. Seed and rule ids are recorded from that PR forward and never backfilled.
+2. The quote/impact engine — what a change costs before it happens. Everything visible depends on it. **Done.**
+3. Mobile: `1a` **done** → `1b` **done** → `1c` **done** → `2c` → `2b`.
+4. Desktop: `1d` **done** → `2a` **done**. Built ahead of `2c` and `2b` under a desktop-first instruction on 8 September; this document's rule 7 stands and the two remaining mobile surfaces are next.
 5. Chat drives the graph; the canvas is a view of what chat did, never the only way to edit.
 
 **Where it lives.** Recipe authoring and the canvas belong in Atomik (planning); running recipes and their outputs belong in particl (rendering). Same graph, same scoping, one database.
 
 **Constraints that don't relax:** rule 6 — a new user must never need to open Rig to make a first render. Rule 7 — five of seven surfaces are 390×844 and must pass the Phase 0 suite. Desktop canvas is min-width 1180px and may be hidden below that; the mobile surfaces may not.
 
-**Known geometry trade-off.** With the chat panel restored, the graph viewport is ~878px against a 1040px graph, so ~162px scrolls off at rest and the collapsed stages node is partly cut. Acceptable for a scrollable canvas. If it must read at rest: pull the column x-positions in ~120px, or narrow the inspector to 240px. **Pick one before building** — the geometry is measured and exact.
+**Geometry — resolved 8 September 2026: neither, because the positions are
+computed.** The trade-off assumed the handoff's fixed coordinates and a fixed
+1040px graph. `lib/graph.ts` derives positions from the recipe's own shape on
+the handoff's grid instead — a stage sits one column right of the furthest
+thing feeding it, and a branch drops a row when two want the same column — so
+the graph is exactly as wide as the recipe needs and the canvas scrolls. The
+inspector keeps its 272px, the columns keep their spacing, and nothing is
+pulled in. When the chat panel lands it takes its 288px from the graph's
+scrollable area, which costs viewport rather than layout.
+
+One consequence worth naming: the asset layer draws Audio under **Keyframes**
+where the handoff draws it under **Motion**, because Audio depends only on the
+shot list. The placement follows the dependency rather than the drawing, and it
+says something truer — Audio can start as soon as the shot list is done, which
+is what the handoff's own copy ("runs alongside Post") means.
 
 ---
 
