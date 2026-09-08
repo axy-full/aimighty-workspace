@@ -132,6 +132,16 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
         </p>
         {project && <CapLine project={project} spentCredits={t.credits} spentUsd={t.spend} isAdmin={isAdmin} onChanged={() => { refreshProjects(); refresh(); }} />}
         <ReviewLinks projectId={id} isAdmin={isAdmin} />
+        {/* The selects, on the way out (brief 2.6). */}
+        <section className="rvl">
+          <div className="rvl-head">
+            <span className="grouplabel !pb-0">Export the selects</span>
+            <a className="hdr-mono-link" href={`/api/export/selects?projectId=${encodeURIComponent(id)}&format=zip`}>ZIP ↓</a>
+            <a className="hdr-mono-link" href={`/api/export/selects?projectId=${encodeURIComponent(id)}&format=csv`}>SHOT LIST ↓</a>
+            <a className="hdr-mono-link" href={`/api/export/selects?projectId=${encodeURIComponent(id)}&format=edl`}>EDL ↓</a>
+          </div>
+          <p className="rvl-note">Every Approved take, in shot order: the masters named by your own convention, a shot list to bill from, and an edit list an editor can conform against. The zip carries all three.</p>
+        </section>
         {project && <BurnDown project={project} totals={t} byShot={data.byShot} shotCount={shots.length} />}
 
         <div className="mt-6 flex flex-wrap gap-2">
