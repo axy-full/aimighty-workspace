@@ -2935,3 +2935,17 @@ html, body { overflow-x: clip; }
    line is not prose and is not capped, which is why this names the classes
    that carry copy rather than every <p> in the document. */
 .said, .measure, .prose-line, .rail-help { max-width: 78ch; }
+
+/* ── The page cap, above 1440 ─────────────────────────────────────────────
+   `.page-inner` has held every list and dashboard at 1360px. That cap was
+   doing two jobs: keeping tables from sprawling, and keeping prose readable.
+   The second job now belongs to the reading measure above, which does it
+   properly and per-paragraph, so the cap is free to let a dashboard use the
+   screen it is on. A 2560 monitor was spending 1200px on empty gutters
+   either side of Usage.
+
+   Stepped rather than removed: an unbounded table at 3440px is its own kind
+   of unreadable, and the row that matters would be a metre from the label
+   that names it. */
+@media (min-width: 1800px) { .page-inner { max-width: 1600px; } }
+@media (min-width: 2400px) { .page-inner { max-width: 1920px; } }
