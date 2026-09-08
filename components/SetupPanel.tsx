@@ -18,6 +18,7 @@
 import Link from "next/link";
 import { CATEGORIES, type ShotSpec } from "@/lib/studio";
 import Cast from "./Cast";
+import { diffLine, LAYER_LABELS, type Source, type SetupDiff } from "@/lib/setupLayers";
 
 export type SetupRow = { key: string; label: string };
 
@@ -44,39 +45,59 @@ function labelFor(key: string, value: string | undefined): string | null {
 }
 
 /** The Setup block alone: title, mono eyebrow, the Studio link, the rows. */
-export function SetupBlock({ spec, rows = VIDEO_ROWS, eyebrow = "Carried into every shot" }: {
+export function SetupBlock({ spec, rows = VIDEO_ROWS, eyebrow = "Carried into every shot", sources, diff, shotCode, onSaveToShot, onClearShot }: {
   spec: ShotSpec; rows?: SetupRow[]; eyebrow?: string;
+  /** Where each active value came from, and the prompt's overrides (brief 2.3). */
+  sources?: Record<string, Source>; diff?: SetupDiff | null;
+  /** The filed shot, and the two things a person can do to its own rows. */
+  shotCode?: string | null; onSaveToShot?: (() => void) | null; onClearShot?: (() => void) | null;
 }) {
   /* The stored keys are the categories' own keys; map by category label so
      a rename on either side still finds its row. */
   const shown = rows.map((r) => {
-    const cat = CATEGORIES.find((c) => c.label === r.label)
+    /* By key first — "move" is "Camera move" in the bank, which no label
+       match ever found, so the Move row read "—" whatever the Setup said. */
+    const cat = CATEGORIES.find((c) => c.key === r.key)
+      ?? CATEGORIES.find((c) => c.label === r.label)
       ?? CATEGORIES.find((c) => c.label.toLowerCase().startsWith(r.label.toLowerCase()));
     const value = cat ? spec[cat.key] : undefined;
-    return { ...r, value: cat ? labelFor(cat.key, value) : null };
+    const over = cat ? diff?.overrides.find((o) => o.key === cat.key) : undefined;
+    return { ...r, value: cat ? labelFor(cat.key, value) : null, source: cat ? sources?.[cat.key] : undefined, over: over && cat ? labelFor(cat.key, over.promptValue) : null };
   });
+  const line = diff ? diffLine(diff, (k, v) => labelFor(k, v) ?? v) : "";
   return (
     <div className="ws-block">
       <div className="ws-block-head">
         <span className="ws-block-title">Setup <span className="mono">{eyebrow}</span></span>
         <Link href="/studio/shot" className="hdr-mono-link">EDIT IN STUDIO →</Link>
       </div>
+      {line && <p className="setup-diff">{line}</p>}
       <div className="kv">
         {shown.map((r) => (
           <div key={r.key} className="kv-row">
             <span>{r.label}</span>
-            <span className={r.value ? "" : "is-unset"}>{r.value ?? "—"}</span>
+            <span className={r.value ? "" : "is-unset"}>
+              {r.over ? <><s className="kv-was">{r.value}</s> {r.over}<span className="kv-src">PROMPT</span></> : <>{r.value ?? "—"}{r.value && r.source ? <span className="kv-src">{LAYER_LABELS[r.source]}</span> : null}</>}
+            </span>
           </div>
         ))}
       </div>
+      {shotCode && (onSaveToShot || onClearShot) && (
+        <div className="setup-shot">
+          {onSaveToShot && <button type="button" className="hdr-mono-link" onClick={onSaveToShot}>USE FOR {shotCode} ONLY →</button>}
+          {onClearShot && <button type="button" className="hdr-mono-link" onClick={onClearShot}>CLEAR {shotCode}&rsquo;S OWN ROWS</button>}
+        </div>
+      )}
     </div>
   );
 }
 
-export default function SetupPanel({ projectId, spec, onCite }: {
+export default function SetupPanel({ projectId, spec, onCite, sources, diff, shotCode, onSaveToShot, onClearShot }: {
   projectId: string;
   spec: ShotSpec;
   onCite: (token: string) => void;
+  sources?: Record<string, Source>; diff?: SetupDiff | null;
+  shotCode?: string | null; onSaveToShot?: (() => void) | null; onClearShot?: (() => void) | null;
   /* Kept for the callers that still pass them; the rail has no shot row of
      its own (the filing chip lives in the rail head) and no close button. */
   shotId?: string; setShotId?: (id: string) => void;
@@ -84,7 +105,7 @@ export default function SetupPanel({ projectId, spec, onCite }: {
 }) {
   return (
     <>
-      <SetupBlock spec={spec} />
+      <SetupBlock spec={spec} sources={sources} diff={diff} shotCode={shotCode} onSaveToShot={onSaveToShot} onClearShot={onClearShot} />
       <div className="ws-block">
         <div className="ws-block-head">
           <span className="ws-block-title">Cast <span className="mono">Write @name in any prompt</span></span>
