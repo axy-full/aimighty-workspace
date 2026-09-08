@@ -517,8 +517,19 @@ export function dimensionsFor(resolution: string, ratio: string): { w: number; h
   // The resolution names the SHORT side. Treating it as the height regardless
   // of orientation made a 9:16 portrait look like 416×720 instead of 720×1280
   // — a cost estimate ~2.8× under what ByteDance actually bills.
-  if (rw >= rh) return { h: up16(base), w: up16((base * rw) / rh) };
-  return { w: up16(base), h: up16((base * rh) / rw) };
+  if (rw >= rh) return { h: base, w: Math.round((base * rw) / rh) };
+  return { w: base, h: Math.round((base * rh) / rw) };
+}
+
+/**
+ * The frame the vendor BILLS, which is the frame above rounded up to the
+ * next multiple of sixteen on each side — the grid a codec works in. It is
+ * why 1080p costs what 1088 costs, and why the two numbers differ: the file
+ * is 1920×1080, the meter counts 1920×1088.
+ */
+export function billedFrame(resolution: string, ratio: string): { w: number; h: number } | null {
+  const d = dimensionsFor(resolution, ratio);
+  return d ? { w: up16(d.w), h: up16(d.h) } : null;
 }
 
 /**
@@ -530,7 +541,7 @@ export function estimateTokens(
   resolution: string, ratio: string, duration: number,
   inputSeconds = 0, fps = DEFAULT_FPS
 ): number | null {
-  const d = dimensionsFor(resolution, ratio);
+  const d = billedFrame(resolution, ratio);
   if (!d) return null;
   return Math.round((d.w * d.h * fps * (duration + inputSeconds)) / 1024);
 }

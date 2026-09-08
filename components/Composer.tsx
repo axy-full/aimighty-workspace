@@ -82,6 +82,8 @@ export type ComposerProps = {
    *  disables the button. A failed submit is shown, never locked in. */
   blocked: boolean;
   est: { net: number } | null; estTokens: number | null; dims: { w: number; h: number } | null;
+  /** The frame the vendor bills, when it differs from the file's own. */
+  billed?: { w: number; h: number } | null;
   /** The trained cast name the prompt cites, when one does (brief 1.3). */
   trainedCited?: string | null;
   /** How many variations one press makes (brief 1.6): 1–4 for video, 1–8 for stills. */
@@ -107,7 +109,7 @@ export default function Composer(p: ComposerProps) {
   const {
     prompt, setPrompt, promptRef, params, patch, model, engines, writer, approval = null, suggestion = null, onSuggestion, plateau = null, onFresh,
     refs, setRefs, picker, cite, taskOn, cancelTask, uploadSource = null, problem, blocked, notice,
-    est, estTokens, dims, trainedCited = null, count = 1, setCount, writerUsd = 0, inputSeconds, hasVideoInput, imageRefCount,
+    est, estTokens, dims, billed = null, trainedCited = null, count = 1, setCount, writerUsd = 0, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
     pickMode, onPickSource, onDropAsset, rail = false,
   } = p;
@@ -376,6 +378,9 @@ export default function Composer(p: ComposerProps) {
         )}
 
         <ChipMenu label={resLabel(params.resolution, isImage)} hint={dims ? `${dims.w}×${dims.h}` : undefined}
+          title={dims && billed && (billed.w !== dims.w || billed.h !== dims.h)
+            ? `The master is ${dims.w}×${dims.h}. The engine meters on a sixteen-pixel grid, so it bills ${billed.w}×${billed.h}.`
+            : undefined}
           open={menu === "res"} onOpen={() => setMenu("res")} onClose={() => setMenu(null)}>
           {model.resolutions.map((r) => {
             const c = isImage ? estimateImageCostUsd(params.modelId, r, imageRefCount)
@@ -482,7 +487,7 @@ export default function Composer(p: ComposerProps) {
                 ) : secondRate != null ? (
                   <>Billed per second on fal.ai: {money.rate(secondRate, params.modelId)}/s × {billedSecs || "the clip's"}s{params.fps60 ? ", doubled for 60 fps" : ""}.{followsSource ? " The length follows the clip." : ""} {taskOn?.id === "upscale" || taskOn?.id === "reframe" ? "Nothing has to be written: the clip is the brief." : "Your words go as written."}</>
                 ) : (
-                  <>Billed by frame tokens: {estTokens != null ? compactTokens(estTokens) : "—"} at {dims ? `${dims.w}×${dims.h}` : "the source size"} for {params.duration}s.{" "}
+                  <>Billed by frame tokens: {estTokens != null ? compactTokens(estTokens) : "—"} at {billed ? `${billed.w}×${billed.h}` : "the source size"} for {params.duration}s{billed && dims && (billed.w !== dims.w || billed.h !== dims.h) ? ` — the file is ${dims.w}×${dims.h}, and the engine bills on a sixteen-pixel grid` : ""}.{" "}
                     {!writer || writer.writer === "none"
                       ? <>Pro mode: your words go as written, the camera as a module from the bank.</>
                       : <>Your words go as written; an idea too thin to film is finished by {writer.label}{writer.usdPerCall ? ` for ${price(writer.usdPerCall, "text")} a call` : ""}{writer.configured ? "" : " (not reachable right now, so it goes raw)"}{writerUsd > 0 ? " — this one is that thin, so it will run" : ""}. The camera comes from the bank.</>}
@@ -508,8 +513,8 @@ export default function Composer(p: ComposerProps) {
 }
 
 /** A control chip that opens its options above itself. */
-function ChipMenu({ label, hint, open, onOpen, onClose, children, disabled, wide, on }: {
-  label: string; hint?: string; open: boolean; onOpen: () => void; onClose: () => void;
+function ChipMenu({ label, hint, title, open, onOpen, onClose, children, disabled, wide, on }: {
+  label: string; hint?: string; title?: string; open: boolean; onOpen: () => void; onClose: () => void;
   children: React.ReactNode; disabled?: boolean; wide?: boolean; on?: boolean;
 }) {
   const wrap = useRef<HTMLSpanElement>(null);
@@ -534,7 +539,7 @@ function ChipMenu({ label, hint, open, onOpen, onClose, children, disabled, wide
   }, [open, wide]);
   return (
     <span ref={wrap} className="relative">
-      <button type="button" disabled={disabled} onClick={open ? onClose : onOpen}
+      <button type="button" disabled={disabled} onClick={open ? onClose : onOpen} title={title}
         className={`chip-ctl ${open ? "is-open" : ""} ${on ? "is-on" : ""}`}>
         {hint && <span className="chip-hint">{hint}</span>}
         {label}
