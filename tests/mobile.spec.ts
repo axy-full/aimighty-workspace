@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * Phase 0 acceptance (docs/particl-brief.md §3): every route, signed out,
+ * Phase 0 acceptance (docs/particl-sow.md §6): every route, signed out,
  * at 360×640, 390×844 and 844×390 —
  *   • the document is never wider than the viewport;
  *   • no visible text field is under 16px (iOS zooms into anything smaller);
