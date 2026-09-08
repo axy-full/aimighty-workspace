@@ -467,6 +467,15 @@ const SCHEMA = [
      kind       TEXT NOT NULL DEFAULT 'render',
      engine     TEXT NOT NULL DEFAULT '',
      params     TEXT NOT NULL DEFAULT '{}',
+     /* Which stages feed this one, as a JSON array of recipe_stage ids.
+        This is what makes a recipe a graph rather than a list: Audio branches
+        off the shot list and Assembly waits for both Post and Audio, and
+        neither of those is expressible as an order. The wires on the canvas
+        are these, and nothing else. */
+     inputs     TEXT NOT NULL DEFAULT '[]',
+     /* Elements pinned into this stage — the locked band at the top of the
+        stage layer, wired down with dashed wires. Ids from the elements table. */
+     locks      TEXT NOT NULL DEFAULT '[]',
      position   INTEGER NOT NULL DEFAULT 0,
      created_at INTEGER NOT NULL,
      updated_at INTEGER NOT NULL
