@@ -7,7 +7,7 @@ import { meter } from "./meter";
 import { getPlatformLayer } from "./platform";
 import { textModelFor } from "./platformLayer";
 import { cleanAttachments, attachmentLine, seenByModel, stepReferences, type Attachment } from "./attachments";
-import { readUploadBytes } from "./storage";
+import { readUploadBytes, readImageBytes } from "./storage";
 
 /**
  * Atomik — the studio's agent.
@@ -468,10 +468,17 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
      of it. A clip is named but never sent — no model here watches video. */
   const shown = await Promise.all(attached.filter(seenByModel).map(async (a) => {
     try {
-      const row = await db().execute({ sql: `SELECT ext, mime, stored_url FROM uploads WHERE id = ? LIMIT 1`, args: [a.uploadId] });
+      /* An upload of the person's, or a still the workspace already made:
+         both are read here and sent as pictures, so the agent sees the
+         same thing whether it was handed over or picked out of the wall. */
+      if (a.genId) {
+        const bytes = await readImageBytes(a.genId);
+        return { type: "image_url", image_url: { url: `data:image/png;base64,${bytes.toString("base64")}` } };
+      }
+      const row = await db().execute({ sql: `SELECT ext, mime, stored_url FROM uploads WHERE id = ? LIMIT 1`, args: [String(a.uploadId)] });
       if (!row.rows.length) return null;
       const u = row.rows[0] as { ext?: string; mime?: string; stored_url?: string };
-      const bytes = await readUploadBytes(a.uploadId, String(u.ext ?? "png"), String(u.stored_url ?? ""));
+      const bytes = await readUploadBytes(String(a.uploadId), String(u.ext ?? "png"), String(u.stored_url ?? ""));
       return { type: "image_url", image_url: { url: `data:${String(u.mime ?? a.mime)};base64,${bytes.toString("base64")}` } };
     } catch { return null; }
   }));

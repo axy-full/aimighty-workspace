@@ -2889,3 +2889,9 @@ html, body { overflow-x: clip; }
 .atomik-file-kind { font: 500 9px/1 var(--font-kode); letter-spacing: .1em; padding: 5px 6px; border-radius: 999px; background: var(--color-chip); }
 .atomik-file button { color: var(--color-mute); font-size: 15px; line-height: 1; }
 .atomik-file button:hover { color: var(--color-ink); }
+
+/* Picking a take or a cast member to hand the agent (attachments). */
+.atomik-plus { bottom: calc(100% + 8px); left: 0; min-width: 210px; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.pick-tile { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--color-thumb, #111); }
+.pick-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; font: 500 10px/1.2 var(--font-kode); letter-spacing: .06em; text-transform: uppercase; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.72)); text-align: left; }
