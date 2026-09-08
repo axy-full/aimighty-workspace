@@ -34,6 +34,8 @@ import { identityForCast, startIdentityStill, runIdentityRender, RENDER_USD_PER_
 import { isBatchId } from "@/lib/variations";
 import { uploadSourceParams } from "@/lib/sourceClip";
 import { shotCapGate } from "@/lib/shotCap";
+import { approvedTakeOf } from "@/lib/shots";
+import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -460,10 +462,17 @@ export const POST = withTenant(async function POST(req: Request) {
     const stillShot = body.shotId ? String(body.shotId) : null;
     let stillVersion = 1;
     let stillShotCode: string | null = null;
+    let stillReason: string | null = null;
     if (stillShot) {
       const shot = await getShot(stillShot);
       if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 400 });
       stillShotCode = shot.code;
+      const approved = await approvedTakeOf(stillShot);
+      if (reasonNeeded({ hasApprovedTake: Boolean(approved), reason: body.reason })) {
+        const ask = lockAsk(approved!.version, approved!.by);
+        return NextResponse.json({ error: ask.title, line: ask.line, needsReason: true, approvedVersion: approved!.version }, { status: 409 });
+      }
+      stillReason = cleanReason(body.reason);
       stillVersion = await nextVersion(stillShot);
     }
     const stillRefs = references.filter((r) => r.kind === "image");
@@ -518,6 +527,7 @@ export const POST = withTenant(async function POST(req: Request) {
         : { uploadId: r.id, role: r.role, kind: r.kind })),
       rawPrompt: castPrompt !== prompt ? prompt : undefined,
       cast: castUsed.length ? castUsed : undefined,
+      reason: stillReason ?? undefined,
       batchId: isBatchId(body.batchId) ? body.batchId : undefined,
       variation: isBatchId(body.batchId) && Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8 ? body.variation : undefined,
     };
@@ -734,10 +744,18 @@ export const POST = withTenant(async function POST(req: Request) {
   const shotId = body.shotId ? String(body.shotId) : null;
   let version = 1;
   let shotCode: string | null = null;
+  let reason: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 400 });
     shotCode = shot.code;
+    /* A shot with an approved take is locked: the next take says why (brief 2.1). */
+    const approved = await approvedTakeOf(shotId);
+    if (reasonNeeded({ hasApprovedTake: Boolean(approved), reason: body.reason })) {
+      const ask = lockAsk(approved!.version, approved!.by);
+      return NextResponse.json({ error: ask.title, line: ask.line, needsReason: true, approvedVersion: approved!.version }, { status: 409 });
+    }
+    reason = cleanReason(body.reason);
     version = await nextVersion(shotId);
   }
 
@@ -785,6 +803,8 @@ export const POST = withTenant(async function POST(req: Request) {
     inputSeconds: hasVideoInput ? inputSeconds : undefined,
     rawPrompt,
     cast: castUsed.length ? castUsed : undefined,
+    // Why this take was made past an approved one (brief 2.1).
+    reason: reason ?? undefined,
     // Siblings of one press (brief 1.6), so the wall shows them as one strip.
     batchId: isBatchId(body.batchId) ? body.batchId : undefined,
     variation: isBatchId(body.batchId) && Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8 ? body.variation : undefined,

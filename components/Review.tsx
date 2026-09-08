@@ -4,8 +4,10 @@ import { useState } from "react";
 import { appAlert } from "./dialog";
 import { useApi } from "@/lib/useApi";
 import { timeAgo } from "@/lib/format";
+import { trailLine, type Trail } from "@/lib/approval";
+import { splitMentions, isNamed } from "@/lib/mentions";
 
-type Note = { id: string; text: string; author: string; userId: string; createdAt: number };
+type Note = { id: string; text: string; author: string; userId: string; createdAt: number ; mentions?: string[] };
 
 /**
  * Sign-off and notes for one shot.
@@ -15,10 +17,14 @@ type Note = { id: string; text: string; author: string; userId: string; createdA
  * shot — not scrolling away in a workspace-wide chat where nobody can tell
  * later which clip a note was about.
  */
-export default function Review({ genId, state, reviewBy, onChanged }: {
+export default function Review({ genId, state, reviewBy, trail, reason, onChanged }: {
   genId: string;
   state: "" | "approved" | "picked" | "changes";
   reviewBy: string | null;
+  /** Who picked and who approved, each with its moment (brief 2.1). */
+  trail?: Trail;
+  /** Why this take was made past an approved one. */
+  reason?: string | null;
   onChanged: () => void;
 }) {
   const { data, refresh } = useApi<{ notes: Note[] }>(`/api/notes?genId=${encodeURIComponent(genId)}`, 0);
@@ -76,9 +82,11 @@ export default function Review({ genId, state, reviewBy, onChanged }: {
           }`}>
           {state === "changes" ? "Changes wanted" : "Ask for changes"}
         </button>
-        {state && reviewBy && (
+        {trail && trailLine(trail, (ms) => timeAgo(ms)) ? (
+          <span className="text-[12.5px] text-mute">{trailLine(trail, (ms) => timeAgo(ms))}</span>
+        ) : state && reviewBy ? (
           <span className="text-[12.5px] text-mute">by {reviewBy}</span>
-        )}
+        ) : null}
         {notes.length > 0 && (
           <span className="ml-auto text-[12.5px] text-mute">
             {notes.length} note{notes.length === 1 ? "" : "s"}
@@ -86,13 +94,15 @@ export default function Review({ genId, state, reviewBy, onChanged }: {
         )}
       </div>
 
+      {reason && <p className="mt-2 text-[12.5px] text-mute">Rendered past an approved take — &ldquo;{reason}&rdquo;</p>}
+
       {notes.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2">
           {notes.map((n) => (
             <li key={n.id} className="text-[13.5px] leading-relaxed">
               <span className="font-medium">{n.author}</span>{" "}
               <span className="text-mute">{timeAgo(n.createdAt)}</span>
-              <p className="whitespace-pre-wrap text-dim">{n.text}</p>
+              <p className="whitespace-pre-wrap text-dim">{splitMentions(n.text, n.mentions ?? []).map((part, i) => (isNamed(part, n.mentions ?? []) ? <span key={i} className="note-at">{part.text}</span> : <span key={i}>{part.text}</span>))}</p>
             </li>
           ))}
         </ul>
