@@ -7,6 +7,7 @@ import { meter } from "./meter";
 import { billedTo, getProvider } from "./providers";
 import { releaseHeldJobs } from "./held";
 import { engineFor } from "./engines";
+import { notify } from "./push";
 
 export type Generation = {
   id: string;
@@ -310,6 +311,16 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   if (TERMINAL.has(task.status)) {
     // A slot just freed: whatever waited for one may start.
     void releaseHeldJobs().catch(() => {});
+    /* The take is done, one way or the other: tell whoever asked for it, if
+       they asked to be told (brief 2.7). Their own takes only — the wall is
+       for watching everyone else's. */
+    if (gen.createdBy && gen.status !== task.status) {
+      const where = gen.shotCode ? `${gen.shotCode} v${gen.version ?? 1}` : "Your take";
+      void notify("takeDone", [gen.createdBy], task.status === "succeeded"
+        ? { title: `${where} is ready`, body: gen.prompt.slice(0, 120), url: "/" }
+        : { title: `${where} didn't render`, body: (task.error ?? "The engine refused it.").slice(0, 120), url: "/" },
+      ).catch(() => { /* a take stands whether or not the nudge lands */ });
+    }
   }
   if (TERMINAL.has(task.status) || cost != null) {
     await meter({

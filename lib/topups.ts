@@ -2,8 +2,8 @@ import { platformDb, platformReady, newId, now, grantCredits, getWorkspace, work
 import { packById } from "./packs";
 import { runInTenant } from "./tenant";
 import { releaseHeldJobs } from "./held";
-import { sendPushTo } from "./push";
 import { sendMail, mailConfigured } from "./mail";
+import { notify } from "./push";
 
 /**
  * Top-up requests: a workspace asks for a pack, the platform answers.
@@ -153,7 +153,7 @@ async function notifyApproved(workspaceId: string, workspaceName: string, req: T
   const body = released
     ? `The ${req.label} pack is in, and ${released} held take${released === 1 ? "" : "s"} ${released === 1 ? "is" : "are"} rendering now.`
     : `The ${req.label} pack is in.`;
-  await sendPushTo(targets.map((a) => a.id), { title, body, url: "/" }).catch(() => {});
+  await notify("balanceLow", targets.map((a) => a.id), { title, body, url: "/" }).catch(() => {});
   if (!mailConfigured()) return;
   await Promise.allSettled(targets.filter((a) => a.email).map((a) => sendMail({
     to: a.email, subject: `${workspaceName}: ${title}`, text: body, html: `<p>${body.replace(/</g, "&lt;")}</p>`,

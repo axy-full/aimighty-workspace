@@ -4,8 +4,8 @@ import { creditsApply } from "./credits";
 import { billCredits } from "./creditTerms";
 import { billedCreditsSum } from "./creditSql";
 import { getSetting } from "./settings";
-import { sendPushTo } from "./push";
 import { workspaceAdmins } from "./platform";
+import { notify } from "./push";
 
 /**
  * A production's cap, in the workspace's unit.
@@ -88,7 +88,7 @@ export async function checkCap(projectId: string | null, needsUsd: number, engin
     const ws = currentTenant()?.workspace;
     if (ws) {
       workspaceAdmins(ws.id)
-        .then((admins) => sendPushTo(admins.map((a) => a.id), { title: `${pc.name} is at ${v.pct}% of its cap`, body: v.notice ?? "", url: `/projects/${projectId}` }))
+        .then((admins) => notify("capNear", admins.map((a) => a.id), { title: `${pc.name} is at ${v.pct}% of its cap`, body: v.notice ?? "", url: `/projects/${projectId}` }))
         .catch(() => {});
     }
   }

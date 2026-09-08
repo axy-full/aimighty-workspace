@@ -226,6 +226,22 @@ export default function Feed({
       </div>
       <QueueStrip gens={gens} onOpen={onOpen} />
 
+      {/* The four things a producer does on a phone (brief 2.7): see what
+          rendered — this wall — then what waits on them, the production's
+          spend against its cap, and the balance. One tap each, and only
+          where the room is scarce enough to need them gathered. */}
+      {!stills && (
+        <div className="phone-acts">
+          <button type="button" className={`chip ${take === "picked" ? "is-on" : ""}`} onClick={() => setTake(take === "picked" ? "all" : "picked")}>
+            {counts.picked > 0 ? `${counts.picked} to approve` : "To approve"}
+          </button>
+          {scoped
+            ? <Link href={`/projects/${encodeURIComponent(projectId)}`} className="chip">Spend &amp; cap</Link>
+            : <Link href="/projects" className="chip">Productions</Link>}
+          <Link href="/settings#credits" className="chip">Balance</Link>
+        </div>
+      )}
+
       <div className="ws-scroll">
         {gens.length === 0 && problem ? (
           <Empty title="The takes didn't load"

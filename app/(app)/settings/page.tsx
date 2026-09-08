@@ -33,6 +33,7 @@ import { ParticlMark, Empty } from "@/components/ParticlMark";
 import { AtomikMark } from "@/components/AtomikMark";
 import { useMoney } from "@/lib/price";
 import { uploadFile } from "@/lib/uploadClient";
+import { NOTIFY_KINDS, NOTIFY_LABELS } from "@/lib/notifyPrefs";
 
 type Me = { name: string; email: string; role: string; owner?: boolean };
 type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; promptSpendUsd?: number };
@@ -645,6 +646,8 @@ function PushRow() {
     : state === "unconfigured" ? "Not set up on this deployment" : null;
 
   return (
+
+    <>
     <div className="row">
       <span className="flex flex-col">
         Chat notifications
@@ -675,6 +678,44 @@ function PushRow() {
         )}
       </span>
     </div>
+    {/* The choice is the person's, in this workspace — not this browser's: it stands whether or not this device is subscribed. */}
+    <NotifyRows />
+    </>
+  );
+}
+
+/**
+ * What to be told about (brief 2.7): four things happen that someone might
+ * want on their phone, and each person chooses their own. Kept beside the
+ * switch that turns notifications on at all, because one without the other
+ * says nothing.
+ */
+function NotifyRows() {
+  const { data, refresh } = useApi<{ prefs: Record<string, boolean>; role: string }>("/api/me/notify", 0);
+  const [busy, setBusy] = useState("");
+  if (!data) return null;
+  const admin = data.role === "admin" || data.role === "owner";
+  async function set(kind: string, on: boolean) {
+    setBusy(kind);
+    try {
+      const res = await fetch("/api/me/notify", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, on }) });
+      if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+      refresh();
+    } catch (e) { await appAlert("Not changed", (e as Error).message); }
+    finally { setBusy(""); }
+  }
+  return (
+    <>
+      {NOTIFY_KINDS.filter((k) => admin || !NOTIFY_LABELS[k].adminOnly).map((k) => (
+        <div key={k} className="srow">
+          <span className="flex flex-col gap-0.5">
+            <span>{NOTIFY_LABELS[k].title}</span>
+            <span className="text-[12.5px] text-mute">{NOTIFY_LABELS[k].line}</span>
+          </span>
+          <Switch checked={Boolean(data.prefs[k])} disabled={busy === k} onChange={(v) => set(k, v)} />
+        </div>
+      ))}
+    </>
   );
 }
 

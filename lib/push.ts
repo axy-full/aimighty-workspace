@@ -1,4 +1,5 @@
 import { db, ready, now } from "./db";
+import { wants, type NotifyKind } from "./notifyPrefs";
 
 /**
  * Web Push for chat. VAPID-signed sends straight to the browsers' push
@@ -118,4 +119,23 @@ export async function sendPushTo(userIds: string[], payload: { title: string; bo
       }
     })
   );
+}
+
+/**
+ * Tell the people who asked to be told (brief 2.7): the same push as ever,
+ * filtered by each person's own choice in this workspace. A kind marked
+ * admin-only never reaches a member even if their row says otherwise.
+ */
+export async function notify(kind: NotifyKind, userIds: string[], payload: { title: string; body: string; url?: string }): Promise<void> {
+  if (!userIds.length) return;
+  await ready();
+  const rs = await db().execute({
+    sql: `SELECT id, role, notify FROM users WHERE id IN (${userIds.map(() => "?").join(",")}) AND disabled = 0 AND deleted_at IS NULL`,
+    args: userIds,
+  });
+  const people = (rs.rows as unknown as { id: string; role: string; notify: string | null }[]).map((r) => ({
+    id: String(r.id), role: String(r.role ?? "member"),
+    prefs: ((): unknown => { try { return r.notify ? JSON.parse(r.notify) : null; } catch { return null; } })(),
+  }));
+  await sendPushTo(wants(kind, people), payload);
 }

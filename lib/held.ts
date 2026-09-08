@@ -7,10 +7,10 @@ import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
 import { invalidate, PROJECTS_KEY } from "./cache";
-import { sendPushTo } from "./push";
 import { sendMail, mailConfigured } from "./mail";
 import { workspaceAdmins } from "./platform";
 import { workspaceLimits, standing } from "./limits";
+import { notify } from "./push";
 
 /**
  * The hard stop at zero.
@@ -152,7 +152,7 @@ export async function notifyHeld(gen: { id: string; needs: number; left: number 
   if (!admins.length) return;
   const title = "Renders are being held";
   const body = `A take needs ${gen.needs} credits and ${Math.max(0, Math.floor(gen.left))} are left. Top up to release it — nothing is lost.`;
-  await sendPushTo(admins.map((a) => a.id), { title, body, url: "/settings#credits" }).catch(() => {});
+  await notify("balanceLow", admins.map((a) => a.id), { title, body, url: "/settings#credits" }).catch(() => {});
   if (!mailConfigured()) return;
   const link = `${siteUrl()}/settings#credits`;
   await Promise.allSettled(admins.filter((a) => a.email).map((a) => sendMail({
