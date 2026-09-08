@@ -33,6 +33,8 @@ import { downloadHref } from "@/lib/format";
 import { useMoney } from "@/lib/price";
 import QueueStrip from "@/components/QueueStrip";
 import { groupSiblings } from "@/lib/variations";
+import Compare from "@/components/Compare";
+import { canCompare } from "@/lib/compare";
 
 /** Kept for the callers that still speak it; the wall itself shows one kind. */
 export type FeedFilter = "all" | "video" | "image" | "audio";
@@ -92,6 +94,8 @@ export default function Feed({
   const money = useMoney();
   const stills = kind === "image";
   const [take, setTake] = useState<TakeState>("all");
+  /* The producer's screen (brief 2.1): takes of one shot, in step, picked with one tap. */
+  const [compare, setCompare] = useState<{ code: string; takes: Gen[] } | null>(null);
   const [role, setRole] = useState<"all" | StillRole>("all");
   const [q, setQ] = useState("");
 
@@ -229,6 +233,7 @@ export default function Feed({
               <span className="grp-id">{g.code}</span>
               {g.title && <span className="grp-title">{g.title}</span>}
               <span className="grp-meta">{g.meta}</span>
+              {canCompare(g.takes) && <button type="button" className="chip !py-0.5 !text-[11px]" onClick={() => setCompare({ code: g.code, takes: g.takes })}>Compare</button>}
               <span className="grp-rule" />
               {g.shotId && scoped && (
                 <Link href={`/projects/${encodeURIComponent(projectId)}/canvas?shot=${encodeURIComponent(g.shotId)}`}
@@ -241,7 +246,9 @@ export default function Feed({
                   onOpen={() => onOpen(s.take.id)} onChanged={onChanged} />
               ) : (
                 <div key={s.batchId} className="var-strip">
-                  <span className="var-label">{s.takes.length} variations · one press · pick one</span>
+                  <span className="var-label">{s.takes.length} variations · one press · pick one
+                    {canCompare(s.takes) && <button type="button" className="chip !py-0.5 !text-[11px] ml-2" onClick={() => setCompare({ code: g.code, takes: s.takes })}>Compare</button>}
+                  </span>
                   <div className={`var-grid ${stills ? "is-stills" : ""}`}>
                     {s.takes.map((t) => (
                       <Take key={t.id} gen={t} code={g.code} active={t.id === activeId} now={now}
@@ -253,6 +260,7 @@ export default function Feed({
             </div>
           </div>
         ))}
+        {compare && <Compare takes={compare.takes} code={compare.code} onClose={() => setCompare(null)} onChanged={onChanged} onOpen={onOpen} />}
         <span className="sr-only">{scopeName}</span>
       </div>
     </section>

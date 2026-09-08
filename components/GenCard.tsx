@@ -16,6 +16,10 @@ export type Gen = {
   projectName: string | null;
   kind?: "video" | "image" | "audio";
   reviewState?: "" | "approved" | "picked" | "changes";
+  pickedBy?: string | null;
+  pickedAt?: number | null;
+  approvedBy?: string | null;
+  approvedAt?: number | null;
   reviewBy?: string | null;
   model: string;
   prompt: string;

@@ -152,3 +152,17 @@ export async function nextVersion(shotId: string): Promise<number> {
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   return Number((rs.rows[0] as any)?.v ?? 0) + 1;
 }
+
+/** The approved take of a shot, when it has one — the shot is locked while it does (brief 2.1). */
+export async function approvedTakeOf(shotId: string): Promise<{ id: string; version: number; by: string | null } | null> {
+  await ready();
+  const rs = await db().execute({
+    sql: `SELECT id, version, approved_by, review_by FROM generations
+          WHERE shot_id = ? AND review_state = 'approved' AND deleted = 0
+          ORDER BY COALESCE(approved_at, updated_at) DESC LIMIT 1`,
+    args: [shotId],
+  });
+  if (!rs.rows.length) return null;
+  const r = rs.rows[0] as unknown as Record<string, unknown>;
+  return { id: String(r.id), version: Number(r.version ?? 1), by: (r.approved_by ?? r.review_by ?? null) as string | null };
+}
