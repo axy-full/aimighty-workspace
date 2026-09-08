@@ -2792,3 +2792,36 @@ html, body { overflow-x: clip; }
 .kv-src { margin-left: 6px; font: 500 9px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-mute); vertical-align: 1px; }
 .kv-was { color: var(--color-mute); text-decoration-thickness: 1px; }
 .setup-shot { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
+/* The production's burn-down (brief 2.2). */
+.burn { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
+.burn-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.burn-bar { position: relative; height: 8px; border-radius: 999px; background: var(--color-chip); overflow: visible; }
+.burn-spent { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--color-blue); }
+.burn-mark { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--color-lift, #d9a441); }
+.burn-line { font-size: 13.5px; color: var(--color-dim); }
+.burn-line.is-over { color: var(--color-lift, #d9a441); }
+.burn-list { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+.burn-list li { display: grid; grid-template-columns: 62px minmax(0, 1fr) 70px 90px 74px; align-items: center; gap: 8px; font-size: 13px; }
+.burn-name { color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.burn-take, .burn-list li > .mono-s:last-child { color: var(--color-mute); text-align: right; }
+.burn-share { height: 6px; border-radius: 999px; background: var(--color-chip); overflow: hidden; }
+.burn-share span { display: block; height: 100%; background: var(--color-blue); opacity: .7; }
+@media (max-width: 767px) { .burn-list li { grid-template-columns: 54px minmax(0, 1fr) 64px; } .burn-share { display: none; } }
+/* A name called out in a note (brief 2.1). */
+.note-at { color: var(--color-blue); font-weight: 500; }
+/* Compare: takes of one shot side by side and in step (brief 2.1). */
+.cmp { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); background: rgba(0, 0, 0, .92); backdrop-filter: blur(6px); }
+.cmp-head { display: flex; align-items: center; gap: 10px; color: #fff; }
+.cmp-grid { flex: 1; display: grid; grid-template-columns: repeat(var(--cmp-cols, 2), minmax(0, 1fr)); gap: 10px; overflow: auto; align-content: start; }
+.cmp-cell { display: flex; flex-direction: column; gap: 6px; border: 1px solid rgba(255, 255, 255, .16); border-radius: 10px; overflow: hidden; background: #000; }
+.cmp-cell.is-picked { border-color: var(--color-blue); }
+.cmp-cell.is-approved { border-color: #46c48a; }
+.cmp-media { position: relative; aspect-ratio: 16 / 9; background: #000; }
+.cmp-media video { width: 100%; height: 100%; object-fit: contain; }
+.cmp-badge { position: absolute; top: 6px; left: 8px; color: #fff; opacity: .85; }
+.cmp-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 0 8px 8px; color: rgba(255, 255, 255, .82); }
+.cmp-acts { display: inline-flex; gap: 6px; }
+.cmp-acts .chip { min-height: 34px; }
+.cmp-bar { display: flex; align-items: center; gap: 10px; color: #fff; }
+.cmp-scrub { flex: 1; accent-color: var(--color-blue); min-width: 0; }
+@media (max-width: 767px) { .cmp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cmp-foot { font-size: 12px; } .cmp-head .mono-s { font-size: 10.5px; } }
