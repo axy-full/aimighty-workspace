@@ -3489,3 +3489,56 @@ html, body { overflow-x: clip; }
   border-top: 1px solid var(--color-hair);
   font: 500 10px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-mute);
 }
+
+/* ── Rig · the provenance card (brief 3, surface 1c) ──────────────────────
+   Exactness is the requirement, so "not recorded" is set in the same weight
+   as a value. A card that quietly showed a zero where it had nothing would
+   make its own primary action a lie. */
+.prv { max-width: 640px; margin: 0 auto; padding: 20px 18px 32px; display: flex; flex-direction: column; gap: 14px; }
+.prv-head { display: flex; flex-direction: column; gap: 4px; }
+.prv-title { font: 600 20px/1.1 var(--font-sans); letter-spacing: -.02em; color: var(--color-bone); }
+.prv-meta { font: 400 12px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-mute); }
+.prv-body { display: flex; flex-direction: column; gap: 12px; }
+.prv-frame {
+  position: relative; aspect-ratio: 16 / 9; border-radius: 10px; border: 1px solid var(--color-line);
+  background-image: repeating-linear-gradient(135deg, var(--color-panel3) 0 6px, var(--color-panel2) 6px 12px);
+}
+.prv-frame-chip {
+  position: absolute; top: 10px; left: 10px; padding: 4px 8px; border-radius: 4px;
+  background: var(--color-chrome); font: 500 10.5px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-lead);
+}
+.prv-label { font: 500 11px/1 var(--font-kode); letter-spacing: .14em; color: var(--color-mute); }
+.prv-rows { display: flex; flex-direction: column; }
+.prv-row {
+  display: flex; align-items: center; gap: 12px; min-height: 60px;
+  border-bottom: 1px solid var(--color-hair);
+}
+.prv-icon {
+  flex: none; width: 36px; height: 36px; border-radius: 6px; border: 1px solid var(--color-line);
+}
+/* Striped for something that was a picture, outlined for everything else —
+   the handoff's own distinction, and a useful one: it says at a glance which
+   inputs you could go and look at. */
+.prv-icon.is-visual { background-image: repeating-linear-gradient(135deg, var(--color-panel3) 0 5px, var(--color-panel2) 5px 10px); }
+.prv-kind { flex: none; width: 116px; font: 500 10.5px/1.2 var(--font-kode); letter-spacing: .12em; color: var(--color-mute); }
+.prv-value { font: 500 14px/1.3 var(--font-sans); color: var(--color-bone); }
+.prv-vmeta { margin-left: auto; font: 500 11px/1 var(--font-kode); color: var(--color-mute); }
+.prv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.prv-chip { padding: 6px 10px; border-radius: 5px; background: var(--color-chip); font: 500 12px/1 var(--font-sans); color: var(--color-lead); }
+.prv-facts { display: flex; flex-direction: column; }
+.prv-facts > span {
+  display: flex; align-items: baseline; gap: 12px; padding: 9px 0;
+  border-bottom: 1px solid var(--color-hair); font: 500 13px/1.3 var(--font-sans); color: var(--color-bone);
+}
+.prv-facts > span > i {
+  flex: none; width: 116px; font: 400 12.5px/1.3 var(--font-sans); font-style: normal; color: var(--color-mute);
+}
+.prv-foot { display: flex; flex-direction: column; gap: 10px; }
+.prv-primary {
+  height: 52px; border: 0; border-radius: 12px; background: var(--color-blue); color: var(--color-on-ink);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 18px;
+  font: 600 15px/1 var(--font-sans);
+}
+.prv-primary:disabled { opacity: .45; }
+.prv-primary-cost { font: 500 13px/1 var(--font-kode); opacity: .62; }
+.prv-note { font: 400 12.5px/1.5 var(--font-sans); color: var(--color-mute); text-align: center; text-wrap: pretty; }
