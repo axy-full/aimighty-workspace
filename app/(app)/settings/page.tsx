@@ -32,6 +32,7 @@ import ThemeRow from "@/components/ThemeRow";
 import { ParticlMark, Empty } from "@/components/ParticlMark";
 import { AtomikMark } from "@/components/AtomikMark";
 import { useMoney } from "@/lib/price";
+import { uploadFile } from "@/lib/uploadClient";
 import Runway from "@/components/Runway";
 
 type Me = { name: string; email: string; role: string; owner?: boolean };
@@ -197,6 +198,20 @@ export default function SettingsPage() {
                 <div className="srow"><span>Your standing here</span><span className="mono-v">{role === "owner" ? "OWNER" : role === "admin" ? "ADMIN" : role === "member" ? "MEMBER" : "—"}</span></div>
                 <div className="srow"><span>Address</span><span className="mono-v">{workspace ? `/${workspace.slug}` : "—"}</span></div>
                 <div className="srow"><span>Your workspaces</span><span className="text-dim">{workspaces.length} · switch or add one from the logo, top-left</span></div>
+                {/* The mark a client sees on a review page (brief 2.6) — never the platform's. */}
+                <div className="srow"><span>Your mark</span><span className="flex items-center gap-2">
+                  {setting("brandLogoUploadId")
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    ? <img src={`/api/uploads/${setting("brandLogoUploadId")}`} alt="" className="h-6 w-auto max-w-[120px] object-contain" />
+                    : <span className="text-dim">none</span>}
+                  {isAdmin && <label className="hdr-mono-link cursor-pointer">UPLOAD
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="sr-only" onChange={async (e) => {
+                      const f = e.target.files?.[0]; if (!f) return;
+                      try { const up = await uploadFile(f, "reference"); saveSetting("brandLogoUploadId", up.id); }
+                      catch (err) { await appAlert("Not uploaded", (err as Error).message); }
+                    }} /></label>}
+                  {isAdmin && setting("brandLogoUploadId") && <button type="button" className="hdr-mono-link" onClick={() => saveSetting("brandLogoUploadId", "")}>REMOVE</button>}
+                </span></div>
               </div>
             )}
           </section>

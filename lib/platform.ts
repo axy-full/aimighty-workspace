@@ -164,6 +164,22 @@ const SCHEMA = [
      expires_at   INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_psessions_account ON p_sessions(account_id)`,
+  /* A client review link (brief 2.6): a production's Approved takes, read
+     only, no login. It lives here because the link is resolved before any
+     workspace is known — the token says which one. Expiring and revocable,
+     and it never carries a session: what it opens is fixed at minting. */
+  `CREATE TABLE IF NOT EXISTS p_shares (
+     id           TEXT PRIMARY KEY,
+     token_hash   TEXT NOT NULL UNIQUE,
+     workspace_id TEXT NOT NULL,
+     project_id   TEXT NOT NULL,
+     label        TEXT NOT NULL DEFAULT '',
+     created_by   TEXT NOT NULL DEFAULT '',
+     created_at   INTEGER NOT NULL,
+     expires_at   INTEGER NOT NULL,
+     revoked_at   INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_shares_project ON p_shares(workspace_id, project_id)`,
   `CREATE TABLE IF NOT EXISTS signup_invites (
      code       TEXT PRIMARY KEY,
      email      TEXT NOT NULL,

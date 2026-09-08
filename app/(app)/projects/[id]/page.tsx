@@ -17,7 +17,7 @@ import { confirmDeleteProject } from "@/lib/deleteProject";
 import { useApi } from "@/lib/useApi";
 import { usd, hours, pct, timeAgo } from "@/lib/format";
 import { type Analytics, Headline, BarList, ShotTable, Patterns } from "@/components/Analytics";
-import { appPrompt, appAlert } from "@/components/dialog";
+import { appPrompt, appAlert, appConfirm } from "@/components/dialog";
 import { Waiting, Trouble } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useMoney } from "@/lib/price";
@@ -131,6 +131,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
           — how this job is grouped on the production dashboard.
         </p>
         {project && <CapLine project={project} spentCredits={t.credits} spentUsd={t.spend} isAdmin={isAdmin} onChanged={() => { refreshProjects(); refresh(); }} />}
+        <ReviewLinks projectId={id} isAdmin={isAdmin} />
         {project && <BurnDown project={project} totals={t} byShot={data.byShot} shotCount={shots.length} />}
 
         <div className="mt-6 flex flex-wrap gap-2">
@@ -264,6 +265,65 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
         <>{" "}<button onClick={() => patch({ capUnlocked: !project.capUnlocked })} className="text-blue">{project.capUnlocked ? "Lock again" : "Unlock"}</button></>
       ) : null}
     </p>
+  );
+}
+
+/**
+ * Client review links (brief 2.6): a read-only page of this production's
+ * Approved takes, for someone with no account here. The link is shown once,
+ * when it is made — after that only its label, its expiry and the power to
+ * withdraw it, because the token itself is never stored in the clear.
+ */
+function ReviewLinks({ projectId, isAdmin }: { projectId: string; isAdmin: boolean }) {
+  const { data, refresh } = useApi<{ shares: { id: string; label: string; createdBy: string; createdAt: number; expiresAt: number; revokedAt: number | null; live: boolean }[]; days: number }>(
+    `/api/shares?projectId=${encodeURIComponent(projectId)}`, 0);
+  const [minted, setMinted] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const shares = data?.shares ?? [];
+  const live = shares.filter((s) => s.live);
+  if (!isAdmin && !live.length) return null;
+
+  async function mint() {
+    const label = await appPrompt("A review link for this production", "", "Who is it for? (optional)");
+    if (label === null) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/shares", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, label }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      setMinted(j.url as string);
+      try { await navigator.clipboard.writeText(j.url as string); } catch { /* the link is on screen either way */ }
+      refresh();
+    } catch (e) { await appAlert("No link made", (e as Error).message); }
+    finally { setBusy(false); }
+  }
+  async function revoke(id: string) {
+    if (!(await appConfirm("Withdraw this link?", "Anyone holding it loses the page at once. The takes are untouched.", { confirmLabel: "Withdraw", danger: true }))) return;
+    await fetch(`/api/shares?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    setMinted(null); refresh();
+  }
+  const when = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+  return (
+    <section className="rvl">
+      <div className="rvl-head">
+        <span className="grouplabel !pb-0">Client review</span>
+        {isAdmin && <button type="button" className="hdr-mono-link" disabled={busy} onClick={mint}>{busy ? "MAKING…" : "MAKE A LINK →"}</button>}
+      </div>
+      <p className="rvl-note">A read-only page of this production&rsquo;s Approved takes, in shot order, under your own name. No login. Comments come back onto the take.</p>
+      {minted && <p className="rvl-new"><code>{minted}</code> <span className="mono-s">COPIED · SHOWN ONCE</span></p>}
+      {live.length > 0 && (
+        <ul className="rvl-list">
+          {live.map((s) => (
+            <li key={s.id}>
+              <span>{s.label || "Review link"}</span>
+              <span className="mono-s">BY {s.createdBy.toUpperCase()} · UNTIL {when(s.expiresAt).toUpperCase()}</span>
+              {isAdmin && <button type="button" className="hdr-mono-link" onClick={() => revoke(s.id)}>WITHDRAW</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
