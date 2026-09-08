@@ -2796,6 +2796,9 @@ html, body { overflow-x: clip; }
 /* The cast still beside a cited name in the theatre (brief 2.4). */
 .theatre-cast { display: inline-flex; align-items: center; gap: 6px; }
 .theatre-cast-still { width: 28px; height: 28px; border-radius: 999px; object-fit: cover; border: 1px solid var(--color-line); background: var(--color-thumb, #222); }
+
+/* A rule surfaced as a one-tap hint beside the engine (brief 2.5). */
+.chip-ctl.is-hint { border-style: dashed; color: var(--color-blue); }
 /* The production's burn-down (brief 2.2). */
 .burn { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
 .burn-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }

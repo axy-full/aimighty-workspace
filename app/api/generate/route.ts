@@ -525,7 +525,11 @@ export const POST = withTenant(async function POST(req: Request) {
       references: stillRefs.map((r) => (r.fromGeneration
         ? { genId: r.id, role: r.role, kind: r.kind }
         : { uploadId: r.id, role: r.role, kind: r.kind })),
-      rawPrompt: castPrompt !== prompt ? prompt : undefined,
+      /* What the person typed, whenever the take carries something else: the
+         cast expanded, the writer rewrote, or the rule library appended its
+         own lines. The theatre shows this, and a fresh render is built from
+         it rather than from the compiled text (brief 2.5). */
+      rawPrompt: stillPrompt !== prompt ? prompt : undefined,
       cast: castUsed.length ? castUsed : undefined,
       reason: stillReason ?? undefined,
       batchId: isBatchId(body.batchId) ? body.batchId : undefined,

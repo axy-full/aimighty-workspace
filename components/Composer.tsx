@@ -62,6 +62,9 @@ export type ComposerProps = {
   model: ModelDef; engines: Engine[]; writer?: WriterInfo | null;
   /** The workspace's cost approval rule, said before the press when it applies (brief 2.2). */
   approval?: ApprovalInfo | null;
+  /** The engine rule surfaced as a suggestion, and the plateau's offer of a fresh render (brief 2.5). */
+  suggestion?: { label: string; why: string } | null; onSuggestion?: () => void;
+  plateau?: { passes: number } | null; onFresh?: () => void;
   refs: RefItem[]; setRefs: React.Dispatch<React.SetStateAction<RefItem[]>>;
   picker: React.MutableRefObject<RefPicker>; cite: (token: string) => void;
   /** The source is null until a clip is chosen — a mode can be picked first. */
@@ -102,7 +105,7 @@ export type ComposerProps = {
 
 export default function Composer(p: ComposerProps) {
   const {
-    prompt, setPrompt, promptRef, params, patch, model, engines, writer, approval = null,
+    prompt, setPrompt, promptRef, params, patch, model, engines, writer, approval = null, suggestion = null, onSuggestion, plateau = null, onFresh,
     refs, setRefs, picker, cite, taskOn, cancelTask, uploadSource = null, problem, blocked, notice,
     est, estTokens, dims, trainedCited = null, count = 1, setCount, writerUsd = 0, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
@@ -350,6 +353,16 @@ export default function Composer(p: ComposerProps) {
             });
           })}
         </ChipMenu>
+        {/* The engine rule, where the choice is made (brief 2.5): one tap to take it. */}
+        {suggestion && onSuggestion && (
+          <button type="button" className="chip-ctl is-hint" title={suggestion.why} onClick={onSuggestion}>{suggestion.label}</button>
+        )}
+        {/* The plateau (brief 2.5): after two edit passes on a still, a fresh render with the full look, not a third edit. */}
+        {plateau && onFresh && (
+          <button type="button" className="chip-ctl is-hint" title="Relative edits on a still stop landing after a couple of passes. This writes the whole final look into one prompt and renders it fresh." onClick={onFresh}>
+            {plateau.passes} passes on this still — regenerate fresh
+          </button>
+        )}
 
         {(!falTask || taskDef?.forceRatio === null) && (
           <ChipMenu label={params.ratio === "adaptive" ? "Auto" : params.ratio} open={menu === "ratio"} onOpen={() => setMenu("ratio")} onClose={() => setMenu(null)}>
