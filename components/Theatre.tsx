@@ -23,6 +23,8 @@ import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy
 import { useMoney } from "@/lib/price";
 import { failureKind, failureCopy } from "@/lib/jobState";
 import Link from "next/link";
+import { useApi } from "@/lib/useApi";
+import { castThumbs } from "@/lib/castUsage";
 
 const clipId = (id: string) => id.split("_").pop()!.slice(-6).toUpperCase();
 
@@ -49,6 +51,9 @@ export default function Theatre({
   const gen = idx >= 0 ? gens[idx] : null;
   const prev = idx > 0 ? gens[idx - 1] : null;
   const next = idx >= 0 && idx < gens.length - 1 ? gens[idx + 1] : null;
+  /* The cast behind the cited names, for the consistency check (brief 2.4). Asked only when a name was cited. */
+  const citedCast = ((gen?.params as { cast?: string[] } | undefined)?.cast ?? []);
+  const { data: castList } = useApi<{ cast: { name: string; uploadId: string | null }[] }>(citedCast.length ? "/api/cast?projectId=all" : null, 0);
   const [copied, setCopied] = useState(false);
   const [copiedErr, setCopiedErr] = useState(false);
   const [saveMenu, setSaveMenu] = useState(false);
@@ -278,9 +283,16 @@ export default function Theatre({
         <div className="theatre-body">
           <p className="theatre-prompt">{shown}</p>
           {p.cast && p.cast.length > 0 && (
+            /* The consistency check (brief 2.4): the still that stands behind each cited name, beside the take, so a likeness drift shows at a glance. */
             <p className="mt-2 flex flex-wrap gap-1.5">
-              {p.cast.map((n) => (
-                <span key={n} className="rounded-full bg-blue/10 px-2 py-0.5 text-[12px] font-medium text-blue">@{n}</span>
+              {castThumbs(p.cast, castList?.cast ?? []).map((c) => (
+                <span key={c.name} className="theatre-cast">
+                  {c.uploadId && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={`/api/uploads/${c.uploadId}`} alt="" className="theatre-cast-still" />
+                  )}
+                  <span className="rounded-full bg-blue/10 px-2 py-0.5 text-[12px] font-medium text-blue">@{c.name}</span>
+                </span>
               ))}
             </p>
           )}

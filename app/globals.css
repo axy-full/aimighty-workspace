@@ -2792,6 +2792,10 @@ html, body { overflow-x: clip; }
 .kv-src { margin-left: 6px; font: 500 9px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-mute); vertical-align: 1px; }
 .kv-was { color: var(--color-mute); text-decoration-thickness: 1px; }
 .setup-shot { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
+
+/* The cast still beside a cited name in the theatre (brief 2.4). */
+.theatre-cast { display: inline-flex; align-items: center; gap: 6px; }
+.theatre-cast-still { width: 28px; height: 28px; border-radius: 999px; object-fit: cover; border: 1px solid var(--color-line); background: var(--color-thumb, #222); }
 /* The production's burn-down (brief 2.2). */
 .burn { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
 .burn-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }

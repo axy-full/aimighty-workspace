@@ -30,6 +30,7 @@ import type { CastMember } from "@/lib/cast";
 import type { Gen } from "@/components/GenCard";
 import { useMoney } from "@/lib/price";
 import RulesSection from "@/components/RulesSection";
+import { usageSummary, usageLine as usageLineOf } from "@/lib/castUsage";
 
 const KINDS: { id: CastMember["kind"]; label: string; badge: string; blurb: string }[] = [
   { id: "character", label: "Character", badge: "CHARACTER", blurb: "A face the production returns to." },
@@ -160,6 +161,12 @@ export default function StudioPage() {
   const railName = curId ? curId.name : cur?.name ?? null;
   const railKind = curId ? "IDENTITY" : cur ? KINDS.find((k) => k.id === cur.kind)?.badge ?? "" : "";
   const railUpload = curId ? curId.coverUploadId : cur?.uploadId ?? null;
+  /* The member's own view (brief 2.4): everything made with the name across
+     the workspace's productions, asked of the server rather than sifted
+     from one page of the current bin. The cards keep the bin's own count. */
+  const { data: madeAll } = useApi<{ generations: Gen[] }>(signedIn && railName ? `/api/jobs?castName=${encodeURIComponent(railName)}&limit=500&sync=0` : null, 0);
+  const railMade: Gen[] = madeAll?.generations ?? (railName ? madeWith(railName) : []);
+  const railLine = railName ? usageLineOf(usageSummary(railMade)) : "";
   const railDesc = curId ? curId.description : cur?.description ?? "";
   const railWhat = curId ? "face" : cur?.kind === "location" ? "place" : cur?.kind === "prop" ? "object" : cur?.kind === "style" ? "look" : "face";
 
@@ -288,7 +295,7 @@ export default function StudioPage() {
               <span className="ws-bar-h truncate">{railName ? (curId ? railName : `@${railName}`) : "Nothing selected"}</span>
               <span className="mono !tracking-[.08em]">{railKind}</span>
             </span>
-            {railName && <span className="mono-s">{usageLine(railName)}</span>}
+            {railName && <span className="mono-s">{railLine}</span>}
             {mobile && <button type="button" className="btn-secondary !h-8 !px-2.5 !text-[12px] ml-auto" onClick={() => setSheetOpen(false)}>Close</button>}
           </div>
           <div className="ws-rail-body !gap-4">
@@ -316,9 +323,9 @@ export default function StudioPage() {
               <>
                 <div className="ws-block !pt-3.5">
                   <span className="mono">Everything made with @{railName}</span>
-                  {madeWith(railName).length ? (
+                  {railMade.length ? (
                     <div className="grid grid-cols-3 gap-1.5">
-                      {madeWith(railName).slice(0, 9).map((g) => (
+                      {railMade.slice(0, 12).map((g) => (
                         <Link key={g.id} href={g.kind === "image" ? "/images" : g.kind === "audio" ? "/audio" : "/"} className="st-take">
                           <span className="st-take-well">
                             {g.storedUrl && g.status === "succeeded" && g.kind !== "audio"
