@@ -29,7 +29,7 @@ import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { detectSpec, specCount, composePrompt, type ShotSpec } from "@/lib/studio";
 import {
-  DEFAULT_MODEL_ID, MODELS, getModel, dimensionsFor,
+  DEFAULT_MODEL_ID, MODELS, getModel, dimensionsFor, billedFrame,
   estimateCostUsd, estimateTokens, estimateImageCostUsd,
 } from "@/lib/models";
 import { usePrefs } from "@/lib/prefs";
@@ -340,6 +340,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
     ? null
     : estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
   const dims = isImage ? null : dimensionsFor(params.resolution, params.ratio);
+  /* What the vendor counts, which is the file rounded up to its codec's grid — shown where the tokens are quoted, not on the chip. */
+  const billed = isImage ? null : billedFrame(params.resolution, params.ratio);
 
   function afterChange() { refresh(); refreshProjects(); }
   // Renames, moves and deletes from the right-click menu land at once.
@@ -615,7 +617,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
               : "Sign in to generate. Everything else here is yours to look at."}
             blocked={!signedIn || Boolean(refProblem || sourceIssue)}
             notice={!signedIn}
-            est={est} estTokens={estTokens} dims={dims} trainedCited={trainedCited}
+            est={est} estTokens={estTokens} dims={dims} billed={billed} trainedCited={trainedCited}
             count={countNow} setCount={setCount} writerUsd={writerUsd}
             inputSeconds={inputSeconds} hasVideoInput={hasVideoInput} imageRefCount={imageRefCount}
             busy={busy} onRender={render}
