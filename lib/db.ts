@@ -563,6 +563,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `token_id TEXT`,
         // Review state: '' (unreviewed) | 'approved' | 'changes'
         `review_state TEXT NOT NULL DEFAULT ''`,
+        /* Who picked and who approved, each with its own moment (brief 2.1). */
+        `picked_by TEXT`, `picked_at INTEGER`, `approved_by TEXT`, `approved_at INTEGER`,
         `review_by TEXT`,
         `reviewed_at INTEGER`,
         // Which shot this render is a take of, and which take it is.
