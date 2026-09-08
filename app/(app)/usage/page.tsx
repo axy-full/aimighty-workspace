@@ -120,7 +120,7 @@ export default function UsagePage() {
 
         {!money.inCredits && (<>
         {/* ── The ledgers ── */}
-        <p className="mt-16 text-[13px] text-dim">
+        <p className="measure mt-16 text-[13px] text-dim">
           Below: the ledgers behind the numbers — each vendor&rsquo;s own count, prompt writing, storage rent, where the time goes, and every render&rsquo;s price.
         </p>
         <p className="grouplabel mt-12">Ledgers</p>
@@ -163,7 +163,7 @@ export default function UsagePage() {
                 <span className="row-value font-semibold tabular-nums !text-bone">{usd(data.promptSpendUsd, 3)}</span>
               </div>
             </div>
-            <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
+            <p className="measure px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
               Every prompt&rsquo;s cost is part of its render&rsquo;s total wherever a total is shown, and
               is counted against the ledger of whoever wrote it: Claude on the Google Gemini credit,
               ByteDance&rsquo;s writer on ModelArk.
