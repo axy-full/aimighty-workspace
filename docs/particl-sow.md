@@ -356,10 +356,36 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 **Build order — data model first, mobile before desktop, canvas last:**
 1. Schema and the migration from what 1.0 shipped. Be specific about how existing takes get backfilled with provenance, or why they can't.
 2. The quote/impact engine — what a change costs before it happens. Everything visible depends on it.
-3. Mobile: `1a` **built** → `1b` **built** → `1c` **built** → `2c` → `2b`.
+3. `1a` **built** → `1b` **built** → `1c` **built** → `2c` **built** → `2b`.
 4. Desktop: `1d` **built** → `2a` **built**. Both were brought forward on
    8 September under a desktop-first instruction, which rule 7 has since made
-   the settled shape rather than a detour.
+   the settled shape rather than a detour. The step names "mobile" and
+   "desktop" no longer describe the work: under rule 7 each surface ships in
+   both shapes at once, and `2c` was built that way — two panes at 1440 where
+   the take stays in view beside the picker, one column on a phone.
+
+**One thing `2c` had to add that the handoff does not draw: binding an EMPTY
+slot.** The handoff's shot holds one of everything, so every row it draws is a
+change to something already wired. But nothing else in the product writes a
+binding — this route is the only writer — so a surface that could only
+re-point would have shown five empty rows on every real workspace and been
+unable to do anything about any of them. An empty row therefore offers the
+elements whose kind maps to that slot, and binds the **bundle**: no attribute,
+no version, following the library until somebody pins it. `keyframe` offers
+nothing, because a keyframe is a frame of this shot's own take rather than a
+member of the library, and the row says so.
+
+**And one the handoff implies but does not draw: narrowing a bundle is two
+steps.** The handoff's sentence is that "a shot can override one attribute
+without leaving the character", and the CHARACTER row is a bundle —
+`attribute_id` null, every attribute at its current version. The first build
+flattened that: the row quietly adopted the element's first attribute so it
+would have versions to show, and picking any of them rewrote a four-port
+binding into a face-only one, dropping hair, wardrobe and voice off the shot
+with no message and no way back. So a bundle row now expands to its **ports**
+first — each with where it stands and whether it is locked — and only a
+version of a chosen port writes the narrowed binding. Narrowing is a decision,
+so it is a thing a person does on purpose.
 5. Chat drives the graph; the canvas is a view of what chat did, never the only way to edit.
 
 **Where it lives.** Recipe authoring and the canvas belong in Atomik (planning); running recipes and their outputs belong in particl (rendering). Same graph, same scoping, one database.

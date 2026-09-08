@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { fmtCredits } from "@/lib/price";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
@@ -48,7 +49,17 @@ export default function ProvenanceCard({ takeId }: { takeId: string }) {
 
       <div className="prv-body">
         <div className="prv-frame">
-          <span className="prv-frame-chip">{take.shotCode || "UNFILED"}{take.shotTitle ? ` · ${take.shotTitle}` : ""}</span>
+          {/* The way into the shot's own slots (surface 2c). It matters on a
+              phone especially: the canvas is the only other door and it is
+              hidden below 1180, so without this a 390-wide surface built for
+              a phone could not be reached from one. */}
+          {take.shotId ? (
+            <Link className="prv-frame-chip is-link" href={`/shots/${encodeURIComponent(take.shotId)}`}>
+              {take.shotCode || "UNFILED"}{take.shotTitle ? ` · ${take.shotTitle}` : ""}
+            </Link>
+          ) : (
+            <span className="prv-frame-chip">{take.shotCode || "UNFILED"}{take.shotTitle ? ` · ${take.shotTitle}` : ""}</span>
+          )}
         </div>
 
         {!rec ? (

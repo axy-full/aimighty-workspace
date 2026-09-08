@@ -3448,7 +3448,15 @@ html, body { overflow-x: clip; }
   position: absolute; box-sizing: border-box;
   background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden;
 }
-.ast-shot-head { display: flex; align-items: center; gap: 8px; padding: 0 10px; }
+/* The header is a link into the shot's own screen (surface 2c). It keeps
+   the node's geometry exactly — the wires land on slot centres measured
+   from this height, so it may not grow by so much as a border. */
+.ast-shot-head {
+  display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  text-decoration: none; color: inherit; box-sizing: border-box;
+}
+.ast-shot-head:hover { background: var(--color-fill-on); }
+.ast-shot-head:hover .ast-shot-title { color: var(--color-bone); text-decoration: underline; }
 .ast-shot-id { font: 500 11px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-mute); }
 .ast-shot-title {
   font: 500 12.5px/1 var(--font-sans); color: var(--color-bone);
@@ -3507,6 +3515,10 @@ html, body { overflow-x: clip; }
   position: absolute; top: 10px; left: 10px; padding: 4px 8px; border-radius: 4px;
   background: var(--color-chrome); font: 500 10.5px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-lead);
 }
+/* The chip is a door when the take has a shot. Its own 44px is inside the
+   frame's padding, so it does not move the frame. */
+.prv-frame-chip.is-link { text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+.prv-frame-chip.is-link:hover { border-color: var(--color-edge-hover); color: var(--color-bone); text-decoration: underline; }
 .prv-label { font: 500 11px/1 var(--font-kode); letter-spacing: .14em; color: var(--color-mute); }
 .prv-rows { display: flex; flex-direction: column; }
 .prv-row {
@@ -3542,3 +3554,361 @@ html, body { overflow-x: clip; }
 .prv-primary:disabled { opacity: .45; }
 .prv-primary-cost { font: 500 13px/1 var(--font-kode); opacity: .62; }
 .prv-note { font: 400 12.5px/1.5 var(--font-sans); color: var(--color-mute); text-align: center; text-wrap: pretty; }
+
+/* ── Rig · one shot's slots (brief 3, surface 2c) ──────────────────────────
+   Written desktop-first: the base rules here are the 1440 shape, and the
+   phone overrides are at the end of the file with the rest of Rig's. That is
+   the opposite of the app's older blocks and it is deliberate — rule 7 makes
+   the desktop the surface where wiring is done, and a desktop layout written
+   as an override of a 390px column inherits every decision that column had to
+   make about space it did not have.
+
+   Two panes, because wiring is comparing: the take on the left stays in view
+   while the picker on the right changes what made it. The rows column is
+   fixed rather than fluid so that a row's four fields keep their relationship
+   at any width, and the frame takes the rest — a bigger monitor spends its
+   extra pixels on the picture, which is the density rule applied to a
+   two-pane screen. */
+.bnd {
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100dvh; min-height: 0;
+}
+.bnd-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+  padding: 18px 24px 14px; border-bottom: 1px solid var(--color-hair);
+}
+.bnd-head-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bnd-code { margin: 0; font: 600 22px/1.1 var(--font-sans); letter-spacing: -.02em; color: var(--color-bone); }
+.bnd-title {
+  margin: 0; font: 400 11.5px/1.3 var(--font-mono); letter-spacing: .06em;
+  color: var(--color-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bnd-up {
+  flex: none; display: inline-flex; align-items: center; min-height: 44px;
+  font: 500 13px/1 var(--font-sans); color: var(--color-dim);
+  text-decoration: none; padding: 0 14px; border: 1px solid var(--color-line); border-radius: 8px;
+}
+.bnd-up:hover { color: var(--color-bone); border-color: var(--color-edge-hover); }
+
+.bnd-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) 460px;
+  min-height: 0; overflow: hidden;
+}
+.bnd-take {
+  min-height: 0; overflow-y: auto; padding: 22px 24px 28px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+/* Capped, and the cap is the point. 16:9 across a 922px pane is 519px of
+   height, which put the sentence and the promoted-element card below the fold
+   on a 900px screen — the take is what you compare AGAINST, so it may not be
+   the only thing you can see. The width follows the height so the frame stays
+   16:9 and stays left-aligned with the copy under it. */
+.bnd-frame {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  max-height: 42dvh; max-width: calc(42dvh * 16 / 9);
+  background: var(--color-thumb); border: 1px solid var(--color-line); border-radius: 12px;
+}
+/* Ground and ink from tokens that flip TOGETHER, so the chip is right
+   whichever way the theme decision goes (SOW section 4). The first pass used
+   `--color-scrim`, which is a fixed dark wash in every theme, under
+   `--color-bone`, which flips to near-black in the light one — dark ink on a
+   dark ground the moment the theme changed. A solid panel is also more
+   legible over a photograph than a wash is. */
+.bnd-frame-chip {
+  position: absolute; left: 12px; bottom: 12px;
+  padding: 6px 10px; border-radius: 7px;
+  background: var(--color-panel2); border: 1px solid var(--color-line);
+  font: 500 11px/1 var(--font-mono); letter-spacing: .07em; color: var(--color-bone);
+}
+.bnd-lede { margin: 0; font: 400 14px/1.5 var(--font-sans); color: var(--color-lead); max-width: 60ch; text-wrap: pretty; }
+.bnd-label { font: 500 10.5px/1 var(--font-mono); letter-spacing: .12em; color: var(--color-mute); }
+.bnd-made { display: flex; flex-direction: column; gap: 8px; }
+.bnd-made-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 11px 13px; border: 1px dashed var(--color-edge); border-radius: 10px; background: var(--color-panel3);
+}
+.bnd-made-name { font: 500 14px/1.2 var(--font-sans); color: var(--color-bone); }
+.bnd-made-meta { font: 400 11px/1.2 var(--font-mono); letter-spacing: .05em; color: var(--color-mute); text-align: right; }
+
+.bnd-rows-wrap {
+  min-height: 0; overflow-y: auto; padding: 22px 24px 28px;
+  background: var(--color-chrome); border-left: 1px solid var(--color-hair);
+}
+.bnd-rows {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--color-line); border-radius: 12px; overflow: hidden; background: var(--color-panel);
+}
+.bnd-row-shell + .bnd-row-shell { border-top: 1px solid var(--color-hair); }
+.bnd-row-shell.is-open { background: var(--color-panel3); }
+.bnd-row {
+  width: 100%; display: grid;
+  grid-template-columns: 44px 92px minmax(0, 1fr) auto 14px;
+  align-items: center; gap: 12px;
+  min-height: 64px; padding: 10px 13px;
+  background: none; border: 0; text-align: left; cursor: pointer; color: inherit;
+}
+.bnd-row:disabled { cursor: default; }
+.bnd-row:hover:not(:disabled) { background: var(--color-fill-on); }
+.bnd-thumb {
+  width: 44px; height: 32px; border-radius: 6px;
+  background: var(--color-thumb); border: 1px solid var(--color-line);
+}
+.bnd-thumb.is-empty { border-style: dashed; background: none; }
+.bnd-slot { font: 500 10.5px/1 var(--font-mono); letter-spacing: .1em; color: var(--color-mute); }
+.bnd-value { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bnd-name {
+  font: 500 14px/1.2 var(--font-sans); color: var(--color-bone);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bnd-detail {
+  font: 400 11.5px/1.3 var(--font-sans); color: var(--color-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Wraps, and is capped. Two badges side by side took ~130px of a 460px rail
+   and the name went to "The M…" — the row's job is to say WHAT is bound, and
+   the badges qualify it. Stacked they cost ~70px and the name survives. */
+.bnd-badges {
+  display: flex; align-items: flex-end; justify-content: flex-end;
+  flex-wrap: wrap; gap: 4px; max-width: 76px;
+}
+.bnd-badge {
+  flex: none; padding: 4px 7px; border-radius: 5px;
+  font: 500 9.5px/1 var(--font-mono); letter-spacing: .09em;
+  background: var(--color-chip); color: var(--color-dim); border: 1px solid transparent;
+}
+/* Only the two that mean "this differs" get weight. A locked row and a row
+   with a history are facts; an override and an unsaved edit are the reasons
+   somebody opened this screen. */
+.bnd-badge.is-changed { background: var(--color-ink); color: var(--color-on-ink); }
+.bnd-badge.is-override { background: none; border-color: var(--color-edge); color: var(--color-bone); }
+.bnd-chev {
+  width: 8px; height: 8px; justify-self: end;
+  border-right: 1.5px solid var(--color-mute); border-bottom: 1.5px solid var(--color-mute);
+  transform: rotate(-45deg); transition: transform .14s ease;
+}
+.bnd-row[aria-expanded="true"] .bnd-chev { transform: rotate(45deg); }
+.bnd-row:disabled .bnd-chev { opacity: 0; }
+
+.bnd-picker { padding: 2px 13px 14px; display: flex; flex-direction: column; gap: 10px; }
+.bnd-lock { margin: 0; font: 400 12px/1.4 var(--font-sans); color: var(--color-dim); max-width: 62ch; }
+
+/* Binding an empty slot: a list of what this slot could hold. Rows rather
+   than tiles, because the question here is WHICH THING, and a name reads
+   faster in a row than under a thumbnail. */
+.bnd-candidates { display: flex; flex-direction: column; gap: 6px; }
+.bnd-candidate {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 5px 10px;
+  border: 1px solid var(--color-line); border-radius: 9px; background: none;
+  cursor: pointer; text-align: left;
+}
+.bnd-candidate:hover { border-color: var(--color-edge-hover); background: var(--color-fill-on); }
+.bnd-candidate-thumb {
+  width: 34px; height: 26px; border-radius: 5px;
+  background: var(--color-thumb); border: 1px solid var(--color-line);
+}
+.bnd-candidate-name {
+  font: 500 13px/1.2 var(--font-sans); color: var(--color-bone);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bnd-candidate-meta { font: 400 10px/1 var(--font-mono); letter-spacing: .1em; color: var(--color-mute); }
+/* Wraps on a desktop, and the first version of this scrolled instead — which
+   put `Follow current` off the right edge of a 460px rail with four versions,
+   a control you could only reach by discovering you could drag inside a pane
+   that was already scrolling vertically. Wrapping was argued against on the
+   grounds that a version's place in the strip is its number; it isn't, the
+   number is printed on the tile, and reading order keeps them in sequence
+   anyway. The phone keeps the strip, because there is no vertical room. */
+.bnd-versions {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px; padding-bottom: 4px;
+}
+.bnd-version {
+  min-width: 0; display: flex; flex-direction: column; gap: 5px;
+  padding: 0; background: none; border: 0; text-align: left; cursor: pointer; color: inherit;
+}
+.bnd-version:disabled { cursor: default; opacity: .45; }
+.bnd-version-frame {
+  width: 100%; aspect-ratio: 3 / 4; border-radius: 8px;
+  background: var(--color-thumb); border: 1px solid var(--color-line);
+}
+.bnd-version-frame.is-follow { border-style: dashed; background: none; }
+.bnd-version.is-on .bnd-version-frame { border-color: var(--color-ink); box-shadow: 0 0 0 3px var(--color-fill-on); }
+.bnd-version-line { font: 500 12px/1.2 var(--font-mono); letter-spacing: .03em; color: var(--color-bone); }
+
+/* The mode, not a member of the set it switches off. */
+.bnd-follow {
+  display: grid; grid-template-columns: 10px auto minmax(0, 1fr);
+  align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px;
+  border: 1px dashed var(--color-edge); border-radius: 9px; background: none;
+  cursor: pointer; text-align: left;
+}
+.bnd-follow:hover:not(:disabled) { border-color: var(--color-edge-hover); background: var(--color-fill-on); }
+.bnd-follow:disabled { opacity: .45; cursor: default; }
+.bnd-follow.is-on { border-style: solid; border-color: var(--color-ink); }
+.bnd-follow-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--color-mute); }
+.bnd-follow.is-on .bnd-follow-dot { background: var(--color-ink); border-color: var(--color-ink); }
+.bnd-follow-line { font: 500 12.5px/1 var(--font-sans); color: var(--color-bone); }
+.bnd-follow-meta {
+  font: 400 11px/1.2 var(--font-sans); color: var(--color-mute); text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bnd-version-meta { font: 400 10.5px/1.2 var(--font-sans); color: var(--color-mute); min-height: 13px; }
+
+/* Two things about the padding.
+
+   The bottom inset: `.bnd` is a 100dvh grid and this is its last row, so on a
+   device with a home indicator the footer sits under it. The phone block adds
+   the inset too; it is here as well because a desktop-shaped window can run
+   on hardware that has one.
+
+   The right gutter: the chat bubble is fixed at the bottom-right of the shell
+   and lands inside this footer. Lifting the bubble was tried first and is the
+   wrong shape — it fights the shell's own cascade, and whatever constant it
+   is given is a guess at a footer height that changes with how much the
+   verdict has to say. A gutter is deterministic: the bubble sits in it, and
+   nothing here is ever underneath it. */
+.bnd-foot {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 88px calc(18px + env(safe-area-inset-bottom, 0px)) 24px;
+  border-top: 1px solid var(--color-hair); background: var(--color-chrome);
+}
+.bnd-consequence:focus-visible { outline: 2px solid var(--color-edge-hover); outline-offset: 3px; }
+.bnd-was { font-style: normal; color: var(--color-mute); }
+
+/* A bundle's ports, offered before any version of one of them. */
+.bnd-ports { display: flex; flex-wrap: wrap; gap: 6px; }
+.bnd-port {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 11px;
+  border: 1px solid var(--color-line); border-radius: 999px; background: none;
+  cursor: pointer; color: var(--color-lead);
+}
+.bnd-port:hover:not(:disabled) { border-color: var(--color-edge-hover); color: var(--color-bone); }
+.bnd-port:disabled { opacity: .45; cursor: default; }
+.bnd-port.is-on { border-color: var(--color-ink); color: var(--color-bone); background: var(--color-fill-on); }
+.bnd-port-name { font: 500 12px/1 var(--font-sans); }
+.bnd-port-at { font: 500 10.5px/1 var(--font-mono); letter-spacing: .06em; color: var(--color-mute); }
+.bnd-port-lock { font: 500 9px/1 var(--font-mono); letter-spacing: .1em; color: var(--color-mute); }
+.bnd-consequence {
+  margin: 0; font: 500 10.5px/1.4 var(--font-mono); letter-spacing: .08em; color: var(--color-dim);
+}
+.bnd-trouble { margin: 0; font: 400 13px/1.4 var(--font-sans); color: var(--color-red); }
+/* A standing fact about the render, not a failure of this screen. Red here
+   was reading as "your save failed" under a save that had just succeeded. */
+.bnd-verdict { margin: 0; font: 400 13px/1.45 var(--font-sans); color: var(--color-dim); max-width: 78ch; }
+.bnd-actions { display: flex; align-items: center; gap: 10px; }
+.bnd-revert, .bnd-save {
+  min-height: 44px; padding: 0 16px; border-radius: 10px;
+  font: 500 14px/1 var(--font-sans); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+}
+.bnd-revert { background: none; border: 1px solid var(--color-line); color: var(--color-dim); }
+.bnd-revert:hover:not(:disabled) { color: var(--color-bone); border-color: var(--color-edge-hover); }
+.bnd-save { background: var(--color-ink); border: 0; color: var(--color-on-ink); }
+.bnd-save:hover:not(:disabled) { background: var(--color-blue-hover); }
+/* Disabled, the primary stops being a filled button. At .4 opacity an ink
+   fill is still the brightest shape on a phone screen, so "Nothing to save"
+   was shouting the one thing on the surface you cannot do. */
+.bnd-revert:disabled { opacity: .4; cursor: default; }
+.bnd-save:disabled {
+  cursor: default; background: none; color: var(--color-mute);
+  border: 1px solid var(--color-line);
+}
+/* A price, not a control. It sits last and reads as a fact, because nothing
+   on this screen spends and dressing it as a button would promise otherwise. */
+.bnd-render {
+  margin-left: auto; align-self: center;
+  font: 500 12px/1 var(--font-mono); letter-spacing: .07em; color: var(--color-dim);
+}
+
+/* A wider monitor gets a wider frame, not a wider row. */
+@media (min-width: 1800px) {
+  .bnd-body { grid-template-columns: minmax(0, 1fr) 520px; }
+  .bnd-take { padding: 26px 28px 32px; }
+  .bnd-rows-wrap { padding: 26px 28px 32px; }
+  .bnd-versions { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+}
+
+/* ── One shot's slots, on a phone ─────────────────────────────────────────
+   Last in the file on purpose. Rig's desktop rules are appended above, and an
+   override written anywhere earlier loses to them on source order alone —
+   which is exactly how the run header came to pin under the app header.
+
+   The query is the shell's own definition of a phone, copied from
+   lib/useMobile.ts. What changes is the shape, not the content: one column
+   instead of two, because there is nothing to compare against on 390px; the
+   page scrolls rather than each pane scrolling separately, because two
+   independent scroll regions inside 844px of height leaves neither usable;
+   and a row shows one badge, because four fields and three badges on 390px
+   costs the name its line. */
+@media (max-width: 1023px), (max-height: 520px) {
+  .bnd { display: flex; flex-direction: column; height: auto; min-height: 0; }
+  .bnd-head { padding: 14px 16px 12px; }
+  .bnd-code { font-size: 20px; }
+
+  .bnd-body { display: flex; flex-direction: column; overflow: visible; min-height: 0; }
+  .bnd-take { overflow: visible; padding: 16px 16px 8px; gap: 14px; }
+  .bnd-rows-wrap {
+    overflow: visible; padding: 8px 16px 20px;
+    background: none; border-left: 0;
+  }
+  .bnd-row { grid-template-columns: 44px minmax(0, 1fr) auto 10px; gap: 10px; padding: 10px 12px; }
+  /* The slot name moves above the value rather than beside it: 92px of the
+     row's 390 spent on a fixed label is the name's ellipsis. */
+  .bnd-slot { display: none; }
+  .bnd-value::before {
+    content: attr(data-slot);
+    font: 500 9.5px/1 var(--font-mono); letter-spacing: .1em; color: var(--color-mute);
+  }
+  /* Visually one badge; all of them still in the accessibility tree. The
+     first pass used display:none, which deletes them from it — a screen
+     reader was told a locked, overridden row was merely overridden. */
+  .bnd-badges > .bnd-badge:not(:first-child) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  .bnd-badges { position: relative; max-width: none; }
+
+  /* A strip again: 844px of height has no room to wrap four 3:4 cards, and a
+     horizontal drag is the phone's own idiom rather than a discovery. */
+  .bnd-versions {
+    display: flex; gap: 10px; overflow-x: auto;
+    scroll-snap-type: x proximity; scrollbar-width: none;
+    margin: 0 -12px; padding: 0 12px 4px;
+  }
+  .bnd-version { flex: none; width: 112px; scroll-snap-align: start; }
+  .bnd-follow-meta { display: none; }
+
+  /* The footer travels with the page. A fixed bar over a phone-height column
+     eats a third of the rows, and the dock is already down there. */
+  .bnd-foot {
+    position: sticky; bottom: var(--tabbar-h); z-index: 3;
+    /* 58px of gutter, which is the bubble's 44 plus its 14 of margin. */
+    padding: 12px 62px calc(12px + env(safe-area-inset-bottom, 0px)) 16px;
+    border-top: 1px solid var(--color-line);
+  }
+  /* The bubble clears the footer AND the tab bar. The desktop rule's bare
+     96px lands under the tab bar here, which is where it was sitting on top
+     of the last action. */
+  .bnd-actions { flex-wrap: wrap; }
+  .bnd-revert, .bnd-save { flex: 1 1 auto; }
+  /* The price leads on a phone: it is read before the buttons under it. */
+  .bnd-render { order: -1; margin-left: 0; flex: 1 1 100%; align-self: flex-start; }
+}
+
+/* A phone on its side. Measured at 844×390: the app header, this footer and
+   the tab bar together took 254px of 390 — 65% of the screen — leaving about
+   two rows of the thing the screen is for. So at short heights the footer
+   stops being sticky and scrolls with the page. Nothing is truncated and
+   nothing moves out of reach; the rows simply get the height back.
+
+   Written as its own block AFTER the phone one rather than inside it: the
+   first attempt closed the phone block early to start this, which stranded
+   the footer, the actions and the chat-bubble clearance in a height-only
+   query — so a portrait phone, which is most of them, silently lost all
+   three. */
+@media (max-height: 520px) {
+  .bnd-foot { position: static; }
+  .bnd-frame { max-height: 30dvh; max-width: calc(30dvh * 16 / 9); }
+  .bnd-take { padding-bottom: 4px; }
+}
