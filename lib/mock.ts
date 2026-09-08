@@ -57,7 +57,9 @@ export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "sho
       title: "Mocked production",
       say: "Mocked: one shot, so the pipeline can be watched end to end without a vendor.",
       activity: ["read the brief", "chose one engine"],
-      propose: [{ kind: "video", title: "Mocked shot", prompt: "A mocked shot, held still for five seconds.", model: DEFAULT_MODEL_ID, seconds: 5, ratio: "16:9", resolution: "1080p" }],
+      /* A model told what it was shown says so on the step it proposes; the
+         mock answers the same way, so the whole path can be watched. */
+      propose: [{ kind: "video", title: "Mocked shot", prompt: "A mocked shot, held still for five seconds.", model: DEFAULT_MODEL_ID, seconds: 5, ratio: "16:9", resolution: "1080p", attachments: /ATTACHED:/.test(requestBody) }],
     })
     : kind === "idea" ? JSON.stringify({ logline: `Mocked logline for: ${lastUser.replace(/^NOTE:\s*/i, "").slice(0, 120)}`, tone: ["mocked", "quiet", "30s"] })
     : kind === "scene" ? JSON.stringify({ title: "Mocked scene", secs: 6, prose: "Mocked: the scene, rewritten — the same beat, one clear action, the cast where they were." })

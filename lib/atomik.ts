@@ -6,6 +6,8 @@ import { gatewayPost } from "./gateway";
 import { meter } from "./meter";
 import { getPlatformLayer } from "./platform";
 import { textModelFor } from "./platformLayer";
+import { cleanAttachments, attachmentLine, seenByModel, stepReferences, type Attachment } from "./attachments";
+import { readUploadBytes, readImageBytes } from "./storage";
 
 /**
  * Atomik — the studio's agent.
@@ -45,6 +47,8 @@ export type Step = {
   id: string; chatId: string; messageId: string; position: number;
   kind: StepKind; title: string; prompt: string; model: string;
   params: Record<string, unknown>;
+  /** What the person attached, carried onto the render this step makes. */
+  refs: { uploadId: string; role: "reference_image" | "reference_video" }[];
   status: StepStatus; genId: string | null;
   estCostUsd: number | null; error: string | null;
   createdAt: number;
@@ -55,6 +59,8 @@ export type Ask = { question: string; options: string[] };
 export type Message = {
   id: string; chatId: string; role: "user" | "assistant";
   text: string; activity: string[]; ask: Ask | null;
+  /** What the person handed the agent with this message. */
+  attachments: Attachment[];
   workedMs: number | null; costUsd: number; model: string;
   createdAt: number;
 };
@@ -79,6 +85,7 @@ const toStep = (r: Row): Step => ({
   position: Number(r.position ?? 0), kind: String(r.kind) as StepKind,
   title: String(r.title ?? ""), prompt: String(r.prompt ?? ""), model: String(r.model ?? ""),
   params: jsonOr<Record<string, unknown>>(r.params, {}),
+  refs: jsonOr<Step["refs"]>(r.refs, []),
   status: String(r.status ?? "proposed") as StepStatus,
   genId: r.gen_id ? String(r.gen_id) : null,
   estCostUsd: r.est_cost_usd == null ? null : Number(r.est_cost_usd),
@@ -92,6 +99,7 @@ const toMessage = (r: Row): Message => ({
   text: String(r.text ?? ""),
   activity: jsonOr<string[]>(r.activity, []),
   ask: jsonOr<Ask | null>(r.ask, null),
+  attachments: cleanAttachments(jsonOr<unknown[]>(r.attachments, [])),
   workedMs: r.worked_ms == null ? null : Number(r.worked_ms),
   costUsd: Number(r.cost_usd ?? 0), model: String(r.model ?? ""),
   createdAt: Number(r.created_at ?? 0),
@@ -387,6 +395,9 @@ How to plan:
 - When a production needs a consistent subject across shots, propose a still FIRST and say that it is the reference the shots will share.
 - seconds applies to video and audio. ratio and resolution apply to video and image.`;
 
+/** A turn's message: words, or words and the pictures the person attached. */
+type TurnMessage = { role: string; content: string | ({ type: string; text?: string; image_url?: { url: string } })[] };
+
 export type TurnResult = {
   message: Message;
   steps: Step[];
@@ -416,6 +427,10 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
   const list = await engines();
   const engineText = list.map((e) => `  ${e.id} — ${e.label} (${e.kind}). ${e.note}`).join("\n");
 
+  /* What the person attached to the message this turn answers: the agent
+     is shown the stills themselves, and any render it proposes for them
+     carries the same files as references. */
+  const attached = messages[messages.length - 1]?.attachments ?? [];
   const history = messages.slice(-20).map((m) => ({
     role: m.role === "assistant" ? "assistant" : "user",
     content: m.role === "assistant"
@@ -427,17 +442,18 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
     "ENGINES YOU MAY CHOOSE (exact ids):", engineText,
     opts.context ? `\nTHIS PROJECT ALREADY HAS:\n${opts.context}` : "",
     opts.rules ? `\nTHE PLATFORM'S RULES, BY ENGINE — write every proposal's prompt to the rules for its engine:\n${opts.rules}` : "",
+    attachmentLine(attached) ? `\n${attachmentLine(attached)}` : "",
   ].filter(Boolean).join("\n");
 
   const started = Date.now();
   const auth = await gatewayAuth();
   /* The planner's instruction is the same on every turn, so it is marked
      cacheable (brief 1.8); a model that refuses the mark is asked plain. */
-  const shaped = (msgs: { role: string; content: string }[], cacheable: boolean) => JSON.stringify({
+  const shaped = (msgs: TurnMessage[], cacheable: boolean) => JSON.stringify({
     model, max_tokens: 4000,
     messages: msgs.map((m, i) => (cacheable && i === 0 && m.role === "system" ? { ...m, cache_control: { type: "ephemeral" } } : m)),
   });
-  const send = async (msgs: { role: string; content: string }[]) => {
+  const send = async (msgs: TurnMessage[]) => {
     const post = (cacheable: boolean) => gatewayPost(shaped(msgs, cacheable), { auth, timeoutMs: 180_000, mock: "turn" });
     const r = await post(true);
     if (r.status === 400 && /cache_control|unknown|unsupported|invalid/i.test(r.text)) {
@@ -447,10 +463,37 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
     return r;
   };
 
-  const base = [
+  /* The stills the person attached go with the words, as pictures: the
+     agent is answering about the thing in front of it, not a description
+     of it. A clip is named but never sent — no model here watches video. */
+  const shown = await Promise.all(attached.filter(seenByModel).map(async (a) => {
+    try {
+      /* An upload of the person's, or a still the workspace already made:
+         both are read here and sent as pictures, so the agent sees the
+         same thing whether it was handed over or picked out of the wall. */
+      if (a.genId) {
+        const bytes = await readImageBytes(a.genId);
+        return { type: "image_url", image_url: { url: `data:image/png;base64,${bytes.toString("base64")}` } };
+      }
+      const row = await db().execute({ sql: `SELECT ext, mime, stored_url FROM uploads WHERE id = ? LIMIT 1`, args: [String(a.uploadId)] });
+      if (!row.rows.length) return null;
+      const u = row.rows[0] as { ext?: string; mime?: string; stored_url?: string };
+      const bytes = await readUploadBytes(String(a.uploadId), String(u.ext ?? "png"), String(u.stored_url ?? ""));
+      return { type: "image_url", image_url: { url: `data:${String(u.mime ?? a.mime)};base64,${bytes.toString("base64")}` } };
+    } catch { return null; }
+  }));
+  const pictures = shown.filter(Boolean) as { type: string; image_url: { url: string } }[];
+
+  const base: TurnMessage[] = [
     { role: "system", content: SYSTEM },
     { role: "user", content: preamble },
-    ...history,
+    ...history.slice(0, -1),
+    /* The last message is the one being answered: its words and its pictures together. */
+    ...(history.length
+      ? [pictures.length
+          ? { role: history[history.length - 1].role, content: [{ type: "text", text: String(history[history.length - 1].content) }, ...pictures] }
+          : history[history.length - 1]]
+      : []),
   ];
 
   let res = await send(base);
@@ -524,11 +567,11 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
     const est = await estimateStepUsd(p.kind, p.model, p.params);
     await db().execute({
       sql: `INSERT INTO atomik_steps
-              (id, chat_id, message_id, position, kind, title, prompt, model, params,
+              (id, chat_id, message_id, position, kind, title, prompt, model, params, refs,
                status, est_cost_usd, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?, 'proposed', ?,?,?)`,
+            VALUES (?,?,?,?,?,?,?,?,?,?, 'proposed', ?,?,?)`,
       args: [stepId, chatId, messageId, pos++, p.kind, p.title, p.prompt, p.model,
-        JSON.stringify(p.params), est, ts, ts],
+        JSON.stringify(p.params), JSON.stringify(stepReferences(attached, p.attachments)), est, ts, ts],
     });
     const s = await getStep(stepId);
     if (s) saved.push(s);
@@ -566,7 +609,7 @@ type ParsedTurn = {
   say: string;
   activity: string[];
   ask: Ask | null;
-  propose: { kind: StepKind; title: string; prompt: string; model: string; params: Record<string, unknown> }[];
+  propose: { kind: StepKind; title: string; prompt: string; model: string; params: Record<string, unknown>; attachments?: boolean }[];
 };
 
 /** Pull the object out of whatever the model wrapped it in, and make every
@@ -604,6 +647,9 @@ function extractTurn(text: string): ParsedTurn | null {
     const s = r as Record<string, unknown>;
     const prompt = String(s.prompt ?? "").trim();
     if (!prompt) continue;
+    /* The model says which steps are about what it was shown; the caller
+       turns that into the references the render will carry. */
+    const attachments = s.attachments === true;
     const kind: StepKind = s.kind === "image" ? "image" : s.kind === "audio" ? "audio" : "video";
 
     /* The engine has to match the KIND, not merely exist. Checking the id
@@ -646,7 +692,7 @@ function extractTurn(text: string): ParsedTurn | null {
     propose.push({
       kind, model, prompt: prompt.slice(0, 4000),
       title: String(s.title ?? "").slice(0, 60) || `Shot ${propose.length + 1}`,
-      params,
+      params, attachments,
     });
   }
 
@@ -669,14 +715,14 @@ function extractTurn(text: string): ParsedTurn | null {
 }
 
 /** Record a person's message. Returns its id. */
-export async function addUserMessage(chatId: string, text: string): Promise<string> {
+export async function addUserMessage(chatId: string, text: string, attachments: Attachment[] = []): Promise<string> {
   await ready();
   const messageId = newId("amsg");
   const ts = now();
   await db().execute({
-    sql: `INSERT INTO atomik_messages (id, chat_id, role, text, activity, created_at)
-          VALUES (?,?, 'user', ?, '[]', ?)`,
-    args: [messageId, chatId, text.slice(0, 8000), ts],
+    sql: `INSERT INTO atomik_messages (id, chat_id, role, text, activity, attachments, created_at)
+          VALUES (?,?, 'user', ?, '[]', ?, ?)`,
+    args: [messageId, chatId, text.slice(0, 8000), attachments.length ? JSON.stringify(attachments) : null, ts],
   });
   await db().execute({
     sql: `UPDATE atomik_chats SET updated_at = ?, status = 'running' WHERE id = ?`,
