@@ -58,6 +58,11 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
   // Renders outlive the shot they were filed under — unfile them, never
   // delete work because a slate was tidied away.
   await db().execute({ sql: `UPDATE generations SET shot_id = NULL WHERE shot_id = ?`, args: [shotId] });
+  /* What this shot pointed at goes with it. A binding is not work and holds
+     nothing anyone would miss, and one left behind keeps voting on what a
+     change costs: a shot nobody can open would still be counted, and priced,
+     every time a version it named was swapped. */
+  await db().execute({ sql: `DELETE FROM bindings WHERE shot_id = ?`, args: [shotId] });
   await db().execute({ sql: `DELETE FROM shots WHERE id = ?`, args: [shotId] });
   return NextResponse.json({ ok: true });
 });

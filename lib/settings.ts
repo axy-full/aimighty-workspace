@@ -51,6 +51,15 @@ export const DEFAULTS = {
    * The library's camera modules apply in every mode; this is only the model.
    */
   promptWriter: "claude",
+  /**
+   * When this workspace's cast was mirrored into Rig's elements (brief 3).
+   *
+   * Blank means it has not happened, and the first read of the element
+   * library is what does it. It is a marker rather than a schema version
+   * because the work is a one-off read of rows that already existed, not a
+   * migration anything is waiting on.
+   */
+  rigBackfilledAt: "",
 } as const;
 
 export type SettingKey = keyof typeof DEFAULTS;
