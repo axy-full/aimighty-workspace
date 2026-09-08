@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Kode+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#DEDFE1}a{color:#15171C;text-decoration:none}a:hover{color:#000000}button{font-family:inherit;cursor:pointer}*{scrollbar-width:none}*::-webkit-scrollbar{display:none}</style>
+</helmet>
+
+<section style="padding:44px 44px 40px;display:flex;flex-direction:column;gap:28px;font-family:Outfit,sans-serif;color:#15171C">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:32px;max-width:1440px">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.16em;color:#666A72">TURN 2 · ASSET WIRING · HOW THINGS CONNECT</span>
+      <h1 style="margin:0;font:600 32px/1.05 Outfit,sans-serif;letter-spacing:-0.025em">Ports carry pictures, not names</h1>
+      <p style="margin:0;max-width:860px;font:400 15px/1.5 Outfit,sans-serif;color:#666A72;text-wrap:pretty">A character isn't one thing — it's a face, hair, wardrobe and voice, each versioned and separately wireable. A location fans out into plates. An element can be created by a render and wired back in. A shot has named slots, and a wire lands on a slot rather than on the node.</p>
+    </div>
+    <div style="flex:none;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:9px;min-width:260px">
+      <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">WIRES</span>
+      <span style="display:flex;align-items:center;gap:10px;font:400 13px/1.3 Outfit,sans-serif"><svg viewBox="0 0 34 8" width="34" height="8" style="flex:none" aria-hidden="true"><path d="M0,4 L34,4" style="stroke:rgba(21,23,28,.28);stroke-width:1.5;fill:none"></path></svg>current version, inherited</span>
+      <span style="display:flex;align-items:center;gap:10px;font:400 13px/1.3 Outfit,sans-serif"><svg viewBox="0 0 34 8" width="34" height="8" style="flex:none" aria-hidden="true"><path d="M0,4 L34,4" style="stroke:#15171C;stroke-width:2.5;fill:none"></path></svg>override, set on this shot</span>
+      <span style="display:flex;align-items:center;gap:10px;font:400 13px/1.3 Outfit,sans-serif"><svg viewBox="0 0 34 8" width="34" height="8" style="flex:none" aria-hidden="true"><path d="M0,4 L34,4" style="stroke:rgba(21,23,28,.35);stroke-width:1.5;stroke-dasharray:4 4;fill:none"></path></svg>created from a take</span>
+    </div>
+  </div>
+
+  <div id="2a" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="background:#15171C;color:#FFFFFF;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.1em">2a</span>
+      <span style="font:600 15px/1 Outfit,sans-serif">Canvas · asset layer</span>
+      <span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">1440 × 900 · every port is a picture; a plate is mid-drag onto SH04's background</span>
+    </div>
+    <div style="width:1440px;height:900px;box-sizing:border-box;overflow:hidden;background:#ECEDEE;border-radius:20px;border:1px solid rgba(21,23,28,.1);display:flex;flex-direction:column">
+      <header style="flex:none;height:60px;display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid rgba(21,23,28,.08)">
+        <span style="display:flex;align-items:center;gap:8px">
+          <svg viewBox="30 68 140 64" width="30" height="14" fill="#15171C" aria-hidden="true"><circle cx="38.7" cy="120.8" r="1.8"></circle><circle cx="50.9" cy="100.5" r="2.8"></circle><circle cx="69.8" cy="86.3" r="4"></circle><circle cx="92.7" cy="80.1" r="5.5"></circle><circle cx="116.2" cy="83" r="7.2"></circle><circle cx="136.9" cy="94.5" r="9.2"></circle><circle cx="151.7" cy="112.9" r="12"></circle></svg>
+          <span style="font:600 16px/1 Outfit,sans-serif;letter-spacing:-0.03em">partıcl</span>
+        </span>
+        <span style="width:1px;height:20px;background:rgba(21,23,28,.14)"></span>
+        <span style="display:flex;align-items:center;gap:10px"><span style="font:600 15px/1 Outfit,sans-serif">Northline</span><span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">Assets · 4 elements · 12 shots bound</span></span>
+        <span style="display:flex;gap:6px;margin-left:8px">
+          <span style="background:#15171C;color:#FFFFFF;border-radius:999px;padding:7px 11px;font:500 13px/1 Outfit,sans-serif">Assets</span>
+          <span style="border:1px solid rgba(21,23,28,.12);border-radius:999px;padding:7px 11px;font:500 13px/1 Outfit,sans-serif;color:#666A72">Stages</span>
+          <span style="border:1px solid rgba(21,23,28,.12);border-radius:999px;padding:7px 11px;font:500 13px/1 Outfit,sans-serif;color:#666A72">Runs</span>
+        </span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:12px">
+          <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">2 LOCKED · 1 OVERRIDE · 1 CREATED</span>
+          <button style="height:40px;border:0;border-radius:10px;background:#15171C;color:#FFFFFF;padding:0 16px;font:600 14px/1 Outfit,sans-serif;display:flex;align-items:center;gap:10px">New element<span style="font:500 12px/1 'Kode Mono',monospace;color:#9A9DA3">12 CR</span></button>
+        </span>
+      </header>
+
+      <div style="flex:1;display:grid;grid-template-columns:288px minmax(0,1fr) 272px;min-height:0">
+        <aside style="border-right:1px solid rgba(21,23,28,.08);display:flex;flex-direction:column;min-height:0">
+          <div style="flex:none;padding:16px 16px 12px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid rgba(21,23,28,.08)">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">CHAT</span>
+            <span style="font:400 13px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty">Every wire on the canvas was made here. Either side can lead.</span>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px">
+            <sc-for list="{{ assetChat }}" as="m" hint-placeholder-count="5">
+              <div style="display:flex;flex-direction:column;gap:7px;align-items:{{ m.align }}">
+                <span style="font:500 11px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#666A72">{{ m.who }}</span>
+                <span style="background:{{ m.bg }};border:{{ m.border }};border-radius:14px;padding:11px 13px;font:400 13.5px/1.5 Outfit,sans-serif;color:{{ m.fg }};max-width:236px;text-wrap:pretty">{{ m.text }}</span>
+                <sc-if value="{{ m.hasChips }}" hint-placeholder-val="{{ false }}">
+                  <span style="display:flex;flex-wrap:wrap;gap:5px;max-width:236px">
+                    <sc-for list="{{ m.chips }}" as="c" hint-placeholder-count="2"><span style="background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:7px;padding:5px 8px;font:500 11px/1 'Kode Mono',monospace;letter-spacing:0.06em">{{ c }}</span></sc-for>
+                  </span>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:none;padding:12px 16px 16px;border-top:1px solid rgba(21,23,28,.08);display:flex;gap:8px;align-items:flex-end">
+            <span style="flex:1;min-height:48px;box-sizing:border-box;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:12px;padding:14px 12px;font:400 13.5px/1.3 Outfit,sans-serif;color:#8A8E96">Ask for a change…</span>
+            <button style="flex:none;width:48px;height:48px;border:0;border-radius:12px;background:#15171C;color:#FFFFFF;font:500 16px/1 Outfit,sans-serif">↑</button>
+          </div>
+        </aside>
+        <section style="display:flex;flex-direction:column;min-height:0;min-width:0;position:relative">
+          <div style="flex:none;height:48px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(21,23,28,.08)">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">LIBRARY → SHOTS → STAGES</span>
+            <span style="font:400 13px/1.4 Outfit,sans-serif;color:#666A72">Drag a port onto a slot. A filled slot shows what replacing it costs.</span>
+          </div>
+          <div style="flex:1;overflow:auto;position:relative">
+            <div style="width:1040px;height:770px;position:relative">
+              <svg viewBox="0 0 1040 770" width="1040" height="770" style="position:absolute;left:0;top:0;pointer-events:none" aria-hidden="true">
+                <g style="fill:none;stroke:rgba(21,23,28,.28);stroke-width:1.5">
+                  <path d="M206,32 C244,32 250,199 280,199"></path>
+                  <path d="M206,336 C244,336 252,239 280,239"></path>
+                  <path d="M206,291 C244,291 252,613 280,613"></path>
+                  <path d="M206,485 C248,485 256,279 280,279"></path>
+                  <path d="M206,485 C240,485 252,653 280,653"></path>
+                  <path d="M206,622 C252,622 262,319 280,319"></path>
+                  <path d="M206,622 C238,622 256,693 280,693"></path>
+                  <path d="M500,195 C530,195 534,92 560,92"></path>
+                  <path d="M655,168 L655,195"></path>
+                  <path d="M500,569 C528,569 534,520 560,520"></path>
+                  <path d="M750,271 C776,271 780,292 800,292"></path>
+                </g>
+                <g style="fill:none;stroke:#15171C;stroke-width:2.5">
+                  <path d="M206,154 C238,154 250,573 280,573"></path>
+                </g>
+                <g style="fill:none;stroke:rgba(21,23,28,.35);stroke-width:1.5;stroke-dasharray:4 4">
+                  <path d="M750,520 C812,632 460,742 150,730 C120,727 111,706 111,566"></path>
+                </g>
+                <g style="fill:none;stroke:#15171C;stroke-width:2;stroke-dasharray:5 4">
+                  <path d="M206,381 C246,381 252,258 280,239"></path>
+                </g>
+              </svg>
+
+              <sc-for list="{{ assetNodes }}" as="n" hint-placeholder-count="4">
+                <div style="position:absolute;left:{{ n.x }};top:{{ n.y }};width:190px;box-sizing:border-box;background:{{ n.bg }};border:1px solid rgba(21,23,28,.12);border-radius:12px;padding:0 0 8px">
+                  <div style="height:{{ n.headerH }};box-sizing:border-box;padding:0 10px;display:flex;flex-direction:column;justify-content:center;gap:1px;position:relative">
+                    <span style="display:flex;align-items:baseline;gap:7px">
+                      <span style="font:600 13px/1.2 Outfit,sans-serif">{{ n.name }}</span>
+                      <span style="font:500 10px/1.2 'Kode Mono',monospace;letter-spacing:0.1em;color:#666A72">{{ n.kind }}</span>
+                      <sc-if value="{{ n.locked }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 12 12" width="11" height="11" style="margin-left:auto;fill:none;stroke:#15171C;stroke-width:1.3" aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2"></rect><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4"></path></svg></sc-if>
+                    </span>
+                    <sc-if value="{{ n.hasOrigin }}" hint-placeholder-val="{{ false }}"><span style="font:500 10px/1.2 'Kode Mono',monospace;letter-spacing:0.06em;color:#666A72">{{ n.origin }}</span></sc-if>
+                    <sc-if value="{{ n.hasBundle }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-5px;top:10px;width:10px;height:10px;border-radius:50%;background:#15171C;border:2px solid #FFFFFF;box-sizing:content-box"></span></sc-if>
+                  </div>
+                  <sc-for list="{{ n.ports }}" as="p" hint-placeholder-count="3">
+                    <div style="height:45px;box-sizing:border-box;padding:0 10px 5px;position:relative">
+                      <span style="display:block;width:100%;height:40px;border-radius:6px;background:{{ p.tile }};background-color:{{ p.tileBg }};border:1px solid rgba(21,23,28,.1);opacity:{{ p.op }};position:relative;overflow:hidden">
+                        <span style="position:absolute;left:5px;top:5px;background:rgba(255,255,255,.92);border-radius:4px;padding:3px 5px;font:500 10px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#15171C">{{ p.label }}</span>
+                        <span style="position:absolute;right:5px;bottom:5px;background:rgba(255,255,255,.92);border-radius:4px;padding:3px 5px;font:400 10px/1 'Kode Mono',monospace;color:#666A72">{{ p.version }}</span>
+                      </span>
+                      <span style="position:absolute;right:-5px;top:15px;width:8px;height:8px;border-radius:50%;background:{{ p.dotBg }};border:{{ p.dotBorder }};box-sizing:border-box"></span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-for>
+
+              <sc-for list="{{ shotNodes }}" as="s" hint-placeholder-count="2">
+                <div style="position:absolute;left:{{ s.x }};top:{{ s.y }};width:220px;box-sizing:border-box;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:12px;overflow:hidden">
+                  <div style="height:40px;box-sizing:border-box;padding:0 10px;display:flex;align-items:center;gap:8px">
+                    <span style="font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.1em;color:#666A72">{{ s.id }}</span>
+                    <span style="font:600 12.5px/1.2 Outfit,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.title }}</span>
+                  </div>
+                  <div style="margin:0 10px;height:112px;border-radius:8px;background:repeating-linear-gradient(135deg,#E2E3E6 0 6px,#E9EAEC 6px 12px);border:1px solid rgba(21,23,28,.1);position:relative;overflow:hidden">
+                    <span style="position:absolute;left:6px;bottom:6px;background:rgba(255,255,255,.92);border-radius:4px;padding:4px 6px;font:500 10px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#15171C">{{ s.frame }}</span>
+                  </div>
+                  <div style="padding:8px 10px 0;display:flex;flex-direction:column">
+                    <sc-for list="{{ s.slots }}" as="k" hint-placeholder-count="4">
+                      <div style="height:40px;box-sizing:border-box;display:flex;align-items:center;gap:8px;position:relative;background:{{ k.rowBg }};border-radius:6px">
+                        <span style="position:absolute;left:-15px;top:16px;width:8px;height:8px;border-radius:50%;background:#15171C"></span>
+                        <span style="flex:none;width:54px;height:34px;border-radius:5px;background:{{ k.thumb }};border:1px solid rgba(21,23,28,.1)"></span>
+                        <span style="font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:{{ k.tagColor }}">{{ k.tag }}</span>
+                        <sc-if value="{{ k.showValue }}" hint-placeholder-val="{{ true }}"><span style="margin-left:auto;flex:none;white-space:nowrap;font:400 10.5px/1 'Kode Mono',monospace;color:#666A72">{{ k.value }}</span></sc-if>
+                        <sc-if value="{{ k.over }}" hint-placeholder-val="{{ false }}"><span style="flex:none;background:#15171C;color:#FFFFFF;border-radius:4px;padding:3px 5px;font:500 9.5px/1 'Kode Mono',monospace;letter-spacing:0.06em">OVR</span></sc-if>
+                        <sc-if value="{{ k.dropping }}" hint-placeholder-val="{{ false }}">
+                          <span style="position:absolute;left:-8px;right:-8px;top:0;bottom:0;border:2px solid #15171C;border-radius:8px;pointer-events:none"></span>
+                          <span style="margin-left:auto;flex:none;white-space:nowrap;background:#15171C;color:#FFFFFF;border-radius:4px;padding:3px 5px;font:500 9.5px/1 'Kode Mono',monospace;letter-spacing:0.06em;position:relative">29 CR</span>
+                        </sc-if>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <div style="height:32px;box-sizing:border-box;margin-top:6px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(21,23,28,.07);font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#666A72">
+                    <span>{{ s.footer }}</span><span style="color:#15171C">{{ s.estimate }}</span>
+                  </div>
+                </div>
+              </sc-for>
+
+              <div style="position:absolute;left:560px;top:16px;width:190px;box-sizing:border-box;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:12px;overflow:hidden">
+                <div style="height:28px;padding:0 10px;display:flex;align-items:center;gap:7px"><span style="font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.1em;color:#666A72">04</span><span style="font:600 12.5px/1 Outfit,sans-serif">Keyframes</span><span style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:oklch(55% 0.12 200)"></span></div>
+                <div style="margin:0 10px;height:96px;border-radius:8px;background:repeating-linear-gradient(135deg,#E2E3E6 0 6px,#E9EAEC 6px 12px);border:1px solid rgba(21,23,28,.1);position:relative">
+                  <span style="position:absolute;left:6px;bottom:6px;background:rgba(255,255,255,.92);border-radius:4px;padding:3px 5px;font:500 10px/1 'Kode Mono',monospace;color:#15171C">12 STILLS · 2K</span>
+                </div>
+                <div style="height:28px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#666A72"><span>NANO BANANA</span><span style="color:#15171C">5 cr</span></div>
+              </div>
+              <div style="position:absolute;left:560px;top:195px;width:190px;box-sizing:border-box;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:12px;overflow:hidden">
+                <div style="height:28px;padding:0 10px;display:flex;align-items:center;gap:7px"><span style="font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.1em;color:#666A72">05</span><span style="font:600 12.5px/1 Outfit,sans-serif">Motion</span><span style="margin-left:auto;width:8px;height:8px;border-radius:50%;border:2.5px solid oklch(55% 0.12 200);box-sizing:border-box"></span></div>
+                <div style="margin:0 10px;height:96px;border-radius:8px;background:repeating-linear-gradient(135deg,#E2E3E6 0 6px,#E9EAEC 6px 12px);border:1px solid rgba(21,23,28,.1);position:relative">
+                  <span style="position:absolute;left:6px;bottom:6px;background:rgba(255,255,255,.92);border-radius:4px;padding:3px 5px;font:500 10px/1 'Kode Mono',monospace;color:#15171C">3 OF 12 · 0:05</span>
+                  <span style="position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(21,23,28,.12)"><span style="display:block;height:100%;width:62%;background:oklch(55% 0.12 200)"></span></span>
+                </div>
+                <div style="height:28px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#666A72"><span>SEEDANCE 2.5</span><span style="color:#15171C">87 cr</span></div>
+              </div>
+              <div style="position:absolute;left:560px;top:456px;width:190px;box-sizing:border-box;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:12px;overflow:hidden">
+                <div style="height:28px;padding:0 10px;display:flex;align-items:center;gap:7px"><span style="font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.1em;color:#666A72">TAKES</span><span style="font:600 12.5px/1 Outfit,sans-serif">SH03</span><span style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:oklch(55% 0.12 200)"></span></div>
+                <div style="margin:0 10px;display:flex;gap:5px">
+                  <span style="flex:1;height:44px;border-radius:6px;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);border:1px solid rgba(21,23,28,.1)"></span>
+                  <span style="flex:1;height:44px;border-radius:6px;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);border:2px solid oklch(55% 0.12 200);position:relative"><span style="position:absolute;left:3px;bottom:3px;background:rgba(255,255,255,.92);border-radius:3px;padding:2px 4px;font:500 9px/1 'Kode Mono',monospace;color:#15171C">v2</span></span>
+                  <span style="flex:1;height:44px;border-radius:6px;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);border:1px solid rgba(21,23,28,.1)"></span>
+                </div>
+                <div style="padding:8px 10px 10px"><button style="width:100%;min-height:32px;border:1px solid rgba(21,23,28,.16);border-radius:8px;background:transparent;font:500 11.5px/1 Outfit,sans-serif;color:#15171C">Promote v2 to element</button></div>
+              </div>
+              <div style="position:absolute;left:800px;top:250px;width:190px;box-sizing:border-box;background:#F3F4F5;border:1px dashed rgba(21,23,28,.24);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px">
+                <span style="font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.1em;color:#666A72">06 – 08</span>
+                <span style="font:600 12.5px/1.2 Outfit,sans-serif">Post · Audio · Assembly</span>
+                <span style="font:400 11px/1.4 'Kode Mono',monospace;color:#666A72">COLLAPSED · 17 CR</span>
+              </div>
+
+              <span style="position:absolute;left:16px;top:731px;background:#ECEDEE;padding:0 8px;font:500 10.5px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">SH03 v2 CREATED THE MULE</span>
+            </div>
+          </div>
+        </section>
+
+        <aside style="border-left:1px solid rgba(21,23,28,.08);display:flex;flex-direction:column;min-height:0">
+          <div style="flex:none;padding:16px;border-bottom:1px solid rgba(21,23,28,.08);display:flex;flex-direction:column;gap:7px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">SLOT · SH04 BACKGROUND</span>
+            <span style="font:600 18px/1.15 Outfit,sans-serif;letter-spacing:-0.01em">Workshop</span>
+            <span style="font:400 13px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty">A location holds plates, not one image. The shot binds to a plate, so a night version is a swap rather than a new location.</span>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">PLATES</span>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="border:1px solid rgba(21,23,28,.12);border-radius:12px;overflow:hidden;background:#FFFFFF">
+                <span style="display:block;aspect-ratio:16/9;background:repeating-linear-gradient(135deg,#E2E3E6 0 6px,#E9EAEC 6px 12px)"></span>
+                <span style="display:flex;align-items:center;gap:8px;padding:10px 12px;font:500 13px/1 Outfit,sans-serif">plate 01<span style="font:400 12px/1 Outfit,sans-serif;color:#666A72">wide</span><span style="margin-left:auto;font:400 11px/1 'Kode Mono',monospace;color:#666A72">SH03</span></span>
+              </div>
+              <div style="border:2px solid #15171C;border-radius:12px;overflow:hidden;background:#FFFFFF">
+                <span style="display:block;aspect-ratio:16/9;background:repeating-linear-gradient(135deg,#E2E3E6 0 6px,#E9EAEC 6px 12px)"></span>
+                <span style="display:flex;align-items:center;gap:8px;padding:10px 12px;font:500 13px/1 Outfit,sans-serif">plate 02<span style="font:400 12px/1 Outfit,sans-serif;color:#666A72">interior</span><span style="margin-left:auto;background:#15171C;color:#FFFFFF;border-radius:5px;padding:4px 6px;font:500 10px/1 'Kode Mono',monospace;letter-spacing:0.06em">BOUND</span></span>
+              </div>
+              <div style="border:2px dashed #15171C;border-radius:12px;overflow:hidden;background:#FFFFFF">
+                <span style="display:block;aspect-ratio:16/9;background:repeating-linear-gradient(135deg,#E2E3E6 0 6px,#E9EAEC 6px 12px)"></span>
+                <span style="display:flex;align-items:center;gap:8px;padding:10px 12px;font:500 13px/1 Outfit,sans-serif">plate 03<span style="font:400 12px/1 Outfit,sans-serif;color:#666A72">night</span><span style="margin-left:auto;font:500 10px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#15171C">DRAGGING</span></span>
+              </div>
+            </div>
+            <button style="min-height:44px;border:1px dashed rgba(21,23,28,.3);border-radius:12px;background:transparent;font:500 13px/1 Outfit,sans-serif;color:#15171C">Add a plate · 0.4 cr</button>
+          </div>
+          <div style="flex:none;padding:12px 16px 16px;border-top:1px solid rgba(21,23,28,.08);display:flex;flex-direction:column;gap:8px">
+            <button style="min-height:46px;border:0;border-radius:12px;background:#15171C;color:#FFFFFF;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font:600 14px/1 Outfit,sans-serif">Bind plate 03<span style="font:500 12px/1 'Kode Mono',monospace;color:#9A9DA3">29 CR</span></button>
+            <span style="font:400 11.5px/1.4 'Kode Mono',monospace;letter-spacing:0.04em;color:#666A72;text-align:center">SH04 ONLY · OTHER SHOTS KEEP PLATE 01</span>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+    <div id="2b" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="background:#15171C;color:#FFFFFF;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.1em">2b</span>
+        <span style="font:600 15px/1 Outfit,sans-serif">Character attributes</span>
+        <span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">390 × 844 · tap a row</span>
+      </div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow-y:auto;background:#ECEDEE;border-radius:24px;border:1px solid rgba(21,23,28,.1);display:flex;flex-direction:column">
+        <header style="position:sticky;top:0;z-index:5;flex:none;height:56px;display:flex;align-items:center;gap:12px;padding:0 16px;background:#ECEDEE;border-bottom:1px solid rgba(21,23,28,.08)">
+          <button style="width:44px;height:44px;margin-left:-10px;border:0;background:transparent;color:#15171C;font:400 20px/1 Outfit,sans-serif;display:flex;align-items:center;justify-content:center">←</button>
+          <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 16px/1 Outfit,sans-serif">Cass</span><span style="font:400 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">CHARACTER · USED BY 14 SHOTS</span></span>
+          <svg viewBox="0 0 12 12" width="14" height="14" style="margin-left:auto;fill:none;stroke:#15171C;stroke-width:1.3" aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2"></rect><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4"></path></svg>
+        </header>
+        <div style="flex:1;padding:16px 16px 24px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
+            <span style="aspect-ratio:3/4;border-radius:10px;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);border:1px solid rgba(21,23,28,.08)"></span>
+            <span style="aspect-ratio:3/4;border-radius:10px;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);border:1px solid rgba(21,23,28,.08)"></span>
+            <span style="aspect-ratio:3/4;border-radius:10px;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);border:1px solid rgba(21,23,28,.08)"></span>
+            <span style="aspect-ratio:3/4;border-radius:10px;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);border:1px solid rgba(21,23,28,.08);display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace;color:#666A72">+14</span>
+          </div>
+          <p style="margin:0;font:400 14px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty">Any prompt citing <span style="background:rgba(21,23,28,.08);border-radius:4px;padding:0 4px;color:#15171C;font-weight:500">@Cass</span> gets these versions. A shot can override one attribute without leaving the character.</p>
+
+          <div style="background:#FFFFFF;border-radius:16px;overflow:hidden;display:flex;flex-direction:column">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72;padding:14px 16px 10px">ATTRIBUTES · 4 PORTS</span>
+            <sc-for list="{{ attrs }}" as="a" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;background:{{ a.bg }};border-top:{{ a.rule }}">
+                <button onClick="{{ a.select }}" style="min-height:64px;text-align:left;display:flex;align-items:center;gap:12px;background:transparent;border:0;padding:12px 16px;color:#15171C">
+                  <span style="flex:none;width:40px;height:40px;border-radius:8px;background:{{ a.thumb }};border:1px solid rgba(21,23,28,.1)"></span>
+                  <span style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                    <span style="display:flex;align-items:center;gap:8px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#666A72">{{ a.label }}</span><span style="font:600 15px/1 Outfit,sans-serif">{{ a.value }}</span>
+                      <sc-if value="{{ a.locked }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 12 12" width="11" height="11" style="fill:none;stroke:#666A72;stroke-width:1.3" aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2"></rect><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4"></path></svg></sc-if>
+                    </span>
+                    <span style="font:400 13px/1.35 Outfit,sans-serif;color:#666A72">{{ a.meta }}</span>
+                  </span>
+                  <span style="margin-left:auto;flex:none;font:400 16px/1 Outfit,sans-serif;color:#666A72">›</span>
+                </button>
+                <sc-if value="{{ a.open }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:10px">
+                    <div style="display:flex;gap:8px;overflow-x:auto">
+                      <sc-for list="{{ a.versionRows }}" as="v" hint-placeholder-count="2">
+                        <span style="flex:none;width:112px;border:1px solid {{ v.border }};border-radius:10px;overflow:hidden;background:#FFFFFF">
+                          <span style="display:block;aspect-ratio:3/4;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px)"></span>
+                          <span style="display:flex;flex-direction:column;gap:3px;padding:8px 9px"><span style="font:600 13px/1 Outfit,sans-serif">{{ v.v }}</span><span style="font:400 11.5px/1.25 Outfit,sans-serif;color:#666A72">{{ v.note }}</span></span>
+                        </span>
+                      </sc-for>
+                      <button style="flex:none;width:112px;min-height:44px;border:1px dashed rgba(21,23,28,.3);border-radius:10px;background:transparent;font:500 12.5px/1.3 Outfit,sans-serif;color:#15171C;display:flex;align-items:center;justify-content:center;padding:8px">+ New version</button>
+                    </div>
+                    <span style="font:400 12px/1.45 'Kode Mono',monospace;letter-spacing:0.03em;color:#666A72">A NEW VERSION NEVER CHANGES EXISTING TAKES · SWAPPING ONE OPENS THE IMPACT PANEL</span>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="background:#FFFFFF;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">WIRED INTO</span>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <span style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;font:400 14px/1.3 Outfit,sans-serif"><span>Keyframes · Motion</span><span style="font:500 13px/1 'Kode Mono',monospace;color:#666A72">FACE · HAIR · WARDROBE</span></span>
+              <span style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid rgba(21,23,28,.07);font:400 14px/1.3 Outfit,sans-serif"><span>Audio</span><span style="font:500 13px/1 'Kode Mono',monospace;color:#666A72">VOICE</span></span>
+              <span style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid rgba(21,23,28,.07);font:400 14px/1.3 Outfit,sans-serif"><span>SH03 only</span><span style="font:500 13px/1 'Kode Mono',monospace;color:#15171C">WARDROBE v1 · OVERRIDE</span></span>
+            </div>
+          </div>
+        </div>
+        <div style="position:sticky;bottom:0;flex:none;background:#ECEDEE;border-top:1px solid rgba(21,23,28,.08);padding:12px 16px 16px;display:flex;gap:10px">
+          <button style="flex:none;min-width:96px;height:52px;border:1px solid rgba(21,23,28,.16);border-radius:14px;background:transparent;color:#15171C;font:500 15px/1 Outfit,sans-serif">Unlock</button>
+          <button style="flex:1;height:52px;border:0;border-radius:14px;background:#15171C;color:#FFFFFF;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font:600 16px/1 Outfit,sans-serif">Add a version<span style="font:500 14px/1 'Kode Mono',monospace;color:#9A9DA3">12 cr</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="2c" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="background:#15171C;color:#FFFFFF;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.1em">2c</span>
+        <span style="font:600 15px/1 Outfit,sans-serif">Shot bindings</span>
+        <span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">390 × 844 · pick a plate</span>
+      </div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow-y:auto;background:#ECEDEE;border-radius:24px;border:1px solid rgba(21,23,28,.1);display:flex;flex-direction:column">
+        <header style="position:sticky;top:0;z-index:5;flex:none;height:56px;display:flex;align-items:center;gap:12px;padding:0 16px;background:#ECEDEE;border-bottom:1px solid rgba(21,23,28,.08)">
+          <button style="width:44px;height:44px;margin-left:-10px;border:0;background:transparent;color:#15171C;font:400 20px/1 Outfit,sans-serif;display:flex;align-items:center;justify-content:center">←</button>
+          <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 16px/1 Outfit,sans-serif">SH03</span><span style="font:400 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">THE MULE, LOW TRACKING · APPROVED</span></span>
+        </header>
+        <div style="flex:1;padding:16px 16px 24px;display:flex;flex-direction:column;gap:12px">
+          <div style="aspect-ratio:16/9;border-radius:16px;background:repeating-linear-gradient(135deg,#E2E3E6 0 8px,#E9EAEC 8px 16px);border:1px solid rgba(21,23,28,.08);display:flex;align-items:flex-end;padding:14px;box-sizing:border-box">
+            <span style="background:#FFFFFF;border-radius:8px;padding:7px 10px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#666A72">v2 APPROVED · 0:03 · 29 CR</span>
+          </div>
+          <p style="margin:0;font:400 14px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty">Five slots. Each one points at a version of something in the library — change what's in a slot and only this shot moves.</p>
+
+          <div style="background:#FFFFFF;border-radius:16px;overflow:hidden;display:flex;flex-direction:column">
+            <sc-for list="{{ bindings }}" as="b" hint-placeholder-count="5">
+              <div style="display:flex;flex-direction:column;border-top:{{ b.rule }}">
+                <div style="min-height:64px;display:flex;align-items:center;gap:12px;padding:12px 16px">
+                  <span style="flex:none;width:44px;height:32px;border-radius:6px;background:{{ b.thumb }};border:1px solid rgba(21,23,28,.1)"></span>
+                  <span style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                    <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#666A72">{{ b.slot }}</span>
+                    <span style="font:600 15px/1.2 Outfit,sans-serif">{{ b.value }}</span>
+                    <span style="font:400 12.5px/1.3 Outfit,sans-serif;color:#666A72">{{ b.detail }}</span>
+                  </span>
+                  <span style="margin-left:auto;flex:none;display:flex;align-items:center;gap:8px">
+                    <sc-if value="{{ b.hasBadge }}" hint-placeholder-val="{{ false }}"><span style="border:1px solid rgba(21,23,28,.2);border-radius:5px;padding:4px 6px;font:500 10px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#15171C">{{ b.badge }}</span></sc-if>
+                    <span style="font:400 16px/1 Outfit,sans-serif;color:#666A72">›</span>
+                  </span>
+                </div>
+                <sc-if value="{{ b.isPicker }}" hint-placeholder-val="{{ true }}">
+                  <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:10px">
+                    <div style="display:flex;gap:8px">
+                      <sc-for list="{{ plates }}" as="p" hint-placeholder-count="3">
+                        <button onClick="{{ p.select }}" style="flex:1;min-width:0;padding:0;border:1px solid {{ p.border }};border-radius:10px;overflow:hidden;background:#FFFFFF;box-shadow:{{ p.ring }};text-align:left;color:#15171C">
+                          <span style="display:block;aspect-ratio:16/10;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);position:relative">
+                            <span style="position:absolute;left:6px;top:6px;background:{{ p.tagBg }};color:{{ p.tagFg }};border-radius:4px;padding:3px 5px;font:500 10px/1 'Kode Mono',monospace;letter-spacing:0.06em">{{ p.k }}</span>
+                          </span>
+                          <span style="display:block;padding:8px 9px;font:400 12px/1.3 Outfit,sans-serif;color:#666A72">{{ p.note }}</span>
+                        </button>
+                      </sc-for>
+                    </div>
+                    <span style="font:400 12px/1.45 'Kode Mono',monospace;letter-spacing:0.03em;color:#666A72">{{ swapNote }}</span>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="background:#FFFFFF;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">THIS SHOT MADE AN ELEMENT</span>
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="flex:none;width:56px;height:40px;border-radius:8px;background:repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px);border:1px solid rgba(21,23,28,.1)"></span>
+              <span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font:600 15px/1.2 Outfit,sans-serif">The Mule</span><span style="font:400 12.5px/1.35 Outfit,sans-serif;color:#666A72">Promoted from v2 · 8 turntable views · now bound in 6 shots</span></span>
+            </div>
+          </div>
+        </div>
+        <div style="position:sticky;bottom:0;flex:none;background:#ECEDEE;border-top:1px solid rgba(21,23,28,.08);padding:12px 16px 16px;display:flex;gap:10px">
+          <button style="flex:none;min-width:96px;height:52px;border:1px solid rgba(21,23,28,.16);border-radius:14px;background:transparent;color:#15171C;font:500 15px/1 Outfit,sans-serif">Revert</button>
+          <button style="flex:1;height:52px;border:0;border-radius:14px;background:#15171C;color:#FFFFFF;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font:600 16px/1 Outfit,sans-serif">Re-render this shot<span style="font:500 14px/1 'Kode Mono',monospace;color:#9A9DA3">{{ swapCost }}</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding:24px 44px 64px;display:flex;flex-direction:column;gap:28px;font-family:Outfit,sans-serif;color:#15171C;border-top:1px solid rgba(21,23,28,.12)">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:32px;max-width:1440px">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.16em;color:#666A72">NODE GRAPH SURFACES · TURN 1 · LIGHT MODE</span>
+      <h1 style="margin:0;font:600 32px/1.05 Outfit,sans-serif;letter-spacing:-0.025em">A recipe you can watch, price and take apart</h1>
+      <p style="margin:0;max-width:820px;font:400 15px/1.5 Outfit,sans-serif;color:#666A72;text-wrap:pretty">Four surfaces over one idea: a recipe is a graph of production stages, every stage has a price in credits, and nothing renders before the price is on the button. The run view is the calm read of it; the canvas is the editable view of the same thing.</p>
+    </div>
+    <span style="flex:none;font:500 12px/1.6 'Kode Mono',monospace;letter-spacing:0.1em;color:#666A72;text-align:right">1 CREDIT = 10¢<br>RUN 04 · NORTHLINE · 12 SHOTS</span>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+
+    <div id="1a" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="background:#15171C;color:#FFFFFF;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.1em">1a</span>
+        <span style="font:600 15px/1 Outfit,sans-serif">Run view</span>
+        <span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">390 × 844 · the primary screen</span>
+      </div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow-y:auto;background:#ECEDEE;border-radius:24px;border:1px solid rgba(21,23,28,.1);display:flex;flex-direction:column;position:relative">
+        <header style="position:sticky;top:0;z-index:5;flex:none;height:56px;display:flex;align-items:center;gap:12px;padding:0 16px;background:#ECEDEE;border-bottom:1px solid rgba(21,23,28,.08)">
+          <button style="width:44px;height:44px;margin-left:-10px;border:0;background:transparent;color:#15171C;font:400 20px/1 Outfit,sans-serif;display:flex;align-items:center;justify-content:center">←</button>
+          <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 16px/1 Outfit,sans-serif">Run 04</span><span style="font:400 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">NORTHLINE · STARTED 14:02</span></span>
+          <button style="margin-left:auto;width:44px;height:44px;margin-right:-10px;border:0;background:transparent;color:#15171C;font:500 18px/1 Outfit,sans-serif;display:flex;align-items:center;justify-content:center">···</button>
+        </header>
+
+        <div style="flex:1;padding:16px 16px 24px;display:flex;flex-direction:column;gap:10px">
+          <div style="background:#FFFFFF;border-radius:16px;padding:18px 18px 16px;display:flex;flex-direction:column;gap:12px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">SPENT OF RUN ESTIMATE</span>
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font:600 40px/1 Outfit,sans-serif;letter-spacing:-0.03em">{{ spent }}</span>
+              <span style="font:400 16px/1 Outfit,sans-serif;color:#666A72">of {{ total }} credits</span>
+              <span style="margin-left:auto;font:500 13px/1 'Kode Mono',monospace;color:#666A72">{{ totalMoney }}</span>
+            </div>
+            <div style="height:6px;border-radius:3px;background:rgba(21,23,28,.09);overflow:hidden;display:flex"><div style="width:{{ spentPct }};background:#15171C"></div></div>
+            <div style="display:flex;justify-content:space-between;font:400 13px/1.4 Outfit,sans-serif;color:#666A72"><span>{{ doneCount }} of 8 stages complete</span><span>{{ remainingLine }}</span></div>
+          </div>
+
+          <sc-if value="{{ hasFailure }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;align-items:center;gap:10px;padding:2px 4px 2px 2px">
+              <span style="width:8px;height:8px;border-radius:50%;background:#15171C"></span>
+              <span style="font:500 13px/1.4 Outfit,sans-serif">One stage needs you. The rest of the run is holding, not lost.</span>
+            </div>
+          </sc-if>
+
+          <sc-for list="{{ stages }}" as="s" hint-placeholder-count="8">
+            <div style="background:{{ s.cardBg }};border:1px solid {{ s.cardBorder }};border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="flex:none;width:60px;height:38px;border-radius:8px;background:{{ s.wellBg }};border:{{ s.wellBorder }};box-sizing:border-box;display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace;color:#666A72">{{ s.wellLabel }}</span>
+                <span style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                  <span style="font:600 16px/1.2 Outfit,sans-serif">{{ s.name }}</span>
+                  <span style="font:400 13px/1.3 Outfit,sans-serif;color:#666A72">{{ s.sub }}</span>
+                </span>
+                <span style="margin-left:auto;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+                  <span style="display:flex;align-items:center;gap:7px;font:500 13px/1 Outfit,sans-serif;color:{{ s.stateColor }}"><span style="width:9px;height:9px;border-radius:50%;background:{{ s.dotBg }};border:{{ s.dotBorder }};box-sizing:border-box"></span>{{ s.stateWord }}</span>
+                  <span style="font:500 13px/1 'Kode Mono',monospace;color:{{ s.costColor }}">{{ s.cost }}</span>
+                </span>
+              </div>
+              <sc-if value="{{ s.running }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:7px">
+                  <div style="height:5px;border-radius:3px;background:rgba(21,23,28,.09);overflow:hidden;display:flex"><div style="width:{{ s.progress }};background:oklch(55% 0.12 200)"></div></div>
+                  <div style="display:flex;justify-content:space-between;font:400 12px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#666A72"><span>{{ s.progressLabel }}</span><span>{{ s.etaLabel }}</span></div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ s.failed }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:12px;border-top:1px solid rgba(21,23,28,.1);padding-top:12px">
+                  <span style="font:400 14px/1.45 Outfit,sans-serif;text-wrap:pretty">{{ s.reason }}</span>
+                  <div style="display:flex;flex-direction:column;gap:6px">
+                    <sc-for list="{{ s.fixes }}" as="f" hint-placeholder-count="3">
+                      <button onClick="{{ f.select }}" style="min-height:48px;text-align:left;display:flex;align-items:center;gap:12px;background:{{ f.bg }};border:1px solid {{ f.border }};border-radius:12px;padding:10px 12px;color:#15171C">
+                        <span style="flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid {{ f.markBorder }};background:{{ f.markBg }};box-sizing:border-box"></span>
+                        <span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font:500 14px/1.25 Outfit,sans-serif">{{ f.label }}</span><span style="font:400 12.5px/1.3 Outfit,sans-serif;color:#666A72">{{ f.note }}</span></span>
+                        <span style="margin-left:auto;flex:none;font:500 13px/1 'Kode Mono',monospace;color:#666A72">{{ f.cost }}</span>
+                      </button>
+                    </sc-for>
+                  </div>
+                  <span style="font:400 12px/1.4 'Kode Mono',monospace;letter-spacing:0.04em;color:#666A72">FIXED IN PLACE · THE RUN CONTINUES FROM HERE</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+
+          <p style="margin:6px 2px 0;font:400 13px/1.5 Outfit,sans-serif;color:#666A72;text-wrap:pretty">Stages price themselves per shot. Post only runs on takes you keep, so its estimate falls as you approve.</p>
+        </div>
+
+        <div style="position:sticky;bottom:0;z-index:5;flex:none;background:#ECEDEE;border-top:1px solid rgba(21,23,28,.08);padding:12px 16px 16px;display:flex;gap:10px">
+          <button style="flex:none;min-width:96px;height:52px;border:1px solid rgba(21,23,28,.16);border-radius:14px;background:transparent;color:#15171C;font:500 15px/1 Outfit,sans-serif">Pause</button>
+          <button style="flex:1;height:52px;border:0;border-radius:14px;background:#15171C;color:#FFFFFF;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font:600 16px/1 Outfit,sans-serif">{{ primaryLabel }}<span style="font:500 14px/1 'Kode Mono',monospace;color:#9A9DA3">{{ primaryCost }}</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="1b" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="background:#15171C;color:#FFFFFF;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.1em">1b</span>
+        <span style="font:600 15px/1 Outfit,sans-serif">Impact panel</span>
+        <span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">opened on editing a shared element</span>
+      </div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#ECEDEE;border-radius:24px;border:1px solid rgba(21,23,28,.1);display:flex;flex-direction:column;position:relative">
+        <div style="position:absolute;inset:0;padding:16px;display:flex;flex-direction:column;gap:12px;filter:saturate(.9)">
+          <div style="height:56px;flex:none;display:flex;align-items:center;gap:12px"><span style="font:600 16px/1 Outfit,sans-serif">Cass</span><span style="font:400 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">CHARACTER · V3 → V4</span></div>
+          <div style="background:#FFFFFF;border-radius:16px;height:150px;flex:none"></div>
+          <div style="background:#FFFFFF;border-radius:16px;height:96px;flex:none"></div>
+          <div style="background:#FFFFFF;border-radius:16px;height:200px;flex:none"></div>
+        </div>
+        <div style="position:absolute;inset:0;background:rgba(21,23,28,.42)"></div>
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#ECEDEE;border-radius:24px 24px 0 0;border-top:1px solid rgba(21,23,28,.1);display:flex;flex-direction:column;max-height:88%">
+          <div style="display:flex;justify-content:center;padding:10px 0 2px"><span style="width:38px;height:4px;border-radius:2px;background:rgba(21,23,28,.2)"></span></div>
+          <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:14px;overflow-y:auto">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">IMPACT · CASS'S LOOK</span>
+              <h2 style="margin:0;font:600 24px/1.15 Outfit,sans-serif;letter-spacing:-0.02em">You changed a look 14 shots are using.</h2>
+              <p style="margin:0;font:400 14.5px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty">Nothing has been re-rendered yet. Choose what happens to the takes that already exist.</p>
+            </div>
+
+            <div style="background:#FFFFFF;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:baseline;gap:10px">
+                <span style="font:600 17px/1 Outfit,sans-serif">Used by 14 shots</span>
+                <span style="margin-left:auto;font:400 13px/1 Outfit,sans-serif;color:#666A72">6 approved · 8 draft</span>
+              </div>
+              <div style="display:flex;height:10px;border-radius:3px;overflow:hidden;gap:2px"><div style="flex:6;background:oklch(55% 0.12 200)"></div><div style="flex:8;background:rgba(21,23,28,.2)"></div></div>
+              <div style="display:flex;gap:8px;overflow-x:auto;margin:0 -16px;padding:0 16px">
+                <sc-for list="{{ affected }}" as="a" hint-placeholder-count="6">
+                  <span style="flex:none;display:flex;align-items:center;gap:7px;border:1px solid rgba(21,23,28,.12);border-radius:999px;padding:9px 12px;font:500 13px/1 Outfit,sans-serif;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:{{ a.dot }};border:{{ a.dotBorder }};box-sizing:border-box"></span>{{ a.id }}</span>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ choices }}" as="c" hint-placeholder-count="3">
+                <button onClick="{{ c.select }}" style="text-align:left;background:{{ c.bg }};border:1px solid {{ c.border }};border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;color:#15171C;min-height:48px">
+                  <span style="display:flex;align-items:center;gap:12px">
+                    <span style="flex:none;width:20px;height:20px;border-radius:50%;border:1.5px solid {{ c.markBorder }};background:{{ c.markBg }};box-sizing:border-box"></span>
+                    <span style="font:600 16px/1.2 Outfit,sans-serif">{{ c.label }}</span>
+                    <span style="margin-left:auto;flex:none;font:500 15px/1 'Kode Mono',monospace">{{ c.cost }}</span>
+                  </span>
+                  <span style="font:400 13.5px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty;padding-left:32px">{{ c.note }}</span>
+                </button>
+              </sc-for>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px;padding-top:2px">
+              <button style="height:52px;border:0;border-radius:14px;background:#15171C;color:#FFFFFF;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font:600 16px/1 Outfit,sans-serif">{{ impactPrimary }}<span style="font:500 14px/1 'Kode Mono',monospace;color:#9A9DA3">{{ impactCost }}</span></button>
+              <span style="font:400 12px/1.5 'Kode Mono',monospace;letter-spacing:0.04em;color:#666A72;text-align:center">{{ impactFootnote }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="1c" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="background:#15171C;color:#FFFFFF;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.1em">1c</span>
+        <span style="font:600 15px/1 Outfit,sans-serif">Provenance card</span>
+        <span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">opened from a finished take</span>
+      </div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow-y:auto;background:#ECEDEE;border-radius:24px;border:1px solid rgba(21,23,28,.1);display:flex;flex-direction:column">
+        <header style="position:sticky;top:0;z-index:5;flex:none;height:56px;display:flex;align-items:center;gap:12px;padding:0 16px;background:#ECEDEE;border-bottom:1px solid rgba(21,23,28,.08)">
+          <button style="width:44px;height:44px;margin-left:-10px;border:0;background:transparent;color:#15171C;font:400 20px/1 Outfit,sans-serif;display:flex;align-items:center;justify-content:center">←</button>
+          <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 16px/1 Outfit,sans-serif">SH04 v2</span><span style="font:400 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">APPROVED · 4 SEP 16:41</span></span>
+          <button style="margin-left:auto;width:44px;height:44px;margin-right:-10px;border:0;background:transparent;color:#15171C;font:500 18px/1 Outfit,sans-serif;display:flex;align-items:center;justify-content:center">···</button>
+        </header>
+        <div style="flex:1;padding:16px 16px 24px;display:flex;flex-direction:column;gap:12px">
+          <div style="aspect-ratio:16/9;border-radius:16px;background:repeating-linear-gradient(135deg,#E2E3E6 0 8px,#E9EAEC 8px 16px);border:1px solid rgba(21,23,28,.08);display:flex;align-items:flex-end;padding:14px;box-sizing:border-box">
+            <span style="background:#FFFFFF;border-radius:8px;padding:7px 10px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#666A72">CASS ENTERS THE WORKSHOP · 0:05</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72;padding:4px 2px 0">PRODUCED BY</span>
+            <div style="background:#FFFFFF;border-radius:16px;overflow:hidden;display:flex;flex-direction:column">
+              <sc-for list="{{ provenance }}" as="p" hint-placeholder-count="5">
+                <button style="min-height:60px;text-align:left;display:flex;align-items:center;gap:12px;background:transparent;border:0;border-top:{{ p.rule }};padding:14px 16px;color:#15171C">
+                  <span style="flex:none;width:36px;height:36px;border-radius:8px;background:{{ p.iconBg }};border:{{ p.iconBorder }};box-sizing:border-box;display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace;color:#666A72">{{ p.tag }}</span>
+                  <span style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                    <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#666A72">{{ p.kind }}</span>
+                    <span style="font:600 15.5px/1.2 Outfit,sans-serif">{{ p.value }}</span>
+                  </span>
+                  <span style="margin-left:auto;flex:none;display:flex;align-items:center;gap:10px"><span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">{{ p.meta }}</span><span style="font:400 16px/1 Outfit,sans-serif;color:#666A72">›</span></span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="background:#FFFFFF;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">SETUP · 12 VALUES CARRIED IN</span>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <sc-for list="{{ setup }}" as="v" hint-placeholder-count="12"><span style="border:1px solid rgba(21,23,28,.12);border-radius:8px;padding:8px 10px;font:500 13px/1 Outfit,sans-serif">{{ v }}</span></sc-for>
+            </div>
+          </div>
+
+          <div style="background:#FFFFFF;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:2px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72;padding-bottom:8px">EXACT CONDITIONS</span>
+            <sc-for list="{{ conditions }}" as="c" hint-placeholder-count="5">
+              <div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid rgba(21,23,28,.07);font:400 14px/1.3 Outfit,sans-serif"><span style="color:#666A72">{{ c.k }}</span><span style="font:500 13.5px/1.3 'Kode Mono',monospace;text-align:right">{{ c.v }}</span></div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:10px;padding-top:2px">
+            <button style="min-height:56px;border:0;border-radius:14px;background:#15171C;color:#FFFFFF;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font:600 16px/1.2 Outfit,sans-serif;text-align:left">Make another from exactly this<span style="flex:none;font:500 14px/1 'Kode Mono',monospace;color:#9A9DA3;padding-left:12px">{{ againCost }}</span></button>
+            <span style="font:400 13px/1.45 Outfit,sans-serif;color:#666A72;text-align:center;text-wrap:pretty">Same character version, look, Setup and rules. New seed.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="1d" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="background:#15171C;color:#FFFFFF;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.1em">1d</span>
+      <span style="font:600 15px/1 Outfit,sans-serif">Canvas</span>
+      <span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">1440 × 900 · the same recipe, editable — chat drives it, the canvas shows it</span>
+    </div>
+    <div style="width:1440px;height:900px;box-sizing:border-box;overflow:hidden;background:#ECEDEE;border-radius:20px;border:1px solid rgba(21,23,28,.1);display:flex;flex-direction:column">
+      <header style="flex:none;height:60px;display:flex;align-items:center;gap:16px;padding:0 20px;background:#ECEDEE;border-bottom:1px solid rgba(21,23,28,.08)">
+        <span style="display:flex;align-items:center;gap:8px">
+          <svg viewBox="30 68 140 64" width="30" height="14" fill="#15171C" aria-hidden="true"><circle cx="38.7" cy="120.8" r="1.8"></circle><circle cx="50.9" cy="100.5" r="2.8"></circle><circle cx="69.8" cy="86.3" r="4"></circle><circle cx="92.7" cy="80.1" r="5.5"></circle><circle cx="116.2" cy="83" r="7.2"></circle><circle cx="136.9" cy="94.5" r="9.2"></circle><circle cx="151.7" cy="112.9" r="12"></circle></svg>
+          <span style="font:600 16px/1 Outfit,sans-serif;letter-spacing:-0.03em">partıcl</span>
+        </span>
+        <span style="width:1px;height:20px;background:rgba(21,23,28,.14)"></span>
+        <span style="display:flex;align-items:center;gap:10px"><span style="font:600 15px/1 Outfit,sans-serif">Northline</span><span style="font:400 13px/1 Outfit,sans-serif;color:#666A72">Recipe · 8 stages · 12 shots</span></span>
+        <span style="display:flex;align-items:center;gap:6px;margin-left:8px">
+          <span style="border:1px solid rgba(21,23,28,.12);border-radius:999px;padding:7px 11px;font:500 13px/1 Outfit,sans-serif">Draft 3</span>
+          <span style="border:1px solid rgba(21,23,28,.12);border-radius:999px;padding:7px 11px;font:500 13px/1 Outfit,sans-serif;color:#666A72">3 locked</span>
+        </span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:12px">
+          <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">ESTIMATE <span style="color:#15171C">{{ total }} CR</span> · {{ totalMoney }}</span>
+          <button style="height:40px;border:0;border-radius:10px;background:#15171C;color:#FFFFFF;padding:0 16px;font:600 14px/1 Outfit,sans-serif;display:flex;align-items:center;gap:10px">Run recipe<span style="font:500 12px/1 'Kode Mono',monospace;color:#9A9DA3">{{ total }} CR</span></button>
+        </span>
+      </header>
+
+      <div style="flex:1;display:grid;grid-template-columns:288px minmax(0,1fr) 272px;min-height:0">
+        <aside style="border-right:1px solid rgba(21,23,28,.08);display:flex;flex-direction:column;min-height:0">
+          <div style="flex:none;padding:16px 16px 12px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid rgba(21,23,28,.08)">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">CHAT</span>
+            <span style="font:400 13px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty">The canvas is a view of this conversation. Either side can lead.</span>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px">
+            <sc-for list="{{ chat }}" as="m" hint-placeholder-count="5">
+              <div style="display:flex;flex-direction:column;gap:7px;align-items:{{ m.align }}">
+                <span style="font:500 11px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#666A72">{{ m.who }}</span>
+                <span style="background:{{ m.bg }};border:{{ m.border }};border-radius:14px;padding:11px 13px;font:400 13.5px/1.5 Outfit,sans-serif;color:{{ m.fg }};max-width:236px;text-wrap:pretty">{{ m.text }}</span>
+                <sc-if value="{{ m.hasChips }}" hint-placeholder-val="{{ false }}">
+                  <span style="display:flex;flex-wrap:wrap;gap:5px;max-width:236px">
+                    <sc-for list="{{ m.chips }}" as="c" hint-placeholder-count="2"><span style="background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:7px;padding:5px 8px;font:500 11px/1 'Kode Mono',monospace;letter-spacing:0.06em">{{ c }}</span></sc-for>
+                  </span>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:none;padding:12px 16px 16px;border-top:1px solid rgba(21,23,28,.08);display:flex;gap:8px;align-items:flex-end">
+            <span style="flex:1;min-height:48px;box-sizing:border-box;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:12px;padding:14px 12px;font:400 13.5px/1.3 Outfit,sans-serif;color:#8A8E96">Ask for a change…</span>
+            <button style="flex:none;width:48px;height:48px;border:0;border-radius:12px;background:#15171C;color:#FFFFFF;font:500 16px/1 Outfit,sans-serif">↑</button>
+          </div>
+        </aside>
+
+        <section style="display:flex;flex-direction:column;min-height:0;min-width:0;position:relative;background:#ECEDEE">
+          <div style="flex:none;height:48px;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid rgba(21,23,28,.08)">
+            <span style="display:flex;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:9px;overflow:hidden">
+              <span style="padding:8px 11px;font:500 13px/1 Outfit,sans-serif;border-right:1px solid rgba(21,23,28,.12)">−</span>
+              <span style="padding:8px 11px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.06em;border-right:1px solid rgba(21,23,28,.12)">100%</span>
+              <span style="padding:8px 11px;font:500 13px/1 Outfit,sans-serif">+</span>
+            </span>
+            <span style="background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:9px;padding:8px 11px;font:500 13px/1 Outfit,sans-serif">Fit</span>
+            <span style="margin-left:12px;font:400 13px/1.4 Outfit,sans-serif;color:#666A72">Wired left to right. Drag a port to rewire; locked nodes refuse.</span>
+            <span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">8 STAGES · 3 LOCKED · 1 BRANCH</span>
+          </div>
+
+          <div style="flex:1;overflow:auto;position:relative">
+            <div style="width:860px;height:530px;position:relative">
+              <svg viewBox="0 0 860 530" width="860" height="530" style="position:absolute;left:0;top:0;pointer-events:none" aria-hidden="true">
+                <g style="fill:none;stroke:rgba(21,23,28,.28);stroke-width:1.5">
+                  <path d="M142,248 L152,248"></path>
+                  <path d="M278,248 L288,248"></path>
+                  <path d="M414,248 L424,248"></path>
+                  <path d="M550,248 L560,248"></path>
+                  <path d="M686,248 L696,248"></path>
+                  <path d="M414,248 C414,330 470,424 560,424"></path>
+                  <path d="M686,424 L696,424"></path>
+                  <path d="M759,300 L759,372"></path>
+                </g>
+                <g style="fill:none;stroke:rgba(21,23,28,.2);stroke-width:1.5;stroke-dasharray:4 4">
+                  <path d="M215,112 C215,150 400,158 487,196"></path>
+                  <path d="M351,112 C351,150 440,160 487,196"></path>
+                  <path d="M351,112 C351,164 560,158 623,196"></path>
+                  <path d="M487,112 C487,220 520,330 623,372"></path>
+                </g>
+              </svg>
+
+              <sc-for list="{{ nodes }}" as="n" hint-placeholder-count="11">
+                <button onClick="{{ n.select }}" style="position:absolute;left:{{ n.x }};top:{{ n.y }};width:126px;box-sizing:border-box;text-align:left;background:{{ n.bg }};border:1px solid {{ n.border }};border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;color:#15171C;box-shadow:{{ n.ring }}">
+                  <span style="display:flex;align-items:center;gap:6px">
+                    <span style="font:500 11px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#666A72">{{ n.num }}</span>
+                    <sc-if value="{{ n.locked }}" hint-placeholder-val="{{ false }}">
+                      <svg viewBox="0 0 12 12" width="11" height="11" style="margin-left:auto;fill:none;stroke:#15171C;stroke-width:1.3" aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2"></rect><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4"></path></svg>
+                    </sc-if>
+                    <sc-if value="{{ n.showDot }}" hint-placeholder-val="{{ true }}">
+                      <span style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:{{ n.dotBg }};border:{{ n.dotBorder }};box-sizing:border-box"></span>
+                    </sc-if>
+                  </span>
+                  <span style="font:600 13px/1.2 Outfit,sans-serif">{{ n.name }}</span>
+                  <span style="font:400 11px/1.35 'Kode Mono',monospace;letter-spacing:0.04em;color:#666A72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">{{ n.engine }}</span>
+                  <span style="display:flex;align-items:center;justify-content:space-between;gap:6px;border-top:1px solid rgba(21,23,28,.08);padding-top:7px;font:400 11px/1 'Kode Mono',monospace;letter-spacing:0.04em;color:#666A72">
+                    <span>{{ n.inputs }}</span>
+                    <sc-if value="{{ estimatesOn }}" hint-placeholder-val="{{ true }}"><span style="color:#15171C;font-weight:500">{{ n.estimate }}</span></sc-if>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="position:absolute;left:16px;bottom:16px;width:150px;height:92px;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:10px;padding:8px;box-sizing:border-box">
+            <div style="position:relative;width:100%;height:100%">
+              <span style="position:absolute;left:2%;top:38%;width:12%;height:16%;border-radius:2px;background:rgba(21,23,28,.25)"></span>
+              <span style="position:absolute;left:18%;top:38%;width:12%;height:16%;border-radius:2px;background:rgba(21,23,28,.25)"></span>
+              <span style="position:absolute;left:34%;top:38%;width:12%;height:16%;border-radius:2px;background:rgba(21,23,28,.25)"></span>
+              <span style="position:absolute;left:50%;top:38%;width:12%;height:16%;border-radius:2px;background:rgba(21,23,28,.25)"></span>
+              <span style="position:absolute;left:66%;top:38%;width:12%;height:16%;border-radius:2px;background:oklch(55% 0.12 200)"></span>
+              <span style="position:absolute;left:82%;top:38%;width:12%;height:16%;border-radius:2px;background:rgba(21,23,28,.25)"></span>
+              <span style="position:absolute;left:18%;top:6%;width:12%;height:14%;border-radius:2px;background:rgba(21,23,28,.14)"></span>
+              <span style="position:absolute;left:34%;top:6%;width:12%;height:14%;border-radius:2px;background:rgba(21,23,28,.14)"></span>
+              <span style="position:absolute;left:50%;top:6%;width:12%;height:14%;border-radius:2px;background:rgba(21,23,28,.14)"></span>
+              <span style="position:absolute;left:66%;top:74%;width:12%;height:16%;border-radius:2px;background:rgba(21,23,28,.25)"></span>
+              <span style="position:absolute;left:82%;top:74%;width:12%;height:16%;border-radius:2px;background:rgba(21,23,28,.25)"></span>
+              <span style="position:absolute;left:0;top:28%;width:78%;height:44%;border:1px solid rgba(21,23,28,.5);border-radius:3px"></span>
+            </div>
+          </div>
+        </section>
+
+        <aside style="border-left:1px solid rgba(21,23,28,.08);background:#ECEDEE;display:flex;flex-direction:column;min-height:0">
+          <div style="flex:none;padding:16px 16px 12px;border-bottom:1px solid rgba(21,23,28,.08);display:flex;flex-direction:column;gap:7px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">{{ sel.eyebrow }}</span>
+            <span style="font:600 18px/1.15 Outfit,sans-serif;letter-spacing:-0.01em">{{ sel.name }}</span>
+            <span style="font:400 13px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty">{{ sel.blurb }}</span>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px">
+            <sc-if value="{{ sel.locked }}" hint-placeholder-val="{{ false }}">
+              <div style="background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px">
+                <span style="display:flex;align-items:center;gap:8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em"><svg viewBox="0 0 12 12" width="12" height="12" style="fill:none;stroke:#15171C;stroke-width:1.3" aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2"></rect><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4"></path></svg>LOCKED FOR THIS RECIPE</span>
+                <span style="font:400 13.5px/1.45 Outfit,sans-serif;color:#666A72;text-wrap:pretty">{{ sel.lockNote }}</span>
+                <button style="align-self:flex-start;min-height:40px;border:1px solid rgba(21,23,28,.16);border-radius:10px;background:transparent;padding:0 12px;font:500 13px/1 Outfit,sans-serif;color:#15171C">Unlock for this recipe</button>
+              </div>
+            </sc-if>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">ENGINE</span>
+              <button style="min-height:44px;background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:12px;padding:11px 12px;display:flex;align-items:center;gap:10px;color:#15171C">
+                <span style="display:flex;flex-direction:column;gap:3px;text-align:left;min-width:0"><span style="font:500 14px/1.2 Outfit,sans-serif">{{ sel.engine }}</span><span style="font:400 11.5px/1 'Kode Mono',monospace;letter-spacing:0.04em;color:#666A72">{{ sel.engineMeta }}</span></span>
+                <span style="margin-left:auto;font:400 11px/1 Outfit,sans-serif;color:#666A72">▼</span>
+              </button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">INPUTS</span>
+              <div style="background:#FFFFFF;border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+                <sc-for list="{{ sel.inputRows }}" as="i" hint-placeholder-count="3">
+                  <span style="min-height:44px;display:flex;align-items:center;gap:10px;padding:11px 12px;border-top:{{ i.rule }}">
+                    <span style="width:7px;height:7px;border-radius:50%;background:{{ i.dot }};flex:none"></span>
+                    <span style="font:500 13.5px/1.2 Outfit,sans-serif;min-width:0">{{ i.label }}</span>
+                    <span style="margin-left:auto;flex:none;font:400 11.5px/1 'Kode Mono',monospace;letter-spacing:0.04em;color:#666A72">{{ i.from }}</span>
+                  </span>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">{{ sel.paramsLabel }}</span>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ sel.params }}" as="p" hint-placeholder-count="6"><span style="background:#FFFFFF;border:1px solid rgba(21,23,28,.12);border-radius:8px;padding:8px 10px;font:500 12.5px/1 Outfit,sans-serif">{{ p }}</span></sc-for>
+              </div>
+            </div>
+            <div style="background:#FFFFFF;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px">
+              <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.14em;color:#666A72">ESTIMATE</span>
+              <span style="font:600 26px/1 Outfit,sans-serif;letter-spacing:-0.02em">{{ sel.estimateBig }}</span>
+              <span style="font:400 12.5px/1.45 'Kode Mono',monospace;letter-spacing:0.03em;color:#666A72">{{ sel.estimateMath }}</span>
+            </div>
+          </div>
+          <div style="flex:none;padding:12px 16px 16px;border-top:1px solid rgba(21,23,28,.08);display:flex;flex-direction:column;gap:8px">
+            <button style="min-height:46px;border:0;border-radius:12px;background:#15171C;color:#FFFFFF;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font:600 14px/1 Outfit,sans-serif">{{ sel.action }}<span style="font:500 12px/1 'Kode Mono',monospace;color:#9A9DA3">{{ sel.actionCost }}</span></button>
+            <span style="font:400 11.5px/1.4 'Kode Mono',monospace;letter-spacing:0.04em;color:#666A72;text-align:center">{{ sel.footnote }}</span>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin:0;max-width:1000px;font:400 13.5px/1.6 Outfit,sans-serif;color:#666A72;text-wrap:pretty">Tap a node on <a href="#1d">1d</a> to move the inspector; the fix options on <a href="#1a">1a</a> and the three choices on <a href="#1b">1b</a> are live. Next passes belong on <a href="#1a">1a</a>: stage grouping, what a queued stage should say before it has anything to show, and whether the run cost header should hold the pause control.</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1560,&quot;height&quot;:1100},&quot;runHasFailure&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Run view&quot;},&quot;showCurrency&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Credits&quot;},&quot;nodeEstimates&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Canvas&quot;}}">
+class Component extends DCLogic {
+  state = { fix: 'resize', choice: 'approved', node: 'motion', attr: 'wardrobe', plate: 'plate 01' };
+
+  money(cr) { return '$' + (cr * 0.1).toFixed(2); }
+
+  stageData() {
+    // name, sub, state, credits, well
+    return [
+      ['Brief', 'Logline, tone, budget cap', 'done', 2, 'BR'],
+      ['Scene', '5 scenes · 0:30 runtime', 'done', 3, 'SC'],
+      ['Shot list', '12 shots · cast tagged', 'done', 4, 'SH'],
+      ['Keyframes', '12 first frames · Nano Banana', 'done', 5, 'IMG'],
+      ['Motion', '12 shots · Seedance 2.5', 'running', 87, 'MOV'],
+      ['Post', 'Upscale and grade on kept takes', 'failed', 6, 'PST'],
+      ['Audio', 'Ambient beds per shot', 'queued', 9, 'AUD'],
+      ['Assembly', 'Approved takes in order', 'queued', 2, 'ASM'],
+    ];
+  }
+
+  renderVals() {
+    const teal = 'oklch(55% 0.12 200)';
+    const hasFailure = this.props.runHasFailure ?? true;
+    const showCurrency = this.props.showCurrency ?? true;
+    const estimatesOn = this.props.nodeEstimates ?? true;
+
+    // ---- run view ----
+    const raw = this.stageData().map(([name, sub, st, credits, well]) => ({ name, sub, st: (!hasFailure && st === 'failed') ? 'done' : st, credits, well }));
+    const spent = raw.filter(s => s.st === 'done').reduce((a, s) => a + s.credits, 0) + (raw.some(s => s.st === 'running') ? 54 : 0);
+    const total = raw.reduce((a, s) => a + s.credits, 0);
+    const word = { done: 'Done', running: 'Running', failed: 'Needs you', queued: 'Queued' };
+
+    const stages = raw.map(s => {
+      const failed = s.st === 'failed', running = s.st === 'running', done = s.st === 'done';
+      return {
+        ...s,
+        stateWord: word[s.st],
+        cost: (running ? '54 / ' : '') + s.credits + ' cr',
+        costColor: done || running ? '#15171C' : '#666A72',
+        stateColor: failed ? '#15171C' : done ? teal : '#666A72',
+        dotBg: done ? teal : failed ? '#15171C' : running ? teal : 'transparent',
+        dotBorder: running ? '2.5px solid ' + teal : s.st === 'queued' ? '1.5px dashed #8A8E96' : '0',
+        cardBg: failed ? '#F7F5EC' : '#FFFFFF',
+        cardBorder: failed ? 'rgba(21,23,28,.5)' : 'rgba(21,23,28,0)',
+        wellBg: done || running ? 'repeating-linear-gradient(135deg,#E2E3E6 0 5px,#E9EAEC 5px 10px)' : 'transparent',
+        wellBorder: done || running ? '1px solid rgba(21,23,28,.08)' : '1px dashed rgba(21,23,28,.22)',
+        wellLabel: done || running ? s.well : '—',
+        running, failed,
+        progress: '62%',
+        progressLabel: '3 OF 12 SHOTS · 62%',
+        etaLabel: '~4 MIN LEFT',
+        reason: 'The upscaler refused SH07 — it returned a 1088px height and Post expects 1080. Nothing downstream has started.',
+        fixes: [
+          { key: 'resize', label: 'Set Post height to 1088', note: 'Matches what Motion actually rendered. No re-render.', cost: '0 cr' },
+          { key: 'rerender', label: 'Re-render SH07 at 1080', note: 'One shot, Motion runs again, then Post continues.', cost: '29 cr' },
+          { key: 'skip', label: 'Skip Post on SH07', note: 'The take stays ungraded and goes to Assembly as it is.', cost: '0 cr' },
+        ].map(f => {
+          const on = this.state.fix === f.key;
+          return { ...f, select: () => this.setState({ fix: f.key }), bg: on ? '#FFFFFF' : 'transparent', border: on ? 'rgba(21,23,28,.5)' : 'rgba(21,23,28,.14)', markBorder: on ? '#15171C' : 'rgba(21,23,28,.28)', markBg: on ? '#15171C' : 'transparent' };
+        }),
+      };
+    });
+
+    const fixCost = { resize: '0 cr', rerender: '29 cr', skip: '0 cr' }[this.state.fix];
+
+    // ---- impact ----
+    const per = 29;
+    const choiceDefs = [
+      { key: 'all', label: 'Re-render all 14', cost: 14 * per, note: 'Every shot comes back on the new look. The 6 approved takes return to draft for re-approval.' },
+      { key: 'approved', label: 'Re-render approved only', cost: 6 * per, note: 'The 6 you already signed off match the new look. The 8 drafts keep the old one until you render them.' },
+      { key: 'leave', label: 'Leave existing takes', cost: 0, note: 'Nothing already made changes. Only renders started from now use the new look.' },
+    ];
+    const choices = choiceDefs.map(c => {
+      const on = this.state.choice === c.key;
+      return { ...c, cost: c.cost + ' cr', select: () => this.setState({ choice: c.key }), bg: on ? '#FFFFFF' : 'transparent', border: on ? 'rgba(21,23,28,.5)' : 'rgba(21,23,28,.14)', markBorder: on ? '#15171C' : 'rgba(21,23,28,.28)', markBg: on ? '#15171C' : 'transparent' };
+    });
+    const chosen = choiceDefs.find(c => c.key === this.state.choice);
+    const impactFootnotes = {
+      all: '406 CR · $40.60 · 6 APPROVALS TO REDO',
+      approved: '174 CR · $17.40 · 8 DRAFTS LEFT ON V3',
+      leave: 'NOTHING RE-RENDERS · 14 SHOTS STAY ON V3',
+    };
+    const affected = [
+      ['SH02', 'approved'], ['SH04', 'approved'], ['SH05', 'draft'], ['SH07', 'draft'], ['SH09', 'approved'], ['SH11', 'draft'], ['SH12', 'draft'], ['SH14', 'approved'],
+    ].map(([id, st]) => ({ id, dot: st === 'approved' ? teal : 'transparent', dotBorder: st === 'approved' ? '0' : '1.5px solid #8A8E96' }));
+
+    // ---- provenance ----
+    const provenance = [
+      { kind: 'CHARACTER', value: 'Cass', meta: 'v3', tag: 'CH', img: true },
+      { kind: 'LOOK', value: 'Bleach bypass', meta: 'v2', tag: 'LK', img: true },
+      { kind: 'LOCATION', value: 'Workshop', meta: 'v1', tag: 'LO', img: true },
+      { kind: 'ENGINE', value: 'Seedance 2.5', meta: 'ModelArk', tag: 'EN', img: false },
+      { kind: 'RULES IN SCOPE', value: '3 rules', meta: 'recipe', tag: 'RL', img: false },
+    ].map((p, i) => ({
+      ...p,
+      rule: i === 0 ? '0' : '1px solid rgba(21,23,28,.07)',
+      iconBg: p.img ? 'repeating-linear-gradient(135deg,#E2E3E6 0 4px,#E9EAEC 4px 8px)' : 'transparent',
+      iconBorder: p.img ? '1px solid rgba(21,23,28,.08)' : '1px solid rgba(21,23,28,.14)',
+    }));
+
+    // ---- canvas ----
+    const nodeDefs = [
+      { key: 'cast', num: 'LK', name: 'Cass', engine: 'identity · v3', inputs: '18 photos', estimate: 'locked', x: 152, y: 28, locked: true, st: 'locked', blurb: 'A trained face. Downstream stages cite it by name and cannot alter it.', lockNote: 'Locked by Mara on 3 Sep. Unlocking lets any stage in this recipe swap the version — every take made after that stops matching the ones before it.', engineLabel: 'fal.ai identity', engineMeta: 'TRAINED · 18 PHOTOS · 12 CR', inputRows: [['18 reference photos', 'upload'], ['Approved by MR', '3 Sep']], paramsLabel: 'VERSIONS', params: ['v1', 'v2', 'v3 · in use'], estimateBig: '0 cr', estimateMath: 'ALREADY TRAINED · RETRAIN WOULD COST 12 CR', action: 'Open identity', actionCost: '', footnote: 'USED BY 6 STAGES' },
+      { key: 'look', num: 'LK', name: 'Bleach bypass', engine: 'look · v2', inputs: '4 refs', estimate: 'locked', x: 288, y: 28, locked: true, st: 'locked', blurb: 'Silver retained, colour pulled back, blacks slightly lifted, over 35mm grain.', lockNote: 'Locked with the brief. Editing it opens the impact panel — 14 shots are already using it.', engineLabel: 'Look profile', engineMeta: 'V2 · 4 REFERENCE FRAMES', inputRows: [['4 reference frames', 'library'], ['35mm grain', 'stock']], paramsLabel: 'APPLIES TO', params: ['Keyframes', 'Motion', 'Post'], estimateBig: '0 cr', estimateMath: 'CARRIED, NOT RENDERED', action: 'Edit look', actionCost: '', footnote: 'EDIT OPENS THE IMPACT PANEL' },
+      { key: 'voice', num: 'LK', name: 'Cass · voice', engine: 'voice · v1', inputs: '9 min audio', estimate: 'locked', x: 424, y: 28, locked: true, st: 'locked', blurb: 'Learned the way the face was, and cited the same way in dialogue beds.', lockNote: 'Locked because two approved takes already carry this voice. Unlock only if you intend to redo them.', engineLabel: 'Voice model', engineMeta: 'V1 · 9 MIN SOURCE · 8 CR', inputRows: [['9 min clean audio', 'upload'], ['Approved by MR', '4 Sep']], paramsLabel: 'VERSIONS', params: ['v1 · in use'], estimateBig: '0 cr', estimateMath: 'ALREADY TRAINED', action: 'Open voice', actionCost: '', footnote: 'USED BY AUDIO ONLY' },
+      { key: 'brief', num: '01', name: 'Brief', engine: 'text · Claude', inputs: 'logline', estimate: '2 cr', x: 16, y: 196, st: 'done', blurb: 'The logline, the tone words and the cap. Everything downstream inherits these.', engineLabel: 'Claude', engineMeta: 'TEXT · 2 CR PER PASS', inputRows: [['Logline', 'chat'], ['Budget cap · 1200 cr', 'producer']], paramsLabel: 'TONE', params: ['Tense', 'Practicals', '30s'], estimateBig: '2 cr', estimateMath: '1 PASS × 2 CR', action: 'Re-run stage', actionCost: '2 CR', footnote: 'DONE · 4 SEP 14:02' },
+      { key: 'scene', num: '02', name: 'Scene', engine: 'text · Claude', inputs: 'brief', estimate: '3 cr', x: 152, y: 196, st: 'done', blurb: 'Five scenes with durations that have to add up to the runtime in the brief.', engineLabel: 'Claude', engineMeta: 'TEXT · 3 CR PER PASS', inputRows: [['Brief', '01']], paramsLabel: 'CONSTRAINTS', params: ['0:30 total', '5 scenes'], estimateBig: '3 cr', estimateMath: '1 PASS × 3 CR', action: 'Re-run stage', actionCost: '3 CR', footnote: 'DONE · 4 SEP 14:03' },
+      { key: 'shotlist', num: '03', name: 'Shot list', engine: 'text · Claude', inputs: 'scene', estimate: '4 cr', x: 288, y: 196, st: 'done', blurb: 'Twelve shots with size, angle, move, lens and cast tags. The contract for every stage after this.', engineLabel: 'Claude', engineMeta: 'TEXT · 4 CR PER PASS', inputRows: [['Scene', '02'], ['Cast · @Cass', 'locked']], paramsLabel: 'SHAPE', params: ['12 shots', 'One move each', 'Cast tagged'], estimateBig: '4 cr', estimateMath: '1 PASS × 4 CR', action: 'Re-run stage', actionCost: '4 CR', footnote: 'DONE · 4 SEP 14:05' },
+      { key: 'keyframe', num: '04', name: 'Keyframes', engine: 'Nano Banana', inputs: 'shots · cast', estimate: '5 cr', x: 424, y: 196, st: 'done', blurb: 'One first frame per shot, so Motion starts from a picture rather than a sentence.', engineLabel: 'Nano Banana', engineMeta: '2K STILL · 0.4 CR EACH', inputRows: [['Shot list', '03'], ['Cass · v3', 'locked'], ['Bleach bypass · v2', 'locked']], paramsLabel: 'OUTPUT', params: ['2K', '16:9', '1 per shot'], estimateBig: '5 cr', estimateMath: '12 STILLS × 0.4 CR = 4.8 CR', action: 'Re-run stage', actionCost: '5 CR', footnote: 'DONE · 12 OF 12 STILLS' },
+      { key: 'motion', num: '05', name: 'Motion', engine: 'Seedance 2.5', inputs: 'keyframes', estimate: '87 cr', x: 560, y: 196, st: 'running', blurb: 'Five seconds per shot at 1080P, starting from each keyframe. The expensive stage.', engineLabel: 'Seedance 2.5', engineMeta: 'BYTEPLUS MODELARK · 29 CR / 5S', inputRows: [['Keyframes', '04'], ['Shot list', '03'], ['Bleach bypass · v2', 'locked']], paramsLabel: 'PER SHOT', params: ['5s', '1080P', '16:9', 'Audio on', 'One move'], estimateBig: '87 cr', estimateMath: '3 SHOTS × 29 CR · 9 SHOTS QUEUED', action: 'Run this stage', actionCost: '87 CR', footnote: 'RUNNING · 3 OF 12 · ~4 MIN LEFT' },
+      { key: 'post', num: '06', name: 'Post', engine: 'Upscale · grade', inputs: 'kept takes', estimate: '6 cr', x: 696, y: 196, st: 'failed', blurb: 'Runs only on takes you keep, which is why it sits after review rather than before it.', engineLabel: 'Upscale · grade', engineMeta: '0.5 CR PER TAKE', inputRows: [['Motion', '05'], ['Bleach bypass · v2', 'locked']], paramsLabel: 'SETTINGS', params: ['Height 1080', 'Grade on', 'Keep master'], estimateBig: '6 cr', estimateMath: '12 KEPT TAKES × 0.5 CR', action: 'Fix and continue', actionCost: '0 CR', footnote: 'NEEDS YOU · HEIGHT MISMATCH ON SH07' },
+      { key: 'audio', num: '07', name: 'Audio', engine: 'Audio model', inputs: 'shots · voice', estimate: '9 cr', x: 560, y: 372, st: 'queued', blurb: 'An ambient bed per shot, plus dialogue where the shot list calls for it.', engineLabel: 'Audio model', engineMeta: 'STEREO · 48 KHZ · 0.7 CR / 5S', inputRows: [['Shot list', '03'], ['Cass · voice v1', 'locked']], paramsLabel: 'PER SHOT', params: ['Ambient', '5s', 'Stereo', '48 kHz'], estimateBig: '9 cr', estimateMath: '12 BEDS × 0.7 CR = 8.4 CR', action: 'Run this stage', actionCost: '9 CR', footnote: 'QUEUED · RUNS ALONGSIDE POST' },
+      { key: 'assembly', num: '08', name: 'Assembly', engine: 'Sequence', inputs: 'approved', estimate: '2 cr', x: 696, y: 372, st: 'queued', blurb: 'Approved takes in shot order against the references. Picked takes hold their slot as stills.', engineLabel: 'Sequence', engineMeta: 'NO ENGINE · 2 CR PER BUILD', inputRows: [['Post', '06'], ['Audio', '07']], paramsLabel: 'RULES', params: ['Approved only', 'Shot order', '0:30'], estimateBig: '2 cr', estimateMath: '1 BUILD × 2 CR', action: 'Run this stage', actionCost: '2 CR', footnote: 'QUEUED · WAITS FOR 06 AND 07' },
+    ];
+
+    const sel0 = nodeDefs.find(n => n.key === this.state.node) || nodeDefs[7];
+    const nodes = nodeDefs.map(n => {
+      const on = n.key === this.state.node;
+      const failed = n.st === 'failed' && hasFailure;
+      return {
+        ...n, x: n.x + 'px', y: n.y + 'px',
+        select: () => this.setState({ node: n.key }),
+        bg: n.locked ? '#F3F4F5' : failed ? '#F7F5EC' : '#FFFFFF',
+        border: on ? '#15171C' : failed ? 'rgba(21,23,28,.5)' : 'rgba(21,23,28,.12)',
+        ring: on ? '0 0 0 3px rgba(21,23,28,.12)' : 'none',
+        showDot: !n.locked,
+        dotBg: n.st === 'done' ? teal : failed ? '#15171C' : n.st === 'running' ? teal : 'transparent',
+        dotBorder: n.st === 'running' ? '2.5px solid ' + teal : n.st === 'queued' ? '1.5px dashed #8A8E96' : '0',
+      };
+    });
+
+    const sel = {
+      ...sel0,
+      eyebrow: sel0.locked ? 'INSPECTOR · LOCKED ELEMENT' : 'INSPECTOR · STAGE ' + sel0.num,
+      engine: sel0.engineLabel,
+      inputRows: sel0.inputRows.map(([label, from], i) => ({ label, from, rule: i === 0 ? '0' : '1px solid rgba(21,23,28,.07)', dot: from === 'locked' ? '#15171C' : 'rgba(21,23,28,.25)' })),
+      locked: !!sel0.locked,
+    };
+
+    const chat = [
+      { who: 'MARA', text: 'Twelve shots, keep the whole run under 120 credits.', me: true },
+      { who: 'PARTICL', text: 'Eight stages, 118 credits. I put Post after Motion so upscales only run on takes you keep — that saved 34 credits against running it on everything.', chips: ['06 POST', '−34 CR'] },
+      { who: 'MARA', text: 'Cass shouldn\'t drift. Lock her.', me: true },
+      { who: 'PARTICL', text: 'Locked her identity, her look and her voice. Nothing downstream can swap a version without an unlock, and an unlock shows you what it would cost to redo.', chips: ['3 LOCKED'] },
+      { who: 'PARTICL', text: 'Motion is running now. Post stopped on SH07 — a height mismatch, fixable without restarting the run.', chips: ['06 POST'] },
+    ].map(m => ({
+      ...m,
+      align: m.me ? 'flex-end' : 'flex-start',
+      bg: m.me ? '#15171C' : '#FFFFFF',
+      fg: m.me ? '#FFFFFF' : '#15171C',
+      border: m.me ? '0' : '1px solid rgba(21,23,28,.1)',
+      hasChips: !!m.chips, chips: m.chips || [],
+    }));
+
+    // ---- turn 2 · asset wiring ----
+    const stripe = 'repeating-linear-gradient(135deg,#E2E3E6 0 4px,#E9EAEC 4px 8px)';
+    const wave = 'repeating-linear-gradient(90deg,rgba(21,23,28,.34) 0 2px,transparent 2px 5px)';
+    const port = (label, version, dim, isWave) => ({ label, version, dim: !!dim, tile: isWave ? wave : stripe, tileBg: isWave ? '#E9EAEC' : 'transparent', op: dim ? '.5' : '1', dotBg: dim ? 'transparent' : '#15171C', dotBorder: dim ? '1.5px dashed #8A8E96' : '0' });
+
+    const assetNodes = [
+      { key: 'cass', name: 'Cass', kind: 'CHARACTER', x: 16, y: 16, locked: true, bundle: true, origin: '', ports: [port('FACE', 'v3'), port('HAIR', 'v1'), port('WARDROBE', 'v2'), port('VOICE', 'v1', true, true)] },
+      { key: 'workshop', name: 'Workshop', kind: 'LOCATION', x: 16, y: 243, locked: false, bundle: false, origin: '', ports: [port('PLATE 01', 'wide'), port('PLATE 02', 'interior'), port('PLATE 03', 'night', true)] },
+      { key: 'mule', name: 'The Mule', kind: 'ELEMENT', x: 16, y: 425, locked: false, bundle: false, origin: 'CREATED FROM SH03 v2', ports: [port('TURNTABLE', '8 views'), port('DETAIL', '2 views', true)] },
+      { key: 'look', name: 'Bleach bypass', kind: 'LOOK', x: 16, y: 574, locked: true, bundle: false, origin: '', ports: [port('LOOK', 'v2')] },
+    ].map(n => ({ ...n, x: n.x + 'px', y: n.y + 'px', hasBundle: !!n.bundle, hasOrigin: !!n.origin, bg: n.locked ? '#F3F4F5' : '#FFFFFF', headerH: n.origin ? '40px' : '28px' }));
+
+    const slot = (tag, value, kind) => ({ tag, value, kind });
+    const shotNodes = [
+      { key: 'sh04', id: 'SH04', title: 'Cass enters the workshop', frame: 'SH04 S2 · KEYFRAME', x: 280, y: 16, estimate: '29 cr', footer: 'BOUND · READY', slots: [slot('CHAR', 'all current'), slot('BG', 'plate 02', 'drop'), slot('ELEM', 'turntable'), slot('LOOK', 'v2')] },
+      { key: 'sh03', id: 'SH03', title: 'The Mule, low tracking', frame: 'SH03 v2 · APPROVED', x: 280, y: 390, estimate: '29 cr', footer: 'v2 PROMOTED', slots: [slot('CHAR', 'wardrobe v1', 'over'), slot('BG', 'plate 01'), slot('ELEM', 'turntable'), slot('LOOK', 'v2')] },
+    ].map(n => ({ ...n, x: n.x + 'px', y: n.y + 'px', slots: n.slots.map(s => ({ ...s, over: s.kind === 'over', dropping: s.kind === 'drop', showValue: s.kind !== 'drop', thumb: stripe, rowBg: s.kind === 'drop' ? 'rgba(21,23,28,.05)' : 'transparent', tagColor: s.kind === 'over' ? '#15171C' : '#666A72' })) }));
+
+    const attrDefs = [
+      { key: 'face', label: 'FACE', value: 'v3', meta: 'Trained from 18 photos · used by 14 shots', locked: true, versions: [['v1', 'first pass'], ['v2', 'more light'], ['v3', 'in use']] },
+      { key: 'hair', label: 'HAIR', value: 'v1', meta: 'Cropped grey · used by 14 shots', locked: true, versions: [['v1', 'in use']] },
+      { key: 'wardrobe', label: 'WARDROBE', value: 'v2', meta: '8 shots on v2 · 6 held on v1', locked: false, versions: [['v1', 'waxed coat · 6 shots'], ['v2', 'overalls · in use']] },
+      { key: 'voice', label: 'VOICE', value: 'v1', meta: '2 shots with dialogue', locked: true, versions: [['v1', 'in use']] },
+    ];
+    const attrs = attrDefs.map((a, i) => {
+      const on = this.state.attr === a.key;
+      return { ...a, open: on, rule: i === 0 ? '0' : '1px solid rgba(21,23,28,.07)', bg: on ? '#F3F4F5' : 'transparent', thumb: stripe,
+        select: () => this.setState({ attr: on ? '' : a.key }),
+        versionRows: a.versions.map(([v, note]) => ({ v, note, inUse: note.indexOf('in use') === 0, border: note.indexOf('in use') === 0 ? 'rgba(21,23,28,.5)' : 'rgba(21,23,28,.12)' })) };
+    });
+
+    const plateDefs = [['plate 01', 'Wide · the bay from the door'], ['plate 02', 'Interior · over the bonnet'], ['plate 03', 'Night · practicals only']];
+    const plates = plateDefs.map(([k, note]) => {
+      const on = this.state.plate === k;
+      return { k, note, select: () => this.setState({ plate: k }), border: on ? '#15171C' : 'rgba(21,23,28,.12)', ring: on ? '0 0 0 3px rgba(21,23,28,.1)' : 'none', thumb: stripe, tagBg: on ? '#15171C' : 'rgba(255,255,255,.9)', tagFg: on ? '#FFFFFF' : '#666A72' };
+    });
+    const plateSwapped = this.state.plate !== 'plate 01';
+
+    const bindings = [
+      { slot: 'CHARACTER', value: 'Cass', detail: 'face v3 · hair v1 · wardrobe v1', badge: 'OVERRIDE', thumbs: 3 },
+      { slot: 'BACKGROUND', value: 'Workshop · ' + this.state.plate, detail: plateSwapped ? 'changed from plate 01' : '1 of 3 plates', badge: plateSwapped ? 'CHANGED' : '', thumbs: 1, picker: true },
+      { slot: 'ELEMENT', value: 'The Mule · turntable', detail: 'created from SH03 v2', badge: 'CREATED', thumbs: 1 },
+      { slot: 'LOOK', value: 'Bleach bypass v2', detail: 'locked with the brief', badge: 'LOCKED', thumbs: 1 },
+      { slot: 'KEYFRAME', value: 'SH03 S3', detail: 'the frame Motion starts from', badge: '', thumbs: 1 },
+    ].map((b, i) => ({ ...b, hasBadge: !!b.badge, isPicker: !!b.picker, rule: i === 0 ? '0' : '1px solid rgba(21,23,28,.07)', thumb: stripe }));
+
+    const assetChat = [
+      { who: 'MARA', text: 'Cass wears the coat in the workshop scene and the overalls everywhere after.', me: true },
+      { who: 'PARTICL', text: 'Kept her face and hair on the current versions and overrode wardrobe to v1 on SH03 only. The other 13 shots stay on v2 — no re-renders.', chips: ['SH03 CHAR', 'WARDROBE v1', '0 CR'] },
+      { who: 'MARA', text: 'The approved Mule take should be the reference everywhere.', me: true },
+      { who: 'PARTICL', text: 'Promoted SH03 v2 into an element, built 8 turntable views from it and wired it into the 6 shots that show the car.', chips: ['THE MULE', '6 SHOTS'] },
+      { who: 'PARTICL', text: 'You are dragging plate 03 onto SH04\u2019s background. It would replace plate 02 and re-render that one shot.', chips: ['SH04 BG', '29 CR'] },
+    ].map(m => ({ ...m, align: m.me ? 'flex-end' : 'flex-start', bg: m.me ? '#15171C' : '#FFFFFF', fg: m.me ? '#FFFFFF' : '#15171C', border: m.me ? '0' : '1px solid rgba(21,23,28,.1)', hasChips: !!m.chips, chips: m.chips || [] }));
+
+    return {
+      // turn 2
+      assetNodes, shotNodes, attrs, plates, bindings, plateSwapped, assetChat,
+      swapCost: plateSwapped ? '29 cr' : '0 cr',
+      swapNote: plateSwapped ? 'CHANGING THE PLATE RE-RENDERS THIS SHOT · 29 CR' : 'PLATE 01 IS WHAT THE APPROVED TAKE USED',
+      // run view
+      stages, hasFailure, spent, total,
+      totalMoney: showCurrency ? this.money(total) : '',
+      spentPct: Math.round(spent / total * 100) + '%',
+      doneCount: raw.filter(s => s.st === 'done').length,
+      remainingLine: hasFailure ? '1 stage needs you' : '2 stages queued',
+      primaryLabel: hasFailure ? 'Fix and continue' : 'Approve run',
+      primaryCost: hasFailure ? fixCost : total + ' cr',
+      // impact
+      affected, choices,
+      impactPrimary: chosen.key === 'leave' ? 'Keep existing takes' : chosen.label,
+      impactCost: chosen.cost + ' cr',
+      impactFootnote: impactFootnotes[chosen.key],
+      // provenance
+      provenance,
+      setup: ['Medium wide', 'Eye level', 'Push in', '35mm', 'Practicals', 'Dusk', 'Bleach bypass', 'Tense', 'Real time', 'Ambient only', 'No subtitles', 'One move'],
+      conditions: [
+        { k: 'Resolution', v: '1920 × 1088' }, { k: 'Duration', v: '0:05' }, { k: 'Seed', v: '41822' },
+        { k: 'Rules in scope', v: 'ONE MOVE · NO TITLES · PRACTICALS' }, { k: 'Cost', v: '29 CR · ' + this.money(29) }, { k: 'Rendered by', v: 'TO · 4 SEP 16:41' },
+      ],
+      againCost: '29 cr',
+      // canvas
+      nodes, sel, chat, estimatesOn,
+    };
+  }
+}
+</script>
+</body>
+</html>

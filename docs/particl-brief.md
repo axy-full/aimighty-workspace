@@ -226,6 +226,9 @@ These exist because particl has a shot model and a cost model and Higgsfield has
 - **Per-shot override** without touching the workspace setup, and one-tap **clear for this shot**.
 - **Three layers**: platform default → workspace Setup → project Setup → shot. Each inherits and overrides the one above; the UI shows where each active value came from.
 
+### 2.3b / 2.3c — superseded
+The graph work has moved to **Phase 3 — Rig** at the end of this brief, and now has a design handoff. Read that instead.
+
 ### 2.4 Cast that carries across everything
 - A cast member's page shows **every take and still made with it**, across the workspace's projects (already promised in Studio — make it real and fast).
 - **Consistency check**: when a take is rendered with `@Name`, thumbnail the cast still next to the take so a likeness drift is visible at a glance.
@@ -263,3 +266,48 @@ Atomik does idea → shot list. Particl does shot → takes. Close the loop on t
 5. Phase 1 in the numbered order, one PR each, 1.0 first. Each PR includes: what it costs a workspace to use (per render / per training), how it's mocked in tests, what changed in the prompt compiler if anything, and where the new code is workspace-scoped.
 6. Phase 2 after Phase 1 is merged, starting with 2.1 and 2.2 — those are the two a paying team will feel first.
 7. Any time a task would spend real money on an engine, stop and ask.
+
+---
+
+## 7. Phase 3 — Rig
+
+The node layer. It has a full design handoff in the repo at `docs/handoff/nodegraph/` — README.md (the seven surfaces), DESKTOP-README.md (shared design system, state model, Atomik sync contract), design-tokens.json, and design-references/. Read all of it before planning.
+
+**Name.** The surface is called **Rig**. "Canvas" is already taken by the sequence wall at `/projects/:id/canvas`, and Rig is the right word twice over: on a set it's the wiring and mounting that holds a setup together, and in animation "rigging" is exactly what 2b does — binding a character's attributes to controls that everything downstream reads. Nav entry `RIG`, route `/projects/:id/rig`, mono label `RIG`. Recipes, runs, elements, ports, bindings and provenance are the nouns inside it.
+
+**Seven surfaces**, from the handoff:
+- `2a` Rig · asset layer (1440×900) — how characters, elements and backgrounds connect to shots
+- `2b` Character attributes (390×844) — a character is four versioned attributes, not one asset
+- `2c` Shot bindings (390×844) — what one shot points at, and what changing it costs
+- `1a` Run view (390×844) — watching a recipe run, fixing a failed stage in place
+- `1b` Impact panel (390×844) — editing a shared element with takes downstream
+- `1c` Provenance card (390×844) — exactly what produced a finished take
+- `1d` Rig · stage layer (1440×900) — the recipe as an editable stage graph, chat alongside
+
+The two desktop surfaces are two layers of one screen behind an `Assets | Stages | Runs` switcher, not two screens.
+
+**The seven rules the surfaces enforce** (from the handoff — these are the acceptance criteria):
+1. The price is on the action, quoted before the button enables.
+2. State vocabulary: `queued → running → done`, plus `needs you` for failure and `locked` for pinned.
+3. Take states stay `draft → picked → approved`; only approved reaches assembly.
+4. A failure never restarts a run — it offers priced fixes in place.
+5. Nothing re-renders silently; any edit to a shared element opens the impact panel first.
+6. A wire lands on a slot, not a node. Ports are the unit of connection.
+7. Versions are additive. A new version never alters an existing take; the *swap* is what costs.
+
+**Port identity is `elementId:attributeId:versionId`.** That triple is what a wire carries and what provenance records. It is the single most important line in the handoff — everything else in Rig is bookkeeping on top of it.
+
+**Elements can be created from takes** (the handoff's example: a prop promoted from an approved take, then bound into six other shots). The dashed creation wire in 2a is that loop. Design the schema for it from the start.
+
+**Build order** — data model first, mobile before desktop, canvas last:
+1. Schema: `recipe`, `stage`, `run`, `failure`, `element`, `attribute`, `version`, `binding`, `provenance`, `impact`, `quote` (shapes are in the handoff). Workspace-scoped like everything else. Migration from what 1.0 shipped.
+2. The quote/impact engine — what a change costs, before it happens. Everything visible depends on it.
+3. Mobile surfaces in this order: `1a` run view, `1b` impact panel, `1c` provenance, `2c` shot bindings, `2b` character attributes.
+4. Desktop `1d` stage layer, then `2a` asset layer.
+5. Chat panel drives the graph; the canvas is a view of what chat did, never the only way to edit.
+
+**Where it lives.** Recipe authoring belongs in Atomik (planning); running recipes and their outputs belong in particl (rendering). Same graph, same workspace scoping, one database. The Atomik ⇄ particl sync contract in DESKTOP-README governs the handoff both ways.
+
+**Constraints that do not relax for this phase:** rule 6 (five minutes to first render — a new user must never need to open Rig) and rule 7 (mobile first-class — five of the seven surfaces are 390×844 and must pass the Phase 0 Playwright suite). The desktop canvas is min-width 1180px and may be hidden below that; the mobile surfaces may not.
+
+**Do not port `support.js`** — it is a preview runtime for opening the HTML standalone. Recreate every surface in the existing Next/React components, routing and styling patterns. The striped grey rectangles are image placeholders; in production they are real keyframes, take thumbnails, reference photos, location plates and turntable views. Do not ship a surface with text where a thumbnail belongs.

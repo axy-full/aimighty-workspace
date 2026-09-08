@@ -1,0 +1,256 @@
+{
+  "meta": {
+    "system": "particl studio + atomik",
+    "note": "One system. atomik is a tier of particl, not a separate palette. Difference is carried by the mark (trail vs closed ring) and by the wordmark (atomik's o is the ring), never by color."
+  },
+  "color": {
+    "dark": {
+      "page": "#1D1F24",
+      "panel": "#0B0D11",
+      "panelRaised": "#0F1115",
+      "surface": "#12141A",
+      "surfaceAlt": "#0D0F14",
+      "ink": "#F5F6F8",
+      "inkSoft": "#E6E8EC",
+      "inkMuted": "#C9CCD2",
+      "muted": "#8A8E96",
+      "faint": "#666A72",
+      "dim": "#3A3D44",
+      "hairline": "rgba(255,255,255,0.07)",
+      "border": "rgba(255,255,255,0.10)",
+      "borderStrong": "rgba(255,255,255,0.16)",
+      "borderSelected": "rgba(255,255,255,0.28)",
+      "scrim": "rgba(6,7,10,0.72)"
+    },
+    "light": {
+      "page": "#ECEDEF",
+      "panel": "#FCFCFD",
+      "surface": "#F5F6F8",
+      "ink": "#15171C",
+      "muted": "#666A72",
+      "border": "rgba(0,0,0,0.10)"
+    }
+  },
+  "type": {
+    "display": {
+      "family": "Outfit",
+      "weight": 600,
+      "tracking": "-0.03em",
+      "use": "logotype, headings, numerals"
+    },
+    "ui": {
+      "family": "Geist",
+      "weights": [
+        300,
+        400,
+        500
+      ],
+      "use": "body, prompts, descriptions"
+    },
+    "mono": {
+      "family": "Kode Mono",
+      "weights": [
+        500,
+        700
+      ],
+      "use": "labels, metadata, buttons, all-caps microcopy",
+      "tracking": "0.12em–0.20em"
+    },
+    "scale": {
+      "hero": 118,
+      "h1": 64,
+      "h2": 54,
+      "h2Mobile": 36,
+      "statNumber": 38,
+      "lead": 28,
+      "body": 20,
+      "bodySm": 17,
+      "ui": 15,
+      "label": 11,
+      "labelSm": 10
+    }
+  },
+  "radius": {
+    "sm": 6,
+    "md": 8,
+    "lg": 10,
+    "xl": 12,
+    "xxl": 16,
+    "appIcon": "21.875% of icon size (224/1024)"
+  },
+  "spacing": {
+    "gridGap": 14,
+    "sectionPadDesktop": "96px 64px",
+    "sectionPadMobile": "40px 22px",
+    "cardPad": "20px 24px"
+  },
+  "motion": {
+    "markMorph": {
+      "duration": "600ms",
+      "easing": "ease-out",
+      "note": "particl trail -> atomik ring. Head sweeps 298° clockwise (right -> under -> top); circle center drifts (97,142)->(100,100); spacing 22°->45°; 8th dot grows in at the tail; radii 1.8-12 -> 2-16. Nothing else moves.",
+      "keyframesIn": "Atomik Switchover.dc.html screen 00"
+    }
+  },
+  "logo": {
+    "particl": {
+      "dots": 7,
+      "arcRadius": 62,
+      "stepDeg": 22,
+      "radii": [
+        1.8,
+        2.8,
+        4,
+        5.5,
+        7.2,
+        9.2,
+        12
+      ],
+      "viewBox": "0 0 200 200",
+      "coords": [
+        [
+          38.7,
+          120.8,
+          1.8
+        ],
+        [
+          50.9,
+          100.5,
+          2.8
+        ],
+        [
+          69.8,
+          86.3,
+          4
+        ],
+        [
+          92.7,
+          80.1,
+          5.5
+        ],
+        [
+          116.2,
+          83,
+          7.2
+        ],
+        [
+          136.9,
+          94.5,
+          9.2
+        ],
+        [
+          151.7,
+          112.9,
+          12
+        ]
+      ]
+    },
+    "atomik": {
+      "dots": 8,
+      "ringRadius": 62,
+      "center": [
+        100,
+        100
+      ],
+      "stepDeg": 45,
+      "headAngleDeg": -90,
+      "spin": "clockwise (same as particl)",
+      "radii": [
+        16,
+        11.9,
+        8.8,
+        6.5,
+        4.8,
+        3.6,
+        2.7,
+        2
+      ],
+      "ratioPerStep": 0.74,
+      "viewBox": "0 0 200 200",
+      "coords": [
+        [
+          100,
+          38,
+          16
+        ],
+        [
+          56.16,
+          56.16,
+          11.9
+        ],
+        [
+          38,
+          100,
+          8.8
+        ],
+        [
+          56.16,
+          143.84,
+          6.5
+        ],
+        [
+          100,
+          162,
+          4.8
+        ],
+        [
+          143.84,
+          143.84,
+          3.6
+        ],
+        [
+          162,
+          100,
+          2.7
+        ],
+        [
+          143.84,
+          56.16,
+          2
+        ]
+      ],
+      "appIconTransform": "translate(182 191) scale(3.4)",
+      "standalone": "icon use only — never beside the atomik wordmark"
+    },
+    "wordmark": {
+      "particl": "partıcl",
+      "atomik": "at◯mık — the o is the ring mark",
+      "tittle": {
+        "shape": "ring",
+        "diameter": "0.17em",
+        "stroke": "0.04em",
+        "offsetTop": "0.09em",
+        "align": "centered on the dotless ı",
+        "strokeAtomik": "0.035em"
+      },
+      "sub": {
+        "particl": "STUDIO",
+        "atomik": "BY PARTICL",
+        "font": "Kode Mono 500",
+        "transform": "uppercase",
+        "tracking": "0.36em",
+        "sizeRatio": 0.21,
+        "align": "right, under the last letter"
+      },
+      "particlFont": "Outfit 600, tracking -0.03em",
+      "atomikFont": "Outfit 500, tracking +0.005em",
+      "ringO": {
+        "svgViewBox": "20 22 160 145",
+        "height": "0.61em",
+        "width": "0.67em",
+        "margin": "0 0.03em",
+        "align": "flex row, align-items:baseline — ring bottom on the baseline, head pokes above x-height"
+      }
+    },
+    "clearSpace": "≥ the largest dot's height (12 units particl / 16 units atomik on the 200 grid)",
+    "dont": [
+      "rotate the mark",
+      "recolor individual dots",
+      "add strokes or outlines",
+      "introduce an accent color",
+      "set either wordmark in a serif or a different sans",
+      "place the atomik ring beside the atomik wordmark",
+      "change the spin direction of either mark"
+    ]
+  }
+}
