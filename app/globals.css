@@ -2895,3 +2895,43 @@ html, body { overflow-x: clip; }
 .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .pick-tile { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--color-thumb, #111); }
 .pick-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; font: 500 10px/1.2 var(--font-kode); letter-spacing: .06em; text-transform: uppercase; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.72)); text-align: left; }
+
+/* ── Desktop density (brief rule 7, revised) ──────────────────────────────
+   A bigger screen should show BIGGER frames, not more small ones.
+
+   Every wall in the app is `repeat(auto-fill, minmax(N, 1fr))` with one fixed
+   N, and that has a sawtooth failure at width: as the container grows, another
+   column fits and every card snaps back down towards N. Measured on the
+   library, a take thumbnail was 237px at 1280 and 217px at 2560 — a 4K monitor
+   showing smaller frames than a laptop, in a tool whose whole job is looking
+   at frames.
+
+   Stepping the minimum with the viewport makes the sawtooth trend upward
+   instead. The steps are deliberately coarse: they are about which side of a
+   column break a common screen lands on, not about pixel-perfect fit. */
+@media (min-width: 1440px) {
+  .grp-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .grp-grid.is-stills, .grp-grid.is-lib { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .gal-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+}
+@media (min-width: 1800px) {
+  .grp-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .grp-grid.is-stills, .grp-grid.is-lib { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .gal-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+}
+@media (min-width: 2400px) {
+  .grp-grid { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+  .grp-grid.is-stills, .grp-grid.is-lib { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+  .gal-grid { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+}
+
+/* ── Reading measure ──────────────────────────────────────────────────────
+   Prose stops being readable somewhere past about ninety characters a line,
+   and a page that is wide because it is a dashboard will happily run a
+   paragraph to two hundred. Measured on Usage: 1360px at 13px is roughly 209
+   characters. This is the cap; `.measure` is for anything narrower still.
+
+   It is scoped to paragraphs deliberately. A <p> used as a label or a stat
+   line is not prose and is not capped, which is why this names the classes
+   that carry copy rather than every <p> in the document. */
+.said, .measure, .prose-line, .rail-help { max-width: 78ch; }

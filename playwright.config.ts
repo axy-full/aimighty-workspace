@@ -13,6 +13,13 @@ const base = process.env.PW_BASE_URL ?? "http://localhost:4551";
 /** PW_CHANNEL=chrome drives the machine's own Chrome when the Playwright build can't be fetched. */
 const channel = process.env.PW_CHANNEL || undefined;
 
+const desk = (width: number, height: number) => ({
+  browserName: "chromium" as const,
+  ...(channel ? { channel } : {}),
+  viewport: { width, height },
+  deviceScaleFactor: 1,
+});
+
 const phone = (width: number, height: number) => ({
   browserName: "chromium" as const,
   ...(channel ? { channel } : {}),
@@ -39,6 +46,12 @@ export default defineConfig({
     { name: "phone-360x640", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(360, 640) },
     { name: "phone-390x844", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(390, 844) },
     { name: "phone-844x390", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(844, 390) },
+    /* Desktop is the shape, the phone is the floor (brief rule 7, revised).
+       Three widths because the failures are at the column breaks, not in
+       between: a laptop, a common desktop, and a 4K panel. */
+    { name: "desktop-1440", testMatch: /tests\/desktop\.spec\.ts$/, use: desk(1440, 900) },
+    { name: "desktop-1920", testMatch: /tests\/desktop\.spec\.ts$/, use: desk(1920, 1080) },
+    { name: "desktop-2560", testMatch: /tests\/desktop\.spec\.ts$/, use: desk(2560, 1440) },
   ],
   webServer: process.env.PW_BASE_URL ? undefined : {
     command: "npm run dev -- -p 4551",
