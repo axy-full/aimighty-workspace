@@ -8,6 +8,8 @@
  * button before it is pressed.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { menuPlacement, type Placement } from "@/lib/menuPlacement";
 import { useMoney } from "@/lib/price";
 
 /**
@@ -16,11 +18,13 @@ import { useMoney } from "@/lib/price";
  * it the containing block for fixed descendants, so that backdrop only ever
  * covered the island and a click on the wall never closed anything.
  */
-function useDismiss(ref: React.RefObject<HTMLElement | null>, open: boolean, onClose: () => void) {
+function useDismiss(ref: React.RefObject<HTMLElement | null>, open: boolean, onClose: () => void, also?: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      const t = e.target as Node;
+      // The menu itself may be rendered at the top of the document, away from its chip.
+      if (!ref.current?.contains(t) && !also?.current?.contains(t)) onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("pointerdown", onDown, true);
@@ -29,7 +33,7 @@ function useDismiss(ref: React.RefObject<HTMLElement | null>, open: boolean, onC
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey);
     };
-  }, [ref, open, onClose]);
+  }, [ref, open, onClose, also]);
 }
 import References, { type RefItem, type RefPicker } from "./References";
 import { Switch } from "./Panel";
@@ -491,13 +495,24 @@ function ChipMenu({ label, hint, open, onOpen, onClose, children, disabled, wide
   children: React.ReactNode; disabled?: boolean; wide?: boolean; on?: boolean;
 }) {
   const wrap = useRef<HTMLSpanElement>(null);
-  const [alignRight, setAlignRight] = useState(false);
-  useDismiss(wrap, open, onClose);
+  const pop = useRef<HTMLSpanElement>(null);
+  const [place, setPlace] = useState<Placement | null>(null);
+  useDismiss(wrap, open, onClose, pop);
+  /* The menu is rendered at the top of the document, because the composer's
+     sheet is a transformed, overflow-hidden box: anything fixed inside it is
+     contained and clipped by it, which is how a menu came to open inside a
+     window of its own. Placed here from the chip's rectangle, and kept in
+     step with a scroll or a resize while it is open. */
   useLayoutEffect(() => {
     if (!open) return;
-    const r = wrap.current?.getBoundingClientRect();
-    // A menu anchored near the right edge would leave the screen — flip it.
-    if (r) setAlignRight(r.left + (wide ? 320 : 220) > window.innerWidth - 12);
+    const put = () => {
+      const r = wrap.current?.getBoundingClientRect();
+      if (r) setPlace(menuPlacement(r, { width: window.innerWidth, height: window.innerHeight }, wide ? 300 : 220));
+    };
+    put();
+    window.addEventListener("resize", put);
+    window.addEventListener("scroll", put, true);
+    return () => { window.removeEventListener("resize", put); window.removeEventListener("scroll", put, true); };
   }, [open, wide]);
   return (
     <span ref={wrap} className="relative">
@@ -507,11 +522,11 @@ function ChipMenu({ label, hint, open, onOpen, onClose, children, disabled, wide
         {label}
         <IconCaret className="chip-caret" />
       </button>
-      {open && (
-        <span className={`menu-pop island-menu ${alignRight ? "island-menu-right" : ""} ${wide ? "w-[300px]" : ""}`}>
+      {open && place && typeof document !== "undefined" && createPortal(
+        <span ref={pop} className={`menu-pop island-menu ${wide ? "w-[300px]" : ""}`}
+          style={{ position: "fixed", left: place.left, top: place.top, bottom: place.bottom, maxHeight: place.maxHeight }}>
           {children}
-        </span>
-      )}
+        </span>, document.body)}
     </span>
   );
 }
