@@ -299,7 +299,17 @@ The two desktop surfaces are two layers of one screen behind an `Assets | Stages
 
 **Elements can be created from takes** (the handoff's example: a prop promoted from an approved take, then bound into six other shots). The dashed creation wire in 2a is that loop. Design the schema for it from the start.
 
-**Build order** — data model first, mobile before desktop, canvas last:
+**Build order.** Revised 8 September 2026, and the revision is the important
+part: **desktop comes first, across the board.** The two handoffs disagreed —
+`DESKTOP-README.md` calls the product "desktop only (min-width 1180px)" while
+the node-graph handoff draws five of its seven surfaces at 390×844 — and this
+resolves it in favour of desktop. Rule 7 is not withdrawn: the phone suite
+stays as a floor so nothing breaks on a phone, but surfaces are designed for
+desktop first and no longer phone-first. `1a` and `1b`, already built as phone
+surfaces, get desktop layouts before the canvas. `1c`, `2c` and `2b` wait until
+the canvas exists.
+
+The original order, kept because the first two steps are done and unchanged:
 1. Schema: `recipe`, `stage`, `run`, `failure`, `element`, `attribute`, `version`, `binding`, `provenance`, `impact`, `quote` (shapes are in the handoff). Workspace-scoped like everything else. Migration from what 1.0 shipped.
 2. The quote/impact engine — what a change costs, before it happens. Everything visible depends on it.
 3. Mobile surfaces in this order: `1a` run view, `1b` impact panel, `1c` provenance, `2c` shot bindings, `2b` character attributes.

@@ -349,7 +349,8 @@ export async function clearBinding(shotId: string, slot: Slot, ordinal = 0): Pro
 export type Dependent = { shotId: string; projectId: string | null; slots: Slot[]; pinned: boolean };
 
 export async function dependentsOf(
-  elementId: string, attributeId: string, versionId: string, opts: { projectId?: string | null } = {},
+  elementId: string, attributeId: string, versionId: string,
+  opts: { projectId?: string | null; following?: boolean } = {},
 ): Promise<Dependent[]> {
   await ready();
   /* The element is named first and is not optional. A bundle binding carries
@@ -366,12 +367,22 @@ export async function dependentsOf(
      Only shots whose row still exists count. Foreign keys are declared and not
      enforced here, so the join is what keeps a shot somebody deleted from
      going on voting for what a change costs. */
+  /* Two different questions, and confusing them costs money.
+
+     By default: which ports does a change TO THIS VERSION reach — a port
+     pinned to it is reached, because it is that version.
+
+     `following`: which ports would MOVE if current changed. A pinned port
+     does not move, whatever it is pinned to. Asking the first question about
+     a swap counts shots already sitting on the target, prices a re-render
+     that cannot change their output, and un-approves them for it. */
   const args: (string | null)[] = [elementId, attributeId, versionId];
   let sql = `SELECT b.* FROM bindings b
              JOIN shots s ON s.id = b.shot_id
              WHERE b.element_id = ?
                AND (b.attribute_id = ? OR b.attribute_id IS NULL)
-               AND (b.version_id IS NULL OR b.version_id = ?)`;
+               AND ${opts.following ? "b.version_id IS NULL" : "(b.version_id IS NULL OR b.version_id = ?)"}`;
+  if (opts.following) args.pop();
   if (opts.projectId) { sql += ` AND s.project_id = ?`; args.push(opts.projectId); }
   sql += ` ORDER BY b.shot_id, b.slot, b.ordinal`;
   const rs = await db().execute({ sql, args });
