@@ -22,6 +22,7 @@ import { Waiting, Trouble } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useMoney } from "@/lib/price";
 import { useSession } from "@/lib/session";
+import { burnDown, biggestBurners, projectionLine } from "@/lib/burndown";
 
 type Project = {
   id: string; name: string; description: string; code?: string; category?: string;
@@ -131,6 +132,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
         </p>
         {project && <CapLine project={project} spentCredits={t.credits} spentUsd={t.spend} isAdmin={isAdmin} onChanged={() => { refreshProjects(); refresh(); }} />}
         <ReviewLinks projectId={id} isAdmin={isAdmin} />
+        {project && <BurnDown project={project} totals={t} byShot={data.byShot} shotCount={shots.length} />}
 
         <div className="mt-6 flex flex-wrap gap-2">
           <Link href="/" className="chip bg-blue text-on-ink">Open in Generate</Link>
@@ -317,6 +319,68 @@ function ReviewLinks({ projectId, isAdmin }: { projectId: string; isAdmin: boole
               <span>{s.label || "Review link"}</span>
               <span className="mono-s">BY {s.createdBy.toUpperCase()} · UNTIL {when(s.expiresAt).toUpperCase()}</span>
               {isAdmin && <button type="button" className="hdr-mono-link" onClick={() => revoke(s.id)}>WITHDRAW</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The burn-down (brief 2.2): what this production has spent against its
+ * cap, what finishing it looks like at the rate it has actually run, and
+ * which shots are eating it. The arithmetic is plain on purpose — a
+ * producer who cannot check a projection will not act on it.
+ */
+function BurnDown({ project, totals, byShot, shotCount }: {
+  project: Project;
+  totals: Analytics["totals"];
+  byShot: Analytics["byShot"];
+  shotCount: number;
+}) {
+  const money = useMoney();
+  const inCredits = money.inCredits;
+  const show = (n: number) => (inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${Math.round(n)}`);
+  const spend = (s: { credits?: number; spend: number }) => (inCredits ? s.credits ?? 0 : s.spend);
+  const rows = byShot.map((s) => ({ id: s.id, code: s.code, title: s.title, takes: s.takes, credits: spend(s) }));
+  const b = burnDown({
+    spentCredits: inCredits ? totals.credits : totals.spend,
+    capCredits: (inCredits ? project.capCredits : project.capUsd) ?? null,
+    shotCount, byShot: rows,
+  });
+  const burners = biggestBurners(rows, b.spent);
+  const line = projectionLine(b, show);
+  if (!b.known && !b.cap) return null;
+
+  return (
+    <section className="burn">
+      <div className="burn-head">
+        <span className="grouplabel !pb-0">Burn-down</span>
+        <span className="mono-s">
+          {show(b.spent)} SPENT{b.cap != null ? ` OF ${show(b.cap)}` : ""}
+          {b.pct != null ? ` · ${b.pct}%` : ""}
+          {b.started ? ` · ${b.started} OF ${b.shots} SHOTS STARTED` : ""}
+        </span>
+      </div>
+      {b.cap != null && (
+        <div className="burn-bar" role="img" aria-label={`${b.pct ?? 0}% of the cap spent`}>
+          <span className="burn-spent" style={{ width: `${Math.min(100, b.pct ?? 0)}%` }} />
+          {b.projected != null && b.cap > 0 && (
+            <span className="burn-mark" style={{ left: `${Math.min(100, Math.round((b.projected / b.cap) * 100))}%` }} title={`Projected finish: ${show(b.projected)}`} />
+          )}
+        </div>
+      )}
+      {line && <p className={`burn-line ${b.over != null && b.over > 0 ? "is-over" : ""}`}>{line}</p>}
+      {burners.length > 0 && (
+        <ul className="burn-list">
+          {burners.map((s) => (
+            <li key={s.id}>
+              <span className="mono-s">{s.code}</span>
+              <span className="burn-name">{s.title || "Untitled shot"}</span>
+              <span className="burn-take">{s.takes} take{s.takes === 1 ? "" : "s"}</span>
+              <span className="burn-share"><span style={{ width: `${Math.max(2, s.share)}%` }} /></span>
+              <span className="mono-s">{show(s.credits)}</span>
             </li>
           ))}
         </ul>

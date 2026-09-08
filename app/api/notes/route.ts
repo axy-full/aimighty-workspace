@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
+import { peopleIn } from "@/lib/mentions";
+import { sendPushTo } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -32,6 +34,7 @@ export const GET = withTenant(async function GET(req: Request) {
       userId: r.user_id, createdAt: Number(r.created_at),
       /** A comment from a client review link, not one of the team's own. */
       guest: Number(r.guest) === 1,
+      mentions: ((): string[] => { try { return JSON.parse(r.mentions ?? "[]") as string[]; } catch { return []; } })(),
     })),
   });
 });
@@ -45,9 +48,24 @@ export const POST = withTenant(async function POST(req: Request) {
   const text = String(body.text ?? "").trim().slice(0, 2000);
   if (!genId || !text) return NextResponse.json({ error: "A note needs a shot and some words" }, { status: 400 });
 
+  /* A note that names someone should reach them (brief 2.1): "the 3rd one
+     but with the pan slower" belongs on the take, and the person it is
+     addressed to should not have to find it. */
+  const team = await db().execute(`SELECT id, name FROM users WHERE disabled = 0 AND deleted_at IS NULL`);
+  const people = (team.rows as unknown as { id: string; name: string }[])
+    .map((r) => ({ id: String(r.id), name: String(r.name ?? "") })).filter((p) => p.name);
+  const named = peopleIn(text, people);
   await db().execute({
-    sql: `INSERT INTO notes (id, gen_id, user_id, text, created_at) VALUES (?,?,?,?,?)`,
-    args: [id("note"), genId, got.user.id, text, now()],
+    sql: `INSERT INTO notes (id, gen_id, user_id, text, mentions, created_at) VALUES (?,?,?,?,?,?)`,
+    args: [id("note"), genId, got.user.id, text, JSON.stringify(named.map((p) => p.name)), now()],
   });
-  return NextResponse.json({ ok: true });
+  const toTell = named.filter((p) => p.id !== got.user.id).map((p) => p.id);
+  if (toTell.length) {
+    await sendPushTo(toTell, {
+      title: `${got.user.name} wrote on a take`,
+      body: text.slice(0, 140),
+      url: "/all",
+    }).catch(() => { /* a note stands whether or not the nudge lands */ });
+  }
+  return NextResponse.json({ ok: true, mentioned: named.map((p) => p.name) });
 });
