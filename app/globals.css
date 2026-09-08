@@ -3180,3 +3180,61 @@ html, body { overflow-x: clip; }
 .rig-ver.is-on { border-color: var(--color-picked); background: var(--color-panel3); }
 .rig-ver:disabled { opacity: .5; }
 .rig-ver-now { width: 8px; height: 8px; border-radius: 50%; background: var(--color-approved); }
+
+/* ── Rig on a desktop (brief rule 7, revised) ─────────────────────────────
+   The run is a list beside the one stage being looked at — the app's own
+   two-pane idiom (.ws is `minmax(0,1fr) 400px`) and the handoff's own
+   "right detail rail 360–400px". A phone has nowhere to put a rail, so
+   there the same stage opens inside its card instead.
+
+   Workspace-page padding from DESKTOP-README: 18–26px 20–28px. */
+.rig-run.is-wide {
+  display: grid; grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100dvh; min-height: 0; padding-bottom: 0;
+}
+.rig-run.is-wide .rig-run-head { grid-column: 1 / -1; }
+.rig-run.is-wide .rig-run-body {
+  grid-column: 1; min-height: 0; overflow-y: auto;
+  padding: 22px 24px 28px; gap: 8px;
+}
+.rig-run.is-wide .rig-run-bar {
+  grid-column: 1; position: static; padding: 12px 24px 18px;
+}
+/* A stage is a row that puts itself in the rail, not a card that opens. */
+.rig-run.is-wide .rig-stage { cursor: pointer; }
+.rig-run.is-wide .rig-stage.is-open { border-color: var(--color-picked); background: var(--color-panel3); }
+.rig-run.is-wide .rig-cost { padding: 20px 20px 18px; }
+
+.rig-rail {
+  grid-column: 2; grid-row: 1 / -1; min-height: 0; display: flex; flex-direction: column;
+  background: var(--color-chrome); border-left: 1px solid var(--color-hair);
+}
+.rig-rail-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 22px 22px 28px; display: flex; flex-direction: column; gap: 12px;
+}
+.rig-rail-name { margin: 0; font: 600 20px/1.15 var(--font-sans); letter-spacing: -.02em; color: var(--color-bone); }
+.rig-rail-sub { font: 400 13px/1.4 var(--font-sans); color: var(--color-mute); }
+/* The rail has room for the output to be a picture rather than a chip. */
+.rig-well.is-big { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 10px; }
+.rig-rail-facts { display: flex; flex-direction: column; gap: 0; margin-top: 2px; }
+.rig-rail-facts > span {
+  display: flex; align-items: baseline; gap: 12px; padding: 7px 0;
+  border-bottom: 1px solid var(--color-hair);
+  font: 500 13px/1.3 var(--font-sans); color: var(--color-bone);
+}
+.rig-rail-facts > span > i {
+  flex: none; width: 118px; font: 400 12.5px/1.3 var(--font-sans); font-style: normal; color: var(--color-mute);
+}
+.rig-rail .rig-fixes { border-top: 0; padding-top: 4px; }
+
+/* The impact panel is a sheet on a phone and a dialog on a desktop, which is
+   what every other dialog in this app already does. */
+@media (min-width: 1024px) {
+  .imp-scrim { align-items: center; padding: 24px; }
+  .imp-sheet { max-width: 560px; max-height: min(84dvh, 760px); border-radius: 18px; border: 1px solid var(--color-line); }
+  .imp-grab { display: none; }
+  .imp-body { padding-top: 20px; }
+  .imp-foot { border-radius: 0 0 18px 18px; }
+}
