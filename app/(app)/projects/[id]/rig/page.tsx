@@ -5,6 +5,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { useIsMobile } from "@/lib/useMobile";
 import RunView from "@/components/RunView";
 import StageLayer from "@/components/StageLayer";
+import AssetLayer from "@/components/AssetLayer";
 
 /**
  * Rig (brief 3).
@@ -40,12 +41,7 @@ export default function RigPage({ params }: { params: Promise<{ id: string }> })
       </div>
       {layer === "runs" ? <RunView projectId={id} /> : null}
       {layer === "stages" ? <StageLayer projectId={id} /> : null}
-      {/* The asset layer is 2a, and it is the next surface after this one. */}
-      {layer === "assets" ? (
-        <div className="rig-soon">
-          <p>The asset layer is the next surface: characters, elements and backgrounds, and the wires from each of them to the shots that use them.</p>
-        </div>
-      ) : null}
+      {layer === "assets" ? <AssetLayer projectId={id} /> : null}
     </div>
   );
 }

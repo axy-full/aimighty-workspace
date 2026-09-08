@@ -159,3 +159,117 @@ export function shapeLine(placed: Placed[], locked: number): string {
   parts.push(`${branches} branch${branches === 1 ? "" : "es"}`);
   return parts.join(" · ").toUpperCase();
 }
+
+/* ── The asset layer (surface 2a) ────────────────────────────────────────
+   A different graph from the stage layer and a simpler one: elements on the
+   left, shots in the middle, and a wire from a port on an element to a slot
+   on a shot. The handoff's own geometry — asset node 190 wide at x 16, shot
+   node 220 wide at x 280 — becomes two columns whose heights are whatever
+   the workspace actually holds.
+
+   A port is a tile: one per attribute, 40px tall and 5px apart under a
+   header. A slot is a row: one per binding, 40px tall. Both are addressed by
+   their centre, because that is where a wire lands. */
+
+export const ASSET_W = 190;
+export const SHOT_W = 220;
+export const TILE_H = 40;
+export const TILE_GAP = 5;
+export const ASSET_HEAD = 28;
+export const ASSET_HEAD_ORIGIN = 40;   /* when it says what take it came from */
+export const SHOT_HEAD = 40;
+export const SHOT_KEY_H = 112;         /* the keyframe, 16:9 */
+export const SHOT_FOOT = 32;
+export const GAP_Y = 28;
+export const ASSET_X = 16;
+export const SHOT_X = 280;
+
+export type PortIn = { id: string; label: string; version: string; idle: boolean };
+export type AssetIn = { id: string; name: string; kind: string; locked: boolean; origin: string | null; ports: PortIn[] };
+export type SlotIn = { id: string; slot: string; label: string; version: string; overridden: boolean };
+export type ShotIn = { id: string; code: string; title: string; slots: SlotIn[]; state: string; credits: number };
+
+export type PortAt = PortIn & { x: number; y: number };
+export type SlotAt = SlotIn & { x: number; y: number };
+export type AssetAt = AssetIn & { x: number; y: number; h: number; headH: number; bundleY: number; ports: PortAt[] };
+export type ShotAt = ShotIn & { x: number; y: number; h: number; slots: SlotAt[] };
+
+export function assetHeight(a: AssetIn): number {
+  const head = a.origin ? ASSET_HEAD_ORIGIN : ASSET_HEAD;
+  const tiles = a.ports.length ? a.ports.length * TILE_H + (a.ports.length - 1) * TILE_GAP : 0;
+  return head + (tiles ? tiles + 8 : 0) + 8;
+}
+
+export function shotHeight(s: ShotIn): number {
+  const rows = s.slots.length * TILE_H;
+  return SHOT_HEAD + SHOT_KEY_H + rows + SHOT_FOOT;
+}
+
+/** Elements stacked down the left, each port's dot at its tile's centre. */
+export function layoutAssets(assets: AssetIn[], top = 16): AssetAt[] {
+  let y = top;
+  return assets.map((a) => {
+    const headH = a.origin ? ASSET_HEAD_ORIGIN : ASSET_HEAD;
+    const h = assetHeight(a);
+    const ports = a.ports.map((p, i) => ({
+      ...p,
+      x: ASSET_X + ASSET_W,
+      y: y + headH + 8 + i * (TILE_H + TILE_GAP) + TILE_H / 2,
+    }));
+    const node = { ...a, x: ASSET_X, y, h, headH, bundleY: y + headH / 2, ports };
+    y += h + GAP_Y;
+    return node;
+  });
+}
+
+/** Shots stacked down the middle, each slot's dot on the node's left edge. */
+export function layoutShots(shots: ShotIn[], top = 16): ShotAt[] {
+  let y = top;
+  return shots.map((s) => {
+    const h = shotHeight(s);
+    const slots = s.slots.map((sl, i) => ({
+      ...sl,
+      x: SHOT_X,
+      y: y + SHOT_HEAD + SHOT_KEY_H + i * TILE_H + TILE_H / 2,
+    }));
+    const node = { ...s, x: SHOT_X, y, h, slots };
+    y += h + GAP_Y;
+    return node;
+  });
+}
+
+/* ── The three wire styles ───────────────────────────────────────────────
+   They are not decoration. Each one is a different fact already stored on
+   the binding, and reading the graph is reading which is which:
+
+     inherited  the slot follows current — `version_id IS NULL`
+     override   the slot is pinned — `version_id` is set
+     created    the element was promoted from a take — `from_gen_id` is set
+
+   So the picture and the database cannot disagree: there is nowhere else
+   for the style to come from. */
+export type WireKind = "inherited" | "override" | "created";
+
+export type AssetWire = { key: string; d: string; kind: WireKind };
+
+export function assetWires(
+  links: { portX: number; portY: number; slotX: number; slotY: number; key: string; kind: WireKind }[],
+): AssetWire[] {
+  return links.map((l) => {
+    const bend = Math.max(24, Math.min(90, (l.slotX - l.portX) / 2));
+    return {
+      key: l.key,
+      kind: l.kind,
+      d: `M ${l.portX} ${l.portY} C ${l.portX + bend} ${l.portY}, ${l.slotX - bend} ${l.slotY}, ${l.slotX} ${l.slotY}`,
+    };
+  });
+}
+
+/** "2 locked · 1 override · 1 created" — the header's own count. */
+export function assetShapeLine(o: { locked: number; overrides: number; created: number }): string {
+  const parts: string[] = [];
+  if (o.locked) parts.push(`${o.locked} locked`);
+  if (o.overrides) parts.push(`${o.overrides} override${o.overrides === 1 ? "" : "s"}`);
+  if (o.created) parts.push(`${o.created} created`);
+  return parts.length ? parts.join(" · ").toUpperCase() : "NOTHING PINNED";
+}
