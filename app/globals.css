@@ -2881,3 +2881,11 @@ html, body { overflow-x: clip; }
 .cmp-bar { display: flex; align-items: center; gap: 10px; color: #fff; }
 .cmp-scrub { flex: 1; accent-color: var(--color-blue); min-width: 0; }
 @media (max-width: 767px) { .cmp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cmp-foot { font-size: 12px; } .cmp-head .mono-s { font-size: 10.5px; } }
+
+/* What a person hands the agent: the tray above the box. */
+.atomik-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 0; }
+.atomik-file { display: inline-flex; align-items: center; gap: 6px; max-width: 210px; padding: 4px 8px 4px 4px; border: 1px solid var(--color-line); border-radius: 999px; font-size: 12.5px; }
+.atomik-file img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
+.atomik-file-kind { font: 500 9px/1 var(--font-kode); letter-spacing: .1em; padding: 5px 6px; border-radius: 999px; background: var(--color-chip); }
+.atomik-file button { color: var(--color-mute); font-size: 15px; line-height: 1; }
+.atomik-file button:hover { color: var(--color-ink); }

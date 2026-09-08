@@ -16,6 +16,8 @@ import ApprovalCard from "@/components/atomik/ApprovalCard";
 import ModelMenu, { type PlannerModel } from "@/components/atomik/ModelMenu";
 import { useDraft } from "@/lib/useDraft";
 import type { Chat, Message, Step, Engine, AgentMode } from "@/lib/atomik";
+import { uploadFile } from "@/lib/uploadClient";
+import { MAX_ATTACHMENTS, type Attachment } from "@/lib/attachments";
 
 /**
  * Atomik.
@@ -54,6 +56,10 @@ export default function AtomikPage() {
 
   /* What is being typed survives leaving the room; cleared only when sent. */
   const { value: draft, set: setDraft, clear: clearDraft } = useDraft("atomik-agent", "");
+  /* What the person hands the agent: it looks at the stills, and a render
+     it proposes for them carries the same files (attachments). */
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const [attaching, setAttaching] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [busyStep, setBusyStep] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,9 +126,10 @@ export default function AtomikPage() {
         router.replace(`/atomik/agent?c=${encodeURIComponent(id)}`);
       }
       clearDraft();
+      setFiles([]);   // they went with the message
       const res = await fetch(`/api/atomik/${encodeURIComponent(id)}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: body }),
+        body: JSON.stringify({ text: body, attachments: files }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) setError(j.error ?? "The planner didn't answer.");
@@ -133,7 +140,23 @@ export default function AtomikPage() {
     } finally {
       setThinking(false);
     }
-  }, [chatId, thinking, model, mode, selection, router, refreshIndex, clearDraft]);
+  }, [chatId, thinking, model, mode, selection, router, refreshIndex, clearDraft, files]);
+
+  /** Upload what was picked or dropped, and keep it until the message goes. */
+  async function attach(list: FileList | null) {
+    const picked = [...(list ?? [])].slice(0, MAX_ATTACHMENTS - files.length);
+    if (!picked.length) return;
+    setAttaching(true);
+    try {
+      const added: Attachment[] = [];
+      for (const f of picked) {
+        const up = await uploadFile(f, "reference");
+        added.push({ uploadId: up.id, kind: up.kind === "video" ? "video" : "image", name: f.name, mime: up.mime || f.type || "image/png" });
+      }
+      setFiles((prev) => [...prev, ...added].slice(0, MAX_ATTACHMENTS));
+    } catch (e) { setError((e as Error).message); }
+    finally { setAttaching(false); }
+  }
 
   /* ── the gate ── */
 
@@ -180,6 +203,8 @@ export default function AtomikPage() {
             prompt: step.prompt, model: step.model, projectId,
             ratio: step.params.ratio, resolution: step.params.resolution,
             duration: Number(step.params.seconds) || undefined,
+            /* What the person attached, on the render the agent proposed for it. */
+            references: step.refs?.length ? step.refs : undefined,
           }),
         });
       const j = await res.json().catch(() => ({}));
@@ -364,7 +389,23 @@ export default function AtomikPage() {
           />
         )}
 
-        <div className="atomik-composer">
+        <div className="atomik-composer"
+          onDragOver={(e) => { if (signedIn) e.preventDefault(); }}
+          onDrop={(e) => { if (!signedIn) return; e.preventDefault(); void attach(e.dataTransfer.files); }}>
+          {files.length > 0 && (
+            <div className="atomik-files">
+              {files.map((f) => (
+                <span key={f.uploadId} className="atomik-file">
+                  {f.kind === "image"
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    ? <img src={`/api/uploads/${f.uploadId}`} alt="" />
+                    : <span className="atomik-file-kind">CLIP</span>}
+                  <span className="truncate">{f.name || f.uploadId}</span>
+                  <button type="button" onClick={() => setFiles((prev) => prev.filter((x) => x.uploadId !== f.uploadId))} aria-label={`Remove ${f.name}`}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -385,6 +426,14 @@ export default function AtomikPage() {
           <div className="atomik-controls">
             <ModelMenu value={model} models={index?.models ?? { featured: [], rest: [] }}
               onPick={setChatModel} disabled={thinking} />
+
+            <label className={`chip-ctl ${attaching ? "is-on" : ""} ${!signedIn || files.length >= MAX_ATTACHMENTS ? "opacity-50" : "cursor-pointer"}`}
+              title={files.length >= MAX_ATTACHMENTS ? `${MAX_ATTACHMENTS} at a time` : "Attach a still or a clip — the agent looks at stills, and hands what you attach to the render it proposes"}>
+              {attaching ? "Attaching…" : "Attach"}
+              <input type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime" className="sr-only"
+                disabled={!signedIn || attaching || files.length >= MAX_ATTACHMENTS}
+                onChange={(e) => { void attach(e.target.files); e.target.value = ""; }} />
+            </label>
 
             <button type="button" disabled={thinking}
               onClick={() => setChatMode(mode === "ask" ? "auto" : "ask")}

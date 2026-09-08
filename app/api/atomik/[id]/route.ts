@@ -6,6 +6,7 @@ import {
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { effectiveRules } from "@/lib/rules";
+import { cleanAttachments } from "@/lib/attachments";
 
 export const dynamic = "force-dynamic";
 /* A turn is a model call with a 180s ceiling of its own, so this route needs
@@ -70,7 +71,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   const loaded = await getChat(id);
   if (!loaded) return NextResponse.json({ error: "That chat is gone." }, { status: 404 });
 
-  await addUserMessage(id, text);
+  await addUserMessage(id, text, cleanAttachments(b.attachments));
   try {
     const context = await projectContext(loaded.chat.projectId);
     await runTurn(id, { context, rules: writerRulesByScope(await effectiveRules()) });
