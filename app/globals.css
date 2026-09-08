@@ -2839,6 +2839,15 @@ html, body { overflow-x: clip; }
 
 /* A shot written in Atomik that nobody has rendered yet (brief 2.6). */
 .grp-empty { font-size: 13px; color: var(--color-mute); border: 1px dashed var(--color-line); border-radius: 10px; padding: 12px 14px; }
+
+/* A producer's row on a phone (brief 2.7): what waits on them, the cap, the balance. */
+.phone-acts { display: none; }
+@media (max-width: 767px) {
+  .phone-acts { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; }
+  .phone-acts::-webkit-scrollbar { display: none; }
+  .phone-acts .chip { flex: none; min-height: 36px; }
+  .phone-acts .chip.is-on { background: var(--color-blue); color: var(--color-on-ink, #fff); }
+}
 /* The production's burn-down (brief 2.2). */
 .burn { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
 .burn-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }

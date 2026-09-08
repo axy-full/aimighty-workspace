@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getGeneration, syncGeneration } from "@/lib/jobs";
 import { db, ready } from "@/lib/db";
 import { deleteVideo } from "@/lib/storage";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
+import { notify } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -62,6 +63,18 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
              state === "approved" ? 1 : 0, got.user.name, state === "approved" ? 1 : 0, ts,
              ts, id],
     });
+    /* Picking a take asks someone for a decision: tell the admins who want
+       to be asked (brief 2.7). Approving it, or sending it back, is the
+       decision itself and needs no nudge. */
+    if (state === "picked") {
+      after(async () => {
+        const admins = await db().execute({ sql: `SELECT id FROM users WHERE role = 'admin' AND disabled = 0 AND deleted_at IS NULL AND id <> ?`, args: [got.user.id] });
+        const gen = await getGeneration(id).catch(() => null);
+        const where = gen?.shotCode ? `${gen.shotCode} v${gen.version ?? 1}` : "A take";
+        await notify("approvalNeeded", (admins.rows as unknown as { id: string }[]).map((r) => String(r.id)),
+          { title: `${where} is waiting on you`, body: `${got.user.name} picked it.`, url: "/" }).catch(() => {});
+      });
+    }
   }
   /* Filing against a shot, moving between shots, or unfiling. A video or a
      still takes the shot's next version number on the way in; an audio
