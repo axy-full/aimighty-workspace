@@ -32,6 +32,7 @@ import { effectiveRules } from "@/lib/rules";
 import { stillToolFor } from "@/lib/stillTools";
 import { identityForCast, startIdentityStill, runIdentityRender, RENDER_USD_PER_MP, RENDER_RATIOS } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
+import { uploadSourceParams } from "@/lib/sourceClip";
 import { approvedTakeOf } from "@/lib/shots";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 
@@ -139,6 +140,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const notices: string[] = [];
   const task = getTask(String(body.task ?? "generate"));
   const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
+  /* An uploaded clip as the source of a locked task: the client sends it here, not among the references. */
+  const sourceUploadId = !sourceGenId && body.sourceUploadId ? String(body.sourceUploadId) : null;
 
   let sourceRef: Reference | null = null;
   let sourceSeconds: number | null = null;
@@ -158,10 +161,28 @@ export const POST = withTenant(async function POST(req: Request) {
         { error: `${model.label} can't ${task.label.toLowerCase()} — pick an engine that offers it.` },
         { status: 400 });
     }
-    if (!sourceGenId) {
+    if (!sourceGenId && !sourceUploadId) {
       return NextResponse.json(
-        { error: `${task.label} needs a source render to work on.` }, { status: 400 });
+        { error: `${task.label} needs a clip to work on — a render from the wall, or an uploaded video.` }, { status: 400 });
     }
+    if (sourceUploadId) {
+      const up = await db().execute({
+        sql: `SELECT id, mime, ext, stored_url, kind, duration_s, height FROM uploads WHERE id = ? LIMIT 1`,
+        args: [sourceUploadId],
+      });
+      if (!up.rows.length) return NextResponse.json({ error: "That uploaded clip no longer exists." }, { status: 400 });
+      const u = up.rows[0] as unknown as { id: string; mime: string; ext: string; stored_url: string; kind: string; duration_s: number | null; height: number | null };
+      if (u.kind !== "video") return NextResponse.json({ error: `${task.label} works on video, and that upload is a still.` }, { status: 400 });
+      sourceRef = { id: u.id, mime: u.mime || "video/mp4", ext: u.ext || "mp4", storedUrl: u.stored_url, role: "reference_video", kind: "video", fromGeneration: false };
+      const sp = uploadSourceParams({ durationS: u.duration_s, height: u.height });
+      if (typeof sp.duration === "number") sourceSeconds = sp.duration;
+      if (typeof sp.resolution === "string") sourceResolution = sp.resolution;
+      const refused = sourceProblem(task, sp, "upload");
+      if (refused) return NextResponse.json({ error: refused }, { status: 400 });
+      const advice = sourceAdvice(task, typeof sp.duration === "number" ? sp.duration : null);
+      if (advice) notices.push(advice);
+    }
+    if (!sourceUploadId) {
     const rs = await db().execute({
       sql: `SELECT id, status, stored_url, kind, params FROM generations
             WHERE id = ? AND deleted = 0 LIMIT 1`,
@@ -196,6 +217,7 @@ export const POST = withTenant(async function POST(req: Request) {
       const advice = sourceAdvice(task, typeof sp.duration === "number" ? sp.duration : null);
       if (advice) notices.push(advice);
     } catch { /* unparseable params — no advice to give */ }
+    }
     if (!hasTrigger(task, prompt)) {
       return NextResponse.json({
         error: `${task.label} has to say so in words — the model reads the intent from ` +
@@ -239,6 +261,8 @@ export const POST = withTenant(async function POST(req: Request) {
    * resolved separately and carry fromGeneration, which the vendor adapters
    * now honour on the image path as well as the video one.
    * --------------------------------------------------------------- */
+  // The source clip is the vendor's @Video 1, not a reference: never both.
+  if (sourceUploadId) { const i = wanted.findIndex((w) => w.uploadId === sourceUploadId); if (i >= 0) wanted.splice(i, 1); }
   const wantedGens: { genId: string; role: ImageRole }[] = Array.isArray(body.references)
     ? body.references
         .map((r: { genId?: string; role?: string }) => ({
@@ -774,6 +798,7 @@ export const POST = withTenant(async function POST(req: Request) {
     previewFor: typeof body.previewFor === "string" && /^[a-z]+:[a-z0-9_-]+$/i.test(body.previewFor) ? body.previewFor : undefined,
     task: task.id !== "generate" ? task.id : undefined,
     sourceGenId: sourceGenId ?? undefined,
+    sourceUploadId: sourceUploadId ?? undefined,
     sourceSeconds: sourceSeconds ?? undefined,
     // What the vendor locked for us, so the record explains its own shape.
     locked: task.locked
