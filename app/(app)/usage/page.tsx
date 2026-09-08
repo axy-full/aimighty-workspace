@@ -22,6 +22,7 @@ import { IconClose } from "@/components/Icons";
 import { appConfirm } from "@/components/dialog";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useMoney } from "@/lib/price";
+import Runway from "@/components/Runway";
 
 /**
  * Usage — four ledgers, one per vendor.
@@ -115,6 +116,7 @@ export default function UsagePage() {
     <div className="page">
       <div className="page-inner">
         <ProductionTop />
+        {money.inCredits && <Runway className="mt-3 block text-[13px] text-mute" />}
 
         {!money.inCredits && (<>
         {/* ── The ledgers ── */}
