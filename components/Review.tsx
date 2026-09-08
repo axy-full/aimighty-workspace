@@ -5,8 +5,9 @@ import { appAlert } from "./dialog";
 import { useApi } from "@/lib/useApi";
 import { timeAgo } from "@/lib/format";
 import { trailLine, type Trail } from "@/lib/approval";
+import { splitMentions, isNamed } from "@/lib/mentions";
 
-type Note = { id: string; text: string; author: string; userId: string; createdAt: number };
+type Note = { id: string; text: string; author: string; userId: string; createdAt: number ; mentions?: string[] };
 
 /**
  * Sign-off and notes for one shot.
@@ -101,7 +102,7 @@ export default function Review({ genId, state, reviewBy, trail, reason, onChange
             <li key={n.id} className="text-[13.5px] leading-relaxed">
               <span className="font-medium">{n.author}</span>{" "}
               <span className="text-mute">{timeAgo(n.createdAt)}</span>
-              <p className="whitespace-pre-wrap text-dim">{n.text}</p>
+              <p className="whitespace-pre-wrap text-dim">{splitMentions(n.text, n.mentions ?? []).map((part, i) => (isNamed(part, n.mentions ?? []) ? <span key={i} className="note-at">{part.text}</span> : <span key={i}>{part.text}</span>))}</p>
             </li>
           ))}
         </ul>

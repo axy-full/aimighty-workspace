@@ -38,3 +38,47 @@ export function splitMentions(text: string, known: string[] = []): { text: strin
   if (i < text.length) parts.push({ text: text.slice(i), mention: false });
   return parts;
 }
+
+/** Someone on the team, as a note may name them. */
+export type Person = { id: string; name: string };
+
+/** The names a person answers to in a note: their full name, and their first when it is theirs alone. */
+export function nicknames(people: Person[]): { name: string; id: string }[] {
+  const firsts = new Map<string, number>();
+  for (const p of people) {
+    const first = p.name.trim().split(/\s+/)[0] ?? "";
+    if (first) firsts.set(first.toLowerCase(), (firsts.get(first.toLowerCase()) ?? 0) + 1);
+  }
+  const out: { name: string; id: string }[] = [];
+  for (const p of people) {
+    const full = p.name.trim();
+    if (full) out.push({ name: full, id: p.id });
+    const first = full.split(/\s+/)[0] ?? "";
+    if (first && first !== full && (firsts.get(first.toLowerCase()) ?? 0) === 1) out.push({ name: first, id: p.id });
+  }
+  return out;
+}
+
+/** Who a note names, once each. A name nobody answers to is left alone. */
+export function peopleIn(text: string, people: Person[]): Person[] {
+  const names = nicknames(people);
+  const said = mentionsIn(text, names.map((n) => n.name));
+  const ids = new Set<string>();
+  const out: Person[] = [];
+  for (const word of said) {
+    const hit = names.find((n) => n.name.toLowerCase() === word.toLowerCase());
+    if (!hit || ids.has(hit.id)) continue;
+    ids.add(hit.id);
+    const person = people.find((p) => p.id === hit.id);
+    if (person) out.push(person);
+  }
+  return out;
+}
+
+
+/** Only a name the note actually resolved reads as a mention; an address in the text does not. */
+export function isNamed(part: { text: string; mention: boolean }, names: string[]): boolean {
+  if (!part.mention) return false;
+  const word = part.text.replace(/^@/, "").toLowerCase();
+  return names.some((n) => n.toLowerCase() === word);
+}
