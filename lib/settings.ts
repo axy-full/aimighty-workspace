@@ -20,6 +20,8 @@ export const DEFAULTS = {
   deriveForApi: "1",
   /** Cost approval rule: anyone renders, a cap per shot, or a producer approves. */
   approvalRule: "anyone",
+  /** With "cap": a shot may take this many credits before a member needs an admin to press (brief 2.2). */
+  shotCapCredits: "50",
   /** Warn the producer when a production's spend reaches this share of its cap. */
   capWarnPct: "80",
   /** What happens at the cap: the producer unlocks, rendering stops, or a warning only. */

@@ -47,10 +47,12 @@ import { readDraggedAsset, readDraggedCast } from "@/lib/dnd";
 import { movesFor, getTask, type EditMove, type TaskId, type LockedTaskId } from "@/lib/tasks";
 import type { Params } from "./Workspace";
 import { COUNTS } from "@/lib/variations";
+import { ruleLine } from "@/lib/approvalRule";
 
 type Menu = null | "model" | "dur" | "ratio" | "res" | "more" | "cost" | "orient";
 
 export type Engine = { id: string; label: string; configured: boolean };
+export type ApprovalInfo = { rule: "anyone" | "cap" | "producer"; shotCapCredits: number };
 export type WriterInfo = { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean; usdPerCall?: number };
 
 export type ComposerProps = {
@@ -58,6 +60,8 @@ export type ComposerProps = {
   promptRef: React.RefObject<HTMLTextAreaElement | null>;
   params: Params; patch: (p: Partial<Params>) => void;
   model: ModelDef; engines: Engine[]; writer?: WriterInfo | null;
+  /** The workspace's cost approval rule, said before the press when it applies (brief 2.2). */
+  approval?: ApprovalInfo | null;
   refs: RefItem[]; setRefs: React.Dispatch<React.SetStateAction<RefItem[]>>;
   picker: React.MutableRefObject<RefPicker>; cite: (token: string) => void;
   /** The source is null until a clip is chosen — a mode can be picked first. */
@@ -98,7 +102,7 @@ export type ComposerProps = {
 
 export default function Composer(p: ComposerProps) {
   const {
-    prompt, setPrompt, promptRef, params, patch, model, engines, writer,
+    prompt, setPrompt, promptRef, params, patch, model, engines, writer, approval = null,
     refs, setRefs, picker, cite, taskOn, cancelTask, uploadSource = null, problem, blocked, notice,
     est, estTokens, dims, trainedCited = null, count = 1, setCount, writerUsd = 0, inputSeconds, hasVideoInput, imageRefCount,
     busy, onRender, setupCount, setupOpen, toggleSetup, kind, ownRefs, dropOwnRef,
@@ -469,7 +473,8 @@ export default function Composer(p: ComposerProps) {
                     {!writer || writer.writer === "none"
                       ? <>Pro mode: your words go as written, the camera as a module from the bank.</>
                       : <>Your words go as written; an idea too thin to film is finished by {writer.label}{writer.usdPerCall ? ` for ${price(writer.usdPerCall, "text")} a call` : ""}{writer.configured ? "" : " (not reachable right now, so it goes raw)"}{writerUsd > 0 ? " — this one is that thin, so it will run" : ""}. The camera comes from the bank.</>}
-                    {" "}Start with <span className="font-medium text-blue">raw:</span> to bypass everything.</>
+                    {" "}Start with <span className="font-medium text-blue">raw:</span> to bypass everything.
+                    {approval && ruleLine(approval.rule, approval.shotCapCredits, (n) => `${n} cr`) ? <> {ruleLine(approval.rule, approval.shotCapCredits, (n) => `${n} cr`)}</> : null}</>
                 )}
               </span>
             </>
