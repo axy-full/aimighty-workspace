@@ -23,6 +23,7 @@ import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
 import ShotRow from "./ShotRow";
 import { useApi } from "@/lib/useApi";
+import { liftLocalSetup } from "@/lib/setupLocal";
 import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import { useOnChange } from "@/lib/changes";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
@@ -83,12 +84,28 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /* The saved Setups are layers now (brief 2.3): the workspace's, then the
      production's, read here and folded under the shot's own rows rather
      than copied into them — so the composer can say which is which. */
-  const [savedLayers, setSavedLayers] = useState<{ workspace: ShotSpec; production: ShotSpec }>({ workspace: {}, production: {} });
+  /* Both layers come from the server now. They used to be read out of this
+     browser's localStorage, which meant a production's Setup was known only
+     to whoever last saved it — and the workspace key was not keyed by
+     workspace, so one team's defaults followed you into another's composer. */
+  const setupUrl = signedIn ? `/api/setup?projectId=${encodeURIComponent(bin)}` : null;
+  const { data: setupData, refresh: refreshSetup } =
+    useApi<{ workspace: ShotSpec; production: ShotSpec }>(setupUrl, 0);
+  const savedLayers = useMemo(
+    () => ({ workspace: setupData?.workspace ?? {}, production: setupData?.production ?? {} }),
+    [setupData],
+  );
+  /* Anyone who had a Setup before this moved server-side keeps it: it is
+     lifted up once, and only into a scope the server has nothing for.
+     Guarded by a ref rather than by the outcome, because `setupData` is a new
+     object on every fetch and this effect can ask for another one — without
+     the guard that is a fetch loop, which is exactly what it was. */
+  const lifted = useRef<string | null>(null);
   useEffect(() => {
-    const read = (key: string): ShotSpec => { try { const raw = window.localStorage.getItem(key); return raw ? (JSON.parse(raw) as ShotSpec) : {}; } catch { return {}; } };
-    const production = bin !== "all" && bin !== "unfiled" ? read(`aw_setup_${bin}`) : {};
-    Promise.resolve().then(() => setSavedLayers({ workspace: read("aw_setup_all"), production }));
-  }, [bin]);
+    if (!setupData || lifted.current === bin) return;
+    lifted.current = bin;
+    void liftLocalSetup(bin, setupData).then((moved) => { if (moved) refreshSetup(); });
+  }, [bin, setupData, refreshSetup]);
   /** Which shot this take belongs to — what makes it v3 of SH110. */
   const [shotId, setShotId] = useState<string>("");
   /* Stills only: how many to make from one prompt, and the role each one

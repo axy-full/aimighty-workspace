@@ -16,7 +16,9 @@
  * keeps the model, the duration and the references.
  */
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { appAlert } from "@/components/dialog";
+import { liftLocalSetup } from "@/lib/setupLocal";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
@@ -61,18 +63,37 @@ function ShotBuilder() {
   const shotId = search.get("shot");
   const shot = shotData?.shots.find((s) => s.id === shotId) ?? null;
 
-  // The production's saved setup opens the builder already set — unless
-  // there is unfinished work here, which wins over the saved starting point.
+  /* The saved Setup for this scope, from the server. It used to be read out
+     of this browser, which is why a production's Setup was only ever known to
+     whoever last saved it. */
+  const { data: setupData, refresh: refreshSetup } =
+    useApi<{ workspace: ShotSpec; production: ShotSpec }>(
+      signedIn ? `/api/setup?projectId=${encodeURIComponent(bin)}` : null, 0);
+  const savedSpec = useMemo(
+    () => (scoped ? setupData?.production : setupData?.workspace) ?? null,
+    [setupData, scoped],
+  );
+
+  /* Whatever this browser still holds is lifted up once, into a scope the
+     server has nothing for — so nobody loses the Setup they already had.
+     Guarded by a ref rather than by the outcome: `setupData` is a new object
+     on every fetch and this effect can ask for another one, which without the
+     guard is a fetch loop. */
+  const lifted = useRef<string | null>(null);
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(`aw_setup_${bin}`);
-      if (raw && !peekDraft<ShotSpec>(workspace?.id, `studio-spec:${bin}`)) {
-        const saved = JSON.parse(raw) as ShotSpec;
-        Promise.resolve().then(() => setSpec(saved));
-      }
-    } catch { /* private mode */ }
+    if (!setupData || lifted.current === bin) return;
+    lifted.current = bin;
+    void liftLocalSetup(bin, setupData).then((moved) => { if (moved) refreshSetup(); });
+  }, [bin, setupData, refreshSetup]);
+
+  // The saved setup opens the builder already set — unless there is
+  // unfinished work here, which wins over the saved starting point.
+  useEffect(() => {
+    if (!savedSpec || !Object.keys(savedSpec).length) return;
+    if (peekDraft<ShotSpec>(workspace?.id, `studio-spec:${bin}`)) return;
+    Promise.resolve().then(() => setSpec(savedSpec));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bin, workspace?.id]);
+  }, [bin, workspace?.id, savedSpec]);
 
   /* Which renders used each move or technique — the bank's usage line. */
   /* What this production has used, what the workspace has used, and the
@@ -101,11 +122,13 @@ function ShotBuilder() {
   /* A production with no setup saved yet starts from the platform's defaults, not from nothing. */
   useEffect(() => {
     if (!signedIn || !platformSetup || specCount(spec) > 0) return;
-    let hasSaved = false;
-    try { hasSaved = Boolean(window.localStorage.getItem(`aw_setup_${bin}`)); } catch { /* private mode */ }
-    if (!hasSaved) setSpec({ ...platformSetup });
+    // Wait for the answer before falling back: `undefined` is "still asking",
+    // and treating it as "nothing saved" would stamp the platform's defaults
+    // over a Setup that was about to arrive.
+    if (!setupData) return;
+    if (!savedSpec || !Object.keys(savedSpec).length) setSpec({ ...platformSetup });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bin, platformSetup, signedIn]);
+  }, [bin, platformSetup, signedIn, setupData, savedSpec]);
 
   const toggle = (cat: string, value: string) =>
     setSpec((s) => ({ ...s, [cat]: s[cat] === value && cat !== "titles" ? "" : value }));
@@ -126,12 +149,24 @@ function ShotBuilder() {
     proseDraft.clear(); specDraft.clear();
     router.push("/");
   }
-  function saveSetup() {
+  /* Saving a Setup is now something the whole team gets, not something this
+     browser remembers. `aw_last_spec` stays local on purpose — that one is
+     the composer's own "what I used last", a personal convenience, not a
+     shared decision. */
+  async function saveSetup() {
+    try { window.localStorage.setItem("aw_last_spec", JSON.stringify(spec)); } catch { /* private mode */ }
     try {
-      window.localStorage.setItem(`aw_setup_${bin}`, JSON.stringify(spec));
-      window.localStorage.setItem("aw_last_spec", JSON.stringify(spec));
+      const res = await fetch("/api/setup", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: scoped ? bin : "workspace", spec }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      refreshSetup();
       setSaved(true); setTimeout(() => setSaved(false), 1800);
-    } catch { /* private mode */ }
+    } catch (e) {
+      await appAlert("Not saved", (e as Error).message);
+    }
   }
 
   const bankAll = (["move", "technique"] as const).flatMap((key) => {
