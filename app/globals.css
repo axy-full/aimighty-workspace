@@ -2635,6 +2635,9 @@ html, body { overflow-x: clip; }
   .ak-cta > .btn-secondary { flex: none; height: 46px !important; border-radius: 10px; }
   .hdr-open-long { display: none; }
   .shell-body:has(.ak-cta) .chat-fab { bottom: calc(var(--tabbar-h) + 79px); }
+  /* The run view carries its own action bar, so the chat button sits above
+     it rather than over the price on the one button that spends money. */
+  .shell-body:has(.rig-run-bar) .chat-fab { bottom: calc(var(--tabbar-h) + 96px); }
   .wl-rooms { display: block; order: 3; padding: 26px 22px 0; font: 500 10px/1 var(--font-kode); letter-spacing: .18em; color: var(--color-dim); }
   /* treatment: the outline becomes a sticky strip; the document a column */
   .ak-trt { display: block; min-height: 0; }
@@ -2895,3 +2898,181 @@ html, body { overflow-x: clip; }
 .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .pick-tile { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--color-thumb, #111); }
 .pick-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; font: 500 10px/1.2 var(--font-kode); letter-spacing: .06em; text-transform: uppercase; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.72)); text-align: left; }
+
+/* ── Rig · the run view (brief 3, surface 1a) ─────────────────────────────
+   A phone screen first: the header and the action bar are sticky, the body
+   scrolls between them, and the bar clears the home indicator. Colours come
+   from the app's own tokens rather than the handoff's absolute values, so
+   Rig follows whichever theme the reader is in instead of being a light
+   screen dropped into a dark app. */
+.rig-run { display: flex; flex-direction: column; min-height: 100dvh; box-sizing: border-box; background: var(--color-desk); }
+.rig-run-head {
+  position: sticky; top: 0; z-index: 5; flex: none; height: 56px;
+  /* On a phone the shell's own header is sticky at top:0 and taller in the
+     stack, so a run header pinned to zero hides underneath it. */
+  display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  background: var(--color-desk); border-bottom: 1px solid var(--color-hair);
+}
+.rig-icon {
+  /* flex: none, because the row's other child is a nowrap mono line: without
+     it a long production name eats the back button down past the 44px floor. */
+  flex: none;
+  width: 44px; height: 44px; margin-left: -10px; border: 0; background: transparent;
+  color: var(--color-bone); font: 400 20px/1 var(--font-sans);
+  display: flex; align-items: center; justify-content: center;
+}
+.rig-run-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rig-run-name { font: 600 16px/1 var(--font-sans); color: var(--color-bone); }
+.rig-run-meta {
+  font: 400 12px/1 var(--font-kode); letter-spacing: .08em; color: var(--color-mute);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rig-run-body { flex: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+
+.rig-cost {
+  background: var(--color-panel); border-radius: 16px; padding: 18px 18px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.rig-eyebrow { font: 500 12px/1 var(--font-kode); letter-spacing: .14em; color: var(--color-mute); }
+.rig-cost-figures { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rig-cost-big { font: 600 40px/1 var(--font-sans); letter-spacing: -.03em; color: var(--color-bone); }
+.rig-cost-of { font: 400 16px/1 var(--font-sans); color: var(--color-mute); }
+.rig-cost-line {
+  display: flex; justify-content: space-between; gap: 12px;
+  font: 400 13px/1.4 var(--font-sans); color: var(--color-mute);
+}
+.rig-bar { height: 6px; border-radius: 3px; background: var(--color-chip2); overflow: hidden; display: flex; }
+.rig-bar > i { background: var(--color-ink); }
+.rig-bar.is-accent { height: 5px; }
+.rig-bar.is-accent > i { background: var(--color-approved); }
+
+/* The one line that answers the question a stopped run actually raises. */
+.rig-holding {
+  display: flex; align-items: center; gap: 10px; margin: 0; padding: 2px 4px 2px 2px;
+  font: 500 13px/1.4 var(--font-sans); color: var(--color-bone);
+}
+.rig-holding > i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-ink); }
+
+.rig-stage {
+  background: var(--color-panel); border: 1px solid transparent; border-radius: 16px;
+  padding: 14px; display: flex; flex-direction: column; gap: 12px;
+}
+/* A stage waiting on somebody is the only thing on the screen that is tinted. */
+.rig-stage.is-attention { background: var(--color-panel3); border-color: var(--color-edge); }
+.rig-stage-top { display: flex; align-items: center; gap: 12px; }
+/* The well is a picture of what the stage made, never a caption about it.
+   Empty it is a dashed outline with a dash in it; once there is output it is
+   the thumbnail, and until the frames are wired it is the placeholder fill
+   the rest of the app already uses for a well with something in it. */
+.rig-well {
+  flex: none; width: 60px; height: 38px; border-radius: 8px; box-sizing: border-box;
+  overflow: hidden; border: 1px dashed var(--color-edge);
+  display: flex; align-items: center; justify-content: center;
+  font: 500 12px/1 var(--font-kode); color: var(--color-mute);
+}
+.rig-well.has-output {
+  border: 1px solid var(--color-line); background: var(--color-thumb);
+  background-image: repeating-linear-gradient(135deg, var(--color-panel3) 0 5px, var(--color-panel2) 5px 10px);
+}
+.rig-well img { width: 100%; height: 100%; object-fit: cover; }
+.rig-stage-names { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rig-stage-name { font: 600 16px/1.2 var(--font-sans); color: var(--color-bone); }
+.rig-stage-sub {
+  font: 400 13px/1.3 var(--font-sans); color: var(--color-mute);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rig-stage-right { margin-left: auto; flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.rig-stage-cost { font: 500 13px/1 var(--font-kode); color: var(--color-mute); }
+.rig-stage-right .is-done ~ .rig-stage-cost,
+.rig-stage-right .is-running ~ .rig-stage-cost { color: var(--color-bone); }
+
+/* The state vocabulary, and nothing outside it: queued, running, done,
+   needs you. Done and running carry the one accent the system has. */
+.rig-state { display: flex; align-items: center; gap: 7px; font: 500 13px/1 var(--font-sans); color: var(--color-mute); }
+.rig-state > i { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; background: transparent; }
+.rig-state.is-done { color: var(--color-approved); }
+.rig-state.is-done > i { background: var(--color-approved); }
+.rig-state.is-running { color: var(--color-bone); }
+.rig-state.is-running > i { border: 2.5px solid var(--color-approved); }
+.rig-state.is-queued > i { border: 1.5px dashed var(--color-dim); }
+.rig-state.is-needs_you { color: var(--color-bone); }
+.rig-state.is-needs_you > i { background: var(--color-ink); }
+.rig-state.is-skipped > i { border: 1.5px solid var(--color-faint); }
+
+.rig-progress { display: flex; flex-direction: column; gap: 7px; }
+.rig-progress-line {
+  display: flex; justify-content: space-between;
+  font: 400 12px/1 var(--font-kode); letter-spacing: .06em; color: var(--color-mute);
+}
+
+.rig-fixes {
+  display: flex; flex-direction: column; gap: 12px;
+  border-top: 1px solid var(--color-line); padding-top: 12px;
+}
+.rig-reason { margin: 0; font: 400 14px/1.45 var(--font-sans); color: var(--color-bone); text-wrap: pretty; }
+.rig-fix-list { display: flex; flex-direction: column; gap: 6px; }
+.rig-fix {
+  min-height: 48px; text-align: left; display: flex; align-items: center; gap: 12px;
+  background: transparent; border: 1px solid var(--color-line); border-radius: 12px;
+  padding: 10px 12px; color: var(--color-bone); width: 100%;
+}
+.rig-fix.is-on { background: var(--color-panel2); border-color: var(--color-picked); }
+.rig-mark {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; box-sizing: border-box;
+  border: 1.5px solid var(--color-edge); background: transparent;
+}
+.rig-fix.is-on .rig-mark { border-color: var(--color-ink); background: var(--color-ink); }
+.rig-fix-words { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rig-fix-label { font: 500 14px/1.25 var(--font-sans); }
+.rig-fix-note { font: 400 12.5px/1.3 var(--font-sans); color: var(--color-mute); text-wrap: pretty; }
+.rig-fix-cost { margin-left: auto; flex: none; font: 500 13px/1 var(--font-kode); color: var(--color-mute); }
+.rig-fixed-note { font: 400 12px/1.4 var(--font-kode); letter-spacing: .04em; color: var(--color-mute); }
+.rig-foot-note { margin: 6px 2px 0; font: 400 13px/1.5 var(--font-sans); color: var(--color-mute); text-wrap: pretty; }
+
+/* Above the dock, never behind it. The app's tab bar sits under every route,
+   so a bar stuck to the viewport's own bottom would put the one action on the
+   screen beneath it.
+   The clearance is the sticky OFFSET, not padding inside the bar: padding
+   only holds while the bar is overhanging, so at the end of the scroll the
+   bar settled into its own box and rose into the chat button. */
+.rig-run-bar {
+  position: sticky; bottom: 0; z-index: 5; flex: none;
+  background: var(--color-desk); border-top: 1px solid var(--color-hair);
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px;
+}
+.rig-secondary {
+  flex: none; min-width: 96px; height: 52px; border: 1px solid var(--color-edge);
+  border-radius: 14px; background: transparent; color: var(--color-bone);
+  font: 500 15px/1 var(--font-sans);
+}
+.rig-primary {
+  flex: 1; height: 52px; border: 0; border-radius: 14px;
+  background: var(--color-blue); color: var(--color-on-ink);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 18px; font: 600 16px/1 var(--font-sans); min-width: 0;
+}
+.rig-primary:disabled { opacity: .45; }
+.rig-primary-cost { font: 500 14px/1 var(--font-kode); opacity: .62; }
+
+/* The run view against the shell it lives in.
+
+   This block is at the END of the file on purpose. The .rig-* rules above are
+   appended after the shell's own mobile block, so an override written up
+   there loses to them on source order alone — which is how the run header
+   came to pin underneath the app header and the action bar came to rest under
+   the chat button, both while the rule that should have stopped it was
+   present and correct.
+
+   The query is the shell's own definition of a phone, copied verbatim from
+   lib/useMobile.ts: the height half matters, because a short wide screen puts
+   the tab bar back and a narrower query left the primary underneath it. */
+@media (max-width: 1023px), (max-height: 520px) {
+  /* .hdr is 52px and sticky at top: 0, so the run's header sits below it. */
+  .rig-run-head { top: 52px; }
+  /* The clearance is the sticky OFFSET, not padding inside the bar: padding
+     only holds while the bar overhangs, so at the end of the scroll the bar
+     settled into its own box and rose into the chat button. The shell already
+     reserves the tab bar's room below the route, so reserving it again here
+     is what pushed the resting bar back up into the button. */
+  .rig-run-bar { bottom: var(--tabbar-h); }
+}

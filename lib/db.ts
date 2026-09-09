@@ -435,6 +435,90 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_bindings_element ON bindings(element_id)`,
   `CREATE INDEX IF NOT EXISTS idx_bindings_version ON bindings(version_id)`,
   `CREATE INDEX IF NOT EXISTS idx_bindings_project ON bindings(project_id)`,
+
+  /* ── Rig: recipes, and the runs of them (brief 3) ─────────────────────
+     A RECIPE is the production written down as stages — brief, scene, shot
+     list, keyframes, motion, post, audio, assembly. A RUN is one execution
+     of it. The recipe is authored in Atomik and run here, which is the same
+     split the shot list already uses, on the same rows.
+
+     `stage` is a word the projects table already spends on something else
+     entirely, so nothing here is called that on its own: a recipe has
+     recipe_stages, and a run has stage_runs. */
+  `CREATE TABLE IF NOT EXISTS recipes (
+     id         TEXT PRIMARY KEY,
+     project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+     name       TEXT NOT NULL DEFAULT '',
+     draft      INTEGER NOT NULL DEFAULT 1,
+     created_by TEXT NOT NULL DEFAULT '',
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_recipes_project ON recipes(project_id)`,
+  /* One step of a recipe. `kind` decides what finishing it means: writing
+     costs text credits and produces a document, rendering produces takes,
+     and assembly gathers what the rest made. */
+  `CREATE TABLE IF NOT EXISTS recipe_stages (
+     id         TEXT PRIMARY KEY,
+     recipe_id  TEXT NOT NULL,
+     num        INTEGER NOT NULL DEFAULT 0,
+     name       TEXT NOT NULL DEFAULT '',
+     /* write | render | assemble */
+     kind       TEXT NOT NULL DEFAULT 'render',
+     engine     TEXT NOT NULL DEFAULT '',
+     params     TEXT NOT NULL DEFAULT '{}',
+     position   INTEGER NOT NULL DEFAULT 0,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_recipe_stages ON recipe_stages(recipe_id, position)`,
+  /* One execution. `num` is what the header calls it — Run 04 — and counts
+     per production, so it reads the way a team would say it out loud. */
+  `CREATE TABLE IF NOT EXISTS runs (
+     id           TEXT PRIMARY KEY,
+     recipe_id    TEXT NOT NULL,
+     project_id   TEXT REFERENCES projects(id) ON DELETE CASCADE,
+     num          INTEGER NOT NULL DEFAULT 1,
+     /* running | paused | done | needs_you */
+     state        TEXT NOT NULL DEFAULT 'running',
+     estimate_credits INTEGER,
+     started_by   TEXT NOT NULL DEFAULT '',
+     started_at   INTEGER NOT NULL,
+     finished_at  INTEGER,
+     updated_at   INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_id, started_at DESC)`,
+  /* Where one stage of one run got to.
+
+     A failure lives here rather than in a table of its own, because it is
+     not a thing that outlives the attempt it belongs to: it is the reason
+     this stage stopped and the priced ways out of it, and it is replaced
+     whole the next time the stage is tried. Rule four of the design — a
+     failure never restarts a run — is why the fixes are stored beside the
+     stage and not thrown away with it. */
+  `CREATE TABLE IF NOT EXISTS stage_runs (
+     id           TEXT PRIMARY KEY,
+     run_id       TEXT NOT NULL,
+     stage_id     TEXT NOT NULL,
+     /* queued | running | done | needs_you | skipped */
+     state        TEXT NOT NULL DEFAULT 'queued',
+     done_units   INTEGER NOT NULL DEFAULT 0,
+     total_units  INTEGER NOT NULL DEFAULT 0,
+     spent_credits INTEGER NOT NULL DEFAULT 0,
+     estimate_credits INTEGER NOT NULL DEFAULT 0,
+     /* the reason it stopped and the priced ways out, as JSON */
+     failure      TEXT,
+     /* which fix was taken, so the record says how it was got past, and the
+        words it was taken in — a stored id is an internal name and reads as
+        one on a card months later */
+     fixed_with   TEXT,
+     fixed_label  TEXT,
+     fixed_by     TEXT,
+     fixed_at     INTEGER,
+     started_at   INTEGER,
+     updated_at   INTEGER NOT NULL
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_stage_runs_one ON stage_runs(run_id, stage_id)`,
   /* Workspace-level settings that outlive any one browser: the filename
      protocol, retention policy, provider preferences. localStorage prefs
      stay in lib/prefs.ts — these are the ones the whole team shares. */
