@@ -41,3 +41,11 @@ test("every surface's default sits inside its own stops", () => {
     expect(clampWidth(spec, spec.def), `${name} default survives its own clamp`).toBe(spec.def);
   }
 });
+
+test("a width stored on a wide display is clamped to the window it is shown on", () => {
+  /* Dragged to 720 on a 27" display, then opened at 1024: read back
+     unclamped that laid out as `304px 720px` — the wall of renders, which is
+     the work, narrower than the rail beside it. */
+  expect(clampWidth(composer, 720, 1024)).toBe(512);
+  expect(clampWidth(composer, 720, 2560)).toBe(720);   // and given room, unchanged
+});

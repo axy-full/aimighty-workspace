@@ -105,10 +105,12 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const [railW] = usePaneWidth(PANES.composer);
   const lifted = useRef<string | null>(null);
   useEffect(() => {
-    if (!setupData || lifted.current === bin) return;
+    if (lifted.current === bin) return;
     lifted.current = bin;
-    void liftLocalSetup(bin, setupData).then((moved) => { if (moved) refreshSetup(); });
-  }, [bin, setupData, refreshSetup]);
+    /* No longer waits on this screen's copy of the Setup: the lift asks the
+       server itself, for this exact production, at the moment it decides. */
+    void liftLocalSetup(bin).then((moved) => { if (moved) refreshSetup(); });
+  }, [bin, refreshSetup]);
   /** Which shot this take belongs to — what makes it v3 of SH110. */
   const [shotId, setShotId] = useState<string>("");
   /* Stills only: how many to make from one prompt, and the role each one

@@ -115,3 +115,29 @@ test("a frame with no width yet does not produce NaN", () => {
      clip-path and blank the take. */
   expect(wipeFromPointer(300, 0, 0)).toBe(50);
 });
+
+test("a comparison is of video, so the stills wall gets no Compare button", () => {
+  /* compareSet filtered on url and status but never on kind, so any shot
+     with two finished stills showed a Compare button on /images — and the
+     grid then put PNG urls inside <video> elements: black boxes under a
+     transport reporting no duration. canCompare is the gate on that button. */
+  const stills = [
+    { id: "s1", version: 1, storedUrl: "u", kind: "image" },
+    { id: "s2", version: 2, storedUrl: "u", kind: "image" },
+  ];
+  expect(compareSet(stills)).toEqual([]);
+  expect(canCompare(stills)).toBe(false);
+});
+
+test("a row from before the kind column is treated as video", () => {
+  const old = [{ id: "a", version: 1, storedUrl: "u" }, { id: "b", version: 2, storedUrl: "u" }];
+  expect(canCompare(old)).toBe(true);
+});
+
+test("audio takes are not comparable either", () => {
+  const tracks = [
+    { id: "a1", version: 1, storedUrl: "u", kind: "audio" },
+    { id: "a2", version: 2, storedUrl: "u", kind: "audio" },
+  ];
+  expect(canCompare(tracks)).toBe(false);
+});
