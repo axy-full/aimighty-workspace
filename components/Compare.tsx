@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMoney } from "@/lib/price";
-import { compareSet, compareColumns } from "@/lib/compare";
+import { compareSet, compareColumns, compareCandidates, toggleCompare, canToggle, COMPARE_MAX, COMPARE_MIN } from "@/lib/compare";
 import { groupSpan, clockIndex, tileTarget, needsCorrection, readout } from "@/lib/transport";
 import type { Gen } from "@/components/GenCard";
 
@@ -23,7 +23,17 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
   onOpen?: (id: string) => void;
 }) {
   const money = useMoney();
-  const set = useMemo(() => compareSet(takes), [takes]);
+  /* Every take that could be weighed, and the ones actually being weighed.
+     The comparison opens on what it always did — the newest four — so
+     nothing changes for someone who never touches the row; the difference
+     is that the other takes are now visible and reachable instead of
+     silently dropped. */
+  const candidates = useMemo(() => compareCandidates(takes), [takes]);
+  const [chosen, setChosen] = useState<string[]>(() => compareSet(takes).map((t) => t.id));
+  const set = useMemo(
+    () => candidates.filter((t) => chosen.includes(t.id)),
+    [candidates, chosen],
+  );
   const refs = useRef<(HTMLVideoElement | null)[]>([]);
   const [playing, setPlaying] = useState(true);
   const [at, setAt] = useState(0);
@@ -36,6 +46,10 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
   const each = useCallback((fn: (v: HTMLVideoElement) => void) => {
     refs.current.forEach((v) => { if (v) fn(v); });
   }, []);
+
+  /* The refs are positional, so a take leaving the comparison would leave
+     its element behind to be corrected against a clock it is no longer in. */
+  useEffect(() => { refs.current.length = set.length; }, [set.length]);
 
   /** Which takes have run out while the longest is still playing. */
   const [ended, setEnded] = useState<boolean[]>([]);
@@ -145,6 +159,30 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
         <span className="mono-s">{code} · {set.length} TAKES · IN STEP</span>
         <button type="button" className="chip ml-auto" onClick={onClose}>Close</button>
       </div>
+
+      {candidates.length > COMPARE_MIN && (
+        /* Which takes are being weighed. Only worth showing when there is a
+           choice to make — with two takes there is nothing to choose. The
+           bound lives in the chips: at four, the rest cannot be added; at
+           two, neither can be dropped. That is the limit stated by the
+           control rather than in a sentence under it. */
+        <div className="cmp-pick" role="group" aria-label="Takes in this comparison">
+          {candidates.map((t) => {
+            const on = chosen.includes(t.id);
+            const may = canToggle(chosen, t.id);
+            return (
+              <button
+                key={t.id} type="button"
+                className={`chip !py-1 ${on ? "is-on" : ""}`}
+                aria-pressed={on}
+                disabled={!may}
+                title={may ? undefined : on ? `A comparison holds at least ${COMPARE_MIN}` : `A comparison holds at most ${COMPARE_MAX}`}
+                onClick={() => setChosen((c) => toggleCompare(c, t.id))}
+              >v{t.version ?? 1}</button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="cmp-grid" style={{ "--cmp-cols": cols } as React.CSSProperties}>
         {set.map((t, i) => {
