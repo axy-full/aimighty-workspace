@@ -30,6 +30,8 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo, downloadHref, posterSrc } from "@/lib/format";
 import LazyMedia from "@/components/LazyMedia";
 import ProductionNav from "@/components/ProductionNav";
+import PaneDivider from "@/components/PaneDivider";
+import { PANES, usePaneWidth } from "@/lib/panes";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import { stateOf, roleOf } from "@/components/Feed";
 import type { Gen } from "@/components/GenCard";
@@ -101,6 +103,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
     .map((c) => c.hero!);
 
   /* ▶ Play approved: the approved takes, in order, in the rail's preview. */
+  const [railW] = usePaneWidth(PANES.canvas);
   const [seq, setSeq] = useState<number | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const playing = seq != null ? approvedHeroes[seq] ?? null : null;
@@ -154,7 +157,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
     <>
       <ProductionNav id={id} on="canvas" />
 
-      <div className="cv">
+      <div className="cv" style={{ "--cv-rail": `${railW}px` } as React.CSSProperties}>
         <section className="cv-main">
           <div className="cv-head">
             <span className="cv-h">{project?.name ?? "Canvas"}</span>
@@ -253,6 +256,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
         </section>
 
         <aside className="cv-rail">
+            <PaneDivider spec={PANES.canvas} label="Shot rail" />
           <div className="cv-rail-head">
             <span className="mono-v text-dim">{cur?.shot.code ?? "—"}</span>
             <span className="cv-rail-title">{cur ? (cur.shot.title || cur.shot.description || "Untitled shot") : "No shot selected"}</span>

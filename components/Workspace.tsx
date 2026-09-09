@@ -24,6 +24,8 @@ import SetupPanel from "./SetupPanel";
 import ShotRow from "./ShotRow";
 import { useApi } from "@/lib/useApi";
 import { liftLocalSetup } from "@/lib/setupLocal";
+import PaneDivider from "@/components/PaneDivider";
+import { PANES, usePaneWidth } from "@/lib/panes";
 import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import { useOnChange } from "@/lib/changes";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
@@ -100,6 +102,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
      Guarded by a ref rather than by the outcome, because `setupData` is a new
      object on every fetch and this effect can ask for another one — without
      the guard that is a fetch loop, which is exactly what it was. */
+  const [railW] = usePaneWidth(PANES.composer);
   const lifted = useRef<string | null>(null);
   useEffect(() => {
     if (!setupData || lifted.current === bin) return;
@@ -591,7 +594,8 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         ? "Attach a still of the character to move — an upload, one of your renders, or a cast member." : null));
 
   return (
-    <div className={`ws ${data && visible.length === 0 ? "is-empty" : ""}`}>
+    <div className={`ws ${data && visible.length === 0 ? "is-empty" : ""}`}
+         style={{ "--ws-rail": `${railW}px` } as React.CSSProperties}>
       {/* The wall draws whatever the library holds, including rows made by
           engines that have since been retired. One unreadable row must not
           take the composer down with it. */}
@@ -621,6 +625,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
       </div>
       {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
       <aside className={`ws-rail ${mobile ? (sheetOpen ? "is-sheet" : "is-hidden") : ""}`}>
+        <PaneDivider spec={PANES.composer} label="Composer rail" />
         <div className="sheet-grab" aria-hidden="true"><span /></div>
         <div className="ws-rail-head">
           <span className="ws-bar-h">Composer</span>

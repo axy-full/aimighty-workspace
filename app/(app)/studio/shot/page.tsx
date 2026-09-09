@@ -19,6 +19,8 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { appAlert } from "@/components/dialog";
 import { liftLocalSetup } from "@/lib/setupLocal";
+import PaneDivider from "@/components/PaneDivider";
+import { PANES, usePaneWidth } from "@/lib/panes";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
@@ -79,6 +81,7 @@ function ShotBuilder() {
      Guarded by a ref rather than by the outcome: `setupData` is a new object
      on every fetch and this effect can ask for another one, which without the
      guard is a fetch loop. */
+  const [railW] = usePaneWidth(PANES.builder);
   const lifted = useRef<string | null>(null);
   useEffect(() => {
     if (!setupData || lifted.current === bin) return;
@@ -195,7 +198,7 @@ function ShotBuilder() {
         </span>
       </nav>
 
-      <div className="st is-builder" style={{ "--st-rail": "400px" } as React.CSSProperties}>
+      <div className="st is-builder" style={{ "--st-rail": `${railW}px` } as React.CSSProperties}>
         <section className="st-main !gap-[30px]">
           <div className="st-sec">
             <div className="st-sec-head">
@@ -249,6 +252,7 @@ function ShotBuilder() {
         </section>
 
         <aside className="ws-rail">
+          <PaneDivider spec={PANES.builder} label="Builder rail" />
           <div className="ws-rail-head">
             <span className="ws-bar-h">Prompt</span>
             <span className="mono-s">{n} OF {CATEGORIES.length} ROWS SET</span>

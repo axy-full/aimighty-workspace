@@ -17,6 +17,8 @@ import { startCastDrag } from "@/lib/dnd";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useSearchParams } from "next/navigation";
+import PaneDivider from "@/components/PaneDivider";
+import { PANES, usePaneWidth } from "@/lib/panes";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { uploadFile } from "@/lib/uploadClient";
@@ -89,6 +91,7 @@ function Studio() {
      cast member — on the list, with the person still to be found by eye.
      Seeded once, and only after the list arrives, because the id has to
      match something; going through `pick` so the mobile sheet opens too. */
+  const [railW] = usePaneWidth(PANES.studio);
   const [seededFor, setSeededFor] = useState<string | null>(null);
   const wantCast = useSearchParams().get("cast");
   /* React's "adjust state when the input changes" pattern, done during render
@@ -208,7 +211,7 @@ function Studio() {
         </span>
       </nav>
 
-      <div className="st" style={{ "--st-rail": "380px" } as React.CSSProperties}>
+      <div className="st" style={{ "--st-rail": `${railW}px` } as React.CSSProperties}>
         <section className="st-main">
           <div className="flex max-w-[760px] flex-col gap-2">
             <span className="mono !tracking-[.18em]">{scoped ? current?.name ?? "This production" : "The whole workspace"}</span>
@@ -316,6 +319,7 @@ function Studio() {
         {/* ── Detail rail ───────────────────────────────────────── */}
         {mobile && sheetOpen && <div className="sheet-scrim" onClick={() => setSheetOpen(false)} />}
         <aside className={`ws-rail ${mobile ? (sheetOpen ? "is-sheet" : "is-hidden") : ""}`}>
+          <PaneDivider spec={PANES.studio} label="Studio rail" />
           <div className="sheet-grab" aria-hidden="true"><span /></div>
           <div className="ws-rail-head">
             <span className="flex min-w-0 items-baseline gap-2">

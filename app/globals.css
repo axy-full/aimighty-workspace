@@ -1887,13 +1887,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .search-glyph { font: 500 11px var(--font-kode); }
 
 /* Workspace and list-page frames. */
-.ws { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 400px; }
+.ws { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--ws-rail, 400px); }
 .ws-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .ws-bar { height: 52px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-bottom: 1px solid var(--color-hair); }
 .ws-bar-title { display: flex; align-items: baseline; gap: 10px; }
 .ws-bar-h { font: 600 15px/1 var(--font-display); color: var(--color-ink); }
 .ws-scroll { flex: 1; overflow: auto; padding: 18px 20px 40px; display: flex; flex-direction: column; gap: 26px; }
-.ws-rail { border-left: 1px solid var(--color-hair); background: var(--color-panel); display: flex; flex-direction: column; min-height: 0; }
+.ws-rail { position: relative; border-left: 1px solid var(--color-hair); background: var(--color-panel); display: flex; flex-direction: column; min-height: 0; }
 .ws-rail-head { height: 52px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--color-hair); }
 .ws-rail-body { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
 .ws-rail-foot { flex: none; padding: 14px 16px 16px; border-top: 1px solid var(--color-line); display: flex; flex-direction: column; gap: 8px; }
@@ -2074,7 +2074,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .page-acts { display: flex; gap: 8px; flex: none; }
 
 /* ── Canvas: the sequence ────────────────────────────────────────────── */
-.cv { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 360px; }
+.cv { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--cv-rail, 360px); }
 .cv-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 22px 24px 20px; gap: 18px; }
 .cv-head { display: flex; align-items: baseline; gap: 14px; flex: none; }
 .cv-h { font: 600 18px/1 var(--font-display); color: var(--color-ink); }
@@ -2103,7 +2103,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .cv-bar > span.is-draft { background: rgba(245, 246, 248, .3); }
 .cv-ticks { display: flex; justify-content: space-between; font: 400 10px/1 var(--font-kode); color: var(--color-dim); }
 .cv-note { margin: 4px 0 0 74px; font: 400 12.5px/1.45 var(--font-display); color: var(--color-dim); max-width: 720px; text-wrap: pretty; }
-.cv-rail { border-left: 1px solid var(--color-hair); background: var(--color-panel); display: flex; flex-direction: column; min-height: 0; }
+.cv-rail { position: relative; border-left: 1px solid var(--color-hair); background: var(--color-panel); display: flex; flex-direction: column; min-height: 0; }
 .cv-rail-head { height: 52px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--color-hair); }
 .cv-rail-title { font: 600 15px/1.2 var(--font-display); color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cv-preview { aspect-ratio: 16 / 9; border-radius: 8px; background: var(--placeholder); border: 1px solid var(--color-line); display: flex; align-items: center; justify-content: center; font: 400 11px/1 var(--font-kode); color: var(--color-dim); overflow: hidden; position: relative; }
@@ -4250,3 +4250,27 @@ html, body { overflow-x: clip; }
   .cmdk-foot { padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)); }
   .cmdk-help-body dt { width: 84px; }
 }
+
+/* ── Pane divider (SOW §10 4.1) ────────────────────────────────────────
+   The seam between a work surface and its rail. Absolutely positioned on
+   the boundary inside the rail, so the grid stays two columns and nothing
+   has to make room for it. Seven pixels of target, one pixel painted.
+   Below 1024 the rails are sheets, not columns — there is no seam. */
+.pane-div {
+  position: absolute; left: -4px; top: 0; bottom: 0; width: 7px; z-index: 6;
+  padding: 0; border: 0; background: transparent; cursor: col-resize;
+  touch-action: none; /* the pointer belongs to the drag, not to a scroll */
+}
+.pane-div::after {
+  content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px;
+  background: transparent; transition: background .12s ease;
+}
+.pane-div:hover::after,
+.pane-div:focus-visible::after,
+.pane-div.is-drag::after { background: var(--color-picked); }
+.pane-div:focus-visible { outline: none; }
+.pane-div.is-drag { cursor: col-resize; }
+/* While dragging, nothing else may claim the cursor or select text. */
+body:has(.pane-div.is-drag) { cursor: col-resize; user-select: none; }
+@media (prefers-reduced-motion: reduce) { .pane-div::after { transition: none; } }
+@media (max-width: 1023px) { .pane-div { display: none; } }
