@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { groupSpan, clockIndex, tileTarget, needsCorrection, readout, DRIFT_TOL, FPS, FRAME, stepFrame, frameAt } from "../../lib/transport";
+import { groupSpan, clockIndex, tileTarget, needsCorrection, readout, DRIFT_TOL, FPS, FRAME, stepFrame, frameAt, timecode } from "../../lib/transport";
 
 /* The real shape of the problem, from this workspace's own data: every
    multi-take shot has takes of different lengths. shot_1a05c273f3691dhod is
@@ -104,4 +104,32 @@ test("the frame number counts, and 24 of them is one second", () => {
   expect(frameAt(1)).toBe(24);
   expect(frameAt(0.5)).toBe(12);
   expect(frameAt(-3)).toBe(0);
+});
+
+/* ── Timecode: the read-out an edit suite expects ──────────────────────── */
+
+test("timecode counts frames, not tenths", () => {
+  /* A director asking for a change "seven frames in" is asking about a
+     frame; decimals make them do arithmetic the tool already knows. */
+  expect(timecode(0)).toBe("0:00:00");
+  expect(timecode(1)).toBe("0:01:00");
+  expect(timecode(1 + 7 / 24)).toBe("0:01:07");
+  expect(timecode(63.5)).toBe("1:03:12");
+});
+
+test("a position a hair under the next second never reads as frame 24", () => {
+  /* Flooring alone would produce 0:01:24 at 24fps, which is not a frame
+     that exists. */
+  expect(timecode(1.99999)).toBe("0:01:23");
+  expect(timecode(2 - 1e-9)).toBe("0:01:23");
+});
+
+test("timecode is steady on nonsense rather than showing NaN", () => {
+  expect(timecode(Number.NaN)).toBe("0:00:00");
+  expect(timecode(-5)).toBe("0:00:00");
+});
+
+test("minutes roll over past sixty seconds", () => {
+  expect(timecode(60)).toBe("1:00:00");
+  expect(timecode(125)).toBe("2:05:00");
 });

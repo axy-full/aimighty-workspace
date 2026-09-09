@@ -6,7 +6,7 @@
  * sign-off. Arrow keys walk the wall; Escape leaves. Rendered through a
  * portal so no screen's transform can pin it in place.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LockedTaskId } from "@/lib/tasks";
 import { createPortal } from "react-dom";
 import type { Gen } from "./GenCard";
@@ -20,7 +20,8 @@ import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { prettyModel } from "@/lib/models";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
-import { stepFrame } from "@/lib/transport";
+import { stepFrame, timecode, FPS } from "@/lib/transport";
+import { useIsMobile } from "@/lib/useMobile";
 import { useMoney } from "@/lib/price";
 import { failureKind, failureCopy } from "@/lib/jobState";
 import Link from "next/link";
@@ -64,6 +65,47 @@ export default function Theatre({
   const projectScope = selection !== "all" && selection !== "unfiled" ? selection : null;
 
   const video = useRef<HTMLVideoElement>(null);
+  /* THE PLAYER IS THE APP'S ON DESKTOP (§10 4.3).
+     It was one line — a bare <video controls> — so every verb 4.3 asks for
+     (scrub, loop, in/out) lived in the browser's shadow DOM, where nothing
+     in this product can reach it: not a keyboard binding, not a note that
+     wants a position, not a second window. A control bar the app draws is
+     the thing the rest of 4.3 is built on.
+     On a phone the native bar stays: it carries fullscreen and
+     picture-in-picture, which a producer watching on a handset actually
+     wants and which this bar does not replace. */
+  const mobile = useIsMobile();
+  const [playing, setPlaying] = useState(true);
+  const [at, setAt] = useState(0);
+  const [span, setSpan] = useState(0);
+  const [loop, setLoop] = useState(true);
+  const [muted, setMuted] = useState(false);
+
+  /* Position off the element itself, every frame. `timeupdate` fires about
+     four times a second, which is fine for a number and visibly stuttery
+     under a playhead. */
+  useEffect(() => {
+    if (mobile) return;
+    let raf = 0;
+    const tick = () => {
+      const v = video.current;
+      if (v) {
+        setAt(v.currentTime);
+        if (Number.isFinite(v.duration)) setSpan(v.duration);
+        setPlaying(!v.paused);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [mobile]);
+
+  const toggle = useCallback(() => {
+    const v = video.current;
+    if (!v) return;
+    if (v.paused) void v.play().catch(() => { /* the policy said no; the button shows it */ });
+    else v.pause();
+  }, []);
   useEffect(() => {
     if (!gen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -92,12 +134,17 @@ export default function Theatre({
                                   e.key === "ArrowRight" ? 1 : -1);
         return;
       }
+      if (e.key === " " || e.code === "Space") {
+        // Only where the app owns the transport; the native bar has its own.
+        if (!mobile && video.current) { e.preventDefault(); toggle(); }
+        return;
+      }
       if (e.key === "ArrowUp" && prev) { e.preventDefault(); onSelect(prev.id); }
       else if (e.key === "ArrowDown" && next) { e.preventDefault(); onSelect(next.id); }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [gen, prev, next, onClose, onSelect]);
+  }, [gen, prev, next, onClose, onSelect, mobile, toggle]);
 
   if (!gen || typeof document === "undefined") return null;
 
@@ -218,7 +265,13 @@ export default function Theatre({
               <audio key={gen.id} src={url!} controls autoPlay className="mt-4 w-[min(520px,90%)]" />
             </div>
           ) : (
-            <video ref={video} key={gen.id} src={url!} controls autoPlay loop playsInline className="theatre-media" />
+            <video
+              ref={video} key={gen.id} src={url!}
+              controls={mobile} autoPlay playsInline
+              loop={loop} muted={muted}
+              className="theatre-media"
+              onClick={mobile ? undefined : toggle}
+            />
           )
         ) : (
           <div className="theatre-face">
@@ -269,6 +322,33 @@ export default function Theatre({
                 )}
               </>
             )}
+          </div>
+        )}
+
+        {!mobile && done && !still && gen.kind !== "audio" && (
+          /* The transport, drawn by the app. Everything on it is something
+             4.3 needs to be able to reach from somewhere else: a position a
+             note can point at, a loop that can be turned off, a playhead a
+             second window could mirror. */
+          <div className="tr" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="tr-btn" onClick={toggle}
+              aria-label={playing ? "Pause  space" : "Play  space"} title={playing ? "Pause  space" : "Play  space"}>
+              {playing ? "❚❚" : "▶"}
+            </button>
+            <span className="tr-tc mono-s" aria-live="off">{timecode(at)}</span>
+            <input
+              className="tr-scrub" type="range" min={0} max={Math.max(0.04, span)} step={1 / FPS}
+              value={Math.min(at, span || 0)} aria-label="Position in this take"
+              aria-valuetext={`${timecode(at)} of ${timecode(span)}`}
+              onChange={(e) => { const v = video.current; if (v) { v.currentTime = Number(e.target.value); setAt(Number(e.target.value)); } }}
+            />
+            <span className="tr-tc mono-s text-dim">{timecode(span)}</span>
+            <button type="button" className={`tr-btn tr-tog ${loop ? "is-on" : ""}`} aria-pressed={loop}
+              onClick={() => setLoop((v) => !v)} title="Loop" aria-label="Loop">↺</button>
+            <button type="button" className={`tr-btn tr-tog ${muted ? "is-on" : ""}`} aria-pressed={muted}
+              onClick={() => setMuted((v) => !v)} title={muted ? "Unmute" : "Mute"} aria-label={muted ? "Unmute" : "Mute"}>
+              {muted ? "🔇" : "🔊"}
+            </button>
           </div>
         )}
 
