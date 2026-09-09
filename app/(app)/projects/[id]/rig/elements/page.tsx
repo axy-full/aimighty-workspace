@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
+import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
@@ -67,7 +68,9 @@ export default function RigElementsPage({ params }: { params: Promise<{ id: stri
       {data.elements.map((el) => (
         <section key={el.id} className="rig-el">
           <div className="rig-el-top">
-            <span className="rig-el-name">{el.name}</span>
+            {/* The list is the phone's way into 2b: the canvas is the only
+                other door and it is hidden below 1180. */}
+            <Link className="rig-el-name" href={`/elements/${encodeURIComponent(el.id)}`}>{el.name}</Link>
             <span className="rig-el-kind">{el.kind.toUpperCase()}</span>
           </div>
           {el.attributes.filter((a) => a.versions.length).map((a) => (

@@ -356,7 +356,7 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 **Build order — data model first, mobile before desktop, canvas last:**
 1. Schema and the migration from what 1.0 shipped. Be specific about how existing takes get backfilled with provenance, or why they can't.
 2. The quote/impact engine — what a change costs before it happens. Everything visible depends on it.
-3. `1a` **built** → `1b` **built** → `1c` **built** → `2c` **built** → `2b`.
+3. `1a` **built** → `1b` **built** → `1c` **built** → `2c` **built** → `2b` **built**.
 4. Desktop: `1d` **built** → `2a` **built**. Both were brought forward on
    8 September under a desktop-first instruction, which rule 7 has since made
    the settled shape rather than a detour. The step names "mobile" and
@@ -374,6 +374,55 @@ elements whose kind maps to that slot, and binds the **bundle**: no attribute,
 no version, following the library until somebody pins it. `keyframe` offers
 nothing, because a keyframe is a frame of this shot's own take rather than a
 member of the library, and the row says so.
+
+**DECIDED — a shot overrides one attribute without leaving the element.** 2b
+exposed that `bindings UNIQUE (shot_id, slot, ordinal)` cannot represent the
+handoff's own sentence: one slot holds one row, so pinning WARDROBE
+**replaces** the bundle and `portsForShot` emits a single port — the shot stops
+citing the character's face, hair and voice, renders a coat attached to nobody,
+and provenance records it that way.
+
+Three shapes were put up. **Chosen: widen the key**, so a bundle row and an
+override row coexist on one slot and the override supersedes the bundle for
+that attribute alone. It is the closest to what the design says and needs no
+new concept. It is also the most invasive, and the cost was accepted with eyes
+open: *"one slot, one wire" stops being true*, which is the rule the canvas
+draws, so anything counting per slot has to learn the difference between a wire
+and a wire that beats another one.
+
+The two rejected shapes, kept because the reasons still bite:
+
+- **Overrides as JSON on the single row.** No key change and no second wire,
+  but the port stops being a row — so "which shots pin this version", the query
+  the impact panel is built on, goes from an index scan to a table scan.
+- **Leave it, and bind the override on the next ordinal.** Two ordinals on the
+  character slot reads as two characters everywhere else in the product,
+  including on the row labels `2c` added.
+
+**What the change touches, and it must all move together:**
+
+1. **The key.** `UNIQUE (shot_id, slot, ordinal)` becomes two *partial* unique
+   indexes, not a four-column UNIQUE: SQLite treats NULLs as distinct, so a
+   four-column constraint would happily allow a slot to hold five bundles. One
+   index over `(shot_id, slot, ordinal, attribute_id) WHERE attribute_id IS NOT
+   NULL`, one over `(shot_id, slot, ordinal) WHERE attribute_id IS NULL`.
+2. **`setBinding` / `clearBinding`.** The upsert's conflict target and the
+   clear both address a row by slot alone today; both need the attribute.
+3. **`dependentsOf` and `elementUsage`.** A bundle reaches an attribute only
+   where no override row covers it. Without this the panel counts a shot as
+   following current when it is pinned, and prices a re-render that changes
+   nothing.
+4. **`portsForShot`.** A bundle must expand to every attribute's current
+   version, minus the ones an override covers, so provenance records what
+   actually produced the take rather than a row.
+5. **The asset layer.** A slot can now have two wires; the override is the one
+   drawn in ink.
+6. **`2c`.** A row shows the element plus which of its attributes this shot has
+   stepped out of line on — which is what the row was always trying to say.
+
+`bindings` has never shipped: every Rig branch is unmerged, so the table exists
+only in local development databases and the definition can change without a
+rebuild. That is the reason to do this now rather than after.
 
 **And one the handoff implies but does not draw: narrowing a bundle is two
 steps.** The handoff's sentence is that "a shot can override one attribute
