@@ -90,7 +90,15 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
   const total = cols.reduce((a, c) => a + c.secs, 0);
   const done = cols.filter((c) => c.state === "approved").reduce((a, c) => a + c.secs, 0);
   const n = (s: ShotState) => cols.filter((c) => c.state === s).length;
-  const approvedHeroes = cols.filter((c) => c.state === "approved" && c.hero).map((c) => c.hero!);
+  /* An approved take with no file is not something you can play. `hero` is
+     chosen by state and only its last fallback requires a url, so without
+     this filter ▶ Play approved sets seq to a take with nothing to show,
+     the `ended` event that advances the sequence never fires, and the run
+     can neither continue nor be understood as stopped. Same root as the
+     download link's crash: approved is a judgement, not a promise of bytes. */
+  const approvedHeroes = cols
+    .filter((c) => c.state === "approved" && c.hero && (c.hero.storedUrl ?? c.hero.sourceUrl))
+    .map((c) => c.hero!);
 
   /* ▶ Play approved: the approved takes, in order, in the rail's preview. */
   const [seq, setSeq] = useState<number | null>(null);
