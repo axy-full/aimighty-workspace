@@ -14,13 +14,14 @@
  */
 import Link from "next/link";
 import { startCastDrag } from "@/lib/dnd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
+import { useSearchParams } from "next/navigation";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { uploadFile } from "@/lib/uploadClient";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
-import { Empty, ParticlSpinner } from "@/components/ParticlMark";
+import { Empty, ParticlSpinner, Waiting } from "@/components/ParticlMark";
 import LazyMedia from "@/components/LazyMedia";
 import IdentitySheet, { type IdentityView, type IdentityTerms } from "@/components/IdentitySheet";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -44,7 +45,15 @@ const NO_TERMS: IdentityTerms = {
 };
 type Sel = { type: "cast"; id: string } | { type: "identity"; id: string } | null;
 
+/* `useSearchParams` in a statically-renderable route needs a Suspense
+   boundary or `next build` refuses the page — the same reason the shot
+   builder next door is wrapped. Studio reads `?cast=` so the palette can
+   land on a member, so it needs one too. */
 export default function StudioPage() {
+  return <Suspense fallback={<Waiting label="Opening Studio" />}><Studio /></Suspense>;
+}
+
+function Studio() {
   usePageTitle("Studio · Cast");
   const { signedIn } = useSession();
   const money = useMoney();
@@ -74,6 +83,24 @@ export default function StudioPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   useSheetLock(mobile && sheetOpen);
   const pick = (next: Sel) => { setSel(next); if (mobile) setSheetOpen(true); };
+
+  /* `/studio?cast=<id>` selects that member. Studio holds its selection in
+     React state, so before this the command palette could only land NEAR a
+     cast member — on the list, with the person still to be found by eye.
+     Seeded once, and only after the list arrives, because the id has to
+     match something; going through `pick` so the mobile sheet opens too. */
+  const [seededFor, setSeededFor] = useState<string | null>(null);
+  const wantCast = useSearchParams().get("cast");
+  /* React's "adjust state when the input changes" pattern, done during render
+     rather than in an effect: the set functions belong to this component, so
+     React re-renders before painting and the member never flashes unselected.
+     `seededFor` remembers which id was honoured, so choosing someone else
+     afterwards sticks — the URL does not keep pulling the selection back. */
+  if (wantCast && wantCast !== seededFor && cast.some((c) => c.id === wantCast)) {
+    setSeededFor(wantCast);
+    setSel({ type: "cast", id: wantCast });
+    if (mobile) setSheetOpen(true);
+  }
 
   // A face mid-training changes state without anyone touching the page.
   const anyTraining = identities.some((i) => i.status === "training");
