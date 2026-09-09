@@ -6,7 +6,7 @@ process.env.ENGINE_MOCK = "1";
 test("a cited name becomes the identity's trigger, and training and a Flux still price in whole credits", async () => {
   const { promptWithTrigger, trainCostUsd, TRAIN_STEPS, RENDER_USD_PER_MP } = await import("../../lib/identities");
   const { billCredits } = await import("../../lib/creditTerms");
-  const { estimateImageCostUsd } = await import("../../lib/models");
+  const { estimateImageCostUsd } = await import("../../lib/vendorPricing");
   const identity = { name: "Mara", trigger: "mara_prtcl" } as never;
   expect(promptWithTrigger("@Mara on a rooftop at dusk", identity)).toBe("mara_prtcl on a rooftop at dusk");
   expect(promptWithTrigger("a rooftop at dusk", identity)).toBe("mara_prtcl, a rooftop at dusk");

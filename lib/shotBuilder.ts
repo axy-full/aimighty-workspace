@@ -1,5 +1,5 @@
 import { CATEGORIES } from "./studio";
-import { estimateCostUsd, estimateImageCostUsd, DEFAULT_MODEL_ID } from "./models";
+import { DEFAULT_MODEL_ID } from "./models";
 
 /**
  * The shot builder's pure half (brief 1.8): the engine a shot should go to,
@@ -61,12 +61,6 @@ export function shotsFromReply(text: string, castNames: string[] = []): ShotProp
 }
 
 /** One take of a shot at its engine, in dollars: 1080p 16:9, the planned seconds (Seedance bills five at least). */
-export function shotCostUsd(engine: ShotEngine, planned: number | null): number {
-  const secs = Math.max(5, planned ?? 5);
-  if (engine === "nano-banana") return estimateImageCostUsd(ENGINE_MODEL["nano-banana"], "2K", 0)?.net ?? 0;
-  return estimateCostUsd(ENGINE_MODEL[engine], "1080p", "16:9", secs, 0, false, { audio: engine === "seedance" })?.net ?? 0;
-}
-
 /** The option values the model may use, row by row, for the instruction. */
 export function setupVocabulary(): string {
   return CATEGORIES.map((c) => `${c.key}: ${c.options.map((o) => o.value).join("|")}`).join("\n");

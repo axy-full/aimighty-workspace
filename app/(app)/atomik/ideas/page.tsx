@@ -22,6 +22,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
+import { writerCall } from "@/lib/rateTable";
 import { useProject } from "@/lib/projectContext";
 import { uploadFile } from "@/lib/uploadClient";
 import { useDraft } from "@/lib/useDraft";
@@ -32,8 +33,6 @@ import ModelMenu, { type PlannerModel } from "@/components/atomik/ModelMenu";
 import { usePageTitle } from "@/lib/usePageTitle";
 import type { Idea, IdeaState } from "@/lib/atomikDocs";
 import { textModelFor } from "@/lib/platformLayer";
-import { billCredits } from "@/lib/creditTerms";
-import { estimateRefineUsd } from "@/lib/refineGate";
 
 type Row = Idea & { projectName: string | null; shots: number; byName: string | null; parkedByName: string | null };
 type Filter = "all" | "pinned" | "production" | "parked";
@@ -53,7 +52,7 @@ const modelTail = (id: string | null) => (id ?? "auto").split("/").pop() ?? "aut
 export default function IdeasPage() {
   usePageTitle("Atomik · Ideas");
   const router = useRouter();
-  const { signedIn  } = useSession();
+  const { signedIn, rates } = useSession();
   const { setSelection, refreshProjects } = useProject();
   const { data, refresh } = useApi<{ ideas: Row[] }>(signedIn ? "/api/atomik/ideas" : null, 15_000);
   /* The planner menu rides along with the agent's index — a cached read of
@@ -194,7 +193,7 @@ function NewIdea({ draft: d, set, models, onDone, onCancel }: {
   draft: IdeaDraft; set: (next: IdeaDraft | ((prev: IdeaDraft) => IdeaDraft)) => void; models: Models;
   onDone: () => void; onCancel: () => void;
 }) {
-  const { models: sessionModels } = useSession();
+  const { models: sessionModels, rates } = useSession();
   const [busy, setBusy] = useState<"" | "refs" | "write" | "save">("");
   /* What the model replaced, so one click brings the person's own words back. */
   const [written, setWritten] = useState<{ before: { logline: string; tone: string }; model: string; costUsd: number } | null>(null);
@@ -211,7 +210,7 @@ function NewIdea({ draft: d, set, models, onDone, onCancel }: {
     finally { setBusy(""); }
   }
   /* What the write will cost, from the model that will run it — the one picked, else the platform's routing (brief 1.8). */
-  const writeCr = billCredits(estimateRefineUsd(d.model !== "auto" ? d.model : textModelFor(sessionModels ?? null, "idea"), 600, 400) ?? 0.01, "text");
+  const writeCr = writerCall(rates, d.model !== "auto" ? d.model : textModelFor(sessionModels ?? null, "idea"), 600, 400) ?? 0.1;
   async function write() {
     if (!d.logline.trim()) return;
     setBusy("write");

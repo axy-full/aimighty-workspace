@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { failureKind, failureCopy, queueCounts, estimateForRow, inTraining } from "../../lib/jobState";
+import { failureKind, failureCopy, queueCounts, inTraining } from "../../lib/jobState";
+import { estimateForRow } from "../../lib/jobCost";
 
 /** Job state (brief 1.5): a failed take says why, in the four words the brief names, and offers the one action that fits. */
 test("a failure is read off the row's own words, and each kind has its action", () => {

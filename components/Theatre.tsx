@@ -18,7 +18,7 @@ import { uploadFile } from "@/lib/uploadClient";
 import { useProject } from "@/lib/projectContext";
 import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
-import { prettyModel } from "@/lib/enhance";
+import { prettyModel } from "@/lib/models";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
 import { useMoney } from "@/lib/price";
 import { failureKind, failureCopy } from "@/lib/jobState";
@@ -308,7 +308,10 @@ export default function Theatre({
                 {(gen.params as { look: { name: string } }).look.name}
               </span>
             )}
-            {gen.costUsd != null && (
+            {/* Whichever unit this row carries — a credit workspace is sent
+                creditsBilled and no dollars, and one on its own keys the
+                reverse, so "is it priced" is the two together. */}
+            {(gen.creditsBilled != null || gen.costUsd != null) && (
               <span className="font-semibold text-bone" title="Render plus prompt">
                 {money.take(gen)}
               </span>
@@ -317,7 +320,7 @@ export default function Theatre({
 
           {/* The ledger for this one render: what the engine charged, what
               the writer charged, and the sum that appears everywhere else. */}
-          {gen.costUsd != null && money.inCredits && (
+          {gen.creditsBilled != null && money.inCredits && (
             <div className="theatre-ledger">
               <span><span className="text-mute">Charged</span> {money.take(gen)}</span>
               <span className="text-mute">{gen.refineModel ? "prompt writing included" : "prompt as written"}</span>

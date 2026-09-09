@@ -1,6 +1,6 @@
 import type { EngineAdapter, PollResult } from "./types";
 import { providerConfigured, getProvider } from "../providers";
-import { estimateCostUsd } from "../models";
+import { estimateCostUsd } from "../vendorPricing";
 import { submitTask, fetchTask } from "../ark";
 import { fetchBytes } from "../mockFs";
 

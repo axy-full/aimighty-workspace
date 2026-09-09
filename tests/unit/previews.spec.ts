@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { previewItems, previewPlan, supportedDuration, PREVIEW_SCENE } from "../../lib/previews";
-import { estimateCostUsd, getModel } from "../../lib/models";
+import { previewItems, supportedDuration, PREVIEW_SCENE } from "../../lib/previews";
+import { previewPlan } from "../../lib/previewCost";
+import { estimateCostUsd } from "../../lib/vendorPricing";
+import { getModel } from "../../lib/models";
 
 /** The bank's neutral previews (brief 1.4): one clip per move and technique, one scene, priced exactly before anything runs. */
 test("the plan covers every move and technique once, from the one scene, at the catalogue's price", () => {

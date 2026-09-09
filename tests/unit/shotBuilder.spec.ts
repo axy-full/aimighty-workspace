@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { suggestEngine, shotsFromReply, shotCostUsd, cleanSetupFields, ENGINE_MODEL } from "../../lib/shotBuilder";
-import { estimateCostUsd } from "../../lib/models";
+import { suggestEngine, shotsFromReply, cleanSetupFields, ENGINE_MODEL } from "../../lib/shotBuilder";
+import { shotCostUsd } from "../../lib/shotCost";
+import { estimateCostUsd } from "../../lib/vendorPricing";
 
 /** The shot builder's pure half (brief 1.8): the engine rule, the structured reply read into shots, and credits per shot before rendering. */
 test("water, cloth and physics go to Kling; everything else to Seedance; a still to Nano Banana", () => {

@@ -1,7 +1,7 @@
 import { db, ready } from "./db";
 import { currentTenant } from "./tenant";
 import { dependentsOf, type Dependent } from "./elements";
-import { plannedTakeUsd } from "./shotBudget";
+import { plannedTakeUsd } from "./shotBudgetCost";
 import { DEFAULT_MODEL_ID, getModel } from "./models";
 import { ENGINE_MODEL, type ShotEngine } from "./shotBuilder";
 import { vendorKeyNameFor, paidByPlatform, allowanceUsd, platformSpendThisMonth } from "./allowance";

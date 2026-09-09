@@ -1,4 +1,3 @@
-import { estimateCostUsd, estimateImageCostUsd } from "./models";
 
 /**
  * Job state, in the studio's words (brief 1.5): why a take failed and
@@ -7,7 +6,7 @@ import { estimateCostUsd, estimateImageCostUsd } from "./models";
 export type FailureKind = "refused" | "cap" | "balance" | "slots" | "vendor" | "unknown";
 export type FailureAction = "edit" | "unlock" | "topup" | "retry";
 
-type Row = { status: string; error?: string | null; params?: unknown; kind?: string; model?: string };
+export type Row = { status: string; error?: string | null; params?: unknown; kind?: string; model?: string };
 
 /** Which of the four things the brief names happened, read off the row's own words. */
 export function failureKind(error: string | null | undefined, params?: unknown): FailureKind {
@@ -37,7 +36,7 @@ export function failureCopy(kind: FailureKind): { why: string; action: FailureAc
 }
 
 /** An identity being trained: asynchronous work that belongs in the queue beside the renders (brief 1.3). */
-export type TrainingRow = { id: string; name: string; status: string; costUsd: number | null; steps: number | null };
+export type TrainingRow = { id: string; name: string; status: string; costUsd: number | null; creditsBilled?: number | null; steps: number | null };
 export const inTraining = <T extends { status: string }>(rows: T[]): T[] => rows.filter((r) => r.status === "training");
 
 export type QueueCounts = { rendering: number; queued: number; held: number; failed: number };
@@ -51,15 +50,4 @@ export function queueCounts(rows: Row[]): QueueCounts {
     else if (r.status === "failed" || r.status === "cancelled") c.failed++;
   }
   return c;
-}
-
-/** What a take costs, before it has finished: the held figure when it is held, else the catalogue's estimate. */
-export function estimateForRow(r: Row): number | null {
-  const p = (r.params ?? {}) as Record<string, unknown>;
-  const held = p.held as { estUsd?: number } | undefined;
-  if (held && typeof held.estUsd === "number") return held.estUsd;
-  if (!r.model) return null;
-  if (r.kind === "image") return estimateImageCostUsd(r.model, String(p.resolution ?? "1K"), Array.isArray(p.references) ? (p.references as unknown[]).length : 0)?.net ?? null;
-  if (r.kind === "audio") return null;
-  return estimateCostUsd(r.model, String(p.resolution ?? "1080p"), String(p.ratio ?? "16:9"), Number(p.duration ?? 0), 0, Boolean(p.hasVideoInput), { audio: Boolean(p.generateAudio), task: p.task as string | undefined, fps60: Boolean(p.fps60) })?.net ?? null;
 }

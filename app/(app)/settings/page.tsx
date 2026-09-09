@@ -18,7 +18,8 @@ import Link from "next/link";
 import { creditsNumber } from "@/lib/price";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MODELS, getModel, estimateCostUsd, estimateTokens, DEFAULT_MODEL_ID } from "@/lib/models";
+import { MODELS, getModel, estimateTokens, costUsd, DEFAULT_MODEL_ID } from "@/lib/models";
+import { estimateVideo, secondRateOf } from "@/lib/rateTable";
 import { usePrefs, setPrefs } from "@/lib/prefs";
 import { useApi } from "@/lib/useApi";
 import { usd, compactTokens, timeAgo } from "@/lib/format";
@@ -51,7 +52,7 @@ type RefinerTest = {
 type TeamMember = { id: string; email: string; name: string; role?: string; lastSeen: number | null; disabled: boolean; permanent?: boolean };
 type Team = { users: TeamMember[]; canSeeRoles?: boolean };
 type Ws = { platformModels?: { video: string; image: string } | null; settings: Record<string, string>; defaults: Record<string, string> };
-type IdTerms = { terms: { configured: boolean; trainer: string; trainCostUsd: number } };
+type IdTerms = { terms: { configured: boolean; trainer: string; trainCostUsd: number | null; trainCredits: number | null } };
 type AudioSetup = { configured: boolean; envKey: string; terms: { sfxCredits: number; musicCreditsPerMinute: number }; account: { tier: string } | null };
 type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; monthlyUsd: number } | null };
 type TopupsView = {
@@ -87,7 +88,7 @@ function gb(bytes: number): string {
 
 export default function SettingsPage() {
   usePageTitle("Settings");
-  const { signedIn, workspace, role, owner, superAdmin, workspaces } = useSession();
+  const { signedIn, workspace, role, owner, superAdmin, workspaces, rates } = useSession();
   const money = useMoney();
   const prefs = usePrefs();
   const router = useRouter();
@@ -137,15 +138,25 @@ export default function SettingsPage() {
     router.refresh();
   }
 
-  /* The rate lines: the same estimates the render button shows. */
-  const seed = estimateCostUsd(DEFAULT_MODEL_ID, "1080p", "16:9", 5);
+  /* The rate lines: the same estimates the render button shows, off the same
+     table. The vendors' own per-second figures used to be typed into the copy
+     below — `money.rate(0.084, …)` — which is the platform's cost printed on
+     a settings page in a workspace's own browser. */
+  const seed = estimateVideo(rates, DEFAULT_MODEL_ID, "1080p", 5,
+    estimateTokens("1080p", "16:9", 5), costUsd, {});
   const seedTok = estimateTokens("1080p", "16:9", 5);
+  const klingRate = secondRateOf(rates, "fal-ai/kling-video/v3/standard", "1080p");
+  const topazRate = secondRateOf(rates, "topaz/upscale/video/creative", "adaptive");
   /* /api/engines already lists every vendor, fal and ElevenLabs included;
      the rate line is the same estimate the render button shows. */
   const rateFor = (e: EngineInfo): string => {
     const id = e.id.toLowerCase();
-    if (id.includes("byteplus") || id.includes("ark")) return seed ? `${money.price(seed.net, DEFAULT_MODEL_ID)} per 5s at 1080P${seedTok && !money.inCredits ? ` (${compactTokens(seedTok)} tok)` : ""}. 10s doubles.` : "Billed per token of output video.";
-    if (id.includes("fal")) return `Kling 3.0 from ${money.rate(0.084, "fal-ai/kling-video/v3/standard")} a second · Topaz Astra from ${money.rate(0.30, "topaz/upscale/video/creative")} a second${idTerms?.terms.trainCostUsd ? ` · ~${money.price(idTerms.terms.trainCostUsd, "identity-training")} per identity trained` : ""}.`;
+    if (id.includes("byteplus") || id.includes("ark")) return seed != null ? `${money.price(seed)} per 5s at 1080P${seedTok && !money.inCredits ? ` (${compactTokens(seedTok)} tok)` : ""}. 10s doubles.` : "Billed per token of output video.";
+    if (id.includes("fal")) return [
+      klingRate != null ? `Kling 3.0 from ${money.rate(klingRate)} a second` : null,
+      topazRate != null ? `Topaz Astra from ${money.rate(topazRate)} a second` : null,
+      idTerms?.terms.trainCredits != null ? `~${money.price(idTerms.terms.trainCredits)} per identity trained` : null,
+    ].filter(Boolean).join(" · ") + ".";
     if (id.includes("eleven")) return audio?.terms ? `${audio.terms.sfxCredits} credits per sound effect · ${audio.terms.musicCreditsPerMinute} per minute of music${audio.account ? ` · ${audio.account.tier} plan` : ""}.` : "Bought in credits; the ledger counts them.";
     if (id.includes("gateway")) return "The prompt writer and Google stills bill here, on the deployment's own credit.";
     if (e.via === "gateway") return "Billed per still through Vercel AI Gateway, on the same credit as the prompt writer.";

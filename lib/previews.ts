@@ -1,5 +1,5 @@
 import { CATEGORIES } from "./studio";
-import { estimateCostUsd, getModel } from "./models";
+import { getModel } from "./models";
 
 /**
  * The bank's neutral previews (brief 1.4): one short looping clip per camera
@@ -28,7 +28,7 @@ export function previewItems(): PreviewItem[] {
   });
 }
 
-export type PreviewPlan = { modelId: string; resolution: string; duration: number; items: PreviewItem[]; count: number; perClipUsd: number; totalUsd: number };
+export type PreviewPlan = { modelId: string; resolution: string; duration: number; items: PreviewItem[]; count: number; perClipUsd: number; totalUsd: number; perClipCredits: number; totalCredits: number };
 
 /** The length the engine will actually render: the shortest it supports that is not shorter than what was asked, else its longest. */
 export function supportedDuration(modelId: string, duration: number): number {
@@ -37,10 +37,3 @@ export function supportedDuration(modelId: string, duration: number): number {
   return list.find((d) => d >= duration) ?? list[list.length - 1];
 }
 
-/** The batch, priced: the count times the catalogue's price for one clip, silent, 16:9, at the length the engine will really render. */
-export function previewPlan(modelId: string, resolution: string, duration: number): PreviewPlan {
-  const items = previewItems();
-  const d = supportedDuration(modelId, duration);
-  const perClipUsd = estimateCostUsd(modelId, resolution, "16:9", d, 0, false, { audio: false })?.net ?? 0;
-  return { modelId, resolution, duration: d, items, count: items.length, perClipUsd, totalUsd: Math.round(perClipUsd * items.length * 100) / 100 };
-}

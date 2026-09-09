@@ -34,6 +34,8 @@ import { useMoney } from "@/lib/price";
 import QueueStrip from "@/components/QueueStrip";
 import { groupSiblings } from "@/lib/variations";
 import { plannedLine } from "@/lib/shotBudget";
+import { estimateVideo } from "@/lib/rateTable";
+import { estimateTokens, costUsd } from "@/lib/models";
 import Compare from "@/components/Compare";
 import { canCompare } from "@/lib/compare";
 
@@ -91,8 +93,18 @@ export default function Feed({
      ignores it, because a wall is one kind by construction. */
   filter?: FeedFilter; setFilter?: (f: FeedFilter) => void; aside?: React.ReactNode;
 }) {
-  const { signedIn } = useSession();
+  const { signedIn, rates } = useSession();
   const money = useMoney();
+  /* A shot with no takes still shows what one would cost. Priced off the
+     session's table, in this workspace's unit — the wall used to estimate in
+     the vendor's dollars, which put the whole rate table in its bundle for
+     one sentence. Seedance bills a five-second minimum. */
+  const plannedPrice = (planned: number | null | undefined) => {
+    const secs = Math.max(5, Number(planned) || 5);
+    const amount = estimateVideo(rates, DEFAULT_MODEL_ID, "1080p", secs,
+      estimateTokens("1080p", "16:9", secs, 0), costUsd, {});
+    return amount == null ? "—" : money.price(amount);
+  };
   const stills = kind === "image";
   const [take, setTake] = useState<TakeState>("all");
   /* The producer's screen (brief 2.1): takes of one shot, in step, picked with one tap. */
@@ -170,7 +182,7 @@ export default function Feed({
         if (s.kind === "type" || byShot.has(s.code)) continue;
         out.push({
           key: s.code, code: s.code, title: s.title || s.description?.slice(0, 80) || "", shotId: s.id,
-          takes: [], meta: plannedLine(s.planned, (usd) => money.price(usd, DEFAULT_MODEL_ID)),
+          takes: [], meta: plannedLine(s.planned, plannedPrice(s.planned)),
         });
       }
       out.sort((a, b) => (order.get(a.code) ?? 1e9) - (order.get(b.code) ?? 1e9) || a.code.localeCompare(b.code));

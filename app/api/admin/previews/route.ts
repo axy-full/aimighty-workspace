@@ -4,7 +4,8 @@ import { currentTenant } from "@/lib/tenant";
 import { db, ready } from "@/lib/db";
 import { listPlatformAssets, putPlatformAsset } from "@/lib/platform";
 import { readVideoBytes, storePlatformBytes } from "@/lib/storage";
-import { previewPlan, PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
+import { PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
+import { previewPlan } from "@/lib/previewCost";
 
 export const dynamic = "force-dynamic";
 

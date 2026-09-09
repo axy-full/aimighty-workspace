@@ -3,7 +3,7 @@ import type { Reference } from "./ark";
 import type { ModelDef } from "./models";
 import { gatewayReachable, gatewayAuth, GATEWAY_URL, explainGatewayFailure } from "./gateway";
 import { vendorKey } from "./vendorKeys";
-import { estimateImageCostUsd } from "./models";
+import { estimateImageCostUsd } from "./vendorPricing";
 import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
 

@@ -30,7 +30,12 @@ export type Gen = {
   storedUrl: string | null;
   sourceUrl: string | null;
   totalTokens: number | null;
+  /** Dollars — present only for a workspace that pays its vendors in them. */
   costUsd: number | null;
+  /** Credits — present only for a workspace that pays in credits. The two are
+   *  never both set: a row carries the unit its workspace spends, and the
+   *  vendor's dollars are not that unit. */
+  creditsBilled?: number | null;
   /** The prompt writer's share, and who wrote it. */
   refineCostUsd?: number | null;
   refineModel?: string | null;

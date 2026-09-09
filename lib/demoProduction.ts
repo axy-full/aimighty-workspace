@@ -1,5 +1,6 @@
 import { STARTER_PRODUCTION, STARTER_CAST, DEFAULT_SETUP, type StarterCast, type StarterShot } from "./platformLayer";
-import { estimateCostUsd, DEFAULT_MODEL_ID } from "./models";
+import { DEFAULT_MODEL_ID } from "./models";
+import { estimateCostUsd } from "./vendorPricing";
 import { specToPhrase, type ShotSpec } from "./studio";
 
 /**
@@ -24,7 +25,8 @@ export type DemoTake = {
 const SD25 = DEFAULT_MODEL_ID;
 const price = (res: string, dur: number) => estimateCostUsd(SD25, res, "16:9", dur, 0, false, { audio: true })?.net ?? 0;
 const take = (shotCode: string, version: number, resolution: string, duration: number, move: string, prompt: string, approved = false): DemoTake => ({
-  key: `${shotCode}-v${version}`, shotCode, version, model: SD25, resolution, duration, prompt, costUsd: price(resolution, duration),
+  key: `${shotCode}-v${version}`, shotCode, version, model: SD25, resolution, duration, prompt,
+  costUsd: price(resolution, duration),
   approved, previewKey: move.includes(":") ? move : `move:${move}`, move: move.replace(/^[a-z]+:/, ""),
 });
 

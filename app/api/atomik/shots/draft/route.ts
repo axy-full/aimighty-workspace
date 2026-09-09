@@ -10,7 +10,8 @@ import { findModel, textCostUsd } from "@/lib/catalog";
 import { estimateRefineUsd } from "@/lib/refineGate";
 import { meter } from "@/lib/meter";
 import { specToPhrase } from "@/lib/studio";
-import { shotsFromReply, shotCostUsd, setupVocabulary, suggestEngine } from "@/lib/shotBuilder";
+import { shotsFromReply, setupVocabulary, suggestEngine } from "@/lib/shotBuilder";
+import { shotCostUsd } from "@/lib/shotCost";
 
 export const dynamic = "force-dynamic";
 

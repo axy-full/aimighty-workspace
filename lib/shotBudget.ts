@@ -1,4 +1,3 @@
-import { estimateCostUsd, DEFAULT_MODEL_ID } from "./models";
 
 /**
  * What a shot is expected to cost before it has a take (brief 2.6).
@@ -11,14 +10,14 @@ import { estimateCostUsd, DEFAULT_MODEL_ID } from "./models";
  */
 export const MIN_BILLED_SECONDS = 5;
 
-export function plannedTakeUsd(planned: number | null | undefined, modelId: string = DEFAULT_MODEL_ID): number {
-  const seconds = Math.max(MIN_BILLED_SECONDS, Number(planned) || MIN_BILLED_SECONDS);
-  return estimateCostUsd(modelId, "1080p", "16:9", seconds)?.net ?? 0;
-}
-
-/** What the wall says under a shot nobody has rendered yet. */
-export function plannedLine(planned: number | null | undefined, price: (usd: number) => string): string {
+/**
+ * What the wall says under a shot nobody has rendered yet.
+ *
+ * The PRICE is handed in, already formatted. It used to be computed here from
+ * `plannedTakeUsd` — a vendor estimate — which is why the wall, a client
+ * component, dragged the whole rate table into its bundle for one sentence.
+ */
+export function plannedLine(planned: number | null | undefined, cost: string): string {
   const secs = Number(planned) || 0;
-  const cost = price(plannedTakeUsd(planned));
   return secs ? `no takes yet · ${secs}s planned · ${cost} a take` : `no takes yet · ${cost} a take`;
 }

@@ -1,6 +1,6 @@
 import type { EngineAdapter } from "./types";
 import { providerConfigured, getProvider } from "../providers";
-import { estimateImageCostUsd } from "../models";
+import { estimateImageCostUsd } from "../vendorPricing";
 import { generateImage } from "../gemini";
 
 /** Google's Nano Banana: a synchronous still engine, direct or through the gateway. */

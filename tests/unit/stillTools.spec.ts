@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { getModel, estimateImageCostUsd } from "../../lib/models";
+import { getModel } from "../../lib/models";
+import { estimateImageCostUsd } from "../../lib/vendorPricing";
 import { billCredits } from "../../lib/creditTerms";
 import { canvasFor, falImageInput, stillToolFor, STILL_TOOLS } from "../../lib/stillTools";
 
