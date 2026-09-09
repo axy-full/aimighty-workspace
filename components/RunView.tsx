@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
+import { useIsMobile } from "@/lib/useMobile";
 import { fmtCredits } from "@/lib/price";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
 import {
@@ -27,6 +28,11 @@ import {
  */
 export default function RunView({ projectId }: { projectId: string }) {
   const router = useRouter();
+  /* Desktop is the shape and the phone is the floor (brief rule 7, revised).
+     On a wide screen the run is a list beside the one stage being looked at,
+     which is the app's own two-pane idiom; on a phone the same stage opens in
+     place, because there is nowhere to put a rail. */
+  const mobile = useIsMobile();
   const { data, error, refresh } = useApi<{ run: Run | null }>(
     `/api/rig/runs/${encodeURIComponent(projectId)}?of=project`, 5_000);
 
@@ -35,6 +41,7 @@ export default function RunView({ projectId }: { projectId: string }) {
      across stages, so a tap on one card could price and spend on another. */
   const [chosen, setChosen] = useState<Choice | null>(null);
   const [busy, setBusy] = useState(false);
+  const [opened, setOpened] = useState<string | null>(null);
 
   if (error) return <Trouble label="This run didn't load" />;
   if (!data) return <Waiting />;
@@ -54,6 +61,14 @@ export default function RunView({ projectId }: { projectId: string }) {
   const picked = chosenFix(run.stages, chosen);
   const primary = primaryFor(run, picked?.fix ?? null);
   const holding = holdingLine(run.stages);
+
+  /* What the rail is showing: whatever was clicked, else the thing that wants
+     a person, else the thing that is working, else the top of the run. */
+  const shown = run.stages.find((s) => s.id === opened)
+    ?? run.stages.find((s) => s.state === "needs_you")
+    ?? run.stages.find((s) => s.state === "running")
+    ?? run.stages[0]
+    ?? null;
 
   async function press() {
     if (!picked || busy) return;
@@ -82,7 +97,7 @@ export default function RunView({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="rig-run">
+    <div className={`rig-run${mobile ? "" : " is-wide"}`}>
       <header className="rig-run-head">
         <button className="rig-icon" onClick={() => router.back()} aria-label="Back">←</button>
         <span className="rig-run-title">
@@ -118,6 +133,12 @@ export default function RunView({ projectId }: { projectId: string }) {
         {run.stages.map((s) => (
           <Stage
             key={s.id} stage={s}
+            /* The fixes open in the card only on a phone. On a wide screen
+               they live in the rail, where there is room for the reason to
+               read as a sentence rather than a caption. */
+            inline={mobile}
+            selected={!mobile && shown?.id === s.id}
+            onOpen={() => setOpened(s.id)}
             chosen={chosen?.stageId === s.id ? chosen.fixId : null}
             onChoose={(fixId) => setChosen({ stageId: s.id, fixId })}
           />
@@ -128,6 +149,51 @@ export default function RunView({ projectId }: { projectId: string }) {
           an estimate falls as work is approved or skipped.
         </p>
       </div>
+
+      {!mobile && shown ? (
+        <aside className="rig-rail">
+          <div className="rig-rail-body">
+            <span className="rig-eyebrow">STAGE {String(shown.num).padStart(2, "0")}</span>
+            <h2 className="rig-rail-name">{shown.name}</h2>
+            {shown.sub ? <span className="rig-rail-sub">{shown.sub}</span> : null}
+
+            <span className={`rig-well is-big${shown.hasOutput ? " has-output" : ""}`}>
+              {shown.hasOutput ? "" : "—"}
+            </span>
+
+            <div className="rig-rail-facts">
+              <span><i>State</i>{STATE_WORD[shown.state]}</span>
+              <span><i>Cost</i>{costLabel(shown, fmtCredits)}</span>
+              {shown.totalUnits ? <span><i>Progress</i>{progressLine(shown) || "—"}</span> : null}
+              {shown.fixedWith ? <span><i>Got past with</i>{shown.fixedWith}</span> : null}
+            </div>
+
+            {shown.state === "needs_you" && shown.failure ? (
+              <div className="rig-fixes">
+                <p className="rig-reason">{shown.failure.reason}</p>
+                <div className="rig-fix-list" role="radiogroup" aria-label={`Ways past ${shown.name}`}>
+                  {shown.failure.fixes.map((f) => (
+                    <button
+                      key={f.id} type="button" role="radio"
+                      aria-checked={chosen?.stageId === shown.id && chosen.fixId === f.id}
+                      className={`rig-fix${chosen?.stageId === shown.id && chosen.fixId === f.id ? " is-on" : ""}`}
+                      onClick={() => setChosen({ stageId: shown.id, fixId: f.id })}
+                    >
+                      <span className="rig-mark" />
+                      <span className="rig-fix-words">
+                        <span className="rig-fix-label">{f.label}</span>
+                        <span className="rig-fix-note">{f.note}</span>
+                      </span>
+                      <span className="rig-fix-cost">{fmtCredits(f.credits)}</span>
+                    </button>
+                  ))}
+                </div>
+                <span className="rig-fixed-note">FIXED IN PLACE · THE RUN CONTINUES FROM HERE</span>
+              </div>
+            ) : null}
+          </div>
+        </aside>
+      ) : null}
 
       <div className="rig-run-bar">
         <button className="rig-secondary" onClick={pause} disabled={busy || run.state === "done"}>
@@ -142,18 +208,26 @@ export default function RunView({ projectId }: { projectId: string }) {
   );
 }
 
-/* One stage card. A stopped one opens in place; nothing else does. */
-function Stage({ stage, chosen, onChoose }: {
+/* One stage card. On a phone a stopped one opens in place; on a wide screen
+   it is a row that puts itself in the rail. */
+function Stage({ stage, chosen, onChoose, inline, selected, onOpen }: {
   stage: StageView;
   chosen: string | null;
   onChoose: (fixId: string) => void;
+  inline: boolean;
+  selected: boolean;
+  onOpen: () => void;
 }) {
   const running = stage.state === "running";
   const failed = stage.state === "needs_you" && stage.failure !== null;
   const line = progressLine(stage);
 
   return (
-    <section className={`rig-stage${failed ? " is-attention" : ""}`}>
+    <section
+      className={`rig-stage${failed ? " is-attention" : ""}${selected ? " is-open" : ""}${inline ? "" : " is-row"}`}
+      onClick={inline ? undefined : onOpen}
+      aria-current={selected ? "true" : undefined}
+    >
       <div className="rig-stage-top">
         <span className={`rig-well${stage.hasOutput ? " has-output" : ""}`}>{stage.hasOutput ? "" : "—"}</span>
         <span className="rig-stage-names">
@@ -175,7 +249,7 @@ function Stage({ stage, chosen, onChoose }: {
         </div>
       ) : null}
 
-      {failed && stage.failure ? (
+      {inline && failed && stage.failure ? (
         <div className="rig-fixes">
           <p className="rig-reason">{stage.failure.reason}</p>
           <div className="rig-fix-list" role="radiogroup" aria-label={`Ways past ${stage.name}`}>
