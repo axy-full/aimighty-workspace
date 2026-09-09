@@ -32,12 +32,23 @@ const take = (shotCode: string, version: number, resolution: string, duration: n
 
 export const DEMO_TAKES: DemoTake[] = [
   take("SH010", 1, "720p", 5, "static", "A quiet street at dawn, wet from the night, the first light along the rooftops. Locked off, wide."),
-  take("SH010", 2, "1080p", 5, "push", "A quiet street at dawn, wet from the night, the first light along the rooftops. The camera pushes slowly in.", true),
+  take("SH010", 2, "1080p", 5, "push", "A quiet street at dawn, wet from the night, the first light along the rooftops. The camera pushes slowly in."),
   take("SH020", 1, "720p", 5, "track", "@Mara rides @Mule down the wet street, standing on the pedals, the panniers swinging. The camera tracks alongside."),
   take("SH020", 2, "1080p", 5, "handheld", "@Mara rides @Mule down the wet street, standing on the pedals. Handheld, close behind."),
   take("SH020", 3, "1080p", 5, "technique:dollyzoom", "@Mara brakes hard as the light changes; a dolly zoom holds her while the street swells behind."),
   take("SH030", 1, "1080p", 5, "static", "A close-up on the hand-off: a parcel passed from @Mara's glove to a waiting hand in a doorway, soft light."),
-  take("SH030", 2, "1080p", 5, "push", "The hand-off, closer: the parcel changes hands, the camera easing in on the two gloves."),
+  /* The one approved take sits on the LAST shot, and that is the whole
+     point of where it is. A shot with an approved take is locked: the next
+     render against it has to say why (lib/approval.ts). While this mark sat
+     on SH010 the starter production handed every new workspace a FIRST shot
+     that was already locked, so a stranger's first Generate — on the shot
+     the product opens them on — came back "v2 is approved. Why render
+     another?". That is rule 6 failing on the shot it is measured by: a
+     paragraph before the first render. The demonstration is worth keeping,
+     so it moved rather than went; on the last shot the obvious first render
+     is unobstructed, and anyone who does start here sees APPROVED on the
+     take before they press anything. */
+  take("SH030", 2, "1080p", 5, "push", "The hand-off, closer: the parcel changes hands, the camera easing in on the two gloves.", true),
 ];
 
 export type DemoShot = StarterShot & { setupFull: ShotSpec; setupLine: string };
