@@ -122,7 +122,7 @@ export default function ElementScreen({ elementId }: { elementId: string }) {
         </div>
         {el.locked ? <span className="elm-lock" title="Locked">LOCKED</span> : null}
         {el.projectId ? (
-          <Link className="elm-up" href={`/projects/${encodeURIComponent(el.projectId)}/rig`}>Rig</Link>
+          <Link className="elm-up" href={`/projects/${encodeURIComponent(el.projectId)}/rig`}>Nodes</Link>
         ) : null}
       </header>
 

@@ -11,6 +11,7 @@
  */
 import { use, useState } from "react";
 import Link from "next/link";
+import ProductionNav from "@/components/ProductionNav";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/lib/projectContext";
 import { confirmDeleteProject } from "@/lib/deleteProject";
@@ -113,6 +114,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
         <Link href="/projects" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
+        <ProductionNav id={id} on="shots" />
         <Headline a={data} title={project?.name ?? "Project"} />
 
         {project?.description && (

@@ -6,6 +6,7 @@ import { useIsMobile } from "@/lib/useMobile";
 import RunView from "@/components/RunView";
 import StageLayer from "@/components/StageLayer";
 import AssetLayer from "@/components/AssetLayer";
+import ProductionNav from "@/components/ProductionNav";
 
 /**
  * Rig (brief 3).
@@ -23,13 +24,17 @@ type Layer = "assets" | "stages" | "runs";
 export default function RigPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const mobile = useIsMobile();
-  usePageTitle("Rig");
+  usePageTitle("Nodes");
   const [layer, setLayer] = useState<Layer>("runs");
 
-  if (mobile) return <RunView projectId={id} />;
+  /* The nav goes above BOTH branches. Rig used to render with no way back to
+     the production it belongs to — on a phone it was a bare RunView — which
+     made an already-unlinked surface a dead end at both ends. */
+  if (mobile) return <><ProductionNav id={id} on="nodes" /><RunView projectId={id} /></>;
 
   return (
     <div className="rig-screen">
+      <ProductionNav id={id} on="nodes" />
       <div className="rig-switch" role="tablist" aria-label="Rig layers">
         {([["assets", "Assets"], ["stages", "Stages"], ["runs", "Runs"]] as [Layer, string][]).map(([k, label]) => (
           <button

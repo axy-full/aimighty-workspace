@@ -28,8 +28,8 @@ import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo, downloadHref } from "@/lib/format";
-import { AtomikMark } from "@/components/AtomikMark";
 import LazyMedia from "@/components/LazyMedia";
+import ProductionNav from "@/components/ProductionNav";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import { stateOf, roleOf } from "@/components/Feed";
 import type { Gen } from "@/components/GenCard";
@@ -90,7 +90,15 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
   const total = cols.reduce((a, c) => a + c.secs, 0);
   const done = cols.filter((c) => c.state === "approved").reduce((a, c) => a + c.secs, 0);
   const n = (s: ShotState) => cols.filter((c) => c.state === s).length;
-  const approvedHeroes = cols.filter((c) => c.state === "approved" && c.hero).map((c) => c.hero!);
+  /* An approved take with no file is not something you can play. `hero` is
+     chosen by state and only its last fallback requires a url, so without
+     this filter ▶ Play approved sets seq to a take with nothing to show,
+     the `ended` event that advances the sequence never fires, and the run
+     can neither continue nor be understood as stopped. Same root as the
+     download link's crash: approved is a judgement, not a promise of bytes. */
+  const approvedHeroes = cols
+    .filter((c) => c.state === "approved" && c.hero && (c.hero.storedUrl ?? c.hero.sourceUrl))
+    .map((c) => c.hero!);
 
   /* ▶ Play approved: the approved takes, in order, in the rail's preview. */
   const [seq, setSeq] = useState<number | null>(null);
@@ -122,18 +130,16 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
   const slugName = slug(project?.code || project?.name || "production");
   const preview = playing ?? cur?.hero ?? null;
   const previewUrl = preview ? (preview.storedUrl ?? preview.sourceUrl) : null;
+  /* The hero's own file, which may not exist. `hero` is picked by STATE —
+     approved, then picked — and only the last fallback requires a url, so an
+     approved take whose master is gone yields a hero with nothing to play or
+     download. The download link asserted that away with a `!` and took the
+     whole screen down with "Cannot read properties of null". */
+  const heroUrl = cur?.hero ? (cur.hero.storedUrl ?? cur.hero.sourceUrl) : null;
 
   return (
     <>
-      <nav className="subnav" aria-label="Production">
-        <Link href={`/projects/${id}`} className="subnav-item">Shots</Link>
-        <span className="subnav-item is-on" aria-current="page">Canvas</span>
-        <Link href="/studio" className="subnav-item">Cast</Link>
-        <Link href="/usage" className="subnav-item">Cost</Link>
-        <Link href="/atomik/shots" className="subnav-note hdr-mono-link flex items-center gap-2">
-          <AtomikMark size={14} /> SHOT LIST · ATOMIK →
-        </Link>
-      </nav>
+      <ProductionNav id={id} on="canvas" />
 
       <div className="cv">
         <section className="cv-main">
@@ -169,7 +175,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                       <div key={c.shot.id} className="cv-refs">
                         {c.refs.slice(0, 2).map((r) => (
                           <div key={r.id} className="cv-ref" title={r.prompt}>
-                            <LazyMedia url={(r.storedUrl ?? r.sourceUrl)!} kind="image" alt="" />
+                            <LazyMedia url={(r.storedUrl ?? r.sourceUrl) ?? ""} kind="image" alt="" />
                           </div>
                         ))}
                         {c.refs.length === 0 && <div className="cv-ref">{c.shot.scene ? c.shot.scene : "no refs"}</div>}
@@ -261,7 +267,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                 <span className="mono">Refs</span>
                 <div className="flex gap-2">
                   {cur.refs.slice(0, 4).map((r) => (
-                    <span key={r.id} className="cv-ref !w-16 !flex-none"><LazyMedia url={(r.storedUrl ?? r.sourceUrl)!} kind="image" alt="" /></span>
+                    <span key={r.id} className="cv-ref !w-16 !flex-none"><LazyMedia url={(r.storedUrl ?? r.sourceUrl) ?? ""} kind="image" alt="" /></span>
                   ))}
                 </div>
               </div>
@@ -298,8 +304,8 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
           <div className="ws-rail-foot">
             <div className="cv-foot-acts">
               <Link href="/" className="btn-secondary justify-center" onClick={() => setSelection(id)}>Open takes</Link>
-              {cur?.state === "approved" && cur.hero ? (
-                <a href={downloadHref((cur.hero.storedUrl ?? cur.hero.sourceUrl)!)} download className="btn-primary justify-center">Download master ↓</a>
+              {cur?.state === "approved" && heroUrl ? (
+                <a href={downloadHref(heroUrl)} download className="btn-primary justify-center">Download master ↓</a>
               ) : cur?.state === "picked" && cur.hero ? (
                 <button type="button" className="btn-primary justify-center" onClick={() => approve(cur.hero!)}>Approve take</button>
               ) : cur?.state === "draft" ? (
