@@ -515,10 +515,17 @@ export default function AtomikPage() {
                 the workspace's own takes, or its cast. Atomik and particl are
                 one app, so the agent reaches everything the wall does. */}
             <span className="relative">
+              {/* A control that is off because nobody is signed in has to SAY
+                  so. This read "+ Attach", did nothing when pressed, and gave
+                  no reason — the file picker, the wall and the cast are all
+                  behind a session, and a disabled button is not an
+                  explanation. The three states are now three labels. */}
               <button type="button" className={`chip-ctl ${plus ? "is-open" : ""}`} disabled={!signedIn || attaching || files.length >= MAX_ATTACHMENTS}
                 onClick={() => setPlus((v) => !v)}
-                title={files.length >= MAX_ATTACHMENTS ? `${MAX_ATTACHMENTS} at a time` : "Attach a still, a clip, a take or someone from the cast"}>
-                {attaching ? "Attaching…" : "+ Attach"}
+                title={!signedIn ? "Sign in to attach your own files, a take, or someone from the cast"
+                  : files.length >= MAX_ATTACHMENTS ? `${MAX_ATTACHMENTS} at a time`
+                  : "Attach a still, a clip, a take or someone from the cast"}>
+                {attaching ? "Attaching…" : !signedIn ? "Sign in to attach" : "+ Attach"}
               </button>
               {plus && (
                 <span className="menu-pop atomik-plus">
