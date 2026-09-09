@@ -3396,3 +3396,96 @@ html, body { overflow-x: clip; }
 }
 .stg-estimate-big { font: 600 22px/1 var(--font-sans); letter-spacing: -.02em; color: var(--color-bone); }
 .stg-estimate-math { font: 500 10.5px/1.3 var(--font-kode); letter-spacing: .08em; color: var(--color-mute); }
+
+/* ── Rig · the asset layer (brief 3, surface 2a) ──────────────────────────
+   Elements on the left, shots in the middle, and a wire from a port to a
+   slot. The three wire styles are the three facts a binding already holds,
+   so the picture cannot say something the database does not. */
+.ast { display: flex; flex-direction: column; min-height: 0; }
+.ast .stg-bar { border-bottom: 1px solid var(--color-hair); }
+
+.ast-wire { fill: none; }
+/* Following current: thin, quiet, the common case. */
+.ast-wire.is-inherited { stroke: var(--color-edge); stroke-width: 1.5; }
+/* Pinned: heavier and in ink, because a slot that will not follow is the
+   thing somebody decided and the thing somebody has to remember. */
+.ast-wire.is-override { stroke: var(--color-ink); stroke-width: 2.5; }
+/* Promoted out of a take: dashed, so the loop back into the production reads
+   as a different kind of connection from the ones going forward. */
+.ast-wire.is-created { stroke: var(--color-picked); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.ast-wire.is-lit { stroke: var(--color-ink); stroke-width: 3; }
+
+.ast-node {
+  position: absolute; box-sizing: border-box;
+  background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 10px;
+  padding: 0 0 8px; overflow: visible;
+}
+.ast-head { display: flex; align-items: center; gap: 6px; padding: 0 10px; flex-wrap: wrap; }
+.ast-name { font: 600 13px/1.1 var(--font-sans); color: var(--color-bone); }
+.ast-kind { font: 500 10px/1 var(--font-kode); letter-spacing: .14em; color: var(--color-mute); }
+.ast-lock { margin-left: auto; font-size: 9px; color: var(--color-dim); }
+.ast-origin { width: 100%; font: 500 9.5px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-mute); }
+/* A port is a picture of what it holds. Placeholder until the frames land,
+   never a caption where a thumbnail belongs. */
+.ast-tile {
+  position: relative; height: 40px; margin: 5px 8px 0; border-radius: 6px;
+  border: 1px solid var(--color-line); background: var(--color-thumb);
+  background-image: repeating-linear-gradient(135deg, var(--color-panel3) 0 5px, var(--color-panel2) 5px 10px);
+}
+.ast-tile.is-idle { opacity: .5; }
+.ast-tag {
+  position: absolute; top: 5px; left: 6px; padding: 2px 5px; border-radius: 4px;
+  background: var(--color-chrome); font: 500 9px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-lead);
+}
+.ast-ver { position: absolute; right: 6px; bottom: 5px; font: 500 9.5px/1 var(--font-kode); color: var(--color-dim); }
+.ast-port {
+  position: absolute; right: -5px; top: 50%; transform: translateY(-50%);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--color-ink);
+}
+.ast-port.is-idle { background: transparent; border: 1.5px dashed var(--color-dim); }
+
+.ast-shot {
+  position: absolute; box-sizing: border-box;
+  background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden;
+}
+.ast-shot-head { display: flex; align-items: center; gap: 8px; padding: 0 10px; }
+.ast-shot-id { font: 500 11px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-mute); }
+.ast-shot-title {
+  font: 500 12.5px/1 var(--font-sans); color: var(--color-bone);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ast-key {
+  position: relative; margin: 0 8px; border-radius: 6px; border: 1px solid var(--color-line);
+  background-image: repeating-linear-gradient(135deg, var(--color-panel3) 0 5px, var(--color-panel2) 5px 10px);
+}
+.ast-key-chip {
+  position: absolute; top: 6px; left: 7px; padding: 3px 6px; border-radius: 4px;
+  background: var(--color-chrome); font: 500 9.5px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-lead);
+}
+.ast-slot {
+  position: relative; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  border-top: 1px solid var(--color-hair);
+}
+.ast-slot.is-over .ast-slot-tag { color: var(--color-bone); }
+.ast-slot-port {
+  position: absolute; left: -5px; top: 50%; transform: translateY(-50%);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--color-ink);
+}
+.ast-slot-thumb {
+  flex: none; width: 34px; height: 22px; border-radius: 4px; border: 1px solid var(--color-line);
+  background-image: repeating-linear-gradient(135deg, var(--color-panel3) 0 5px, var(--color-panel2) 5px 10px);
+}
+.ast-slot-tag { flex: none; font: 500 9.5px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-mute); }
+.ast-slot-val {
+  font: 500 11px/1 var(--font-sans); color: var(--color-lead);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ast-ovr {
+  margin-left: auto; flex: none; padding: 2px 5px; border-radius: 4px;
+  background: var(--color-chip2); font: 500 9px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-bone);
+}
+.ast-shot-foot {
+  height: 32px; display: flex; align-items: center; padding: 0 10px;
+  border-top: 1px solid var(--color-hair);
+  font: 500 10px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-mute);
+}

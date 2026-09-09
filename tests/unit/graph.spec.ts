@@ -93,3 +93,74 @@ test("the toolbar counts what is actually there", () => {
   expect(shapeLine(placed, 3)).toBe("8 STAGES · 3 LOCKED · 1 BRANCH");
   expect(shapeLine(layout([s("a", 1)]), 0)).toBe("1 STAGE · 0 BRANCHES");
 });
+
+/* ── The asset layer (surface 2a) ─────────────────────────────────────── */
+
+import {
+  layoutAssets, layoutShots, assetWires, assetShapeLine,
+  ASSET_W, ASSET_X, SHOT_X, TILE_H, TILE_GAP, ASSET_HEAD, ASSET_HEAD_ORIGIN,
+  SHOT_HEAD, SHOT_KEY_H, type AssetIn, type ShotIn,
+} from "../../lib/graph";
+
+const port = (id: string, idle = false) => ({ id, label: id.toUpperCase(), version: "v1", idle });
+const asset = (id: string, ports: string[], origin: string | null = null): AssetIn =>
+  ({ id, name: id, kind: "character", locked: false, origin, ports: ports.map((p) => port(p)) });
+const shot = (id: string, slots: string[]): ShotIn => ({
+  id, code: id.toUpperCase(), title: id, state: "open", credits: 0,
+  slots: slots.map((s) => ({ id: `${id}:${s}`, slot: s.toUpperCase(), label: "x", version: "v1", overridden: false })),
+});
+
+test("a port's dot sits at the centre of its own tile", () => {
+  const [a] = layoutAssets([asset("cass", ["face", "hair", "wardrobe"])]);
+  expect(a.x).toBe(ASSET_X);
+  expect(a.ports[0].x).toBe(ASSET_X + ASSET_W);          // the right edge
+  expect(a.ports[0].y).toBe(a.y + ASSET_HEAD + 8 + TILE_H / 2);
+  // Each following tile is one tile plus its gap further down.
+  expect(a.ports[1].y - a.ports[0].y).toBe(TILE_H + TILE_GAP);
+  expect(a.ports[2].y - a.ports[1].y).toBe(TILE_H + TILE_GAP);
+  // The bundle leaves from the header, meaning every current version at once.
+  expect(a.bundleY).toBe(a.y + ASSET_HEAD / 2);
+});
+
+test("an element that came from a take carries a taller header, and its ports move with it", () => {
+  const [plain] = layoutAssets([asset("a", ["one"])]);
+  const [origin] = layoutAssets([asset("b", ["one"], "CREATED FROM A TAKE")]);
+  expect(origin.headH).toBe(ASSET_HEAD_ORIGIN);
+  expect(origin.ports[0].y - origin.y).toBe(plain.ports[0].y - plain.y + (ASSET_HEAD_ORIGIN - ASSET_HEAD));
+});
+
+test("elements stack without overlapping, whatever they hold", () => {
+  const placed = layoutAssets([asset("a", ["one"]), asset("b", ["one", "two", "three", "four"]), asset("c", [])]);
+  for (let i = 1; i < placed.length; i++) {
+    expect(placed[i].y).toBeGreaterThanOrEqual(placed[i - 1].y + placed[i - 1].h);
+  }
+});
+
+test("a slot's dot sits on the shot's left edge, below the keyframe", () => {
+  const [s] = layoutShots([shot("sh04", ["character", "background"])]);
+  expect(s.x).toBe(SHOT_X);
+  expect(s.slots[0].x).toBe(SHOT_X);
+  expect(s.slots[0].y).toBe(s.y + SHOT_HEAD + SHOT_KEY_H + TILE_H / 2);
+  expect(s.slots[1].y - s.slots[0].y).toBe(TILE_H);
+});
+
+/* The three styles are the three facts a binding holds. A wire cannot say
+   something the row does not. */
+test("a wire carries the kind it was given, and always leaves left to right", () => {
+  const wires = assetWires([
+    { key: "a", kind: "inherited", portX: 206, portY: 64, slotX: 280, slotY: 199 },
+    { key: "b", kind: "override", portX: 206, portY: 154, slotX: 280, slotY: 573 },
+    { key: "c", kind: "created", portX: 206, portY: 485, slotX: 280, slotY: 279 },
+  ]);
+  expect(wires.map((w) => w.kind)).toEqual(["inherited", "override", "created"]);
+  for (const w of wires) {
+    expect(w.d.startsWith("M 206 ")).toBe(true);
+    expect(w.d).toContain("280");
+  }
+});
+
+test("the header counts only what is actually pinned", () => {
+  expect(assetShapeLine({ locked: 2, overrides: 1, created: 1 })).toBe("2 LOCKED · 1 OVERRIDE · 1 CREATED");
+  expect(assetShapeLine({ locked: 0, overrides: 2, created: 0 })).toBe("2 OVERRIDES");
+  expect(assetShapeLine({ locked: 0, overrides: 0, created: 0 })).toBe("NOTHING PINNED");
+});
