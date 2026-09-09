@@ -216,18 +216,34 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
   - **Accept it and say so.** Write down that margin is derivable by anyone who
     opens devtools, and stop claiming otherwise in §2.
 
-  **Decide before the display fix**, because the second option changes what the
-  composer is even given to render. Still open.
+  **DECIDED: ship credit rates, not dollar rates.** The bundle carries
+  per-engine credits-per-second instead of USD, and `margins` comes out of the
+  session. The button stays instant — no round trip to reprice a duration — and
+  the arithmetic gives nothing away because there is no dollar figure left to
+  divide.
+
+  The cost, accepted: **the client can then no longer show dollars at all**,
+  and the legacy and own-keys workspaces are exactly the ones entitled to see
+  them. They need their own path — a rate the server hands them, or a dollar
+  view that only their session is given. Until that path exists this is not
+  shippable, so it is one piece of work and not two.
+
+  What it touches: `lib/models.ts` (the rate tables the browser gets),
+  `lib/price.ts` (`useMoney`, which converts USD→credits client-side today),
+  `lib/session.tsx` and `/api/me` (dropping `margins`), and every caller of
+  `estimateCostUsd` / `estimateImageCostUsd` in a client component. The
+  signed-out composer and Usage's sample numbers both fall out of it in
+  credits, which is the two Phase 0 lines above closing together.
 - ~~**Token count on the button**~~ **Done.** It was on two chips, not one —
   the rail button and the island cost button — and both now carry the price and
   nothing else. How the engine bills is still explained in the cost popover,
   which is where somebody who wants to know goes to look.
-- **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio. **Still
-  open, and it needs a decision rather than a fix.** `/` is reached by pressing
-  GENERATE and is then labelled Video, so the same screen has two names. Either
-  the dock names the medium, or the segmented control stops competing for the
-  name — but "Generate" is the word §3 rule 5 already settled, so it is not
-  obvious which side gives.
+- ~~**Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.~~
+  **Closed — not drift.** They name different things: GENERATE is the section,
+  Video / Images / Audio are the three media inside it, and "Generate → Video"
+  is how a person would say it out loud. Nothing to change, and rule 5's
+  settled word keeps its place in the navigation. Recorded rather than deleted
+  so the question is not re-opened by the next reader of the line.
 - ~~**`aria-pressed` on chips**~~ **Done, and not with `aria-pressed`
   everywhere** — that would have been the wrong answer in most places. What a
   control is decides what it says: a *link* that is the current page carries
