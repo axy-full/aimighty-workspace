@@ -59,10 +59,10 @@ export default function ShotRow({ projectId, shotId, setShotId, chip = false }: 
         </button>
         {open && (
           <span className="menu-pop hdr-switch-menu right-0 left-auto" role="menu">
-            <button type="button" className={`menu-item ${!shotId ? "is-on" : ""}`}
+            <button type="button" role="menuitemradio" aria-checked={!shotId} className={`menu-item ${!shotId ? "is-on" : ""}`}
               onClick={() => { setShotId(""); setOpen(false); }}>Unfiled</button>
             {shots.map((sh) => (
-              <button key={sh.id} type="button" className={`menu-item ${shotId === sh.id ? "is-on" : ""}`}
+              <button key={sh.id} type="button" role="menuitemradio" aria-checked={shotId === sh.id} className={`menu-item ${shotId === sh.id ? "is-on" : ""}`}
                 onClick={() => { setShotId(sh.id); setOpen(false); }}>
                 <span className="mono-v mr-2">{sh.code}</span>
                 <span className="min-w-0 flex-1 truncate">{sh.title || ""}</span>
@@ -97,11 +97,11 @@ export default function ShotRow({ projectId, shotId, setShotId, chip = false }: 
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1.5">
-        <button onClick={() => setShotId("")}
+        <button onClick={() => setShotId("")} aria-pressed={!shotId}
           className={`chip ${!shotId ? "bg-blue text-on-ink" : ""}`}>Unfiled</button>
         {shots.map((s) => (
           <button key={s.id} onClick={() => setShotId(s.id)}
-            title={s.title || undefined}
+            title={s.title || undefined} aria-pressed={shotId === s.id}
             className={`chip ${shotId === s.id ? "bg-blue text-on-ink" : ""}`}>
             {s.scene ? `${s.scene}·` : ""}{s.code}
             {s.takes > 0 && <span className="ml-1 opacity-60">{s.takes}</span>}

@@ -75,11 +75,11 @@ export default function AppHeader() {
 
       <nav className="hdr-nav" aria-label="Sections">
         {MAKE.map((t) => (
-          <Link key={t.href} href={t.href} className={`hdr-tab ${active(t.href) ? "is-on" : ""}`}>{t.label}</Link>
+          <Link key={t.href} href={t.href} aria-current={active(t.href) ? "page" : undefined} className={`hdr-tab ${active(t.href) ? "is-on" : ""}`}>{t.label}</Link>
         ))}
         <span className="hdr-nav-rule" aria-hidden="true" />
         {MANAGE.map((t) => (
-          <Link key={t.href} href={t.href} className={`hdr-tab ${active(t.href) ? "is-on" : ""}`}>{t.label}</Link>
+          <Link key={t.href} href={t.href} aria-current={active(t.href) ? "page" : undefined} className={`hdr-tab ${active(t.href) ? "is-on" : ""}`}>{t.label}</Link>
         ))}
       </nav>
 
