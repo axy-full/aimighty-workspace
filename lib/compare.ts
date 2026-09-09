@@ -21,3 +21,43 @@ export const canCompare = (takes: Take[]): boolean => compareSet(takes).length >
 
 /** How many across at most; a phone is held to two by the stylesheet. */
 export const compareColumns = (n: number): number => Math.max(1, Math.min(n, COMPARE_MAX));
+
+/**
+ * Every take that COULD be compared, newest first.
+ *
+ * `compareSet` answers a different question — what a comparison opens on —
+ * and it answers it by taking the newest four and dropping the rest without
+ * saying so. On a shot with six takes that hid two of them, and it made
+ * "A/B wipe for two" (§10 4.3) impossible to ask for: you got the newest
+ * four whether or not those were the two you wanted to weigh.
+ */
+export function compareCandidates<T extends Take>(takes: T[]): T[] {
+  return takes
+    .filter((t) => Boolean(t.storedUrl) && (t.status ?? "succeeded") === "succeeded")
+    .sort((a, b) => (b.version ?? 0) - (a.version ?? 0));
+}
+
+/**
+ * Membership, held between two and four.
+ *
+ * At the bounds the answer is "no" rather than a silent shuffle: dropping
+ * someone's oldest pick to make room for a new one is the kind of help that
+ * loses the take they were actually looking at. The caller disables the
+ * chips this refuses, so the limit is visible in the control instead of
+ * explained in a sentence.
+ */
+export function toggleCompare(
+  selected: readonly string[], id: string, max = COMPARE_MAX, min = COMPARE_MIN,
+): string[] {
+  const has = selected.includes(id);
+  if (has) return selected.length <= min ? [...selected] : selected.filter((x) => x !== id);
+  if (selected.length >= max) return [...selected];
+  return [...selected, id];
+}
+
+/** Whether a chip may be pressed at all, so the bound shows rather than tells. */
+export function canToggle(
+  selected: readonly string[], id: string, max = COMPARE_MAX, min = COMPARE_MIN,
+): boolean {
+  return selected.includes(id) ? selected.length > min : selected.length < max;
+}

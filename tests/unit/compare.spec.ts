@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { compareSet, canCompare, compareColumns, COMPARE_MAX } from "../../lib/compare";
+import { compareSet, canCompare, compareColumns, COMPARE_MAX, compareCandidates, toggleCompare, canToggle } from "../../lib/compare";
 
 /** Compare (brief 2.1): two to four playable takes of one shot, newest first. */
 test("a comparison holds only playable takes, newest first, at most four", () => {
@@ -20,4 +20,62 @@ test("a comparison holds only playable takes, newest first, at most four", () =>
   expect(compareColumns(3)).toBe(3);
   expect(compareColumns(9)).toBe(4);
   expect(compareColumns(0)).toBe(1);
+});
+
+/* ── Choosing which takes are weighed (SOW §10 4.3) ────────────────────── */
+
+const six = [
+  { id: "a", version: 6, storedUrl: "u" }, { id: "b", version: 5, storedUrl: "u" },
+  { id: "c", version: 4, storedUrl: "u" }, { id: "d", version: 3, storedUrl: "u" },
+  { id: "e", version: 2, storedUrl: "u" }, { id: "f", version: 1, storedUrl: "u" },
+];
+
+test("every playable take is a candidate, newest first — none is hidden", () => {
+  /* compareSet answers "what does it open on" and silently drops the rest.
+     On a six-take shot that hid two takes with nothing saying so, and made
+     "A/B wipe for two" impossible to ask for. */
+  expect(compareCandidates(six).map((t) => t.id)).toEqual(["a", "b", "c", "d", "e", "f"]);
+  expect(compareSet(six).length).toBe(4);
+  expect(compareCandidates(six).length).toBe(6);
+});
+
+test("a take with nothing to play is not a candidate", () => {
+  const mixed = [...six, { id: "g", version: 7, storedUrl: null }, { id: "h", version: 8, storedUrl: "u", status: "failed" }];
+  const ids = compareCandidates(mixed).map((t) => t.id);
+  expect(ids).not.toContain("g");
+  expect(ids).not.toContain("h");
+});
+
+test("a comparison holds at most four: adding a fifth is refused, not shuffled", () => {
+  /* Dropping someone's oldest pick to make room is the kind of help that
+     loses the take they were looking at. */
+  const four = ["a", "b", "c", "d"];
+  expect(toggleCompare(four, "e")).toEqual(four);
+  expect(canToggle(four, "e")).toBe(false);
+});
+
+test("a comparison holds at least two: the second cannot be dropped", () => {
+  expect(toggleCompare(["a", "b"], "a")).toEqual(["a", "b"]);
+  expect(canToggle(["a", "b"], "a")).toBe(false);
+});
+
+test("inside the bounds, toggling adds and removes", () => {
+  expect(toggleCompare(["a", "b", "c"], "d")).toEqual(["a", "b", "c", "d"]);
+  expect(toggleCompare(["a", "b", "c"], "b")).toEqual(["a", "c"]);
+  expect(canToggle(["a", "b", "c"], "d")).toBe(true);
+  expect(canToggle(["a", "b", "c"], "b")).toBe(true);
+});
+
+test("toggling never mutates the list it was given", () => {
+  const before = ["a", "b", "c"];
+  toggleCompare(before, "d");
+  expect(before).toEqual(["a", "b", "c"]);
+});
+
+test("choosing exactly two is reachable, which is what A/B needs", () => {
+  let sel = compareSet(six).map((t) => t.id);      // opens on four
+  sel = toggleCompare(sel, sel[3]);
+  sel = toggleCompare(sel, sel[2]);
+  expect(sel.length).toBe(2);
+  expect(canToggle(sel, sel[0])).toBe(false);      // and stops there
 });
