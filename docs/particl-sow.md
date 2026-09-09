@@ -600,6 +600,59 @@ A production tool lives on shortcuts. Minimum set, discoverable through a `?` ov
 - Rig: `⌘1/2/3` switch Assets / Stages / Runs, `space` pan, `⌘0` fit graph, `⌘F` find node.
 Every shortcut has a menu-bar equivalent in the Mac app.
 
+**BUILT — the palette, the registry and the `?` overlay.** `lib/shortcuts.ts`
+is the whole table above as data, because 5.1 says the Mac menus carry every
+one of these and a menu can only carry what it can enumerate. Most rows were
+already implemented as ad-hoc listeners in whichever component owned the key;
+the table records where, and only rows marked `owner: "global"` are handled by
+the layer in `CommandPalette.tsx`. `?` reads the table, so a shortcut added in
+a component becomes discoverable the moment someone adds its row.
+
+The palette (`⌘K`, or `/`) finds all four nouns 4.2 names — production, shot,
+cast member, screen — plus takes, via the one server-side search parameter the
+API has (`q` on `/api/jobs`). Everything else is matched in the browser by
+`lib/match.ts`. Three decisions worth keeping:
+
+- **No spending action is in it, and this is the rule not an omission.** Twelve
+  actions in this product call a vendor and write a `meter()` row. A palette is
+  a text field where Return fires the top match, so listing any of them would
+  put a mistyped query one keystroke from a customer's credits — §3 rule 1.
+  The palette navigates; it does `help` and `select`, both free and reversible.
+  `tests/unit/palette.spec.ts` asserts the verb list, so a future row that
+  wants a new verb has to argue for it there. Related: `/atomik/agent?c=<id>`
+  auto-approves a pending step when the chat is in auto mode — a render on
+  arrival, with no click. The bare route is safe and is the only form listed.
+- **Groups are ordered by their best member, not by a fixed sequence.** The
+  first draft pinned the sections; typing "sh" then put "Keyboard shortcuts"
+  above "Shot list" and Return fired the wrong thing. The top row is a promise
+  about what Return does.
+- **A shot lands on `…/canvas?shot=`, not `/shots/[id]`.** That route is the
+  Rig bindings screen — five slots — where canvas already deep-links to the
+  shot in its context. `/studio?cast=` is new: Studio held its selection in
+  React state, so before this the palette could only land near a cast member.
+
+Mobile (§12): no touch entry point, deliberately. `⌘K` presumes a hardware
+keyboard and §3 rule 7 puts navigating an index on the desktop side. It lays
+out full-bleed at 360px if a keyboard is attached, and never focuses the field
+on a touch surface. Mounted outside `.shell` — the only place that sees both
+providers and escapes the backdrop-filter containing block — which costs it
+Shell's `.theme-light`, so it re-applies the paper ground itself on Atomik.
+
+The overlay shows only shortcuts that WORK. §10 4.2 above is a set to build,
+and most of it does not exist: auditing the actual handlers found seven live
+keys — `⌘K`, `/`, `?`, `esc`, `←/→`, `space`, `⌘↵` — against eleven planned
+ones. An overlay listing `⌘0 fit graph` while `⌘0` does nothing is worse than
+no overlay: the reader tries it, nothing happens, and they stop believing the
+rest. So the registry carries every row with a `live` flag, the overlay
+renders the live ones, and `PLANNED` is what is left to wire. Two live keys
+were also mis-described by 4.2 and are now recorded as they behave: Theatre's
+`←/→` steps between TAKES, not frames, and `space` plays and pauses in
+Compare, not everywhere.
+
+Still to wire, all present as `live: false`: `J K L`, `[ ]`, `P`, `A`, `S`, a
+real frame step, batch generate, the rail toggle, and Rig's layer switch, fit
+and find. Each is a one-line flip here when its handler lands.
+
 ### 4.3 Review at speed
 The desktop version of 2.1, and the reason an editor keeps the app open.
 - **Player**: scrub, frame-step, loop, in/out, and a comparison mode with synced playhead across two to four takes — side by side, or A/B wipe for two.
@@ -629,10 +682,11 @@ were never offered. **Not widened to PDF, WebM or ProRes**: the sniffer does
 not read them and no engine in §2 takes them, so offering them would be
 promising a conversion nothing does.
 
-Still to do here: a folder of stills into Studio, drag a take onto a shot,
-drag to reorder the sequence canvas, resumable failures, and the remembered
-download folder.
-Drag references into the composer; drag a folder of stills into Studio to create cast entries; drag a take onto a shot to file it; drag to reorder the sequence canvas; drag a plate onto a slot in Rig. Batch upload with per-file progress and resumable failures. Download: pick a destination folder once and remember it; masters land named by the convention without a Save dialog each time.
+**Still to do here**, which is the original spec minus what shipped: a folder
+of stills into Studio to create cast entries; a take dragged onto a shot to
+file it; drag to reorder the sequence canvas; a plate dragged onto a slot in
+Rig; resumable failures; and a remembered download folder, so masters land
+named by the convention without a Save dialog each time.
 
 ### 4.6 Scale
 A production reaches thousands of takes. Virtualised lists and grids, thumbnail sprite sheets or a poster-frame service rather than loading video, lazy provenance, and a Rig canvas that stays responsive at 200+ nodes. Set a budget: the library at 2,000 takes scrolls at 60fps and first paint stays under 1.5s on a cold load.

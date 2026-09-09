@@ -4,6 +4,7 @@ import Shell from "@/components/shell/Shell";
 import ChatDock from "@/components/ChatDock";
 import ContextMenu from "@/components/ContextMenu";
 import DialogHost from "@/components/dialog";
+import CommandPalette from "@/components/CommandPalette";
 import ViewportGuard from "@/components/ViewportGuard";
 import { ProjectProvider } from "@/lib/projectContext";
 import { SessionProvider } from "@/lib/session";
@@ -67,6 +68,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </Shell>
       <ContextMenu />
       <DialogHost />
+      {/* Outside <Shell> on purpose: that is where `.theme-light` and the
+          backdrop-filter containing block live, and a fixed overlay inside
+          either is a fight. The palette re-applies the light ground itself. */}
+      <CommandPalette />
       <ViewportGuard />
     </ProjectProvider>
     </SessionProvider>

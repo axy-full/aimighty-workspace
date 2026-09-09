@@ -103,6 +103,10 @@ export default function DialogHost() {
 
   return (
     <div
+      /* Marked so the command palette can tell a blocking dialog is up and
+         stay closed. A confirm is a question; ⌘K over it would be answering
+         something else. */
+      data-dialog=""
       className="fixed inset-0 z-[95] grid place-items-center bg-scrim p-5 backdrop-blur-[2px]"
       // Dismiss only a true backdrop click — not a drag that ends outside the
       // card — and never let it reach the page's own click-away listeners.
