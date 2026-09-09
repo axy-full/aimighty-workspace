@@ -82,21 +82,55 @@ export async function assetGraphOf(projectId: string): Promise<AssetGraph> {
   const shots: ShotIn[] = shotRows.rows.map((r) => {
     const row = r as any;
     const mine = bindings.filter((b) => b.shotId === String(row.id));
-    const slots: SlotIn[] = mine.map((b) => {
-      const el = byElement.get(b.elementId);
-      const attr = el?.attributes.find((a) => a.id === b.attributeId) ?? null;
-      const pinned = b.versionId
-        ? attr?.versions.find((v) => v.id === b.versionId) ?? null
-        : attr
-          ? attr.versions.find((v) => v.id === attr.currentId) ?? null
-          : null;
-      const index = attr && pinned ? attr.versions.findIndex((v) => v.id === pinned.id) : -1;
+
+    /* ONE slot per address, however many wires land on it.
+ 
+       Since the key was widened a slot can hold a bundle and an override on
+       the same element at once, and mapping bindings straight to slots gave
+       two rows with the same id — duplicate keys, and both wires resolving to
+       the same point because the point is derived from the id. So the
+       bindings are grouped by address first, and the slot says what the group
+       amounts to. This is the cost the decision accepted, paid here: "one
+       slot, one wire" is no longer true, so the drawing has to say which wire
+       wins rather than drawing both as equals. */
+    const groups = new Map<string, typeof mine>();
+    for (const b of mine) {
+      const key = bySlotKey(b);
+      groups.set(key, [...(groups.get(key) ?? []), b]);
+    }
+
+    const slots: SlotIn[] = [...groups.entries()].map(([key, group]) => {
+      /* The bundle is the slot's identity; the overrides qualify it. */
+      const bundle = group.find((b) => !b.attributeId) ?? null;
+      const overrides = group.filter((b) => b.attributeId);
+      const el = byElement.get((bundle ?? group[0]).elementId);
+
+      const nameOf = (b: (typeof group)[number]) => {
+        const attr = el?.attributes.find((a) => a.id === b.attributeId) ?? null;
+        if (!attr) return "";
+        const want = b.versionId ?? attr.currentId;
+        const i = attr.versions.findIndex((v) => v.id === want);
+        const label = (attr.label || attr.kind).toLowerCase();
+        return i < 0 ? label : `${label} ${versionLine(i, "").trim()}`;
+      };
+
+      /* What the slot resolves to, read left to right: everything current,
+         then whatever this shot has taken out of the element's hands. */
+      const parts: string[] = [];
+      if (bundle) parts.push("all current");
+      for (const o of overrides) {
+        const line = nameOf(o);
+        if (line) parts.push(o.versionId ? line : `${line} (follows)`);
+      }
+
       return {
-        id: bySlotKey(b),
-        slot: SLOT_LABELS[b.slot as Slot] ?? b.slot.toUpperCase(),
+        id: key,
+        slot: SLOT_LABELS[group[0].slot as Slot] ?? group[0].slot.toUpperCase(),
         label: el?.name ?? "—",
-        version: pinned ? versionLine(index, pinned.label) : attr ? "none" : "all current",
-        overridden: b.versionId !== null,
+        version: parts.join(" · ") || "none",
+        /* Overridden is about a PIN, not about being a second wire: a wire
+           that follows current still moves with the library. */
+        overridden: group.some((b) => b.versionId !== null),
       };
     });
     return {

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import {
   rowsOf, detailOf, orderBadges, sameBinding, consequenceOf, saveLabel,
   renderPrice, lockNote, takeLine, secondsLine, madeHere, effectiveVersion, follows, rowKey,
-  candidatesFor, emptyNote, countLine,
+  candidatesFor, emptyNote, countLine, wireKey,
   type ElementIn, type BindingIn,
 } from "../../lib/shotBindings";
 
@@ -103,12 +103,12 @@ test("changed is a comparison against what is saved, not a memory of a tap", () 
   const saved = [bind("background", "el-shop", "at-plate", null)];
 
   // Picking plate 2 is a change.
-  const moved = rowsOf("sh3", saved, ELEMENTS, { "background:0": bind("background", "el-shop", "at-plate", "p2") });
+  const moved = rowsOf("sh3", saved, ELEMENTS, { "background:0:at-plate": bind("background", "el-shop", "at-plate", "p2") });
   expect(moved[1].badges).toContain("changed");
 
   /* Picking what is already bound is NOT a change and must not price. This
      is the one that decides whether a footer can read 29 cr for nothing. */
-  const same = rowsOf("sh3", saved, ELEMENTS, { "background:0": bind("background", "el-shop", "at-plate", null) });
+  const same = rowsOf("sh3", saved, ELEMENTS, { "background:0:at-plate": bind("background", "el-shop", "at-plate", null) });
   expect(same[1].badges).not.toContain("changed");
 });
 
@@ -171,7 +171,7 @@ test("the consequence separates what a save does from what a render costs", () =
   expect(consequenceOf(clean, 29, true)).not.toContain("29 CR");
 
   const dirty = rowsOf("sh3", [bind("background", "el-shop", "at-plate", null)], ELEMENTS,
-    { "background:0": bind("background", "el-shop", "at-plate", "p2") });
+    { "background:0:at-plate": bind("background", "el-shop", "at-plate", "p2") });
   const line = consequenceOf(dirty, 29, true);
   expect(line).toContain("BACKGROUND");
   // The approved take is not changed by a save, and the sentence has to say so.
@@ -187,15 +187,15 @@ test("the footer says what each button does, and only one of them spends", () =>
   expect(saveLabel(clean)).toBe("Nothing to save");
 
   const one = rowsOf("sh3", [bind("background", "el-shop", "at-plate", null)], ELEMENTS,
-    { "background:0": bind("background", "el-shop", "at-plate", "p2") });
+    { "background:0:at-plate": bind("background", "el-shop", "at-plate", "p2") });
   expect(saveLabel(one)).toBe("Save this change");
 
   const two = rowsOf("sh3",
     [bind("background", "el-shop", "at-plate", null), bind("character", "el-cass", "at-ward", null)],
     ELEMENTS,
     {
-      "background:0": bind("background", "el-shop", "at-plate", "p2"),
-      "character:0": bind("character", "el-cass", "at-ward", "w1"),
+      "background:0:at-plate": bind("background", "el-shop", "at-plate", "p2"),
+      "character:0:at-ward": bind("character", "el-cass", "at-ward", "w1"),
     });
   expect(saveLabel(two)).toBe("Save 2 changes");
 
@@ -260,7 +260,7 @@ test("a second character on the same slot gets its own row, not the first one's"
 
   // And an edit to the second does not touch the first.
   const edited = rowsOf("sh9", two, ELEMENTS,
-    { [rowKey("character", 1)]: { ...two[1], versionId: "t2" } });
+    { [wireKey("character", 1, "at-turn")]: { ...two[1], versionId: "t2" } });
   const c2 = edited.filter((r) => r.slot === "character");
   expect(c2[0].badges).not.toContain("changed");
   expect(c2[1].badges).toContain("changed");
@@ -305,18 +305,30 @@ test("a changed row says what it was changed from", () => {
      person asks — from what? — has no answer on the screen. */
   const saved = [bind("background", "el-shop", "at-plate", "p1")];
   const rows = rowsOf("sh3", saved, ELEMENTS,
-    { "background:0": bind("background", "el-shop", "at-plate", "p3") });
+    { "background:0:at-plate": bind("background", "el-shop", "at-plate", "p3") });
   expect(rows[1].detail).toBe("v3 of 3 plates");
   expect(rows[1].wasLine).toBe("was v1 north wall");
 
   // Coming off a follow, and coming off a bundle, each read as themselves.
   const fromFollow = rowsOf("sh3", [bind("background", "el-shop", "at-plate", null)], ELEMENTS,
-    { "background:0": bind("background", "el-shop", "at-plate", "p2") });
+    { "background:0:at-plate": bind("background", "el-shop", "at-plate", "p2") });
   expect(fromFollow[1].wasLine).toBe("was following current");
 
+  /* Pinning a port on a bundle row no longer takes the shot off the element:
+     the override is a wire of its own beside the bundle, so the row's own
+     wire has not moved and has nothing to say it was changed FROM. What
+     changed is the port, and the port is where it shows — which is the whole
+     of what widening the key bought. */
   const fromBundle = rowsOf("sh3", [bind("character", "el-cass", null, null)], ELEMENTS,
-    { "character:0": bind("character", "el-cass", "at-ward", "w1") });
-  expect(fromBundle[0].wasLine).toBe("was the whole element");
+    { "character:0:at-ward": bind("character", "el-cass", "at-ward", "w1") });
+  expect(fromBundle[0].wasLine).toBe("");
+  expect(fromBundle[0].badges).toContain("changed");
+  expect(fromBundle[0].badges).toContain("override");
+  // The element is still bound whole: the detail names every port, the
+  // pinned one starred.
+  expect(fromBundle[0].detail).toBe("face v3 · hair v1 · wardrobe v1*");
+  expect(fromBundle[0].bundle.find((b) => b.label === "wardrobe")!.pinned).toBe("w1");
+  expect(fromBundle[0].bundle.find((b) => b.label === "face")!.pinned).toBeNull();
 
   // A row with nothing pending says nothing.
   expect(rowsOf("sh3", saved, ELEMENTS)[1].wasLine).toBe("");

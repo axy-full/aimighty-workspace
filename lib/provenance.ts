@@ -1,6 +1,6 @@
 import { db, ready, now } from "./db";
 import { listBindings } from "./elements";
-import { portKey, type Port } from "./rig";
+import { portKey, expandPorts, type Port } from "./rig";
 
 /**
  * What produced a take (brief 3, surface 1c).
@@ -94,27 +94,27 @@ export async function portsForShot(shotId: string): Promise<{ rows: PortRow[]; k
   const bindings = await listBindings(shotId);
   if (!bindings.length) return { rows: [], keys: [] };
 
-  const attrIds = bindings.map((b) => b.attributeId).filter(Boolean) as string[];
-  const current = new Map<string, string | null>();
-  if (attrIds.length) {
-    const holes = attrIds.map(() => "?").join(",");
+  /* A BUNDLE is expanded, not recorded as itself — the rule lives in
+     lib/rig.ts as `expandPorts`, pure and tested, because provenance records
+     its output and the version counts read it back. */
+  const elementIds = [...new Set(bindings.map((b) => b.elementId))];
+  const attrsOf = new Map<string, { id: string; currentId: string | null }[]>();
+  if (elementIds.length) {
+    const holes = elementIds.map(() => "?").join(",");
     const rs = await db().execute({
-      sql: `SELECT id, current_id FROM element_attributes WHERE id IN (${holes})`,
-      args: attrIds,
+      sql: `SELECT id, element_id, current_id FROM element_attributes
+            WHERE element_id IN (${holes}) ORDER BY position, rowid`,
+      args: elementIds,
     });
     for (const r of rs.rows) {
-      const row = r as unknown as { id: string; current_id: string | null };
-      current.set(String(row.id), row.current_id ?? null);
+      const row = r as unknown as { id: string; element_id: string; current_id: string | null };
+      const list = attrsOf.get(String(row.element_id)) ?? [];
+      list.push({ id: String(row.id), currentId: row.current_id ?? null });
+      attrsOf.set(String(row.element_id), list);
     }
   }
 
-  const rows: PortRow[] = bindings.map((b) => ({
-    elementId: b.elementId,
-    attributeId: b.attributeId,
-    versionId: b.versionId ?? (b.attributeId ? current.get(b.attributeId) ?? null : null),
-    slot: b.slot,
-    ordinal: b.ordinal,
-  }));
+  const rows: PortRow[] = expandPorts(bindings, (id) => attrsOf.get(id) ?? []);
   const keys = rows.map((r) => portKey({
     elementId: r.elementId, attributeId: r.attributeId, versionId: r.versionId,
   } as Port));

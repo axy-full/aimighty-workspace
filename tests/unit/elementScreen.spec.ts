@@ -85,6 +85,11 @@ test("a version says what is actually holding it", () => {
   // Still rendering outranks everything: it is not a version you can pick.
   expect(versionMeta({ id: "p", label: "", status: "pending" }, true, { versionId: "p", pinned: 0, takes: 0 }))
     .toBe("still rendering");
+  /* And failed is not pending: a version whose views never rendered will not
+     render later, so saying "still rendering" leaves somebody waiting for a
+     thing that already stopped. */
+  expect(versionMeta({ id: "f", label: "", status: "failed" }, false, { versionId: "f", pinned: 0, takes: 0 }))
+    .toBe("failed");
   expect(versionMeta({ id: "p", label: "", status: "ready" }, false, { versionId: "p", pinned: 1, takes: 0 }))
     .toBe("1 shot");
 });
@@ -113,6 +118,17 @@ test("a row reads its port, its version and where both stand", () => {
     EMPTY_USE);
   expect(bare[0].at).toBe("");
   expect(bare[0].versions).toEqual([]);
+
+  /* And versions made with none chosen is a THIRD state, not the same as the
+     first: it used to read as "nothing has been made" when something had and
+     nobody had picked it. */
+  const unchosen = attributeRows(
+    { ...cass, attributes: [{ id: "a", kind: "face", label: "face", currentId: null, locked: false,
+      versions: [v("f1", ""), v("f2", "")] }] },
+    EMPTY_USE);
+  expect(unchosen[0].at).toBe("2 versions, none current");
+  expect(unchosen[0].versions).toHaveLength(2);
+  expect(unchosen[0].versions.some((x) => x.current)).toBe(false);
   expect(hasPorts({ ...cass, attributes: bare.length ? [] : [] })).toBe(false);
   expect(hasPorts(cass)).toBe(true);
 });

@@ -327,30 +327,72 @@ export async function setBinding(
   const shot = await db().execute({ sql: `SELECT project_id FROM shots WHERE id = ?`, args: [input.shotId] });
   if (!shot.rows.length) return null;
   const projectId = (shot.rows[0] as unknown as { project_id: string | null }).project_id ?? null;
-  await db().execute({
-    sql: `INSERT INTO bindings (id, shot_id, project_id, slot, ordinal, element_id, attribute_id, version_id, created_by, created_at, updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)
-          ON CONFLICT (shot_id, slot, ordinal) DO UPDATE SET
-            element_id = excluded.element_id,
-            attribute_id = excluded.attribute_id,
-            version_id = excluded.version_id,
-            project_id = excluded.project_id,
-            updated_at = excluded.updated_at`,
-    args: [bid, input.shotId, projectId, input.slot, ordinal,
-           input.port.elementId, input.port.attributeId, input.port.versionId, by, ts, ts],
+  const attributeId = input.port.attributeId;
+
+  /* A wire's address is (shot, slot, ordinal, ATTRIBUTE). It used to be the
+     first three, which meant an override overwrote the bundle it was supposed
+     to sit on top of — a shot that pinned one wardrobe stopped citing the
+     character's face, hair and voice.
+
+     Two statements rather than one upsert, because the two addresses live in
+     two partial indexes and an upsert would need its conflict target to carry
+     each index's WHERE clause. Written out, what happens is legible: find the
+     wire at this exact address, move it if it is there, add it if it is not. */
+  const found = await db().execute({
+    sql: attributeId
+      ? `SELECT id FROM bindings WHERE shot_id = ? AND slot = ? AND ordinal = ? AND attribute_id = ?`
+      : `SELECT id FROM bindings WHERE shot_id = ? AND slot = ? AND ordinal = ? AND attribute_id IS NULL`,
+    args: attributeId
+      ? [input.shotId, input.slot, ordinal, attributeId]
+      : [input.shotId, input.slot, ordinal],
   });
+
+  if (found.rows.length) {
+    const id = String((found.rows[0] as unknown as { id: string }).id);
+    await db().execute({
+      sql: `UPDATE bindings SET element_id = ?, version_id = ?, project_id = ?, updated_at = ? WHERE id = ?`,
+      args: [input.port.elementId, input.port.versionId, projectId, ts, id],
+    });
+  } else {
+    await db().execute({
+      sql: `INSERT INTO bindings (id, shot_id, project_id, slot, ordinal, element_id, attribute_id, version_id, created_by, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      args: [bid, input.shotId, projectId, input.slot, ordinal,
+             input.port.elementId, attributeId, input.port.versionId, by, ts, ts],
+    });
+  }
+
   const rs = await db().execute({
-    sql: `SELECT * FROM bindings WHERE shot_id = ? AND slot = ? AND ordinal = ?`,
-    args: [input.shotId, input.slot, ordinal],
+    sql: attributeId
+      ? `SELECT * FROM bindings WHERE shot_id = ? AND slot = ? AND ordinal = ? AND attribute_id = ?`
+      : `SELECT * FROM bindings WHERE shot_id = ? AND slot = ? AND ordinal = ? AND attribute_id IS NULL`,
+    args: attributeId
+      ? [input.shotId, input.slot, ordinal, attributeId]
+      : [input.shotId, input.slot, ordinal],
   });
-  return rowToBinding(rs.rows[0]);
+  return rs.rows.length ? rowToBinding(rs.rows[0]) : null;
 }
 
-export async function clearBinding(shotId: string, slot: Slot, ordinal = 0): Promise<boolean> {
+/**
+ * Take a wire off a slot.
+ *
+ * `attributeId` names WHICH wire: an override on that attribute, or — with
+ * `null` — the bundle. Passing `"*"` clears the slot entirely, bundle and
+ * every override with it, which is what unbinding a slot means and is the
+ * only caller that should ever want it.
+ */
+export async function clearBinding(
+  shotId: string, slot: Slot, ordinal = 0, attributeId: string | null | "*" = "*",
+): Promise<boolean> {
   await ready();
+  const where = attributeId === "*" ? ""
+    : attributeId === null ? ` AND attribute_id IS NULL`
+    : ` AND attribute_id = ?`;
+  const args: (string | number)[] = [shotId, slot, ordinal];
+  if (typeof attributeId === "string" && attributeId !== "*") args.push(attributeId);
   const rs = await db().execute({
-    sql: `DELETE FROM bindings WHERE shot_id = ? AND slot = ? AND ordinal = ?`,
-    args: [shotId, slot, ordinal],
+    sql: `DELETE FROM bindings WHERE shot_id = ? AND slot = ? AND ordinal = ?${where}`,
+    args,
   });
   return rs.rowsAffected > 0;
 }
@@ -390,11 +432,23 @@ export async function dependentsOf(
      does not move, whatever it is pinned to. Asking the first question about
      a swap counts shots already sitting on the target, prices a re-render
      that cannot change their output, and un-approves them for it. */
-  const args: (string | null)[] = [elementId, attributeId, versionId];
+  /* A bundle reaches an attribute only where NO override covers it.
+ 
+     Since the key was widened, a slot can hold a bundle and an override on
+     the same attribute at once, and the override wins. Without the NOT EXISTS
+     the bundle would still be counted: the panel would report a shot as
+     following current when it is pinned, quote a re-render for it, take the
+     producer's money and change nothing about the frame. The override row is
+     counted on its own terms by the first half of the OR. */
+  const covered = `NOT EXISTS (
+      SELECT 1 FROM bindings o
+      WHERE o.shot_id = b.shot_id AND o.slot = b.slot AND o.ordinal = b.ordinal
+        AND o.element_id = b.element_id AND o.attribute_id = ?)`;
+  const args: (string | null)[] = [elementId, attributeId, attributeId, versionId];
   let sql = `SELECT b.* FROM bindings b
              JOIN shots s ON s.id = b.shot_id
              WHERE b.element_id = ?
-               AND (b.attribute_id = ? OR b.attribute_id IS NULL)
+               AND (b.attribute_id = ? OR (b.attribute_id IS NULL AND ${covered}))
                AND ${opts.following ? "b.version_id IS NULL" : "(b.version_id IS NULL OR b.version_id = ?)"}`;
   if (opts.following) args.pop();
   if (opts.projectId) { sql += ` AND s.project_id = ?`; args.push(opts.projectId); }
@@ -617,7 +671,12 @@ export async function elementUsage(elementId: string): Promise<ElementUsage> {
             LEFT JOIN bindings b
               ON b.element_id = a.element_id
              AND b.version_id IS NULL
-             AND (b.attribute_id = a.id OR b.attribute_id IS NULL)
+             AND (b.attribute_id = a.id
+                  OR (b.attribute_id IS NULL AND NOT EXISTS (
+                        SELECT 1 FROM bindings o
+                        WHERE o.shot_id = b.shot_id AND o.slot = b.slot
+                          AND o.ordinal = b.ordinal AND o.element_id = b.element_id
+                          AND o.attribute_id = a.id)))
              AND EXISTS (SELECT 1 FROM shots s
                          WHERE s.id = b.shot_id AND COALESCE(s.kind, 'render') != 'type')
             WHERE a.element_id = ?

@@ -94,9 +94,11 @@ export type RowVersion = {
 export type BundlePort = {
   id: string;
   label: string;
-  /** `v3` — where this attribute currently stands. */
+  /** `v3` — where this attribute stands FOR THIS SHOT, pin included. */
   at: string;
   locked: boolean;
+  /** The version this shot has pinned the port to, if it has. */
+  pinned: string | null;
   versions: VersionIn[];
 };
 
@@ -149,7 +151,9 @@ const numberOf = (a: AttributeIn, versionId: string | null): string => {
  * element with several attributes reads as its attributes; an element with
  * one reads as which of its versions this shot took.
  */
-export function detailOf(el: ElementIn, b: BindingIn, shotId: string): string {
+export function detailOf(
+  el: ElementIn, b: BindingIn, shotId: string, overrides: BindingIn[] = [],
+): string {
   if (el.fromShotId && el.fromShotId === shotId) return "created here";
 
   const visible = el.attributes.filter((a) => a.versions.length > 0);
@@ -172,10 +176,17 @@ export function detailOf(el: ElementIn, b: BindingIn, shotId: string): string {
     return `${at || "—"} of ${a.versions.length} ${plural(a.label || a.kind, a.versions.length)}`;
   }
 
-  /* The bundle: every attribute at its current version, which is the whole
-     of what the shot inherits and the only honest summary of it. */
+  /* The bundle: every attribute at the version THIS SHOT gets — current,
+     unless the shot has pinned that port to something older, which is now a
+     row of its own on the same slot. Reading current for all of them would
+     describe the library rather than the shot, and the whole promise of the
+     screen is that it describes the shot. */
   return visible
-    .map((a) => `${(a.label || a.kind).toLowerCase()} ${numberOf(a, a.currentId) || "—"}`)
+    .map((a) => {
+      const over = overrides.find((o) => o.attributeId === a.id) ?? null;
+      const at = numberOf(a, over?.versionId ?? a.currentId) || "—";
+      return `${(a.label || a.kind).toLowerCase()} ${at}${over?.versionId ? "*" : ""}`;
+    })
     .join(" · ");
 }
 
@@ -187,6 +198,17 @@ function plural(word: string, n: number): string {
 
 /** A row's address. A slot alone is not one: a shot can hold two characters. */
 export const rowKey = (slot: Slot, ordinal: number): string => `${slot}:${ordinal}`;
+
+/**
+ * A WIRE's address, which is a row's plus the attribute.
+ *
+ * Since the key was widened a row can carry several wires — the bundle, and
+ * an override per attribute — so pending edits are keyed by this rather than
+ * by the row. Keyed by the row, an override would have overwritten the
+ * bundle's pending entry, which is the same mistake the schema used to make.
+ */
+export const wireKey = (slot: Slot, ordinal: number, attributeId: string | null): string =>
+  `${slot}:${ordinal}:${attributeId ?? ""}`;
 
 /**
  * The rows, in the handoff's order, whether or not anything is bound.
@@ -216,7 +238,7 @@ export function rowsOf(
   for (const slot of SLOTS) {
     const ordinals = [...new Set([
       ...bindings.filter((b) => b.slot === slot).map((b) => b.ordinal),
-      ...Object.values(changed).filter((b) => b.slot === slot).map((b) => b.ordinal),
+      ...Object.values(changed).filter((b) => b && b.slot === slot).map((b) => b.ordinal),
     ])].sort((a, b) => a - b);
     /* Nothing bound is still one row. Something bound gets a row each, and no
        empty row after it: an "add another" is a different control from a slot
@@ -225,8 +247,29 @@ export function rowsOf(
   }
 
   return pairs.map(({ slot, ordinal }) => {
-    const saved = bindings.find((b) => b.slot === slot && b.ordinal === ordinal) ?? null;
-    const pending = changed[rowKey(slot, ordinal)] ?? null;
+    /* The BUNDLE is the row's identity; overrides on the same address qualify
+       it. Taking whichever binding came back first made the row report itself
+       as a wardrobe when the shot was citing a whole character. */
+    const here = bindings.filter((b) => b.slot === slot && b.ordinal === ordinal);
+    const saved = here.find((b) => !b.attributeId) ?? here[0] ?? null;
+    const pinnedHere = here.filter((b) => b.attributeId);
+    /* The row's own pending edit is the one on the wire the row IS. Usually
+       that is the bundle; on a slot bound straight to one attribute — a
+       background pinned to a plate, with no bundle above it — the row is that
+       override, and reading the bundle's address would have shown the saved
+       version while the person was looking at the one they had just picked.
+       A pending edit on any OTHER wire is a port, and shows up there. */
+    const rowWire = saved?.attributeId ?? null;
+    const pending = changed[wireKey(slot, ordinal, rowWire)] ?? null;
+    const pendingPorts = Object.entries(changed)
+      .filter(([k, v]) => v && k.startsWith(`${slot}:${ordinal}:`) && v.attributeId
+                          && v.attributeId !== rowWire)
+      .map(([, v]) => v);
+    /* Only the ones that actually LAND somewhere else. Re-picking what a port
+       is already pinned to is not a change and must not price — the same rule
+       the row's own wire has, applied to the wires beside it. */
+    const movedPorts = pendingPorts.filter(
+      (v) => !sameBinding(v, here.find((x) => x.attributeId === v.attributeId) ?? null));
     const b = pending ?? saved;
     /* The label carries the ordinal only when there is more than one, so the
        common shot reads exactly as the handoff draws it. */
@@ -247,12 +290,14 @@ export function rowsOf(
     const badges: Badge[] = [];
     /* An unsaved edit is only a change if it actually lands somewhere else.
        Re-picking what is already bound is not a change and must not price. */
-    if (pending && !sameBinding(pending, saved)) badges.push("changed");
+    if ((pending && !sameBinding(pending, saved)) || movedPorts.length) badges.push("changed");
     if (locked) badges.push("locked");
     /* Pinned: this shot names a version, so it will not follow the library.
        That is the whole of what OVERRIDE means and the whole of what draws
        the ink wire on the canvas. */
-    if (b.versionId) badges.push("override");
+    if (b.versionId || pinnedHere.some((x) => x.versionId) || pendingPorts.some((x) => x.versionId)) {
+      badges.push("override");
+    }
     if (el.fromShotId && el.fromShotId === shotId) badges.push("created");
 
     /* A bundle stays a bundle. `attributeId: null` means every attribute at
@@ -283,13 +328,23 @@ export function rowsOf(
        the slot) wearing the same control. */
     const bundle: BundlePort[] = b.attributeId ? [] : el.attributes
       .filter((a) => a.versions.length > 0)
-      .map((a) => ({
-        id: a.id,
-        label: (a.label || a.kind).toLowerCase(),
-        at: numberOf(a, a.currentId) || "—",
-        locked: a.locked,
-        versions: a.versions,
-      }));
+      .map((a) => {
+        /* An override on this port is a SEPARATE row on the same slot now, so
+           the port reads its own pin rather than the bundle's absence of one. */
+        /* Unsaved beats saved: a port the person has just pinned reads as
+           pinned before it is written, which is what makes CHANGED mean
+           anything on the row above it. */
+        const over = pendingPorts.find((x) => x.attributeId === a.id)
+          ?? pinnedHere.find((x) => x.attributeId === a.id) ?? null;
+        return {
+          id: a.id,
+          label: (a.label || a.kind).toLowerCase(),
+          at: numberOf(a, over?.versionId ?? a.currentId) || "—",
+          locked: a.locked,
+          pinned: over?.versionId ?? null,
+          versions: a.versions,
+        };
+      });
 
     return {
       ...base,
@@ -298,7 +353,8 @@ export function rowsOf(
          narrows it on purpose. */
       attributeId: b.attributeId,
       name: el.name,
-      detail: detailOf(el, b, shotId),
+      detail: detailOf(el, b, shotId, [...pinnedHere.filter(
+        (x) => !pendingPorts.some((p) => p.attributeId === x.attributeId)), ...pendingPorts]),
       badges: orderBadges(badges),
       locked,
       versions,

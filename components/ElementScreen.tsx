@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { Waiting, Trouble } from "@/components/ParticlMark";
@@ -46,6 +46,11 @@ export default function ElementScreen({ elementId }: { elementId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [trouble, setTrouble] = useState<string | null>(null);
   const [asking, setAsking] = useState<{ impact: Impact; kindWord: string; versionLabel: string } | null>(null);
+  /* Where focus and the announcement go when an action finishes. The sheet
+     closes, the tile that was pressed becomes the current one and disables
+     itself, and without this focus fell to <body> and nothing was said —
+     the bug 2c's save already had. */
+  const said = useRef<HTMLParagraphElement | null>(null);
 
   const el = data?.element ?? null;
   const use = data?.usage ?? EMPTY_USE;
@@ -122,35 +127,6 @@ export default function ElementScreen({ elementId }: { elementId: string }) {
       </header>
 
       <div className="elm-body">
-        <section className="elm-aside">
-          {/* One tile per port rather than four of the same face: the claim of
-              the screen is that these are four different things. */}
-          <div className="elm-refs">
-            {thumbs.map((r) => (
-              <div key={r.id} className="elm-ref">
-                <span className="elm-ref-frame" aria-hidden="true" />
-                <span className="elm-ref-tag">{r.name}</span>
-              </div>
-            ))}
-            {more > 0 ? <div className="elm-ref is-more">+{more}</div> : null}
-          </div>
-          <p className="elm-rule">{RULE}</p>
-
-          {wired.length ? (
-            <div className="elm-wired">
-              <span className="elm-label">WIRED INTO</span>
-              {wired.map((w, i) => (
-                <div key={`${w.stages}:${i}`} className={`elm-wire${w.override ? " is-over" : ""}`}>
-                  <span className="elm-wire-from">{w.stages}</span>
-                  <span className="elm-wire-arrow" aria-hidden="true">→</span>
-                  <span className="elm-wire-to">{w.ports}</span>
-                  {w.override ? <span className="elm-wire-badge">OVERRIDE</span> : null}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </section>
-
         <section className="elm-ports">
           <span className="elm-label">
             ATTRIBUTES · {rows.length} PORT{rows.length === 1 ? "" : "S"}
@@ -208,14 +184,13 @@ export default function ElementScreen({ elementId }: { elementId: string }) {
                             <span className="elm-version-meta">{v.meta}</span>
                           </button>
                         ))}
-                        {/* Dashed, because it makes something that is not there
-                            yet. It is not wired to a render in this change —
-                            see the note under it. */}
-                        <button type="button" className="elm-version is-new" disabled>
-                          <span className="elm-version-frame is-new" aria-hidden="true" />
-                          <span className="elm-version-line">{addLabel(null)}</span>
-                          <span className="elm-version-meta">from an upload or a take</span>
-                        </button>
+                        {/* The handoff draws a dashed `+ New version` card here.
+                            It is not built, and a permanently disabled button
+                            is the worst way to say so — it promises a control
+                            and then refuses it every time, which is a cost
+                            paid on every visit for nothing. So the card is
+                            absent and the note below says where a version
+                            comes from instead. */}
                       </div>
                       <p className="elm-note">{ADD_NOTE}</p>
                       {row.locked ? (
@@ -230,10 +205,39 @@ export default function ElementScreen({ elementId }: { elementId: string }) {
             })}
           </div>
         </section>
+        <section className="elm-aside">
+          {/* One tile per port rather than four of the same face: the claim of
+              the screen is that these are four different things. */}
+          <div className="elm-refs">
+            {thumbs.map((r) => (
+              <div key={r.id} className="elm-ref">
+                <span className="elm-ref-frame" aria-hidden="true" />
+                <span className="elm-ref-tag">{r.name}</span>
+              </div>
+            ))}
+            {more > 0 ? <div className="elm-ref is-more">+{more}</div> : null}
+          </div>
+          <p className="elm-rule">{RULE}</p>
+
+          {wired.length ? (
+            <div className="elm-wired">
+              <span className="elm-label">WIRED INTO</span>
+              {wired.map((w, i) => (
+                <div key={`${w.stages}:${i}`} className={`elm-wire${w.override ? " is-over" : ""}`}>
+                  <span className="elm-wire-from">{w.stages}</span>
+                  <span className="elm-wire-arrow" aria-hidden="true">→</span>
+                  <span className="elm-wire-to">{w.ports}</span>
+                  {w.override ? <span className="elm-wire-badge">OVERRIDE</span> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+
       </div>
 
       <footer className="elm-foot">
-        <p className="elm-lock-note">
+        <p className="elm-lock-note" ref={said} tabIndex={-1} role="status" aria-live="polite">
           {lockNote(el)}
           {el.lockedBy ? <span className="elm-lock-who"> {el.locked ? "Locked" : "Last unlocked"} by {el.lockedBy}.</span> : null}
         </p>
@@ -253,7 +257,7 @@ export default function ElementScreen({ elementId }: { elementId: string }) {
           kindWord={asking.kindWord}
           versionLabel={asking.versionLabel}
           onClose={() => setAsking(null)}
-          onApplied={() => { setAsking(null); refresh(); }}
+          onApplied={() => { setAsking(null); said.current?.focus(); refresh(); }}
         />
       ) : null}
     </div>

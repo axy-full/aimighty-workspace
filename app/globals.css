@@ -3861,6 +3861,13 @@ html, body { overflow-x: clip; }
 .elm-up:hover { color: var(--color-bone); border-color: var(--color-edge-hover); }
 
 .elm-body { display: grid; grid-template-columns: 360px minmax(0, 1fr); min-height: 0; overflow: hidden; }
+/* The PORTS come first in the DOM, because they are what a phone reader
+   should meet first and a screen reader follows the DOM whatever `order`
+   says. On a desktop the aside is the left column, so the ordering is done
+   here — visual only, and only where the two agree that context beside the
+   work is worth reading first. */
+.elm-aside { order: 1; }
+.elm-ports { order: 2; }
 .elm-aside {
   min-height: 0; overflow-y: auto; padding: 22px 22px 28px;
   display: flex; flex-direction: column; gap: 16px;
@@ -4071,9 +4078,10 @@ html, body { overflow-x: clip; }
   .elm-head { padding: 14px 16px 12px; }
   .elm-name { font-size: 20px; }
   .elm-body { display: flex; flex-direction: column; overflow: visible; min-height: 0; }
-  .elm-ports { order: 1; overflow: visible; padding: 14px 16px 8px; }
+  /* DOM order already puts the ports first here; nothing to reorder. */
+  .elm-ports { order: 0; overflow: visible; padding: 14px 16px 8px; }
   .elm-aside {
-    order: 2; overflow: visible; padding: 8px 16px 20px;
+    order: 0; overflow: visible; padding: 8px 16px 20px;
     border-right: 0; background: none;
   }
   .elm-refs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
