@@ -54,7 +54,7 @@ export const SHORTCUTS: Shortcut[] = [
      instead of frames, describes a product that no longer exists. */
   { id: "taketake",  keys: "↑ ↓",  label: "Between takes",         scope: "review",  live: true,  owner: "Theatre" },
   { id: "framestep", keys: "← →",  label: "Step one frame",        scope: "review",  live: true,  owner: "Theatre" },
-  { id: "playpause", keys: "space",label: "Play or pause",         scope: "review",  live: true,  owner: "Compare" },
+  { id: "playpause", keys: "space",label: "Play or pause",         scope: "review",  live: true,  owner: "Theatre, Compare" },
 
   { id: "generate",  keys: "⌘↵",   label: "Generate",              scope: "compose", live: true,  owner: "Composer, audio, IdentitySheet" },
 

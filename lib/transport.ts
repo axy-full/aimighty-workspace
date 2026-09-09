@@ -129,3 +129,23 @@ export function frameAt(seconds: number, fps: number = FPS): number {
   if (!Number.isFinite(seconds) || seconds < 0) return 0;
   return Math.round(seconds * (fps > 0 ? fps : FPS));
 }
+
+/**
+ * Timecode, the way an edit suite writes it: M:SS:FF.
+ *
+ * Frames, not tenths. A director asking for a change at "seven frames in"
+ * is asking about a frame, and a read-out in decimals makes them do the
+ * arithmetic the tool already knows how to do. This is also where the
+ * workflow's 24 becomes visible rather than merely assumed.
+ */
+export function timecode(seconds: number, fps: number = FPS): string {
+  const rate = fps > 0 ? fps : FPS;
+  const total = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+  const whole = Math.floor(total);
+  // The frame is counted off the remainder, and clamped: a position a hair
+  // under the next second must not read as frame 24 of a 24fps second.
+  const frames = Math.min(rate - 1, Math.floor((total - whole) * rate));
+  const mm = Math.floor(whole / 60);
+  const ss = whole % 60;
+  return `${mm}:${String(ss).padStart(2, "0")}:${String(frames).padStart(2, "0")}`;
+}

@@ -1137,6 +1137,29 @@ button.row:active, a.row:active { background: var(--color-chip2); }
     max-width: 100%; max-height: 100%; width: auto; height: auto;
     border-radius: 12px; background: #000; box-shadow: 0 24px 80px rgba(0, 0, 0, .6);
   }
+  /* The transport the app draws (SOW §10 4.3). It replaces the browser's
+     own bar on desktop so that scrub, loop and position are things this
+     product can reach — from a key, from a note, from a second window. */
+  .tr {
+    position: absolute; left: 64px; right: 64px; bottom: 18px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 10px;
+    background: rgba(0, 0, 0, .62); backdrop-filter: blur(6px);
+    color: #fff;
+  }
+  .tr-btn {
+    flex: none; min-width: 34px; height: 30px; padding: 0 8px;
+    border: 0; border-radius: 7px; background: rgba(255, 255, 255, .12);
+    color: #fff; font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+  }
+  .tr-btn:hover { background: rgba(255, 255, 255, .2); }
+  /* The system has no accent: a primary action INVERTS (see --color-blue,
+     which is near-white on the dark ground and near-black on paper). So the
+     label has to invert with it — filling the pill and leaving the text
+     white gave white on white. */
+  .tr-tog.is-on { background: var(--color-blue); color: var(--color-desk); }
+  .tr-tc { flex: none; min-width: 62px; text-align: center; opacity: .9; font-variant-numeric: tabular-nums; }
+  .tr-scrub { flex: 1; min-width: 0; accent-color: var(--color-blue); }
   .theatre-face { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px; }
   .theatre-nav {
     position: absolute; top: 50%; transform: translateY(-50%);
