@@ -592,6 +592,37 @@ particl is a workstation tool that happens to have a phone client. Everything be
 ### 4.1 Breakpoints and density
 Three layouts, not two: **mobile** (<768), **compact desktop** (1024–1439, two-pane), **full desktop** (≥1440, three-pane — library, work surface, rail). Above 1920 the layout gains columns rather than margins; a 400px composer rail on a 2560px display is wasted real estate. Rig canvas requires ≥1180. Panes are **resizable and persisted per user per surface**; a director and an artist do not want the same split.
 
+**BUILT — the panes resize and stay where they are put.** The second of the
+two §13.3 queue-jumpers, after the palette. Four surfaces carry a seam now:
+the composer rail, the canvas shot rail, Studio's rail and the shot builder's,
+each with its own default, its own stops and its own memory.
+
+The seam is a `role="separator"` with a live `aria-valuenow`, absolutely
+positioned inside the rail so the grid stays two columns and nothing has to
+make room for it — seven pixels of target, one painted. It is reachable
+without a mouse, which §10 4.2 argues for and this is the first surface to
+owe it: arrows nudge by 12, shift-arrow by 48, Home and End go to the stops,
+Enter or a double-click restores the default.
+
+Two ceilings, not one. Each surface has its own maximum, and a rail may never
+take more than half the window whatever that maximum says — a split chosen on
+a 27" display should not swallow a laptop. Below 1024 the rails are sheets
+rather than columns, so there is no seam to drag and the handle is not
+rendered at all.
+
+**Kept in the browser, deliberately, and it is the opposite call to Setup.**
+A production's Setup was moved OUT of localStorage in the same week because
+it is a decision a team shares and one producer should not be its only owner.
+A pane split is the other kind of thing: personal, and shaped by the screen
+it was chosen on. Storing it server-side would carry a 27" split onto a
+laptop. It is also not synced between tabs, for the reason the chosen
+production is not — a value another window can change under you is a value
+that moves while you are using it.
+
+Still open in 4.1: the three named layouts (mobile / compact desktop /
+full desktop) and gaining columns rather than margins above 1920. The rails
+resize; the breakpoints are unchanged.
+
 ### 4.2 Keyboard-first
 A production tool lives on shortcuts. Minimum set, discoverable through a `?` overlay:
 - `⌘K` command palette — jump to a shot, production, cast member or setting; run an action by name. This is the single highest-value desktop feature and it makes every later addition discoverable for free.
