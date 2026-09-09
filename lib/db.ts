@@ -887,6 +887,12 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `cap_warned_at INTEGER`,
         /* The starter production a new workspace opens on (1.0). */
         `starter INTEGER NOT NULL DEFAULT 0`,
+        /* The production's Setup (brief 2.3). It lived in localStorage under
+           `aw_setup_<projectId>`, which meant one producer's Setup for a
+           production was invisible to everyone else on it and to the server —
+           a shared decision kept in one browser. The shot's own Setup has
+           been a column all along; this is the layer above it. */
+        `setup TEXT NOT NULL DEFAULT '{}'`,
 ]) {
         await addColumn(c, "projects", col);
       }

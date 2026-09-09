@@ -34,6 +34,16 @@ export const DEFAULTS = {
   /** Platform rule ids this workspace has switched off, comma-separated. */
   rulesOff: "",
   /**
+   * The workspace's Setup (brief 2.3), as a JSON ShotSpec.
+   *
+   * It lived in `localStorage["aw_setup_all"]` — not in any database, and
+   * NOT KEYED BY WORKSPACE, so it followed you across a workspace switch and
+   * one workspace's defaults quietly applied in another. Being a setting
+   * makes it what it always claimed to be: the workspace's, shared by the
+   * team, and scoped by the database it lives in.
+   */
+  setup: "{}",
+  /**
    * Container for edits and extensions: "mp4" or "mov".
    *
    * ByteDance recommend mov — it preserves colour and audio-visual continuity
