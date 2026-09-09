@@ -428,9 +428,35 @@ const SCHEMA = [
      version_id   TEXT,
      created_by   TEXT NOT NULL DEFAULT '',
      created_at   INTEGER NOT NULL,
-     updated_at   INTEGER NOT NULL,
-     UNIQUE (shot_id, slot, ordinal)
+     updated_at   INTEGER NOT NULL
    )`,
+  /* The address of a wire is (shot, slot, ordinal, attribute) — and it takes
+     TWO partial indexes rather than one four-column UNIQUE.
+ 
+     The design's sentence is that a shot can override one attribute WITHOUT
+     leaving the element. With one row per slot that is not representable:
+     pinning a wardrobe replaced the bundle, so the shot stopped citing the
+     character's face, hair and voice, rendered a coat attached to nobody, and
+     provenance recorded it that way. So a slot now holds a bundle row AND an
+     override row per attribute, and the override supersedes the bundle for
+     that attribute alone.
+ 
+     Why not `UNIQUE (shot_id, slot, ordinal, attribute_id)`: SQL treats NULLs
+     as distinct, so a four-column constraint would happily let one slot hold
+     five bundle rows, which is the one thing that must never happen — a slot
+     with two bundles has no answer to "what does this shot inherit".
+ 
+       · one bundle per slot        the NULL-attribute index
+       · one override per attribute the NOT NULL index
+ 
+     What this costs, named because it was accepted with eyes open: "one slot,
+     one wire" stops being true, and it is the rule the canvas draws. Anything
+     counting per slot now has to know the difference between a wire and a
+     wire that beats another one. */
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_bindings_bundle
+     ON bindings(shot_id, slot, ordinal) WHERE attribute_id IS NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_bindings_override
+     ON bindings(shot_id, slot, ordinal, attribute_id) WHERE attribute_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_bindings_shot ON bindings(shot_id)`,
   `CREATE INDEX IF NOT EXISTS idx_bindings_element ON bindings(element_id)`,
   `CREATE INDEX IF NOT EXISTS idx_bindings_version ON bindings(version_id)`,
@@ -768,6 +794,42 @@ async function addIndex(c: Client, stmt: string): Promise<void> {
  */
 async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       for (const stmt of SCHEMA) await c.execute(stmt);
+      /* Bindings: drop the old one-row-per-slot constraint.
+ 
+         `CREATE TABLE IF NOT EXISTS` cannot change a table that exists, and
+         SQLite has no DROP CONSTRAINT, so a database made before the key was
+         widened still refuses the second row — the override — with a
+         uniqueness error. This rebuilds it once: the check is the table's own
+         DDL, so it costs one cheap read on every boot and does nothing at all
+         on a database that is already right.
+ 
+         Rig has never shipped, so in practice this runs against development
+         databases only. It is here anyway because "it has never shipped" is
+         true exactly once, and the person who finds out it stopped being true
+         should not find out from a uniqueness error. */
+      const bindingsDdl = await c.execute({
+        sql: `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'bindings'`, args: [],
+      }).catch(() => null);
+      const ddl = String((bindingsDdl?.rows?.[0] as unknown as { sql?: string })?.sql ?? "");
+      if (/UNIQUE\s*\(\s*shot_id\s*,\s*slot\s*,\s*ordinal\s*\)/i.test(ddl)) {
+        await c.execute(`ALTER TABLE bindings RENAME TO bindings_old`);
+        /* The new shape, written out rather than reused from SCHEMA: SCHEMA's
+           statement is IF NOT EXISTS and would be a no-op against the renamed
+           table's indexes still holding the name. */
+        await c.execute(`CREATE TABLE bindings (
+           id TEXT PRIMARY KEY, shot_id TEXT NOT NULL, project_id TEXT,
+           slot TEXT NOT NULL, ordinal INTEGER NOT NULL DEFAULT 0,
+           element_id TEXT NOT NULL, attribute_id TEXT, version_id TEXT,
+           created_by TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+           updated_at INTEGER NOT NULL)`);
+        await c.execute(`INSERT INTO bindings SELECT id, shot_id, project_id, slot, ordinal,
+           element_id, attribute_id, version_id, created_by, created_at, updated_at FROM bindings_old`);
+        await c.execute(`DROP TABLE bindings_old`);
+        for (const stmt of SCHEMA) {
+          if (stmt.includes("idx_bindings")) await c.execute(stmt);
+        }
+      }
+
       // Lightweight migrations for columns added after first deploy.
       await addColumn(c, "generations", `deleted INTEGER NOT NULL DEFAULT 0`);
       await addColumn(c, "uploads", `kind TEXT NOT NULL DEFAULT 'image'`);

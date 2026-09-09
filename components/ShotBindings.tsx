@@ -6,7 +6,7 @@ import { useApi } from "@/lib/useApi";
 import { Waiting, Trouble } from "@/components/ParticlMark";
 import {
   rowsOf, madeHere, consequenceOf, saveLabel, renderPrice, lockNote, takeLine, countLine,
-  BADGE_LABELS, sameBinding, follows, rowKey, candidatesFor, emptyNote,
+  BADGE_LABELS, sameBinding, follows, rowKey, wireKey, candidatesFor, emptyNote,
   type Row, type BindingIn, type ElementIn,
 } from "@/lib/shotBindings";
 import { versionLine } from "@/lib/rig";
@@ -72,18 +72,31 @@ export default function ShotBindings({ shotId }: { shotId: string }) {
   /* A pick that lands back on what is already saved clears the pending entry
      instead of storing an equal one, so the badge and the footer agree with
      each other without either having to diff again. */
+  /**
+   * Pick a version for a wire.
+   *
+   * `attributeId` names WHICH wire. Undefined means the row's own binding; a
+   * string is an override on that port, which since the key was widened is a
+   * wire of its own on the same slot and leaves the bundle alone. That is the
+   * whole of what the change bought: a shot can pin a coat without the
+   * character losing its face.
+   *
+   * A null version on an override wire REMOVES it rather than writing one
+   * that follows current — a port following current is what the bundle
+   * already says, and a second row saying it again is a wire with no work.
+   */
   function pick(row: Row, versionId: string | null, attributeId?: string | null) {
     if (row.locked || !row.elementId || !data) return;
-    const saved = data.bindings.find((b) => b.slot === row.slot && b.ordinal === row.ordinal) ?? null;
-    /* `undefined` means "whatever the row already points at"; an explicit
-       null is the bundle being restored. A bundle row narrows only when a
-       version of one of its ports is picked, and then it names that port. */
     const at = attributeId === undefined ? row.attributeId : attributeId;
-    const next: BindingIn = {
-      slot: row.slot, ordinal: row.ordinal, elementId: row.elementId,
-      attributeId: at, versionId,
-    };
-    const key = rowKey(row.slot, row.ordinal);
+    const key = wireKey(row.slot, row.ordinal, at);
+    const saved = data.bindings.find(
+      (b) => b.slot === row.slot && b.ordinal === row.ordinal && (b.attributeId ?? null) === at) ?? null;
+
+    const next: BindingIn = at && versionId === null && saved
+      ? { slot: row.slot, ordinal: row.ordinal, elementId: "", attributeId: at, versionId: null }
+      : { slot: row.slot, ordinal: row.ordinal, elementId: row.elementId, attributeId: at, versionId };
+
+    setTrouble(null);
     setPending((p) => {
       const out = { ...p };
       if (sameBinding(next, saved)) delete out[key];
@@ -98,8 +111,9 @@ export default function ShotBindings({ shotId }: { shotId: string }) {
      and the cheaper of the two things to be wrong about. */
   function bind(row: Row, elementId: string) {
     if (!data) return;
-    const key = rowKey(row.slot, row.ordinal);
-    const saved = data.bindings.find((b) => b.slot === row.slot && b.ordinal === row.ordinal) ?? null;
+    const key = wireKey(row.slot, row.ordinal, null);
+    const saved = data.bindings.find(
+      (b) => b.slot === row.slot && b.ordinal === row.ordinal && !b.attributeId) ?? null;
     const next: BindingIn = { slot: row.slot, ordinal: row.ordinal, elementId, attributeId: null, versionId: null };
     setTrouble(null);
     setPending((p) => {
@@ -297,7 +311,9 @@ export default function ShotBindings({ shotId }: { shotId: string }) {
                               <span className="bnd-version-frame" aria-hidden="true" />
                               <span className="bnd-version-line">{versionLine(i, v.label)}</span>
                               <span className="bnd-version-meta">
-                                {(v.status ?? "ready") !== "ready" ? "still rendering" : "override for this shot"}
+                                {(v.status ?? "ready") !== "ready" ? "still rendering"
+                                  : row.bundle.find((b) => b.id === focus[key])?.pinned === v.id ? "pinned here"
+                                  : "override for this shot"}
                               </span>
                             </button>
                           ))}

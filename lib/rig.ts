@@ -286,7 +286,81 @@ export function versionsFromTakes(
 
 export const versionNumber = (index: number): string => `v${index + 1}`;
 
-export function versionLine(index: number, label: string): string {
+export function versionLine(index: number, label: string | null | undefined): string {
   const n = versionNumber(index);
-  return label.trim() ? `${n} ${label.trim()}` : n;
+  /* A missing label is a version with no name, not a crash. The column is NOT
+     NULL with a default, so this should not arrive — but this function is on
+     the path that renders every price-bearing surface in Rig, and a thrown
+     TypeError there takes the screen down rather than showing "v2". */
+  const text = (label ?? "").trim();
+  return text ? `${n} ${text}` : n;
+}
+
+/* ── A bundle, expanded ──────────────────────────────────────────────────
+   Pure, and here rather than in the reader that uses it, because this is the
+   rule that decides what a take was actually made from. Provenance records
+   its output; the version counts on 2b read it back. Getting it wrong is not
+   a display bug.
+
+   A binding with no attribute means "every attribute of this element at its
+   current version". Recorded as itself it said nothing at all — one row with
+   a null version — so a take made through a bundle carried no version for
+   anything, "make another from exactly this" had nothing to be exact about,
+   and every version's take count read zero.
+
+   An override on the same wire address supersedes the bundle for that
+   attribute alone. On any OTHER address it does not: two characters on one
+   shot each keep their own pins. */
+
+export type BindingLike = {
+  elementId: string; attributeId: string | null; versionId: string | null;
+  slot: string; ordinal: number;
+};
+
+export type ExpandedPort = {
+  elementId: string; attributeId: string | null; versionId: string | null;
+  slot: string; ordinal: number;
+};
+
+export function expandPorts(
+  bindings: BindingLike[],
+  attributesOfElement: (elementId: string) => { id: string; currentId: string | null }[],
+): ExpandedPort[] {
+  const overridden = new Map<string, Set<string>>();
+  for (const b of bindings) {
+    if (!b.attributeId) continue;
+    const key = `${b.slot}:${b.ordinal}:${b.elementId}`;
+    const set = overridden.get(key) ?? new Set<string>();
+    set.add(b.attributeId);
+    overridden.set(key, set);
+  }
+
+  const out: ExpandedPort[] = [];
+  for (const b of bindings) {
+    if (b.attributeId) {
+      const current = attributesOfElement(b.elementId).find((a) => a.id === b.attributeId);
+      out.push({
+        elementId: b.elementId, attributeId: b.attributeId,
+        versionId: b.versionId ?? current?.currentId ?? null,
+        slot: b.slot, ordinal: b.ordinal,
+      });
+      continue;
+    }
+    const skip = overridden.get(`${b.slot}:${b.ordinal}:${b.elementId}`) ?? new Set<string>();
+    const attrs = attributesOfElement(b.elementId).filter((a) => !skip.has(a.id) && a.currentId);
+    if (!attrs.length) {
+      /* An element with nothing made for it yet is still cited by the shot,
+         and saying so is truer than dropping it: the take really was rendered
+         against an element that had no versions. */
+      out.push({ elementId: b.elementId, attributeId: null, versionId: null, slot: b.slot, ordinal: b.ordinal });
+      continue;
+    }
+    for (const a of attrs) {
+      out.push({
+        elementId: b.elementId, attributeId: a.id, versionId: a.currentId,
+        slot: b.slot, ordinal: b.ordinal,
+      });
+    }
+  }
+  return out;
 }

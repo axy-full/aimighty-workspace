@@ -121,6 +121,10 @@ attribute_versions { id, attributeId, elementId, label, status: pending|ready|fa
                      uploadId | genId | identityId }        // exactly one source
 bindings       { id, shotId, projectId, slot, ordinal, elementId,
                  attributeId|null, versionId|null }
+                 // address = (shotId, slot, ordinal, attributeId)
+                 // two PARTIAL unique indexes, not one four-column UNIQUE:
+                 //   attributeId IS NULL      -> one bundle per slot
+                 //   attributeId IS NOT NULL  -> one override per attribute
 take_provenance{ takeId, shotId, recorded{ engine, model, provider, ports[], cast[],
                  setup{}, rules[], conditions{...}, by, at } }
 take_ports     { takeId, elementId, attributeId, versionId, slot, ordinal }
@@ -375,7 +379,7 @@ no version, following the library until somebody pins it. `keyframe` offers
 nothing, because a keyframe is a frame of this shot's own take rather than a
 member of the library, and the row says so.
 
-**DECIDED — a shot overrides one attribute without leaving the element.** 2b
+**BUILT — a shot overrides one attribute without leaving the element.** 2b
 exposed that `bindings UNIQUE (shot_id, slot, ordinal)` cannot represent the
 handoff's own sentence: one slot holds one row, so pinning WARDROBE
 **replaces** the bundle and `portsForShot` emits a single port — the shot stops
@@ -399,7 +403,7 @@ The two rejected shapes, kept because the reasons still bite:
   character slot reads as two characters everywhere else in the product,
   including on the row labels `2c` added.
 
-**What the change touches, and it must all move together:**
+**Shipped, all six at once, because they are one rule seen from six places:**
 
 1. **The key.** `UNIQUE (shot_id, slot, ordinal)` becomes two *partial* unique
    indexes, not a four-column UNIQUE: SQLite treats NULLs as distinct, so a
@@ -418,11 +422,23 @@ The two rejected shapes, kept because the reasons still bite:
 5. **The asset layer.** A slot can now have two wires; the override is the one
    drawn in ink.
 6. **`2c`.** A row shows the element plus which of its attributes this shot has
-   stepped out of line on — which is what the row was always trying to say.
+   stepped out of line on — which is what the row was always trying to say. A
+   bundle row's ports each carry their own pin, and picking a version writes an
+   override wire beside the bundle rather than over it. Pending edits are keyed
+   by wire, not by row: keyed by row, an override overwrote the bundle's
+   pending entry — the same mistake the schema used to make, one layer up.
 
-`bindings` has never shipped: every Rig branch is unmerged, so the table exists
-only in local development databases and the definition can change without a
-rebuild. That is the reason to do this now rather than after.
+`bindings` had never shipped: every Rig branch is unmerged, so the table
+existed only in development databases. A guarded rebuild runs at bootstrap
+anyway, keyed on the table's own DDL — "it has never shipped" is true exactly
+once, and the person who finds out it stopped being true should not find out
+from a uniqueness error.
+
+**The rule that decides what a take was made from is `expandPorts` in
+`lib/rig.ts`** — pure, and tested rather than trusted. Provenance records its
+output and 2b's version counts read it back; a bundle recorded as itself said
+nothing at all, so a take made through one carried no version for anything and
+every version's take count read zero.
 
 **And one the handoff implies but does not draw: narrowing a bundle is two
 steps.** The handoff's sentence is that "a shot can override one attribute

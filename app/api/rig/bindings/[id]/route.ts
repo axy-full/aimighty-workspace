@@ -136,8 +136,11 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
      say what it did is refused rather than half-applied. */
   const seen = new Set<string>();
   for (const c of changes) {
-    const at = `${c.slot}:${c.ordinal}`;
-    if (seen.has(at)) return NextResponse.json({ error: "That slot is named twice." }, { status: 400 });
+    /* The address includes the ATTRIBUTE now: a slot legitimately carries a
+       bundle and an override at once, and rejecting that as a duplicate would
+       refuse the one thing the widened key exists to allow. */
+    const at = `${c.slot}:${c.ordinal}:${c.attributeId ?? ""}`;
+    if (seen.has(at)) return NextResponse.json({ error: "That wire is named twice." }, { status: 400 });
     seen.add(at);
   }
 
@@ -164,11 +167,16 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
     const el = byId.get(b.elementId);
     if (!el) continue;
     const attr = b.attributeId ? el.attributes.find((a) => a.id === b.attributeId) ?? null : null;
-    if (el.locked || attr?.locked) lockedAlready.set(`${b.slot}:${b.ordinal}`, el.name);
+    /* A locked ELEMENT holds the whole slot, including any override wire on
+       it; a locked ATTRIBUTE holds only its own wire. Keying both under the
+       slot alone would have let a locked face freeze an open wardrobe. */
+    if (el.locked) lockedAlready.set(`${b.slot}:${b.ordinal}:`, el.name);
+    if (attr?.locked) lockedAlready.set(`${b.slot}:${b.ordinal}:${b.attributeId}`, el.name);
   }
 
   for (const c of changes) {
-    const held = lockedAlready.get(`${c.slot}:${c.ordinal}`);
+    const held = lockedAlready.get(`${c.slot}:${c.ordinal}:`)
+      ?? lockedAlready.get(`${c.slot}:${c.ordinal}:${c.attributeId ?? ""}`);
     if (held) return NextResponse.json({ error: `${held} is locked on this shot.` }, { status: 409 });
     if (!c.elementId) continue;
     const el = byId.get(c.elementId);
@@ -203,7 +211,11 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
   let changed = 0;
   for (const c of changes) {
     if (!c.elementId) {
-      if (await clearBinding(shotId, c.slot, c.ordinal)) changed += 1;
+      /* Naming an attribute clears just that override and leaves the bundle;
+         naming none unbinds the slot entirely, bundle and overrides together,
+         which is what taking a wire off a slot has always meant. */
+      const which = c.attributeId ?? "*";
+      if (await clearBinding(shotId, c.slot, c.ordinal, which)) changed += 1;
       continue;
     }
     const row = await setBinding({
