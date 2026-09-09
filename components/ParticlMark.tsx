@@ -184,7 +184,15 @@ export function Trouble({ label = "This didn't load", detail, onRetry }: {
 
 export function Empty({ title, line, action, compact = false, demo = false }: {
   title: string; line?: string; action?: React.ReactNode; compact?: boolean;
-  /** Signed out: point at the demo production instead of at nothing (brief 1.7). */
+  /**
+   * Signed out: point somewhere rather than at nothing.
+   *
+   * It used to say SEE THE DEMO PRODUCTION and link to /welcome#demo. The
+   * demo wall was cut, so the link survived its destination — it sat on
+   * every empty wall a visitor could reach and went to an anchor that is not
+   * on the page any more. It points at the sign-in now, which is the thing
+   * an empty wall is actually asking for.
+   */
   demo?: boolean;
 }) {
   const atomik = useInAtomik();
@@ -196,7 +204,7 @@ export function Empty({ title, line, action, compact = false, demo = false }: {
       <p className={`mt-3 font-medium text-dim ${compact ? "text-[14px]" : "text-[15px]"}`}>{title}</p>
       {line && <p className="mt-1 max-w-[40ch] text-[13px] leading-relaxed text-mute">{line}</p>}
       {action && <div className="mt-4">{action}</div>}
-    {demo && <Link href="/welcome#demo" className="hdr-mono-link mt-3">SEE THE DEMO PRODUCTION →</Link>}
+    {demo && <Link href="/welcome" className="hdr-mono-link mt-3">SIGN IN TO SEE THIS →</Link>}
     </div>
   );
 }
