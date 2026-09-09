@@ -73,12 +73,30 @@ export function actionCommands(): Cmd[] {
 
 type P = { id: string; name: string; code?: string; description?: string };
 export function productionCommands(projects: P[]): Cmd[] {
-  return projects.map((p) => ({
-    id: `p:${p.id}`, label: p.name, group: "Productions",
-    hint: p.code || undefined, href: `/projects/${p.id}`,
-    act: "select" as const, arg: p.id,
-    alt: [p.code, p.description],
-  }));
+  /* Three rows per production, because a production is three surfaces and
+     two of them had no way in. The Rig in particular was linked from nowhere
+     at all — a whole node graph nobody could reach — so "rig" typed into the
+     palette has to find it. */
+  return projects.flatMap((p) => [
+    {
+      id: `p:${p.id}`, label: p.name, group: "Productions",
+      hint: p.code || undefined, href: `/projects/${p.id}`,
+      act: "select" as const, arg: p.id,
+      alt: [p.code, p.description],
+    },
+    {
+      id: `p:${p.id}:canvas`, label: `${p.name} — Canvas`, group: "Productions",
+      hint: "Canvas", href: `/projects/${p.id}/canvas`,
+      act: "select" as const, arg: p.id,
+      alt: ["canvas", p.code],
+    },
+    {
+      id: `p:${p.id}:rig`, label: `${p.name} — Rig`, group: "Productions",
+      hint: "Rig", href: `/projects/${p.id}/rig`,
+      act: "select" as const, arg: p.id,
+      alt: ["rig", "nodes", "graph", "stages", "assets", "runs", p.code],
+    },
+  ]);
 }
 
 type S = { id: string; code: string; title: string; projectId?: string | null; scene?: string };

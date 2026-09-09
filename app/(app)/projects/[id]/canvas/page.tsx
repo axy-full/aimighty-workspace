@@ -28,8 +28,8 @@ import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo, downloadHref } from "@/lib/format";
-import { AtomikMark } from "@/components/AtomikMark";
 import LazyMedia from "@/components/LazyMedia";
+import ProductionNav from "@/components/ProductionNav";
 import { Empty, Waiting } from "@/components/ParticlMark";
 import { stateOf, roleOf } from "@/components/Feed";
 import type { Gen } from "@/components/GenCard";
@@ -131,15 +131,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
 
   return (
     <>
-      <nav className="subnav" aria-label="Production">
-        <Link href={`/projects/${id}`} className="subnav-item">Shots</Link>
-        <span className="subnav-item is-on" aria-current="page">Canvas</span>
-        <Link href="/studio" className="subnav-item">Cast</Link>
-        <Link href="/usage" className="subnav-item">Cost</Link>
-        <Link href="/atomik/shots" className="subnav-note hdr-mono-link flex items-center gap-2">
-          <AtomikMark size={14} /> SHOT LIST · ATOMIK →
-        </Link>
-      </nav>
+      <ProductionNav id={id} on="canvas" />
 
       <div className="cv">
         <section className="cv-main">
