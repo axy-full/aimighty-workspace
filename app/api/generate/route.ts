@@ -12,6 +12,7 @@ import {
 } from "@/lib/enhance";
 import { requireRender, tokenSpendThisMonth, withTenant } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
+import { ceilingProblem } from "@/lib/refLimits";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
@@ -432,6 +433,26 @@ export const POST = withTenant(async function POST(req: Request) {
     castUsed = expanded.used.map((m) => m.name);
     castIds = expanded.used.map((m) => m.id);
   }
+
+  /* THE CEILING IS COUNTED AFTER THE CAST, because the cast attaches too.
+     References were validated at the point they arrived from the browser —
+     which is before `expandCast` pushes a still for every cited name. So
+     attaching two images to a two-image model and then citing @Mara and
+     @Mule passed the check with two and left with four, and nothing said
+     so. The still path already counts them (see the identical check on the
+     image branch below, and its comment); the video path never did.
+     What the engine then does with the surplus is not a refusal but a
+     silent change of meaning: fal takes images[0] as the FIRST FRAME and
+     the next as the LAST FRAME (lib/falVideo.ts:132-134) and discards the
+     rest, so a reference the person attached can quietly become a frame
+     and turn a text-to-video into an image-to-video. Some models take no
+     reference images at all (`maxReferenceImages: 0`). */
+  /* Only the image rules are re-checked, and deliberately: the cast adds
+     `reference_image` rows and nothing else, so the video count and the
+     total-seconds budget were settled at the earlier check and the
+     durations needed to re-test them are not carried on a Reference. */
+  const afterCast = ceilingProblem(references, model, castUsed);
+  if (afterCast) return NextResponse.json({ error: afterCast }, { status: 400 });
 
   /* Motion control moves a character: it needs the still as well as the clip. */
   if (task.needsImage && !references.some((r) => r.kind === "image")) {
