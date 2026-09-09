@@ -105,9 +105,22 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
   const video = useRef<HTMLVideoElement>(null);
   const playing = seq != null ? approvedHeroes[seq] ?? null : null;
   useEffect(() => {
-    if (!playing || !video.current) return;
-    video.current.load();
-    video.current.play().catch(() => setSeq(null));
+    const el = video.current;
+    if (!playing || !el) return;
+    /* Start at the top, not at the poster.
+       The src now carries `#t=0.1` so the paused rail has a frame to show
+       instead of a black rectangle — but the fragment is also where the
+       element PARKS, so playing from it started every approved take a tenth
+       of a second in. Setting currentTime straight after load() does not
+       work: readyState is 0 at that moment, and the fragment is applied when
+       metadata arrives, overwriting it. The seek has to wait for metadata,
+       which is what this listener is for. */
+    let live = true;
+    const fromTheTop = () => { if (live) { try { el.currentTime = 0; } catch { /* not seekable */ } } };
+    el.addEventListener("loadedmetadata", fromTheTop, { once: true });
+    el.load();
+    el.play().catch(() => setSeq(null));
+    return () => { live = false; el.removeEventListener("loadedmetadata", fromTheTop); };
   }, [playing]);
 
   function downloadAll() {
