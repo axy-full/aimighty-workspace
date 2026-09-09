@@ -27,7 +27,7 @@ import { useOnChange } from "@/lib/changes";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { timeAgo, downloadHref } from "@/lib/format";
+import { timeAgo, downloadHref, posterSrc } from "@/lib/format";
 import LazyMedia from "@/components/LazyMedia";
 import ProductionNav from "@/components/ProductionNav";
 import { Empty, Waiting } from "@/components/ParticlMark";
@@ -249,7 +249,16 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
               {previewUrl && preview ? (
                 preview.kind === "image"
                   ? <LazyMedia url={previewUrl} kind="image" alt="" className="media" />
-                  : <video ref={video} src={previewUrl} controls playsInline preload="metadata"
+                  /* posterSrc, not the bare url. `preload="metadata"` only
+                     obliges the browser to reach HAVE_METADATA — duration and
+                     dimensions — and it is under no obligation to decode a
+                     frame. With no poster and no media fragment there is
+                     nothing to paint, so the rail sat black with a play
+                     button over it. Measured: on the bare url no `seeked`
+                     ever fires, currentTime stays 0 and
+                     getVideoPlaybackQuality() reports zero frames decoded;
+                     with `#t=0.1` it seeks, decodes and paints. */
+                  : <video ref={video} src={posterSrc(previewUrl)} controls playsInline preload="metadata"
                       onEnded={() => setSeq((i) => (i != null && i + 1 < approvedHeroes.length ? i + 1 : null))} />
               ) : cur ? `no render yet · ${cur.shot.code}` : "—"}
             </div>

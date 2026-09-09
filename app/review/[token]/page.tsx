@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
+import { posterSrc } from "@/lib/format";
 
 /**
  * A client review page (brief 2.6).
@@ -62,7 +63,10 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
               {t.kind === "image"
                 /* eslint-disable-next-line @next/next/no-img-element */
                 ? <img src={t.media} alt={t.title ?? t.shot ?? "take"} />
-                : <video src={t.media} controls playsInline preload="metadata" />}
+                /* Same reason as the canvas rail: a paused <video> on a bare
+                   url decodes no frame and shows black. This is the page a
+                   client opens, so it is the last place that should. */
+                : <video src={posterSrc(t.media)} controls playsInline preload="metadata" />}
             </div>
             <div className="rv-body">
               <h2>{t.shot ? `${t.shot} · v${t.version}` : `v${t.version}`}{t.title ? ` — ${t.title}` : ""}</h2>
