@@ -308,6 +308,133 @@ const SCHEMA = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_presets_project ON shot_presets(project_id)`,
+
+  /* ── Rig: elements, their attributes, their versions and what binds to
+     them (brief 3) ─────────────────────────────────────────────────────
+     An ELEMENT is the thing a production keeps coming back to. It is a
+     separate row from the cast member rather than the same row, so a
+     migration here can never take the composer down with it, and it keeps
+     a link to the cast member it stands for so the two are not two truths
+     about one face. Where a shot has a binding the binding decides; where
+     it has none the cast member's own still decides, exactly as before.
+     That is what lets a workspace that never opens Rig behave as it does
+     today, which rule 6 requires.
+
+     project_id null means the element is shared across the workspace, the
+     same convention cast_members already uses. It is a real decision at
+     promotion time and not a default, because it changes every "used by N
+     shots" count afterwards, and those counts sit on priced buttons. */
+  `CREATE TABLE IF NOT EXISTS elements (
+     id           TEXT PRIMARY KEY,
+     project_id   TEXT REFERENCES projects(id) ON DELETE CASCADE,
+     /* the cast member this stands for, when it stands for one */
+     cast_id      TEXT,
+     /* character | location | prop | look | voice */
+     kind         TEXT NOT NULL DEFAULT 'character',
+     name         TEXT NOT NULL,
+     description  TEXT NOT NULL DEFAULT '',
+     /* pinned with the brief: the canvas draws a lock instead of a state dot */
+     locked       INTEGER NOT NULL DEFAULT 0,
+     locked_by    TEXT,
+     locked_at    INTEGER,
+     /* promoted from a take: the origin line, written once and never rewritten */
+     from_shot_id TEXT,
+     from_gen_id  TEXT,
+     /* When the backfill FINISHED with this one, versions and all. An element
+        row alone does not mean the work was done: a run that died between
+        writing the element and writing its versions would otherwise look
+        complete and be skipped for good, leaving it permanently empty. Null
+        on anything made by hand, which was never the backfill's to finish. */
+     mirrored_at  INTEGER,
+     created_by   TEXT NOT NULL DEFAULT '',
+     created_at   INTEGER NOT NULL,
+     updated_at   INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_elements_project ON elements(project_id)`,
+  /* One element per cast member, enforced rather than hoped for. The backfill
+     guards itself with a read, and a read cannot serialise two people opening
+     Rig in the same second: both would see an unmirrored cast and both would
+     mirror it. This makes the second one fail its insert instead, which the
+     backfill treats as "somebody else got there first". Partial, so the
+     elements nobody mirrored — everything promoted from a take — are free to
+     have no cast member at all. */
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_elements_cast_one ON elements(cast_id) WHERE cast_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_elements_from ON elements(from_gen_id)`,
+  /* One part of an element that changes on its own. A character is a face,
+     hair, a wardrobe and a voice; a location is its plates. current_id is
+     the version every shot following this element gets. */
+  `CREATE TABLE IF NOT EXISTS element_attributes (
+     id          TEXT PRIMARY KEY,
+     element_id  TEXT NOT NULL,
+     /* face | hair | wardrobe | voice | plate | turntable | detail | look */
+     kind        TEXT NOT NULL,
+     label       TEXT NOT NULL DEFAULT '',
+     current_id  TEXT,
+     locked      INTEGER NOT NULL DEFAULT 0,
+     position    INTEGER NOT NULL DEFAULT 0,
+     created_at  INTEGER NOT NULL,
+     updated_at  INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_attrs_element ON element_attributes(element_id, position)`,
+  /* One state of an attribute. Additive, always: making v2 never touches a
+     take made with v1, which is why the swap is the thing that costs and
+     the new version is not.
+
+     Exactly one of upload_id, gen_id and identity_id stands behind it — a
+     photo someone brought, a frame the product made, or a trained likeness.
+     A version whose views are still rendering is 'pending' and binds to
+     nothing until it is ready, so a quote can never be given for an image
+     that does not exist yet.
+
+     element_id is carried here as well as on the attribute. It is one join
+     fewer on the two queries this whole layer exists to answer, and both of
+     them end up under a price the producer is about to press. */
+  `CREATE TABLE IF NOT EXISTS attribute_versions (
+     id           TEXT PRIMARY KEY,
+     attribute_id TEXT NOT NULL,
+     element_id   TEXT NOT NULL,
+     label        TEXT NOT NULL DEFAULT '',
+     upload_id    TEXT,
+     gen_id       TEXT,
+     identity_id  TEXT,
+     /* pending | ready | failed */
+     status       TEXT NOT NULL DEFAULT 'ready',
+     created_by   TEXT NOT NULL DEFAULT '',
+     created_at   INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_versions_attr ON attribute_versions(attribute_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_versions_element ON attribute_versions(element_id)`,
+  /* What one shot points at. A wire lands on a slot, not on a node, so the
+     slot and its ordinal are the address: a shot holding two characters has
+     character 0 and character 1, and each is bound on its own.
+
+     attribute_id null is the bundle — every current version this element
+     holds. version_id null is follow current, and a value is a pin: the
+     shot is held there and does not move when the element does. Those two
+     nulls are the difference between the inherited wire and the override
+     wire on the canvas, without a second row to keep in step.
+
+     project_id is denormalised from the shot so that deleting a production
+     and counting the shots inside one are each a single filter. */
+  `CREATE TABLE IF NOT EXISTS bindings (
+     id           TEXT PRIMARY KEY,
+     shot_id      TEXT NOT NULL,
+     project_id   TEXT,
+     /* character | background | element | look | keyframe */
+     slot         TEXT NOT NULL,
+     ordinal      INTEGER NOT NULL DEFAULT 0,
+     element_id   TEXT NOT NULL,
+     attribute_id TEXT,
+     version_id   TEXT,
+     created_by   TEXT NOT NULL DEFAULT '',
+     created_at   INTEGER NOT NULL,
+     updated_at   INTEGER NOT NULL,
+     UNIQUE (shot_id, slot, ordinal)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_bindings_shot ON bindings(shot_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_bindings_element ON bindings(element_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_bindings_version ON bindings(version_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_bindings_project ON bindings(project_id)`,
   /* Workspace-level settings that outlive any one browser: the filename
      protocol, retention policy, provider preferences. localStorage prefs
      stay in lib/prefs.ts — these are the ones the whole team shares. */

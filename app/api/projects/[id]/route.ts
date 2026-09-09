@@ -62,6 +62,21 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   await db().execute({ sql: `UPDATE generations SET project_id = NULL WHERE project_id = ?`, args: [id] });
   await db().execute({ sql: `UPDATE identities SET project_id = NULL WHERE project_id = ?`, args: [id] });
   await db().execute({ sql: `DELETE FROM cast_members WHERE project_id = ?`, args: [id] });
+  /* Rig's rows go with it. Foreign keys are declared but not enforced here,
+     so a binding left behind would keep being counted by the impact query —
+     a production nobody can open, still adding shots to what a change costs.
+     Versions and attributes go through their element, which is why the
+     element ids are read first. */
+  const elements = await db().execute({ sql: `SELECT id FROM elements WHERE project_id = ?`, args: [id] });
+  const elementIds = elements.rows.map((r) => String((r as unknown as { id: string }).id));
+  if (elementIds.length) {
+    const holes = elementIds.map(() => "?").join(",");
+    await db().execute({ sql: `DELETE FROM attribute_versions WHERE element_id IN (${holes})`, args: elementIds });
+    await db().execute({ sql: `DELETE FROM element_attributes WHERE element_id IN (${holes})`, args: elementIds });
+    await db().execute({ sql: `DELETE FROM bindings WHERE element_id IN (${holes})`, args: elementIds });
+  }
+  await db().execute({ sql: `DELETE FROM bindings WHERE project_id = ?`, args: [id] });
+  await db().execute({ sql: `DELETE FROM elements WHERE project_id = ?`, args: [id] });
   await db().execute({ sql: `DELETE FROM shots WHERE project_id = ?`, args: [id] });
   await db().execute({ sql: `DELETE FROM canvas_items WHERE project_id = ?`, args: [id] });
   await db().execute({ sql: `DELETE FROM shot_presets WHERE project_id = ?`, args: [id] });
