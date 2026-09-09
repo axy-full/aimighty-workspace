@@ -21,6 +21,8 @@ import { shortLabel } from "@/lib/models";
 import { prettyModel } from "@/lib/models";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
 import { stepFrame, timecode, FPS } from "@/lib/transport";
+import { stripFor, stripIndex, neighbour } from "@/lib/filmstrip";
+import LazyMedia from "./LazyMedia";
 import { useIsMobile } from "@/lib/useMobile";
 import { useMoney } from "@/lib/price";
 import { failureKind, failureCopy } from "@/lib/jobState";
@@ -51,8 +53,17 @@ export default function Theatre({
 }) {
   const idx = gens.findIndex((g) => g.id === activeId);
   const gen = idx >= 0 ? gens[idx] : null;
-  const prev = idx > 0 ? gens[idx - 1] : null;
-  const next = idx >= 0 && idx < gens.length - 1 ? gens[idx + 1] : null;
+  /* Every take on this shot, under the player (§10 4.3). Derived from the
+     rows already in the browser — a Gen carries its shotId — so opening a
+     take does not cost a round trip to be told what it already knows. */
+  const strip = stripFor(gens, gen);
+  const here = stripIndex(strip, gen);
+  /* With a strip on screen the arrows walk IT, not the wall behind it: a key
+     that moves the highlight somewhere the eye cannot follow is worse than
+     no key. Without one they walk the list the player was opened with,
+     exactly as before. */
+  const prev = neighbour(gens, strip, gen, -1);
+  const next = neighbour(gens, strip, gen, 1);
   /* The cast behind the cited names, for the consistency check (brief 2.4). Asked only when a name was cited. */
   const citedCast = ((gen?.params as { cast?: string[] } | undefined)?.cast ?? []);
   const { data: castList } = useApi<{ cast: { name: string; uploadId: string | null }[] }>(citedCast.length ? "/api/cast?projectId=all" : null, 0);
@@ -349,6 +360,36 @@ export default function Theatre({
               onClick={() => setMuted((v) => !v)} title={muted ? "Unmute" : "Mute"} aria-label={muted ? "Unmute" : "Mute"}>
               {muted ? "🔇" : "🔊"}
             </button>
+          </div>
+        )}
+
+        {strip.length > 1 && (
+          /* The strip. It counts what it shows rather than claiming to be
+             every take that exists: opened from a shot-scoped wall it is all
+             of them, opened from the library it is the ones on screen, and
+             saying "3 takes" of something that is not exhaustive would be
+             the kind of small lie a producer eventually catches. */
+          <div className="fs" onClick={(e) => e.stopPropagation()}>
+            <span className="fs-lbl mono-s">{gen.shotCode ?? "Shot"} · {strip.length} here</span>
+            <div className="fs-row" role="listbox" aria-label={`Takes of ${gen.shotCode ?? "this shot"}`}>
+              {strip.map((t, i) => {
+                const on = i === here;
+                const url = t.storedUrl ?? t.sourceUrl ?? null;
+                return (
+                  <button
+                    key={t.id} type="button" role="option" aria-selected={on}
+                    className={`fs-cell${on ? " is-on" : ""}`}
+                    title={`v${t.version ?? i + 1}${on ? " — showing" : ""}`}
+                    onClick={() => { if (!on) onSelect(t.id); }}
+                  >
+                    {url
+                      ? <LazyMedia url={url} kind={t.kind === "image" ? "image" : "video"} alt="" className="fs-media" />
+                      : <span className="fs-none" />}
+                    <span className="fs-v mono-s">v{t.version ?? i + 1}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 

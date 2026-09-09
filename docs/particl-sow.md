@@ -749,10 +749,31 @@ identical 638×358 box from the same origin. The handle carries
 `role="slider"` and moves on arrows, because a comparison is the screen a
 producer holds and half of them are on a keyboard.
 
-**Still open in the first bullet:** the PLAYER itself. Theatre hands scrub,
-loop and in/out to the browser's own control bar, so none of them is
-addressable from a keyboard, from a note, or from a second window — which is
-what the remaining three bullets are each blocked on.
+**BUILT — the player, 9 September.** Theatre handed scrub, loop and in/out to
+the browser's own control bar, where nothing in this product could reach
+them. On desktop the app now draws the transport: play/pause, a scrub that
+steps in frames, a timecode read-out, a loop toggle and a mute, with position
+read every animation frame rather than from `timeupdate` (which fires about
+four times a second — fine for a number, visibly stuttery under a playhead).
+On a phone the native bar stays, because it carries fullscreen and
+picture-in-picture that this bar does not replace. Timecode is M:SS:FF, not
+decimals: a director asking for a change seven frames in is asking about a
+frame, and it is where the workflow's 24 becomes visible rather than assumed.
+
+**BUILT — the filmstrip, the second bullet.** Every take on the shot under
+the player, oldest version first, derived from the rows the browser already
+holds — a Gen carries its shotId, so opening a take costs no round trip to
+be told what it knows. With a strip on screen the arrows walk IT rather than
+the wall behind it: a key that moves the highlight somewhere the eye cannot
+follow is worse than no key. Without one they walk the list the player was
+opened with, exactly as before. The strip counts what it SHOWS rather than
+claiming to be every take that exists — opened from a shot-scoped wall that
+is all of them, opened from the library it is the ones on screen — because
+"3 takes" of something not exhaustive is a small lie a producer eventually
+catches.
+
+**Still open:** the pop-out review window, and notes with a timecode. The
+scrub bar they both need now exists and is the app's own.
 
 ### 4.4 Bulk operations
 Desktop is where someone acts on forty things at once. Multi-select with click, shift-click ranges and `⌘A`; a persistent selection bar showing count and total credits. Bulk: approve, send back, file against shots, download masters, add to a review link, delete drafts. Every bulk action that spends credits quotes the total before enabling, same as a single action.
