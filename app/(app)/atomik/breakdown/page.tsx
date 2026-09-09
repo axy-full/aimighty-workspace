@@ -21,7 +21,8 @@ import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { usd } from "@/lib/format";
 import { specToPhrase, CATEGORIES } from "@/lib/studio";
-import { DEFAULT_MODEL_ID, estimateCostUsd } from "@/lib/models";
+import { DEFAULT_MODEL_ID, estimateTokens, costUsd } from "@/lib/models";
+import { estimateVideo, estimateImage, type RateTable, writerCall } from "@/lib/rateTable";
 import { mentionsIn } from "@/lib/mentions";
 import { appAlert, appConfirm } from "@/components/dialog";
 import { Waiting } from "@/components/ParticlMark";
@@ -29,10 +30,8 @@ import PickProduction from "@/components/atomik/PickProduction";
 import type { Treatment, Scene } from "@/lib/atomikDocs";
 import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
-import { shotCostUsd, ENGINE_LABEL, ENGINE_MODEL, type ShotProposal as BaseShotProposal } from "@/lib/shotBuilder";
+import { ENGINE_LABEL, ENGINE_MODEL, type ShotProposal as BaseShotProposal } from "@/lib/shotBuilder";
 type ShotProposal = BaseShotProposal & { takeUsd?: number };
-import { billCredits } from "@/lib/creditTerms";
-import { estimateRefineUsd } from "@/lib/refineGate";
 import { useMoney } from "@/lib/price";
 import { textModelFor } from "@/lib/platformLayer";
 
@@ -41,10 +40,23 @@ type Loaded = { treatment: Treatment | null; cast: CastMember[] };
 const sceneNo = (scene: string) => Number((scene ?? "").replace(/\D/g, "")) || 0;
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 const SETUP = ["shot", "angle", "move", "lens"];
-/** One take of a shot: Seedance bills 5s minimum, so shorter shots price at 5s. */
-export function takeCost(planned: number | null, engine?: string | null): number {
-  if (engine === "kling" || engine === "nano-banana") return shotCostUsd(engine, planned);
-  return estimateCostUsd(DEFAULT_MODEL_ID, "1080p", "16:9", Math.max(5, planned ?? 5))?.net ?? 0;
+/**
+ * One take of a shot: Seedance bills 5s minimum, so shorter shots price at 5s.
+ *
+ * The rate table is an argument because this is a browser: it used to call
+ * `shotCostUsd`, which reads the vendors' dollars, and importing that from a
+ * client component is what put those dollars in the bundle. The table it is
+ * handed is already in the unit this workspace pays in.
+ */
+export function takeCost(rates: RateTable, planned: number | null, engine?: string | null): number {
+  const secs = Math.max(5, planned ?? 5);
+  const model = engine === "kling" || engine === "nano-banana"
+    ? ENGINE_MODEL[engine as "kling" | "nano-banana"]
+    : DEFAULT_MODEL_ID;
+  if (engine === "nano-banana") return estimateImage(rates, model, "2K", 0) ?? 0;
+  return estimateVideo(rates, model, "1080p", secs,
+    estimateTokens("1080p", "16:9", secs, 0), costUsd,
+    { audio: engine !== "kling" }) ?? 0;
 }
 
 export default function BreakdownPage() {
@@ -58,7 +70,7 @@ export default function BreakdownPage() {
 function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTarget: number | null }) {
   const router = useRouter();
   const money = useMoney();
-  const { signedIn , models: sessionModels } = useSession();
+  const { signedIn , models: sessionModels, rates } = useSession();
   const { data } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
   const { data: shotData, refresh } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 15_000);
   useOnChange(refresh);
@@ -71,7 +83,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   const billable = shots.filter((s) => s.kind !== "type");
   const runtime = billable.reduce((a, s) => a + (s.planned ?? 0), 0);
   const target = runtimeTarget ?? scenes.reduce((a, s) => a + s.secs, 0);
-  const estimate = billable.reduce((a, s) => a + takeCost(s.planned, s.engine), 0);
+  const estimate = billable.reduce((a, s) => a + takeCost(rates, s.planned, s.engine), 0);
 
   async function patch(s: Shot, body: Record<string, unknown>) {
     const res = await fetch(`/api/shots/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -92,7 +104,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   /* The shot builder (brief 1.8): a scene's shots proposed with every row filled, cast tagged, an engine and its credits each — added one by one, never over what is here. */
   const [drafting, setDrafting] = useState<number | null>(null);
   const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; sceneUsd: number; model: string; costUsd: number } | null>(null);
-  const draftCr = billCredits(estimateRefineUsd(textModelFor(sessionModels ?? null, "shot"), 1800, 900) ?? 0.01, "text");
+  const draftCr = writerCall(rates, textModelFor(sessionModels ?? null, "shot"), 1800, 900) ?? 0.1;
   async function draftShots(scene: Scene) {
     setDrafting(scene.n); setProposals(null);
     try {
@@ -128,7 +140,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
         <div className="cv-bar !h-1.5 w-[220px]">
           {scenes.map((sc) => <span key={sc.n} className={inScene(sc.n).filter((s) => s.kind !== "type").reduce((a, s) => a + (s.planned ?? 0), 0) > sc.secs ? "is-over" : "is-picked"} style={{ flex: Math.max(1, sc.secs) }} />)}
         </div>
-        <span className="ak-sub !text-[12px]">Runtime is the sum of planned durations. Seedance bills 5s minimum, so every shot estimates at {usd(takeCost(5), 2)}.</span>
+        <span className="ak-sub !text-[12px]">Runtime is the sum of planned durations. Seedance bills 5s minimum, so every shot estimates at {money.price(takeCost(rates, 5))}.</span>
         <div className="ml-auto ak-cta is-bar"><button type="button" className="btn-primary" onClick={() => router.push("/atomik/shots")}>Build the shot list →</button></div>
       </div>
 
@@ -165,7 +177,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
                       <div key={`${sc.n}-${i}`} className="ak-prop-shot">
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                           <span className="font-medium">{p.title || "Untitled"}</span>
-                          <span className="mono-s">{p.planned}s · {ENGINE_LABEL[p.engine]} · {money.price(p.takeUsd ?? shotCostUsd(p.engine, p.planned), ENGINE_MODEL[p.engine])}</span>
+                          <span className="mono-s">{p.planned}s · {ENGINE_LABEL[p.engine]} · {money.price(p.takeUsd ?? takeCost(rates, p.planned, p.engine))}</span>
                           {p.cast.length > 0 && <span className="mono-s">{p.cast.map((c) => `@${c}`).join(" ")}</span>}
                         </div>
                         <p className="text-[13px] leading-relaxed text-dim">{p.description}</p>
@@ -208,6 +220,11 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
 function ShotCard({ shot, castNames, scenes, onPatch, onRemove }: {
   shot: Shot; castNames: string[]; scenes?: Scene[]; onPatch: (b: Record<string, unknown>) => void; onRemove: () => void;
 }) {
+  /* Its own hooks rather than props: a card is rendered in a list and the
+     session is the same for every one of them. */
+  const money = useMoney();
+  const { rates } = useSession();
+  const priceOf = (planned: number | null) => money.price(takeCost(rates, planned));
   const [desc, setDesc] = useState(shot.description);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /* The patch waiting on the timer, so unmounting sends it instead of
@@ -266,7 +283,7 @@ function ShotCard({ shot, castNames, scenes, onPatch, onRemove }: {
           <span className="flex items-center gap-2.5">
             <button type="button" className="ak-act is-muted" onClick={() => onPatch({ kind: type ? "render" : "type" })} title={type ? "Type only — click to make it a rendered shot" : "Renders — click to make it type only, which never renders and never costs"}>{type ? "TYPE ONLY" : "RENDERS"}</button>
             <button type="button" className="ak-act is-muted" onClick={onRemove} title="Remove">×</button>
-            <span className="mono-s !font-medium">{type ? "$0" : usd(takeCost(shot.planned), 2)}</span>
+            <span className="mono-s !font-medium">{type ? "0" : priceOf(shot.planned)}</span>
           </span>
         </div>
       </div>

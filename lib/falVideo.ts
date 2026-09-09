@@ -18,7 +18,8 @@ import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
   readImageBytes, readUploadBytes, readVideoBytes, storeVideo,
 } from "./storage";
-import { estimateCostUsd, getModel, type ModelDef } from "./models";
+import { getModel, type ModelDef } from "./models";
+import { estimateCostUsd } from "./vendorPricing";
 import { type TaskDef, type TaskId } from "./tasks";
 import { db, now } from "./db";
 import { invalidate, PROJECTS_KEY } from "./cache";

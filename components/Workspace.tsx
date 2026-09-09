@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrice } from "@/lib/price";
+import { estimateVideo, estimateImage } from "@/lib/rateTable";
 import { referenceProblem, type RefItem, type RefPicker } from "./References";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 import type { Gen } from "./GenCard";
@@ -30,7 +31,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { detectSpec, specCount, composePrompt, type ShotSpec } from "@/lib/studio";
 import {
   DEFAULT_MODEL_ID, MODELS, getModel, dimensionsFor, billedFrame,
-  estimateCostUsd, estimateTokens, estimateImageCostUsd,
+  estimateTokens, costUsd, billingOf,
 } from "@/lib/models";
 import { usePrefs } from "@/lib/prefs";
 import { useProject } from "@/lib/projectContext";
@@ -64,7 +65,7 @@ function defaultModelFor(kind: "video" | "image"): string {
 export default function Workspace({ kind = "video" }: { kind?: "video" | "image" }) {
   usePageTitle(kind === "image" ? "Generate · Images" : "Generate · Video");
   const { selection: bin, current, refreshProjects } = useProject();
-  const { signedIn, models, setup: platformSetup } = useSession();
+  const { signedIn, models, setup: platformSetup, rates } = useSession();
   const money = useMoney();
   const prefs = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
@@ -329,16 +330,24 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   const trainedCited = isImage && !taskOn
     ? (castList?.cast ?? []).find((m) => m.trained && new RegExp(`@${m.name}\\b`, "i").test(prompt))?.name ?? null
     : null;
-  const est = isImage
-    ? estimateImageCostUsd(trainedCited ? "fal-ai/flux-lora" : params.modelId, trainedCited ? "1K" : params.resolution, imageRefCount)
-    : estimateCostUsd(
-        params.modelId, params.resolution, params.ratio, billedSecs,
-        inputSeconds, hasVideoInput,
-        { audio: params.generateAudio, task: taskOn?.id, fps60: params.fps60 }
-      );
-  const estTokens = isImage || modelDef.secondRates
+  /* Priced off the table the server handed this session, in the unit this
+     workspace pays in. It used to estimate in the VENDOR's dollars and convert
+     here, which is why the rate tables and the margins were both in the
+     bundle — and why the markup was one division away for anyone who opened
+     devtools. The arithmetic is the same; only the numbers it starts from
+     changed, and tests/unit/rateTable.spec.ts holds the two paths together. */
+  const estTokens = isImage || billingOf(params.modelId) === "second"
     ? null
     : estimateTokens(params.resolution, params.ratio, params.duration, inputSeconds);
+  const estNow = isImage
+    ? estimateImage(rates, trainedCited ? "fal-ai/flux-lora" : params.modelId, trainedCited ? "1K" : params.resolution, imageRefCount)
+    : estimateVideo(
+        rates, params.modelId, params.resolution, billedSecs,
+        estTokens ?? estimateTokens(params.resolution, params.ratio, billedSecs, inputSeconds),
+        costUsd,
+        { audio: params.generateAudio, task: taskOn?.id, fps60: params.fps60, hasVideoInput },
+      );
+  const est = estNow == null ? null : { net: estNow };
   const dims = isImage ? null : dimensionsFor(params.resolution, params.ratio);
   /* What the vendor counts, which is the file rounded up to its codec's grid — shown where the tokens are quoted, not on the chip. */
   const billed = isImage ? null : billedFrame(params.resolution, params.ratio);
@@ -490,9 +499,9 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
   /** A still post tool from the theatre: the price first, then a take under the same shot. */
   async function stillTool(tool: "outpaint" | "cutout", gen: Gen, ratio?: string) {
     const model = stillToolModel(tool);
-    const usd = estimateImageCostUsd(model.id, "adaptive", 0)?.net ?? 0;
+    const amount = estimateImage(rates, model.id, "adaptive", 0) ?? 0;
     const what = tool === "outpaint" ? `Outpaint to ${ratio ?? "9:16"}` : "Cut out the subject";
-    const ok = await appConfirm(`${what} for ${money.price(usd, model.id)}?`, "A new take, filed under the same shot.");
+    const ok = await appConfirm(`${what} for ${money.price(amount)}?`, "A new take, filed under the same shot.");
     if (!ok) return;
     setBusy(true);
     try {

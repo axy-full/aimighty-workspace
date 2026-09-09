@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { billCreditsWith, marginFor, DEFAULT_MARGINS } from "@/lib/creditTerms";
 import LazyMedia from "@/components/LazyMedia";
 
-type DemoTake = { key: string; shotCode: string; version: number; resolution: string; duration: number; prompt: string; costUsd: number; approved: boolean; url: string; move: string };
+type DemoTake = { key: string; shotCode: string; version: number; resolution: string; duration: number; prompt: string; credits: number; approved: boolean; url: string; move: string };
 type Demo = {
   production: {
     name: string; code: string; description: string;
@@ -28,18 +27,20 @@ export default function DemoWall({ compact = false }: { compact?: boolean }) {
     fetch("/api/platform/demo", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j) setData(j as Demo); }).catch(() => {});
     return () => { live = false; };
   }, []);
-  /* Credits, priced from the platform's own terms: a visitor has no workspace, and the numbers should read as the product's unit. */
-  const cr = (usd: number, engine: string) => `${billCreditsWith(usd, marginFor(engine, DEFAULT_MARGINS), 0.10).toLocaleString("en-US")} cr`;
+  /* The demo's takes arrive already priced in credits — the server does the
+     conversion, because doing it here needed the margin table to be here, and
+     this is a page a visitor can open. */
+  const cr = (n: number) => `${Math.round(n).toLocaleString("en-US")} cr`;
   if (!data) return null;
   const p = data.production;
-  const spent = p.takes.reduce((a, t) => a + t.costUsd, 0);
+  const spent = p.takes.reduce((a, t) => a + t.credits, 0);
   return (
     <section id="demo" className={`demo ${compact ? "is-compact" : ""}`} aria-label="Demo production">
       <div className="demo-head">
         <span className="mono-s">{p.code} · DEMO PRODUCTION · READ-ONLY</span>
         <span className="demo-title">{p.name}</span>
         <span className="demo-line">{p.description}</span>
-        <span className="demo-meta">{p.shots.length} shots · {p.takes.length} takes · {p.takes.filter((t) => t.approved).length} approved · {cr(spent, "dreamina-seedance-2-5-260628")} spent · cast: {p.cast.map((c) => `@${c.name}`).join(", ")}</span>
+        <span className="demo-meta">{p.shots.length} shots · {p.takes.length} takes · {p.takes.filter((t) => t.approved).length} approved · {cr(spent)} spent · cast: {p.cast.map((c) => `@${c.name}`).join(", ")}</span>
       </div>
       {p.shots.map((s) => {
         const takes = p.takes.filter((t) => t.shotCode === s.code);
@@ -56,7 +57,7 @@ export default function DemoWall({ compact = false }: { compact?: boolean }) {
                   <div className="demo-take-media"><LazyMedia url={t.url} kind="video" hoverPlay className="h-full w-full object-cover" /></div>
                   <div className="demo-take-foot">
                     <span className="mono-s">v{t.version} · {t.resolution.toUpperCase()} · {t.duration}s · {t.move}</span>
-                    <span className="demo-take-cost">{t.approved ? "Approved · " : ""}{cr(t.costUsd, "dreamina-seedance-2-5-260628")}</span>
+                    <span className="demo-take-cost">{t.approved ? "Approved · " : ""}{cr(t.credits)}</span>
                   </div>
                 </div>
               ))}

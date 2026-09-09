@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { EMPTY_TABLE, type RateTable } from "./rateTable";
 
 /**
  * Who is looking, and what that means for the rest of the app.
@@ -23,7 +24,11 @@ import { usePathname } from "next/navigation";
 
 export type SessionWorkspace = { id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean };
 /** The workspace's credits, when it pays in them — null for one that pays its vendors in dollars. */
-export type SessionCredits = { creditUsd: number; margins: Record<string, number>; granted: number; used: number; balance: number };
+/* No `margins`. It used to be here, and with `creditUsd` beside it a customer
+   could divide the markup back out of any price on the screen — §2 says margin
+   is never shown, and shipping it counts. What the browser gets instead is
+   `rates`, already converted, in lib/rateTable.ts. */
+export type SessionCredits = { creditUsd: number; granted: number; used: number; balance: number };
 export type Session = {
   signedIn: boolean;
   name: string | null;
@@ -36,13 +41,15 @@ export type Session = {
   superAdmin: boolean;
   workspaces: (SessionWorkspace & { role: "owner" | "admin" | "member" })[];
   credits: SessionCredits | null;
+  /** The rates this browser may see, in the unit this workspace pays in. */
+  rates: RateTable;
   /** The engines the composer opens on here — the workspace's Defaults & caps, which inherit the platform's. */
   models?: { video: string; image: string; text?: Record<string, string> } | null;
   /** The platform layer's default Setup — what a new production starts from (brief 1.4). */
   setup?: Record<string, string> | null;
 };
 
-const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null, workspace: null, role: null, owner: false, superAdmin: false, workspaces: [], credits: null, models: null, setup: null });
+const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null, workspace: null, role: null, owner: false, superAdmin: false, workspaces: [], credits: null, rates: EMPTY_TABLE, models: null, setup: null });
 
 /**
  * What the browser must not keep once nobody is signed in.

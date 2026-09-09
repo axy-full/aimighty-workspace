@@ -6,7 +6,8 @@ process.env.ENGINE_MOCK = "1";
 test("every provider has an adapter, and the adapters estimate what the catalogue says", async () => {
   const { ENGINES, engineFor, enginesFor } = await import("../../lib/engines");
   const { PROVIDERS } = await import("../../lib/providers");
-  const { getModel, estimateCostUsd, estimateImageCostUsd, DEFAULT_MODEL_ID } = await import("../../lib/models");
+  const { getModel, DEFAULT_MODEL_ID } = await import("../../lib/models");
+  const { estimateCostUsd, estimateImageCostUsd } = await import("../../lib/vendorPricing");
   const { getTask } = await import("../../lib/tasks");
   for (const p of PROVIDERS) {
     const e = ENGINES[p.id];

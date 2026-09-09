@@ -11,6 +11,8 @@ import { currentContext, userCount, isPlatformOwner } from "@/lib/auth";
 import { effectiveModels } from "@/lib/defaultModels";
 import { runInTenant } from "@/lib/tenant";
 import { getPlatformLayer } from "@/lib/platform";
+import { buildRateTable } from "@/lib/rateTable.server";
+import { creditsApply } from "@/lib/credits";
 
 /**
  * The shell, for everyone.
@@ -45,6 +47,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       credits: ctx?.workspace ? await creditStateFor(ctx.workspace).catch(() => null) : null,
       models: ctx?.workspace ? await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null) : null,
       setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
+      /* The rates this browser may see, in the unit this workspace pays in.
+         Built here rather than fetched, so a VISITOR gets one too: signed out
+         there is no workspace and no /api/me, and without a table the composer
+         fell back to dollars — which is how the platform's vendor cost came to
+         be printed on a public page. A visitor is quoted credits at the
+         platform's own margin, like the customer they might become. */
+      rates: buildRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd"),
     }}>
     <ProjectProvider>
       {/* The pipeline redesign puts the project and the nav in one 52px

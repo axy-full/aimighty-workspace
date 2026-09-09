@@ -45,7 +45,7 @@ export default function ShotListPage() {
 
 function ShotList({ projectId, name }: { projectId: string; name: string }) {
   const money = useMoney();
-  const { signedIn } = useSession();
+  const { signedIn, rates } = useSession();
   const { data: shotData, refresh } = useApi<{ shots: Row[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 15_000);
   const { data: projects } = useApi<{ projects: Proj[] }>(signedIn ? "/api/projects" : null, 30_000);
   const { data: trt } = useApi<{ treatment: Treatment | null }>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
@@ -56,7 +56,7 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
 
   const billable = shots.filter((s) => s.kind !== "type");
   const runtime = billable.reduce((a, s) => a + (s.planned ?? 0), 0);
-  const estimate = billable.reduce((a, s) => a + takeCost(s.planned), 0);
+  const estimate = billable.reduce((a, s) => a + takeCost(rates, s.planned), 0);
   const spent = shots.reduce((a, s) => a + s.spend, 0);
   const n = (st: string) => shots.filter((s) => s.state === st).length;
   const open = shots.filter((s) => !["approved", "picked", "type"].includes(s.state)).length;
@@ -76,7 +76,7 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
   function exportCsv() {
     const rows = [["#", "shot", "scene", "cast", "size", "angle", "move", "lens", "planned_s", "estimate_usd", "state", "takes", "spent_usd", "master"],
       ...shots.map((s) => [s.code, s.description || s.title, s.scene, s.cast.join(" "), labelOf("shot", s.setup.shot) ?? "", labelOf("angle", s.setup.angle) ?? "", labelOf("move", s.setup.move) ?? "", labelOf("lens", s.setup.lens) ?? "",
-        s.planned ?? "", s.kind === "type" ? 0 : takeCost(s.planned).toFixed(2), s.state, s.takes, s.spend.toFixed(2), s.master?.url ?? ""])];
+        s.planned ?? "", s.kind === "type" ? 0 : takeCost(rates, s.planned).toFixed(2), s.state, s.takes, s.spend.toFixed(2), s.master?.url ?? ""])];
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -140,7 +140,7 @@ function ShotList({ projectId, name }: { projectId: string; name: string }) {
                 <span className="flex flex-wrap gap-[3px]">{s.cast.map((c) => <span key={c} className="ak-tag !text-[10.5px]">@{c}</span>)}</span>
                 <span className="text-[12px] leading-[1.35]">{setup}</span>
                 <span className="mono-v !text-[11px]">{s.planned != null ? `${s.planned}s` : "—"}</span>
-                <span className="mono-s !text-[11px] !font-medium">{st === "type" ? "$0" : usd(takeCost(s.planned), 2)}</span>
+                <span className="mono-s !text-[11px] !font-medium">{st === "type" ? "$0" : usd(takeCost(rates, s.planned), 2)}</span>
                 <span className="ak-vrule" />
                 <span className={`ak-state !text-[12px] !tracking-normal !font-medium ${st === "approved" ? "is-approved" : st === "none" || st === "type" ? "is-muted" : "is-ink"}`}>
                   <span className={`dot ${st === "approved" ? "dot-approved" : st === "picked" ? "dot-picked" : st === "draft" ? "dot-draft" : st === "rendering" ? "dot-rendering" : "dot-none"}`} />

@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { plannedTakeUsd, plannedLine, MIN_BILLED_SECONDS } from "../../lib/shotBudget";
-import { estimateCostUsd, DEFAULT_MODEL_ID } from "../../lib/models";
+import { DEFAULT_MODEL_ID } from "../../lib/models";
+import { estimateCostUsd } from "../../lib/vendorPricing";
 
 const price = (usd: number) => `${Math.round(usd * 100)}c`;
 
@@ -13,6 +14,6 @@ test("the planned budget is one take at the default engine, five seconds at leas
 });
 
 test("the wall says what is planned and what it will cost, or just the cost when nothing is planned", () => {
-  expect(plannedLine(8, price)).toBe(`no takes yet · 8s planned · ${price(plannedTakeUsd(8))} a take`);
-  expect(plannedLine(null, price)).toBe(`no takes yet · ${price(plannedTakeUsd(null))} a take`);
+  expect(plannedLine(8, price(plannedTakeUsd(8)))).toBe(`no takes yet · 8s planned · ${price(plannedTakeUsd(8))} a take`);
+  expect(plannedLine(null, price(plannedTakeUsd(null)))).toBe(`no takes yet · ${price(plannedTakeUsd(null))} a take`);
 });

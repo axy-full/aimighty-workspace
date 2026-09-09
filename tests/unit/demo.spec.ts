@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { DEMO_PRODUCTION, DEMO_TAKES, demoMediaUrl, demoTotals, demoShots } from "../../lib/demoProduction";
-import { estimateCostUsd } from "../../lib/models";
+import { estimateCostUsd } from "../../lib/vendorPricing";
 import { CATEGORIES } from "../../lib/studio";
 
 /** The demo production (brief 1.7): three shots, a few takes each, one Approved, real credit numbers, a cast of two, Setup filled, rights-clear pictures. */

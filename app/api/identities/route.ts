@@ -6,6 +6,9 @@ import {
   MIN_PHOTOS, MAX_PHOTOS, RECOMMENDED_PHOTOS, TRAIN_STEPS, trainCostUsd, RENDER_USD_PER_MP, TRAINER,
 } from "@/lib/identities";
 import { falConfigured } from "@/lib/fal";
+import { creditsApply } from "@/lib/credits";
+import { billCredits } from "@/lib/creditTerms";
+import { currentTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +23,18 @@ export const GET = withTenant(async function GET(req: Request) {
      training. It reads the rows as they stand — asking fal about each one on
      every poll would be a vendor call per wall, per person, per fifteen
      seconds. The Studio, which shows progress, still syncs. */
+  const inCredits = creditsApply(currentTenant()?.workspace);
   if (url.searchParams.get("live") === "1") {
     return NextResponse.json({
       identities: identities.filter((i) => i.status === "training")
-        .map((i) => ({ id: i.id, name: i.name, status: i.status, costUsd: i.costUsd, steps: i.steps, createdAt: i.createdAt })),
+        /* The unit this workspace pays in, like every other priced row. The
+           queue strip used to be handed the vendor's dollars and convert them
+           in the browser, which needed the margin to be there to convert with. */
+        .map((i) => ({
+          id: i.id, name: i.name, status: i.status, steps: i.steps, createdAt: i.createdAt,
+          costUsd: inCredits ? null : i.costUsd,
+          creditsBilled: inCredits && i.costUsd != null ? billCredits(i.costUsd, "identity-training") : null,
+        })),
     });
   }
   // Anything mid-training gets asked about while the list is being read, so
@@ -36,7 +47,12 @@ export const GET = withTenant(async function GET(req: Request) {
       configured: falConfigured(),
       trainer: TRAINER,
       minPhotos: MIN_PHOTOS, maxPhotos: MAX_PHOTOS, recommended: RECOMMENDED_PHOTOS,
-      steps: TRAIN_STEPS, trainCostUsd: trainCostUsd(), renderUsdPerMp: RENDER_USD_PER_MP,
+      steps: TRAIN_STEPS,
+      /* The unit this workspace pays in. `trainCostUsd` is the vendor's price
+         for a training run; a credit workspace is quoted the charge instead. */
+      trainCostUsd: inCredits ? null : trainCostUsd(),
+      trainCredits: inCredits ? billCredits(trainCostUsd(), "identity-training") : null,
+      renderUsdPerMp: inCredits ? null : RENDER_USD_PER_MP,
     },
   });
 });

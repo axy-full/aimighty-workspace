@@ -40,7 +40,9 @@ import { Switch } from "./Panel";
 import type { Gen } from "./GenCard";
 import { ParticlSpinner } from "./ParticlMark";
 import { compactTokens } from "@/lib/format";
-import { MODELS, estimateCostUsd, estimateImageCostUsd, type ModelDef, perSecondRate } from "@/lib/models";
+import { MODELS, estimateTokens, costUsd, type ModelDef } from "@/lib/models";
+import { estimateVideo, estimateImage, secondRateOf } from "@/lib/rateTable";
+import { useSession } from "@/lib/session";
 import { IconArrowUp, IconCaret, IconAttach, IconSliders, IconClose } from "./Icons";
 import LazyMedia from "./LazyMedia";
 import { readDraggedAsset, readDraggedCast } from "@/lib/dnd";
@@ -116,6 +118,7 @@ export default function Composer(p: ComposerProps) {
   const [menu, setMenu] = useState<Menu>(null);
   const money = useMoney();
   const price = money.price;
+  const { rates } = useSession();
   const [drag, setDrag] = useState(false);
   const overlayEl = useRef<HTMLDivElement>(null);
   const costRef = useRef<HTMLSpanElement>(null);
@@ -151,7 +154,19 @@ export default function Composer(p: ComposerProps) {
   const sourceSecs = taskOn?.gen ? Number((taskOn.gen.params as { duration?: number }).duration ?? 0) || 0 : 0;
   const billedSecs = followsSource ? sourceSecs : params.duration;
   const estOpts = { audio: params.generateAudio, task: taskOn?.id, fps60: params.fps60 };
-  const secondRate = perSecondRate(params.modelId, params.resolution, estOpts);
+  /* Off the session's table, in the unit this workspace pays in. The vendor's
+     per-second rate is not something a browser is given any more. */
+  const secondRate = secondRateOf(rates, params.modelId, params.resolution, estOpts);
+  /* One helper for every price in this component: a menu row, a duration, a
+     resolution. They all used to call the USD estimator and convert. */
+  const priceOf = (modelId: string, res: string, ratio: string, secs: number, refs = imageRefCount, image = false) => {
+    const amount = image
+      ? estimateImage(rates, modelId, res, refs)
+      : estimateVideo(rates, modelId, res, secs,
+          estimateTokens(res, ratio, secs, inputSeconds), costUsd,
+          { ...estOpts, hasVideoInput });
+    return amount == null ? null : price(amount);
+  };
 
   // The prompt box grows with its text, and the highlight layer must track
   // the textarea's scroll exactly or the coloured @cites drift.
@@ -188,11 +203,10 @@ export default function Composer(p: ComposerProps) {
      number next to each engine, so the choice is made with the price. */
   const rowPrice = (m: ModelDef): string | null => {
     const res = m.resolutions.includes(params.resolution) ? params.resolution : m.resolutions[0];
-    const c = m.kind === "image"
-      ? estimateImageCostUsd(m.id, res, imageRefCount)
-      : estimateCostUsd(m.id, res, m.ratios.includes(params.ratio) ? params.ratio : m.ratios[0],
-          m.durations.includes(params.duration) ? params.duration : (m.durations[0] ?? 5), inputSeconds, hasVideoInput, estOpts);
-    return c ? price(c.net, m.id) : null;
+    return priceOf(m.id, res,
+      m.ratios.includes(params.ratio) ? params.ratio : m.ratios[0],
+      m.durations.includes(params.duration) ? params.duration : (m.durations[0] ?? 5),
+      imageRefCount, m.kind === "image");
   };
   const engineOf = (m: ModelDef) => engines.find((e) => e.id === m.provider);
 
@@ -383,12 +397,11 @@ export default function Composer(p: ComposerProps) {
             : undefined}
           open={menu === "res"} onOpen={() => setMenu("res")} onClose={() => setMenu(null)}>
           {model.resolutions.map((r) => {
-            const c = isImage ? estimateImageCostUsd(params.modelId, r, imageRefCount)
-              : estimateCostUsd(params.modelId, r, params.ratio, billedSecs, inputSeconds, hasVideoInput, estOpts);
+            const c = priceOf(params.modelId, r, params.ratio, billedSecs, imageRefCount, isImage);
             return (
               <button key={r} onClick={() => { patch({ resolution: r }); setMenu(null); }} className="menu-item">
                 <span className={`flex-1 ${params.resolution === r ? "text-blue" : ""}`}>{resLabel(r, isImage)}</span>
-                {c && <span className="text-[13px] text-mute">{price(c.net, params.modelId)}</span>}
+                {c && <span className="text-[13px] text-mute">{c}</span>}
               </button>
             );
           })}
@@ -398,11 +411,11 @@ export default function Composer(p: ComposerProps) {
           <ChipMenu label={`${params.duration}s`} open={menu === "dur"} onOpen={() => setMenu("dur")} onClose={() => setMenu(null)}
             disabled={Boolean(taskOn && taskOn.id === "edit")}>
             {model.durations.map((d) => {
-              const c = estimateCostUsd(params.modelId, params.resolution, params.ratio, d, inputSeconds, hasVideoInput, estOpts);
+              const c = priceOf(params.modelId, params.resolution, params.ratio, d);
               return (
                 <button key={d} onClick={() => { patch({ duration: d }); setMenu(null); }} className="menu-item">
                   <span className={`flex-1 ${params.duration === d ? "text-blue" : ""}`}>{d}s</span>
-                  <span className="text-[13px] text-mute">{c ? price(c.net, params.modelId) : ""}</span>
+                  <span className="text-[13px] text-mute">{c ?? ""}</span>
                 </button>
               );
             })}

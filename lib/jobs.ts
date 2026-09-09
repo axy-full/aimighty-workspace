@@ -1,6 +1,10 @@
 import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
-import { costUsd, effectiveRate } from "./models";
+import { costUsd } from "./models";
+import { effectiveRate } from "./vendorPricing";
+import { creditsApply } from "./credits";
+import { billCredits, marginKeyOf } from "./creditTerms";
+import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
 import { meter } from "./meter";
@@ -30,7 +34,10 @@ export type Generation = {
   sourceUrl: string | null;
   storedUrl: string | null;
   totalTokens: number | null;
+  /** Dollars — only for a workspace that pays its vendors in them. */
   costUsd: number | null;
+  /** Credits — only for a workspace that pays in them. Never both. */
+  creditsBilled: number | null;
   /** What the prompt writer charged for this render, and who it was. */
   refineCostUsd: number | null;
   refineModel: string | null;
@@ -76,6 +83,9 @@ async function inChunks<T>(items: T[], size: number, fn: (item: T) => Promise<un
 function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
 
 export function rowToGeneration(r: any): Generation {
+  /* Read once per row rather than per field: which unit this workspace pays
+     in decides what the row is allowed to carry. */
+  const inCredits = creditsApply(currentTenant()?.workspace);
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -98,8 +108,18 @@ export function rowToGeneration(r: any): Generation {
     sourceUrl: r.source_url ?? null,
     storedUrl: r.stored_url ?? null,
     totalTokens: r.total_tokens ?? null,
-    costUsd: r.cost_usd ?? null,
-    refineCostUsd: r.refine_cost_usd ?? null,
+    /* The unit this workspace pays in, and only that one.
+       A workspace on the platform's keys is sent `creditsBilled` — the
+       ledger's own figure, computed here where the margin lives — and NOT
+       `cost_usd`, which is what the vendor charged the platform. Sending both
+       was how the markup came to be a subtraction away on any take card. A
+       workspace on its own keys gets the dollars, because those are the
+       dollars that left its account. */
+    costUsd: inCredits ? null : (r.cost_usd ?? null),
+    refineCostUsd: inCredits ? null : (r.refine_cost_usd ?? null),
+    creditsBilled: inCredits
+      ? billCredits(Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0), marginKeyOf(r.kind, r.model))
+      : null,
     refineModel: r.refine_model ?? null,
     refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
     refineOutTokens: r.refine_out_tokens == null ? null : Number(r.refine_out_tokens),

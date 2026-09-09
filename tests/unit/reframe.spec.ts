@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { getModel, estimateCostUsd, perSecondRate } from "../../lib/models";
+import { getModel } from "../../lib/models";
+import { estimateCostUsd, perSecondRate } from "../../lib/vendorPricing";
 import { getTask, sourceProblem } from "../../lib/tasks";
 import { falEndpointFor } from "../../lib/falVideo";
 import { billCredits } from "../../lib/creditTerms";

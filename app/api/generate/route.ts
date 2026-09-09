@@ -2,7 +2,8 @@ import { NextResponse, after } from "next/server";
 import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
 import { type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
-import { getModel, DEFAULT_MODEL_ID, estimateCostUsd, estimateImageCostUsd, dimensionsFor, billedFrame } from "@/lib/models";
+import { getModel, DEFAULT_MODEL_ID, dimensionsFor, billedFrame } from "@/lib/models";
+import { estimateCostUsd, estimateImageCostUsd } from "@/lib/vendorPricing";
 import { enqueueRender } from "@/lib/inngest";
 import { runInline } from "@/lib/renderWork";
 import {

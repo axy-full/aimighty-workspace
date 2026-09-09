@@ -1,7 +1,8 @@
 import { db, ready, now, id as newId } from "./db";
 import { gatewayAuth, gatewayReachable, explainGatewayFailure } from "./gateway";
 import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd, textCostUsd } from "./catalog";
-import { MODELS, estimateCostUsd, estimateImageCostUsd } from "./models";
+import { MODELS } from "./models";
+import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { gatewayPost } from "./gateway";
 import { meter } from "./meter";
 import { getPlatformLayer } from "./platform";

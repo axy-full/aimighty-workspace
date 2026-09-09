@@ -18,7 +18,6 @@ import { REASON_LABELS } from "@/lib/reports";
 import { getModel, MODELS } from "@/lib/models";
 import { TEXT_JOBS, TEXT_JOB_LABELS, TEXT_MODEL_IDS, textModelFor, RULE_SCOPES, RULE_SCOPE_LABELS } from "@/lib/platformLayer";
 import { PREVIEW_MODELS, PREVIEW_RESOLUTIONS, PREVIEW_DURATIONS } from "@/lib/previews";
-import { billCredits } from "@/lib/creditTerms";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -563,7 +562,7 @@ function ReportsCard() {
 
 /* ── The bank's neutral previews: one costed batch, from the test workspace (brief 1.4) ── */
 type PreviewsView = {
-  plan: { modelId: string; resolution: string; duration: number; count: number; perClipUsd: number; totalUsd: number; items: { key: string; label: string; kind: string }[] };
+  plan: { modelId: string; resolution: string; duration: number; count: number; perClipUsd: number; totalUsd: number; perClipCredits: number; totalCredits: number; items: { key: string; label: string; kind: string }[] };
   scene: string;
   workspace: { id: string; name: string; internalTest: boolean } | null;
   candidates: { genId: string; key: string; model: string; costUsd: number | null; status: string; createdAt: number }[];
@@ -583,7 +582,7 @@ function PreviewsCard() {
   const ready = candidates.filter((c) => c.status === "succeeded").length;
   const running = candidates.filter((c) => c.status === "running" || c.status === "held").length;
   const testOk = Boolean(workspace?.internalTest);
-  const credits = billCredits(plan.perClipUsd, plan.modelId) * plan.count;
+  const credits = plan.totalCredits;
 
   async function generate() {
     if (!workspace || !testOk) return;

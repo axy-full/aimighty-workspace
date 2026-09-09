@@ -107,19 +107,23 @@ export type ModelDef = {
   /** The model's id on Vercel AI Gateway, when it is also served there. */
   gatewayId?: string;
   /** Still engines bill per image by size (USD), plus a little per reference in. */
-  imagePricing?: Record<string, number>;
-  imageRefInUsd?: number;
+
   /** Engines that bill by the SECOND of output (Kling, Topaz on fal), by
    *  resolution tier, with and without audio. Present instead of tiers. */
-  secondRates?: { resolutions: string[]; withoutAudio: number; withAudio: number }[];
+  /**
+   * HOW this model is billed — not how much, which lives in lib/vendorRates.ts
+   * and never reaches a browser. The composer needs the shape (does a token
+   * count apply?) without needing the rate, and this is that shape.
+   */
+  billing: "second" | "token" | "image";
   /** Per-second rates for tasks priced apart from generation (motion control). */
-  taskRates?: Partial<Record<TaskId, number>>;
+
   /** The fal endpoint family the engine is served at (see lib/falVideo.ts). */
   falEndpoint?: string;
   /** A still tool rather than a still engine: works on one still of ours (see lib/falImage.ts). */
   stillTask?: "outpaint" | "cutout";
   paramStyle: ParamStyle;
-  tiers: RateTier[];
+
   resolutions: string[];
   ratios: string[];
   durations: number[];
@@ -138,6 +142,7 @@ export type ModelDef = {
 export const MODELS: ModelDef[] = [
   {
     id: "dreamina-seedance-2-5-260628",
+    billing: "token",
     use: "Standard video. Highest fidelity, native audio.",
     label: "Seedance 2.5",
     supportsTasks: ["generate", "edit", "extend"],
@@ -146,10 +151,6 @@ export const MODELS: ModelDef[] = [
     provider: "byteplus",
     kind: "video",
     paramStyle: "fields",
-    tiers: [
-      { resolutions: ["480p", "720p"], withoutVideo: 10.7, withVideo: 6.4 },
-      { resolutions: ["1080p"],        withoutVideo: 11.7, withVideo: 7.0 },
-    ],
     resolutions: ["480p", "720p", "1080p"],
     ratios: ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
     // "Dreamina Seedance 2.5: Default -1; supports [4, 30] or -1."
@@ -163,6 +164,7 @@ export const MODELS: ModelDef[] = [
   },
   {
     id: "dreamina-seedance-2-0-260128",
+    billing: "token",
     use: "Cheaper drafts and roughs.",
     label: "Seedance 2.0",
     short: "SD 2.0",
@@ -170,11 +172,6 @@ export const MODELS: ModelDef[] = [
     provider: "byteplus",
     kind: "video",
     paramStyle: "fields",
-    tiers: [
-      { resolutions: ["480p", "720p"], withoutVideo: 7.0, withVideo: 4.3 },
-      { resolutions: ["1080p"],        withoutVideo: 7.7, withVideo: 4.7 },
-      { resolutions: ["4k"],           withoutVideo: 4.0, withVideo: 2.4 },
-    ],
     resolutions: ["480p", "720p", "1080p", "4k"],
     ratios: ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
     // "Dreamina Seedance 2.0 series: Default 5; supports [4, 15] or -1."
@@ -195,6 +192,7 @@ export const MODELS: ModelDef[] = [
    * ------------------------------------------------------------------ */
   {
     id: "fal-ai/kling-video/v3/standard",
+    billing: "second",
     use: "Water, cloth, physics-heavy motion.",
     label: "Kling 3.0",
     short: "KLING 3",
@@ -204,9 +202,6 @@ export const MODELS: ModelDef[] = [
     supportsTasks: ["generate", "motion"],
     falEndpoint: "fal-ai/kling-video/v3/standard",
     paramStyle: "fields",
-    tiers: [],
-    secondRates: [{ resolutions: ["1080p"], withoutAudio: 0.084, withAudio: 0.126 }],
-    taskRates: { motion: 0.126 },
     resolutions: ["1080p"],
     ratios: ["16:9", "9:16", "1:1"],
     durations: seconds(3, 15),
@@ -219,6 +214,7 @@ export const MODELS: ModelDef[] = [
   },
   {
     id: "fal-ai/kling-video/v3/pro",
+    billing: "second",
     use: "The same motion, steadier, for finals.",
     label: "Kling 3.0 Pro",
     short: "KLING 3 PRO",
@@ -228,9 +224,6 @@ export const MODELS: ModelDef[] = [
     supportsTasks: ["generate", "motion"],
     falEndpoint: "fal-ai/kling-video/v3/pro",
     paramStyle: "fields",
-    tiers: [],
-    secondRates: [{ resolutions: ["1080p"], withoutAudio: 0.112, withAudio: 0.168 }],
-    taskRates: { motion: 0.168 },
     resolutions: ["1080p"],
     ratios: ["16:9", "9:16", "1:1"],
     durations: seconds(3, 15),
@@ -248,6 +241,7 @@ export const MODELS: ModelDef[] = [
    * ------------------------------------------------------------------ */
   {
     id: "topaz/upscale/video/creative",
+    billing: "second",
     use: "Upscale a finished clip to 4K.",
     label: "Topaz Astra",
     short: "ASTRA",
@@ -257,11 +251,6 @@ export const MODELS: ModelDef[] = [
     supportsTasks: ["upscale"],
     falEndpoint: "topaz/upscale/video/creative",
     paramStyle: "fields",
-    tiers: [],
-    secondRates: [
-      { resolutions: ["1080p"], withoutAudio: 0.30, withAudio: 0.30 },
-      { resolutions: ["4k"],    withoutAudio: 0.50, withAudio: 0.50 },
-    ],
     resolutions: ["1080p", "4k"],
     ratios: ["adaptive"],
     durations: [],
@@ -280,6 +269,7 @@ export const MODELS: ModelDef[] = [
    * ------------------------------------------------------------------ */
   {
     id: "fal-ai/luma-dream-machine/ray-2-flash/reframe",
+    billing: "second",
     use: "Re-cut a finished clip to 9:16 or 1:1.",
     label: "Luma Ray 2",
     short: "RAY2",
@@ -289,8 +279,6 @@ export const MODELS: ModelDef[] = [
     supportsTasks: ["reframe"],
     falEndpoint: "fal-ai/luma-dream-machine/ray-2-flash/reframe",
     paramStyle: "fields",
-    tiers: [],
-    secondRates: [{ resolutions: ["adaptive"], withoutAudio: 0.06, withAudio: 0.06 }],
     resolutions: ["adaptive"],
     ratios: ["9:16", "1:1", "16:9", "4:3", "3:4", "21:9", "9:21"],
     durations: [],
@@ -308,6 +296,7 @@ export const MODELS: ModelDef[] = [
    * ------------------------------------------------------------------ */
   {
     id: "fal-ai/bria/expand",
+    billing: "image",
     use: "Outpaint a still to another aspect.",
     label: "Bria Expand",
     short: "EXPAND",
@@ -318,9 +307,6 @@ export const MODELS: ModelDef[] = [
     stillTask: "outpaint",
     falEndpoint: "fal-ai/bria/expand",
     paramStyle: "fields",
-    tiers: [],
-    imagePricing: { adaptive: 0.04 },
-    imageRefInUsd: 0,
     resolutions: ["adaptive"],
     ratios: ["9:16", "1:1", "16:9", "4:5", "5:4", "3:4", "4:3", "2:3", "3:2"],
     durations: [],
@@ -333,6 +319,7 @@ export const MODELS: ModelDef[] = [
   },
   {
     id: "fal-ai/bria/background/remove",
+    billing: "image",
     use: "Cut a still's subject out of its background.",
     label: "Bria Cutout",
     short: "CUTOUT",
@@ -343,9 +330,6 @@ export const MODELS: ModelDef[] = [
     stillTask: "cutout",
     falEndpoint: "fal-ai/bria/background/remove",
     paramStyle: "fields",
-    tiers: [],
-    imagePricing: { adaptive: 0.018 },
-    imageRefInUsd: 0,
     resolutions: ["adaptive"],
     ratios: ["adaptive"],
     durations: [],
@@ -365,6 +349,7 @@ export const MODELS: ModelDef[] = [
     // Retired once for Google's moderation locks; back by request, with
     // refusals surfaced in Google's own words and never charged.
     id: "gemini-3-pro-image",
+    billing: "image",
     use: "Stills with legible text; up to 14 refs.",
     gatewayId: "google/gemini-3-pro-image",
     label: "Nano Banana Pro",
@@ -373,10 +358,7 @@ export const MODELS: ModelDef[] = [
     provider: "google",
     kind: "image",
     paramStyle: "fields",
-    tiers: [],
     // Per image, from the gateway catalogue (identical to Google's list).
-    imagePricing: { "1K": 0.1344, "2K": 0.1344, "4K": 0.24 },
-    imageRefInUsd: 0.0011,
     resolutions: ["1K", "2K", "4K"],
     ratios: ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"],
     durations: [],
@@ -391,6 +373,7 @@ export const MODELS: ModelDef[] = [
     // Nano Banana 2 (Gemini 3.1 Flash Image): the fast, cheaper still engine.
     // Prices per image from the gateway catalogue, read 2026-09-03.
     id: "gemini-3.1-flash-image",
+    billing: "image",
     use: "Quick stills at half the price.",
     gatewayId: "google/gemini-3.1-flash-image",
     label: "Nano Banana 2",
@@ -399,9 +382,6 @@ export const MODELS: ModelDef[] = [
     provider: "google",
     kind: "image",
     paramStyle: "fields",
-    tiers: [],
-    imagePricing: { "512": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151 },
-    imageRefInUsd: 0.0003,
     resolutions: ["512", "1K", "2K", "4K"],
     ratios: ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"],
     durations: [],
@@ -418,6 +398,7 @@ export const MODELS: ModelDef[] = [
     // prompt has to carry the identity's trigger, which that screen adds.
     // Price per megapixel from fal's listing; a 1K frame is ~1 MP.
     id: "fal-ai/flux-lora",
+    billing: "image",
     use: "A trained face, from the Studio.",
     label: "Flux · Identity",
     short: "FLUX ID",
@@ -426,9 +407,6 @@ export const MODELS: ModelDef[] = [
     kind: "image",
     hidden: true,
     paramStyle: "fields",
-    tiers: [],
-    imagePricing: { "1K": 0.035 },
-    imageRefInUsd: 0,
     resolutions: ["1K"],
     ratios: ["1:1", "16:9", "9:16", "4:3", "3:4"],
     durations: [],
@@ -474,23 +452,7 @@ export function shortLabel(modelId: string): string {
 }
 
 /** Undiscounted published rate, USD per million tokens. */
-export function listRate(
-  modelId: string, resolution: string, hasVideoInput = false
-): number | null {
-  let m: ModelDef;
-  try { m = getModel(modelId); } catch { return null; }
-  const tier = m.tiers.find((t) => t.resolutions.includes(resolution.toLowerCase()));
-  if (!tier) return null;
-  return hasVideoInput ? tier.withVideo : tier.withoutVideo;
-}
 
-/** What we actually pay: list rate less the account discount. */
-export function effectiveRate(
-  modelId: string, resolution: string, hasVideoInput = false
-): number | null {
-  const list = listRate(modelId, resolution, hasVideoInput);
-  return list == null ? null : list * (1 - ACCOUNT_DISCOUNT);
-}
 
 export function costUsd(totalTokens: number, usdPerMillionTokens: number): number {
   return (totalTokens / 1_000_000) * usdPerMillionTokens;
@@ -547,38 +509,7 @@ export function estimateTokens(
 }
 
 /** USD per second of output for a per-second engine, or null for the others. */
-export function perSecondRate(
-  modelId: string, resolution: string,
-  opts: { audio?: boolean; task?: TaskId | string; fps60?: boolean } = {}
-): number | null {
-  const m = MODELS.find((x) => x.id === modelId);
-  if (!m?.secondRates?.length) return null;
-  const tier = m.secondRates.find((t) => t.resolutions.includes(resolution.toLowerCase())) ?? m.secondRates[0];
-  const taskRate = opts.task && opts.task !== "generate" ? m.taskRates?.[opts.task as TaskId] : undefined;
-  const base = taskRate ?? (opts.audio ? tier.withAudio : tier.withoutAudio);
-  return base * (opts.fps60 ? 2 : 1);
-}
 
-export function estimateCostUsd(
-  modelId: string, resolution: string, ratio: string, duration: number,
-  inputSeconds = 0, hasVideoInput = false,
-  opts: { audio?: boolean; task?: TaskId | string; fps60?: boolean } = {}
-): { list: number; net: number } | null {
-  /* Per-second engines: the rate times the seconds, and nothing to guess. */
-  const perSecond = perSecondRate(modelId, resolution, opts);
-  if (perSecond != null) {
-    if (!(duration > 0)) return null;
-    const c = Math.round(perSecond * duration * 10_000) / 10_000;
-    return { list: c, net: c };
-  }
-  const tokens = estimateTokens(resolution, ratio, duration, inputSeconds);
-  const list = listRate(modelId, resolution, hasVideoInput);
-  if (tokens == null || list == null) return null;
-  return {
-    list: costUsd(tokens, list),
-    net: costUsd(tokens, list * (1 - ACCOUNT_DISCOUNT)),
-  };
-}
 
 /* ---------------------------------------------------------------------------
  * Image engines (Gemini / Nano Banana Pro) bill flat per image, not by
@@ -587,24 +518,24 @@ export function estimateCostUsd(
  *   each reference image in = 560 tokens ($0.0011)
  * ------------------------------------------------------------------------- */
 
-export const IMAGE_OUT_USD: Record<string, number> = { "1K": 0.134, "2K": 0.134, "4K": 0.24 };
 export const IMAGE_OUT_TOKENS: Record<string, number> = { "1K": 1120, "2K": 1120, "4K": 2000 };
-export const IMAGE_REF_IN_USD = 0.0011;
 export const IMAGE_REF_IN_TOKENS = 560;
 
-export function estimateImageCostUsd(
-  modelId: string, size: string, refImages = 0
-): { list: number; net: number } | null {
-  const m = MODELS.find((x) => x.id === modelId);
-  const table = m?.imagePricing ?? IMAGE_OUT_USD;
-  const out = table[size.toUpperCase()] ?? table[size];
-  if (out == null) return null;
-  const total = out + refImages * (m?.imageRefInUsd ?? IMAGE_REF_IN_USD);
-  return { list: total, net: total };
-}
 
 export function imageTokens(size: string, refImages = 0): number | null {
   const out = IMAGE_OUT_TOKENS[size.toUpperCase()];
   if (out == null) return null;
   return out + refImages * IMAGE_REF_IN_TOKENS;
+}
+
+/**
+ * How a model is billed — the shape, never the rate.
+ *
+ * The composer needs to know whether a frame-token count applies before it
+ * can decide what to show; it does not need to know what a token costs. It
+ * used to answer this by looking for `secondRates` on the model def, which is
+ * why the rates had to be there.
+ */
+export function billingOf(modelId: string): ModelDef["billing"] {
+  try { return getModel(modelId).billing; } catch { return "token"; }
 }

@@ -1,5 +1,7 @@
 import { STARTER_PRODUCTION, STARTER_CAST, DEFAULT_SETUP, type StarterCast, type StarterShot } from "./platformLayer";
-import { estimateCostUsd, DEFAULT_MODEL_ID } from "./models";
+import { DEFAULT_MODEL_ID } from "./models";
+import { estimateCostUsd } from "./vendorPricing";
+import { billCredits } from "./creditTerms";
 import { specToPhrase, type ShotSpec } from "./studio";
 
 /**
@@ -19,12 +21,17 @@ export const DEMO_CAST: StarterCast[] = [
 export type DemoTake = {
   key: string; shotCode: string; version: number; model: string; resolution: string; duration: number;
   prompt: string; costUsd: number; approved: boolean; previewKey: string; move: string;
+  /** What the demo take would be charged, in credits. Computed here, on the
+   *  server, so the wall that shows it needs no margin to convert with. */
+  credits: number;
 };
 
 const SD25 = DEFAULT_MODEL_ID;
 const price = (res: string, dur: number) => estimateCostUsd(SD25, res, "16:9", dur, 0, false, { audio: true })?.net ?? 0;
 const take = (shotCode: string, version: number, resolution: string, duration: number, move: string, prompt: string, approved = false): DemoTake => ({
-  key: `${shotCode}-v${version}`, shotCode, version, model: SD25, resolution, duration, prompt, costUsd: price(resolution, duration),
+  key: `${shotCode}-v${version}`, shotCode, version, model: SD25, resolution, duration, prompt,
+  costUsd: price(resolution, duration),
+  credits: billCredits(price(resolution, duration), SD25),
   approved, previewKey: move.includes(":") ? move : `move:${move}`, move: move.replace(/^[a-z]+:/, ""),
 });
 

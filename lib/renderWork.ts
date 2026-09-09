@@ -1,5 +1,6 @@
 import { db, ready, now } from "./db";
-import { getModel, estimateImageCostUsd, imageTokens } from "./models";
+import { getModel, imageTokens } from "./models";
+import { estimateImageCostUsd } from "./vendorPricing";
 import { storeImageBytes, storeAudioBytes } from "./storage";
 import { withRetry, billedTo } from "./providers";
 import { invalidate, PROJECTS_KEY } from "./cache";

@@ -1,6 +1,6 @@
 import type { ModelDef } from "./models";
 import type { Reference } from "./ark";
-import { estimateImageCostUsd } from "./models";
+import { estimateImageCostUsd } from "./vendorPricing";
 import { falRun } from "./fal";
 import { mediaUrl } from "./falVideo";
 import { engineMock } from "./mock";

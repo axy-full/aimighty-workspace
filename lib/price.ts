@@ -13,7 +13,7 @@
 import { useMemo } from "react";
 import { useSession } from "@/lib/session";
 import { usd } from "@/lib/format";
-import { billCreditsWith, marginFor, marginKeyOf } from "@/lib/creditTerms";
+
 
 /** A finished take: what the engine charged, plus the prompt writer's share. */
 export type Priced = {
@@ -21,6 +21,9 @@ export type Priced = {
   refineCostUsd?: number | null;
   kind?: string | null;
   model?: string | null;
+  /** What the ledger billed, in credits. The server's figure, not a
+   *  conversion done here — the browser has no margin to convert with. */
+  creditsBilled?: number | null;
 };
 /** A server aggregate that carries both units. */
 export type Amount = { spend?: number | null; credits?: number | null };
@@ -56,9 +59,12 @@ export function creditsNumber(n: number): string {
 export const fmtCredits = (n: number): string => `${creditsNumber(n)} cr`;
 
 export function useMoney(): Money {
-  const { credits } = useSession();
+  const { credits, rates } = useSession();
   return useMemo<Money>(() => {
-    if (!credits) {
+    /* Dollars, for a workspace that pays its vendors in them. The figures
+       arrive already in dollars — the server built the table that way — so
+       nothing here converts and nothing here knows a margin. */
+    if (!credits || rates.unit === "usd") {
       const all = (g: Priced) => (g.costUsd ?? 0) + (g.refineCostUsd ?? 0);
       return {
         inCredits: false,
@@ -72,22 +78,29 @@ export function useMoney(): Money {
         approx: (n) => usd(n, 0),
       };
     }
-    const { creditUsd: per, margins } = credits;
-    const bill = (n: number, engine?: string | null) => billCreditsWith(n, marginFor(engine, margins), per);
-    const takeCredits = (g: Priced) => bill((g.costUsd ?? 0) + (g.refineCostUsd ?? 0), marginKeyOf(g.kind, g.model));
-    const ofCredits = (v: Amount) => v.credits ?? Math.ceil(((v.spend ?? 0) * marginFor("*", margins)) / per);
+    /* Credits. Every figure that reaches this hook is ALREADY in credits:
+       estimates come off the rate table the server converted, and a finished
+       take's credits come off the ledger, which did the conversion when it
+       billed. So this rounds and formats, and that is all it does.
+
+       It used to convert — `billCreditsWith(usd, marginFor(engine, margins), per)`
+       — which meant the browser held both the vendor's dollars and the margin,
+       and `credits × 0.10 ÷ margin` gave up the markup exactly. */
+    const whole = (n: number) => (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0);
+    const takeCredits = (g: Priced) => Math.round(g.creditsBilled ?? 0);
+    const ofCredits = (v: Amount) => v.credits ?? 0;
     return {
       inCredits: true,
-      price: (n, engine) => cr(bill(n, engine)),
-      rate: (n, engine) => `${((n * marginFor(engine, margins)) / per).toFixed(1)} cr`,
+      price: (n) => cr(whole(n)),
+      rate: (n) => `${n.toFixed(1)} cr`,
       take: (g) => cr(takeCredits(g)),
       takeCredits,
       sum: (list) => cr(list.reduce((a, g) => a + takeCredits(g), 0)),
       of: (v) => cr(ofCredits(v)),
       each: (v, n) => (n > 0 ? cr(ofCredits(v) / n) : "—"),
-      approx: (n) => `≈ ${cr((n * marginFor("*", margins)) / per)}`,
+      approx: (n) => `≈ ${cr(whole(n))}`,
     };
-  }, [credits]);
+  }, [credits, rates]);
 }
 
 /** The price on a button. */
