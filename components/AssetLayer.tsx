@@ -106,12 +106,16 @@ export default function AssetLayer({ projectId }: { projectId: string }) {
 function Asset({ a }: { a: AssetAt }) {
   return (
     <div className="ast-node" style={{ left: a.x, top: a.y, width: ASSET_W }}>
-      <div className="ast-head" style={{ height: a.headH }}>
+      {/* Into the element's own screen (surface 2b), the mirror of the shot
+          node's link into 2c. Same constraint: the header keeps its exact
+          height, because every port centre below it is measured from it and
+          a wire that misses its port breaks the one idea the layer shows. */}
+      <Link className="ast-head" href={`/elements/${encodeURIComponent(a.id)}`} style={{ height: a.headH }}>
         <span className="ast-name">{a.name}</span>
         <span className="ast-kind">{a.kind.slice(0, 4).toUpperCase()}</span>
         {a.locked ? <span className="ast-lock" aria-label="locked">◆</span> : null}
         {a.origin ? <span className="ast-origin">{a.origin}</span> : null}
-      </div>
+      </Link>
       {a.ports.map((p) => (
         <div key={p.id} className={`ast-tile${p.idle ? " is-idle" : ""}`}>
           <span className="ast-tag">{p.label}</span>

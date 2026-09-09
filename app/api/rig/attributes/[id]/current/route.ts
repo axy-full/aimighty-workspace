@@ -45,13 +45,31 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (!versionId) return NextResponse.json({ error: "Name the version to move to." }, { status: 400 });
 
   const rs = await db().execute({
-    sql: `SELECT v.id, v.element_id, v.status, a.current_id, a.kind
-          FROM attribute_versions v JOIN element_attributes a ON a.id = v.attribute_id
+    sql: `SELECT v.id, v.element_id, v.status, a.current_id, a.kind,
+                 a.locked AS attr_locked, e.locked AS el_locked, e.name AS el_name
+          FROM attribute_versions v
+          JOIN element_attributes a ON a.id = v.attribute_id
+          JOIN elements e ON e.id = a.element_id
           WHERE v.id = ? AND v.attribute_id = ?`,
     args: [versionId, attributeId],
   });
   if (!rs.rows.length) return NextResponse.json({ error: "That version is not one of this attribute's." }, { status: 404 });
-  const row = rs.rows[0] as unknown as { element_id: string; status: string; current_id: string | null; kind: string };
+  const row = rs.rows[0] as unknown as {
+    element_id: string; status: string; current_id: string | null; kind: string;
+    attr_locked: number; el_locked: number; el_name: string;
+  };
+
+  /* The lock, enforced HERE and not only on the screen that sets it.
+     Without this the brief's own rule — "A locked node cannot drift between
+     stages or scenes" — held against the buttons and against nothing else,
+     which is the same as not holding: a locked character's wardrobe could be
+     swapped workspace-wide by anything that could post. The bindings route
+     learned this the same way. */
+  if (Number(row.el_locked ?? 0) === 1 || Number(row.attr_locked ?? 0) === 1) {
+    return NextResponse.json(
+      { error: `${row.el_name || "This element"} is locked. Unlock it to move a version.` },
+      { status: 409 });
+  }
 
   /* A version whose views are still rendering is not something to point at:
      binding to it would quote for an image that does not exist yet. */

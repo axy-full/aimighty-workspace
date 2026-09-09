@@ -265,12 +265,26 @@ export async function setCurrentVersion(attributeId: string, versionId: string |
   });
 }
 
+/**
+ * Lock or unlock an element.
+ *
+ * Both directions are recorded. The first version nulled `locked_by` and
+ * `locked_at` on unlock, which meant the one act the brief singles out —
+ * "Unlocking is explicit and logged" (SOW section 9, Locks) — was the one act
+ * that erased its own record: an element could be unlocked and re-locked and
+ * nothing would show it had ever been open.
+ *
+ * So the two columns mean "who last set this lock state, and when", which is
+ * what they now hold in both directions. Nothing reads them expecting null:
+ * the only other reader is the stage layer's locked-node rail, which only
+ * ever asks about elements a stage has already locked.
+ */
 export async function setElementLock(elementId: string, locked: boolean, by: string): Promise<void> {
   await ready();
   const ts = now();
   await db().execute({
     sql: `UPDATE elements SET locked = ?, locked_by = ?, locked_at = ?, updated_at = ? WHERE id = ?`,
-    args: [locked ? 1 : 0, locked ? by : null, locked ? ts : null, ts, elementId],
+    args: [locked ? 1 : 0, by, ts, ts, elementId],
   });
 }
 
@@ -554,3 +568,178 @@ export const describeVersion = (v: VersionRow, index: number): string => version
 
 /** Exported for the tests that read a take's citations without a database. */
 export { citedStills };
+
+/**
+ * What uses one element, counted the way the impact panel counts
+ * (brief 3, surface 2b).
+ *
+ * The screen's numbers and the panel's price have to come from the same
+ * reading of the same rows. A row saying eight shots and a panel then
+ * charging for nine would make both untrustworthy, and the panel is the one
+ * that spends — so `following` here means exactly what `dependentsOf` means
+ * by it: bound to this attribute with no version named.
+ */
+export type ElementUsage = {
+  shots: number;
+  photos: Record<string, number>;
+  from: Record<string, string>;
+  attributes: { attributeId: string; following: number;
+                versions: { versionId: string; pinned: number; takes: number }[] }[];
+};
+
+export async function elementUsage(elementId: string): Promise<ElementUsage> {
+  await ready();
+
+  const [distinct, byAttr, pinned, takes, ids, gens] = await Promise.all([
+    /* Joined to shots for the same reason dependentsOf is: foreign keys are
+       declared and not enforced here, so without the join a shot somebody
+       deleted goes on being counted — and this screen's whole claim is that
+       its numbers are the ones the panel will price.
+
+       Type-only shots are dropped for the same reason. A title card is never
+       rendered and never billed, and `describe()` skips it when it prices;
+       counting it here would put a shot on the row that the panel then
+       refuses to charge for, which is the claim broken in the other
+       direction. */
+    db().execute({
+      sql: `SELECT COUNT(DISTINCT b.shot_id) AS n FROM bindings b
+            JOIN shots s ON s.id = b.shot_id
+            WHERE b.element_id = ? AND COALESCE(s.kind, 'render') != 'type'`,
+      args: [elementId],
+    }),
+    /* Following current: a binding that names the attribute but no version.
+       A BUNDLE binding (attribute_id NULL) follows every attribute at once,
+       so it counts towards each of them — leaving it out would report a
+       character used by fourteen shots as used by none. */
+    db().execute({
+      sql: `SELECT a.id AS attribute_id, COUNT(DISTINCT b.shot_id) AS n
+            FROM element_attributes a
+            LEFT JOIN bindings b
+              ON b.element_id = a.element_id
+             AND b.version_id IS NULL
+             AND (b.attribute_id = a.id OR b.attribute_id IS NULL)
+             AND EXISTS (SELECT 1 FROM shots s
+                         WHERE s.id = b.shot_id AND COALESCE(s.kind, 'render') != 'type')
+            WHERE a.element_id = ?
+            GROUP BY a.id`,
+      args: [elementId],
+    }),
+    db().execute({
+      sql: `SELECT b.version_id, COUNT(DISTINCT b.shot_id) AS n FROM bindings b
+            JOIN shots s ON s.id = b.shot_id
+            WHERE b.element_id = ? AND b.version_id IS NOT NULL
+              AND COALESCE(s.kind, 'render') != 'type'
+            GROUP BY b.version_id`,
+      args: [elementId],
+    }),
+    /* Takes already MADE with a version. A fact about the past, and it is
+       what makes "a new version never changes an existing take" checkable —
+       so it counts finished takes only. A queued, held or failed row is not
+       a take anybody has seen, and counting one would tell a producer their
+       old version is holding work that does not exist. */
+    db().execute({
+      sql: `SELECT p.version_id, COUNT(DISTINCT p.take_id) AS n
+            FROM take_ports p JOIN generations g ON g.id = p.take_id
+            WHERE p.element_id = ? AND p.version_id IS NOT NULL
+              AND g.deleted = 0 AND g.status = 'succeeded'
+            GROUP BY p.version_id`,
+      args: [elementId],
+    }),
+    db().execute({
+      sql: `SELECT DISTINCT identity_id FROM attribute_versions
+            WHERE element_id = ? AND identity_id IS NOT NULL`,
+      args: [elementId],
+    }),
+    db().execute({
+      sql: `SELECT DISTINCT gen_id FROM attribute_versions
+            WHERE element_id = ? AND gen_id IS NOT NULL`,
+      args: [elementId],
+    }),
+  ]);
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const attributes = byAttr.rows.map((r: any) => ({
+    attributeId: String(r.attribute_id),
+    following: Number(r.n ?? 0),
+    versions: [] as { versionId: string; pinned: number; takes: number }[],
+  }));
+
+  const pinnedBy = new Map<string, number>();
+  for (const r of pinned.rows as any[]) pinnedBy.set(String(r.version_id), Number(r.n ?? 0));
+  const takesBy = new Map<string, number>();
+  for (const r of takes.rows as any[]) takesBy.set(String(r.version_id), Number(r.n ?? 0));
+
+  const owner = await db().execute({
+    sql: `SELECT id, attribute_id FROM attribute_versions WHERE element_id = ?`,
+    args: [elementId],
+  });
+  for (const r of owner.rows as any[]) {
+    const a = attributes.find((x) => x.attributeId === String(r.attribute_id));
+    if (!a) continue;
+    a.versions.push({
+      versionId: String(r.id),
+      pinned: pinnedBy.get(String(r.id)) ?? 0,
+      takes: takesBy.get(String(r.id)) ?? 0,
+    });
+  }
+
+  /* How many photographs an identity was trained on, and which take a
+     promoted version came out of. Both are one read each, and both are
+     absent rather than guessed when the row has gone. */
+  const photos: Record<string, number> = {};
+  const identityIds = (ids.rows as any[]).map((r) => String(r.identity_id));
+  if (identityIds.length) {
+    const holes = identityIds.map(() => "?").join(",");
+    const rs = await db().execute({
+      sql: `SELECT id, photos FROM identities WHERE id IN (${holes})`, args: identityIds,
+    });
+    for (const r of rs.rows as any[]) {
+      try { photos[String(r.id)] = JSON.parse(String(r.photos ?? "[]")).length; } catch { /* absent */ }
+    }
+  }
+
+  const from: Record<string, string> = {};
+  const genIds = (gens.rows as any[]).map((r) => String(r.gen_id));
+  if (genIds.length) {
+    const holes = genIds.map(() => "?").join(",");
+    const rs = await db().execute({
+      sql: `SELECT g.id, g.version, s.code FROM generations g
+            LEFT JOIN shots s ON s.id = g.shot_id
+            WHERE g.id IN (${holes})`,
+      args: genIds,
+    });
+    for (const r of rs.rows as any[]) {
+      const code = r.code ? String(r.code) : "";
+      from[String(r.id)] = code ? `${code} v${Number(r.version ?? 1)}` : `v${Number(r.version ?? 1)}`;
+    }
+  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  return {
+    shots: Number((distinct.rows[0] as unknown as { n: number })?.n ?? 0),
+    photos, from, attributes,
+  };
+}
+
+/** Every shot that has stepped out of line on this element, named. */
+export async function overridesOf(elementId: string): Promise<
+  { shotCode: string; attributeId: string; versionId: string }[]
+> {
+  await ready();
+  const rs = await db().execute({
+    /* An inner join: a binding whose shot has gone is not an override
+       anybody can act on, and naming it would send a producer looking for a
+       shot that is not there. */
+    sql: `SELECT b.attribute_id, b.version_id, s.code
+          FROM bindings b JOIN shots s ON s.id = b.shot_id
+          WHERE b.element_id = ? AND b.version_id IS NOT NULL
+          ORDER BY s.position, s.code`,
+    args: [elementId],
+  });
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  return (rs.rows as any[]).map((r) => ({
+    shotCode: String(r.code ?? "A shot"),
+    attributeId: String(r.attribute_id ?? ""),
+    versionId: String(r.version_id ?? ""),
+  }));
+}
