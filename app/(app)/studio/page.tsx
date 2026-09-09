@@ -195,7 +195,7 @@ export default function StudioPage() {
             <div className="st-sec-head">
               <span className="st-h">Trained identities</span>
               <span className="st-sub">a real face, learned from photos{!terms.configured && signedIn ? " · training runs on fal.ai, not connected yet" : ""}</span>
-              <button type="button" className="btn-secondary ml-auto !min-h-[40px]" onClick={() => setOpenId("new")} disabled={!signedIn}>+ New identity</button>
+              <button type="button" className="btn-secondary ml-auto !min-h-[40px]" onClick={() => setOpenId("new")} disabled={!signedIn} title={signedIn ? undefined : "Sign in to train an identity"}>+ New identity</button>
             </div>
             <div className="idgrid">
               {identities.map((i) => (

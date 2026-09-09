@@ -46,7 +46,8 @@ export type Session = {
   /** The engines the composer opens on here — the workspace's Defaults & caps, which inherit the platform's. */
   models?: { video: string; image: string; text?: Record<string, string> } | null;
   /** The platform layer's default Setup — what a new production starts from (brief 1.4). */
-  setup?: Record<string, string> | null;
+  /** The platform's Setup layer. `null` on a row is an explicit clear. */
+  setup?: Record<string, string | null> | null;
 };
 
 const SessionContext = createContext<Session>({ signedIn: false, name: null, email: null, workspace: null, role: null, owner: false, superAdmin: false, workspaces: [], credits: null, rates: EMPTY_TABLE, models: null, setup: null });

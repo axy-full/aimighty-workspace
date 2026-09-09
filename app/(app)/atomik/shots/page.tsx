@@ -30,7 +30,7 @@ type Proj = { id: string; name: string; spend: number; credits?: number; capUsd:
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
 const sceneNo = (scene: string) => Number((scene ?? "").replace(/\D/g, "")) || 0;
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
-const labelOf = (key: string, v: string | undefined) => {
+const labelOf = (key: string, v: string | null | undefined) => {
   const cat = CATEGORIES.find((c) => c.key === key);
   return cat?.options.find((o) => o.value === v)?.label.toLowerCase() ?? null;
 };

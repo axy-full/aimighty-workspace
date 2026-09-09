@@ -31,7 +31,8 @@ export default function TabBar() {
   return (
     <nav className="tabbar" aria-label="Sections">
       {tabs.map((t) => (
-        <Link key={t.href} href={t.href} className={`tabbar-tab ${t.match(path) ? "is-on" : ""}`}>
+        <Link key={t.href} href={t.href} aria-current={t.match(path) ? "page" : undefined}
+              className={`tabbar-tab ${t.match(path) ? "is-on" : ""}`}>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={t.d} /></svg>
           <span>{t.label}</span>
         </Link>
@@ -50,7 +51,10 @@ export function MakeTabs() {
   return (
     <div className="maketabs">
       <div className="seg is-fill">
-        {tabs.map(([h, l]) => <Link key={h} href={h} className={`seg-opt ${active(h) ? "is-on" : ""}`}>{l}</Link>)}
+        {tabs.map(([h, l]) => (
+          <Link key={h} href={h} aria-current={active(h) ? "page" : undefined}
+            className={`seg-opt ${active(h) ? "is-on" : ""}`}>{l}</Link>
+        ))}
       </div>
     </div>
   );

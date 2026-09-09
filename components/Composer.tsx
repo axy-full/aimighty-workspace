@@ -487,9 +487,9 @@ export default function Composer(p: ComposerProps) {
           <button type="button" onClick={() => setMenu(menu === "cost" ? null : "cost")} className="island-cost"
             title="What this take will cost">
             <span className="font-semibold text-bone">{est ? (count > 1 && !taskOn ? `${price(est.net * count, priceModelId)} · ${count} × ${price(est.net, priceModelId)}` : price(est.net, priceModelId)) : "—"}{writerUsd > 0 && <span className="font-normal text-mute"> + {price(writerUsd * (taskOn ? 1 : count), "text")} writer</span>}</span>
-            {!isImage && estTokens != null && (
-              <span className="text-mute max-[560px]:hidden"> · {compactTokens(estTokens)} tok</span>
-            )}
+            {/* The price and nothing else — the same reason the rail button
+                dropped it. The token figure is the vendor's billing unit, and
+                the popover below is where how-it-bills is explained. */}
           </button>
           {menu === "cost" && (
             <>
@@ -553,6 +553,7 @@ function ChipMenu({ label, hint, title, open, onOpen, onClose, children, disable
   return (
     <span ref={wrap} className="relative">
       <button type="button" disabled={disabled} onClick={open ? onClose : onOpen} title={title}
+        aria-haspopup="true" aria-expanded={open}
         className={`chip-ctl ${open ? "is-open" : ""} ${on ? "is-on" : ""}`}>
         {hint && <span className="chip-hint">{hint}</span>}
         {label}

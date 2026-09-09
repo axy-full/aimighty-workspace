@@ -500,7 +500,9 @@ export const MOVEMENT_TECHNIQUES = new Set([
 ]);
 
 /** One selection per category. Empty string = not chosen. */
-export type ShotSpec = Record<string, string>;
+/** A shot's own Setup rows. `null` is an explicit clear — the value that
+ *  says "not this" where a layer beneath it says something. */
+export type ShotSpec = Record<string, string | null>;
 
 /**
  * Render the spec as the sentence a director would actually say, in the order

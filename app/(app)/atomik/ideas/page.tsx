@@ -114,7 +114,7 @@ export default function IdeasPage() {
             ))}
           </div>
           <Link href={agentHref} className="btn-secondary !h-[38px]">Ask the agent →</Link>
-          <button type="button" className="btn-primary !px-4" onClick={() => setComposingChoice(true)} disabled={!signedIn}>New idea</button>
+          <button type="button" className="btn-primary !px-4" onClick={() => setComposingChoice(true)} disabled={!signedIn} title={signedIn ? undefined : "Sign in to write an idea"}>New idea</button>
         </div>
       </div>
 
