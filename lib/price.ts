@@ -59,12 +59,20 @@ export function creditsNumber(n: number): string {
 export const fmtCredits = (n: number): string => `${creditsNumber(n)} cr`;
 
 export function useMoney(): Money {
-  const { credits, rates } = useSession();
+  const { rates } = useSession();
   return useMemo<Money>(() => {
     /* Dollars, for a workspace that pays its vendors in them. The figures
        arrive already in dollars — the server built the table that way — so
-       nothing here converts and nothing here knows a margin. */
-    if (!credits || rates.unit === "usd") {
+       nothing here converts and nothing here knows a margin.
+       
+       THE UNIT IS THE TABLE'S, and only the table's. This used to read
+       `!credits || rates.unit === "usd"`, which meant a VISITOR — who has no
+       credit balance because they have no workspace — got the dollar
+       formatter applied to a credit table. The signed-out composer read
+       "$39.81" for a shot that costs 40 credits: not the vendor's dollars,
+       not the price, just a credit figure with a dollar sign in front of it.
+       A balance says what somebody HAS; it was never what they pay in. */
+    if (rates.unit === "usd") {
       const all = (g: Priced) => (g.costUsd ?? 0) + (g.refineCostUsd ?? 0);
       return {
         inCredits: false,
@@ -100,7 +108,7 @@ export function useMoney(): Money {
       each: (v, n) => (n > 0 ? cr(ofCredits(v) / n) : "—"),
       approx: (n) => `≈ ${cr(whole(n))}`,
     };
-  }, [credits, rates]);
+  }, [rates]);
 }
 
 /** The price on a button. */

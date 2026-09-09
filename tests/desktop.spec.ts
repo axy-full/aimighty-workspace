@@ -103,3 +103,42 @@ test("a wide screen shows bigger frames, not more small ones", async ({ page }, 
     expect(card, `${route}: a card is ${card}px on a 2560 screen`).toBeGreaterThan(280);
   }
 });
+
+/**
+ * Signed out, every price is in credits.
+ *
+ * This is the check that was missing when it mattered. The rate-table change
+ * was verified locally while SIGNED IN, so the visitor path — the one on the
+ * front door, the one a stranger sees — went out reading "$39.81" for a shot
+ * that costs 40 credits. Not the vendor's dollars and not the price: a credit
+ * figure with a dollar sign in front of it, because the formatter keyed off
+ * whether there was a credit BALANCE rather than off what the table was in.
+ *
+ * §2: every price is in whole credits, and USD appears once, on the top-up
+ * screen. A visitor has no workspace, so a visitor is quoted the platform's
+ * own terms — which is what they would pay if they signed up.
+ */
+test("signed out, nothing is priced in dollars", async ({ page }) => {
+  for (const route of ["/", "/images", "/audio"]) {
+    await page.goto(route);
+    await settle(page);
+    const text = await page.evaluate(() => document.body.innerText);
+    /* The top-up screen is the one place §2 allows a dollar, and it is not
+       one of these three. */
+    const dollars = text.match(/\$\s?\d[\d,.]*/g) ?? [];
+    expect(dollars, `${route} shows dollars to a visitor: ${dollars.join(", ")}`).toEqual([]);
+  }
+});
+
+test("signed out, the composer still quotes a price", async ({ page }) => {
+  /* A guard on the guard: no dollars is trivially true if nothing is priced
+     at all, and a composer that has stopped quoting is worse than one
+     quoting the wrong unit. */
+  await page.goto("/");
+  await settle(page);
+  const cost = await page.evaluate(() =>
+    document.querySelector(".btn-primary-cost")?.textContent?.trim()
+    ?? document.querySelector(".island-cost")?.textContent?.trim() ?? "");
+  expect(cost, "the composer quotes nothing at all").toMatch(/\d/);
+  expect(cost).toMatch(/cr\b/);
+});
