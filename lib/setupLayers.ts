@@ -7,19 +7,32 @@
  * is read against it: a row the prompt names differently is an override,
  * shown as one rather than silently losing. Pure; the composer reads it.
  */
-export type Spec = Record<string, string>;
+/**
+ * What a LAYER holds. `null` is an explicit clear — see layerSetup — so the
+ * type a layer is written in and the type that comes out of the stack are
+ * deliberately different: only an input can say "not this".
+ */
+export type Spec = Record<string, string | null>;
+/** What the stack RESOLVES to. A cleared key is absent, never null. */
+export type Effective = Record<string, string>;
 export type Source = "platform" | "workspace" | "production" | "shot";
 export const LAYERS: Source[] = ["platform", "workspace", "production", "shot"];
 export const LAYER_LABELS: Record<Source, string> = { platform: "PLATFORM", workspace: "WORKSPACE", production: "PRODUCTION", shot: "SHOT" };
 
-export type Layered = { effective: Spec; sources: Record<string, Source> };
+export type Layered = { effective: Effective; sources: Record<string, Source> };
 
 export function layerSetup(layers: Partial<Record<Source, Spec | null | undefined>>): Layered {
-  const effective: Spec = {}; const sources: Record<string, Source> = {};
+  const effective: Effective = {}; const sources: Record<string, Source> = {};
   for (const source of LAYERS) {
     const spec = layers[source];
     if (!spec) continue;
     for (const [key, value] of Object.entries(spec)) {
+      /* NULL is an explicit clear, and it is the only way a row can be blank
+         when a layer beneath it has an opinion. An empty string cannot do it:
+         the loop has always skipped those, so a shot that "cleared" a row
+         just inherited the platform's value back and the person who cleared
+         it watched it reappear. */
+      if (value === null) { delete effective[key]; delete sources[key]; continue; }
       if (typeof value !== "string" || !value) continue;
       effective[key] = value; sources[key] = source;
     }
@@ -41,7 +54,9 @@ export function setupDiff(layered: Layered, detected: Spec, order: string[] = []
     if (promptValue && promptValue !== setupValue) overrides.push({ key, setupValue, promptValue });
     else active.push({ key, value: setupValue, source: layered.sources[key] });
   }
-  const added = Object.entries(detected).filter(([k, v]) => v && !layered.effective[k]).map(([key, value]) => ({ key, value }));
+  const added = Object.entries(detected)
+    .filter(([k, v]) => v && !layered.effective[k])
+    .map(([key, value]) => ({ key, value: value as string }));
   return { active, overrides, added };
 }
 
@@ -55,7 +70,7 @@ export function diffLine(diff: SetupDiff, label: (key: string, value: string) =>
 }
 
 /** The effective rows with the prompt's own words on top: what a render actually carries. */
-export function appliedSetup(layered: Layered, detected: Spec): Spec {
+export function appliedSetup(layered: Layered, detected: Spec): Effective {
   const out = { ...layered.effective };
   for (const [k, v] of Object.entries(detected)) if (v) out[k] = v;
   return out;

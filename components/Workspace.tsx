@@ -655,7 +655,11 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
               </span>
             </div>
           )}
-          <SetupPanel projectId={bin} spec={layered.effective} sources={layered.sources} diff={setupDiffNow} shotCode={shotId ? shotCodeOf(shotId) : null} onSaveToShot={saveToShot} onClearShot={clearShot} onCite={cite} />
+          {/* Each row can be changed here, for this render, without leaving
+              for Studio — and cleared, which needs an explicit null because a
+              blank would just inherit the platform's value straight back. */}
+          <SetupPanel projectId={bin} spec={layered.effective} sources={layered.sources} diff={setupDiffNow} shotCode={shotId ? shotCodeOf(shotId) : null} onSaveToShot={saveToShot} onClearShot={clearShot} onCite={cite}
+            onSet={(key, value) => setSpec((p) => ({ ...p, [key]: value }))} />
         </div>
         <div className="ws-rail-foot">
           {/* The cost is on the action, always: quoted before the button is
