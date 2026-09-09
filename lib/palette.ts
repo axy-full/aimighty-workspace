@@ -91,10 +91,12 @@ export function productionCommands(projects: P[]): Cmd[] {
       alt: ["canvas", p.code],
     },
     {
-      id: `p:${p.id}:rig`, label: `${p.name} — Rig`, group: "Productions",
-      hint: "Rig", href: `/projects/${p.id}/rig`,
+      id: `p:${p.id}:rig`, label: `${p.name} — Nodes`, group: "Productions",
+      hint: "Nodes", href: `/projects/${p.id}/rig`,
       act: "select" as const, arg: p.id,
-      alt: ["rig", "nodes", "graph", "stages", "assets", "runs", p.code],
+      /* "rig" stays a search key: it is what this surface was called until
+         now, and someone who learned that name must still find it. */
+      alt: ["nodes", "rig", "graph", "stages", "assets", "runs", p.code],
     },
   ]);
 }

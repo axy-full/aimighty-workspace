@@ -71,13 +71,14 @@ test("a shot with no production still has somewhere to land", () => {
   expect(orphan.href).toBe("/shots/s3");
 });
 
-test("the Rig is reachable — it was linked from nowhere at all", () => {
+test("Nodes is reachable — it was linked from nowhere at all", () => {
   /* Rig shipped with a graph, three layers and its own routes, and the only
      two links to it in the whole codebase sat on /shots/[id] and
      /elements/[id], which are themselves unreachable. Typing "rig" has to
      find it, or a whole surface stays invisible. */
-  const rows = flatten(search(everything(), "rig"));
-  expect(rows.some((r) => r.href === "/projects/p1/rig")).toBe(true);
+  expect(flatten(search(everything(), "nodes")).some((r) => r.href === "/projects/p1/rig")).toBe(true);
+  // and by its old name, which people have already learned
+  expect(flatten(search(everything(), "rig")).some((r) => r.href === "/projects/p1/rig")).toBe(true);
   // and by what it IS, not only by its name
   expect(flatten(search(everything(), "nodes")).some((r) => r.href?.endsWith("/rig"))).toBe(true);
 });
