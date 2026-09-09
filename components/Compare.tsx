@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMoney } from "@/lib/price";
 import { compareSet, compareColumns } from "@/lib/compare";
+import { groupSpan, clockIndex, tileTarget, needsCorrection, readout } from "@/lib/transport";
 import type { Gen } from "@/components/GenCard";
 
 /**
@@ -36,12 +37,48 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
     refs.current.forEach((v) => { if (v) fn(v); });
   }, []);
 
-  /* The transport: every clip takes its cue from the first one that can play. */
+  /** Which takes have run out while the longest is still playing. */
+  const [ended, setEnded] = useState<boolean[]>([]);
+  /* Which tile is the clock. Held in state rather than worked out at render
+     time, because that would mean reading refs during a render. Only the
+     clock's own end wraps the group — a shorter take reaching its end must
+     not drag everyone back to zero. */
+  const [clockAt, setClockAt] = useState(-1);
+
+  /* The transport, and the whole point of this screen: one clock, and every
+     other clip CORRECTED to it rather than merely told to play.
+
+     The clock is the longest take — see lib/transport.ts. Reading position
+     off real media time means a stall holds the group together instead of
+     racing ahead; taking it off the LONGEST means the reading stays true
+     past the point where a shorter take has ended. */
   useEffect(() => {
     let raf = 0;
     const tick = () => {
-      const lead = refs.current.find(Boolean);
-      if (lead) { setAt(lead.currentTime); if (lead.duration && Number.isFinite(lead.duration)) setSpan(lead.duration); }
+      const vids = refs.current;
+      const durations = vids.map((v) => (v && Number.isFinite(v.duration) ? v.duration : null));
+      const span = groupSpan(durations);
+      const ci = clockIndex(durations);
+      const clock = ci >= 0 ? vids[ci] : null;
+
+      if (clock && span > 0) {
+        const pos = clock.currentTime;
+        setAt(pos);
+        setSpan(span);
+        setClockAt(ci);
+
+        const out: boolean[] = [];
+        vids.forEach((v, i) => {
+          if (!v) { out[i] = false; return; }
+          const { time, ended: done } = tileTarget(pos, durations[i]);
+          out[i] = done;
+          if (i !== ci && needsCorrection(v.currentTime, time)) v.currentTime = time;
+          // A take that has run out holds its last frame; it must not loop
+          // back to an unrelated moment while the others are still running.
+          if (done && !v.paused) v.pause();
+        });
+        setEnded(out);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -49,9 +86,21 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
   }, []);
 
   useEffect(() => {
-    if (playing) each((v) => { void v.play().catch(() => { /* it will join on loadeddata */ }); });
-    else each((v) => v.pause());
+    if (playing) {
+      each((v) => {
+        // Don't restart a take that has already run out — the clock's wrap does that.
+        if (v.duration && Number.isFinite(v.duration) && v.currentTime >= v.duration - 0.05) return;
+        void v.play().catch(() => { /* it will join on loadeddata */ });
+      });
+    } else each((v) => v.pause());
   }, [playing, each, set.length]);
+
+  /* The group loops as one. `loop` used to sit on every tile, so each clip
+     wrapped on its own length and the grid drifted apart by design. */
+  const wrap = useCallback(() => {
+    each((v) => { try { v.currentTime = 0; } catch { /* not seekable yet */ } });
+    if (playing) each((v) => { void v.play().catch(() => {}); });
+  }, [each, playing]);
 
   /* Escape closes, space plays and pauses: this screen is watched, not typed in. */
   useEffect(() => {
@@ -64,7 +113,11 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
   }, [onClose]);
 
   function seek(to: number) {
-    each((v) => { v.currentTime = to; });
+    refs.current.forEach((v) => {
+      if (!v) return;
+      const { time } = tileTarget(to, Number.isFinite(v.duration) ? v.duration : null);
+      try { v.currentTime = time; } catch { /* not seekable yet */ }
+    });
     setAt(to);
   }
 
@@ -102,13 +155,26 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
                 <video
                   ref={(el) => { refs.current[i] = el; }}
                   src={t.storedUrl ?? undefined}
-                  muted playsInline loop preload="auto"
-                  /* A clip that was still loading when the transport started
-                     would sit at zero for ever: it joins as soon as it can. */
-                  onLoadedData={(e) => { if (playing) void e.currentTarget.play().catch(() => {}); }}
+                  muted playsInline preload="auto"
+                  /* No `loop` here on purpose. It used to sit on every tile,
+                     so each clip wrapped on its OWN length and the grid came
+                     apart the moment two takes differed. The group wraps
+                     together, on the longest take. */
+                  onLoadedData={(e) => {
+                    /* A clip still loading when the transport started used to
+                       join at ITS zero — which, if the others were already a
+                       few hundred milliseconds in, left it behind for the
+                       rest of the session. It joins where the group IS. */
+                    const v = e.currentTarget;
+                    const { time } = tileTarget(at, Number.isFinite(v.duration) ? v.duration : null);
+                    try { v.currentTime = time; } catch { /* not seekable yet */ }
+                    if (playing) void v.play().catch(() => {});
+                  }}
+                  onEnded={() => { if (i === clockAt) wrap(); }}
                   onClick={() => onOpen?.(t.id)}
                 />
                 <span className="cmp-badge mono-s">v{t.version ?? 1}</span>
+                {ended[i] && <span className="cmp-ended mono-s">ENDED</span>}
               </div>
               <div className="cmp-foot">
                 <span className="mono-s">{state ? state.toUpperCase() : "DRAFT"} · {money.take(t)}</span>
@@ -134,7 +200,7 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
         </button>
         <input className="cmp-scrub" type="range" min={0} max={Math.max(0.1, span)} step={0.05} value={Math.min(at, span || 0)}
           aria-label="Position in every take" onChange={(e) => seek(Number(e.target.value))} />
-        <span className="mono-s">{at.toFixed(1)}s{span ? ` / ${span.toFixed(1)}s` : ""}</span>
+        <span className="mono-s">{readout(at, span)}</span>
       </div>
     </div>
   );

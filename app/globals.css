@@ -2860,6 +2860,15 @@ html, body { overflow-x: clip; }
 .cmp-media { position: relative; aspect-ratio: 16 / 9; background: #000; }
 .cmp-media video { width: 100%; height: 100%; object-fit: contain; }
 .cmp-badge { position: absolute; top: 6px; left: 8px; color: #fff; opacity: .85; }
+/* A take shorter than the longest holds its last frame rather than looping
+   to an unrelated moment. Saying so is the difference between a still frame
+   that reads as "this take ended" and one that reads as "this is broken". */
+.cmp-ended {
+  position: absolute; top: 6px; right: 8px;
+  padding: 1px 6px; border-radius: var(--r-chip);
+  background: rgba(0, 0, 0, .55); color: #fff; opacity: .9;
+  letter-spacing: .08em;
+}
 .cmp-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 0 8px 8px; color: rgba(255, 255, 255, .82); }
 .cmp-acts { display: inline-flex; gap: 6px; }
 .cmp-acts .chip { min-height: 34px; }
