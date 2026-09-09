@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { groupSpan, clockIndex, tileTarget, needsCorrection, readout, DRIFT_TOL } from "../../lib/transport";
+import { groupSpan, clockIndex, tileTarget, needsCorrection, readout, DRIFT_TOL, FPS, FRAME, stepFrame, frameAt } from "../../lib/transport";
 
 /* The real shape of the problem, from this workspace's own data: every
    multi-take shot has takes of different lengths. shot_1a05c273f3691dhod is
@@ -60,4 +60,48 @@ test("the read-out never claims a position past the span", () => {
   expect(readout(12, 10)).toBe("10.0s / 10.0s");
   expect(readout(6, 10)).toBe("6.0s / 10.0s");
   expect(readout(3, 0)).toBe("3.0s");
+});
+
+/* ── One frame, at the workflow's rate ─────────────────────────────────── */
+
+test("the workflow is 24fps, and it is one number", () => {
+  /* It used to be two: 24 for the billing maths and 25 for the EDL's
+     timecode, with nothing reconciling them — a cut listed at 25 conformed
+     against masters rendered at 24 drifts a frame every 25. */
+  expect(FPS).toBe(24);
+  expect(FRAME).toBeCloseTo(1 / 24, 6);
+});
+
+test("a step is exactly one frame, forwards and back", () => {
+  expect(stepFrame(1, 10, 1)).toBeCloseTo(1 + 1 / 24, 6);
+  expect(stepFrame(1, 10, -1)).toBeCloseTo(1 - 1 / 24, 6);
+});
+
+test("stepping back from the first frame stays on it", () => {
+  expect(stepFrame(0, 10, -1)).toBe(0);
+  expect(stepFrame(0.01, 10, -1)).toBe(0);
+});
+
+test("stepping forward never lands on the end, where a decoder blanks", () => {
+  /* Seeking exactly to `duration` fires `ended` and some decoders show
+     nothing, so the last stop is half a frame short. */
+  const last = stepFrame(9.999, 10, 1);
+  expect(last).toBeLessThan(10);
+  expect(last).toBeGreaterThan(10 - 1 / 24);
+  expect(stepFrame(10, 10, 1)).toBe(stepFrame(9.999, 10, 1));
+});
+
+test("a clip of unknown length can still be stepped", () => {
+  expect(stepFrame(2, null, 1)).toBeCloseTo(2 + 1 / 24, 6);
+});
+
+test("a broken position steps from the top rather than to NaN", () => {
+  expect(stepFrame(Number.NaN, 10, 1)).toBeCloseTo(1 / 24, 6);
+});
+
+test("the frame number counts, and 24 of them is one second", () => {
+  expect(frameAt(0)).toBe(0);
+  expect(frameAt(1)).toBe(24);
+  expect(frameAt(0.5)).toBe(12);
+  expect(frameAt(-3)).toBe(0);
 });

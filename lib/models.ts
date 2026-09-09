@@ -1,4 +1,5 @@
 import type { TaskId } from "./tasks";
+import { FPS } from "./transport";
 /**
  * Model catalog + pricing — Seedance 2.x.
  *
@@ -465,7 +466,9 @@ export function costUsd(totalTokens: number, usdPerMillionTokens: number): numbe
  * "adaptive" ratio returns null — frame size isn't known until render time.
  * ------------------------------------------------------------------------- */
 
-const DEFAULT_FPS = 24;
+/* One rate for the whole workflow — see lib/transport.ts. Billing counted
+   frames at 24 while the EDL wrote timecode at 25; they agree now. */
+const DEFAULT_FPS = FPS;
 const up16 = (n: number) => Math.ceil(n / 16) * 16;
 
 export function dimensionsFor(resolution: string, ratio: string): { w: number; h: number } | null {

@@ -48,10 +48,12 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "help",      keys: "?",    label: "This list",             scope: "global",  live: true,  owner: "global" },
   { id: "esc",       keys: "esc",  label: "Close what is open",    scope: "global",  live: true,  owner: "dialog, sheets, Theatre" },
 
-  /* Theatre's arrows step between TAKES, not frames — 4.2 asks for both, and
-     this is the one that exists. Naming it "frame step" here would send
-     people looking for a frame that never moves. */
-  { id: "taketake",  keys: "← →",  label: "Between takes",         scope: "review",  live: true,  owner: "Theatre" },
+  /* All four arrows now do their §4.2 job: ←/→ step a frame, ↑/↓ walk the
+     takes. Both rows are live because both keys actually move something —
+     the note that used to sit here, explaining that ←/→ stepped takes
+     instead of frames, describes a product that no longer exists. */
+  { id: "taketake",  keys: "↑ ↓",  label: "Between takes",         scope: "review",  live: true,  owner: "Theatre" },
+  { id: "framestep", keys: "← →",  label: "Step one frame",        scope: "review",  live: true,  owner: "Theatre" },
   { id: "playpause", keys: "space",label: "Play or pause",         scope: "review",  live: true,  owner: "Compare" },
 
   { id: "generate",  keys: "⌘↵",   label: "Generate",              scope: "compose", live: true,  owner: "Composer, audio, IdentitySheet" },
@@ -59,7 +61,6 @@ export const SHORTCUTS: Shortcut[] = [
   /* Planned — §10 4.2's set, not yet wired. Enumerable for the Mac menu work
      and for whoever picks these up; deliberately absent from the overlay. */
   { id: "shuttle",   keys: "J K L",label: "Shuttle back / stop / forward", scope: "review", live: false, owner: "—" },
-  { id: "framestep", keys: "← →",  label: "Step a frame",          scope: "review",  live: false, owner: "—" },
   { id: "shotshot",  keys: "[ ]",  label: "Between shots",         scope: "review",  live: false, owner: "—" },
   { id: "pick",      keys: "P",    label: "Pick",                  scope: "review",  live: false, owner: "—" },
   { id: "approve",   keys: "A",    label: "Approve",               scope: "review",  live: false, owner: "—" },
