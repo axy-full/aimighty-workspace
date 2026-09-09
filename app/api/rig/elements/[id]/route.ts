@@ -59,17 +59,34 @@ async function stagesFor(elementId: string, projectId: string | null): Promise<{
         args: [elementId],
       });
   /* Deduplicated: a production can hold more than one recipe, and two of them
-     naming a Keyframes stage is one thing that consumes a port, not two. */
+     naming a Keyframes stage is one thing that consumes a port, not two.
+
+     Classified from the ENGINE, case-insensitively, and only then from the
+     name. The first pass tested `engine.includes("eleven")`, which is false
+     for "ElevenLabs" — the label the product itself uses — so a stage named
+     "VO" with that engine landed in `visual`, and because the audio line is
+     only drawn when there IS an audio stage, the character's VOICE port
+     disappeared from the card entirely while the same stage was claimed by
+     FACE · HAIR · WARDROBE. A misclassification here is not a mislabel; it
+     deletes a port from the one screen a swap is judged on. */
   const visual: string[] = [];
   const audio: string[] = [];
   const seen = new Set<string>();
+  const isAudio = (engine: string, name: string) => {
+    const e = engine.toLowerCase();
+    if (/eleven|elevenlabs/.test(e)) return true;
+    /* The name is a last resort, and only when the engine says nothing. An
+       engine that names a picture model beats any word in the title: a
+       lip-sync stage called "Voice sync" renders frames. */
+    return e ? false : /\baudio\b|\bvoice\b|\bvo\b|\bsound\b|\bmusic\b|\bsfx\b/i.test(name);
+  };
   for (const row of rs.rows) {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
     const r = row as any;
     const name = String(r.name ?? "").trim();
     if (!name || seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
-    (String(r.engine ?? "").includes("eleven") || /audio|voice|sound/i.test(name) ? audio : visual).push(name);
+    (isAudio(String(r.engine ?? ""), name) ? audio : visual).push(name);
   }
   return { visual, audio };
 }

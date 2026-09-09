@@ -1,4 +1,4 @@
-import { isVisual, versionLine, type AttributeKind, type ElementKind } from "./rig";
+import { isVisual, versionLine, type AttributeKind } from "./rig";
 
 /**
  * One element, and everything it reaches (brief 3, surface 2b).
@@ -140,7 +140,12 @@ export function spreadOf(a: AttributeIn, use: ElementUse): string {
 }
 
 export function versionMeta(v: VersionIn, current: boolean, u: VersionUse): string {
-  if ((v.status ?? "ready") !== "ready") return "still rendering";
+  /* `failed` is not `pending`. A version whose views never rendered will not
+     render later, and calling it "still rendering" leaves somebody waiting
+     for a thing that already stopped. */
+  const status = v.status ?? "ready";
+  if (status === "failed") return "failed";
+  if (status !== "ready") return "still rendering";
   const parts: string[] = [];
   if (current) parts.push("in use");
   if (u.pinned) parts.push(`${u.pinned} shot${u.pinned === 1 ? "" : "s"}`);
@@ -160,7 +165,13 @@ export function attributeRows(el: ElementIn, use: ElementUse): AttributeRow[] {
       /* The element's own lock reaches every port. A person who locked a
          character did not lock three quarters of one. */
       locked: a.locked || el.locked,
-      at: current ? versionLine(currentIndex, current.label) : "",
+      /* Three different states, and they were two: no versions made at all,
+         versions made but none current, and a current version. The middle one
+         used to read the same as the first, which told a producer nothing had
+         been made when something had and nobody had chosen it. */
+      at: current ? versionLine(currentIndex, current.label)
+        : a.versions.length ? `${a.versions.length} version${a.versions.length === 1 ? "" : "s"}, none current`
+        : "",
       source: sourceOf(current, use),
       spread: spreadOf(a, use),
       versions: a.versions.map((v, i) => ({
@@ -265,13 +276,11 @@ export function addLabel(credits: number | null): string {
 }
 
 export const ADD_NOTE =
-  "A new version never changes an existing take. Swapping which one is current is what costs, and it asks first.";
+  "A new version never changes an existing take — swapping which one is current is what costs, and it asks first. "
+  + "Versions arrive from an upload, an approved take, or a trained identity.";
 
 /** Which element kinds have anything worth showing on this screen. */
 export function hasPorts(el: ElementIn): boolean {
   return el.attributes.some((a) => a.versions.length > 0);
 }
 
-export function kindWord(kind: string): string {
-  return (kind as ElementKind) === "look" ? "look" : kind;
-}
