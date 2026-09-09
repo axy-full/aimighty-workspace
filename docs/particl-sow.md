@@ -266,9 +266,29 @@ A queue strip on the make screen: rendering / queued / failed, per-job credits a
 
 Count control on the composer (1–4 video, 1–8 stills) — **shipped**; the button multiplies credits. Siblings file under the same shot; the wall groups them so picking is one screen.
 
-### 1.7 Demo and starter production
+### 1.7 Starter production · THE SIGNED-OUT DEMO WALL IS CUT
 
-One platform demo production visible signed out and from every empty state: three shots, a few takes each, one approved, real credit numbers, a cast of two, Setup filled, read-only, generic and rights-clear. The same production copied into every new workspace as its starter, editable and deletable. The "sign in to generate" gate stays where it is.
+**Cut, 9 September, on the owner's call.** The read-only demo production on
+the front door is gone — component, endpoint, stylesheet. What it was meant to
+be was proof the thing works before you sign in; what it actually was, until
+the platform published its own previews, was Big Buck Bunny footage of a rowing
+boat sitting under copy about *"The city, first light"* and *"The courier"*. It
+argued against itself, and a front door that undersells is worse than a front
+door that says less.
+
+The welcome page keeps what it had underneath: the four panels that say what
+Generate, Studio, Productions and Usage are for, and the sign-in beside them.
+
+**The starter production stays**, and it is a different thing: three shots with
+Setup filled, copied into a workspace when it is created, editable and
+deletable — a real production a new team can open, change and render, not a
+picture of one. `lib/demoProduction.ts` survives because that is where its
+takes are defined; `lib/starter.ts` is its only reader now.
+
+If the starter should go too, say so — it is one function and its seed data,
+and nothing else depends on either.
+
+The "sign in to generate" gate stays where it is.
 
 ### 1.8 Atomik — idea builder, shot builder, prompt enhancement
 
@@ -294,6 +314,23 @@ Every shot on the wall shows `takes so far · spent so far` (`6 takes · 172 cr`
 
 ### 2.3 Setup you can see and override
 The composer shows a live diff: which rows are active, which the current shot overrides (`Setup: 35mm · Golden hour · Handheld — this shot overrides: Locked off`). Per-shot override without touching workspace Setup, and one-tap clear. **Four layers** — platform default → workspace → project → shot — each inheriting and overriding the one above, with the UI showing where every active value came from. The live composer already labels rows `PLATFORM`; extend that to all four.
+
+**Done, 9 September: the rows are controls, not a read-out.** Every Setup row
+in the composer is a dropdown of its own category's options, plus `—`. Picking
+sets the row for this render; picking `—` clears it. Before this the rows
+arrived filled from the platform layer and the only way to touch any of them
+was to leave for Studio — good defaults, no way to disagree with them.
+
+Clearing needed one change underneath: **`null` in a layer is an explicit
+clear.** `layerSetup` has always skipped empty strings, so a shot that
+"cleared" a row inherited the platform's value straight back and the person
+who cleared it watched it reappear. A layer's type (`Spec`) now allows `null`
+and the resolved type (`Effective`) does not — only an input can say *not
+this*.
+
+A native `<select>` on purpose: correct for the keyboard and a screen reader
+with no work, and on a phone it opens the system's own picker, which beats
+anything a custom menu does at 390px.
 
 ### 2.4 Cast that carries
 A cast member's page shows every take and still made with it across the workspace's projects, fast. Consistency check: a take rendered with `@Name` shows the cast still beside it so likeness drift is visible at a glance. Identical behaviour in stills and video composers. Never crosses a workspace boundary.
