@@ -142,3 +142,44 @@ test("signed out, the composer still quotes a price", async ({ page }) => {
   expect(cost, "the composer quotes nothing at all").toMatch(/\d/);
   expect(cost).toMatch(/cr\b/);
 });
+
+test("two productions open in two tabs do not fight over the switcher", async ({ page, context }) => {
+  /* The regression: the chosen production was shared across tabs — the store
+     re-read localStorage on every snapshot and subscribed to the cross-tab
+     `storage` event — while every canvas page insists the switcher follows
+     the production it is about. Two canvases open on different productions
+     therefore wrote over each other for ever. It was measured at 73 requests
+     to each of three endpoints in 1.2 seconds, until the browser began
+     refusing new connections outright.
+     What made it worth fixing rather than throttling: this selection is the
+     `projectId` a render files into, so the loser of that argument had takes
+     — and their cost — land on a production nobody chose for it.
+     Counted here as writes to the key, because signed out there are no
+     requests to count and the argument is client-side either way. */
+  await context.addInitScript(() => {
+    (window as unknown as { __sel: number }).__sel = 0;
+    const orig = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, k: string, v: string) {
+      if (k === "aw_project") (window as unknown as { __sel: number }).__sel++;
+      return orig.call(this, k, v);
+    };
+  });
+
+  const a = page;
+  await a.goto("/projects/demo-a/canvas");
+  const b = await context.newPage();
+  await b.goto("/projects/demo-b/canvas");
+
+  await settle(a);
+  await settle(b);
+  await a.waitForTimeout(2500);
+
+  const writes = async (p: typeof a) => p.evaluate(() => (window as unknown as { __sel: number }).__sel ?? 0);
+  const [wa, wb] = [await writes(a), await writes(b)];
+  await b.close();
+
+  /* One write each is the whole job: "this page is about that production".
+     A handful of extra is fine; a loop is dozens within a second. */
+  expect(wa, `tab A wrote the selection ${wa} times`).toBeLessThan(5);
+  expect(wb, `tab B wrote the selection ${wb} times`).toBeLessThan(5);
+});
