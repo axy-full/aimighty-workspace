@@ -61,3 +61,29 @@ export function canToggle(
 ): boolean {
   return selected.includes(id) ? selected.length > min : selected.length < max;
 }
+
+/**
+ * A wipe is offered at exactly two takes, and nowhere else.
+ *
+ * §10 4.3 asks for "side by side, or A/B wipe for two". Two is not an
+ * arbitrary limit: a wipe works by putting one take UNDER another and
+ * revealing across a seam, which has meaning for a pair and none for three.
+ */
+export function wipeAvailable(n: number): boolean {
+  return n === 2;
+}
+
+/** Where the seam sits, as a percentage of the frame. */
+export function clampWipe(pct: number): number {
+  if (!Number.isFinite(pct)) return 50;
+  return Math.round(Math.min(100, Math.max(0, pct)));
+}
+
+/**
+ * The seam from a pointer, measured against the frame it is dragged over.
+ * Zero-width boxes happen during layout; they must not produce NaN.
+ */
+export function wipeFromPointer(clientX: number, left: number, width: number): number {
+  if (!(width > 0)) return 50;
+  return clampWipe(((clientX - left) / width) * 100);
+}

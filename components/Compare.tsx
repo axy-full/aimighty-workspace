@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMoney } from "@/lib/price";
-import { compareSet, compareColumns, compareCandidates, toggleCompare, canToggle, COMPARE_MAX, COMPARE_MIN } from "@/lib/compare";
+import { compareSet, compareColumns, compareCandidates, toggleCompare, canToggle, wipeAvailable, clampWipe, wipeFromPointer, COMPARE_MAX, COMPARE_MIN } from "@/lib/compare";
 import { groupSpan, clockIndex, tileTarget, needsCorrection, readout } from "@/lib/transport";
 import type { Gen } from "@/components/GenCard";
 
@@ -53,6 +53,14 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
 
   /** Which takes have run out while the longest is still playing. */
   const [ended, setEnded] = useState<boolean[]>([]);
+  /* A/B: two takes in ONE frame, revealed across a seam. Offered at exactly
+     two — a wipe puts one take UNDER another, which has meaning for a pair
+     and none for three — and the mode falls away by itself if a third is
+     added back. */
+  const [wipe, setWipe] = useState(false);
+  const [seam, setSeam] = useState(50);
+  const frame = useRef<HTMLDivElement>(null);
+  const wiping = wipe && wipeAvailable(set.length);
   /* Which tile is the clock. Held in state rather than worked out at render
      time, because that would mean reading refs during a render. Only the
      clock's own end wraps the group — a shorter take reaching its end must
@@ -184,6 +192,72 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
         </div>
       )}
 
+      {wipeAvailable(set.length) && (
+        <div className="cmp-mode" role="group" aria-label="How the takes are shown">
+          <button type="button" className={`chip !py-1 ${!wipe ? "is-on" : ""}`} aria-pressed={!wipe}
+            onClick={() => setWipe(false)}>Side by side</button>
+          <button type="button" className={`chip !py-1 ${wipe ? "is-on" : ""}`} aria-pressed={wipe}
+            onClick={() => setWipe(true)}>Wipe</button>
+        </div>
+      )}
+
+      {wiping ? (
+        /* One frame, both takes, a seam between them. They are the same box
+           with the same object-fit, so the two pictures are registered on
+           top of each other — a wipe that did not line up would be showing
+           the difference between two crops rather than between two takes.
+           The one underneath is whole; the one on top is clipped at the
+           seam, so nothing is scaled or moved as the handle travels. */
+        <div className="cmp-wipe" ref={frame}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            const r = e.currentTarget.getBoundingClientRect();
+            setSeam(wipeFromPointer(e.clientX, r.left, r.width));
+          }}
+          onPointerMove={(e) => {
+            if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            setSeam(wipeFromPointer(e.clientX, r.left, r.width));
+          }}
+          onPointerUp={(e) => { try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* gone */ } }}
+        >
+          {set.map((t, i) => (
+            <video
+              key={t.id}
+              ref={(el) => { refs.current[i] = el; }}
+              src={t.storedUrl ?? undefined}
+              muted playsInline preload="auto"
+              className={i === 0 ? "cmp-wipe-a" : "cmp-wipe-b"}
+              style={i === 1 ? { clipPath: `inset(0 0 0 ${seam}%)` } : undefined}
+              onLoadedData={(e) => {
+                const v = e.currentTarget;
+                const { time } = tileTarget(at, Number.isFinite(v.duration) ? v.duration : null);
+                try { v.currentTime = time; } catch { /* not seekable yet */ }
+                if (playing) void v.play().catch(() => {});
+              }}
+              onEnded={() => { if (i === clockAt) wrap(); }}
+            />
+          ))}
+          <span className="cmp-wipe-lbl is-a mono-s">v{set[0]?.version ?? 1}</span>
+          <span className="cmp-wipe-lbl is-b mono-s">v{set[1]?.version ?? 2}</span>
+          <div
+            className="cmp-seam" style={{ left: `${seam}%` }}
+            role="slider" tabIndex={0}
+            aria-label="Wipe between the two takes"
+            aria-valuenow={seam} aria-valuemin={0} aria-valuemax={100}
+            aria-valuetext={`${seam}% — v${set[0]?.version ?? 1} to the left, v${set[1]?.version ?? 2} to the right`}
+            onKeyDown={(e) => {
+              const step = e.shiftKey ? 10 : 2;
+              if (e.key === "ArrowLeft") { e.preventDefault(); setSeam((v) => clampWipe(v - step)); }
+              else if (e.key === "ArrowRight") { e.preventDefault(); setSeam((v) => clampWipe(v + step)); }
+              else if (e.key === "Home") { e.preventDefault(); setSeam(0); }
+              else if (e.key === "End") { e.preventDefault(); setSeam(100); }
+              else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSeam(50); }
+            }}
+          />
+        </div>
+      ) : (
       <div className="cmp-grid" style={{ "--cmp-cols": cols } as React.CSSProperties}>
         {set.map((t, i) => {
           const state = states[t.id] ?? "";
@@ -231,6 +305,7 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
           );
         })}
       </div>
+      )}
 
       <div className="cmp-bar">
         <button type="button" className="chip" onClick={() => setPlaying((p) => !p)} aria-label={playing ? "Pause" : "Play"}>
