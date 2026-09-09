@@ -336,11 +336,11 @@ function IdentityComposer({ identity, projectId }: { identity: IdentityView; pro
         className="mt-2 w-full resize-none rounded-[12px] bg-chip px-3.5 py-3 text-[14.5px] text-bone placeholder:text-mute focus:bg-panel focus:outline-none" />
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {RATIOS.map((r) => (
-          <button key={r} type="button" onClick={() => setRatio(r)} className={`chip !py-1 !text-[12.5px] ${ratio === r ? "bg-blue text-on-ink" : ""}`}>{r}</button>
+          <button key={r} type="button" onClick={() => setRatio(r)} aria-pressed={ratio === r} className={`chip !py-1 !text-[12.5px] ${ratio === r ? "bg-blue text-on-ink" : ""}`}>{r}</button>
         ))}
         <span className="mx-1 text-mute">·</span>
         {[1, 2, 4].map((n) => (
-          <button key={n} type="button" onClick={() => setCount(n)} className={`chip !py-1 !text-[12.5px] ${count === n ? "bg-blue text-on-ink" : ""}`}>{n} still{n === 1 ? "" : "s"}</button>
+          <button key={n} type="button" onClick={() => setCount(n)} aria-pressed={count === n} className={`chip !py-1 !text-[12.5px] ${count === n ? "bg-blue text-on-ink" : ""}`}>{n} still{n === 1 ? "" : "s"}</button>
         ))}
         <button type="button" onClick={render} disabled={!prompt.trim() || busy}
           className="btn-render ml-auto h-[34px] px-4 text-[13.5px] disabled:opacity-50">
