@@ -113,10 +113,12 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
               <div className="cmp-foot">
                 <span className="mono-s">{state ? state.toUpperCase() : "DRAFT"} · {money.take(t)}</span>
                 <span className="cmp-acts">
-                  <button type="button" className={`chip !py-1 ${state === "picked" ? "is-on" : ""}`} disabled={busy != null} onClick={() => mark(t, "picked")}>
+                  <button type="button" aria-pressed={state === "picked"}
+                    className={`chip !py-1 ${state === "picked" ? "is-on" : ""}`} disabled={busy != null} onClick={() => mark(t, "picked")}>
                     {state === "picked" ? "Picked" : "Pick"}
                   </button>
-                  <button type="button" className={`chip !py-1 ${state === "approved" ? "is-on" : ""}`} disabled={busy != null} onClick={() => mark(t, "approved")}>
+                  <button type="button" aria-pressed={state === "approved"}
+                    className={`chip !py-1 ${state === "approved" ? "is-on" : ""}`} disabled={busy != null} onClick={() => mark(t, "approved")}>
                     {state === "approved" ? "Approved" : "Approve"}
                   </button>
                 </span>

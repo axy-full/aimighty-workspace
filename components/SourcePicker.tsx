@@ -82,7 +82,7 @@ export default function SourcePicker({ task, onPick, onClose }: {
                 className="ctl !h-[36px] w-full !pl-9 !text-[14px]" />
             </span>
             {selection !== "all" && selection !== "unfiled" && (
-              <button type="button" onClick={() => setAllProjects((v) => !v)}
+              <button type="button" onClick={() => setAllProjects((v) => !v)} aria-pressed={!allProjects}
                 className={`chip !py-1.5 !text-[13px] ${allProjects ? "" : "bg-blue text-on-ink"}`}>
                 {allProjects ? "All productions" : "This production"}
               </button>

@@ -166,7 +166,7 @@ Everything above is workspace-scoped.
 
 ---
 
-## 6. Phase 0 — Mobile foundations · LARGELY COMPLETE
+## 6. Phase 0 — Mobile foundations · COMPLETE BUT FOR TWO DECISIONS
 
 Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow on any route, no inputs under 16px, per-scheme `theme-color`, composer sheet opens with Close and Generate both in the viewport, vocabulary corrected (Request an invite / Takes / Productions / Generate), 1920×1080 replacing 1080P/1088, positional copy removed.
 
@@ -179,22 +179,96 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
   Chrome defines the variable as zero and the fallback is never reached. A Face
   ID iPhone reports 34px. The mobile suite asserts the *declaration* for exactly
   this reason. Re-check on device before the iOS build if you want certainty.
-- **Credits not in the composer — established: neither partial nor absent.** It
-  works, gated on `creditsApply(ws)`, which needs a workspace on the platform's
-  keys. Signed out there is no workspace, so it falls through to dollars; the
-  same button inside a platform-keys workspace reads
-  `Generate 40 cr + 1 cr writer`. **What matters is what those dollars are:**
-  $2.86 is the platform's *vendor* cost against a 40 cr charge, so the margin is
-  a subtraction away for anyone who opens the page — and §2 says margin is never
-  shown. Fix: price the signed-out composer in credits at the platform default
-  margin. Still open.
-- **Token count on the button** — noise once it's credits. Remove.
-- **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.
-- **Sticky context in the shot builder** — the assembled prompt and the `N OF 12 ROWS SET` counter scroll away, so tapping a chip far down the page gives no feedback. Put a one-line preview and the counter in the sticky bar.
-- **`aria-pressed` on chips** — currently `is-on` class only.
-- **`/images` hydration** — the SSR HTML previously carried the video composer. Confirm resolved.
-- **Audio tab** — if ElevenLabs is wired, show its composer signed out like Video and Images; if not, hide the tab.
-- **Usage signed out** is blank while the copy promises otherwise. Show the shape with placeholder numbers.
+- **Credits not in the composer — and the margin is on the client, which is the
+  bigger half.** The conversion works, gated on `creditsApply(ws)`: signed out
+  there is no workspace, so it falls through to dollars, and the same button
+  inside a platform-keys workspace reads `Generate 40 cr + 1 cr writer`.
+
+  The stated fix — price the signed-out composer in credits at the platform
+  default margin — **fixes the display and not the leak.** Measured on the built
+  bundle, §2's "margin … never shown" is broken structurally, twice over:
+
+  1. **The vendor rate table is in a public static chunk**, no sign-in needed.
+     `grep -o "withoutAudio:\.[0-9]*" .next/static/chunks/*.js` returns
+     `.084`, `.112`, `.3`, `.5` — the engines' real per-second rates. The
+     estimator (`lib/models.ts`, `estimateCostUsd`) is imported by
+     `components/Workspace.tsx`, so it is bundled for the browser by design:
+     that is how the button prices a duration change without a round trip.
+  2. **`/api/me` returns `credits.margins`**, the per-engine multiplier map, to
+     every credit workspace. With `creditUsd` beside it,
+     `credits × 0.10 ÷ margin` is the platform's cost exactly.
+
+  Either half alone is enough to compute the markup; a paying customer has both.
+  **Not a display bug and not fixable by changing a label.** The options, and
+  none is free:
+
+  - **Estimate on the server.** The composer asks for a price and is told
+    credits; no rate table and no margin ever reach the browser. Correct, and
+    the most work: every reactive control — duration, resolution, count, engine,
+    the batch multiplier — becomes a request, and the button's price has to stay
+    honest while one is in flight.
+  - **Ship credit rates, not dollar rates.** Bake the per-engine
+    credits-per-second into the bundle instead of USD, and drop `margins` from
+    the session. The button stays instant and the arithmetic gives nothing away,
+    because there is no dollar figure to divide. Cheaper, and it means the
+    client can no longer show dollars at all — which is a problem only for the
+    legacy and own-keys workspaces, who are the ones entitled to see them.
+  - **Accept it and say so.** Write down that margin is derivable by anyone who
+    opens devtools, and stop claiming otherwise in §2.
+
+  **DECIDED: ship credit rates, not dollar rates.** The bundle carries
+  per-engine credits-per-second instead of USD, and `margins` comes out of the
+  session. The button stays instant — no round trip to reprice a duration — and
+  the arithmetic gives nothing away because there is no dollar figure left to
+  divide.
+
+  The cost, accepted: **the client can then no longer show dollars at all**,
+  and the legacy and own-keys workspaces are exactly the ones entitled to see
+  them. They need their own path — a rate the server hands them, or a dollar
+  view that only their session is given. Until that path exists this is not
+  shippable, so it is one piece of work and not two.
+
+  What it touches: `lib/models.ts` (the rate tables the browser gets),
+  `lib/price.ts` (`useMoney`, which converts USD→credits client-side today),
+  `lib/session.tsx` and `/api/me` (dropping `margins`), and every caller of
+  `estimateCostUsd` / `estimateImageCostUsd` in a client component. The
+  signed-out composer and Usage's sample numbers both fall out of it in
+  credits, which is the two Phase 0 lines above closing together.
+- ~~**Token count on the button**~~ **Done.** It was on two chips, not one —
+  the rail button and the island cost button — and both now carry the price and
+  nothing else. How the engine bills is still explained in the cost popover,
+  which is where somebody who wants to know goes to look.
+- ~~**Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.~~
+  **Closed — not drift.** They name different things: GENERATE is the section,
+  Video / Images / Audio are the three media inside it, and "Generate → Video"
+  is how a person would say it out loud. Nothing to change, and rule 5's
+  settled word keeps its place in the navigation. Recorded rather than deleted
+  so the question is not re-opened by the next reader of the line.
+- ~~**`aria-pressed` on chips**~~ **Done, and not with `aria-pressed`
+  everywhere** — that would have been the wrong answer in most places. What a
+  control is decides what it says: a *link* that is the current page carries
+  `aria-current="page"` (the dock, both header nav rows, the make tabs); a
+  *menu item* holding the current choice carries `role="menuitemradio"` and
+  `aria-checked`; a control that opens a popup carries `aria-haspopup` and
+  `aria-expanded`; only genuine toggles take `aria-pressed`. Fourteen sites.
+  Two segmented controls turned out to be correct already — `Feed`'s and the
+  composer's Use-as both had `role="tab"` and `aria-selected` — so the item's
+  "currently `is-on` class only" was never true of them.
+- ~~**Sticky context in the shot builder**~~ **Already done.** Verified at
+  390×844: `.ws-rail-foot` computes to `position: fixed` and `.st-foot-line`
+  reads `10 OF 12 ROWS SET · wide shot, at eye level. the camera locked off…`,
+  in the viewport, with both halves the item asked for.
+- ~~**`/images` hydration**~~ **Confirmed resolved.** The signed-out SSR of
+  `/images` carries `Generate still` and none of the video-only controls — no
+  duration, no 60 fps, no resolution row.
+- ~~**Audio tab**~~ **Already done.** ElevenLabs is wired
+  (`lib/elevenlabs.ts`, `lib/engines/elevenlabs.ts`, `ELEVENLABS_API_KEY`), and
+  `/audio` shows its composer signed out exactly as Video and Images do —
+  `COMPOSER · FILES AS LOOSE · AMBIENT · AUTO` over a sample prompt.
+- ~~**Usage signed out**~~ **Already done** — it is not blank. It shows the
+  shape under `Sample numbers, to show the shape of the page.` **But it shows
+  them in dollars** (`$612.40`), which is the same open question as the
+  composer above and resolves with it, not separately.
 
 **Acceptance suite** (keep it green for every later phase). Rule 7 makes this
 **five viewports, not three** — 360×640, 390×844, 844×390, 1440×900, 1920×1080
@@ -266,9 +340,29 @@ A queue strip on the make screen: rendering / queued / failed, per-job credits a
 
 Count control on the composer (1–4 video, 1–8 stills) — **shipped**; the button multiplies credits. Siblings file under the same shot; the wall groups them so picking is one screen.
 
-### 1.7 Demo and starter production
+### 1.7 Starter production · THE SIGNED-OUT DEMO WALL IS CUT
 
-One platform demo production visible signed out and from every empty state: three shots, a few takes each, one approved, real credit numbers, a cast of two, Setup filled, read-only, generic and rights-clear. The same production copied into every new workspace as its starter, editable and deletable. The "sign in to generate" gate stays where it is.
+**Cut, 9 September, on the owner's call.** The read-only demo production on
+the front door is gone — component, endpoint, stylesheet. What it was meant to
+be was proof the thing works before you sign in; what it actually was, until
+the platform published its own previews, was Big Buck Bunny footage of a rowing
+boat sitting under copy about *"The city, first light"* and *"The courier"*. It
+argued against itself, and a front door that undersells is worse than a front
+door that says less.
+
+The welcome page keeps what it had underneath: the four panels that say what
+Generate, Studio, Productions and Usage are for, and the sign-in beside them.
+
+**The starter production stays**, and it is a different thing: three shots with
+Setup filled, copied into a workspace when it is created, editable and
+deletable — a real production a new team can open, change and render, not a
+picture of one. `lib/demoProduction.ts` survives because that is where its
+takes are defined; `lib/starter.ts` is its only reader now.
+
+If the starter should go too, say so — it is one function and its seed data,
+and nothing else depends on either.
+
+The "sign in to generate" gate stays where it is.
 
 ### 1.8 Atomik — idea builder, shot builder, prompt enhancement
 
@@ -294,6 +388,23 @@ Every shot on the wall shows `takes so far · spent so far` (`6 takes · 172 cr`
 
 ### 2.3 Setup you can see and override
 The composer shows a live diff: which rows are active, which the current shot overrides (`Setup: 35mm · Golden hour · Handheld — this shot overrides: Locked off`). Per-shot override without touching workspace Setup, and one-tap clear. **Four layers** — platform default → workspace → project → shot — each inheriting and overriding the one above, with the UI showing where every active value came from. The live composer already labels rows `PLATFORM`; extend that to all four.
+
+**Done, 9 September: the rows are controls, not a read-out.** Every Setup row
+in the composer is a dropdown of its own category's options, plus `—`. Picking
+sets the row for this render; picking `—` clears it. Before this the rows
+arrived filled from the platform layer and the only way to touch any of them
+was to leave for Studio — good defaults, no way to disagree with them.
+
+Clearing needed one change underneath: **`null` in a layer is an explicit
+clear.** `layerSetup` has always skipped empty strings, so a shot that
+"cleared" a row inherited the platform's value straight back and the person
+who cleared it watched it reappear. A layer's type (`Spec`) now allows `null`
+and the resolved type (`Effective`) does not — only an input can say *not
+this*.
+
+A native `<select>` on purpose: correct for the keyboard and a screen reader
+with no work, and on a phone it opens the system's own picker, which beats
+anything a custom menu does at 390px.
 
 ### 2.4 Cast that carries
 A cast member's page shows every take and still made with it across the workspace's projects, fast. Consistency check: a take rendered with `@Name` shows the cast still beside it so likeness drift is visible at a glance. Identical behaviour in stills and video composers. Never crosses a workspace boundary.

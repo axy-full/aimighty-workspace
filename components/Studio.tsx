@@ -55,7 +55,7 @@ export default function Studio({ spec, setSpec }: {
                   const on = spec[c.key] === o.value;
                   return (
                     <button key={o.value} onClick={() => toggle(c.key, o.value)}
-                      title={o.phrase}
+                      title={o.phrase} aria-pressed={on}
                       className={`chip ${on ? "bg-blue text-on-ink" : ""}`}>
                       {o.label}
                     </button>

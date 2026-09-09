@@ -54,7 +54,7 @@ export default function AtomikHeader() {
       <nav className="hdr-nav" aria-label="Stages">
         {STAGES.map((s) => {
           const on = path.startsWith(s.href) || (s.href === "/atomik/ideas" && path === "/atomik");
-          return <Link key={s.href} href={s.href} className={`hdr-tab ${on ? "is-on" : ""}`}>{s.label}</Link>;
+          return <Link key={s.href} href={s.href} aria-current={on ? "page" : undefined} className={`hdr-tab ${on ? "is-on" : ""}`}>{s.label}</Link>;
         })}
       </nav>
 

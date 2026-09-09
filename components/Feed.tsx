@@ -236,7 +236,8 @@ export default function Feed({
           where the room is scarce enough to need them gathered. */}
       {!stills && (
         <div className="phone-acts">
-          <button type="button" className={`chip ${take === "picked" ? "is-on" : ""}`} onClick={() => setTake(take === "picked" ? "all" : "picked")}>
+          <button type="button" aria-pressed={take === "picked"}
+            className={`chip ${take === "picked" ? "is-on" : ""}`} onClick={() => setTake(take === "picked" ? "all" : "picked")}>
             {counts.picked > 0 ? `${counts.picked} to approve` : "To approve"}
           </button>
           {scoped
@@ -395,9 +396,9 @@ export function Take({ gen, code, active, now, onOpen, onChanged, badge }: {
       {s === "held" && <HeldActions gen={gen} onChanged={onChanged} />}
       {still && done && (
         <div className="take-acts">
-          <button type="button" className={`trk-btn ${role === "first" ? "is-on" : ""}`} onClick={() => setRole(role === "first" ? "loose" : "first")}
+          <button type="button" aria-pressed={role === "first"} className={`trk-btn ${role === "first" ? "is-on" : ""}`} onClick={() => setRole(role === "first" ? "loose" : "first")}
             title={role === "first" ? "Pinned to its shot as the first frame — click to unpin" : "Pin to its shot as the first frame"}>First frame</button>
-          <button type="button" className={`trk-btn ${role === "cast" ? "is-on" : ""}`} onClick={toCast}
+          <button type="button" aria-pressed={role === "cast"} className={`trk-btn ${role === "cast" ? "is-on" : ""}`} onClick={toCast}
             title={role === "cast" ? "A cast still — click to make it loose" : "Make this a cast still"}>To cast</button>
           <a href={downloadHref(url!)} download className="trk-btn is-icon" title="Download" aria-label="Download" onClick={(e) => e.stopPropagation()}>↓</a>
         </div>

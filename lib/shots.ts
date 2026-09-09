@@ -24,7 +24,8 @@ export type Shot = {
   /** The breakdown's half: planned seconds, per-shot setup, cast tags,
    *  render or type-only, and the sync flag the shot list reads. */
   planned: number | null;
-  setup: Record<string, string>;
+  /** The shot's own Setup rows. `null` on a row is an explicit clear. */
+  setup: Record<string, string | null>;
   cast: string[];
   kind: "render" | "type";
   /** The engine the shot builder recommended for it (brief 1.8), when one was. */
@@ -112,7 +113,7 @@ export async function createShot(input: {
   title?: string;
   description?: string;
   planned?: number | null;
-  setup?: Record<string, string>;
+  setup?: Record<string, string | null>;
   cast?: string[];
   kind?: "render" | "type";
   engine?: string | null;
