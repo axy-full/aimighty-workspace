@@ -539,3 +539,23 @@ export function imageTokens(size: string, refImages = 0): number | null {
 export function billingOf(modelId: string): ModelDef["billing"] {
   try { return getModel(modelId).billing; } catch { return "token"; }
 }
+
+/**
+ * A model id as a person would say it.
+ *
+ * Here rather than in lib/enhance.ts, where it used to live: the theatre
+ * imports it to name the prompt writer on a take, and enhance.ts reaches
+ * getPlatformLayer → seedStarterProduction → the demo takes → the vendors'
+ * dollars. A string formatter was dragging the platform's seeding stack, and
+ * the engines' real per-second rates, into every wall in the product.
+ */
+export function prettyModel(id: string): string {
+  const bare = id.split("/").pop() ?? id;
+  if (/claude-opus-5/.test(bare)) return "Claude Opus 5";
+  if (/claude-sonnet-5/.test(bare)) return "Claude Sonnet 5";
+  if (/claude-haiku-4/.test(bare)) return "Claude Haiku 4.5";
+  if (/gemini-3\.1-pro/.test(bare)) return "Gemini 3.1 Pro";
+  if (/dola-seed-2-1/.test(bare)) return "Seed 2.1 Turbo";
+  if (/seed-2-0-pro/.test(bare)) return "Seed 2.0 Pro";
+  return bare;
+}

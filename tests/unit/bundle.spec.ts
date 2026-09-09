@@ -82,12 +82,25 @@ test("no margin reaches the browser", () => {
   expect(found, `margins in the client bundle:\n${found.join("\n")}`).toEqual([]);
 });
 
-test("the rate table the browser DOES get is in credits", () => {
+test("the browser still has the estimator, just nothing to divide", () => {
   const files = chunks();
   test.skip(files.length === 0, "no build in .next — run `next build` first");
-  /* A guard on the guards: if the composer stopped shipping any rate at all
-     the two tests above would pass for the wrong reason — the prices would
-     simply have gone. The estimator's own name should still be there. */
+
+  /* A guard on the guards. The two tests above would also pass if the
+     composer had simply stopped pricing — no rates, no leak, no prices — and
+     a green tick for that would be the worst outcome of the three.
+     
+     What it checks is the ESTIMATOR, not a number: `withoutAudio` appears in
+     the bundle as a property the estimator reads, and measured on the built
+     output it appears with no digits after it anywhere. The figures
+     themselves now arrive at runtime in the session, which is better than
+     this change set set out to do — the browser holds the arithmetic and the
+     server holds the numbers. */
   const any = files.some((f) => readFileSync(f, "utf8").includes("withoutAudio"));
-  expect(any, "no rate table in the bundle at all — the composer cannot price").toBe(true);
+  expect(any, "the estimator is gone from the bundle — the composer cannot price").toBe(true);
+
+  /* And no digits after it, in any chunk: that is the leak, stated the other
+     way round. */
+  const withNumbers = files.filter((f) => /withoutAudio:\s*\.?\d/.test(readFileSync(f, "utf8")));
+  expect(withNumbers, "a rate literal is back in the bundle").toEqual([]);
 });

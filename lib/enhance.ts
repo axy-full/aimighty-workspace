@@ -28,6 +28,7 @@ import { engineMock } from "./mock";
 import { getModel } from "./models";
 import { TEXT_RATES, promptRichness, shouldRefine, type Richness } from "./refineGate";
 import { getPlatformLayer } from "./platform";
+import { prettyModel } from "./models";
 import { textModelFor } from "./platformLayer";
 export { TEXT_RATES, promptRichness, shouldRefine };
 export type { Richness };
@@ -134,17 +135,6 @@ export async function activeWriter(): Promise<ActiveWriter> {
     configured: gatewayReachable(),
   };
 }
-export function prettyModel(id: string): string {
-  const bare = id.split("/").pop() ?? id;
-  if (/claude-opus-5/.test(bare)) return "Claude Opus 5";
-  if (/claude-sonnet-5/.test(bare)) return "Claude Sonnet 5";
-  if (/claude-haiku-4/.test(bare)) return "Claude Haiku 4.5";
-  if (/gemini-3\.1-pro/.test(bare)) return "Gemini 3.1 Pro";
-  if (/dola-seed-2-1/.test(bare)) return "Seed 2.1 Turbo";
-  if (/seed-2-0-pro/.test(bare)) return "Seed 2.0 Pro";
-  return bare;
-}
-
 export type RefineResult = {
   text: string;
   model: string;

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { plannedTakeUsd, plannedLine, MIN_BILLED_SECONDS } from "../../lib/shotBudget";
+import { plannedLine, MIN_BILLED_SECONDS } from "../../lib/shotBudget";
+import { plannedTakeUsd } from "../../lib/shotBudgetCost";
 import { DEFAULT_MODEL_ID } from "../../lib/models";
 import { estimateCostUsd } from "../../lib/vendorPricing";
 

@@ -18,7 +18,7 @@ import { uploadFile } from "@/lib/uploadClient";
 import { useProject } from "@/lib/projectContext";
 import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
-import { prettyModel } from "@/lib/enhance";
+import { prettyModel } from "@/lib/models";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
 import { useMoney } from "@/lib/price";
 import { failureKind, failureCopy } from "@/lib/jobState";

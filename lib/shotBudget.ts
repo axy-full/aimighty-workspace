@@ -1,5 +1,3 @@
-import { DEFAULT_MODEL_ID } from "./models";
-import { estimateCostUsd } from "./vendorPricing";
 
 /**
  * What a shot is expected to cost before it has a take (brief 2.6).
@@ -11,11 +9,6 @@ import { estimateCostUsd } from "./vendorPricing";
  * a five. Pure.
  */
 export const MIN_BILLED_SECONDS = 5;
-
-export function plannedTakeUsd(planned: number | null | undefined, modelId: string = DEFAULT_MODEL_ID): number {
-  const seconds = Math.max(MIN_BILLED_SECONDS, Number(planned) || MIN_BILLED_SECONDS);
-  return estimateCostUsd(modelId, "1080p", "16:9", seconds)?.net ?? 0;
-}
 
 /**
  * What the wall says under a shot nobody has rendered yet.
