@@ -166,6 +166,119 @@ function assemble(r: any, stages: StageView[]): RunView {
   };
 }
 
+/* ── The recipe as a graph (surface 1d) ─────────────────────────────────
+   A run is one execution; the recipe is the thing itself. The stage layer
+   reads this: the stages, what feeds each of them, and the elements pinned
+   into the recipe that sit in the band above. */
+
+export type RecipeStage = {
+  id: string; num: number; name: string;
+  kind: "write" | "render" | "assemble";
+  engine: string;
+  params: Record<string, unknown>;
+  inputs: string[];
+  locks: string[];
+  position: number;
+  /** Where the latest run of this recipe got to, when there is one. */
+  state: StageState;
+  credits: number;
+  spent: number;
+  doneUnits: number;
+  totalUnits: number;
+};
+
+export type LockedElement = { id: string; name: string; kind: string; lockedBy: string | null; lockedAt: number | null };
+
+export type RecipeGraph = {
+  id: string;
+  name: string;
+  projectId: string | null;
+  stages: RecipeStage[];
+  locked: LockedElement[];
+  /** The run the states came from, if any. */
+  runId: string | null;
+};
+
+export async function recipeOf(projectId: string): Promise<RecipeGraph | null> {
+  await ready();
+  const rs = await db().execute({
+    sql: `SELECT * FROM recipes WHERE project_id = ? ORDER BY updated_at DESC LIMIT 1`,
+    args: [projectId],
+  });
+  if (!rs.rows.length) return null;
+  const r = rs.rows[0] as any;
+
+  /* The newest run's states are painted onto the recipe, so the stage layer
+     shows what is happening rather than a diagram of what could. A recipe
+     nobody has run yet reads as all queued, which is true. */
+  const latest = await db().execute({
+    sql: `SELECT id FROM runs WHERE recipe_id = ? ORDER BY started_at DESC LIMIT 1`,
+    args: [String(r.id)],
+  });
+  const runId = latest.rows.length ? String((latest.rows[0] as any).id) : null;
+
+  const [defs, states] = await Promise.all([
+    db().execute({ sql: `SELECT * FROM recipe_stages WHERE recipe_id = ? ORDER BY position, num`, args: [String(r.id)] }),
+    runId
+      ? db().execute({ sql: `SELECT * FROM stage_runs WHERE run_id = ?`, args: [runId] })
+      : Promise.resolve({ rows: [] as unknown[] }),
+  ]);
+
+  const byStage = new Map<string, any>();
+  for (const row of states.rows) byStage.set(String((row as any).stage_id), row);
+
+  const stages: RecipeStage[] = defs.rows.map((d) => {
+    const def = d as any;
+    const got = byStage.get(String(def.id));
+    const kind = String(def.kind);
+    return {
+      id: String(def.id),
+      num: Number(def.num ?? 0),
+      name: String(def.name ?? ""),
+      kind: kind === "write" || kind === "assemble" ? kind : "render",
+      engine: String(def.engine ?? ""),
+      params: jsonOrEmpty(def.params),
+      inputs: jsonList(def.inputs),
+      locks: jsonList(def.locks),
+      position: Number(def.position ?? 0),
+      state: stageState(got?.state),
+      credits: Math.max(0, Math.round(Number(got?.estimate_credits ?? 0))),
+      spent: Math.max(0, Math.round(Number(got?.spent_credits ?? 0))),
+      doneUnits: Math.max(0, Number(got?.done_units ?? 0)),
+      totalUnits: Math.max(0, Number(got?.total_units ?? 0)),
+    };
+  });
+
+  /* Everything any stage pins, in the order the stages cite them, so the band
+     reads left to right the way the recipe does. */
+  const wanted: string[] = [];
+  for (const st of stages) for (const id of st.locks) if (!wanted.includes(id)) wanted.push(id);
+  let locked: LockedElement[] = [];
+  if (wanted.length) {
+    const holes = wanted.map(() => "?").join(",");
+    const els = await db().execute({
+      sql: `SELECT id, name, kind, locked_by, locked_at FROM elements WHERE id IN (${holes})`,
+      args: wanted,
+    });
+    const byId = new Map(els.rows.map((e) => [String((e as any).id), e as any]));
+    locked = wanted.map((id) => byId.get(id)).filter(Boolean).map((e) => ({
+      id: String(e.id), name: String(e.name ?? ""), kind: String(e.kind ?? ""),
+      lockedBy: e.locked_by ?? null, lockedAt: e.locked_at == null ? null : Number(e.locked_at),
+    }));
+  }
+
+  return { id: String(r.id), name: String(r.name ?? ""), projectId: r.project_id ?? null, stages, locked, runId };
+}
+
+const jsonList = (raw: unknown): string[] => {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; } catch { return []; }
+};
+const jsonOrEmpty = (raw: unknown): Record<string, unknown> => {
+  if (typeof raw !== "string" || !raw.trim()) return {};
+  try { const v = JSON.parse(raw); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; }
+};
+
 /* ── Writing ────────────────────────────────────────────────────────── */
 
 /**
