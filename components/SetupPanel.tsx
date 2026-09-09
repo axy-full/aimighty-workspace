@@ -37,7 +37,7 @@ export const AUDIO_ROWS: SetupRow[] = [
 ];
 
 /** The category's chip label for a stored value, or null when unset. */
-function labelFor(key: string, value: string | undefined): string | null {
+function labelFor(key: string, value: string | null | undefined): string | null {
   if (!value) return null;
   const cat = CATEGORIES.find((c) => c.key === key)
     ?? CATEGORIES.find((c) => c.label.toLowerCase().startsWith(key.slice(0, 4)));
@@ -45,12 +45,22 @@ function labelFor(key: string, value: string | undefined): string | null {
 }
 
 /** The Setup block alone: title, mono eyebrow, the Studio link, the rows. */
-export function SetupBlock({ spec, rows = VIDEO_ROWS, eyebrow = "Carried into every shot", sources, diff, shotCode, onSaveToShot, onClearShot }: {
+export function SetupBlock({ spec, rows = VIDEO_ROWS, eyebrow = "Carried into every shot", sources, diff, shotCode, onSaveToShot, onClearShot, onSet }: {
   spec: ShotSpec; rows?: SetupRow[]; eyebrow?: string;
   /** Where each active value came from, and the prompt's overrides (brief 2.3). */
   sources?: Record<string, Source>; diff?: SetupDiff | null;
   /** The filed shot, and the two things a person can do to its own rows. */
   shotCode?: string | null; onSaveToShot?: (() => void) | null; onClearShot?: (() => void) | null;
+  /**
+   * Change one row for this render. `null` clears it — and clearing has to be
+   * possible even though a layer beneath has an opinion, which is why
+   * layerSetup treats null as an explicit clear rather than an empty string.
+   *
+   * Without this the rows were a read-out: every one arrived filled from the
+   * platform layer and the only way to change any of them was to leave for
+   * Studio. The values are good defaults; being unable to touch them is not.
+   */
+  onSet?: ((key: string, value: string | null) => void) | null;
 }) {
   /* The stored keys are the categories' own keys; map by category label so
      a rename on either side still finds its row. */
@@ -62,7 +72,7 @@ export function SetupBlock({ spec, rows = VIDEO_ROWS, eyebrow = "Carried into ev
       ?? CATEGORIES.find((c) => c.label.toLowerCase().startsWith(r.label.toLowerCase()));
     const value = cat ? spec[cat.key] : undefined;
     const over = cat ? diff?.overrides.find((o) => o.key === cat.key) : undefined;
-    return { ...r, value: cat ? labelFor(cat.key, value) : null, source: cat ? sources?.[cat.key] : undefined, over: over && cat ? labelFor(cat.key, over.promptValue) : null };
+    return { ...r, cat, value: cat ? labelFor(cat.key, value) : null, source: cat ? sources?.[cat.key] : undefined, over: over && cat ? labelFor(cat.key, over.promptValue) : null };
   });
   const line = diff ? diffLine(diff, (k, v) => labelFor(k, v) ?? v) : "";
   return (
@@ -76,9 +86,29 @@ export function SetupBlock({ spec, rows = VIDEO_ROWS, eyebrow = "Carried into ev
         {shown.map((r) => (
           <div key={r.key} className="kv-row">
             <span>{r.label}</span>
-            <span className={r.value ? "" : "is-unset"}>
-              {r.over ? <><s className="kv-was">{r.value}</s> {r.over}<span className="kv-src">PROMPT</span></> : <>{r.value ?? "—"}{r.value && r.source ? <span className="kv-src">{LAYER_LABELS[r.source]}</span> : null}</>}
-            </span>
+            {/* A prompt override still reads as text: the prompt won, and a
+                control there would suggest this row is the argument when the
+                words already settled it. */}
+            {r.over || !onSet || !r.cat ? (
+              <span className={r.value ? "" : "is-unset"}>
+                {r.over ? <><s className="kv-was">{r.value}</s> {r.over}<span className="kv-src">PROMPT</span></> : <>{r.value ?? "—"}{r.value && r.source ? <span className="kv-src">{LAYER_LABELS[r.source]}</span> : null}</>}
+              </span>
+            ) : (
+              <span className="kv-pick">
+                <select
+                  className="kv-select"
+                  aria-label={r.label}
+                  value={(spec[r.cat.key] as string | undefined) ?? ""}
+                  onChange={(e) => onSet(r.cat!.key, e.target.value === "" ? null : e.target.value)}
+                >
+                  <option value="">—</option>
+                  {r.cat.options.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                {r.value && r.source ? <span className="kv-src">{LAYER_LABELS[r.source]}</span> : null}
+              </span>
+            )}
           </div>
         ))}
       </div>
@@ -92,12 +122,13 @@ export function SetupBlock({ spec, rows = VIDEO_ROWS, eyebrow = "Carried into ev
   );
 }
 
-export default function SetupPanel({ projectId, spec, onCite, sources, diff, shotCode, onSaveToShot, onClearShot }: {
+export default function SetupPanel({ projectId, spec, onCite, sources, diff, shotCode, onSaveToShot, onClearShot, onSet }: {
   projectId: string;
   spec: ShotSpec;
   onCite: (token: string) => void;
   sources?: Record<string, Source>; diff?: SetupDiff | null;
   shotCode?: string | null; onSaveToShot?: (() => void) | null; onClearShot?: (() => void) | null;
+  onSet?: ((key: string, value: string | null) => void) | null;
   /* Kept for the callers that still pass them; the rail has no shot row of
      its own (the filing chip lives in the rail head) and no close button. */
   shotId?: string; setShotId?: (id: string) => void;
@@ -105,7 +136,7 @@ export default function SetupPanel({ projectId, spec, onCite, sources, diff, sho
 }) {
   return (
     <>
-      <SetupBlock spec={spec} sources={sources} diff={diff} shotCode={shotCode} onSaveToShot={onSaveToShot} onClearShot={onClearShot} />
+      <SetupBlock spec={spec} sources={sources} diff={diff} shotCode={shotCode} onSaveToShot={onSaveToShot} onClearShot={onClearShot} onSet={onSet} />
       <div className="ws-block">
         <div className="ws-block-head">
           <span className="ws-block-title">Cast <span className="mono">Write @name in any prompt</span></span>
