@@ -123,6 +123,9 @@ export default function AtomikPage() {
      it proposes for them carries the same files (attachments). */
   const [files, setFiles] = useState<Attachment[]>([]);
   const [attaching, setAttaching] = useState(false);
+  /** One row per file in flight, so a batch reports itself rather than a spinner. */
+  const [progress, setProgress] = useState<{ name: string; pct: number }[]>([]);
+  const [dropping, setDropping] = useState(false);
   const [plus, setPlus] = useState(false);
   const [picking, setPicking] = useState<"take" | "cast" | null>(null);
   const [thinking, setThinking] = useState(false);
@@ -212,19 +215,52 @@ export default function AtomikPage() {
     prev.some((x) => attachmentId(x) === attachmentId(a)) ? prev : [...prev, a].slice(0, MAX_ATTACHMENTS));
 
   /** Upload what was picked or dropped, and keep it until the message goes. */
+  /**
+   * Attach files — as many as there is room for, each on its own terms.
+   *
+   * The first version uploaded them in a loop inside one try, so the first
+   * refusal threw and took the rest with it: drop five references, have the
+   * second one be a 200px thumbnail the engine won't take, and the three
+   * behind it never uploaded and nothing said why. A batch is not a
+   * transaction — there is nothing to roll back and no reason to punish the
+   * files that were fine.
+   *
+   * So each file settles on its own, they go up together rather than in a
+   * queue, each reports its own progress, and the ones that fail are named
+   * with the reason the server gave.
+   */
   async function attach(list: FileList | null) {
-    const picked = [...(list ?? [])].slice(0, MAX_ATTACHMENTS - files.length);
+    const room = MAX_ATTACHMENTS - files.length;
+    const all = [...(list ?? [])];
+    const picked = all.slice(0, room);
     if (!picked.length) return;
+
     setAttaching(true);
-    try {
-      const added: Attachment[] = [];
-      for (const f of picked) {
-        const up = await uploadFile(f, "reference");
-        added.push({ uploadId: up.id, kind: up.kind === "video" ? "video" : "image", name: f.name, mime: up.mime || f.type || "image/png" });
-      }
-      setFiles((prev) => [...prev, ...added].slice(0, MAX_ATTACHMENTS));
-    } catch (e) { setError((e as Error).message); }
-    finally { setAttaching(false); }
+    setError(all.length > room
+      ? `${MAX_ATTACHMENTS} at a time — taking the first ${room}.`
+      : null);
+    setProgress(picked.map((f) => ({ name: f.name, pct: 0 })));
+
+    const settled = await Promise.allSettled(picked.map((f, i) =>
+      uploadFile(f, "reference", (pct) =>
+        setProgress((prev) => prev.map((p, j) => (j === i ? { ...p, pct } : p))))
+        .then((up): Attachment => ({
+          uploadId: up.id,
+          kind: up.kind === "video" ? "video" : "image",
+          name: f.name,
+          mime: up.mime || f.type || "image/png",
+        }))));
+
+    const added = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    const refused = settled.flatMap((r, i) =>
+      r.status === "rejected" ? [`${picked[i].name}: ${(r.reason as Error)?.message ?? "didn't upload"}`] : []);
+
+    if (added.length) setFiles((prev) => [...prev, ...added].slice(0, MAX_ATTACHMENTS));
+    /* Named, and only the ones that failed — the rest are already attached
+       and saying "upload failed" over them would be a lie about all five. */
+    if (refused.length) setError(refused.join(" · "));
+    setProgress([]);
+    setAttaching(false);
   }
 
   /* ── the gate ── */
@@ -459,9 +495,13 @@ export default function AtomikPage() {
         )}
 
         {picking && <PickSheet what={picking} onPick={addAttachment} onClose={() => setPicking(null)} />}
-        <div className="atomik-composer"
-          onDragOver={(e) => { if (signedIn) e.preventDefault(); }}
+        {/* It has always accepted a drop and never looked like it — which is
+            the same as not having it, for anyone who did not try. */}
+        <div className={`atomik-composer${dropping ? " is-dropping" : ""}`}
+          onDragOver={(e) => { if (signedIn) { e.preventDefault(); setDropping(true); } }}
+          onDragLeave={(e) => { if (e.currentTarget === e.target) setDropping(false); }}
           onDrop={(e) => {
+            setDropping(false);
             if (!signedIn) return;
             e.preventDefault();
             /* Atomik and particl are one app: a take dragged off the wall or
@@ -474,6 +514,16 @@ export default function AtomikPage() {
             if (cast) { setDraft(`${draft}${draft.endsWith(" ") || !draft ? "" : " "}@${cast.name} `); return; }
             void attach(e.dataTransfer.files);
           }}>
+          {progress.length > 0 && (
+            <div className="atomik-progress">
+              {progress.map((f) => (
+                <span key={f.name} className="atomik-prog">
+                  <span className="atomik-prog-name">{f.name}</span>
+                  <span className="atomik-prog-bar"><i style={{ width: `${Math.round(f.pct)}%` }} /></span>
+                </span>
+              ))}
+            </div>
+          )}
           {files.length > 0 && (
             <div className="atomik-files">
               {files.map((f) => (
@@ -515,16 +565,23 @@ export default function AtomikPage() {
                 the workspace's own takes, or its cast. Atomik and particl are
                 one app, so the agent reaches everything the wall does. */}
             <span className="relative">
+              {/* A control that is off because nobody is signed in has to SAY
+                  so. This read "+ Attach", did nothing when pressed, and gave
+                  no reason — the file picker, the wall and the cast are all
+                  behind a session, and a disabled button is not an
+                  explanation. The three states are now three labels. */}
               <button type="button" className={`chip-ctl ${plus ? "is-open" : ""}`} disabled={!signedIn || attaching || files.length >= MAX_ATTACHMENTS}
                 onClick={() => setPlus((v) => !v)}
-                title={files.length >= MAX_ATTACHMENTS ? `${MAX_ATTACHMENTS} at a time` : "Attach a still, a clip, a take or someone from the cast"}>
-                {attaching ? "Attaching…" : "+ Attach"}
+                title={!signedIn ? "Sign in to attach your own files, a take, or someone from the cast"
+                  : files.length >= MAX_ATTACHMENTS ? `${MAX_ATTACHMENTS} at a time`
+                  : "Attach a still, a clip, a take or someone from the cast"}>
+                {attaching ? "Attaching…" : !signedIn ? "Sign in to attach" : "+ Attach"}
               </button>
               {plus && (
                 <span className="menu-pop atomik-plus">
                   <label className="menu-item cursor-pointer">
                     Attach a file
-                    <input type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime" className="sr-only"
+                    <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,image/heic,image/heif,video/mp4,video/quicktime" className="sr-only"
                       onChange={(e) => { setPlus(false); void attach(e.target.files); e.target.value = ""; }} />
                   </label>
                   <button type="button" className="menu-item" onClick={() => { setPlus(false); setPicking("take"); }}>A take from the wall</button>

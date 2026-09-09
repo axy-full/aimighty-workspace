@@ -81,22 +81,47 @@ function SignInForm({ next }: { next: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  /**
+   * Sign in, and say what went wrong in words a person can act on.
+   *
+   * This used to be `setErr((e as Error).message)`, which put the browser's
+   * own string on the screen: Safari says "Load failed" and Chrome says
+   * "Failed to fetch" for the same thing, and neither tells anybody whether
+   * the password was wrong, the network dropped, or the server fell over.
+   * Three different failures reached that line and all three read the same.
+   */
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setErr(null);
+    let res: Response;
     try {
-      const res = await fetch("/api/auth/login", {
+      res = await fetch("/api/auth/login", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Could not sign in");
-      router.push(next);
-      router.refresh();
-    } catch (e) {
-      setErr((e as Error).message);
+    } catch {
+      /* The request never arrived: no connection, or a page left open across
+         a deploy holding on to something that has since been replaced. Both
+         are fixed by trying again, and the second by reloading. */
+      setErr("Couldn't reach particl. Check your connection and try again — and reload the page if this tab has been open a while.");
       setBusy(false);
+      return;
     }
+
+    let json: { error?: string } | null = null;
+    try { json = await res.json() as { error?: string }; } catch { json = null; }
+
+    if (!res.ok) {
+      /* The server's own words when it has any. When it does not — a gateway
+         error, an HTML page from somewhere in between — say which code came
+         back rather than reporting a JSON parse error, which describes our
+         own reading of the answer and not the answer. */
+      setErr(json?.error ?? `The server answered ${res.status}. Try again in a moment.`);
+      setBusy(false);
+      return;
+    }
+    router.push(next);
+    router.refresh();
   }
 
   return (
