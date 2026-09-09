@@ -22,7 +22,6 @@ import Theatre from "./Theatre";
 import SetupPanel from "./SetupPanel";
 import ShotRow from "./ShotRow";
 import { useApi } from "@/lib/useApi";
-import { compactTokens } from "@/lib/format";
 import { useIsMobile, useSheetLock } from "@/lib/useMobile";
 import { useOnChange } from "@/lib/changes";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
@@ -659,7 +658,15 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
         </div>
         <div className="ws-rail-foot">
           {/* The cost is on the action, always: quoted before the button is
-              enabled, printed on it in mono, never beside it. */}
+              enabled, printed on it in mono, never beside it.
+
+              The price and nothing else. The button used to carry the token
+              estimate too — `$2.86 · 244.8k TOK` — which is the vendor's
+              billing unit shown to somebody who pays in credits. It answered
+              a question nobody at the point of pressing was asking, and it
+              made the one figure that matters share the line. How the engine
+              bills is still explained, in the cost popover, where somebody
+              who wants to know goes to look. */}
           <button type="button" onClick={render}
             disabled={busy || !(prompt.trim() || promptOptional) || !signedIn || Boolean(refProblem || sourceIssue)}
             className="btn-primary !h-[46px] !rounded-[8px] !px-4 !text-[14px]" title="Render  ⌘↵">
@@ -667,7 +674,7 @@ export default function Workspace({ kind = "video" }: { kind?: "video" | "image"
             <span className="btn-primary-cost">
               {est
                 ? `${countNow > 1 && !taskOn ? `${price(est.net * countNow, params.modelId)} · ${countNow} × ${price(est.net, params.modelId)}` : price(est.net, params.modelId)}${writerUsd > 0 ? ` + ${price(writerUsd * countNow, "text")} writer` : ""}`
-                : "—"}{!isImage && estTokens != null ? ` · ${compactTokens(estTokens)} TOK` : ""}
+                : "—"}
             </span>
           </button>
           <span className="mono-s text-center" style={{ letterSpacing: 0 }}>

@@ -166,7 +166,7 @@ Everything above is workspace-scoped.
 
 ---
 
-## 6. Phase 0 — Mobile foundations · LARGELY COMPLETE
+## 6. Phase 0 — Mobile foundations · COMPLETE BUT FOR TWO DECISIONS
 
 Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow on any route, no inputs under 16px, per-scheme `theme-color`, composer sheet opens with Close and Generate both in the viewport, vocabulary corrected (Request an invite / Takes / Productions / Generate), 1920×1080 replacing 1080P/1088, positional copy removed.
 
@@ -179,22 +179,80 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
   Chrome defines the variable as zero and the fallback is never reached. A Face
   ID iPhone reports 34px. The mobile suite asserts the *declaration* for exactly
   this reason. Re-check on device before the iOS build if you want certainty.
-- **Credits not in the composer — established: neither partial nor absent.** It
-  works, gated on `creditsApply(ws)`, which needs a workspace on the platform's
-  keys. Signed out there is no workspace, so it falls through to dollars; the
-  same button inside a platform-keys workspace reads
-  `Generate 40 cr + 1 cr writer`. **What matters is what those dollars are:**
-  $2.86 is the platform's *vendor* cost against a 40 cr charge, so the margin is
-  a subtraction away for anyone who opens the page — and §2 says margin is never
-  shown. Fix: price the signed-out composer in credits at the platform default
-  margin. Still open.
-- **Token count on the button** — noise once it's credits. Remove.
-- **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.
-- **Sticky context in the shot builder** — the assembled prompt and the `N OF 12 ROWS SET` counter scroll away, so tapping a chip far down the page gives no feedback. Put a one-line preview and the counter in the sticky bar.
-- **`aria-pressed` on chips** — currently `is-on` class only.
-- **`/images` hydration** — the SSR HTML previously carried the video composer. Confirm resolved.
-- **Audio tab** — if ElevenLabs is wired, show its composer signed out like Video and Images; if not, hide the tab.
-- **Usage signed out** is blank while the copy promises otherwise. Show the shape with placeholder numbers.
+- **Credits not in the composer — and the margin is on the client, which is the
+  bigger half.** The conversion works, gated on `creditsApply(ws)`: signed out
+  there is no workspace, so it falls through to dollars, and the same button
+  inside a platform-keys workspace reads `Generate 40 cr + 1 cr writer`.
+
+  The stated fix — price the signed-out composer in credits at the platform
+  default margin — **fixes the display and not the leak.** Measured on the built
+  bundle, §2's "margin … never shown" is broken structurally, twice over:
+
+  1. **The vendor rate table is in a public static chunk**, no sign-in needed.
+     `grep -o "withoutAudio:\.[0-9]*" .next/static/chunks/*.js` returns
+     `.084`, `.112`, `.3`, `.5` — the engines' real per-second rates. The
+     estimator (`lib/models.ts`, `estimateCostUsd`) is imported by
+     `components/Workspace.tsx`, so it is bundled for the browser by design:
+     that is how the button prices a duration change without a round trip.
+  2. **`/api/me` returns `credits.margins`**, the per-engine multiplier map, to
+     every credit workspace. With `creditUsd` beside it,
+     `credits × 0.10 ÷ margin` is the platform's cost exactly.
+
+  Either half alone is enough to compute the markup; a paying customer has both.
+  **Not a display bug and not fixable by changing a label.** The options, and
+  none is free:
+
+  - **Estimate on the server.** The composer asks for a price and is told
+    credits; no rate table and no margin ever reach the browser. Correct, and
+    the most work: every reactive control — duration, resolution, count, engine,
+    the batch multiplier — becomes a request, and the button's price has to stay
+    honest while one is in flight.
+  - **Ship credit rates, not dollar rates.** Bake the per-engine
+    credits-per-second into the bundle instead of USD, and drop `margins` from
+    the session. The button stays instant and the arithmetic gives nothing away,
+    because there is no dollar figure to divide. Cheaper, and it means the
+    client can no longer show dollars at all — which is a problem only for the
+    legacy and own-keys workspaces, who are the ones entitled to see them.
+  - **Accept it and say so.** Write down that margin is derivable by anyone who
+    opens devtools, and stop claiming otherwise in §2.
+
+  **Decide before the display fix**, because the second option changes what the
+  composer is even given to render. Still open.
+- ~~**Token count on the button**~~ **Done.** It was on two chips, not one —
+  the rail button and the island cost button — and both now carry the price and
+  nothing else. How the engine bills is still explained in the cost popover,
+  which is where somebody who wants to know goes to look.
+- **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio. **Still
+  open, and it needs a decision rather than a fix.** `/` is reached by pressing
+  GENERATE and is then labelled Video, so the same screen has two names. Either
+  the dock names the medium, or the segmented control stops competing for the
+  name — but "Generate" is the word §3 rule 5 already settled, so it is not
+  obvious which side gives.
+- ~~**`aria-pressed` on chips**~~ **Done, and not with `aria-pressed`
+  everywhere** — that would have been the wrong answer in most places. What a
+  control is decides what it says: a *link* that is the current page carries
+  `aria-current="page"` (the dock, both header nav rows, the make tabs); a
+  *menu item* holding the current choice carries `role="menuitemradio"` and
+  `aria-checked`; a control that opens a popup carries `aria-haspopup` and
+  `aria-expanded`; only genuine toggles take `aria-pressed`. Fourteen sites.
+  Two segmented controls turned out to be correct already — `Feed`'s and the
+  composer's Use-as both had `role="tab"` and `aria-selected` — so the item's
+  "currently `is-on` class only" was never true of them.
+- ~~**Sticky context in the shot builder**~~ **Already done.** Verified at
+  390×844: `.ws-rail-foot` computes to `position: fixed` and `.st-foot-line`
+  reads `10 OF 12 ROWS SET · wide shot, at eye level. the camera locked off…`,
+  in the viewport, with both halves the item asked for.
+- ~~**`/images` hydration**~~ **Confirmed resolved.** The signed-out SSR of
+  `/images` carries `Generate still` and none of the video-only controls — no
+  duration, no 60 fps, no resolution row.
+- ~~**Audio tab**~~ **Already done.** ElevenLabs is wired
+  (`lib/elevenlabs.ts`, `lib/engines/elevenlabs.ts`, `ELEVENLABS_API_KEY`), and
+  `/audio` shows its composer signed out exactly as Video and Images do —
+  `COMPOSER · FILES AS LOOSE · AMBIENT · AUTO` over a sample prompt.
+- ~~**Usage signed out**~~ **Already done** — it is not blank. It shows the
+  shape under `Sample numbers, to show the shape of the page.` **But it shows
+  them in dollars** (`$612.40`), which is the same open question as the
+  composer above and resolves with it, not separately.
 
 **Acceptance suite** (keep it green for every later phase). Rule 7 makes this
 **five viewports, not three** — 360×640, 390×844, 844×390, 1440×900, 1920×1080
