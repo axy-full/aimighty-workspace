@@ -675,17 +675,37 @@ keys — `⌘K`, `/`, `?`, `esc`, `←/→`, `space`, `⌘↵` — against eleve
 ones. An overlay listing `⌘0 fit graph` while `⌘0` does nothing is worse than
 no overlay: the reader tries it, nothing happens, and they stop believing the
 rest. So the registry carries every row with a `live` flag, the overlay
-renders the live ones, and `PLANNED` is what is left to wire. Two live keys
-were also mis-described by 4.2 and are now recorded as they behave: Theatre's
-`←/→` steps between TAKES, not frames, and `space` plays and pauses in
-Compare, not everywhere.
+renders the live ones, and `PLANNED` is what is left to wire. One live key
+was also mis-described by 4.2 and is recorded as it behaves: `space` plays
+and pauses in Compare, not everywhere.
 
-Still to wire, all present as `live: false`: `J K L`, `[ ]`, `P`, `A`, `S`, a
-real frame step, batch generate, the rail toggle, and Rig's layer switch, fit
-and find. Each is a one-line flip here when its handler lands.
+**ALL FOUR ARROWS now do their 4.2 job**, decided 9 September: `←/→` step one
+frame and `↑/↓` walk the takes. Theatre shipped `←/→` on takes, which this
+document recorded as a divergence rather than a plan; the remap was made in
+one move rather than the two-step handover first proposed, because a key that
+is bound but does nothing is worse than a key that changes meaning once. The
+prerequisite was removing `video` from Theatre's typing guard: with the
+player in that list, one click on the native control bar gave the `<video>`
+focus and every arrow after it was swallowed and handled by the browser as a
+±5s seek — the same key meaning two things with nothing on screen saying
+which.
+
+Still to wire, all present as `live: false`: `J K L`, `[ ]`, `P`, `A`, `S`,
+batch generate, the rail toggle, and Rig's layer switch, fit and find. Each
+is a one-line flip here when its handler lands.
 
 ### 4.3 Review at speed
 The desktop version of 2.1, and the reason an editor keeps the app open.
+
+**ONE FRAME RATE: 24, decided 9 September.** It was two numbers with nothing
+reconciling them — 24 for the billing maths (`lib/models.ts`) and 25 for the
+EDL's timecode (`lib/selects.ts`) — so a cut listed at 25 was conformed
+against masters rendered at 24, drifting a frame every 25. Both now read one
+exported constant. It is a constant rather than a measurement on purpose:
+frame rate is not stored on a take, and probing each master's sample table
+would buy accuracy this pipeline does not want. The workflow is 24, so a
+frame is 1/24s. EDL export gains nothing further; it is not a direction this
+product is taking.
 - **Player**: scrub, frame-step, loop, in/out, and a comparison mode with synced playhead across two to four takes — side by side, or A/B wipe for two.
 - **Filmstrip** of every take on the shot under the player; arrow through them without leaving playback.
 - **Pop-out review window** to a second display. Studios review on a reference monitor; the grading suite is not a laptop screen.

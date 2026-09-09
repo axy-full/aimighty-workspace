@@ -89,3 +89,43 @@ export function readout(pos: number, span: number): string {
   const s = (n: number) => `${Math.max(0, n).toFixed(1)}s`;
   return span > 0 ? `${s(Math.min(pos, span))} / ${s(span)}` : s(pos);
 }
+
+/**
+ * The workflow runs at 24fps, decided once and stated here.
+ *
+ * It was two numbers before: 24 for the billing maths (lib/models.ts) and 25
+ * for the timecode on the EDL export (lib/selects.ts). Nothing reconciled
+ * them, so a cut listed at 25 was being conformed against masters rendered
+ * at 24 — every timecode drifting a frame every 25. One rate, named once,
+ * is rule 5 applied to a number rather than a word.
+ *
+ * It is a constant on purpose. Frame rate is not stored on a take, and the
+ * alternative — probing each master's `stts` table — buys accuracy the
+ * workflow does not want: this pipeline is 24, so a frame is 1/24s.
+ */
+export const FPS = 24;
+export const FRAME = 1 / FPS;
+
+/**
+ * One frame away, and never off the end of the clip.
+ *
+ * Seeking exactly to `duration` makes a browser fire `ended` and some
+ * decoders blank the frame, so the last stop is half a frame short of it.
+ */
+export function stepFrame(
+  current: number,
+  duration: number | null | undefined,
+  dir: 1 | -1,
+  fps: number = FPS,
+): number {
+  const frame = 1 / (fps > 0 ? fps : FPS);
+  const last = known(duration) ? Math.max(0, duration - frame / 2) : Number.POSITIVE_INFINITY;
+  const at = Number.isFinite(current) ? current : 0;
+  return Math.min(last, Math.max(0, at + dir * frame));
+}
+
+/** Which frame a position is on, for a read-out that counts rather than rounds. */
+export function frameAt(seconds: number, fps: number = FPS): number {
+  if (!Number.isFinite(seconds) || seconds < 0) return 0;
+  return Math.round(seconds * (fps > 0 ? fps : FPS));
+}

@@ -1,3 +1,4 @@
+import { FPS } from "./transport";
 /**
  * The selects, on the way out (brief 2.6): the shot list a producer bills
  * from, and an edit list an editor drops into Resolve or Premiere. Pure —
@@ -25,7 +26,7 @@ export function selectsCsv(rows: Select[], unit: "cr" | "$"): string {
 }
 
 /** Frames as a timecode at the given rate. */
-export function tc(frames: number, fps = 25): string {
+export function tc(frames: number, fps = FPS): string {
   const f = Math.max(0, Math.round(frames));
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(Math.floor(f / (fps * 3600)))}:${p(Math.floor(f / (fps * 60)) % 60)}:${p(Math.floor(f / fps) % 60)}:${p(f % fps)}`;
@@ -37,7 +38,7 @@ export function tc(frames: number, fps = 25): string {
  * editor's conform reads to find the master.
  */
 export function edl(rows: Select[], opts: { title: string; fps?: number }): string {
-  const fps = opts.fps ?? 25;
+  const fps = opts.fps ?? FPS;
   const out: string[] = [`TITLE: ${opts.title.slice(0, 70)}`, "FCM: NON-DROP FRAME"];
   let at = 0;
   rows.forEach((r, i) => {

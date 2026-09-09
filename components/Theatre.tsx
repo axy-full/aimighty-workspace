@@ -6,7 +6,7 @@
  * sign-off. Arrow keys walk the wall; Escape leaves. Rendered through a
  * portal so no screen's transform can pin it in place.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LockedTaskId } from "@/lib/tasks";
 import { createPortal } from "react-dom";
 import type { Gen } from "./GenCard";
@@ -20,6 +20,7 @@ import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
 import { prettyModel } from "@/lib/models";
 import { IconClose, IconArrowLeft, IconArrowRight, IconDown, IconTrash, IconCopy, IconAudio } from "./Icons";
+import { stepFrame } from "@/lib/transport";
 import { useMoney } from "@/lib/price";
 import { failureKind, failureCopy } from "@/lib/jobState";
 import Link from "next/link";
@@ -62,20 +63,37 @@ export default function Theatre({
   const money = useMoney();
   const projectScope = selection !== "all" && selection !== "unfiled" ? selection : null;
 
+  const video = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (!gen) return;
     const onKey = (e: KeyboardEvent) => {
-      // Typing a note or scrubbing the player must never walk the wall:
-      // arrows belong to the caret and the seek bar there. Escape just
-      // leaves the field; a second Escape closes the theatre.
+      /* Typing a note must never walk the wall: arrows belong to the caret
+         there. The PLAYER is deliberately no longer in this list. It used to
+         be, and the cost was that the same key meant two things: click the
+         native control bar once and the <video> holds focus, so every arrow
+         after that was swallowed here and handled by the browser as a ±5s
+         seek instead. Nothing on screen said which you would get. */
       const t = e.target instanceof Element ? e.target : null;
-      if (t?.closest('input,textarea,select,[contenteditable="true"],video')) {
+      if (t?.closest('input,textarea,select,[contenteditable="true"]')) {
         if (e.key === "Escape") (t as HTMLElement).blur();
         return;
       }
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowLeft" && prev) onSelect(prev.id);
-      else if (e.key === "ArrowRight" && next) onSelect(next.id);
+      if (e.key === "Escape") { onClose(); return; }
+
+      /* §10 4.2, all four arrows: ←/→ step a frame, ↑/↓ walk the takes. */
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const v = video.current;
+        if (!v) return;
+        e.preventDefault();
+        // Stepping while it runs is meaningless — the next frame arrives on
+        // its own. Asking for one frame is asking to stop on it.
+        v.pause();
+        v.currentTime = stepFrame(v.currentTime, Number.isFinite(v.duration) ? v.duration : null,
+                                  e.key === "ArrowRight" ? 1 : -1);
+        return;
+      }
+      if (e.key === "ArrowUp" && prev) { e.preventDefault(); onSelect(prev.id); }
+      else if (e.key === "ArrowDown" && next) { e.preventDefault(); onSelect(next.id); }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -200,7 +218,7 @@ export default function Theatre({
               <audio key={gen.id} src={url!} controls autoPlay className="mt-4 w-[min(520px,90%)]" />
             </div>
           ) : (
-            <video key={gen.id} src={url!} controls autoPlay loop playsInline className="theatre-media" />
+            <video ref={video} key={gen.id} src={url!} controls autoPlay loop playsInline className="theatre-media" />
           )
         ) : (
           <div className="theatre-face">
@@ -255,12 +273,12 @@ export default function Theatre({
         )}
 
         {prev && (
-          <button type="button" onClick={() => onSelect(prev.id)} className="theatre-nav theatre-prev" title="Previous  ←">
+          <button type="button" onClick={() => onSelect(prev.id)} className="theatre-nav theatre-prev" title="Previous take  ↑">
             <IconArrowLeft />
           </button>
         )}
         {next && (
-          <button type="button" onClick={() => onSelect(next.id)} className="theatre-nav theatre-next" title="Next  →">
+          <button type="button" onClick={() => onSelect(next.id)} className="theatre-nav theatre-next" title="Next take  ↓">
             <IconArrowRight />
           </button>
         )}
