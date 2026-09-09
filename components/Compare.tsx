@@ -57,6 +57,10 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
      two — a wipe puts one take UNDER another, which has meaning for a pair
      and none for three — and the mode falls away by itself if a third is
      added back. */
+  /* The rAF reads `playing` through a ref so the loop can keep empty deps.
+     Without it the loop only ever PAUSED, and nothing anywhere resumed. */
+  const wants = useRef(true);
+  useEffect(() => { wants.current = playing; }, [playing]);
   const [wipe, setWipe] = useState(false);
   const [seam, setSeam] = useState(50);
   const frame = useRef<HTMLDivElement>(null);
@@ -98,7 +102,27 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
           // A take that has run out holds its last frame; it must not loop
           // back to an unrelated moment while the others are still running.
           if (done && !v.paused) v.pause();
+          /* ...and it must be let go again. The pause above had no
+             counterpart, so a tile paused at its end stayed paused for ever:
+             scrub backwards on a shot with mixed lengths and the short take
+             advanced only through corrective seeks — eight hard re-buffers a
+             second — and deselecting the clock take could elect an
+             already-ended tile, freezing the group with the button still
+             reading Pause and Play unable to recover it. */
+          else if (!done && wants.current && v.paused) void v.play().catch(() => {});
         });
+        /* The group wraps from HERE as well as from the clock's `ended`.
+           That event fires once, and it can fire while its tile is NOT the
+           clock — nothing listens then — and it cannot fire again once the
+           tile is parked at its end. So electing an already-finished tile as
+           the clock left the group with no way home. */
+        if (wants.current && pos >= span - 0.05) {
+          vids.forEach((v) => {
+            if (!v) return;
+            try { v.currentTime = 0; } catch { /* not seekable yet */ }
+            void v.play().catch(() => {});
+          });
+        }
         setEnded(out);
       }
       raf = requestAnimationFrame(tick);
@@ -137,14 +161,18 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
   function seek(to: number) {
     refs.current.forEach((v) => {
       if (!v) return;
-      const { time } = tileTarget(to, Number.isFinite(v.duration) ? v.duration : null);
+      const { time, ended: ended2 } = tileTarget(to, Number.isFinite(v.duration) ? v.duration : null);
       try { v.currentTime = time; } catch { /* not seekable yet */ }
+      /* Scrubbing backwards past a short take's end used to leave it paused
+         for ever: seek moved it and nothing started it again, so it crawled
+         forward on corrective seeks alone. */
+      if (playing && !ended2 && v.paused) void v.play().catch(() => {});
     });
     setAt(to);
   }
 
   async function mark(gen: Gen, next: "picked" | "approved") {
-    const now = states[gen.id] === next ? "" : next;
+    const now = (states[gen.id] ?? gen.reviewState ?? "") === next ? "" : next;
     setBusy(gen.id);
     try {
       const res = await fetch(`/api/jobs/${gen.id}`, {
@@ -260,7 +288,12 @@ export default function Compare({ takes, code, onClose, onChanged, onOpen }: {
       ) : (
       <div className="cmp-grid" style={{ "--cmp-cols": cols } as React.CSSProperties}>
         {set.map((t, i) => {
-          const state = states[t.id] ?? "";
+          /* The row's own state, with any change made here on top. The map
+             was seeded once from the four takes the comparison opened on, so
+             a take brought in from the chip row afterwards had no entry and
+             read DRAFT — including an APPROVED one, on the screen a producer
+             approves from, with Pick sitting there ready to demote it. */
+          const state = states[t.id] ?? t.reviewState ?? "";
           return (
             <div key={t.id} className={`cmp-cell ${state ? `is-${state}` : ""}`}>
               <div className="cmp-media">

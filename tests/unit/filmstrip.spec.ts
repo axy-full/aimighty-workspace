@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { stripFor, stripIndex, neighbour } from "../../lib/filmstrip";
 
-const g = (id: string, shotId: string | null, version: number, createdAt = 0) => ({ id, shotId, version, createdAt });
+const g = (id: string, shotId: string | null, version: number, createdAt = 0) =>
+  ({ id, shotId, version, createdAt, kind: "video", storedUrl: "u" });
 
 /* A wall is newest-first, and mixes shots. */
 const wall = [
@@ -61,4 +62,28 @@ test("with no strip, arrows walk the list the player was opened with", () => {
   const all = [...wall, loose];
   expect(neighbour(all, [], loose, -1)?.id).toBe("a");
   expect(neighbour(all, [], loose, 1)).toBeNull();
+});
+
+test("audio takes are not in the strip, and are not counted in it", () => {
+  /* The audio desk files tracks against shots ("SH010 · A1"), and a strip is
+     of frames. They used to render as black cells all labelled v1 AND be
+     counted in "3 here", so the strip claimed takes it could not show. */
+  const withAudio = [
+    g("v1", "SH010", 1), g("v2", "SH010", 2),
+    { id: "a1", shotId: "SH010", version: 1, createdAt: 5, kind: "audio", storedUrl: "u" },
+  ];
+  expect(stripFor(withAudio, withAudio[0]).map((x) => x.id)).toEqual(["v1", "v2"]);
+});
+
+test("a take with nothing to show is not in the strip", () => {
+  const noPicture = [
+    g("v1", "SH010", 1),
+    { id: "v2", shotId: "SH010", version: 2, createdAt: 1, kind: "video", storedUrl: null },
+  ];
+  expect(stripFor(noPicture, noPicture[0])).toEqual([]);   // one showable take is not a strip
+});
+
+test("opening an audio take shows no strip at all", () => {
+  const audio = { id: "a1", shotId: "SH010", version: 1, createdAt: 0, kind: "audio", storedUrl: "u" };
+  expect(stripFor([audio, g("v1", "SH010", 1)], audio)).toEqual([]);
 });

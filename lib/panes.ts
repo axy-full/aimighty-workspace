@@ -63,7 +63,11 @@ function read(spec: PaneSpec): number {
   let v = spec.def;
   try {
     const raw = localStorage.getItem(PREFIX + spec.key);
-    if (raw) v = clampWidth(spec, Number(raw));
+    /* Clamped against THIS window, not just the spec. A rail dragged to 720
+       on a 27" display was stored at 720 and read back unclamped, so the
+       same account on a 1024px window laid out as `304px 720px` — the wall
+       of renders, which is the work, narrower than the rail beside it. */
+    if (raw) v = clampWidth(spec, Number(raw), typeof window === "undefined" ? undefined : window.innerWidth);
   } catch { /* private mode: the default, every time */ }
   held.set(spec.key, v);
   return v;
@@ -75,6 +79,32 @@ function write(spec: PaneSpec, n: number) {
   held.set(spec.key, v);
   try { localStorage.setItem(PREFIX + spec.key, String(v)); } catch { /* fine */ }
   listeners.get(spec.key)?.forEach((l) => l());
+}
+
+/* ...and again when the window changes, because `held` caches the first
+   read for the life of the page: dragging a window narrower, or splitting
+   the screen, would otherwise leave the rail at its old width for ever. */
+if (typeof window !== "undefined") {
+  window.addEventListener("resize", () => {
+    for (const spec of Object.values(PANES)) {
+      if (held.get(spec.key) === undefined) continue;
+      /* Re-derived from what was STORED, not from what is held. Clamping the
+         held value would only ever shrink it, so a rail squeezed by a narrow
+         window would stay squeezed after the window was made wide again —
+         the choice someone made on their big display quietly lost. Storage
+         keeps that choice; this only decides how much of it fits now. */
+      let stored = spec.def;
+      try {
+        const raw = localStorage.getItem(PREFIX + spec.key);
+        if (raw) stored = Number(raw);
+      } catch { /* private mode */ }
+      const fit = clampWidth(spec, stored, window.innerWidth);
+      if (fit !== held.get(spec.key)) {
+        held.set(spec.key, fit);
+        listeners.get(spec.key)?.forEach((l) => l());
+      }
+    }
+  });
 }
 
 /** The width, and a setter that clamps and remembers. */

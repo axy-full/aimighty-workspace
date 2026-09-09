@@ -13,7 +13,20 @@
  * be exhaustive, which is why it counts what it shows.
  */
 
-type Take = { id: string; shotId?: string | null; version?: number | null; createdAt?: number };
+type Take = {
+  id: string; shotId?: string | null; version?: number | null; createdAt?: number;
+  kind?: string | null; storedUrl?: string | null; sourceUrl?: string | null;
+};
+
+/**
+ * A strip is of frames, so a take needs a picture to be in one.
+ *
+ * Audio takes file against shots too (the audio desk writes "SH010 · A1"),
+ * and without this they appeared as black cells all labelled v1 — and were
+ * counted in "3 here", so the strip claimed takes it could not show.
+ */
+const showable = (t: Take): boolean =>
+  (t.kind ?? "video") !== "audio" && Boolean(t.storedUrl ?? t.sourceUrl);
 
 /**
  * Ascending by version — v1 leftmost, the way a strip reads in an edit
@@ -25,8 +38,8 @@ type Take = { id: string; shotId?: string | null; version?: number | null; creat
  * and a take with no shot has no siblings to show.
  */
 export function stripFor<T extends Take>(gens: readonly T[], current: T | null | undefined): T[] {
-  if (!current?.shotId) return [];
-  const mine = gens.filter((g) => g.shotId === current.shotId);
+  if (!current?.shotId || !showable(current)) return [];
+  const mine = gens.filter((g) => g.shotId === current.shotId && showable(g));
   if (mine.length < 2) return [];
   return [...mine].sort((a, b) => {
     const av = a.version ?? 0, bv = b.version ?? 0;

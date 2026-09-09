@@ -84,19 +84,39 @@ function ShotBuilder() {
   const [railW] = usePaneWidth(PANES.builder);
   const lifted = useRef<string | null>(null);
   useEffect(() => {
-    if (!setupData || lifted.current === bin) return;
+    if (lifted.current === bin) return;
     lifted.current = bin;
-    void liftLocalSetup(bin, setupData).then((moved) => { if (moved) refreshSetup(); });
-  }, [bin, setupData, refreshSetup]);
+    /* No longer waits on this screen's copy of the Setup: the lift asks the
+       server itself, for this exact production, at the moment it decides. */
+    void liftLocalSetup(bin).then((moved) => { if (moved) refreshSetup(); });
+  }, [bin, refreshSetup]);
 
-  // The saved setup opens the builder already set — unless there is
-  // unfinished work here, which wins over the saved starting point.
+  /* The saved Setup opens the builder already set — unless there is
+     unfinished work here, which wins over the saved starting point.
+
+     "Unfinished work" has to mean work a PERSON did. Applying the saved
+     Setup goes through the draft setter, so the app's own stamp was
+     persisted as a draft 400ms later and then counted as unfinished work
+     for ever: a producer who changed the production's Setup afterwards
+     found the artist's builder still opening on the old one, with nothing
+     to clear it but a trip through "Take it to Video". What the app
+     stamped is remembered here, and a draft still equal to it is not
+     something anybody typed. */
+  const stamped = useRef<string | null>(null);
   useEffect(() => {
     if (!savedSpec || !Object.keys(savedSpec).length) return;
-    if (peekDraft<ShotSpec>(workspace?.id, `studio-spec:${bin}`)) return;
+    const incoming = JSON.stringify(savedSpec);
+    if (stamped.current === incoming) return;
+    const draft = peekDraft<ShotSpec>(workspace?.id, `studio-spec:${bin}`);
+    const untouched = !draft || (stamped.current !== null && JSON.stringify(draft) === stamped.current);
+    if (!untouched) return;
+    stamped.current = incoming;
     Promise.resolve().then(() => setSpec(savedSpec));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bin, workspace?.id, savedSpec]);
+
+  // A different production is a different draft; forget what was stamped.
+  useEffect(() => { stamped.current = null; }, [bin]);
 
   /* Which renders used each move or technique — the bank's usage line. */
   /* What this production has used, what the workspace has used, and the

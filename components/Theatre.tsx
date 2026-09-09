@@ -126,6 +126,10 @@ export default function Theatre({
          native control bar once and the <video> holds focus, so every arrow
          after that was swallowed here and handled by the browser as a ±5s
          seek instead. Nothing on screen said which you would get. */
+      /* A modal owns the keyboard while it is up. Without this, Escape
+         closed the theatre out from under a confirm the person was still
+         answering, and the arrows stepped frames behind it. */
+      if (document.querySelector("[data-dialog]")) return;
       const t = e.target instanceof Element ? e.target : null;
       if (t?.closest('input,textarea,select,[contenteditable="true"]')) {
         if (e.key === "Escape") (t as HTMLElement).blur();
@@ -146,6 +150,13 @@ export default function Theatre({
         return;
       }
       if (e.key === " " || e.code === "Space") {
+        /* Space is how a focused BUTTON is pressed. Taking it here — the
+           typing guard above lists fields, not buttons — meant nothing in
+           the theatre, and nothing in a dialog raised from it, could be
+           activated with the keyboard: `appConfirm` autofocuses Cancel, and
+           Space did nothing to it while quietly pausing the video behind. */
+        const el = e.target instanceof Element ? e.target : null;
+        if (el?.closest('button, summary, [role="button"], [role="slider"]')) return;
         // Only where the app owns the transport; the native bar has its own.
         if (!mobile && video.current) { e.preventDefault(); toggle(); }
         return;
@@ -341,29 +352,29 @@ export default function Theatre({
              4.3 needs to be able to reach from somewhere else: a position a
              note can point at, a loop that can be turned off, a playhead a
              second window could mirror. */
-          <div className="tr" onClick={(e) => e.stopPropagation()}>
-            <button type="button" className="tr-btn" onClick={toggle}
+          <div className="tbar" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="tbar-btn" onClick={toggle}
               aria-label={playing ? "Pause  space" : "Play  space"} title={playing ? "Pause  space" : "Play  space"}>
               {playing ? "❚❚" : "▶"}
             </button>
-            <span className="tr-tc mono-s" aria-live="off">{timecode(at)}</span>
+            <span className="tbar-tc mono-s" aria-live="off">{timecode(at)}</span>
             <input
-              className="tr-scrub" type="range" min={0} max={Math.max(0.04, span)} step={1 / FPS}
+              className="tbar-scrub" type="range" min={0} max={Math.max(0.04, span)} step={1 / FPS}
               value={Math.min(at, span || 0)} aria-label="Position in this take"
               aria-valuetext={`${timecode(at)} of ${timecode(span)}`}
               onChange={(e) => { const v = video.current; if (v) { v.currentTime = Number(e.target.value); setAt(Number(e.target.value)); } }}
             />
-            <span className="tr-tc mono-s text-dim">{timecode(span)}</span>
-            <button type="button" className={`tr-btn tr-tog ${loop ? "is-on" : ""}`} aria-pressed={loop}
+            <span className="tbar-tc mono-s text-dim">{timecode(span)}</span>
+            <button type="button" className={`tbar-btn tbar-tog ${loop ? "is-on" : ""}`} aria-pressed={loop}
               onClick={() => setLoop((v) => !v)} title="Loop" aria-label="Loop">↺</button>
-            <button type="button" className={`tr-btn tr-tog ${muted ? "is-on" : ""}`} aria-pressed={muted}
+            <button type="button" className={`tbar-btn tbar-tog ${muted ? "is-on" : ""}`} aria-pressed={muted}
               onClick={() => setMuted((v) => !v)} title={muted ? "Unmute" : "Mute"} aria-label={muted ? "Unmute" : "Mute"}>
               {muted ? "🔇" : "🔊"}
             </button>
           </div>
         )}
 
-        {strip.length > 1 && (
+        {!mobile && strip.length > 1 && (
           /* The strip. It counts what it shows rather than claiming to be
              every take that exists: opened from a shot-scoped wall it is all
              of them, opened from the library it is the ones on screen, and

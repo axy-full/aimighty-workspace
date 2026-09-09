@@ -1140,29 +1140,39 @@ button.row:active, a.row:active { background: var(--color-chip2); }
   /* The transport the app draws (SOW §10 4.3). It replaces the browser's
      own bar on desktop so that scrub, loop and position are things this
      product can reach — from a key, from a note, from a second window. */
-  .tr {
+  /* Scoped under .theatre AND renamed. It was a bare `.tr`, which collided
+     with `.well-badge.tr` — the top-right CORNER modifier on the FIRST
+     FRAME, @CAST and IDENTITY badges. The badge rule only sets top/right,
+     so every other property here reached those badges: left: 64px, a dark
+     pill, blur and padding, on chips all over the wall and Studio. */
+  .theatre .tbar {
     position: absolute; left: 64px; right: 64px; bottom: 18px;
     display: flex; align-items: center; gap: 10px;
     padding: 8px 12px; border-radius: 10px;
     background: rgba(0, 0, 0, .62); backdrop-filter: blur(6px);
     color: #fff;
   }
-  .tr-btn {
+  .theatre .tbar-btn {
     flex: none; min-width: 34px; height: 30px; padding: 0 8px;
     border: 0; border-radius: 7px; background: rgba(255, 255, 255, .12);
     color: #fff; font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
   }
-  .tr-btn:hover { background: rgba(255, 255, 255, .2); }
+  .theatre .tbar-btn:hover { background: rgba(255, 255, 255, .2); }
   /* The system has no accent: a primary action INVERTS (see --color-blue,
      which is near-white on the dark ground and near-black on paper). So the
      label has to invert with it — filling the pill and leaving the text
      white gave white on white. */
-  .tr-tog.is-on { background: var(--color-blue); color: var(--color-desk); }
-  .tr-tc { flex: none; min-width: 62px; text-align: center; opacity: .9; font-variant-numeric: tabular-nums; }
-  .tr-scrub { flex: 1; min-width: 0; accent-color: var(--color-blue); }
+  .tbar-tog.is-on { background: var(--color-blue); color: var(--color-desk); }
+  .tbar-tc { flex: none; min-width: 62px; text-align: center; opacity: .9; font-variant-numeric: tabular-nums; }
+  .tbar-scrub { flex: 1; min-width: 0; accent-color: var(--color-blue); }
   /* The filmstrip (SOW §10 4.3): every take on this shot, under the player.
      It sits above the transport, so the eye goes picture -> strip -> bar. */
+  /* Desktop only, and gated in the component as well as here. On a phone
+     the stage is 50vh and the transport is deliberately absent, so a strip
+     pinned 62px off the bottom covered roughly the lower third of the
+     picture — on the one surface whose whole job is judging the picture. */
   .fs { position: absolute; left: 64px; right: 64px; bottom: 62px; display: flex; flex-direction: column; gap: 5px; }
+  @media (max-width: 1023px) { .fs { display: none; } }
   .fs-lbl { color: rgba(255, 255, 255, .72); letter-spacing: .07em; }
   .fs-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
   .fs-cell {

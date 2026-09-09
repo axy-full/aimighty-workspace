@@ -6,15 +6,26 @@
 export const COMPARE_MAX = 4;
 export const COMPARE_MIN = 2;
 
-type Take = { id: string; version?: number; storedUrl?: string | null; status?: string };
+type Take = { id: string; version?: number; storedUrl?: string | null; status?: string; kind?: string | null };
+
+/**
+ * A comparison plays takes side by side, so it is of VIDEO.
+ *
+ * The filter used to be "has a url and succeeded", which let stills through:
+ * the Compare button appeared on the /images wall and the grid then put PNG
+ * urls inside <video> elements — four black boxes under a transport that
+ * reported no duration. Anything whose kind is unknown is treated as video,
+ * which is what every row predating the column is.
+ */
+const playable = (t: Take): boolean =>
+  Boolean(t.storedUrl) && (t.status ?? "succeeded") === "succeeded" && (t.kind ?? "video") === "video";
 
 /**
  * The takes a comparison shows: only ones with something to play, newest
  * version first, at most four. Fewer than two is not a comparison.
  */
 export function compareSet<T extends Take>(takes: T[], max = COMPARE_MAX): T[] {
-  const playable = takes.filter((t) => Boolean(t.storedUrl) && (t.status ?? "succeeded") === "succeeded");
-  return [...playable].sort((a, b) => (b.version ?? 0) - (a.version ?? 0)).slice(0, max);
+  return takes.filter(playable).sort((a, b) => (b.version ?? 0) - (a.version ?? 0)).slice(0, max);
 }
 
 export const canCompare = (takes: Take[]): boolean => compareSet(takes).length >= COMPARE_MIN;
@@ -32,9 +43,7 @@ export const compareColumns = (n: number): number => Math.max(1, Math.min(n, COM
  * four whether or not those were the two you wanted to weigh.
  */
 export function compareCandidates<T extends Take>(takes: T[]): T[] {
-  return takes
-    .filter((t) => Boolean(t.storedUrl) && (t.status ?? "succeeded") === "succeeded")
-    .sort((a, b) => (b.version ?? 0) - (a.version ?? 0));
+  return takes.filter(playable).sort((a, b) => (b.version ?? 0) - (a.version ?? 0));
 }
 
 /**
