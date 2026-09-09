@@ -528,6 +528,40 @@ const SCHEMA = [
      updated_at   INTEGER NOT NULL
    )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_stage_runs_one ON stage_runs(run_id, stage_id)`,
+
+  /* ── Rig: what produced a take (brief 3, surface 1c) ──────────────────
+     Written when a take is made and never afterwards. This is the record
+     the provenance card reads and the thing "make another from exactly
+     this" needs: the ports in force, the engine and its exact conditions,
+     the Setup carried in, the rules in scope, and the seed.
+
+     It is a blob because it is a statement about one moment, not a table
+     anybody queries across — every row is read whole, by id, or not at all.
+     The one thing that IS queried across takes gets its own index below. */
+  `CREATE TABLE IF NOT EXISTS take_provenance (
+     take_id    TEXT PRIMARY KEY,
+     shot_id    TEXT,
+     recorded   TEXT NOT NULL DEFAULT '{}',
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_prov_shot ON take_provenance(shot_id)`,
+  /* The reverse lookup, narrow on purpose: which takes were made with a
+     given version. The blob above cannot answer that without reading every
+     row, and it is the question the impact panel and a cast member's page
+     both ask. The triple here is the port — elementId:attributeId:versionId
+     — recorded exactly as the wire carried it. */
+  `CREATE TABLE IF NOT EXISTS take_ports (
+     take_id      TEXT NOT NULL,
+     element_id   TEXT NOT NULL,
+     attribute_id TEXT,
+     version_id   TEXT,
+     slot         TEXT NOT NULL DEFAULT '',
+     ordinal      INTEGER NOT NULL DEFAULT 0,
+     created_at   INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_take_ports_take ON take_ports(take_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_take_ports_version ON take_ports(version_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_take_ports_element ON take_ports(element_id)`,
   /* Workspace-level settings that outlive any one browser: the filename
      protocol, retention policy, provider preferences. localStorage prefs
      stay in lib/prefs.ts — these are the ones the whole team shares. */

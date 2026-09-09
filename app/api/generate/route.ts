@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
 import { type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
-import { getModel, DEFAULT_MODEL_ID, estimateCostUsd, estimateImageCostUsd } from "@/lib/models";
+import { getModel, DEFAULT_MODEL_ID, estimateCostUsd, estimateImageCostUsd, dimensionsFor, billedFrame } from "@/lib/models";
 import { enqueueRender } from "@/lib/inngest";
 import { runInline } from "@/lib/renderWork";
 import {
@@ -35,6 +35,7 @@ import { isBatchId } from "@/lib/variations";
 import { uploadSourceParams } from "@/lib/sourceClip";
 import { shotCapGate } from "@/lib/shotCap";
 import { approvedTakeOf } from "@/lib/shots";
+import { recordProvenance, portsForShot } from "@/lib/provenance";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 
 export const dynamic = "force-dynamic";
@@ -838,6 +839,41 @@ export const POST = withTenant(async function POST(req: Request) {
            shotId, version, model.provider ?? "byteplus", task.id, sourceGenId, refineMs,
            billedTo(model.provider ?? "byteplus")],
   });
+
+  /* What made this take, written once and never afterwards (brief 3, 1c).
+     Additive and best-effort: it happens after the row exists, it cannot
+     fail the render, and it changes nothing about what is sent to the
+     engine. Binding resolution reaching the COMPILER is a separate change
+     with a golden-prompt test; this only writes down what was in force. */
+  void (async () => {
+    const { rows, keys } = shotId ? await portsForShot(shotId) : { rows: [], keys: [] };
+    await recordProvenance(genId, shotId, {
+      engine: billedTo(model.provider ?? "byteplus"),
+      model: modelId,
+      provider: model.provider ?? "byteplus",
+      ports: keys,
+      cast: castUsed,
+      setup: shotSpec ?? {},
+      /* The ids of the rules that applied. The original schema plan called
+         these unrecoverable for old takes; they are recorded from here on. */
+      rules: rules.map((r) => r.id),
+      conditions: {
+        /* The file's own frame, and the frame the engine metered — they
+           differ because the engine bills on a sixteen-pixel grid, and the
+           card says both rather than pretending they are one number. */
+        width: dimensionsFor(String(params.resolution ?? ""), String(params.ratio ?? ""))?.w ?? null,
+        height: dimensionsFor(String(params.resolution ?? ""), String(params.ratio ?? ""))?.h ?? null,
+        billedWidth: billedFrame(String(params.resolution ?? ""), String(params.ratio ?? ""))?.w ?? null,
+        billedHeight: billedFrame(String(params.resolution ?? ""), String(params.ratio ?? ""))?.h ?? null,
+        durationSeconds: typeof params.duration === "number" ? params.duration : null,
+        /* Null until the vendor hands one back — unrecorded is the honest
+           answer, and "make another from exactly this" says so. */
+        seed: null,
+      },
+      by: got.user.id,
+      at: ts,
+    }, rows);
+  })().catch(() => {});
 
   invalidate(PROJECTS_KEY);
   if (hold) {
