@@ -711,6 +711,49 @@ product is taking.
 - **Pop-out review window** to a second display. Studios review on a reference monitor; the grading suite is not a laptop screen.
 - **Notes with a timecode** — click on the scrub bar to attach a note at 0:03. This is what a director actually gives back, and it feeds the send-back note in 2.1.
 
+**BUILT — the comparison half of the first bullet, 9 September.** Compare
+claimed "in step" in its header, its docblock and on screen, and was not: the
+transport COMMANDED every clip to play and then trusted them, the read-out
+took its position from whichever tile was leftmost, a clip still loading
+joined at its own zero and stayed behind for the session, and `loop` sat on
+each tile so every clip wrapped on its own length. That is not a rounding
+error on this data — every multi-take shot in the workspace has takes of
+different lengths (5,10,10,10,4,5 on one), so past the shortest clip the grid
+showed four unrelated moments under one bar claiming a single position, and a
+director picks a take off that screen.
+
+The rules are `lib/transport.ts`, pure and tested: the span and the clock are
+the LONGEST take, because a shorter one cannot express positions past its own
+end — exactly where the leftmost reading went wrong; every other tile is
+CORRECTED to it past 125ms rather than merely told to play; a take shorter
+than the group holds its last frame and says ENDED instead of looping to an
+unrelated moment; a late clip joins where the group is; the group wraps as
+one. Measured on real video: a tile forced to its own zero was 10.0s adrift
+and back within 0.04s after two corrections.
+
+A comparison also took the newest four takes and dropped the rest silently,
+which hid takes AND made "A/B wipe for two" impossible to ask for — you got
+the newest four whether or not those were the two you wanted to weigh. Every
+playable take is now a candidate behind a row of version chips; it still
+opens on the newest four, so nothing changes for anyone who ignores the row.
+The bounds live in the chips rather than a sentence: at four the rest cannot
+be pressed, at two the chosen cannot be dropped. Refusing beats evicting
+somebody's oldest pick to make room.
+
+The A/B wipe is offered at exactly two — a wipe puts one take under another
+and reveals across a seam, which means something for a pair and nothing for
+three. Both takes fill the same box with the same object-fit and the upper
+one is CLIPPED rather than resized, so the pictures stay registered and the
+seam shows a difference in content rather than in crop; measured at an
+identical 638×358 box from the same origin. The handle carries
+`role="slider"` and moves on arrows, because a comparison is the screen a
+producer holds and half of them are on a keyboard.
+
+**Still open in the first bullet:** the PLAYER itself. Theatre hands scrub,
+loop and in/out to the browser's own control bar, so none of them is
+addressable from a keyboard, from a note, or from a second window — which is
+what the remaining three bullets are each blocked on.
+
 ### 4.4 Bulk operations
 Desktop is where someone acts on forty things at once. Multi-select with click, shift-click ranges and `⌘A`; a persistent selection bar showing count and total credits. Bulk: approve, send back, file against shots, download masters, add to a review link, delete drafts. Every bulk action that spends credits quotes the total before enabling, same as a single action.
 

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { compareSet, canCompare, compareColumns, COMPARE_MAX, compareCandidates, toggleCompare, canToggle } from "../../lib/compare";
+import { compareSet, canCompare, compareColumns, COMPARE_MAX, compareCandidates, toggleCompare, canToggle, wipeAvailable, clampWipe, wipeFromPointer } from "../../lib/compare";
 
 /** Compare (brief 2.1): two to four playable takes of one shot, newest first. */
 test("a comparison holds only playable takes, newest first, at most four", () => {
@@ -78,4 +78,40 @@ test("choosing exactly two is reachable, which is what A/B needs", () => {
   sel = toggleCompare(sel, sel[2]);
   expect(sel.length).toBe(2);
   expect(canToggle(sel, sel[0])).toBe(false);      // and stops there
+});
+
+/* ── A/B wipe (SOW §10 4.3: "side by side, or A/B wipe for two") ───────── */
+
+test("a wipe is offered at exactly two takes and nowhere else", () => {
+  /* Not an arbitrary limit: a wipe puts one take UNDER another and reveals
+     across a seam, which has meaning for a pair and none for three. */
+  expect(wipeAvailable(2)).toBe(true);
+  for (const n of [0, 1, 3, 4]) expect(wipeAvailable(n), `${n} takes`).toBe(false);
+});
+
+test("the seam stays inside the frame", () => {
+  expect(clampWipe(-40)).toBe(0);
+  expect(clampWipe(140)).toBe(100);
+  expect(clampWipe(50)).toBe(50);
+});
+
+test("a seam is a whole percent, and nonsense lands in the middle", () => {
+  expect(clampWipe(33.4)).toBe(33);
+  // Neither NaN nor Infinity is a position on a frame, so both land in the
+  // middle rather than being clamped to an edge that would look deliberate.
+  expect(clampWipe(Number.NaN)).toBe(50);
+  expect(clampWipe(Number.POSITIVE_INFINITY)).toBe(50);
+});
+
+test("the seam follows the pointer across the frame it is dragged over", () => {
+  expect(wipeFromPointer(100, 100, 400)).toBe(0);      // at the left edge
+  expect(wipeFromPointer(300, 100, 400)).toBe(50);     // halfway
+  expect(wipeFromPointer(500, 100, 400)).toBe(100);    // at the right edge
+  expect(wipeFromPointer(700, 100, 400)).toBe(100);    // past it, still inside
+});
+
+test("a frame with no width yet does not produce NaN", () => {
+  /* Zero-width boxes happen during layout, and a NaN would reach a
+     clip-path and blank the take. */
+  expect(wipeFromPointer(300, 0, 0)).toBe(50);
 });

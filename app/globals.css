@@ -2859,6 +2859,25 @@ html, body { overflow-x: clip; }
 .cmp-cell.is-approved { border-color: #46c48a; }
 .cmp-media { position: relative; aspect-ratio: 16 / 9; background: #000; }
 .cmp-media video { width: 100%; height: 100%; object-fit: contain; }
+.cmp-mode { display: flex; gap: 6px; padding: 0 14px 8px; flex: none; }
+
+/* A/B wipe: two takes in ONE frame. Both fill the same box with the same
+   object-fit, so the pictures are registered on top of each other — a wipe
+   that did not line up would show the difference between two crops rather
+   than between two takes. The one on top is CLIPPED at the seam rather than
+   resized, so nothing moves as the handle travels. */
+.cmp-wipe { position: relative; flex: 1; min-height: 0; background: #000; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255, 255, 255, .16); touch-action: none; cursor: ew-resize; }
+.cmp-wipe video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.cmp-wipe-lbl { position: absolute; top: 8px; padding: 1px 6px; border-radius: var(--r-chip); background: rgba(0, 0, 0, .55); color: #fff; opacity: .9; }
+.cmp-wipe-lbl.is-a { left: 10px; }
+.cmp-wipe-lbl.is-b { right: 10px; }
+/* The seam: a hairline people aim at, with a target wide enough for a thumb. */
+.cmp-seam { position: absolute; top: 0; bottom: 0; width: 28px; margin-left: -14px; cursor: ew-resize; background: transparent; }
+.cmp-seam::before { content: ""; position: absolute; left: 13px; top: 0; bottom: 0; width: 2px; background: rgba(255, 255, 255, .9); }
+.cmp-seam::after { content: ""; position: absolute; left: 6px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.cmp-seam:focus-visible { outline: none; }
+.cmp-seam:focus-visible::before { background: var(--color-blue); }
+
 .cmp-pick { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; flex: none; }
 .cmp-pick .chip:disabled { opacity: .45; cursor: not-allowed; }
 .cmp-badge { position: absolute; top: 6px; left: 8px; color: #fff; opacity: .85; }
