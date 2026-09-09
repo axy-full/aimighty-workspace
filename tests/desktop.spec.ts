@@ -20,7 +20,7 @@ const ROUTES = [
   "/", "/images", "/audio", "/projects", "/all", "/studio", "/studio/shot",
   "/usage", "/settings", "/policy", "/terms", "/privacy",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots",
-  "/projects/demo/rig", "/projects/demo/rig/elements", "/takes/demo",
+  "/projects/demo/rig", "/projects/demo/rig/elements", "/takes/demo", "/shots/demo",
 ];
 
 async function settle(page: Page) {

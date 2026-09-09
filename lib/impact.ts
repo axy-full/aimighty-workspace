@@ -299,3 +299,44 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
 export async function shotSpent(shotId: string): Promise<number> {
   return shotCreditsSoFar(shotId);
 }
+
+/**
+ * What re-rendering these exact shots would cost, and whether it is allowed
+ * (brief 3, surface 2c).
+ *
+ * The impact panel asks "which shots does this version reach" and prices the
+ * answer. A shot's own bindings reach one shot, and it is already named, so
+ * there is nothing to look up — but the price and the verdict have to be the
+ * same ones, computed by the same functions against the same context, or the
+ * surface that changes one slot would quote differently from the surface that
+ * changes the library and a producer would be right not to trust either.
+ */
+export async function quoteShots(
+  shotIds: string[], opts: { at: number; isAdmin?: boolean },
+): Promise<{ quote: Quote; verdict: Verdict; shots: ImpactShot[]; pricedAt: number; stamp: string }> {
+  await ready();
+  const wanted = [...new Set(shotIds.filter(Boolean))];
+  const terms = liveTerms();
+
+  /* Priced as if nothing is pinned: the question is what this shot costs to
+     render, which does not depend on how it came to be bound. */
+  const described = wanted.length
+    ? await describe(wanted.map((shotId) => ({ shotId, projectId: null, slots: [], pinned: false })))
+    : [];
+
+  const context = await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true });
+  const units: Unit[] = described.map((d) => ({
+    key: d.shot.shotId, usd: d.usd, engine: d.engine,
+    spent: d.spent, code: d.shot.code, projectId: d.shot.projectId,
+    platformPays: d.platformPays,
+  }));
+
+  const quote = quoteOf(units, terms);
+  return {
+    quote,
+    verdict: verdictOf(quote, context),
+    shots: described.map((d, i) => ({ ...d.shot, credits: quote.lines[i]?.credits ?? 0 })),
+    pricedAt: opts.at,
+    stamp: stampOf(units, terms),
+  };
+}

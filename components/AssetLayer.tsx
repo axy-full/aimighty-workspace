@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useApi } from "@/lib/useApi";
 import { Waiting, Trouble, Empty } from "@/components/ParticlMark";
 import {
@@ -129,10 +130,13 @@ function Shot({ s, onHover, links }: {
 }) {
   return (
     <div className="ast-shot" style={{ left: s.x, top: s.y, width: SHOT_W }}>
-      <div className="ast-shot-head" style={{ height: SHOT_HEAD }}>
+      {/* The node's header is the way into surface 2c. The canvas shows that a
+          slot is overridden; the shot's own screen is where it is changed, and
+          a picture you cannot act from is a diagram. */}
+      <Link className="ast-shot-head" href={`/shots/${encodeURIComponent(s.id)}`} style={{ height: SHOT_HEAD }}>
         <span className="ast-shot-id">{s.code}</span>
         <span className="ast-shot-title">{s.title}</span>
-      </div>
+      </Link>
       <div className="ast-key" style={{ height: SHOT_KEY_H }}>
         <span className="ast-key-chip">{s.code} · KEYFRAME</span>
       </div>
