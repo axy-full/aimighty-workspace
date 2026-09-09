@@ -500,6 +500,27 @@ The desktop version of 2.1, and the reason an editor keeps the app open.
 Desktop is where someone acts on forty things at once. Multi-select with click, shift-click ranges and `⌘A`; a persistent selection bar showing count and total credits. Bulk: approve, send back, file against shots, download masters, add to a review link, delete drafts. Every bulk action that spends credits quotes the total before enabling, same as a single action.
 
 ### 4.5 Drag and drop, and local files
+
+**Partly done in Atomik, 9 September**, brought forward because the composer
+would not take a file and nothing said why. Drag onto the Atomik composer now
+shows a drop target — it always accepted one and never looked like it, which
+for anyone who did not happen to try is the same as not having it. A batch
+uploads together with a bar per file, and **one refusal no longer takes the
+rest with it**: the loop used to sit inside one `try`, so a 200px thumbnail
+the engine won't accept killed the three files behind it and named none of
+them. Each file settles on its own and the ones that fail are listed with the
+reason the server gave.
+
+The accept list is widened to what `lib/imagemeta.ts` actually reads — GIF,
+BMP, TIFF, HEIC and HEIF alongside PNG, JPEG, WebP, MP4 and MOV. It was
+narrower than the server's own capability, so files that would have worked
+were never offered. **Not widened to PDF, WebM or ProRes**: the sniffer does
+not read them and no engine in §2 takes them, so offering them would be
+promising a conversion nothing does.
+
+Still to do here: a folder of stills into Studio, drag a take onto a shot,
+drag to reorder the sequence canvas, resumable failures, and the remembered
+download folder.
 Drag references into the composer; drag a folder of stills into Studio to create cast entries; drag a take onto a shot to file it; drag to reorder the sequence canvas; drag a plate onto a slot in Rig. Batch upload with per-file progress and resumable failures. Download: pick a destination folder once and remember it; masters land named by the convention without a Save dialog each time.
 
 ### 4.6 Scale

@@ -4119,3 +4119,23 @@ html, body { overflow-x: clip; }
   .bnd-frame { max-height: 30dvh; max-width: calc(30dvh * 16 / 9); }
   .bnd-take { padding-bottom: 4px; }
 }
+
+
+/* ── Attaching files to Atomik ────────────────────────────────────────────
+   The composer has always taken a drop and never looked like it, which for
+   anyone who did not happen to try is the same as not having it. And a batch
+   used to report itself as one spinner, so five files that were really five
+   uploads — one of which the engine might refuse on its own terms — looked
+   like a single thing that either worked or did not. */
+.atomik-composer.is-dropping {
+  border-color: var(--color-edge-hover);
+  background: var(--color-fill-on);
+}
+.atomik-progress { display: flex; flex-direction: column; gap: 5px; padding: 2px 0 6px; }
+.atomik-prog { display: grid; grid-template-columns: minmax(0, 1fr) 84px; align-items: center; gap: 10px; }
+.atomik-prog-name {
+  font: 400 11.5px/1.2 var(--font-sans); color: var(--color-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.atomik-prog-bar { height: 3px; border-radius: 2px; background: var(--color-chip); overflow: hidden; }
+.atomik-prog-bar > i { display: block; height: 100%; background: var(--color-ink); transition: width .18s linear; }
