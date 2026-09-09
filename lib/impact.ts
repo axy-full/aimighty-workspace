@@ -74,11 +74,12 @@ export type Impact = {
  */
 export async function impactOf(
   elementId: string, attributeId: string, versionId: string,
-  opts: { projectId?: string | null; at: number; isAdmin?: boolean },
+  opts: { projectId?: string | null; at: number; isAdmin?: boolean; following?: boolean },
 ): Promise<Impact> {
   await ready();
 
-  const dependents = await dependentsOf(elementId, attributeId, versionId, { projectId: opts.projectId });
+  const dependents = await dependentsOf(elementId, attributeId, versionId,
+    { projectId: opts.projectId, following: opts.following });
   const described = dependents.length ? await describe(dependents) : [];
 
   const terms = liveTerms();

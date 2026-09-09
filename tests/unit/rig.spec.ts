@@ -61,6 +61,26 @@ test("a change never reaches another element, however the port is wired", () => 
   expect(portFollows(bundle, "el_workshop", "plate", "v2")).toBe(true);
 });
 
+/* Two different questions, and confusing them costs money. "Does a change to
+   this version reach this port" includes a port pinned to it. "Would this port
+   MOVE if current changed" does not — a pin is a pin, whatever it is pinned
+   to. A swap asks the second; asking the first counts shots already sitting on
+   the target and prices a re-render that cannot change their output. */
+test("a pin does not move when current does, whatever it is pinned to", () => {
+  const target = "v2";
+  const follows = { elementId: "el1", attributeId: "wardrobe", versionId: null };
+  const pinnedToTarget = { elementId: "el1", attributeId: "wardrobe", versionId: target };
+
+  // The general question: both are reached by a change to v2.
+  expect(portFollows(follows, "el1", "wardrobe", target)).toBe(true);
+  expect(portFollows(pinnedToTarget, "el1", "wardrobe", target)).toBe(true);
+
+  // The swap's question is about the pin alone, and it is the same answer for
+  // a port pinned to the target as for one pinned anywhere else.
+  expect(isPinned(follows)).toBe(false);
+  expect(isPinned(pinnedToTarget)).toBe(true);
+});
+
 test("an element is made of the attributes its kind has, and lands in one slot", () => {
   expect(attributesOf("character")).toEqual(["face", "hair", "wardrobe", "voice"]);
   expect(attributesOf("location")).toEqual(["plate"]);

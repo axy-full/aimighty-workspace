@@ -3076,3 +3076,107 @@ html, body { overflow-x: clip; }
      is what pushed the resting bar back up into the button. */
   .rig-run-bar { bottom: var(--tabbar-h); }
 }
+
+/* ── Rig · the impact panel (brief 3, surface 1b) ─────────────────────────
+   A sheet over whatever was being edited. Nothing re-renders silently, so
+   this is not the polite path to a change, it is the only one — the swap is
+   refused server-side without a choice. */
+.imp-scrim {
+  position: fixed; inset: 0; z-index: 60; background: var(--color-scrim);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.imp-sheet {
+  width: 100%; max-width: 640px; max-height: 88dvh; box-sizing: border-box;
+  background: var(--color-desk); border-top: 1px solid var(--color-line);
+  border-radius: 24px 24px 0 0; display: flex; flex-direction: column;
+}
+.imp-grab { display: flex; justify-content: center; padding: 10px 0 2px; flex: none; }
+.imp-grab > span { width: 38px; height: 4px; border-radius: 2px; background: var(--color-edge); }
+/* The body scrolls; the footer does not. A sheet whose one action sits below
+   the fold on a short screen is a sheet people press the wrong thing on. */
+.imp-body {
+  padding: 12px 18px 14px;
+  display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0;
+}
+
+.imp-head { display: flex; flex-direction: column; gap: 8px; }
+.imp-eyebrow { font: 500 12px/1 var(--font-kode); letter-spacing: .14em; color: var(--color-mute); }
+.imp-title { margin: 0; font: 600 24px/1.15 var(--font-sans); letter-spacing: -.02em; color: var(--color-bone); text-wrap: pretty; }
+.imp-said { margin: 0; font: 400 14.5px/1.45 var(--font-sans); color: var(--color-mute); text-wrap: pretty; }
+
+.imp-summary {
+  background: var(--color-panel); border-radius: 16px; padding: 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.imp-summary-top { display: flex; align-items: baseline; gap: 10px; }
+.imp-used { font: 600 17px/1 var(--font-sans); color: var(--color-bone); }
+.imp-split { margin-left: auto; font: 400 13px/1 var(--font-sans); color: var(--color-mute); }
+.imp-bar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; gap: 2px; }
+.imp-bar > i { background: var(--color-chip2); }
+.imp-bar > i.is-approved { background: var(--color-approved); }
+/* The shots themselves, so "14" is a list a producer recognises, not a count. */
+.imp-pills { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
+.imp-pills::-webkit-scrollbar { display: none; }
+.imp-pill {
+  flex: none; display: flex; align-items: center; gap: 7px;
+  border: 1px solid var(--color-line); border-radius: 999px; padding: 9px 12px;
+  font: 500 13px/1 var(--font-sans); color: var(--color-bone); white-space: nowrap;
+}
+.imp-pill > i { width: 8px; height: 8px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid var(--color-dim); }
+.imp-pill > i.is-approved { background: var(--color-approved); border-color: var(--color-approved); }
+
+.imp-choices { display: flex; flex-direction: column; gap: 8px; }
+.imp-choice {
+  text-align: left; background: transparent; border: 1px solid var(--color-line);
+  border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  color: var(--color-bone); min-height: 48px; width: 100%;
+}
+.imp-choice.is-on { background: var(--color-panel); border-color: var(--color-picked); }
+.imp-choice-top { display: flex; align-items: center; gap: 12px; }
+.imp-mark {
+  flex: none; width: 20px; height: 20px; border-radius: 50%; box-sizing: border-box;
+  border: 1.5px solid var(--color-edge); background: transparent;
+}
+.imp-choice.is-on .imp-mark { border-color: var(--color-ink); background: var(--color-ink); }
+.imp-choice-label { font: 600 16px/1.2 var(--font-sans); }
+.imp-choice-cost { margin-left: auto; flex: none; font: 500 15px/1 var(--font-kode); }
+/* The consequence sits under the label, indented past the mark: it is the
+   half of the decision a price on its own does not carry. */
+.imp-choice-note { font: 400 13.5px/1.45 var(--font-sans); color: var(--color-mute); text-wrap: pretty; padding-left: 32px; }
+.imp-choice-stop { font: 400 12.5px/1.4 var(--font-sans); color: var(--color-lift); padding-left: 32px; text-wrap: pretty; }
+
+.imp-foot {
+  flex: none; display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--color-hair); background: var(--color-desk);
+}
+.imp-trouble { margin: 0; font: 400 13px/1.4 var(--font-sans); color: var(--color-lift); text-wrap: pretty; }
+.imp-primary {
+  height: 52px; border: 0; border-radius: 14px; background: var(--color-blue); color: var(--color-on-ink);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 18px;
+  font: 600 16px/1 var(--font-sans);
+}
+.imp-primary:disabled { opacity: .45; }
+.imp-primary-cost { font: 500 14px/1 var(--font-kode); opacity: .62; }
+.imp-footnote { font: 400 12px/1.5 var(--font-kode); letter-spacing: .04em; color: var(--color-mute); text-align: center; }
+
+/* The thin element library that hosts the panel — surface 2b grows this. */
+.rig-els { padding: 18px 16px 32px; display: flex; flex-direction: column; gap: 14px; }
+.rig-els-head { display: flex; flex-direction: column; gap: 6px; }
+.rig-els-title { margin: 0; font: 600 24px/1.1 var(--font-sans); letter-spacing: -.02em; color: var(--color-bone); }
+.rig-els-said { margin: 0; font: 400 14px/1.45 var(--font-sans); color: var(--color-mute); text-wrap: pretty; }
+.rig-el { background: var(--color-panel); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.rig-el-top { display: flex; align-items: baseline; gap: 10px; }
+.rig-el-name { font: 600 16px/1.2 var(--font-sans); color: var(--color-bone); }
+.rig-el-kind { margin-left: auto; font: 500 11px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-mute); }
+.rig-attr { display: flex; flex-direction: column; gap: 8px; }
+.rig-attr-kind { font: 500 11px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-mute); }
+.rig-vers { display: flex; gap: 8px; flex-wrap: wrap; }
+.rig-ver {
+  min-height: 44px; display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--color-line); border-radius: 12px; padding: 10px 14px;
+  background: transparent; color: var(--color-bone); font: 500 13px/1 var(--font-sans);
+}
+.rig-ver.is-on { border-color: var(--color-picked); background: var(--color-panel3); }
+.rig-ver:disabled { opacity: .5; }
+.rig-ver-now { width: 8px; height: 8px; border-radius: 50%; background: var(--color-approved); }
