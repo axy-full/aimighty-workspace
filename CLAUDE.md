@@ -29,20 +29,44 @@ The governing rule: **every tier is profitable even if the customer uses everyth
 
 Reference rate card at launch (regenerate from live engine costs before publishing):
 
+**CORRECTED 10 September 2026, from `lib/vendorRates.ts`.** The card below was
+written from costs that did not match the code, and it was wrong in both
+directions — Kling 3.0 Pro read $1.68 for what the rates say is $0.84 (the
+per-second figure doubled), and Topaz read $0.40 for what is really $1.50.
+Published, it would have over-quoted one row twofold and under-quoted another
+fourfold. The app has always billed from the real rates; it was the card that
+lied. Two rows named engines that do not exist and are gone.
+
+Every figure is computed, not asserted: per-second engines are
+`rate x seconds` (`secondRateOf`), Seedance is token-priced off the billed
+frame (`billedFrame` rounds each side up to a multiple of 16, which is why
+1080p is metered at 1088), stills come from `imagePricing`, and every "sells
+at" is `ceil(cost x 1.5 / 0.10)`.
+
 | Action | Engine cost | Sells at |
 |---|---|---|
-| Standard panel (Nano Banana fast) | ~$0.04 | 1 cr |
-| Keyframe still (Nano Banana Pro) | ~$0.15 | 3 cr |
-| Wan 2.6 draft, 5s | ~$0.25 | 4 cr |
-| Kling 3.0 Standard, 5s | ~$0.50 | 8 cr |
-| Kling 3.0 Pro, 5s, audio | ~$1.68 | 26 cr |
-| Seedance 2.5, 5s, 720p | ~$1.60 | 24 cr |
-| Seedance 2.5, 5s, 1080p | ~$2.86 | 43 cr |
-| Veo 3.1, 5s, audio | ~$2.00 | 30 cr |
-| Topaz upscale, 5s | ~$0.40 | 6 cr |
-| VO line (ElevenLabs) | ~$0.03 | 1 cr |
-| Identity training | ~$2.00 | 30 cr |
+| Standard still (Nano Banana 2, 512) | ~$0.045 | 1 cr |
+| Keyframe still (Nano Banana Pro, 1K) | ~$0.134 | 3 cr |
+| Kling 3.0 Standard, 5s 1080p | ~$0.42 | 7 cr |
+| Kling 3.0 Standard, 5s 1080p, audio | ~$0.63 | 10 cr |
+| Kling 3.0 Pro, 5s 1080p, audio | ~$0.84 | 13 cr |
+| Seedance 2.0, 5s 1080p | ~$1.88 | 29 cr |
+| Seedance 2.5, 5s 720p | ~$1.16 | 18 cr |
+| Seedance 2.5, 5s 1080p | ~$2.86 | 43 cr |
+| Topaz upscale, 5s 1080p | ~$1.50 | 23 cr |
+| Topaz upscale, 5s 4K | ~$2.50 | 38 cr |
+| Identity training (1,500 steps) | ~$3.60 | 54 cr |
 | Prompt enhancement | ~$0.01 | 1 cr |
+
+Gone from the card, because the engine is not in the product: **Wan 2.6** —
+`alibaba/wan-v3.0-video` appears only in the gateway shortlist and gateway
+video is explicitly unrunnable — and **Veo 3.1**, which is in neither
+`lib/models.ts` nor `lib/vendorRates.ts`. A VO line is priced per character by
+ElevenLabs rather than per call, so it has no single figure and is not a card
+row; see the audio terms.
+
+Identity training is $3.60, not $2.00: 1,500 steps at $0.0024 (`TRAIN_STEPS`,
+`TRAIN_USD_PER_STEP` in `lib/identities.ts`), with a 1,000-step floor.
 
 ### Tiers
 
@@ -70,7 +94,7 @@ it already means.
 
 | Tier | Price | Included | Members | Worst-case cost | Worst-case gross |
 |---|---|---|---|---|---|
-| **Invite** | $0 | 50 cr once, 1 production, boards at 1 cr | 3 | $3.50 | marketing cost |
+| **Invite** | $0 | 250 cr once, 1 production | 3 | $3.50 | marketing cost |
 | **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited | $38 | $11 · 22% |
 | **Agency** | $199/mo | 1,600 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited | $153 | $46 · 23% |
 | **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited | $750 | $249 · 25% |
