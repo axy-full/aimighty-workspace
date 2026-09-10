@@ -64,7 +64,7 @@ async function shoot(page: Page, file: string): Promise<void> {
   writeFileSync(file, shot);
 }
 const SHOTS: [string, string][] = [
-  ["/welcome", "welcome"], ["/", "generate"], ["/images", "images"], ["/audio", "audio"],
+  ["/welcome", "welcome"], ["/make/video", "make-video"], ["/make/images", "make-images"], ["/make/audio", "make-audio"], ["/library", "library"],
   ["/productions", "productions"], ["/studio", "studio"], ["/studio/shot", "shot-builder"],
   ["/usage", "usage"], ["/settings", "settings"], ["/atomik/ideas", "atomik-ideas"], ["/atomik/shots", "atomik-shots"],
 ];
@@ -107,11 +107,6 @@ test.describe("screens", () => {
       await settle(page);
       await shoot(page, `docs/phase-0/${slug}-${tag}.png`);
     }
-    await page.goto("/");
-    await settle(page);
-    await page.locator(".dock-preview").click();
-    await page.waitForTimeout(500);
-    await shoot(page, `docs/phase-0/sheet-${tag}.png`);
-    info.annotations.push({ type: "shots", description: `${SHOTS.length + 1} screenshots at ${tag}` });
+    info.annotations.push({ type: "shots", description: `${SHOTS.length} screenshots at ${tag}` });
   });
 });

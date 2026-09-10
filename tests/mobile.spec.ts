@@ -13,7 +13,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 const ROUTES = [
   "/welcome", "/login", "/signup", "/reset",
-  "/", "/images", "/audio", "/productions", "/all", "/studio", "/studio/shot",
+  "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio", "/studio/shot",
   "/usage", "/settings", "/connect", "/platform", "/statements/2026-09", "/admin",
   "/policy", "/terms", "/privacy", "/report",
   "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/takes/demo", "/shots/demo", "/elements/demo",
@@ -120,32 +120,34 @@ test.describe("the app shell", () => {
     });
   }
 
-  test("the composer sheet opens with Close and Render inside the viewport", async ({ page }) => {
-    await page.goto("/");
+  /* design/particl-v2 §10 on a phone: the one composer sits first, in the
+     flow, the full width of the screen; Render is reachable by scrolling
+     down, never by panning sideways (SOW rule 7). */
+  test("the composer is the width of the screen and Render is reachable without panning", async ({ page }) => {
+    await page.goto("/make/video");
     await settle(page);
-    await page.locator(".dock-preview").click();
-    const sheet = page.locator(".ws-rail.is-sheet");
-    await expect(sheet).toBeVisible();
+    const composer = page.getByRole("complementary", { name: "Composer" });
+    await expect(composer).toBeVisible();
     const vp = page.viewportSize()!;
-    const inside = async (name: string, box: { x: number; y: number; width: number; height: number } | null) => {
-      expect(box, `${name} has no box`).not.toBeNull();
-      expect(box!.x, `${name} left`).toBeGreaterThanOrEqual(-1);
-      expect(box!.y, `${name} top`).toBeGreaterThanOrEqual(-1);
-      expect(box!.x + box!.width, `${name} right`).toBeLessThanOrEqual(vp.width + 1);
-      expect(box!.y + box!.height, `${name} bottom`).toBeLessThanOrEqual(vp.height + 1);
-    };
-    await inside("Close", await sheet.getByRole("button", { name: "Close" }).boundingBox());
-    await inside("Render", await sheet.locator(".ws-rail-foot .btn-primary").boundingBox());
-    const body = await sheet.locator(".ws-rail-body").evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, overflowY: getComputedStyle(el).overflowY }));
-    expect(body.overflowY).toBe("auto");
-    await page.screenshot({ path: `test-results/sheet-${vp.width}x${vp.height}.png` });
+    const box = await composer.boundingBox();
+    expect(box, "the composer has no box").not.toBeNull();
+    if (vp.width < 768) expect(Math.round(box!.width), "the composer fills a phone's width").toBe(vp.width);
+    const render = composer.locator("[data-render]");
+    await render.scrollIntoViewIfNeeded();
+    const rb = (await render.boundingBox())!;
+    expect(rb.x, "Render left").toBeGreaterThanOrEqual(-1);
+    expect(rb.x + rb.width, "Render right").toBeLessThanOrEqual(vp.width + 1);
+    expect(rb.y, "Render top").toBeGreaterThanOrEqual(-1);
+    expect(rb.y + rb.height, "Render bottom").toBeLessThanOrEqual(vp.height + 1);
+    expect(rb.height, "the primary is 48px (§10) — at least 44pt on a phone").toBeGreaterThanOrEqual(44);
+    await page.screenshot({ path: `test-results/composer-${vp.width}x${vp.height}.png` });
   });
 
   test("opening the engine picker commits no long task over 50ms", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/make/video");
     await settle(page);
-    await page.locator(".dock-preview").click();
-    await expect(page.locator(".ws-rail.is-sheet")).toBeVisible();
+    const composer = page.getByRole("complementary", { name: "Composer" });
+    await expect(composer).toBeVisible();
     await page.evaluate(() => {
       const w = window as unknown as { __long: number[] };
       w.__long = [];
@@ -154,34 +156,45 @@ test.describe("the app shell", () => {
     });
     await page.waitForTimeout(300);
     await page.evaluate(() => { (window as unknown as { __long: number[] }).__long = []; });
-    const chip = page.locator(".ws-rail .chip-ctl").filter({ hasText: /Seedance|Kling|Topaz|Nano/ }).first();
+    const chip = composer.getByRole("button", { name: "Engine" });
+    await chip.scrollIntoViewIfNeeded();
     await chip.click();
-    await expect(page.locator(".island-menu")).toBeVisible();
+    await expect(composer.getByRole("listbox", { name: "Engines" })).toBeVisible();
     await page.waitForTimeout(600);
     const long = await page.evaluate(() => (window as unknown as { __long: number[] }).__long.filter((d) => d > 50));
     expect(long, `long tasks while opening the picker (ms): ${long.join(", ")}`).toEqual([]);
   });
 });
 
-test.describe("the audio desk", () => {
-  /* A visitor's desk is a stand-in Setup with no models and no voices. Every
-     track kind has to open on it: Dialogue reads the model list, which is
-     the lookup that used to throw. */
+test.describe("the audio composer", () => {
+  /* A visitor's composer has no models and no voices. Every track kind has
+     to open on it (design/particl-v2 §10): Dialogue reads the model list,
+     which is the lookup that used to throw. On a phone the composer sits
+     above the wall, in the flow, the same component as the desktop rail. */
   test("every track kind opens for a visitor", async ({ page }) => {
-    await page.goto("/audio");
+    await page.goto("/make/audio");
     await settle(page);
-    await page.locator(".dock-preview").click();
-    const sheet = page.locator(".ws-rail.is-sheet");
-    await expect(sheet).toBeVisible();
-    const kinds = sheet.getByRole("tablist", { name: "Track kind" });
+    const composer = page.getByRole("complementary", { name: "Composer" });
+    await expect(composer).toBeVisible();
+    const kinds = composer.getByRole("group", { name: "Track kind" });
     for (const kind of ["Ambient", "Music", "Dialogue"]) {
-      await kinds.getByRole("tab", { name: kind, exact: true }).click();
-      await expect(kinds.getByRole("tab", { name: kind, exact: true })).toHaveAttribute("aria-selected", "true");
+      await kinds.getByRole("button", { name: kind, exact: true }).click();
+      await expect(kinds.getByRole("button", { name: kind, exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByText(/^This (screen|page) stopped$/)).toHaveCount(0);
     }
     // A visitor has no models, so the select is there with nothing in it;
     // the voice search beside it is the visible proof the tab rendered.
-    await expect(sheet.getByRole("combobox", { name: "Model" })).toHaveCount(1);
-    await expect(sheet.getByPlaceholder("Find a voice")).toBeVisible();
+    await expect(composer.getByRole("combobox", { name: "Model" })).toHaveCount(1);
+    await expect(composer.getByPlaceholder("Find a voice")).toBeVisible();
+    /* §14: every target is at least 44pt — either the control itself, or the
+       invisible touch band (`.tap44::after`) a smaller control carries. Below
+       768 only: a phone on its side (844 wide) gets the desktop rail. */
+    if (page.viewportSize()!.width >= 768) return;
+    const short = await composer.evaluate((root) => [...root.querySelectorAll<HTMLElement>("button")].filter((b) => {
+      const r = b.getBoundingClientRect(); if (r.height === 0) return false;
+      const band = parseFloat(getComputedStyle(b, "::after").height) || 0;
+      return r.height < 44 && band < 44;
+    }).map((b) => `${b.textContent?.trim().slice(0, 16)}:${Math.round(b.getBoundingClientRect().height)}`));
+    expect(short, "every target on a phone is at least 44pt, or carries a 44pt touch band").toEqual([]);
   });
 });

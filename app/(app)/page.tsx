@@ -1,15 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-/**
- * The way in is the composer.
- *
- * This used to be the Projects grid, on the reasoning that you pick a job
- * before you work on it. In practice the job is already in your head when you
- * open the tab — what you want is somewhere to type. Projects moved to
- * /projects, one tap away and still the second thing in the nav.
- */
-import Workspace from "@/components/Workspace";
-
-export default function HomePage() {
-  return <Workspace kind="video" />;
+/** Make is the front door (design/particl-v2/README.md §1, §10): the old composer at `/` is gone; the address still opens Make. */
+export default function Moved() {
+  redirect("/make/video");
 }

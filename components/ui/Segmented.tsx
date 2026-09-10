@@ -31,7 +31,7 @@ export default function Segmented<T extends string>({ value, options, onChange, 
         const on = o.value === value;
         return (
           <button key={o.value} type="button" aria-pressed={on} onClick={() => onChange(o.value)}
-            className={`rounded-pill text-[13px] font-medium leading-none ${PAD[placement]} ${on ? "bg-selected text-ink" : "text-ink-body"}`}>
+            className={`tap44 rounded-pill text-[13px] font-medium leading-none ${PAD[placement]} ${on ? "bg-selected text-ink" : "text-ink-body"}`}>
             {o.label}
           </button>
         );

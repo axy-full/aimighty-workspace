@@ -163,6 +163,8 @@ export async function listGenerations(opts: {
   castName?: string | null;
   /** Cursor: return only rows OLDER than this created_at (keyset pagination). */
   before?: number | null;
+  /** Only takes filed against no project — Make's wall and the Library's Unfiled lens (§10, §11). */
+  unfiled?: boolean;
 } = {}): Promise<Generation[]> {
   await ready();
   const where: string[] = [];
@@ -172,6 +174,7 @@ export async function listGenerations(opts: {
     where.push("g.project_id = ?");
     args.push(opts.projectId);
   }
+  if (opts.unfiled) where.push("g.project_id IS NULL");
   if (opts.createdBy) {
     where.push("g.created_by = ?");
     args.push(opts.createdBy);

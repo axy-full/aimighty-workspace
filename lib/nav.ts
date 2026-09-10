@@ -20,13 +20,13 @@ const starts = (path: string, ...prefixes: string[]) => prefixes.some((p) => pat
 export const NAV: readonly NavItem[] = [
   {
     label: "Make",
-    href: () => "/",                                   // §10 `/make/video` — step 7
+    href: () => "/make/video",
     match: (p) => p === "/" || starts(p, "/generate", "/images", "/audio", "/make"),
   },
   {
     label: "Productions",
     href: () => "/productions",
-    match: (p) => starts(p, "/projects", "/productions", "/shots", "/takes", "/canvas", "/all", "/dashboard") && !p.includes("/rig"),
+    match: (p) => starts(p, "/projects", "/productions", "/shots", "/takes", "/canvas", "/dashboard") && !p.includes("/rig"),
   },
   {
     label: "Rig",
@@ -35,14 +35,14 @@ export const NAV: readonly NavItem[] = [
   },
   {
     label: "Library",
-    href: () => "/studio",                             // §11 `/library` — step 7
-    match: (p) => starts(p, "/library", "/studio"),
+    href: () => "/library",
+    match: (p) => starts(p, "/library", "/studio", "/all"),
   },
 ];
 
 /** The mobile dock (§14): `Needs you · Make · Productions`. */
 export const DOCK: readonly { label: string; href: string; match: (path: string) => boolean }[] = [
   { label: "Needs you", href: "/productions", match: (p) => starts(p, "/needs-you") },     // the approve queue — step 5
-  { label: "Make", href: "/", match: NAV[0].match },
+  { label: "Make", href: "/make/video", match: NAV[0].match },
   { label: "Productions", href: "/productions", match: (p) => NAV[1].match(p) || NAV[2].match(p) || NAV[3].match(p) },
 ];
