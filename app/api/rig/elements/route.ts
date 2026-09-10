@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { listElements, ensureRig, createElement, addVersion, syncTrainedVersions } from "@/lib/elements";
 import { isElementKind } from "@/lib/rig";
+import { getSetting } from "@/lib/settings";
 
 /**
  * The element library of the workspace in scope (brief 3).
@@ -62,6 +63,8 @@ export const POST = withTenant(async function POST(req: Request) {
     /* A trained face is a version too — pending until the trainer finishes, so nothing points at it yet. */
     if (identityId) await addVersion(first.id, { identityId }, { label: "trained", status: "pending" }, got.user.id);
   }
+  /* §13 · Rig & locks: a workspace that locks new assets locks this one from the start. */
+  if ((await getSetting("lockNewAssets")) === "1") { const { setElementLock } = await import("@/lib/elements"); await setElementLock(el.id, true, got.user.id); }
   const { getElement } = await import("@/lib/elements");
   return NextResponse.json({ element: (await getElement(el.id)) ?? el }, { status: 201 });
 });

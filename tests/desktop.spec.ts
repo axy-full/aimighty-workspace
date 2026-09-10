@@ -441,3 +441,31 @@ test("New asset: the 3a sheet opens from the Library at its numbers and closes o
   await page.keyboard.press("Escape");
   await expect(sheet).toHaveCount(0);
 });
+
+/**
+ * Settings (design/particl-v2 §13, board 4a): the 240px index with its nine
+ * sections, the column of `--card` sections at `18px 20px`, Workspace beside
+ * Credits at `1fr 380px`, the row chips at `6px 10px`, the 34×20 switches.
+ */
+test("Settings: the 4a index, sections and controls at their numbers", async ({ page }) => {
+  await page.goto("/settings");
+  await settle(page);
+  const signedIn = await page.getByRole("button", { name: "Account" }).count();
+  test.skip(!signedIn, "settings need a workspace");
+  const aside = page.getByRole("complementary", { name: "Sections" });
+  expect(await aside.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(240);
+  expect(await aside.evaluate((el) => getComputedStyle(el).padding)).toBe("24px 16px");
+  await expect(aside.getByRole("button")).toHaveCount(9);
+  const item = aside.getByRole("button").first();
+  expect(await item.evaluate((el) => getComputedStyle(el).padding)).toBe("9px 10px");
+  const ws = page.getByRole("region", { name: "Workspace" });
+  expect(await ws.evaluate((el) => getComputedStyle(el).padding)).toBe("18px 20px");
+  expect(await ws.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("12px");
+  expect(await ws.evaluate((el) => getComputedStyle(el.parentElement!).gridTemplateColumns.split(" ").pop())).toBe("380px");
+  const chip = ws.getByRole("button", { name: "Default model" });
+  expect(await chip.evaluate((el) => getComputedStyle(el).padding)).toBe("6px 10px");
+  const sw = page.getByRole("switch").first();
+  expect(await sw.evaluate((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })).toEqual([34, 20]);
+  await expect(page.getByRole("region", { name: "Engines & rates" }).getByText(/\/ (5s|still)$/).first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Account" })).toBeVisible();
+});

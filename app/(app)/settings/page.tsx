@@ -1,447 +1,64 @@
 "use client";
 
-/**
- * Settings — from the pipeline handoff.
- *
- * A sticky index on the left, panel cards on the right: who is on the
- * team and what their role lets them do; which model writes the prompts;
- * where the masters live and how they are named; the Atomik
- * connection (which is not a connection at all — one database); what a
- * new composer opens with and what happens at the cap; and the account.
- *
- * Every figure is the API's. The rate lines are the same estimates the
- * render button shows; the storage line is the ledger's; the roles are
- * the ones the server enforces — admin and member — described in terms of
- * what each can actually do here.
- */
-import Link from "next/link";
-import { creditsNumber } from "@/lib/price";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type MouseEvent as RMouseEvent } from "react";
 import { useRouter } from "next/navigation";
-import { MODELS, getModel } from "@/lib/models";
-import { usePrefs, setPrefs } from "@/lib/prefs";
 import { useApi } from "@/lib/useApi";
-import { usd, timeAgo } from "@/lib/format";
-import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
-import { Switch } from "@/components/Panel";
-import { IconChevron } from "@/components/Icons";
-import WorkspaceSettings from "@/components/WorkspaceSettings";
-import { usePageTitle } from "@/lib/usePageTitle";
-import { useSession, clearPrivateLocal } from "@/lib/session";
-import { ParticlMark, Empty } from "@/components/ParticlMark";
-import { AtomikMark } from "@/components/AtomikMark";
+import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
-import { uploadFile } from "@/lib/uploadClient";
-import { NOTIFY_KINDS, NOTIFY_LABELS } from "@/lib/notifyPrefs";
-import Runway from "@/components/Runway";
+import { usePageTitle } from "@/lib/usePageTitle";
+import { useAtomikRail } from "@/lib/atomikRail";
+import { MODELS } from "@/lib/models";
+import { estimateVideo, estimateImage } from "@/lib/rateTable";
+import { estimateTokens, costUsd } from "@/lib/models";
+import { NOTIFY_KINDS, NOTIFY_LABELS, type NotifyKind } from "@/lib/notifyPrefs";
+import { appAlert, appPrompt } from "@/components/dialog";
+import { Mono, Button } from "@/components/ui";
+import Menu, { type MenuItem } from "@/components/ui/Menu";
+import { ToastHost, useToast } from "@/components/ui/Toast";
+import Ring from "@/components/atomik/Ring";
+import { PageLoader } from "@/components/atomik/Loader";
 
-type Me = { name: string; email: string; role: string; owner?: boolean };
-type Credits = { balanceUsd: number; usedUsd: number } | null;
-type EngineInfo = {
-  id: string; label: string; envKey: string; docs: string; configured: boolean; safety?: string;
-  via?: "key" | "gateway" | null;
-  models: { id: string; label: string; kind: "video" | "image" }[];
-};
-type Refiner = { writer: "none" | "byteplus" | "claude"; provider: string; model: string; label: string; via: string; configured: boolean };
-type RefinerTest = {
-  ok: boolean; ms: number; model?: string; sample?: string; move?: string | null; error?: string;
-};
-type TeamMember = { id: string; email: string; name: string; role?: string; lastSeen: number | null; disabled: boolean; permanent?: boolean };
-type Team = { users: TeamMember[]; canSeeRoles?: boolean };
-type Ws = { platformModels?: { video: string; image: string } | null; settings: Record<string, string>; defaults: Record<string, string> };
-type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; monthlyUsd: number } | null };
-type TopupsView = {
-  applies: boolean; provider: "manual" | "stripe" | "razorpay"; canRequest: boolean; openLimit: number;
-  credits: { creditUsd: number; granted: number; used: number; balance: number } | null;
-  packs: { id: string; label: string; credits: number; bonus: number; total: number; usd: number }[];
-  requests: { id: string; packId: string; label: string; credits: number; bonus: number; usd: number; status: "requested" | "approved" | "declined" | "cancelled"; note: string; createdAt: number; decidedAt: number | null }[];
-  history: { id: string; credits: number; note: string; createdAt: number }[];
-};
+/**
+ * Settings (design/particl-v2/README.md §13; board 4a), value for value:
+ * the 240px index (`24px 16px`; `Settings` at 600 22; rows `9px 10px`,
+ * radius 8, 500 13.5, the current one on .12; the note at the foot) and
+ * one scrolling column (`24px 28px 40px`, 14 apart) of `--card` sections
+ * (.08, radius 12, `18px 20px`): Workspace beside Credits (`1fr 380px`),
+ * Team & roles, Engines & rates, Production defaults beside Atomik, then
+ * Rig & locks · Storage & masters · Notifications, and Account. A row is
+ * `10px 0` on a .07 rule at 400 13.5 with its value on the right — a
+ * chip that opens a menu (`6px 10px`, .12), a 34×20 switch, or mono.
+ * Changes save as they are made. Prices are read from engines, never
+ * typed here (§1): the rate on each engine card is the workspace's own
+ * table at the composer's defaults.
+ *
+ * Roles are what the app has — Owner, Admin, Member — not the five §13
+ * lists; a dropdown the server could not enforce would be a lie. The
+ * rows whose behaviour has one setting today say so without a caret
+ * (Atomik checkpoints at every paid step; it proposes assets and never
+ * creates them).
+ */
+type Me = { name: string; email: string; role: string; owner?: boolean; workspace?: { name: string } | null };
+type Ws = { settings: Record<string, string>; defaults: Record<string, string>; models?: { video: string; image: string } | null };
+type Team = { users: { id: string; email: string; name: string; role?: string; standing?: string; permanent?: boolean; disabled: boolean }[]; invites: { code: string; email: string; name: string }[]; canSeeRoles?: boolean };
+type Engines = { engines: { id: string; label: string; configured: boolean; models: { id: string; label: string; kind: "video" | "image" }[] }[]; refiner?: { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean; usdPerCall?: number } };
+type Topups = { applies: boolean; canRequest: boolean; credits: { creditUsd: number; granted: number; used: number; balance: number } | null; packs: { id: string; label: string; credits: number; bonus: number; total: number; usd: number }[]; requests: { id: string; status: string }[] };
+type Usage = { months?: { month: string; credits: number; usd?: number }[]; spentUsd?: number; storage?: { bytes: number } | null };
+type Limits = { limits: { storageBytes: number }; standing: { usedBytes: number } };
 
 const SECTIONS = [
-  ["workspace", "Workspace"], ["team", "Team & roles"], ["credits", "Credits"], ["statements", "Statements"], ["writer", "Prompt writer"], ["masters", "Storage & masters"],
-  ["atomik", "Atomik connection"], ["defaults", "Defaults & caps"], ["account", "Account"],
+  ["workspace", "Workspace & credits"], ["team", "Team & roles"], ["engines", "Engines & rates"], ["defaults", "Production defaults"],
+  ["atomik", "Atomik"], ["rig", "Rig & locks"], ["storage", "Storage & masters"], ["notifications", "Notifications"], ["account", "Account"],
 ] as const;
 const CAN: Record<string, string> = {
-  owner: "owns the workspace — cannot be demoted, disabled or removed · everything an admin can",
-  admin: "seats · keys · model routing · Atomik connection · everything a member can",
-  member: "generate · train identities · pick and approve takes · file against shots · order the canvas · download masters",
+  owner: "Owns the workspace · everything an admin can",
+  admin: "Seats · keys · routing · Atomik · everything a member can",
+  member: "Generate · pick and approve · file · download masters",
 };
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "—";
-function gb(bytes: number): string {
-  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(2)} TB`;
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
-  return `${(bytes / 1e3).toFixed(0)} KB`;
-}
-
-export default function SettingsPage() {
-  usePageTitle("Settings");
-  const { signedIn, workspace, role, superAdmin, workspaces } = useSession();
-  const money = useMoney();
-  const prefs = usePrefs();
-  const router = useRouter();
-  const { data: me } = useApi<Me>(signedIn ? "/api/me" : null);
-  const { data: engineData, refresh: refreshEngines } = useApi<{ engines: EngineInfo[]; refiner?: Refiner; gatewayCredits?: Credits }>("/api/engines");
-  const { data: topups, refresh: refreshTopups } = useApi<TopupsView>(signedIn ? "/api/workspaces/topups" : null, 30_000);
-  const { data: limits } = useApi<{ limits: { concurrency: number; rendersPerHour: number; storageBytes: number }; standing: { running: number; startedLastHour: number; usedBytes: number } }>(signedIn ? "/api/limits" : null, 60_000);
-  const { data: team } = useApi<Team>(signedIn ? "/api/team" : null, 60000);
-  const { data: ws, refresh: refreshWs } = useApi<Ws>(signedIn ? "/api/settings" : null, 0);
-  const { data: ledger } = useApi<Ledger>(signedIn ? "/api/usage" : null, 120000);
-  const [busy, setBusy] = useState(false);
-  const [active, setActive] = useState<string>("team");
-  const isAdmin = me?.role === "admin";
-  const setting = (k: string) => ws?.settings[k] ?? ws?.defaults[k] ?? "";
-  const model = getModel(setting("defaultVideoModel") || ws?.platformModels?.video || prefs.modelId);
-
-  // The index follows the scroll.
-  useEffect(() => {
-    const els = SECTIONS.map(([id]) => document.getElementById(id)).filter(Boolean) as HTMLElement[];
-    if (!els.length) return;
-    const io = new IntersectionObserver((entries) => {
-      const hit = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-      if (hit) setActive(hit.target.id);
-    }, { rootMargin: "-20% 0px -60% 0px" });
-    els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, [signedIn]);
-
-  async function saveSetting(key: string, value: string) {
-    const res = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [key]: value }) });
-    if (!res.ok) { const j = await res.json().catch(() => ({})); await appAlert("Not saved", j.error ?? `The server answered ${res.status}.`); return; }
-    refreshWs();
-  }
-  async function signOut() {
-    setBusy(true);
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      clearPrivateLocal();
-    } catch { /* the cookie may already be gone; leaving is still the intent */ }
-    finally { setBusy(false); }
-    router.push("/login");
-    router.refresh();
-  }
-
-
-  return (
-    <div className="page">
-      <div className="page-inner st-grid">
-        <nav className="st-index" aria-label="Settings">
-          <span className="st-index-h">Settings</span>
-          {SECTIONS.map(([id, label]) => (
-            <a key={id} href={`#${id}`} className={`st-index-a ${active === id ? "is-on" : ""}`} onClick={() => setActive(id)}>{label}</a>
-          ))}
-        </nav>
-
-        <div className="flex min-w-0 flex-col gap-5">
-          {/* ── Workspace ── */}
-          <section id="workspace" className="scard">
-            <div className="scard-h"><span>Workspace</span><span>Every workspace has its own database and its own team. Nothing in one can be seen from another.</span></div>
-            {!signedIn ? <Empty compact title="Sign in to see your workspace" /> : (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 max-[900px]:grid-cols-1">
-                <div className="srow"><span>This workspace</span><span className="font-medium">{workspace?.name ?? "—"}</span></div>
-                <div className="srow"><span>Your standing here</span><span className="mono-v">{role === "owner" ? "OWNER" : role === "admin" ? "ADMIN" : role === "member" ? "MEMBER" : "—"}</span></div>
-                <div className="srow"><span>Address</span><span className="mono-v">{workspace ? `/${workspace.slug}` : "—"}</span></div>
-                <div className="srow"><span>Your workspaces</span><span className="text-dim">{workspaces.length} · switch or add one from the logo, top-left</span></div>
-                {/* The mark a client sees on a review page (brief 2.6) — never the platform's. */}
-                <div className="srow"><span>Your mark</span><span className="flex items-center gap-2">
-                  {setting("brandLogoUploadId")
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    ? <img src={`/api/uploads/${setting("brandLogoUploadId")}`} alt="" className="h-6 w-auto max-w-[120px] object-contain" />
-                    : <span className="text-dim">none</span>}
-                  {isAdmin && <label className="hdr-mono-link cursor-pointer">UPLOAD
-                    <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="sr-only" onChange={async (e) => {
-                      const f = e.target.files?.[0]; if (!f) return;
-                      try { const up = await uploadFile(f, "reference"); saveSetting("brandLogoUploadId", up.id); }
-                      catch (err) { await appAlert("Not uploaded", (err as Error).message); }
-                    }} /></label>}
-                  {isAdmin && setting("brandLogoUploadId") && <button type="button" className="hdr-mono-link" onClick={() => saveSetting("brandLogoUploadId", "")}>REMOVE</button>}
-                </span></div>
-              </div>
-            )}
-          </section>
-
-          {/* ── Team & roles ── */}
-          <section id="team" className="scard">
-            <div className="flex items-baseline justify-between gap-4">
-              <div className="scard-h"><span>Team &amp; roles</span><span>{team ? `${team.users.filter((u) => !u.disabled).length} seat${team.users.length === 1 ? "" : "s"}. ` : ""}One owner, who can&rsquo;t be removed; everyone else is an admin or a member. Everyone on the team renders, picks and approves.</span></div>
-              <Link href="/team" className="btn-secondary">Invite</Link>
-            </div>
-            {!signedIn ? <Empty compact title="The team is for the team" line="Sign in to see who is here." /> : (
-              <div className="flex flex-col">
-                <div className="steam is-head"><span>PERSON</span><span>ROLE</span><span>CAN</span><span className="text-right">LAST SEEN</span></div>
-                {(team?.users ?? []).map((u) => (
-                  <div key={u.id} className={`steam ${u.disabled ? "opacity-50" : ""}`}>
-                    <span className="flex items-center gap-2.5"><span className="ptable-av !ml-0">{initials(u.name)}</span><span className="flex flex-col gap-0.5"><span className="font-medium">{u.name}</span><span className="text-[11.5px] text-dim">{u.email}</span></span></span>
-                    <span className="chip-dd !w-[130px] justify-between !py-1.5" title={team?.canSeeRoles ? "Change on the Team page" : "Roles are the owner's to see"}>{u.permanent ? "Owner" : u.role ? u.role[0].toUpperCase() + u.role.slice(1) : "Team member"} <span className="hdr-caret" aria-hidden="true">▼</span></span>
-                    <span className="text-lead">{u.permanent ? CAN.owner : CAN[u.role ?? "member"] ?? CAN.member}</span>
-                    <span className="mono-s text-right">{u.lastSeen ? timeAgo(u.lastSeen).toUpperCase() : "—"}</span>
-                  </div>
-                ))}
-                {team && team.users.length === 0 && <span className="rail-help">Nobody yet.</span>}
-              </div>
-            )}
-          </section>
-
-          {/* ── Credits ── */}
-          <section id="credits" className="scard">
-            <div className="scard-h"><span>Credits</span><span>{
-              topups?.applies
-                ? "What this workspace renders with. Held takes release themselves the moment a pack arrives."
-                : "This workspace pays its vendors directly, so there is nothing to top up here."
-            }</span></div>
-            {topups?.applies && <CreditsCard view={topups} onChanged={refreshTopups} />}
-          </section>
-
-          {/* ── Statements ── */}
-          <section id="statements" className="scard">
-            <div className="scard-h"><span>Statements</span><span>One a month, itemised by production, shot and take — how this workspace bills its own client. Print it, or take the CSV.</span></div>
-            {isAdmin ? <StatementsCard /> : <span className="rail-help">The owner and admins read statements.</span>}
-          </section>
-
-          {/* ── Prompt writer ──
-              This was "Vendors & keys", and everything about keys is gone
-              from it: the key card, the platform-or-own mode switch, and the
-              per-engine CONNECTED / NOT ROUTED badges. Those badges were the
-              real disclosure — they told every member of the workspace which
-              vendor integrations are configured, which is a list of things to
-              go at and nothing the reader could act on.
-
-              KEY MANAGEMENT IS NO LONGER IN THE PRODUCT. Nothing was deleted
-              and existing keys keep working, but an owner can no longer add,
-              rotate, or switch to their own key from here; that has to happen
-              platform-side until it has somewhere else to live.
-
-              What stayed is the one row in here that was never about keys:
-              which model writes the prompts, which is a workspace's own
-              choice and says nothing about credentials. */}
-          <section id="writer" className="scard">
-            <div className="scard-h"><span>Prompt writer</span><span>Which model turns a line into a shot&rsquo;s prompt. It writes; it never renders.</span></div>
-            <div className="rows">
-              {engineData?.refiner
-                ? <WriterRow writer={engineData.refiner} credits={engineData.gatewayCredits ?? null} isAdmin={isAdmin} onChanged={refreshEngines} />
-                : <div className="row"><span className="text-[14px] text-mute">{signedIn ? "Reading the workspace's choice…" : "Sign in to see who writes the prompts."}</span></div>}
-            </div>
-          </section>
-
-          {/* ── Storage & masters ── */}
-          <section id="masters" className="scard">
-            <div className="scard-h"><span>Storage &amp; masters</span><span>Masters are stored byte-for-byte and never compressed to suit an API. What the engine returned is what you download.</span></div>
-            <div className="grid grid-cols-3 gap-2.5 max-[900px]:grid-cols-1">
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">BUCKET</span><span className="text-[18px] font-semibold">{ledger?.storage ? gb(ledger.storage.bytes) : "—"}{limits ? <span className="text-[13px] font-normal text-dim"> of {gb(limits.limits.storageBytes)}</span> : null}</span><span className="text-[12px] leading-[1.4] text-dim">private Blob · {ledger?.storage ? `${ledger.storage.counted.toLocaleString()} files${ledger.storage.unmeasured ? ` (+${ledger.storage.unmeasured} unmeasured)` : ""}${money.inCredits ? "" : ` · ${usd(ledger.storage.monthlyUsd, 2)} a month`}` : "sign in for the count"} · {setting("retentionDays") === "0" || !setting("retentionDays") ? "every take kept, nothing pruned" : `deleted takes pruned after ${setting("retentionDays")} days`}</span></div>
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">FILE NAMING</span><span className="mono-v !text-[12.5px] !leading-[1.4]">{setting("namingTemplate") || "{project}_{shot}_{version}_{w}x{h}.{ext}"}</span><span className="text-[12px] leading-[1.4] text-dim">Filing against a shot is what gives a take its number and its name.</span></div>
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">DELIVERY</span><span className="text-[18px] font-semibold">Per shot</span><span className="text-[12px] leading-[1.4] text-dim">Approved masters download one shot at a time from the Canvas. Everyone on the team can download; a derived copy travels only when an API needs one.</span></div>
-            </div>
-            {signedIn && <WorkspaceSettings isAdmin={isAdmin} />}
-          </section>
-
-          {/* ── Atomik connection ── */}
-          <section id="atomik" className="scard">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <AtomikMark size={28} />
-                <div className="scard-h"><span>Atomik connection</span><span>Idea to shot list happens in Atomik. The shot list arrives here; state and cost go back.</span></div>
-              </div>
-              <span className="ak-state !text-[10.5px] is-approved"><span className="dot !h-[7px] !w-[7px] dot-approved" />BUILT IN · ONE DATABASE</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2.5 max-[900px]:grid-cols-1">
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">ARRIVES FROM ATOMIK →</span><span className="text-[12.5px] leading-[1.5] text-lead">Production and budget cap · shot list in order with planned durations · @cast tags with descriptions and stills · references pinned per shot · setup defaults (look, lens, lighting, mood).</span></div>
-              <div className="ecard"><span className="mono !tracking-[.12em] !text-[10px]">← GOES BACK TO ATOMIK</span><span className="text-[12.5px] leading-[1.5] text-lead">Per shot: state (draft · picked · approved) · take count · cost to date · master link once approved. Nothing else leaves; prompts and takes stay here.</span></div>
-            </div>
-            <div className="flex items-center justify-between gap-4 text-[12px] text-dim">
-              <span>Atomik and Particl share one database, so the shot list is live and there is nothing to sync — &ldquo;Send changes&rdquo; on the shot list only clears the edited-since-last-send tint.</span>
-              <Link href="/atomik/ideas" className="btn-primary !h-8 !px-3 !text-[12px]">Open Atomik →</Link>
-            </div>
-          </section>
-
-          {/* ── Defaults & caps ── */}
-          <section id="defaults" className="scard">
-            <div className="scard-h"><span>Defaults &amp; caps</span><span>What a new composer opens with, and what happens when a production nears its cap. The engines and rules are the workspace&rsquo;s; resolution, duration and audio are per browser.</span></div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 max-[900px]:grid-cols-1">
-              <div className="srow"><span>Default video engine</span>
-                <label className="chip-dd !py-1.5"><select value={setting("defaultVideoModel")} disabled={!isAdmin} aria-label="Default video engine" onChange={(e) => saveSetting("defaultVideoModel", e.target.value)}>
-                  <option value="">Platform default{ws?.platformModels?.video ? ` (${getModel(ws.platformModels.video).label})` : ""}</option>
-                  {MODELS.filter((m) => m.kind === "video" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
-              </div>
-              <div className="srow"><span>Default still engine</span>
-                <label className="chip-dd !py-1.5"><select value={setting("defaultImageModel")} disabled={!isAdmin} aria-label="Default still engine" onChange={(e) => saveSetting("defaultImageModel", e.target.value)}>
-                  <option value="">Platform default{ws?.platformModels?.image ? ` (${getModel(ws.platformModels.image).label})` : ""}</option>
-                  {MODELS.filter((m) => m.kind === "image" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
-              </div>
-              <div className="srow"><span>Cost approval rule</span>
-                <label className="chip-dd !py-1.5"><select value={setting("approvalRule") || "anyone"} disabled={!isAdmin} aria-label="Cost approval rule" onChange={(e) => saveSetting("approvalRule", e.target.value)}>
-                  <option value="anyone">Anyone generates</option><option value="cap">Cap per shot</option><option value="producer">Producer approves</option>
-                </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
-                {(setting("approvalRule") || "anyone") === "cap" && (
-                  <label className="chip-dd !py-1.5" title="Credits a shot may take before a member needs an admin to press">
-                    <input type="number" min={1} step={1} className="w-16 bg-transparent text-right tabular-nums" aria-label="Shot cap in credits"
-                      value={setting("shotCapCredits") || "50"} disabled={!isAdmin} onChange={(e) => saveSetting("shotCapCredits", e.target.value)} /> cr a shot
-                  </label>
-                )}
-              </div>
-              <div className="srow"><span>Duration · resolution · ratio</span>
-                <span className="flex gap-1.5">
-                  {model.durations.length > 0 && <label className="chip-dd !py-1.5"><select value={prefs.duration} aria-label="Duration" onChange={(e) => setPrefs({ duration: Number(e.target.value) })}>{model.durations.map((d) => <option key={d} value={d}>{d}s</option>)}</select></label>}
-                  <label className="chip-dd !py-1.5"><select value={prefs.resolution} aria-label="Resolution" onChange={(e) => setPrefs({ resolution: e.target.value })}>{model.resolutions.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}</select></label>
-                  <span className="chip-dd is-muted !py-1.5">16:9</span>
-                </span>
-              </div>
-              <div className="srow"><span>Warn the producer at</span>
-                <label className="chip-dd !py-1.5"><select value={setting("capWarnPct") || "80"} disabled={!isAdmin} aria-label="Warn at" onChange={(e) => saveSetting("capWarnPct", e.target.value)}>
-                  {[50, 70, 80, 90, 100].map((p) => <option key={p} value={String(p)}>{p}% OF CAP</option>)}
-                </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
-              </div>
-              <div className="srow"><span>Seedance audio on new takes</span>
-                <button type="button" className={`tgl !h-4 !w-[30px] ${prefs.audio ? "is-on" : ""}`} role="switch" aria-checked={prefs.audio} aria-label="Seedance audio on new renders" onClick={() => setPrefs({ audio: !prefs.audio })} />
-              </div>
-              <div className="srow"><span>At the cap</span>
-                <label className="chip-dd !py-1.5"><select value={setting("atCap") || "producer"} disabled={!isAdmin} aria-label="At the cap" onChange={(e) => saveSetting("atCap", e.target.value)}>
-                  <option value="producer">Producer unlocks</option><option value="stop">Rendering stops</option><option value="warn">Warning only</option>
-                </select><span className="hdr-caret" aria-hidden="true">▼</span></label>
-              </div>
-            </div>
-            <span className="rail-help">A production&rsquo;s cap is set on its page, in {money.inCredits ? "credits" : "dollars"}. These rules apply at the cost check whenever a production has one; the workspace balance is the hard stop above them.</span>
-            {limits && (
-              <span className="rail-help">Limits: {limits.limits.concurrency} renders at once ({limits.standing.running} going) · {limits.limits.rendersPerHour} an hour ({limits.standing.startedLastHour} started this hour) · {gb(limits.limits.storageBytes)} kept ({gb(limits.standing.usedBytes)} used). A take past the first waits for a slot; the platform sets these.</span>
-            )}
-          </section>
-
-          {/* ── Account ── */}
-          <section id="account" className="scard">
-            <div className="scard-h"><span>Account</span><span>{me ? `Signed in as ${me.name} · ${me.email}` : signedIn ? "…" : "Signed out — the interface is open to browse."}</span></div>
-            <div className="rows">
-              <PushRow />
-              <button className="row" onClick={() => router.push("/connect")}>Connect apps &amp; tokens<span className="row-value">Claude · ChatGPT · CLI<IconChevron className="!text-mute" /></span></button>
-              <button className="row" onClick={() => router.push("/platform")}>Platform<span className="row-value">Assets · APIs · security · IP<IconChevron className="!text-mute" /></span></button>
-              {superAdmin && <button className="row" onClick={() => router.push("/admin")}>Sign-ups &amp; workspaces<span className="row-value">Platform owner<IconChevron className="!text-mute" /></span></button>}
-              <button className="row" onClick={() => router.push("/policy")}>Content policy<span className="row-value">What may not be made here<IconChevron className="!text-mute" /></span></button>
-              <button className="row" onClick={() => router.push("/privacy")}>Privacy &amp; retention<span className="row-value">What is kept, where, how long<IconChevron className="!text-mute" /></span></button>
-              <button className="row" onClick={() => router.push("/terms")}>Terms<span className="row-value">Credits · your work · changes<IconChevron className="!text-mute" /></span></button>
-              <button className="row" onClick={() => router.push("/report")}>Report content<span className="row-value">Anyone may<IconChevron className="!text-mute" /></span></button>
-              {me?.owner && <a className="row" href="/api/export?format=csv" download title="Every take with its prompt, cost, filename and a link to its master — the owner's alone">Export takes<span className="row-value">CSV · owner<IconChevron className="!text-mute" /></span></a>}
-              {me?.owner && <MastersRow />}
-              {me?.owner && <a className="row" href="/api/export" download title="Every prompt, cost and account record, as JSON — the owner's alone">Export data<span className="row-value">JSON · owner</span></a>}
-              {signedIn && <button className="row !text-lift" onClick={signOut} disabled={busy}>{busy ? "Signing out…" : "Sign out"}</button>}
-              {/* The legacy gate here used to come from the keys payload, which this
-                  page no longer fetches. It was belt-and-braces anyway: DELETE
-                  /api/workspaces runs `deletionAllowed({ legacy })` and refuses the
-                  studio's own workspace server-side, which is the check that counts. */}
-              {me?.owner && <DeleteWorkspaceRow name={workspace?.name ?? ""} />}
-            </div>
-            <div className="flex items-center gap-2 text-[12px] text-mute"><ParticlMark size={12} className="text-mute/70" /><span>particl studio · Seedance on BytePlus ModelArk · Nano Banana through Vercel AI Gateway</span></div>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-/**
- * The workspace's writer, as a three-way choice, and a way to hear it answer.
- * Through Vercel AI Gateway the credentials are the deployment's own, so the
- * one thing that can still be missing is credit on the gateway — which is
- * exactly what a test call reports in plain words.
- */
-const WRITERS: { id: Refiner["writer"]; label: string; blurb: string }[] = [
-  { id: "none", label: "Pro", blurb: "No rewriting. Your words reach the engine exactly as written." },
-  { id: "byteplus", label: "Seedream", blurb: "ByteDance's own text model finishes thin ideas, on the ModelArk key." },
-  { id: "claude", label: "Claude Opus 5", blurb: "Anthropic's Opus 5 finishes thin ideas, through Vercel AI Gateway." },
-];
-
-function WriterRow({ writer, credits, isAdmin, onChanged }: { writer: Refiner; credits: Credits; isAdmin: boolean; onChanged: () => void }) {
-  const money = useMoney();
-  const [busy, setBusy] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<RefinerTest | null>(null);
-  const current = WRITERS.find((w) => w.id === writer.writer) ?? WRITERS[2];
-
-  async function choose(id: Refiner["writer"]) {
-    if (!isAdmin || saving || id === writer.writer) return;
-    setSaving(true); setResult(null);
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ promptWriter: id }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Couldn't save that");
-      onChanged();
-    } catch (e) {
-      await appAlert("Couldn't change the writer", (e as Error).message);
-    } finally { setSaving(false); }
-  }
-
-  async function test() {
-    setBusy(true); setResult(null);
-    try {
-      const res = await fetch("/api/engines/test", { method: "POST" });
-      setResult(await res.json());
-    } catch (e) {
-      setResult({ ok: false, ms: 0, error: (e as Error).message });
-    } finally { setBusy(false); }
-  }
-
-  return (
-    <div className="row !block py-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="min-w-0 flex-1">
-          Prompt writer
-          <span className="mt-0.5 block text-[12px] leading-snug text-mute">
-            {current.blurb}{writer.writer !== "none" ? ` Currently ${writer.label} · ${writer.via}.` : ""}
-            {credits && writer.writer === "claude" && !money.inCredits && (
-              <> Gateway credit: <span className="text-dim">{usd(credits.balanceUsd, 2)}</span> left, {usd(credits.usedUsd, 3)} used.</>
-            )}
-          </span>
-        </span>
-        <span className="inline-flex rounded-[10px] bg-chip p-[3px]" role="radiogroup" aria-label="Prompt writer">
-          {WRITERS.map((w) => {
-            const on = writer.writer === w.id;
-            return (
-              <button key={w.id} type="button" role="radio" aria-checked={on}
-                disabled={!isAdmin || saving}
-                onClick={() => choose(w.id)}
-                className={`rounded-[8px] px-3 py-1 text-[13px] font-medium transition-colors disabled:cursor-default ${
-                  on ? "bg-panel text-ink shadow-[var(--shadow-card)]" : "text-dim"
-                }`}>
-                {w.label}
-              </button>
-            );
-          })}
-        </span>
-      </div>
-      {(isAdmin || result) && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-3">
-          {isAdmin && writer.writer !== "none" && (
-            <button type="button" onClick={test} disabled={busy}
-              className="chip !py-1.5 !text-[13px] !text-blue disabled:opacity-50">
-              {busy ? "Asking…" : "Test the writer"}
-            </button>
-          )}
-          {!writer.configured && writer.writer !== "none" && (
-            <span className="text-[12.5px] text-warn">Not reachable from this deployment.</span>
-          )}
-          {result && (
-            <span className={`text-[12.5px] leading-snug ${result.ok ? "text-dim" : "text-lift"}`}>
-              {result.ok
-                ? <>{result.ms ? `Answered in ${(result.ms / 1000).toFixed(1)}s` : ""}{result.move ? `, chose “${result.move}”` : ""}{result.ms ? ": " : ""}<span className="italic">{result.sample}</span></>
-                : result.error}
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A row that steps through its options in place — no drill-in for three items. */
-
-/* ── Push notifications ───────────────────────────────────────────────── */
-
+const gb = (bytes: number) => bytes >= 1e12 ? `${(bytes / 1e12).toFixed(2)} TB` : bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : bytes >= 1e6 ? `${(bytes / 1e6).toFixed(0)} MB` : `${(bytes / 1e3).toFixed(0)} KB`;
 const PUSH_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
 function urlB64ToUint8Array(base64: string) {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -449,21 +66,300 @@ function urlB64ToUint8Array(base64: string) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
+export default function SettingsPage() {
+  return <ToastHost><Settings /></ToastHost>;
+}
+
+/* ── the pieces of a section ─────────────────────────────────────────── */
+function Section({ id, title, label, line, children, className = "", head }: { id: string; title?: string; label?: string; line?: string; children: ReactNode; className?: string; head?: ReactNode }) {
+  return (
+    <section id={id} className={`flex flex-col rounded-card border border-border bg-card px-[20px] py-[18px] ${className}`} aria-label={label ?? title}>
+      {title && (
+        <span className="flex items-center justify-between gap-[12px] pb-[8px]">
+          <span className="flex flex-col gap-[4px]"><span className="text-[16px] font-semibold leading-none text-ink">{title}</span>{line && <span className="text-[13px] leading-[1.4] text-ink-body">{line}</span>}</span>
+          {head}
+        </span>
+      )}
+      {children}
+    </section>
+  );
+}
+function Row({ label, children, gap = false }: { label: ReactNode; children: ReactNode; gap?: boolean }) {
+  return <span className={`flex items-center justify-between border-t border-[rgba(245,246,248,.07)] py-[10px] text-[13.5px] leading-none text-ink ${gap ? "gap-[10px]" : ""}`}><span>{label}</span>{children}</span>;
+}
+function Switch({ on, onChange, label, disabled = false }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}
+      className={`tap44 relative inline-block h-[20px] w-[34px] flex-none rounded-[10px] disabled:opacity-40 ${on ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}>
+      <span className={`absolute top-[2px] h-[16px] w-[16px] rounded-full ${on ? "left-[16px] bg-ground" : "left-[2px] bg-ink"}`} />
+    </button>
+  );
+}
+function ChipMenu({ value, items, label, fixed = false }: { value: ReactNode; items: MenuItem[]; label: string; fixed?: boolean }) {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const cls = "tap44 flex items-center gap-[6px] rounded-pill border border-[rgba(245,246,248,.12)] px-[10px] py-[6px] text-[12.5px] font-medium leading-none text-ink";
+  if (fixed) return <span className={cls} title="The one behaviour the app has today">{value}</span>;
+  return (
+    <>
+      <button type="button" aria-label={label} className={cls} onClick={(e: RMouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setAt({ x: r.left, y: r.bottom + 6 }); }}>{value} <span className="text-[9px] text-ink-muted max-md:text-[12px]">▼</span></button>
+      {at && <Menu x={at.x} y={at.y} title={label} items={items} onClose={() => setAt(null)} />}
+    </>
+  );
+}
+
+function Settings() {
+  const router = useRouter();
+  const { signedIn, rates, credits: sessionCredits, name: myName } = useSession();
+  const money = useMoney();
+  const toast = useToast();
+  const rail = useAtomikRail();
+  usePageTitle("Settings");
+  const { data: me } = useApi<Me>(signedIn ? "/api/me" : null, 0);
+  const { data: ws, refresh: refreshWs } = useApi<Ws>(signedIn ? "/api/settings" : null, 0);
+  const { data: team, refresh: refreshTeam } = useApi<Team>(signedIn ? "/api/team" : null, 60_000);
+  const { data: eng, refresh: refreshEngines } = useApi<Engines>(signedIn ? "/api/engines" : null, 0);
+  const { data: topups, refresh: refreshTopups } = useApi<Topups>(signedIn ? "/api/workspaces/topups" : null, 30_000);
+  const { data: usage } = useApi<Usage>(signedIn ? "/api/usage" : null, 120_000);
+  const { data: limits } = useApi<Limits>(signedIn ? "/api/limits" : null, 60_000);
+  const { data: notify, refresh: refreshNotify } = useApi<{ prefs: Record<NotifyKind, boolean>; role: string }>(signedIn ? "/api/me/notify" : null, 0);
+  const [current, setCurrent] = useState<string>(SECTIONS[0][0]);
+  const column = useRef<HTMLDivElement>(null);
+  const isAdmin = me?.role === "admin";
+  const owner = Boolean(me?.owner);
+  const settings = ws?.settings ?? {};
+  const s = (k: string) => settings[k] ?? ws?.defaults[k] ?? "";
+
+  /* The index follows the scroll: the section nearest the top is the current one. */
+  useEffect(() => {
+    const el = column.current; if (!el) return;
+    const onScroll = () => {
+      const top = el.getBoundingClientRect().top + 40;
+      let best: string = SECTIONS[0][0]; let bestD = Infinity;
+      for (const [id] of SECTIONS) { const n = document.getElementById(id); if (!n) continue; const d = Math.abs(n.getBoundingClientRect().top - top); if (d < bestD) { bestD = d; best = id; } }
+      setCurrent(best);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [ws]);
+  const jump = (id: string) => { document.getElementById(id)?.scrollIntoView({ block: "start" }); setCurrent(id); };
+
+  const save = async (key: string, value: string, said?: string) => {
+    const r = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [key]: value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error ?? "That didn't save."); return false; }
+    refreshWs(); if (key === "atomikEngines" || key === "promptWriter") refreshEngines();
+    toast(said ?? "Saved"); return true;
+  };
+
+  /* ── the figures ──────────────────────────────────────────────────── */
+  const videoModels = useMemo(() => MODELS.filter((m) => m.kind === "video" && !m.hidden && m.durations.length), []);
+  const defaultVideo = ws?.models?.video ?? s("defaultVideoModel") ?? videoModels[0]?.id;
+  const defaultModel = MODELS.find((m) => m.id === defaultVideo) ?? videoModels[0];
+  const rateOf = (id: string): string => {
+    const m = MODELS.find((x) => x.id === id); if (!m) return "—";
+    if (m.kind === "image") { const p = estimateImage(rates, id, m.resolutions.includes("1K") ? "1K" : m.resolutions[0], 0); return p == null ? "—" : `${money.price(p)} / still`; }
+    const res = m.resolutions.includes("1080p") ? "1080p" : m.resolutions[0]; const secs = m.durations.includes(5) ? 5 : (m.durations[0] ?? 5);
+    const p = estimateVideo(rates, id, res, secs, estimateTokens(res, "16:9", secs), costUsd, { audio: false });
+    return p == null ? "—" : `${money.price(p)} / ${secs}s`;
+  };
+  const off = useMemo<string[]>(() => { try { const v = JSON.parse(s("atomikEngines") || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  const configuredFor = (modelId: string) => Boolean(eng?.engines.find((e) => e.models.some((m) => m.id === modelId))?.configured);
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const monthRow = usage?.months?.find((m) => m.month === thisMonth);
+  const monthSpent = money.inCredits ? `${(monthRow?.credits ?? 0).toLocaleString()} cr` : money.price(monthRow?.usd ?? 0);
+  const creditUsd = rates.creditUsd || topups?.credits?.creditUsd || 0.1;
+  const balance = topups?.credits?.balance ?? sessionCredits?.balance ?? 0;
+  const pack = topups?.packs[0] ?? null;
+  const openRequests = (topups?.requests ?? []).filter((r) => r.status === "requested").length;
+  const used = limits?.standing.usedBytes ?? usage?.storage?.bytes ?? 0;
+
+  const invite = async () => {
+    const name = await appPrompt("Invite someone", "", "Name", "Their name, then their email on the next line."); if (!name?.trim()) return;
+    const email = await appPrompt(`Invite ${name.trim()}`, "", "name@studio.com"); if (!email?.trim()) return;
+    const r = await fetch("/api/team", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), email: email.trim(), role: "member" }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error ?? "Not invited."); return; }
+    toast(`${name.trim()} invited`); refreshTeam();
+  };
+  const setRole = async (id: string, role: "admin" | "member") => {
+    const r = await fetch(`/api/team/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error ?? "That didn't change."); return; }
+    toast(`Now ${role}`); refreshTeam();
+  };
+  const topUp = async () => {
+    if (!pack) return;
+    const r = await fetch("/api/workspaces/topups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ packId: pack.id }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error ?? "No request made."); return; }
+    if (j.checkout?.url) { window.location.assign(j.checkout.url); return; }
+    toast(`${pack.total.toLocaleString()} cr requested · the platform confirms it`); refreshTopups();
+  };
+  const setNotify = async (kind: NotifyKind, on: boolean) => {
+    const r = await fetch("/api/me/notify", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, on }) });
+    if (!r.ok) { toast("That didn't save."); return; }
+    refreshNotify();
+  };
+  const signOut = async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); };
+  const deleteWorkspace = async () => {
+    const wsName = me?.workspace?.name ?? "";
+    const typed = await appPrompt(`Delete "${wsName}"?`, "", wsName, "Every take, upload, identity and its database will be purged; the platform keeps only its billing record. Type the workspace's name to confirm.");
+    if (typed === null) return;
+    const r = await fetch("/api/workspaces", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: typed }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { await appAlert("Not deleted", j.error ?? "Could not delete it"); return; }
+    router.push("/make/video"); router.refresh();
+  };
+
+  if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to see your workspace&rsquo;s settings.</div>;
+  if (!ws || !me) return <PageLoader what="Opening · Settings" />;
+
+  const monthName = MONTHS[new Date().getMonth()];
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] bg-ground text-ink max-md:grid-cols-1">
+      <aside className="flex flex-col gap-[2px] border-r border-border px-[16px] py-[24px] max-md:hidden" aria-label="Sections">
+        <span className="px-[10px] pb-[16px] text-[22px] font-semibold leading-[1.1] tracking-[-0.02em] text-ink">Settings</span>
+        {SECTIONS.map(([id, label]) => (
+          <button key={id} type="button" onClick={() => jump(id)} aria-current={current === id ? "true" : undefined}
+            className={`rounded-ctl px-[10px] py-[9px] text-left text-[13.5px] font-medium leading-none ${current === id ? "bg-selected text-ink" : "text-ink-body"}`}>{label}</button>
+        ))}
+        <span className="mt-auto px-[10px] text-[12.5px] leading-[1.45] text-ink-muted" style={{ textWrap: "pretty" }}>Changes save as you make them. Prices are read from engines, never typed here.</span>
+      </aside>
+      <div ref={column} className="flex min-h-0 min-w-0 flex-col gap-[14px] overflow-y-auto px-[28px] pb-[40px] pt-[24px] max-md:px-[16px]">
+        <div className="grid grid-cols-[minmax(0,1fr)_380px] gap-[14px] max-md:grid-cols-1">
+          <Section id="workspace" title="Workspace" line="What every new composer opens with." className="gap-[14px]">
+            <div className="grid grid-cols-2 gap-x-[20px] gap-y-[8px] max-md:grid-cols-1">
+              <Row label="Workspace name"><span className="text-[13px] font-medium leading-none text-ink">{me.workspace?.name ?? "—"}</span></Row>
+              <Row label="Default model">
+                <ChipMenu label="Default model" value={defaultModel?.label ?? "—"} items={videoModels.map((m): MenuItem => ({ kind: "item", label: m.label, keys: rateOf(m.id), onSelect: () => { if (isAdmin) save("defaultVideoModel", m.id, `${m.label} is the default`); else toast("An admin sets the default engine."); } }))} />
+              </Row>
+              <Row label="Aspect · duration · resolution"><Mono cost tone="ink">16:9 · 5s · 1080p</Mono></Row>
+              <Row label="Take states"><Mono cost tone="ink">draft → picked → approved</Mono></Row>
+            </div>
+          </Section>
+          <Section id="credits" label="Credits" className="gap-[12px]">
+            <Mono>Credits · 1 cr = {Math.round(creditUsd * 100)}¢</Mono>
+            <span className="flex items-baseline gap-[8px]">
+              <span className="text-[34px] font-semibold leading-none tracking-[-0.02em] text-ink">{money.inCredits ? balance.toLocaleString() : money.price(usage?.spentUsd ?? 0)}</span>
+              <span className="text-[14px] leading-none text-ink-body">{money.inCredits ? `cr · $${(balance * creditUsd).toFixed(2)}` : "spent with your own vendors"}</span>
+            </span>
+            <span className="flex justify-between text-[13px] leading-[1.4] text-ink-body"><span>Open top-up requests</span><Mono cost tone="ink">{openRequests}</Mono></span>
+            <span className="flex justify-between text-[13px] leading-[1.4] text-ink-body"><span>{monthName} so far</span><Mono cost tone="ink">{monthSpent}</Mono></span>
+            {topups?.applies && pack ? (
+              <Button variant="primary" placement="card" outlined={rail.open} disabled={!topups.canRequest} onClick={topUp} cost={pack.total} costSuffix={` · $${pack.usd}`}>Top up</Button>
+            ) : (
+              <span className="text-[13px] leading-[1.4] text-ink-body" style={{ textWrap: "pretty" }}>This workspace pays its vendors directly; there is nothing to top up.</span>
+            )}
+          </Section>
+        </div>
+
+        <Section id="team" title="Team & roles" line={`${team?.users.length ?? 0} ${team?.users.length === 1 ? "seat" : "seats"}. Roles decide who approves, who sets caps, who downloads masters.`} className="gap-[12px]"
+          head={<button type="button" onClick={invite} className="tap44 flex h-[36px] flex-none items-center rounded-pill border border-border-mid px-[12px] text-[13px] font-medium leading-none text-ink">Invite</button>}>
+          <div className="grid grid-cols-3 gap-[8px] max-md:grid-cols-1">
+            {(team?.users ?? []).map((m) => {
+              const role = m.permanent ? "owner" : (m.role ?? "member");
+              return (
+                <div key={m.id} className="flex items-center gap-[10px] rounded-tile border border-border bg-ground px-[12px] py-[10px]">
+                  <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full border border-border-mid bg-card ui-mono tracking-normal text-ink">{initials(m.name)}</span>
+                  <span className="flex min-w-0 flex-col gap-[3px]"><span className="text-[13.5px] font-medium leading-[1.2] text-ink">{m.name}{m.disabled ? " · disabled" : ""}</span><span className="truncate text-[12px] leading-[1.3] text-ink-body">{CAN[role] ?? CAN.member}</span></span>
+                  <span className="ml-auto flex-none">
+                    <ChipMenu label={`${m.name}'s role`} fixed={m.permanent || !owner} value={<span className="text-[12px]">{role[0].toUpperCase() + role.slice(1)}</span>}
+                      items={[{ kind: "item", label: "Admin", onSelect: () => setRole(m.id, "admin") }, { kind: "item", label: "Member", onSelect: () => setRole(m.id, "member") }]} />
+                  </span>
+                </div>
+              );
+            })}
+            {(team?.invites ?? []).map((i) => (
+              <div key={i.code} className="flex items-center gap-[10px] rounded-tile border border-dashed border-[rgba(245,246,248,.22)] px-[12px] py-[10px]">
+                <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full border border-dashed border-border-mid ui-mono tracking-normal text-ink-muted">{initials(i.name)}</span>
+                <span className="flex min-w-0 flex-col gap-[3px]"><span className="text-[13.5px] font-medium leading-[1.2] text-ink">{i.name}</span><span className="truncate text-[12px] leading-[1.3] text-ink-body">Invited · {i.email}</span></span>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section id="engines" title="Engines & rates" line="Keys are set by an admin and never shown again in full. The rate is what every button quotes. The switch is whether Atomik may propose the engine." className="gap-[12px]">
+          <div className="grid grid-cols-3 gap-[8px] max-md:grid-cols-1">
+            {MODELS.filter((m) => !m.hidden).map((m) => {
+              const on = !off.includes(m.id); const ok = configuredFor(m.id);
+              return (
+                <div key={m.id} className="flex flex-col gap-[9px] rounded-tile border border-border bg-ground p-[12px]">
+                  <span className="flex items-center gap-[8px]"><span className="text-[13.5px] font-semibold leading-[1.2] text-ink">{m.label}</span><span className="ml-auto flex items-center gap-[5px] ui-mono"><span className={`box-border block h-[7px] w-[7px] rounded-full ${ok ? "bg-ink" : "border border-dashed border-ink-muted"}`} />{ok ? "connected" : "no key"}</span></span>
+                  <span className="text-[12.5px] leading-[1.3] text-ink-body">{m.use}</span>
+                  <span className="flex items-center justify-between border-t border-[rgba(245,246,248,.07)] pt-[9px]">
+                    <Mono cost tone="ink">{rateOf(m.id)}</Mono>
+                    <span className="flex items-center gap-[8px] ui-mono">Atomik may propose<Switch on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /></span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+
+        <div className="grid grid-cols-2 gap-[14px] max-md:grid-cols-1">
+          <Section id="defaults" title="Production defaults" line="Every new production starts here; each can override." className="gap-[2px]">
+            <Row label="Shot cap"><button type="button" className="tap44" onClick={async () => { const v = await appPrompt("Credits a shot may take before a member needs an admin", s("shotCapCredits"), "50"); if (v != null && /^\d+$/.test(v.trim())) save("shotCapCredits", v.trim(), `Shot cap · ${v.trim()} cr`); }}><Mono cost tone="ink">{s("shotCapCredits")} cr</Mono></button></Row>
+            <Row label="Warn the producer at"><ChipMenu label="Warn at" value={`${s("capWarnPct")}% of cap`} items={[50, 70, 80, 90].map((p): MenuItem => ({ kind: "item", label: `${p}%`, onSelect: () => save("capWarnPct", String(p), `Warn at ${p}%`) }))} /></Row>
+            <Row label="At the cap"><ChipMenu label="At the cap" value={s("atCap") === "stop" ? "Stop" : s("atCap") === "warn" ? "Warn only" : "Producer unlocks"} items={[["producer", "Producer unlocks"], ["stop", "Stop"], ["warn", "Warn only"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => save("atCap", v, `At the cap · ${l.toLowerCase()}`) }))} /></Row>
+            <Row label="Who approves takes"><ChipMenu label="Who approves" value={s("approvalRule") === "producer" ? "Producer" : s("approvalRule") === "cap" ? "Anyone under the cap" : "Anyone"} items={[["anyone", "Anyone"], ["cap", "Anyone under the cap"], ["producer", "Producer"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => save("approvalRule", v, `${l} approves`) }))} /></Row>
+            <Row label="Who renders"><ChipMenu label="Who renders" fixed value="Anyone" items={[]} /></Row>
+          </Section>
+          <Section id="atomik" title="Atomik" line="What it may do on its own, and where it must stop." className="gap-[2px]" head={<Ring mode="idle" size={18} className="order-first mr-[10px] flex-none self-start" />}>
+            <Row label="Checkpoint"><ChipMenu label="Checkpoint" fixed value="Every paid step" items={[]} /></Row>
+            <Row label="May create assets"><ChipMenu label="May create assets" fixed value="Propose only" items={[]} /></Row>
+            <Row label="Planning model">
+              <span className="flex items-center gap-[8px]">
+                <ChipMenu label="Planning model" value={eng?.refiner?.writer === "none" ? "None" : eng?.refiner?.label ?? "—"} items={[["claude", "Claude"], ["byteplus", "BytePlus"], ["none", "None"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => { if (isAdmin) save("promptWriter", v, `Planning by ${l}`); else toast("An admin chooses the planning model."); } }))} />
+                {eng?.refiner && eng.refiner.writer !== "none" && <Mono cost tone="ink" className="whitespace-nowrap">{money.price(eng.refiner.usdPerCall ?? 0)} / plan</Mono>}
+              </span>
+            </Row>
+            <Row label="Never without you"><Mono cost>Spend · unlock · delete · approve</Mono></Row>
+          </Section>
+        </div>
+
+        <div className="grid grid-cols-3 gap-[14px] max-md:grid-cols-1">
+          <Section id="rig" title="Rig & locks" line="What stays fixed once a face, voice or look exists." className="gap-[2px]">
+            <Row label="Lock new identities, voices, looks"><Switch on={s("lockNewAssets") === "1"} label="Lock new assets" disabled={!isAdmin} onChange={(v) => save("lockNewAssets", v ? "1" : "0", v ? "New assets start locked" : "New assets start open")} /></Row>
+            <Row label="Who may unlock"><ChipMenu label="Who may unlock" fixed value="Admin" items={[]} /></Row>
+            <Row label="Train on create"><ChipMenu label="Train on create" value={s("trainOnCreate") === "always" ? "Always" : s("trainOnCreate") === "never" ? "Never" : "Ask each time"} items={[["ask", "Ask each time"], ["always", "Always"], ["never", "Never"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => save("trainOnCreate", v, `Train on create · ${l.toLowerCase()}`) }))} /></Row>
+          </Section>
+          <Section id="storage" title="Storage & masters" line="Byte-for-byte, never re-encoded for an API." className="gap-[2px]">
+            <Row label="Bucket"><Mono cost tone="ink">{gb(used)}{limits ? ` of ${gb(limits.limits.storageBytes)}` : ""}</Mono></Row>
+            <Row label="File naming" gap><button type="button" className="tap44 text-right" onClick={async () => { const v = await appPrompt("File naming", s("namingTemplate"), "{project}_{scene}_{shot}_{model}_v{version}_{user}"); if (v?.trim()) save("namingTemplate", v.trim(), "Naming saved"); }}><Mono tone="ink" className="!whitespace-normal break-all !tracking-[.04em] normal-case">{s("namingTemplate")}</Mono></button></Row>
+            <Row label="Keep every take"><Switch on={s("retentionDays") === "0"} label="Keep every take" disabled={!isAdmin} onChange={(v) => save("retentionDays", v ? "0" : "30", v ? "Every take is kept" : "Takes are kept for 30 days")} /></Row>
+          </Section>
+          <Section id="notifications" title="Notifications" line="Per person. In-app always; email is the switch." className="gap-[2px]">
+            {NOTIFY_KINDS.filter((k) => !NOTIFY_LABELS[k].adminOnly || isAdmin).map((k) => (
+              <Row key={k} label={NOTIFY_LABELS[k].title} gap><Switch on={notify?.prefs[k] ?? true} label={NOTIFY_LABELS[k].title} onChange={(v) => setNotify(k, v)} /></Row>
+            ))}
+            <PushRow />
+          </Section>
+        </div>
+
+        <Section id="account" title="Account" line={`${me.email} · ${me.owner ? "owner" : me.role}${me.workspace ? ` · ${me.workspace.name}` : ""}`} className="!flex-row items-center justify-between gap-[20px] max-md:!flex-col max-md:items-start"
+          head={<span className="flex flex-wrap gap-[8px]">
+            {owner && <a href="/api/export?format=csv" download className="tap44 flex h-[36px] items-center rounded-pill border border-border-mid px-[12px] text-[13px] font-medium leading-none text-ink">Export · CSV</a>}
+            {owner && <a href="/api/export" download className="tap44 flex h-[36px] items-center rounded-pill border border-border-mid px-[12px] text-[13px] font-medium leading-none text-ink">Export · JSON</a>}
+            <button type="button" onClick={signOut} className="tap44 flex h-[36px] items-center rounded-pill border border-border-mid px-[12px] text-[13px] font-medium leading-none text-ink">Sign out{myName ? "" : ""}</button>
+            {owner && <button type="button" onClick={deleteWorkspace} className="tap44 flex h-[36px] items-center rounded-pill border border-border-mid px-[12px] text-[13px] font-medium leading-none text-ink-body">Delete workspace</button>}
+          </span>}>
+          <span />
+        </Section>
+      </div>
+    </div>
+  );
+}
+
+/** Push on this device — a switch, or the one-line reason it can't be. */
 function PushRow() {
   type PushState = "off" | "on" | "busy" | "denied" | "install" | "unconfigured" | "unsupported";
-  // Starts "off" on both server and client — anything read from `navigator`
-  // during render would hydrate differently than it rendered.
   const [state, setState] = useState<PushState>("off");
-
   useEffect(() => {
     let alive = true;
-    // A microtask boundary keeps this out of the render pass entirely.
     Promise.resolve().then(async () => {
       if (!("serviceWorker" in navigator && "PushManager" in window)) {
-        const ios = /iP(hone|ad|od)/.test(navigator.userAgent) &&
-          !matchMedia("(display-mode: standalone)").matches;
-        if (alive) setState(ios ? "install" : "unsupported");
-        return;
+        const ios = /iP(hone|ad|od)/.test(navigator.userAgent) && !matchMedia("(display-mode: standalone)").matches;
+        if (alive) setState(ios ? "install" : "unsupported"); return;
       }
       if (!PUSH_KEY) { if (alive) setState("unconfigured"); return; }
       if (Notification.permission === "denied") { if (alive) setState("denied"); return; }
@@ -473,7 +369,6 @@ function PushRow() {
     });
     return () => { alive = false; };
   }, []);
-
   async function enable() {
     setState("busy");
     try {
@@ -481,290 +376,26 @@ function PushRow() {
       const reg = await navigator.serviceWorker.register("/sw.js");
       const perm = await Notification.requestPermission();
       if (perm !== "granted") { setState(perm === "denied" ? "denied" : "off"); return; }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(PUSH_KEY),
-      });
-      const res = await fetch("/api/push/subscribe", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON() }),
-      });
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(PUSH_KEY) });
+      const res = await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "The server rejected it.");
       setState("on");
-    } catch (e) {
-      appAlert("Couldn't turn on notifications", (e as Error).message);
-      setState(PUSH_KEY ? "off" : "unconfigured");
-    }
+    } catch (e) { appAlert("Couldn't turn on notifications", (e as Error).message); setState(PUSH_KEY ? "off" : "unconfigured"); }
   }
-
   async function disable() {
     setState("busy");
     try {
       const reg = await navigator.serviceWorker.getRegistration();
       const sub = reg && (await reg.pushManager.getSubscription());
-      if (sub) {
-        await fetch("/api/push/unsubscribe", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: sub.endpoint }),
-        });
-        await sub.unsubscribe();
-      }
+      if (sub) { await fetch("/api/push/unsubscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) }); await sub.unsubscribe(); }
       setState("off");
-    } catch (e) {
-      // The old code set "off" in a finally, so a failed unsubscribe showed
-      // the toggle off while the device kept receiving pushes.
-      setState("on");
-      await appAlert("Notifications are still on", (e as Error).message);
-    }
+    } catch (e) { setState("on"); await appAlert("Notifications are still on", (e as Error).message); }
   }
-
   if (state === "unsupported") return null;
-
-  const note =
-    state === "denied" ? "Blocked in your browser's settings"
-    : state === "install" ? "Add Particl to your Home Screen first"
-    : state === "unconfigured" ? "Not set up on this deployment" : null;
-
+  const note = state === "denied" ? "blocked in the browser" : state === "install" ? "add to the Home Screen first" : state === "unconfigured" ? "not set up here" : null;
   return (
-
-    <>
-    <div className="row">
-      <span className="flex flex-col">
-        Chat notifications
-        {note && <span className="text-[13px] text-mute">{note}</span>}
-      </span>
-      <span className="row-value">
-        {note ? (
-          <button
-            className="text-[15px] text-blue"
-            onClick={() => appAlert(
-              state === "denied" ? "Notifications are blocked"
-                : state === "install" ? "Install the app first" : "Push isn't set up",
-              state === "denied"
-                ? "Allow notifications for this site in your browser's settings, then come back here."
-                : state === "install"
-                  ? "On iPhone, notifications only reach the installed app. Tap Share, then Add to Home Screen, open Particl from the icon, and turn this on there."
-                  : "Push notifications aren't set up on this deployment — contact management."
-            )}
-          >
-            Why?
-          </button>
-        ) : (
-          <Switch
-            checked={state === "on"}
-            disabled={state === "busy"}
-            onChange={(v) => (v ? enable() : disable())}
-          />
-        )}
-      </span>
-    </div>
-    {/* The choice is the person's, in this workspace — not this browser's: it stands whether or not this device is subscribed. */}
-    <NotifyRows />
-    </>
-  );
-}
-
-/**
- * What to be told about (brief 2.7): four things happen that someone might
- * want on their phone, and each person chooses their own. Kept beside the
- * switch that turns notifications on at all, because one without the other
- * says nothing.
- */
-function NotifyRows() {
-  const { data, refresh } = useApi<{ prefs: Record<string, boolean>; role: string }>("/api/me/notify", 0);
-  const [busy, setBusy] = useState("");
-  if (!data) return null;
-  const admin = data.role === "admin" || data.role === "owner";
-  async function set(kind: string, on: boolean) {
-    setBusy(kind);
-    try {
-      const res = await fetch("/api/me/notify", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, on }) });
-      if (!res.ok) throw new Error(`The server answered ${res.status}.`);
-      refresh();
-    } catch (e) { await appAlert("Not changed", (e as Error).message); }
-    finally { setBusy(""); }
-  }
-  return (
-    <>
-      {NOTIFY_KINDS.filter((k) => admin || !NOTIFY_LABELS[k].adminOnly).map((k) => (
-        <div key={k} className="srow">
-          <span className="flex flex-col gap-0.5">
-            <span>{NOTIFY_LABELS[k].title}</span>
-            <span className="text-[12.5px] text-mute">{NOTIFY_LABELS[k].line}</span>
-          </span>
-          <Switch checked={Boolean(data.prefs[k])} disabled={busy === k} onChange={(v) => set(k, v)} />
-        </div>
-      ))}
-    </>
-  );
-}
-
-/**
- * The top-up screen: the balance, the packs, and the one dollar figure the
- * product ever shows a workspace — the price of a pack. Asking for one
- * queues a request for the platform; the credits arrive when it is answered.
- */
-function CreditsCard({ view, onChanged }: { view: TopupsView; onChanged: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const open = view.requests.filter((r) => r.status === "requested");
-  const cr = view.credits;
-  async function ask(packId: string) {
-    setBusy(packId); setErr(null);
-    try {
-      const res = await fetch("/api/workspaces/topups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ packId }) });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Could not ask for it");
-      if (json.checkout?.kind === "redirect" && json.checkout.url) { window.location.assign(json.checkout.url); return; }
-      onChanged();
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(null); }
-  }
-  async function cancel(id: string) {
-    setBusy(id); setErr(null);
-    try {
-      const res = await fetch(`/api/workspaces/topups?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Could not cancel it");
-      onChanged();
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(null); }
-  }
-  const when = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  return (
-    <div className="flex flex-col gap-4">
-      {cr && (
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums">{creditsNumber(cr.balance)} credits</span>
-          <span className="text-[13px] text-dim">left · {creditsNumber(cr.used)} used of {creditsNumber(cr.granted)} added</span>
-          <Runway className="basis-full text-[13px] text-mute" />
-        </div>
-      )}
-      {/* Four across only from xl. Between the lg breakpoint and about 1120px
-          a quarter of the rail is ~116px of text, and "24,000 credits" needs
-          ~140 — so three of the four cards broke their headline and their
-          price line while Starter fit, and the row read as ragged blocks. */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {view.packs.map((p) => (
-          <div key={p.id} className="ecard !gap-1.5">
-            <span className="mono !tracking-[.12em] !text-[10px]">{p.label.toUpperCase()}</span>
-            {/* What ARRIVES is the headline. The split is the line under it —
-                a bigger pack buys a cheaper credit, and that is only visible
-                if the free half is named rather than folded into the total. */}
-            <span className="text-[20px] font-semibold tabular-nums">{p.total.toLocaleString("en-US")} credits</span>
-            <span className="text-[13px] text-dim">
-              ${p.usd.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-              {p.bonus > 0 && <span className="text-mute"> · {p.bonus.toLocaleString("en-US")} free</span>}
-            </span>
-            {view.canRequest && (
-              <button type="button" className="btn-primary mt-1 !h-8 !px-3.5 !text-[12.5px]" disabled={busy != null || open.length >= view.openLimit} onClick={() => ask(p.id)}>
-                {busy === p.id ? "Asking…" : view.provider === "manual" ? "Request" : "Buy"}
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-      {!view.canRequest && <span className="rail-help">The owner or an admin asks for a pack.</span>}
-      {view.provider === "manual" && view.canRequest && (
-        <span className="rail-help">A request goes to the platform; the credits arrive once it is answered, and anything held releases itself.</span>
-      )}
-      {err && <span className="text-[13px] text-lift">{err}</span>}
-      {open.length > 0 && (
-        <div className="flex flex-col">
-          {open.map((r) => (
-            <div key={r.id} className="steam !grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_90px]">
-              <span className="flex flex-col gap-0.5"><span className="font-medium">{r.label} · {(r.credits + r.bonus).toLocaleString("en-US")} credits</span><span className="text-[11.5px] text-dim">asked {when(r.createdAt)} · waiting for the platform</span></span>
-              <span className="mono-v">${r.usd.toLocaleString("en-US")}</span>
-              <button type="button" className="btn-secondary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => cancel(r.id)}>Cancel</button>
-            </div>
-          ))}
-        </div>
-      )}
-      {view.history.length > 0 && (
-        <div className="flex flex-col">
-          <div className="steam is-head !grid-cols-[minmax(0,1.5fr)_110px_90px]"><span>ADDED</span><span className="text-right">CREDITS</span><span className="text-right">WHEN</span></div>
-          {view.history.map((g) => (
-            <div key={g.id} className="steam !grid-cols-[minmax(0,1.5fr)_110px_90px]">
-              <span className="truncate">{g.note || "Credits"}</span>
-              <span className={`mono-v text-right ${g.credits < 0 ? "text-lift" : ""}`}>{g.credits > 0 ? "+" : ""}{Math.round(g.credits).toLocaleString("en-US")}</span>
-              <span className="mono-s text-right">{when(g.createdAt).toUpperCase()}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** The months with anything on them, each a page to print and a CSV to take. */
-function StatementsCard() {
-  const { data } = useApi<{ months: { month: string; takes: number }[] }>("/api/statements", 60_000);
-  const label = (month: string) => {
-    const [y, m] = month.split("-").map(Number);
-    return new Date(Date.UTC(y, (m || 1) - 1, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
-  };
-  if (!data) return null;
-  if (!data.months.length) return <span className="rail-help">Nothing billed yet.</span>;
-  return (
-    <div className="flex flex-col">
-      {data.months.map((m) => (
-        <div key={m.month} className="steam !grid-cols-[minmax(0,1.5fr)_90px_160px]">
-          <span className="font-medium">{label(m.month)}</span>
-          <span className="mono-v">{m.takes} take{m.takes === 1 ? "" : "s"}</span>
-          <span className="flex justify-end gap-3 text-[13px]">
-            <Link href={`/statements/${m.month}`} className="text-blue">View</Link>
-            <a href={`/api/statements?month=${m.month}&format=csv`} className="text-blue">CSV</a>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** Every master, one after another, straight from the manifest: the browser does the saving. */
-function MastersRow() {
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
-  async function run() {
-    setBusy(true); setDone(null);
-    try {
-      const res = await fetch("/api/export?format=manifest");
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? "Could not read the manifest");
-      const masters = (j.masters ?? []) as { filename: string; url: string }[];
-      if (!masters.length) { setDone("Nothing to download yet."); return; }
-      const ok = await appConfirm(`Download ${masters.length} master${masters.length === 1 ? "" : "s"}?`, "They come one after another; the browser may ask once to allow several downloads. The links are good for 24 hours.", { confirmLabel: "Download" });
-      if (!ok) return;
-      for (const m of masters) {
-        const a = document.createElement("a"); a.href = m.url; a.download = m.filename; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
-        await new Promise((r) => setTimeout(r, 700));
-      }
-      setDone(`${masters.length} sent to the browser.`);
-    } catch (e) { setDone((e as Error).message); }
-    finally { setBusy(false); }
-  }
-  return (
-    <button className="row" onClick={run} disabled={busy} title="Every finished master, named by the filename protocol — the owner's alone">
-      Export masters<span className="row-value">{busy ? "Working…" : done ?? "Every file · owner"}<IconChevron className="!text-mute" /></span>
-    </button>
-  );
-}
-
-/** The end of a workspace: its exact name to confirm, then the record goes at once and the purge follows. */
-function DeleteWorkspaceRow({ name }: { name: string }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  async function remove() {
-    const typed = await appPrompt(`Delete "${name}"? Every take, upload, identity and its database will be purged; the platform keeps only its billing record. Type the workspace's name to confirm.`, "", name);
-    if (typed === null) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/workspaces", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: typed }) });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? "Could not delete it");
-      router.push("/"); router.refresh();
-    } catch (e) { await appAlert("Not deleted", (e as Error).message); setBusy(false); }
-  }
-  return (
-    <button className="row !text-lift" onClick={remove} disabled={busy}>Delete this workspace<span className="row-value">{busy ? "Deleting…" : "Owner · purges everything"}<IconChevron className="!text-mute" /></span></button>
+    <Row label={<span className="flex flex-col gap-[3px]">Push on this device{note && <Mono>{note}</Mono>}</span>} gap>
+      {note ? <Mono cost>—</Mono> : <Switch on={state === "on"} label="Push on this device" disabled={state === "busy"} onChange={(v) => (v ? enable() : disable())} />}
+    </Row>
   );
 }

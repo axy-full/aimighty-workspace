@@ -105,7 +105,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<ElementKind>(initial?.kind ?? "character");
   const [refs, setRefs] = useState<SheetRef[]>(initial?.references ?? []);
-  const [train, setTrain] = useState(false);
+  const [trainOverride, setTrainOverride] = useState<boolean | null>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -113,6 +113,11 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const picker = useRef<HTMLInputElement>(null);
   const nameField = useRef<HTMLInputElement>(null);
   const { data: terms } = useApi<{ terms: { configured: boolean; minPhotos: number; trainCostUsd: number } }>(signedIn ? "/api/identities" : null, 0);
+  /* §13 · Train on create: "ask" shows the switch off, "always" on, "never" hides the row. */
+  const { data: ws } = useApi<{ settings: Record<string, string> }>(signedIn ? "/api/settings" : null, 0);
+  const trainRule = ws?.settings.trainOnCreate === "always" ? "always" : ws?.settings.trainOnCreate === "never" ? "never" : "ask";
+  /* The switch starts where the workspace's rule puts it; a touch overrides it for this sheet. */
+  const train = trainOverride ?? (trainRule === "always");
   const { data: takes } = useApi<{ generations: Generation[] }>(takeMenu && signedIn ? "/api/jobs?kind=image&status=succeeded&limit=24&sync=0" : null, 0);
 
   useEffect(() => {
@@ -263,8 +268,8 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
               ))}
             </div>
           </div>
-          <div className="mx-[20px] mt-[16px] flex items-center gap-[14px] rounded-card border border-[rgba(245,246,248,.1)] bg-ground px-[14px] py-[12px] max-md:flex-wrap">
-            <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!trainable || !terms?.terms.configured} onClick={() => setTrain((t) => !t)}
+          {trainRule !== "never" && <div className="mx-[20px] mt-[16px] flex items-center gap-[14px] rounded-card border border-[rgba(245,246,248,.1)] bg-ground px-[14px] py-[12px] max-md:flex-wrap">
+            <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!trainable || !terms?.terms.configured} onClick={() => setTrainOverride(!train)}
               className={`tap44 relative h-[20px] w-[36px] flex-none rounded-[10px] disabled:opacity-40 ${trainable && train ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}>
               <span className={`absolute top-[2px] h-[16px] w-[16px] rounded-full ${trainable && train ? "left-[18px] bg-ground" : "left-[2px] bg-ink"}`} />
             </button>
@@ -276,7 +281,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
               )}
             </span>
             <Mono cost tone="ink" className="ml-auto flex-none whitespace-nowrap">{trainable && trainCost != null ? money.price(trainCost) : "—"}</Mono>
-          </div>
+          </div>}
         </div>
         <div className="flex flex-none items-center gap-[12px] px-[20px] pb-[20px] pt-[16px] max-md:flex-wrap">
           <Mono className="max-w-[380px] !leading-[1.5]">{note}</Mono>
