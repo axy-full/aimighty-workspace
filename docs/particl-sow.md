@@ -545,6 +545,38 @@ while billing it at the current rate, so a take held at 40 credits would
 release as soon as the balance covered 40 and then charge 43. `needs` is
 re-derived at release now.
 
+**§7A ledger — the grant knows whether it was bought, 10 September.**
+`credit_grants` recorded an amount and a note, so the platform could not tell
+a credit it had sold from one it had given away — and the welcome grant goes
+in through the same table, so a workspace spending its free credits reported
+them as revenue on the admin console. Measured on the live local record after
+the migration: **500 credits bought against 7,574 given**, a funded share of
+0.06 where `marginUsd` had been assuming 1.0.
+
+`kind` is `purchase | bonus | welcome | manual`, and only `purchase` is paid.
+`grantCredits` takes it with no default, so a caller that has not decided does
+not compile. `marginUsd` multiplies by `fundedFraction`, which apportions —
+which credits a job spent is unknowable without dated lots drawn in order, and
+those are deliberately not built (expiry is later, decided 10 September).
+Apportioning differs from draw-order only in timing, so it is unbiased over a
+workspace's life and wrong only about which month.
+
+The migration is `NOT NULL DEFAULT 'manual'`, ALTERed in the migration block
+rather than the schema array — that array replays FIRST, so anything naming a
+new column belongs after it — and classified inside the same `try`, because
+the ALTER succeeding is the one moment the database gains the column and
+`platformReady` is memoised per process, not per deployment.
+
+**The default is load-bearing, and it was exercised by accident.** A grant
+written by an instance still running the old code against an already-migrated
+database lands on the default. That happened here — a welcome grant written
+during a branch switch came out `manual`, not `welcome` — and it is exactly
+the window a rolling deploy opens. It is harmless because `manual` is unpaid:
+the classification is imprecise, the funded share is not. Getting that
+direction right is why the default is `manual` and not `purchase`.
+
 **Not built, and named here so it is not assumed:** §7A's tiers, floor guard,
-`internal: true` multiplier and guardrails 1–6; invoicing. The packs are still
-the old three (500 / 2,000 / 10,000, no bonus credits), not §7A's four.
+`internal: true` multiplier and guardrails 1–6; invoicing; credit expiry
+("purchased credits last 12 months"), deferred 10 September. The packs are
+still the old three (500 / 2,000 / 10,000, no bonus credits), not §7A's four —
+that is the next change, and the ledger is now shaped for it.
