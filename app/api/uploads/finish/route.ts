@@ -40,12 +40,23 @@ export const POST = withTenant(async function POST(req: Request) {
   /* ── Chat attachments: any file type, streamed — never buffered whole ── */
   if (purpose === "chat") {
     const safeExt = (filename.match(/\.([A-Za-z0-9]{1,8})$/)?.[1] ?? "bin").toLowerCase();
-    const clientMime = String(body.mime ?? "");
-    const mime = /^[\w.-]+\/[\w.+-]+$/.test(clientMime) ? clientMime : "application/octet-stream";
+    /* The client does not get to name the type. It used to: this validated
+       the SHAPE of the string and nothing about its meaning, so "text/html"
+       passed, and `kind` came from sniffing three bytes of the head — a file
+       opening `GIF89a` and continuing as HTML stored as an image that the
+       media route then served inline on this origin.
+       The type is decided from the head below, once the bytes are here, the
+       same way the reference-upload path already does it. The client's
+       filename is still the client's, because a name is not executable. */
     const uploadId = id("file");
     try {
+      /* Stored opaquely at rest. The assembler needs a content type before a
+         single byte has been read, which is precisely when nothing is known
+         about the file — so it gets the honest answer rather than a guess or
+         the client's claim, and the real type is decided from the head below
+         and kept in the row. */
       const { sha256, bytes, headChunk } = await streamAssembleUpload(
-        scoped, count, uploadId, safeExt, mime
+        scoped, count, uploadId, safeExt, "application/octet-stream"
       );
       if (bytes > 2 * 1024 * 1024 * 1024) {
         return NextResponse.json({ error: "Chat files top out at 2 GB." }, { status: 400 });
@@ -55,6 +66,8 @@ export const POST = withTenant(async function POST(req: Request) {
       // unknown — chat doesn't need it.)
       const meta = identifyImage(headChunk);
       const kind = meta?.kind ?? "file";
+      /* Recognised from its own bytes, or opaque. Never the client's word. */
+      const mime = meta?.mime ?? "application/octet-stream";
       await db().execute({
         sql: `INSERT INTO uploads (id, filename, mime, ext, bytes, sha256, width, height, stored_url, kind, duration_s, created_at)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
