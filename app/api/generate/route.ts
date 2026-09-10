@@ -636,6 +636,21 @@ export const POST = withTenant(async function POST(req: Request) {
   let chosenMove: string | null = null;
   const detected = detectSpec(castPrompt);
   const detectedAxes = Object.values(detected).filter(Boolean).length;
+
+  /* The rate limit is asked HERE as well as below, because the prompt writer
+     is a paid call and it used to run first. A request that the limit was
+     going to refuse still paid for its refine on the way to being told no —
+     so a loop against a rate-limited workspace bought gateway text at the
+     platform's expense and rendered nothing, which is a cheaper way to spend
+     somebody's money than actually rendering.
+     Only the "rate" refusal is taken early; a "slots" verdict still falls
+     through, because that one parks the take rather than refusing it and the
+     prompt is wanted when it releases. Identical to the check below. */
+  const limEarly = await checkLimits();
+  if (!limEarly.allow && limEarly.why === "rate") {
+    return NextResponse.json({ error: limEarly.error }, { status: 429 });
+  }
+
   const refineCall = shouldRefine(castPrompt, detectedAxes);
   const writer = await activeWriter();
   if (task.id === "motion" || task.id === "upscale" || task.id === "reframe") {

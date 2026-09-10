@@ -1,3 +1,4 @@
+import { csvCell } from "./csvCell";
 /**
  * The selects, on the way out (brief 2.6): the shot list a producer bills
  * from. Pure — the route reads the takes, this writes the file.
@@ -13,10 +14,6 @@ export type Select = {
   engine: string; credits: number; usd: number; seconds: number; prompt: string; filename: string;
 };
 
-const cell = (v: string | number | null): string => {
-  const s = v == null ? "" : String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 /** One row per approved take, in shot order, the money column in the workspace's unit. */
 export function selectsCsv(rows: Select[], unit: "cr" | "$"): string {
@@ -25,6 +22,6 @@ export function selectsCsv(rows: Select[], unit: "cr" | "$"): string {
     r.shot, r.shotTitle, r.id, r.version, r.engine,
     unit === "cr" ? r.credits : Math.round(r.usd * 10000) / 10000,
     r.seconds, r.prompt, r.filename,
-  ].map(cell).join(","));
+  ].map(csvCell).join(","));
   return [head.join(","), ...lines].join("\r\n") + "\r\n";
 }

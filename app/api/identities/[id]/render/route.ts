@@ -1,5 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { allowanceCheck } from "@/lib/allowance";
+import { checkLimits } from "@/lib/limits";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { requireRender, withTenant } from "@/lib/auth";
 import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RATIOS, RENDER_USD_PER_MP } from "@/lib/identities";
@@ -28,8 +29,6 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (!falConfigured()) {
     return NextResponse.json({ error: "Identities aren't connected for this workspace. Ask the platform to connect them." }, { status: 400 });
   }
-  const allowance = await allowanceCheck("fal");
-  if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   const body = await req.json().catch(() => ({}));
   const prompt = String(body.prompt ?? "").trim();
   if (!prompt) return NextResponse.json({ error: "Say what the shot is." }, { status: 400 });
@@ -38,6 +37,19 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const seed = body.seed === "" || body.seed == null ? null : Number(body.seed);
   const projectId = body.projectId ? String(body.projectId) : identity.projectId;
   const finalPrompt = promptWithTrigger(prompt, identity);
+
+  /* Priced at what it will actually cost, and checked once the COUNT is
+     known. The wall used to run before the body was read, so it asked
+     `allowanceCheck("fal")` with no estimate at all — a zero — which
+     answers "can this workspace spend nothing?" and lets four stills
+     through on one credit. It also ran outside the rate limit entirely, so
+     nothing bounded how many times a second it could be asked.
+     Same walls, same order, as every other paid route. */
+  const estUsd = Math.round(RENDER_USD_PER_MP * count * 10_000) / 10_000;
+  const allowance = await allowanceCheck("fal", estUsd, RENDERER);
+  if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
+  const lim = await checkLimits();
+  if (!lim.allow) return NextResponse.json({ error: lim.error }, { status: lim.why === "rate" ? 429 : 409 });
 
   const ids: string[] = [];
   const ts = now();

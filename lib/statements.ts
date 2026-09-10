@@ -1,4 +1,5 @@
 import { db, ready } from "./db";
+import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
@@ -95,10 +96,6 @@ export function groupLines(rows: RawLine[]): StatementProject[] {
   return out.sort((a, b) => (a.id === null ? 1 : b.id === null ? -1 : a.name.localeCompare(b.name, "en")));
 }
 
-const csvCell = (v: string | number): string => {
-  const s = typeof v === "number" ? String(v) : v;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 /** The statement as a spreadsheet: one row per take, subtotals, the packs line. */
 export function statementCsv(s: Statement): string {
