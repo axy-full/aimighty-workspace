@@ -266,6 +266,29 @@ it already means.
 ### Packs
 Unit stays $0.10. Discount only through bonus credits, capped at 20%. Purchased credits last 12 months.
 
+**AMENDED 10 September 2026 — a pack does not expire while the workspace is
+on a plan.** The 12 months is time spent OFF a plan; a subscriber's purchased
+credits sit still.
+
+Why: with a plan's included credits spent first (which is what makes them
+included), a subscriber who stays inside their monthly allowance never touches
+their packs. A uniform 12-month lifetime would then expire credits the
+customer paid cash for and was structurally prevented from spending. That is
+not breakage, it is a charge for nothing. Breakage is meant to fall on a
+balance somebody walked away from, and a subscriber has not walked away —
+they are paying every month.
+
+**This is a sequencing constraint, not just a rule.** The exemption is part of
+the rule, and it cannot be honoured before plans exist to be exempt from. So
+purchase expiry does not ship first: either it ships WITH plans, or after
+them. Shipping the 12 months on its own would expire the credits of the exact
+customers this amendment protects, with nothing in the code able to tell that
+they should have been protected.
+
+Still open, and only reachable once plans exist: whether leaving a plan
+RESUMES the remaining months or restarts them. It has no answer today because
+nothing can leave a plan, and the two differ only for someone who has.
+
 | Pack | Price | Credits | Effective |
 |---|---|---|---|
 | Starter | $50 | 500 | $0.100 |
@@ -625,6 +648,22 @@ SPEND time for guardrail 5 — `meter_events.billed_credits` is one number with
 no source on it.
 
 **Then plans**, credits-only, on top of that. Then guardrails 1, 3 and 4.
+
+**BUILT — the cycle, 10 September.** `lib/cycle.ts`. The code knew one period,
+the UTC calendar month, and worked it out inline in two files that cannot see
+each other (`platformSpendThisMonth` walking a mutable Date back to the 1st,
+`monthRange` building one from a string). They agreed by both being right
+rather than by construction, and "expires at cycle end" is a rule about a
+boundary. Both callers now take it from one function; anchored on the 1st a
+cycle IS the calendar month, which is what the tests prove against the
+replaced arithmetic rather than assert.
+
+The anchor is a DAY, not a date, because a month-end anchor has to be the 28th
+in February and the 31st again in March, and a stored date remembers only what
+it was clamped to. `expires_at`, `drawn` and a `cycle_anchor` column are
+deliberately NOT in that change: each belongs to one of the three competing
+draw structures, two of which were rejected outright, and an unread column is
+the same mistake as an unread function.
 
 **Not built, and named here so it is not assumed:** §7A's plans/tiers, the
 floor guard, the `internal: true` multiplier, guardrails 1 and 3–6; invoicing;

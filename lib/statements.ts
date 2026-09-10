@@ -3,6 +3,7 @@ import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { platformDb, platformReady } from "./platform";
+import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
 
 /**
@@ -37,13 +38,21 @@ export type Statement = {
   packs: { count: number; credits: number; bonus: number; usd: number };
 };
 
-/** "2026-09" → the UTC month it names, or null for anything else. */
+/**
+ * "2026-09" → the UTC month it names, or null for anything else.
+ *
+ * The bounds come from `lib/cycle.ts` now. A statement is still a calendar
+ * month and this still refuses anything that is not one; what changed is that
+ * the month's two edges are worked out in the same place the rest of the
+ * product works them out, instead of a second time here.
+ */
 export function monthRange(month: string): { from: number; to: number } | null {
   const m = /^(\d{4})-(\d{2})$/.exec(month);
   if (!m) return null;
   const y = Number(m[1]); const mo = Number(m[2]);
   if (mo < 1 || mo > 12) return null;
-  return { from: Date.UTC(y, mo - 1, 1), to: Date.UTC(y, mo, 1) };
+  const { start, end } = cycleBounds(1, Date.UTC(y, mo - 1, 1));
+  return { from: start, to: end };
 }
 
 export const monthOf = (ms: number): string => {
