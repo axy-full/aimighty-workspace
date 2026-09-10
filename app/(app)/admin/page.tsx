@@ -31,6 +31,7 @@ type Ws = {
   id: string; slug: string; name: string; legacy: boolean; platformKeys: boolean; allowanceUsd: number | null; gatewayKey: boolean;
   credits: { granted: number; used: number; balance: number } | null; createdAt: number; owner: { email: string; name: string } | null; members: number;
   spend30: { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number; marginUsd: number } | null;
+  grants: { paid: number; free: number };
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
   limits: { concurrency: number | null; rendersPerHour: number | null; storageGb: number | null };
   internalTest?: boolean;
@@ -141,7 +142,7 @@ export default function AdminPage() {
                   <div key={w.id} className={`steam !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px] ${w.suspended ? "opacity-70" : ""}`}>
                     <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}{w.flagged ? <span className="ml-2 text-[11px] text-lift" title={w.flagNote ?? ""}>FLAGGED</span> : null}</span><span className="text-[11.5px] text-dim">{w.slug}{w.legacy ? " · the studio's own" : ""} · {w.members} member{w.members === 1 ? "" : "s"} · {timeAgo(w.createdAt)}</span></span>
                     <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{w.owner?.email ?? ""}</span></span>
-                    <SpendCell s={w.spend30} />
+                    <SpendCell s={w.spend30} grants={w.grants} />
                     <CreditsCell w={w} onChanged={refresh} />
                     <StateCell w={w} onChanged={refresh} />
                   </div>
@@ -259,14 +260,25 @@ function TopupsCard({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-/** Thirty days of a workspace on the platform's money: what the engines charged, what was billed, the margin between. */
-function SpendCell({ s }: { s: Ws["spend30"] }) {
+/**
+ * Thirty days of a workspace on the platform's money: what the engines
+ * charged, what was billed, the margin between.
+ *
+ * The margin counts only the share of those credits somebody bought, so a
+ * workspace living on its welcome grant no longer reads as revenue. When any
+ * of the balance was given rather than sold the cell says so — otherwise a
+ * margin quietly reduced by apportioning looks like a workspace that renders
+ * expensively, which is a different problem with a different answer.
+ */
+function SpendCell({ s, grants }: { s: Ws["spend30"]; grants: Ws["grants"] }) {
   if (!s || !s.jobs) return <span className="mono-s">—</span>;
   const m = s.marginUsd;
+  const free = grants?.free ?? 0;
   return (
     <span className="flex flex-col gap-0.5">
       <span className="mono-v">{usd(s.engineCostUsd, 2)} · {Math.round(s.billedCredits).toLocaleString()} CR</span>
       <span className={`text-[11.5px] ${m < 0 ? "text-lift" : "text-dim"}`}>margin {m < 0 ? "−" : "+"}{usd(Math.abs(m), 2)} · {s.jobs} job{s.jobs === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}{s.running ? ` · ${s.running} running` : ""}</span>
+      {free > 0 && <span className="text-[11.5px] text-mute">{Math.round(free).toLocaleString()} of {Math.round(free + (grants?.paid ?? 0)).toLocaleString()} CR given, not sold</span>}
     </span>
   );
 }

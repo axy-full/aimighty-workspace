@@ -62,7 +62,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!Number.isFinite(n) || n === 0 || Math.abs(n) > 1_000_000) {
       return NextResponse.json({ error: "Credits to add: a number, negative to take some away." }, { status: 400 });
     }
-    await grantCredits(id, n, String(body.note ?? "Added by management"), got.user.id);
+    /* `manual`, which counts as free. Management adding credits is usually
+       goodwill; when it is a payment taken off-platform there is nowhere yet
+       to say so, and booking goodwill as revenue is the worse mistake. */
+    await grantCredits(id, n, String(body.note ?? "Added by management"), got.user.id, "manual");
     // Credits arriving release what they cover, oldest take first.
     try {
       const ws = await getWorkspace(id);

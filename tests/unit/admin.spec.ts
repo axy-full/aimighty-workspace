@@ -31,7 +31,12 @@ test("spend, billed and failures are summed per workspace, engine health per eng
   expect(wa.jobs).toBe(3); expect(wa.failed).toBe(1);
   expect(wa.engineCostUsd).toBeCloseTo(2.998, 3);
   expect(wa.billedCredits).toBe(46); // 43 + 3
-  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1)).toBeCloseTo(1.602, 3);
+  /* Fully funded: every credit this workspace holds was bought, so the whole
+     of its spend is revenue. */
+  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1, 1)).toBeCloseTo(1.602, 3);
+  /* Half its credits were given. Half the same spend is revenue, and this
+     workspace is in fact losing money — which the old figure hid. */
+  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1, 0.5)).toBeCloseTo(-0.698, 3);
   const wb = by.get("ws_b")!;
   expect(wb.billedCredits).toBe(0); // its own key paid
   expect(wb.engineCostUsd).toBe(0); // not the platform's money

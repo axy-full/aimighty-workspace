@@ -94,6 +94,49 @@ export const usdToCredits = (usd: number, engine?: string | null): number => (us
 export const creditsToUsd = (credits: number): number => credits * creditUsd();
 
 /**
+ * Where a credit came from, and whether anyone paid for it.
+ *
+ * `credit_grants` recorded an amount and a note and nothing else, so the
+ * platform could not tell a credit it had sold from one it had given away.
+ * That was already wrong before bonus credits existed: the welcome grant goes
+ * through the same table, so a workspace spending it reported its whole
+ * balance as revenue (SOW §7A).
+ *
+ * `purchase` is the only kind cash arrives for. `bonus` is §7A's pack
+ * discount — free, by decision, because no money changes hands for it;
+ * `welcome` is the sign-up grant; `manual` is an admin adding credits, which
+ * counts as free because the alternative is booking goodwill as revenue.
+ * Understating is the safe direction to be wrong in, and an admin who is
+ * recording a payment taken off-platform can say so when there is somewhere
+ * to say it.
+ */
+export type GrantKind = "purchase" | "bonus" | "welcome" | "manual";
+export const GRANT_KINDS: readonly GrantKind[] = ["purchase", "bonus", "welcome", "manual"];
+export const isPaidKind = (kind: string | null | undefined): boolean => kind === "purchase";
+export function asGrantKind(v: unknown): GrantKind {
+  return (GRANT_KINDS as readonly string[]).includes(String(v)) ? (String(v) as GrantKind) : "manual";
+}
+
+/**
+ * How much of a balance was actually bought, 0 to 1.
+ *
+ * Which credits a job spent is unknowable without dated lots drawn in order,
+ * and those are deliberately not built yet. Apportioning is what is left, and
+ * it is the ordinary treatment for a fungible prepaid balance: a workspace
+ * whose credits are 90% bought has 90% of its spend funded. It differs from
+ * draw-order only in TIMING — by the time a balance is spent out, both have
+ * booked the same revenue — so it is unbiased over a workspace's life and
+ * wrong only about which month.
+ *
+ * No grants at all is 0, not 1: an unfunded workspace's spend is all cost.
+ */
+export function fundedFraction(paidCredits: number, freeCredits: number): number {
+  const total = paidCredits + freeCredits;
+  if (!(total > 0)) return 0;
+  return Math.min(1, Math.max(0, paidCredits / total));
+}
+
+/**
  * What the client needs to show a balance.
  *
  * **No `margins` here, on purpose (SOW §2: "margin ... never shown").** It

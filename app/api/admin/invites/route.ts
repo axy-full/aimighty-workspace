@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { requireSuperAdmin } from "@/lib/auth";
-import { platformDb, platformReady, now, platformKeysByDefault, rowToWorkspace } from "@/lib/platform";
+import { platformDb, platformReady, now, platformKeysByDefault, rowToWorkspace, grantsByKind } from "@/lib/platform";
 import { creditStateFor } from "@/lib/credits";
-import { creditUsd, signupCredits } from "@/lib/creditTerms";
+import { creditUsd, signupCredits, fundedFraction } from "@/lib/creditTerms";
 import { defaultAllowanceUsd } from "@/lib/allowance";
 import { gatewayMintConfigured } from "@/lib/vercelKeys";
 import { mailConfigured, sendMail, inviteOrigin } from "@/lib/mail";
@@ -32,6 +32,11 @@ export async function GET() {
                FROM workspaces w LEFT JOIN accounts a ON a.id = w.owner_id ORDER BY w.created_at`),
   ]);
   const spend = await meterByWorkspace(now() - 30 * 86_400_000).catch(() => new Map());
+  /* One grouped query for every workspace's bought-versus-given split, beside
+     the one that already reads every workspace's spend. This endpoint is
+     polled by the console; a per-workspace call here would be a scan a minute
+     per workspace. */
+  const split = await grantsByKind().catch(() => new Map());
   const credits = await Promise.all((workspaces.rows as any[]).map(async (r) => {
     try { return await creditStateFor(rowToWorkspace(r)); } catch { return null; }
   }));
@@ -46,7 +51,13 @@ export async function GET() {
     invites: invites.rows.map((r: any) => ({ code: r.code, email: r.email, name: r.name, note: r.note, createdAt: Number(r.created_at), expiresAt: Number(r.expires_at), sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0) })),
     requests: requests.rows.map((r: any) => ({ id: r.id, name: r.name, email: r.email, note: r.note, mailed: Boolean(Number(r.mailed)), createdAt: Number(r.created_at) })),
     workspaces: workspaces.rows.map((r: any, i: number) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: Number(r.uses_platform_keys) === 1, allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd), gatewayKey: Boolean(r.gateway_key_id), credits: credits[i] ? { granted: credits[i]!.granted, used: credits[i]!.used, balance: credits[i]!.balance } : null, createdAt: Number(r.created_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0),
-      spend30: (() => { const m = spend.get(String(r.id)); return m ? { ...m, marginUsd: marginUsd(m.billedCredits, m.engineCostUsd, creditUsd()) } : null; })(),
+      grants: (() => { const g = split.get(String(r.id)); return { paid: g?.paid ?? 0, free: g?.free ?? 0 }; })(),
+      spend30: (() => {
+        const m = spend.get(String(r.id));
+        if (!m) return null;
+        const g = split.get(String(r.id));
+        return { ...m, marginUsd: marginUsd(m.billedCredits, m.engineCostUsd, creditUsd(), fundedFraction(g?.paid ?? 0, g?.free ?? 0)) };
+      })(),
       suspended: Boolean(r.suspended_at), suspendedReason: r.suspended_reason ?? null, flagged: Boolean(r.flagged_at), flagNote: r.flag_note ?? null, internalTest: Number(r.internal_test ?? 0) === 1,
       limits: { concurrency: r.concurrency == null ? null : Number(r.concurrency), rendersPerHour: r.renders_per_hour == null ? null : Number(r.renders_per_hour), storageGb: r.storage_quota_bytes == null ? null : Math.round(Number(r.storage_quota_bytes) / 1e9 * 10) / 10 } })),
   });
