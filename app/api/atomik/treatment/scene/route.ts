@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { requireUser, withTenant } from "@/lib/auth";
+import { allowanceCheck } from "@/lib/allowance";
+import { checkLimits } from "@/lib/limits";
+import { vendorKeyNameFor } from "@/lib/platformSpend";
+import { requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { getTreatment, sceneFromReply } from "@/lib/atomikDocs";
 import { resolveModel } from "@/lib/atomik";
@@ -26,7 +29,12 @@ const SYSTEM = [
  * chooses to use it, so a human edit is never overwritten by a machine.
  */
 export const POST = withTenant(async function POST(req: Request) {
-  const got = await requireUser();
+  /* requireRender, not requireUser. This spends the platform's AI-Gateway
+     credit, and requireUser accepts a bearer of ANY scope — including the
+     read-only token /connect hands to MCP clients precisely because it
+     "cannot bill". The identity and ideas routes were moved for this reason;
+     these two were left behind. */
+  const got = await requireRender();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
   const projectId = String(body.projectId ?? "");
@@ -35,7 +43,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const t = await getTreatment(projectId);
   const scene = t?.scenes.find((s) => s.n === n);
   if (!t || !scene) return NextResponse.json({ error: "No such scene." }, { status: 404 });
-  if (!gatewayReachable()) return NextResponse.json({ error: "Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Vendors & keys." }, { status: 503 });
+  if (!gatewayReachable()) return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
 
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
   const auth = await gatewayAuth();
@@ -46,6 +54,16 @@ export const POST = withTenant(async function POST(req: Request) {
     `REWRITE SCENE ${n}:`, `title: ${scene.title || "(untitled)"}`, `secs: ${scene.secs}`, `prose: ${scene.prose || "(empty)"}`,
     typeof body.note === "string" && body.note.trim() ? `THE PERSON ASKS: ${body.note.trim().slice(0, 400)}` : "",
   ].filter(Boolean).join("\n");
+  /* The gateway's money is the platform's — `lib/platformSpend.ts` counts
+     atomik spend against it — so this asks the same question the render path
+     asks before spending any of it. Text is cheap per call and unlimited per
+     minute was the actual hole: nothing here refused a workspace at zero
+     credits or past its monthly allowance, and nothing rate-limited it. */
+  const estUsd = estimateRefineUsd(model, user.length, SYSTEM.length) ?? 0;
+  const wall = await allowanceCheck(vendorKeyNameFor("vercel"), estUsd, model);
+  if (!wall.ok) return NextResponse.json({ error: wall.error }, { status: wall.status });
+  const lim = await checkLimits();
+  if (!lim.allow) return NextResponse.json({ error: lim.error }, { status: lim.why === "rate" ? 429 : 409 });
   const res = await engineFor("vercel").chat!({ model, system: SYSTEM, user, maxTokens: 900, auth, timeoutMs: 90_000, mock: "scene" });
   const raw = res.text;
   if (!res.ok) {

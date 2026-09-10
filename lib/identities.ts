@@ -241,7 +241,7 @@ export async function startTraining(id: string, consent?: { by: string }): Promi
   const identity = await getIdentity(id);
   if (!identity) throw new Error("No such identity.");
   if (!falConfigured()) {
-    throw new Error("Identity training isn't connected for this workspace — add the fal.ai key under Settings › Vendors & keys.");
+    throw new Error("Identity training isn't connected for this workspace. Ask the platform to connect it.");
   }
   if (identity.status === "training") throw new Error("It's already training.");
   // The person pressing Train confirms the right to train on this face; it is stored with the identity.

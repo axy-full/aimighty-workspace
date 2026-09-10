@@ -119,7 +119,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const vendor = getProvider(model.provider);
   if (!providerConfigured(vendor)) {
     return NextResponse.json({
-      error: `${model.label} isn't connected for this workspace — add a ${vendor.label} key under Settings › Vendors & keys.`,
+      error: `${model.label} isn't connected for this workspace. Ask the platform to connect it.`,
     }, { status: 400 });
   }
   // On the platform's keys, a workspace has a monthly allowance — the wall
