@@ -83,6 +83,29 @@ it already means.
 ### Packs
 Unit stays $0.10. Discount only through bonus credits, capped at 20%. Purchased credits last 12 months.
 
+**AMENDED 10 September 2026 — a pack does not expire while the workspace is
+on a plan.** The 12 months is time spent OFF a plan; a subscriber's purchased
+credits sit still.
+
+Why: with a plan's included credits spent first (which is what makes them
+included), a subscriber who stays inside their monthly allowance never touches
+their packs. A uniform 12-month lifetime would then expire credits the
+customer paid cash for and was structurally prevented from spending. That is
+not breakage, it is a charge for nothing. Breakage is meant to fall on a
+balance somebody walked away from, and a subscriber has not walked away —
+they are paying every month.
+
+**This is a sequencing constraint, not just a rule.** The exemption is part of
+the rule, and it cannot be honoured before plans exist to be exempt from. So
+purchase expiry does not ship first: either it ships WITH plans, or after
+them. Shipping the 12 months on its own would expire the credits of the exact
+customers this amendment protects, with nothing in the code able to tell that
+they should have been protected.
+
+Still open, and only reachable once plans exist: whether leaving a plan
+RESUMES the remaining months or restarts them. It has no answer today because
+nothing can leave a plan, and the two differ only for someone who has.
+
 | Pack | Price | Credits | Effective |
 |---|---|---|---|
 | Starter | $50 | 500 | $0.100 |
