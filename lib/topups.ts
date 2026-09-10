@@ -1,5 +1,5 @@
-import { platformDb, platformReady, newId, now, grantCredits, getWorkspace, workspaceAdmins } from "./platform";
-import { packById } from "./packs";
+import { platformDb, platformReady, newId, now, grantCreditsBatch, getWorkspace, workspaceAdmins } from "./platform";
+import { packById, capBonus } from "./packs";
 import { runInTenant } from "./tenant";
 import { releaseHeldJobs } from "./held";
 import { sendMail, mailConfigured } from "./mail";
@@ -8,14 +8,15 @@ import { notify } from "./push";
 /**
  * Top-up requests: a workspace asks for a pack, the platform answers.
  *
- * One row per request in the platform record, with the pack's size and
- * price frozen at the moment of asking so a later price change never
- * rewrites history. Approving one is what adds the credits — through the
- * same grant every other credit arrives by — and releases held takes.
+ * One row per request in the platform record, with the pack's size, its
+ * bonus and its price frozen at the moment of asking, so a later change to
+ * the table never rewrites what somebody was quoted. Approving one is what
+ * adds the credits — through the same grant every other credit arrives by —
+ * and releases held takes.
  */
 export type TopupStatus = "requested" | "approved" | "declined" | "cancelled";
 export type TopupRequest = {
-  id: string; workspaceId: string; packId: string; label: string; credits: number; usd: number;
+  id: string; workspaceId: string; packId: string; label: string; credits: number; bonus: number; usd: number;
   status: TopupStatus; note: string; requestedBy: string | null; createdAt: number;
   decidedAt: number | null; decidedBy: string | null; decisionNote: string | null;
 };
@@ -33,7 +34,13 @@ type Defer = (fn: () => Promise<void>) => void;
 function rowToRequest(r: Record<string, unknown>): TopupRequest {
   return {
     id: String(r.id), workspaceId: String(r.workspace_id), packId: String(r.pack_id), label: String(r.label ?? r.pack_id),
-    credits: Number(r.credits), usd: Number(r.usd), status: String(r.status) as TopupStatus, note: String(r.note ?? ""),
+    credits: Number(r.credits),
+    /* Clamped on the way OUT as well as in (§7A guardrail 2). The number on
+       this row was frozen by whatever deployment took the request, and it is
+       the number that reaches a grant — so the cap is applied where the money
+       is, not only where the table was built. */
+    bonus: capBonus(Number(r.credits), r.bonus_credits),
+    usd: Number(r.usd), status: String(r.status) as TopupStatus, note: String(r.note ?? ""),
     requestedBy: (r.requested_by as string | null) ?? null, createdAt: Number(r.created_at),
     decidedAt: r.decided_at == null ? null : Number(r.decided_at), decidedBy: (r.decided_by as string | null) ?? null,
     decisionNote: (r.decision_note as string | null) ?? null,
@@ -63,12 +70,12 @@ export async function requestTopup(opts: { workspaceId: string; packId: string; 
   const id = newId("tu");
   const ts = now();
   await platformDb().execute({
-    sql: `INSERT INTO topup_requests (id, workspace_id, pack_id, label, credits, usd, status, note, requested_by, created_at)
-          VALUES (?,?,?,?,?,?,'requested',?,?,?)`,
-    args: [id, opts.workspaceId, pack.id, pack.label, pack.credits, pack.usd, (opts.note ?? "").slice(0, 300), opts.requestedBy, ts],
+    sql: `INSERT INTO topup_requests (id, workspace_id, pack_id, label, credits, bonus_credits, usd, status, note, requested_by, created_at)
+          VALUES (?,?,?,?,?,?,?,'requested',?,?,?)`,
+    args: [id, opts.workspaceId, pack.id, pack.label, pack.credits, pack.bonus, pack.usd, (opts.note ?? "").slice(0, 300), opts.requestedBy, ts],
   });
   return {
-    id, workspaceId: opts.workspaceId, packId: pack.id, label: pack.label, credits: pack.credits, usd: pack.usd,
+    id, workspaceId: opts.workspaceId, packId: pack.id, label: pack.label, credits: pack.credits, bonus: pack.bonus, usd: pack.usd,
     status: "requested", note: (opts.note ?? "").slice(0, 300), requestedBy: opts.requestedBy, createdAt: ts,
     decidedAt: null, decidedBy: null, decisionNote: null,
   };
@@ -132,10 +139,20 @@ export async function decideTopup(opts: { id: string; action: "approve" | "decli
   const request = { ...req, status: next, decidedAt: ts, decidedBy: opts.by, decisionNote: (opts.note ?? "") || null };
   let released = 0;
   if (next === "approved") {
-    /* A pack is the one thing a workspace pays for, so it is the one grant
-       that counts as revenue. Bonus credits, when §7A's packs land, are a
-       SECOND grant marked `bonus` — free, because no money arrives for them. */
-    await grantCredits(req.workspaceId, req.credits, `${req.label} pack · ${req.credits.toLocaleString("en-US")} credits`, opts.by, "purchase");
+    /* Two rows, atomically: what was bought and what was given.
+       A pack is the one thing a workspace pays for, so `purchase` is the one
+       grant that counts as revenue; the bonus is §7A's discount and no money
+       arrives for it, so it goes in as its own free row. Kept apart rather
+       than summed because the platform's margin figure reads the difference —
+       summing them is how the welcome grant came to look like revenue. */
+    const n = (v: number) => v.toLocaleString("en-US");
+    await grantCreditsBatch([
+      { workspaceId: req.workspaceId, credits: req.credits, note: `${req.label} pack · ${n(req.credits)} credits`, by: opts.by, kind: "purchase" },
+      ...(req.bonus > 0 ? [{
+        workspaceId: req.workspaceId, credits: req.bonus,
+        note: `${req.label} pack · ${n(req.bonus)} bonus credits`, by: opts.by, kind: "bonus" as const,
+      }] : []),
+    ]);
     const ws = await getWorkspace(req.workspaceId);
     if (ws) {
       try {
@@ -152,7 +169,7 @@ async function notifyApproved(workspaceId: string, workspaceName: string, req: T
   const who = admins.filter((a) => a.id === req.requestedBy);
   const targets = who.length ? who : admins;
   if (!targets.length) return;
-  const title = `${req.credits.toLocaleString("en-US")} credits added`;
+  const title = `${(req.credits + req.bonus).toLocaleString("en-US")} credits added`;
   const body = released
     ? `The ${req.label} pack is in, and ${released} held take${released === 1 ? "" : "s"} ${released === 1 ? "is" : "are"} rendering now.`
     : `The ${req.label} pack is in.`;

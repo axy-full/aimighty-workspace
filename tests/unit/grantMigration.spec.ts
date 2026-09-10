@@ -101,3 +101,61 @@ test("a row written before the column existed is never NULL", async () => {
   const rs = await c.execute(`SELECT COUNT(*) AS n FROM credit_grants WHERE kind IS NULL OR kind = ''`);
   expect(Number((rs.rows[0] as Record<string, unknown>).n)).toBe(0);
 });
+
+/**
+ * §7A's bonus column, and the guarantee the two-grant approve rests on.
+ */
+test("topup_requests gains the bonus column with zero for every old row", async () => {
+  const { TOPUP_BONUS_COLUMN } = await import("../../lib/platform");
+  const dir = mkdtempSync(path.join(tmpdir(), "particl-topups-"));
+  const c = createClient({ url: `file:${path.join(dir, "t.db")}` });
+  await c.execute(`CREATE TABLE topup_requests (
+    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, pack_id TEXT NOT NULL, label TEXT,
+    credits REAL NOT NULL, usd REAL NOT NULL, status TEXT NOT NULL, note TEXT,
+    requested_by TEXT, created_at INTEGER NOT NULL, decided_at INTEGER, decided_by TEXT, decision_note TEXT)`);
+  await c.execute(`INSERT INTO topup_requests (id, workspace_id, pack_id, label, credits, usd, status, created_at)
+                   VALUES ('tu1','ws','house','House',10000,1000,'requested',0)`);
+  await c.execute(`ALTER TABLE topup_requests ADD COLUMN ${TOPUP_BONUS_COLUMN}`);
+  const rs = await c.execute(`SELECT bonus_credits FROM topup_requests WHERE id = 'tu1'`);
+  /* No backfill, and none needed: every request written before this existed
+     was for a pack that had no bonus, so zero is the truth for all of them. */
+  expect(Number((rs.rows[0] as Record<string, unknown>).bonus_credits)).toBe(0);
+
+  let skipped = false;
+  try { await c.execute(`ALTER TABLE topup_requests ADD COLUMN ${TOPUP_BONUS_COLUMN}`); }
+  catch (e) { skipped = /duplicate column|already exists/i.test(String((e as Error).message)); }
+  expect(skipped, "a second pass is ignored, not fatal").toBe(true);
+});
+
+test("a batch of grants is all or nothing", async () => {
+  /* The guarantee `decideTopup` rests on. A pack with a bonus is TWO grant
+     rows, written after the request has already been marked approved — so if
+     the second could fail alone, a paying customer would be left short of
+     their bonus with nothing that would ever retry it.
+     Asserted against the real client rather than assumed: the second
+     statement collides on the primary key, and the FIRST must not survive. */
+  const dir = mkdtempSync(path.join(tmpdir(), "particl-batch-"));
+  const c = createClient({ url: `file:${path.join(dir, "t.db")}` });
+  await c.execute(`CREATE TABLE credit_grants (
+    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, credits REAL NOT NULL,
+    note TEXT, kind TEXT NOT NULL DEFAULT 'manual', created_by TEXT, created_at INTEGER NOT NULL)`);
+  await c.execute(`INSERT INTO credit_grants VALUES ('taken','ws',1,'n','manual','u',0)`);
+
+  const ins = (id: string, credits: number, kind: string) => ({
+    sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,0)`,
+    args: [id, "ws", credits, "pack", kind, "u"],
+  });
+
+  let threw = false;
+  try { await c.batch([ins("ok_a", 5000, "purchase"), ins("taken", 750, "bonus")], "write"); }
+  catch { threw = true; }
+  expect(threw, "the colliding statement fails the batch").toBe(true);
+
+  const rs = await c.execute(`SELECT COUNT(*) AS n FROM credit_grants WHERE id = 'ok_a'`);
+  expect(Number((rs.rows[0] as Record<string, unknown>).n), "the purchase row rolled back with it").toBe(0);
+
+  // ...and the ordinary case still writes both.
+  await c.batch([ins("p1", 5000, "purchase"), ins("b1", 750, "bonus")], "write");
+  const both = await c.execute(`SELECT kind, credits FROM credit_grants WHERE id IN ('p1','b1') ORDER BY kind`);
+  expect(both.rows.map((r) => (r as unknown as { kind: string }).kind)).toEqual(["bonus", "purchase"]);
+});

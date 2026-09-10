@@ -91,8 +91,14 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
         <div className="flex items-baseline gap-3"><span className="font-medium">Total</span><span className="ml-auto st-mono text-[17px] font-semibold">{amount(data.unit === "cr" ? data.totals.credits : data.totals.usd)}</span></div>
         {data.unit === "cr" && (
           <div className="mt-1.5 flex items-baseline gap-3 text-[14px] text-dim">
-            <span>Packs bought this month{data.packs.count ? ` · ${data.packs.count}` : ""}</span>
-            <span className="ml-auto st-mono">{data.packs.count ? `${data.packs.credits.toLocaleString("en-US")} credits · $${data.packs.usd.toFixed(2)}` : "none"}</span>
+            <span>Packs this month{data.packs.count ? ` · ${data.packs.count}` : ""}</span>
+            {/* What ARRIVED, with the split beside it: §7A's bonus credits are
+                free, so the dollar figure covers only the bought half. A total
+                on its own would not reconcile with the price; the bought half
+                on its own would not reconcile with the balance. */}
+            <span className="ml-auto st-mono">{data.packs.count
+              ? `${(data.packs.credits + data.packs.bonus).toLocaleString("en-US")} credits${data.packs.bonus > 0 ? ` (${data.packs.credits.toLocaleString("en-US")} bought + ${data.packs.bonus.toLocaleString("en-US")} free)` : ""} · $${data.packs.usd.toFixed(2)}`
+              : "none"}</span>
           </div>
         )}
         <p className="mt-4 text-[12px] text-mute">Months are counted in UTC. {data.unit === "cr" ? "Credits are what this workspace was billed; a pack's price is the only dollar figure." : "Costs are what the vendors charged."}</p>

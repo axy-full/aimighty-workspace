@@ -35,11 +35,27 @@ test("the CSV escapes what needs escaping and ends with the totals", () => {
   const s: Statement = {
     month: "2026-09", from: 0, to: 1, unit: "cr", workspace: { name: "Studio", slug: "studio" }, projectFilter: null,
     projects: groupLines([line({ id: "x", shotTitle: 'Rooftop, "wide"', credits: 40 })]),
-    totals: { credits: 40, usd: 0, takes: 1 }, packs: { count: 1, credits: 500, usd: 50 },
+    totals: { credits: 40, usd: 0, takes: 1 }, packs: { count: 1, credits: 500, bonus: 0, usd: 50 },
   };
   const csv = statementCsv(s);
   expect(csv.split("\r\n")[0]).toBe("date,production,shot,take,what,status,credits");
   expect(csv).toContain('"SH010 Rooftop, ""wide"""');
   expect(csv).toContain("total,,40");
-  expect(csv).toContain("packs bought this month (1),,500 credits · USD 50.00");
+  // Starter carries no bonus, so the line stays a single number.
+  expect(csv).toContain("packs this month (1),,500 credits · USD 50.00");
+});
+
+test("a pack's free half is on the statement, not just its bought half", () => {
+  /* §7A puts the discount in bonus credits, so `topup_requests.credits` is
+     the BOUGHT half only. A statement that summed that alone told a
+     workspace it received 20,000 credits in a month its balance rose by
+     24,000 — and this is the document a workspace sends to its own client,
+     so it is the last place that can afford to disagree with the balance.
+     Both halves, and a dollar figure covering only the bought one. */
+  const s: Statement = {
+    month: "2026-09", from: 0, to: 1, unit: "cr", workspace: { name: "Studio", slug: "studio" }, projectFilter: null,
+    projects: groupLines([line({ id: "x", credits: 40 })]),
+    totals: { credits: 40, usd: 0, takes: 1 }, packs: { count: 1, credits: 20000, bonus: 4000, usd: 2000 },
+  };
+  expect(statementCsv(s)).toContain("packs this month (1),,24000 credits (20000 bought + 4000 free) · USD 2000.00");
 });

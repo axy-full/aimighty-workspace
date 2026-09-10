@@ -83,6 +83,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS credit_grants_ws ON credit_grants(workspace_id)`,
   `CREATE TABLE IF NOT EXISTS topup_requests (
      id             TEXT PRIMARY KEY,
+     bonus_credits  REAL NOT NULL DEFAULT 0,
      workspace_id   TEXT NOT NULL,
      pack_id        TEXT NOT NULL,
      label          TEXT,
@@ -305,6 +306,15 @@ export const GRANT_KIND_BACKFILL = [
   `UPDATE credit_grants SET kind = 'purchase' WHERE note LIKE '% pack · %'`,
 ];
 
+/**
+ * §7A's bonus credits, frozen on the request beside the size and the price.
+ *
+ * No backfill: every request written before this existed was for a pack that
+ * had no bonus, and the default says so. Zero is the truth for all of them,
+ * which is the cheapest migration there is.
+ */
+export const TOPUP_BONUS_COLUMN = `bonus_credits REAL NOT NULL DEFAULT 0`;
+
 let _ready: Promise<void> | null = null;
 /**
  * Create the platform tables, and — once — turn the studio's own database
@@ -342,6 +352,10 @@ export function platformReady(): Promise<void> {
           await p.execute(`ALTER TABLE credit_grants ADD COLUMN ${col}`);
           for (const stmt of GRANT_KIND_BACKFILL) await p.execute(stmt);
         } catch (e) { if (!/duplicate column|already exists/i.test(String((e as Error).message))) throw e; }
+      }
+      for (const col of [TOPUP_BONUS_COLUMN]) {
+        try { await p.execute(`ALTER TABLE topup_requests ADD COLUMN ${col}`); }
+        catch (e) { if (!/duplicate column|already exists/i.test(String((e as Error).message))) throw e; }
       }
       const count = await p.execute(`SELECT COUNT(*) AS n FROM workspaces`);
       if (Number((count.rows[0] as any)?.n ?? 0) === 0) await importLegacy();
@@ -552,6 +566,28 @@ export async function grantCredits(workspaceId: string, credits: number, note: s
     sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
     args: [newId("cg"), workspaceId, credits, note.slice(0, 200), kind, by, now()],
   });
+}
+
+/**
+ * Several grants, or none.
+ *
+ * A pack that carries bonus credits is TWO rows — what was bought and what
+ * was given — because they are different kinds and the platform's revenue
+ * figure reads the difference. Two separate INSERTs would have a gap in the
+ * middle: the request is already marked approved by the time either runs, so
+ * a failure between them leaves a paying customer short of the bonus with
+ * nothing left that will retry it. One batch, or neither row.
+ */
+export async function grantCreditsBatch(
+  rows: { workspaceId: string; credits: number; note: string; by: string | null; kind: GrantKind }[],
+): Promise<void> {
+  if (!rows.length) return;
+  await platformReady();
+  const ts = now();
+  await platformDb().batch(rows.map((r) => ({
+    sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
+    args: [newId("cg"), r.workspaceId, r.credits, r.note.slice(0, 200), r.kind, r.by, ts],
+  })), "write");
 }
 
 export type GrantSplit = { paid: number; free: number };

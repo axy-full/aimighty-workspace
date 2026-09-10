@@ -41,7 +41,8 @@ export const POST = withTenant(async function POST(req: Request) {
     const checkout = await startCheckout(request);
     if (checkout.kind === "queued" && mailConfigured() && SUPER_ADMIN_EMAIL) {
       const origin = inviteOrigin(req);
-      const text = `${ws.name} asks for the ${request.label} pack: ${request.credits.toLocaleString("en-US")} credits · $${request.usd.toFixed(2)}.\n${request.note ? `Note: ${request.note}\n` : ""}\nAnswer it on the platform desk: ${origin}/admin`;
+      const split = request.bonus > 0 ? ` (${request.credits.toLocaleString("en-US")} bought + ${request.bonus.toLocaleString("en-US")} free)` : "";
+      const text = `${ws.name} asks for the ${request.label} pack: ${(request.credits + request.bonus).toLocaleString("en-US")} credits${split} · $${request.usd.toFixed(2)}.\n${request.note ? `Note: ${request.note}\n` : ""}\nAnswer it on the platform desk: ${origin}/admin`;
       await sendMail({ to: SUPER_ADMIN_EMAIL, subject: `Top-up requested: ${ws.name}`, text, html: `<p>${text.replace(/</g, "&lt;").replace(/\n/g, "<br>")}</p>` }).catch(() => {});
     }
     return NextResponse.json({ request, checkout }, { status: 201 });

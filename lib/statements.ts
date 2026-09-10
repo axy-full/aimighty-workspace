@@ -34,7 +34,7 @@ export type Statement = {
   projectFilter: string | null;
   projects: StatementProject[];
   totals: { credits: number; usd: number; takes: number };
-  packs: { count: number; credits: number; usd: number };
+  packs: { count: number; credits: number; bonus: number; usd: number };
 };
 
 /** "2026-09" → the UTC month it names, or null for anything else. */
@@ -103,7 +103,10 @@ export function statementCsv(s: Statement): string {
   }
   rows.push([]);
   rows.push(["", "", "", "", "total", "", s.unit === "cr" ? s.totals.credits : Math.round(s.totals.usd * 100) / 100]);
-  if (s.unit === "cr") rows.push(["", "", "", "", `packs bought this month (${s.packs.count})`, "", `${s.packs.credits} credits · USD ${s.packs.usd.toFixed(2)}`]);
+  if (s.unit === "cr") {
+    const free = s.packs.bonus > 0 ? ` (${s.packs.credits} bought + ${s.packs.bonus} free)` : "";
+    rows.push(["", "", "", "", `packs this month (${s.packs.count})`, "", `${s.packs.credits + s.packs.bonus} credits${free} · USD ${s.packs.usd.toFixed(2)}`]);
+  }
   return rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
 
@@ -205,16 +208,26 @@ export async function statementFor(month: string, projectId: string | null): Pro
     }
   }
   const projects = groupLines(raw);
-  let packs = { count: 0, credits: 0, usd: 0 };
+  let packs = { count: 0, credits: 0, bonus: 0, usd: 0 };
   if (inCredits) {
     try {
+      /* BOTH halves. `credits` on this row is what was BOUGHT — §7A puts the
+         discount in `bonus_credits` — and a statement that summed only the
+         bought half would tell a workspace it received 20,000 credits in a
+         month its balance went up by 24,000. This is the document a
+         workspace sends to its own client, so it is the last place that can
+         afford to disagree with the balance.
+         Kept as two numbers rather than one total, which is what §7A's
+         guardrail 5 asks of a statement: show what was free and what was
+         paid. The dollar sum is unchanged, because the bonus is free. */
       const pk = await platformDb().execute({
-        sql: `SELECT COUNT(*) AS n, COALESCE(SUM(credits), 0) AS c, COALESCE(SUM(usd), 0) AS u
+        sql: `SELECT COUNT(*) AS n, COALESCE(SUM(credits), 0) AS c,
+                     COALESCE(SUM(bonus_credits), 0) AS b, COALESCE(SUM(usd), 0) AS u
               FROM topup_requests WHERE workspace_id = ? AND status = 'approved' AND decided_at >= ? AND decided_at < ?`,
         args: [ws.id, range.from, range.to],
       });
-      const r = pk.rows[0] as unknown as { n: number; c: number; u: number } | undefined;
-      packs = { count: Number(r?.n ?? 0), credits: Number(r?.c ?? 0), usd: Number(r?.u ?? 0) };
+      const r = pk.rows[0] as unknown as { n: number; c: number; b: number; u: number } | undefined;
+      packs = { count: Number(r?.n ?? 0), credits: Number(r?.c ?? 0), bonus: Number(r?.b ?? 0), usd: Number(r?.u ?? 0) };
     } catch { /* no platform record, no packs line */ }
   }
   return {
