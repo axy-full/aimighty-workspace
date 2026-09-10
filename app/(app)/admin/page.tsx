@@ -13,6 +13,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo, usd } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
+import { DEFAULT_PLANS, type PlanDef, type PlanId } from "@/lib/plans";
 import { CATEGORIES } from "@/lib/studio";
 import { REASON_LABELS } from "@/lib/reports";
 import { getModel, MODELS } from "@/lib/models";
@@ -25,6 +26,7 @@ type Admin = {
   requests: { id: string; name: string; email: string; note: string; mailed: boolean; createdAt: number }[];
   platformKeysByDefault: boolean; defaultAllowanceUsd: number | null; gatewayMint: boolean;
   creditUsd: number; signupCredits: number;
+  plans: PlanDef[];
   workspaces: Ws[];
 };
 type Ws = {
@@ -35,6 +37,7 @@ type Ws = {
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
   limits: { concurrency: number | null; rendersPerHour: number | null; storageGb: number | null };
   internalTest?: boolean;
+  planId: PlanId | null;
 };
 
 export default function AdminPage() {
@@ -144,7 +147,7 @@ export default function AdminPage() {
                     <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{w.owner?.email ?? ""}</span></span>
                     <SpendCell s={w.spend30} grants={w.grants} />
                     <CreditsCell w={w} onChanged={refresh} />
-                    <StateCell w={w} onChanged={refresh} />
+                    <StateCell w={w} plans={data.plans ?? DEFAULT_PLANS} onChanged={refresh} />
                   </div>
                 ))}
               </div>
@@ -288,7 +291,7 @@ function SpendCell({ s, grants }: { s: Ws["spend30"]; grants: Ws["grants"] }) {
 }
 
 /** Active, flagged for review, or suspended — and the two levers. */
-function StateCell({ w, onChanged }: { w: Ws; onChanged: () => void }) {
+function StateCell({ w, plans, onChanged }: { w: Ws; plans: PlanDef[]; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -331,8 +334,44 @@ function StateCell({ w, onChanged }: { w: Ws; onChanged: () => void }) {
           : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
         <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
         <button type="button" className={`chip !py-0.5 !text-[11.5px] ${w.internalTest ? "is-on" : ""}`} disabled={busy} onClick={() => patch({ internalTest: !w.internalTest })} title="The platform's own internal test workspace: the one place a real engine call may be made for the platform's sake">{w.internalTest ? "Test workspace" : "Make test"}</button>
+        <PlanChip w={w} plans={plans} busy={busy} patch={patch} />
       </span>
     </span>
+  );
+}
+
+/**
+ * Which plan a workspace is on, and the one control that changes it.
+ *
+ * NOTHING ABOUT CREDITS MOVES HERE. A plan's included credits are granted per
+ * cycle and that grant does not exist yet — it waits on a draw order that is
+ * still undecided (§14). This records which plan, which is the part that can
+ * be true today and the part the console has had no way to say at all.
+ *
+ * "None" is a real answer, not a missing one: it is every workspace until
+ * somebody is put on a plan, and it is deliberately not the same as Invite,
+ * which carries a 1-production and 3-member ceiling.
+ */
+function PlanChip({ w, plans, busy, patch }: {
+  w: Ws; plans: PlanDef[]; busy: boolean; patch: (body: Record<string, unknown>) => void;
+}) {
+  const on = plans.find((p) => p.id === w.planId) ?? null;
+  const label = on ? `${on.label}${on.priceUsd ? ` · $${on.priceUsd}/mo` : ""}` : "No plan";
+  return (
+    <label className={`chip !py-0.5 !text-[11.5px] ${on ? "is-on" : ""}`} title={on
+      ? `${on.label}: ${on.includedCredits.toLocaleString()} credits a cycle${on.maxProductions ? `, ${on.maxProductions} production${on.maxProductions === 1 ? "" : "s"}` : ""}${on.maxMembers ? `, ${on.maxMembers} members` : ""}. Included credits are not granted yet.`
+      : "On no plan. Not the same as Invite, which carries its own ceilings."}>
+      <select
+        value={w.planId ?? ""}
+        disabled={busy}
+        aria-label={`Plan for ${w.name}`}
+        onChange={(e) => patch({ planId: e.target.value || null })}
+      >
+        <option value="">No plan</option>
+        {plans.map((p) => <option key={p.id} value={p.id}>{p.label}{p.priceUsd ? ` · $${p.priceUsd}/mo` : ""}</option>)}
+      </select>
+      {label}
+    </label>
   );
 }
 

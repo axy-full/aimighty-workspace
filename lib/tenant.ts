@@ -41,6 +41,8 @@ export type TenantWorkspace = {
   rendersPerHour: number | null;
   storageQuotaBytes: number | null;
   /** The platform's own internal test workspace (brief 1.4): the one place a real engine call may be made for the platform's sake. */
+  /** §7A's plan, or null for a workspace on none. Credits do not move with it yet. */
+  planId?: import("./plans").PlanId | null;
   internalTest?: boolean;
   /** Set once the owner deleted it; the purge follows (lib/purge.ts). */
   deletedAt: number | null;

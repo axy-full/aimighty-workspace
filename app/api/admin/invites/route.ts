@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { requireSuperAdmin } from "@/lib/auth";
-import { platformDb, platformReady, now, platformKeysByDefault, rowToWorkspace, grantsByKind } from "@/lib/platform";
+import { platformDb, platformReady, now, platformKeysByDefault, rowToWorkspace, grantsByKind, getPlatformLayer } from "@/lib/platform";
 import { creditStateFor } from "@/lib/credits";
 import { creditUsd, signupCredits, fundedFraction } from "@/lib/creditTerms";
+import { asPlanId, DEFAULT_PLANS } from "@/lib/plans";
 import { defaultAllowanceUsd } from "@/lib/allowance";
 import { gatewayMintConfigured } from "@/lib/vercelKeys";
 import { mailConfigured, sendMail, inviteOrigin } from "@/lib/mail";
@@ -40,7 +41,12 @@ export async function GET() {
   const credits = await Promise.all((workspaces.rows as any[]).map(async (r) => {
     try { return await creditStateFor(rowToWorkspace(r)); } catch { return null; }
   }));
+  const layer = await getPlatformLayer().catch(() => null);
   return NextResponse.json({
+    /* The plans themselves, not just each workspace's id: the console has to
+       name them and show what each costs, and the platform layer is where
+       they can be edited. */
+    plans: layer?.plans ?? DEFAULT_PLANS,
     creditUsd: creditUsd(),
     signupCredits: signupCredits(),
     ready: provisioningConfigured() && keyringConfigured(),
@@ -52,6 +58,7 @@ export async function GET() {
     requests: requests.rows.map((r: any) => ({ id: r.id, name: r.name, email: r.email, note: r.note, mailed: Boolean(Number(r.mailed)), createdAt: Number(r.created_at) })),
     workspaces: workspaces.rows.map((r: any, i: number) => ({ id: r.id, slug: r.slug, name: r.name, legacy: Number(r.legacy) === 1, platformKeys: Number(r.uses_platform_keys) === 1, allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd), gatewayKey: Boolean(r.gateway_key_id), credits: credits[i] ? { granted: credits[i]!.granted, used: credits[i]!.used, balance: credits[i]!.balance } : null, createdAt: Number(r.created_at), owner: r.owner_email ? { email: r.owner_email, name: r.owner_name } : null, members: Number(r.members ?? 0),
       grants: (() => { const g = split.get(String(r.id)); return { paid: g?.paid ?? 0, free: g?.free ?? 0 }; })(),
+      planId: asPlanId(r.plan_id),
       spend30: (() => {
         const m = spend.get(String(r.id));
         if (!m) return null;

@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
+import { asPlanId } from "@/lib/plans";
 import { requireSuperAdmin } from "@/lib/auth";
-import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits } from "@/lib/platform";
+import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits, setWorkspacePlan } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 
@@ -72,6 +73,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (ws) out.released = (await runInTenant(ws, () => releaseHeldJobs({ defer: (fn) => after(fn) }))).released.length;
     } catch (e) { console.error("release after grant:", (e as Error).message); }
     out.granted = n;
+  }
+  if ("planId" in body) {
+    /* null takes a workspace off its plan. An unknown id is refused rather
+       than quietly stored: a workspace pointing at a plan that does not
+       exist would read as "no plan" everywhere and be impossible to tell
+       from one that genuinely has none. */
+    const raw = body.planId;
+    const plan = raw === null ? null : asPlanId(raw);
+    if (raw !== null && !plan) {
+      return NextResponse.json({ error: `No such plan: ${String(raw)}.` }, { status: 400 });
+    }
+    await setWorkspacePlan(id, plan);
+    out.planId = plan;
   }
   if ("mode" in body) {
     const mode = body.mode === "platform" ? "platform" : body.mode === "own" ? "own" : null;

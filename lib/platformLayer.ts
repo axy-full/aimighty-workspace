@@ -1,6 +1,7 @@
 import { CATEGORIES, type ShotSpec } from "./studio";
 import { MODELS, DEFAULT_MODEL_ID } from "./models";
 import { TEXT_RATES } from "./refineGate";
+import { DEFAULT_PLANS, cleanPlans, type PlanDef } from "./plans";
 
 /**
  * The platform layer: what every new workspace inherits and may change.
@@ -15,7 +16,12 @@ import { TEXT_RATES } from "./refineGate";
  *             prompt writer, some appended to the prompt itself, each in scope
  *             for video, stills or both (the platform half of 2.5);
  *   caps    — the numbers a workspace starts with: welcome credits, a default
- *             cap for a new production, the share of a cap that warns.
+ *             cap for a new production, the share of a cap that warns;
+ *   plans   — §7A's four subscriptions, what each costs a month and what it
+ *             includes. Here rather than in a table of its own because a
+ *             plan is a platform default a workspace is put ON, not data a
+ *             workspace owns (rule 3), and because the console already edits
+ *             this record.
  * Pure: no database here, so the browser can validate what it edits.
  */
 export const DEFAULT_SETUP: ShotSpec = {
@@ -144,10 +150,10 @@ export function resolveModels(settings: Record<string, string | undefined>, laye
   };
 }
 
-export type PlatformLayer = { setup: ShotSpec; starter: StarterProduction; rules: PlatformRule[]; caps: PlatformCaps; models: PlatformModels };
+export type PlatformLayer = { setup: ShotSpec; starter: StarterProduction; rules: PlatformRule[]; caps: PlatformCaps; models: PlatformModels; plans: PlanDef[] };
 export type LayerKey = keyof PlatformLayer;
-export const LAYER_KEYS: LayerKey[] = ["setup", "starter", "rules", "caps", "models"];
-export const DEFAULT_LAYER: PlatformLayer = { setup: DEFAULT_SETUP, starter: STARTER_PRODUCTION, rules: DEFAULT_RULES, caps: DEFAULT_CAPS, models: DEFAULT_MODELS };
+export const LAYER_KEYS: LayerKey[] = ["setup", "starter", "rules", "caps", "models", "plans"];
+export const DEFAULT_LAYER: PlatformLayer = { setup: DEFAULT_SETUP, starter: STARTER_PRODUCTION, rules: DEFAULT_RULES, caps: DEFAULT_CAPS, models: DEFAULT_MODELS, plans: DEFAULT_PLANS };
 
 const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 const str = (v: unknown, max: number): string => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -224,7 +230,11 @@ export function mergeLayer(stored: Partial<Record<LayerKey, unknown>>): Platform
   const rules = (stored.rules !== undefined ? cleanRules(stored.rules) : null) ?? DEFAULT_RULES;
   const caps = stored.caps !== undefined ? cleanCaps(stored.caps) : DEFAULT_CAPS;
   const models = stored.models !== undefined ? cleanModels(stored.models) : DEFAULT_MODELS;
-  return { setup: Object.keys(setup).length ? setup : DEFAULT_SETUP, starter, rules, caps, models };
+  /* `cleanPlans` always returns the four §7A rows, so a workspace pointing at
+     a plan an edit removed still resolves to one: "on no plan" and "on a plan
+     that went missing" are different states and only the first is real. */
+  const plans = stored.plans !== undefined ? cleanPlans(stored.plans) : DEFAULT_PLANS;
+  return { setup: Object.keys(setup).length ? setup : DEFAULT_SETUP, starter, rules, caps, models, plans };
 }
 
 /** The starter's shots with the layer's default Setup underneath each shot's own. */
