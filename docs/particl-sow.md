@@ -375,7 +375,7 @@ Workspace rules are plain sentences a team writes ("our brand never shows logos 
 
 **Client review link**: read-only page of a project's approved takes in shot order with notes. No login; tokenised, expiring, revocable from the project; carries the workspace's name and logo, never particl's branding in front of their client. A comment box writing back to the take's notes.
 
-**Export selects**: zip of approved masters named `{project}_{shot}_{version}_{w}x{h}.{ext}`, a CSV shotlist (shot, take, version, engine, credits, prompt), and an EDL/XML in order so an editor drops them into Resolve or Premiere.
+**Export selects**: zip of approved masters named `{project}_{shot}_{version}_{w}x{h}.{ext}` and a CSV shotlist (shot, take, version, engine, credits, prompt). ~~An EDL/XML in order~~ — dropped 10 September: an EDL is a conform artefact for a cutting room this product does not sit in, and it carried its own timecode implementation and frame-rate assumption to serve it.
 
 ### 2.7 Team on a phone
 The four things a producer does on a phone: see what rendered, compare and approve, see the burn-down, unlock a cap or top up. Each one tap from the make screen, tested at 360×640. Push notifications for take finished, cap at 80%, approval needed, balance low — per-user, per-workspace preferences. **The push service is server-side work and gates the iOS app**: device token registration per user per workspace, an APNs key, and triggers on those four events.
@@ -594,12 +594,12 @@ arrows walk it when it is on screen. Compare elects the longest take as the
 clock and corrects the others past 125ms, rather than commanding every clip to
 play and trusting them. **One frame rate: 24, decided 9 September.**
 
-That note used to end "no EDL export — not wanted", and it was false. An EDL
-export exists and is served: `edl()` in `lib/selects.ts` writes CMX 3600 at
-the same 24, and `app/api/export/selects/route.ts` returns it for
-`?format=edl` and inside the selects zip. It predates the instruction to drop
-the feature and was never removed. Whether it goes is open; what is not open
-is the document claiming it is absent while the route serves it.
+That note used to end "no EDL export — not wanted" while an EDL export was in
+fact being served, which the drift audit caught. **It is now gone for real,
+10 September:** `edl()` and the `tc()` timecode helper are out of
+`lib/selects.ts`, `?format=edl` is off the selects route, the file is out of
+the zip, and the `EDL ↓` link is off the production page. The handover is the
+masters and the shot list.
 
 **§7A margin — done, 10 September.** `lib/creditTerms.ts` carried a per-engine
 table dated 6 September running from 1.25 to 1.5, so every price it produced

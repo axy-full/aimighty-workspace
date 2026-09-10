@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { selectsCsv, edl, tc, type Select } from "../../lib/selects";
+import { selectsCsv, type Select } from "../../lib/selects";
 import { crc32, zipName, uniqueNames, zipStream } from "../../lib/zip";
 
 const rows: Select[] = [
@@ -17,21 +17,10 @@ test("the shot list carries what a client is billed for, quoting what needs quot
   expect(selectsCsv(rows, "$").split("\r\n")[1]).toContain("2.86");
 });
 
-/** An edit list an editor can conform against (brief 2.6). */
-test("the edit list lays the takes end to end, each naming its own master", () => {
-  const out = edl(rows, { title: "Layer cap test" });
-  const lines = out.trim().split("\r\n");
-  expect(lines[0]).toBe("TITLE: Layer cap test");
-  expect(lines[1]).toBe("FCM: NON-DROP FRAME");
-  expect(lines[2]).toContain("001  SH010");
-  expect(lines[2]).toContain("00:00:00:00 00:00:05:00 00:00:00:00 00:00:05:00");
-  expect(lines[3]).toBe("* FROM CLIP NAME: prod_1_SH010_SD25_v2_ana.mp4");
-  expect(lines[4]).toBe("* COMMENT: The jetty");
-  // the second take starts where the first ended
-  expect(lines[5]).toContain("00:00:05:00 00:00:09:00");
-  expect(tc(90_000, 25)).toBe("01:00:00:00");
-  expect(tc(0)).toBe("00:00:00:00");
-});
+/* The CMX 3600 edit list that used to be tested here is gone, and so is the
+   timecode helper it carried. An EDL is a conform artefact for a cutting room
+   this product does not sit in; the masters and the shot list are what the
+   handover actually needs, and the zip still carries both. */
 
 /** The zip itself (brief 2.6): stored entries, real checksums, names that survive any machine. */
 test("a zip is written whole, with a checksum per entry and no name repeated", () => {

@@ -467,7 +467,8 @@ export function costUsd(totalTokens: number, usdPerMillionTokens: number): numbe
  * ------------------------------------------------------------------------- */
 
 /* One rate for the whole workflow — see lib/transport.ts. Billing counted
-   frames at 24 while the EDL wrote timecode at 25; they agree now. */
+   frames at 24 while an EDL export wrote timecode at 25; that export is gone
+   and 24 is the only rate left. */
 const DEFAULT_FPS = FPS;
 const up16 = (n: number) => Math.ceil(n / 16) * 16;
 

@@ -9,7 +9,7 @@ import { creditsApply } from "@/lib/credits";
 import { currentTenant } from "@/lib/tenant";
 import { openMediaStream } from "@/lib/storage";
 import { zipStream, zipName, uniqueNames } from "@/lib/zip";
-import { selectsCsv, edl, type Select } from "@/lib/selects";
+import { selectsCsv, type Select } from "@/lib/selects";
 
 export const dynamic = "force-dynamic";
 
@@ -76,13 +76,8 @@ export const GET = withTenant(async function GET(req: Request) {
       headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${stem}_selects.csv"`, "Cache-Control": "no-store" },
     });
   }
-  if (format === "edl") {
-    return new Response(edl(rows, { title: production || "SELECTS" }), {
-      headers: { "Content-Type": "text/plain; charset=utf-8", "Content-Disposition": `attachment; filename="${stem}_selects.edl"`, "Cache-Control": "no-store" },
-    });
-  }
-
-  /* The masters, plus the two lists beside them, so a zip is the whole handover. */
+  /* The masters, plus the shot list beside them, so a zip is the whole
+     handover. There used to be an EDL in here as well; it is gone. */
   const names = uniqueNames(rows.map((r, i) => zipName(r.filename, `take_${i + 1}.mp4`)));
   const enc = new TextEncoder();
   const entries = [
@@ -91,7 +86,6 @@ export const GET = withTenant(async function GET(req: Request) {
       body: async () => openMediaStream(r.id, r.kind === "image" ? "image" : r.kind === "audio" ? "audio" : "video"),
     })),
     { name: `${stem}_selects.csv`, body: async () => enc.encode(selectsCsv(rows, unit)) },
-    { name: `${stem}_selects.edl`, body: async () => enc.encode(edl(rows, { title: production || "SELECTS" })) },
   ];
   return new Response(zipStream(entries), {
     headers: { "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="${stem}_selects.zip"`, "Cache-Control": "no-store" },
