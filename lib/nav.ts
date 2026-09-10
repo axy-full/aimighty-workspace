@@ -1,0 +1,48 @@
+/**
+ * The four items (design/particl-v2/README.md §1): Make · Productions · Rig
+ * · Library. Usage and Settings live in the account menu, and nowhere else.
+ *
+ * Each item's destination is its v2 route once that step has landed (§0);
+ * until then it goes to the old route it replaces, and this table is the
+ * one place that changes when a route is deleted. `match` decides which
+ * item is lit for a path — the old routes are listed under the item that
+ * replaces them, so the nav is right on every screen, old or new.
+ */
+export type NavItem = {
+  label: "Make" | "Productions" | "Rig" | "Library";
+  /** Where the item goes. `production` is the current production's id, if there is one. */
+  href: (ctx: { production: string | null }) => string;
+  match: (path: string) => boolean;
+};
+
+const starts = (path: string, ...prefixes: string[]) => prefixes.some((p) => path === p || path.startsWith(`${p}/`));
+
+export const NAV: readonly NavItem[] = [
+  {
+    label: "Make",
+    href: () => "/",                                   // §10 `/make/video` — step 7
+    match: (p) => p === "/" || starts(p, "/generate", "/images", "/audio", "/make"),
+  },
+  {
+    label: "Productions",
+    href: () => "/projects",                           // §6 `/productions` — step 4
+    match: (p) => starts(p, "/projects", "/productions", "/shots", "/takes", "/canvas", "/all", "/dashboard") && !p.includes("/rig"),
+  },
+  {
+    label: "Rig",
+    href: ({ production }) => (production ? `/projects/${production}/rig` : "/projects"),   // §8 `/rig/canvas/…` — step 6
+    match: (p) => starts(p, "/rig", "/elements") || p.includes("/rig"),
+  },
+  {
+    label: "Library",
+    href: () => "/studio",                             // §11 `/library` — step 7
+    match: (p) => starts(p, "/library", "/studio"),
+  },
+];
+
+/** The mobile dock (§14): `Needs you · Make · Productions`. */
+export const DOCK: readonly { label: string; href: string; match: (path: string) => boolean }[] = [
+  { label: "Needs you", href: "/projects", match: (p) => starts(p, "/needs-you") },     // the approve queue — step 4/5
+  { label: "Make", href: "/", match: NAV[0].match },
+  { label: "Productions", href: "/projects", match: (p) => NAV[1].match(p) || NAV[2].match(p) || NAV[3].match(p) },
+];

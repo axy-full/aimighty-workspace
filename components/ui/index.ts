@@ -14,3 +14,4 @@ export { Placeholder, Waveform } from "./Placeholder";
 export { default as MediaCard } from "./MediaCard";
 export { default as Rail, RAIL_WIDTHS } from "./Rail";
 export { default as Sheet } from "./Sheet";
+export { Mark, Wordmark, Lockup, TRAIL } from "./Mark";

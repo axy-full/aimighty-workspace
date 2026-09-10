@@ -1,10 +1,8 @@
 import { redirect } from "next/navigation";
 import { creditStateFor } from "@/lib/credits";
 import Shell from "@/components/shell/Shell";
-import ChatDock from "@/components/ChatDock";
 import ContextMenu from "@/components/ContextMenu";
 import DialogHost from "@/components/dialog";
-import CommandPalette from "@/components/CommandPalette";
 import ViewportGuard from "@/components/ViewportGuard";
 import { ProjectProvider } from "@/lib/projectContext";
 import { SessionProvider } from "@/lib/session";
@@ -57,21 +55,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       rates: buildRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd"),
     }}>
     <ProjectProvider>
-      {/* The pipeline redesign puts the project and the nav in one 52px
-          header, so the top bar, the floating tab pill and the projects rail
-          all go: once the header says both things, three more places saying
-          them are noise. The chat dock stays — it is a fixed-position FAB for
-          members and contributes no width. */}
-      <Shell>
-        {children}
-        <ChatDock />
-      </Shell>
+      {/* The v2 shell (design/particl-v2 §3–§5): one 56px header with the
+          four items, the balance, the Atomik button and the account menu;
+          the dock on a phone. Nothing else floats over a screen — the team
+          chat FAB and the ⌘K palette are not in the handoff and are gone
+          with the old shell. */}
+      <Shell>{children}</Shell>
       <ContextMenu />
       <DialogHost />
-      {/* Outside <Shell> on purpose: that is where `.theme-light` and the
-          backdrop-filter containing block live, and a fixed overlay inside
-          either is a fight. The palette re-applies the light ground itself. */}
-      <CommandPalette />
       <ViewportGuard />
     </ProjectProvider>
     </SessionProvider>
