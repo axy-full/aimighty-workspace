@@ -30,8 +30,8 @@ test("spend, billed and failures are summed per workspace, engine health per eng
   const wa = by.get("ws_a")!;
   expect(wa.jobs).toBe(3); expect(wa.failed).toBe(1);
   expect(wa.engineCostUsd).toBeCloseTo(2.998, 3);
-  expect(wa.billedCredits).toBe(42); // 40 + 2
-  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1)).toBeCloseTo(1.202, 3);
+  expect(wa.billedCredits).toBe(46); // 43 + 3
+  expect(marginUsd(wa.billedCredits, wa.engineCostUsd, 0.1)).toBeCloseTo(1.602, 3);
   const wb = by.get("ws_b")!;
   expect(wb.billedCredits).toBe(0); // its own key paid
   expect(wb.engineCostUsd).toBe(0); // not the platform's money

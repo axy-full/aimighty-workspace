@@ -83,7 +83,17 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
       engine: String(row.billed_to ?? row.provider ?? "byteplus"),
       projectId: (row.project_id as string | null) ?? null, shotId: (row.shot_id as string | null) ?? null,
       createdBy: (row.created_by as string | null) ?? null,
-      estUsd, needs: Number(held.needs ?? billCredits(estUsd, marginKeyOf(kind, model))),
+      /* `needs` is re-derived, not read back.
+         The snapshot written when the take was held is what the PERSON was
+         told; it is not what the take will cost. Those came apart the moment
+         the margin moved to a flat 1.5 (§7A): a take held at 40 credits would
+         be released as soon as the balance covered 40, then bill 43 — a
+         workspace pushed negative by a price change it never saw. Whatever is
+         released has to be measured against what it costs NOW.
+         The snapshot is still the fallback, for a row old enough to have no
+         `estUsd` in it, where deriving would give zero and release it free. */
+      estUsd,
+      needs: (estUsd > 0 ? billCredits(estUsd, marginKeyOf(kind, model)) : 0) || Number(held.needs ?? 0),
       why: held.why === "slots" ? "slots" : "credits",
     };
   });
