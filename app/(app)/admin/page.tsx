@@ -204,7 +204,7 @@ type Queue = {
 };
 type QueueRow = {
   id: string; workspaceId: string; workspaceName: string; workspaceSlug: string; packId: string; label: string;
-  credits: number; usd: number; status: "requested" | "approved" | "declined" | "cancelled"; note: string;
+  credits: number; bonus: number; usd: number; status: "requested" | "approved" | "declined" | "cancelled"; note: string;
   requesterEmail: string | null; requesterName: string | null; createdAt: number; decidedAt: number | null;
 };
 
@@ -219,7 +219,11 @@ function TopupsCard({ onChanged }: { onChanged: () => void }) {
       const res = await fetch("/api/admin/topups", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Could not answer it");
-      if (action === "approve") await appAlert("Credits added", json.released ? `${json.request.credits.toLocaleString()} credits are in and ${json.released} held take${json.released === 1 ? "" : "s"} released.` : `${json.request.credits.toLocaleString()} credits are in.`);
+      if (action === "approve") {
+        // What landed, not what was charged for: the bonus is credits too.
+        const arrived = (json.request.credits + (json.request.bonus ?? 0)).toLocaleString();
+        await appAlert("Credits added", json.released ? `${arrived} credits are in and ${json.released} held take${json.released === 1 ? "" : "s"} released.` : `${arrived} credits are in.`);
+      }
       refresh(); onChanged();
     } catch (e) { await appAlert("Not answered", (e as Error).message); }
     finally { setBusy(null); }
@@ -237,7 +241,7 @@ function TopupsCard({ onChanged }: { onChanged: () => void }) {
           <div key={r.id} className="steam !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px]">
             <span className="flex flex-col gap-0.5"><span className="font-medium">{r.workspaceName}</span><span className="text-[11.5px] text-dim">{r.note || r.workspaceSlug}</span></span>
             <span className="flex flex-col gap-0.5"><span>{r.requesterName ?? "—"}</span><span className="text-[11.5px] text-dim">{r.requesterEmail ?? ""}</span></span>
-            <span className="flex flex-col gap-0.5"><span className="mono-v">{r.credits.toLocaleString()} cr</span><span className="text-[11.5px] text-dim">{r.label} · ${r.usd.toLocaleString()}</span></span>
+            <span className="flex flex-col gap-0.5"><span className="mono-v">{(r.credits + r.bonus).toLocaleString()} cr</span><span className="text-[11.5px] text-dim">{r.label} · ${r.usd.toLocaleString()}{r.bonus > 0 ? ` · ${r.bonus.toLocaleString()} free` : ""}</span></span>
             <span className="mono-s text-right">{when(r.createdAt)}</span>
             <span className="flex justify-end gap-1.5">
               <button type="button" className="btn-secondary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => decide(r.id, "decline")}>Decline</button>
@@ -250,7 +254,7 @@ function TopupsCard({ onChanged }: { onChanged: () => void }) {
           <div key={r.id} className="steam !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px] opacity-60">
             <span className="flex flex-col gap-0.5"><span>{r.workspaceName}</span><span className="text-[11.5px] text-dim">{r.workspaceSlug}</span></span>
             <span className="text-dim">{r.requesterName ?? "—"}</span>
-            <span className="mono-v">{r.credits.toLocaleString()} cr</span>
+            <span className="mono-v">{(r.credits + r.bonus).toLocaleString()} cr</span>
             <span className="mono-s text-right">{r.decidedAt ? when(r.decidedAt) : ""}</span>
             <span className="mono-s text-right">{r.status.toUpperCase()}</span>
           </div>

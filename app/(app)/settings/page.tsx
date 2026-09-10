@@ -57,8 +57,8 @@ type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; m
 type TopupsView = {
   applies: boolean; provider: "manual" | "stripe" | "razorpay"; canRequest: boolean; openLimit: number;
   credits: { creditUsd: number; granted: number; used: number; balance: number } | null;
-  packs: { id: string; label: string; credits: number; usd: number }[];
-  requests: { id: string; packId: string; label: string; credits: number; usd: number; status: "requested" | "approved" | "declined" | "cancelled"; note: string; createdAt: number; decidedAt: number | null }[];
+  packs: { id: string; label: string; credits: number; bonus: number; total: number; usd: number }[];
+  requests: { id: string; packId: string; label: string; credits: number; bonus: number; usd: number; status: "requested" | "approved" | "declined" | "cancelled"; note: string; createdAt: number; decidedAt: number | null }[];
   history: { id: string; credits: number; note: string; createdAt: number }[];
 };
 type Keys = {
@@ -770,12 +770,18 @@ function CreditsCard({ view, onChanged }: { view: TopupsView; onChanged: () => v
           <Runway className="basis-full text-[13px] text-mute" />
         </div>
       )}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {view.packs.map((p) => (
           <div key={p.id} className="ecard !gap-1.5">
             <span className="mono !tracking-[.12em] !text-[10px]">{p.label.toUpperCase()}</span>
-            <span className="text-[20px] font-semibold tabular-nums">{p.credits.toLocaleString("en-US")} credits</span>
-            <span className="text-[13px] text-dim">${p.usd.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+            {/* What ARRIVES is the headline. The split is the line under it —
+                a bigger pack buys a cheaper credit, and that is only visible
+                if the free half is named rather than folded into the total. */}
+            <span className="text-[20px] font-semibold tabular-nums">{p.total.toLocaleString("en-US")} credits</span>
+            <span className="text-[13px] text-dim">
+              ${p.usd.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              {p.bonus > 0 && <span className="text-mute"> · {p.bonus.toLocaleString("en-US")} free</span>}
+            </span>
             {view.canRequest && (
               <button type="button" className="btn-primary mt-1 !h-8 !px-3.5 !text-[12.5px]" disabled={busy != null || open.length >= view.openLimit} onClick={() => ask(p.id)}>
                 {busy === p.id ? "Asking…" : view.provider === "manual" ? "Request" : "Buy"}
@@ -793,7 +799,7 @@ function CreditsCard({ view, onChanged }: { view: TopupsView; onChanged: () => v
         <div className="flex flex-col">
           {open.map((r) => (
             <div key={r.id} className="steam !grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_90px]">
-              <span className="flex flex-col gap-0.5"><span className="font-medium">{r.label} · {r.credits.toLocaleString("en-US")} credits</span><span className="text-[11.5px] text-dim">asked {when(r.createdAt)} · waiting for the platform</span></span>
+              <span className="flex flex-col gap-0.5"><span className="font-medium">{r.label} · {(r.credits + r.bonus).toLocaleString("en-US")} credits</span><span className="text-[11.5px] text-dim">asked {when(r.createdAt)} · waiting for the platform</span></span>
               <span className="mono-v">${r.usd.toLocaleString("en-US")}</span>
               <button type="button" className="btn-secondary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => cancel(r.id)}>Cancel</button>
             </div>
