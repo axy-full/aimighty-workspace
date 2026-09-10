@@ -770,7 +770,11 @@ function CreditsCard({ view, onChanged }: { view: TopupsView; onChanged: () => v
           <Runway className="basis-full text-[13px] text-mute" />
         </div>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Four across only from xl. Between the lg breakpoint and about 1120px
+          a quarter of the rail is ~116px of text, and "24,000 credits" needs
+          ~140 — so three of the four cards broke their headline and their
+          price line while Starter fit, and the row read as ragged blocks. */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {view.packs.map((p) => (
           <div key={p.id} className="ecard !gap-1.5">
             <span className="mono !tracking-[.12em] !text-[10px]">{p.label.toUpperCase()}</span>
