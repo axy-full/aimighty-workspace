@@ -136,7 +136,7 @@ export default function SettingsPage() {
         <div className="flex min-w-0 flex-col gap-5">
           {/* ── Workspace ── */}
           <section id="workspace" className="scard">
-            <div className="scard-h"><span>Workspace</span><span>Every workspace has its own database, its own keys and its own team. Nothing in one can be seen from another.</span></div>
+            <div className="scard-h"><span>Workspace</span><span>Every workspace has its own database and its own team. Nothing in one can be seen from another.</span></div>
             {!signedIn ? <Empty compact title="Sign in to see your workspace" /> : (
               <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 max-[900px]:grid-cols-1">
                 <div className="srow"><span>This workspace</span><span className="font-medium">{workspace?.name ?? "—"}</span></div>
