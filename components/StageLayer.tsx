@@ -27,11 +27,27 @@ import type { RecipeGraph, RecipeStage, LockedElement } from "@/lib/runs";
  * will cost.
  */
 export default function StageLayer({ projectId }: { projectId: string }) {
-  const { data, error } = useApi<{ recipe: RecipeGraph | null }>(
+  const { data, error, refresh } = useApi<{ recipe: RecipeGraph | null }>(
     `/api/rig/recipe/${encodeURIComponent(projectId)}`, 10_000);
   const [picked, setPicked] = useState<string | null>(null);
 
   const graph = data?.recipe ?? null;
+  const [making, setMaking] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  /* Writing the recipe is what makes this surface exist at all. Everything
+     below it — the graph, the wires, the inspector — has always worked and
+     has never had a row to draw. */
+  async function makeRecipe() {
+    setMaking(true); setFailed(null);
+    try {
+      const res = await fetch(`/api/rig/recipe/${encodeURIComponent(projectId)}`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `The server answered ${res.status}.`);
+      refresh();
+    } catch (e) { setFailed((e as Error).message); }
+    finally { setMaking(false); }
+  }
   const placed = useMemo(() => (graph ? layout(graph.stages) : []), [graph]);
   const band = useMemo(() => bandLayout(graph?.locked.length ?? 0), [graph]);
   const wires = useMemo(() => wiresOf(placed), [placed]);
@@ -41,10 +57,21 @@ export default function StageLayer({ projectId }: { projectId: string }) {
   if (!data) return <Waiting />;
   if (!graph) {
     return (
-      <Empty
-        title="No recipe yet"
-        line="A recipe is the production written down as stages — brief, scene, shot list, keyframes, motion, post, audio, assembly — and a run is one execution of it."
-      />
+      <div className="screen grid place-items-center">
+        <div className="flex max-w-[46ch] flex-col items-center gap-4 text-center">
+          <Empty
+            title="No recipe yet"
+            line="A recipe is the production written down as stages — brief, scene, shot list, keyframes, motion, post, audio, assembly."
+          />
+          {/* Writing one costs nothing and renders nothing: it is the shape of
+              the production, not a run of it. The stages arrive queued, which
+              is what they are. */}
+          <button type="button" className="btn-primary" onClick={makeRecipe} disabled={making}>
+            {making ? "Writing…" : "Write the recipe"}
+          </button>
+          {failed && <span className="text-[13px] text-lift">{failed}</span>}
+        </div>
+      </div>
     );
   }
 

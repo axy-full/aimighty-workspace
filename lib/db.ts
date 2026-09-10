@@ -973,6 +973,15 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         await addColumn(c, "shots", col);
       }
       /* An idea remembers which reasoning model was chosen for it. */
+      /* `inputs` shipped inside recipe_stages' CREATE TABLE and never as an
+         ALTER, so it reached FRESH databases only. Every workspace whose
+         database predates it has been missing the column ever since, and
+         silently: `recipeOf` reads it off `SELECT *`, so an absent column
+         read back as no inputs and a recipe drew as a column of cards with
+         no wires — which is exactly how it looked. A write naming the column
+         does not degrade, it throws, so this has to land before anything
+         writes a graph's edges. */
+      await addColumn(c, "recipe_stages", `inputs TEXT NOT NULL DEFAULT '[]'`);
       await addColumn(c, "ideas", `model TEXT`);
       await addColumn(c, "topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */
