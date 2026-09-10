@@ -25,6 +25,11 @@ import {
 
 const stageState = (v: unknown): StageState => (isStageState(v) ? v : "queued");
 
+/* A figure in the workspace's unit: whole credits stay whole, and a dollar
+   workspace keeps its cents — the old `Math.round` turned a $0.13 stage into
+   $0, which is not a price. */
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
 export async function getRun(runId: string): Promise<RunView | null> {
   await ready();
   const rs = await db().execute({
@@ -102,8 +107,8 @@ async function stagesOf(runId: string, recipeId: string): Promise<StageView[]> {
          it is worse than one that says it stopped, so it reads as queued
          until there is a way out to show. */
       state: state === "needs_you" && !failure ? "queued" : state,
-      credits: Math.max(0, Math.round(Number(got?.estimate_credits ?? 0))),
-      spent: Math.max(0, Math.round(Number(got?.spent_credits ?? 0))),
+      credits: Math.max(0, round2(Number(got?.estimate_credits ?? 0))),
+      spent: Math.max(0, round2(Number(got?.spent_credits ?? 0))),
       doneUnits: Math.max(0, Number(got?.done_units ?? 0)),
       totalUnits: Math.max(0, Number(got?.total_units ?? 0)),
       hasOutput: hasOutput(got),
@@ -231,21 +236,23 @@ export async function recipeOf(projectId: string): Promise<RecipeGraph | null> {
     const def = d as any;
     const got = byStage.get(String(def.id));
     const kind = String(def.kind);
+    const params = jsonOrEmpty(def.params);
     return {
       id: String(def.id),
       num: Number(def.num ?? 0),
       name: String(def.name ?? ""),
       kind: kind === "write" || kind === "assemble" ? kind : "render",
       engine: String(def.engine ?? ""),
-      params: jsonOrEmpty(def.params),
+      params,
       inputs: jsonList(def.inputs),
       locks: jsonList(def.locks),
       position: Number(def.position ?? 0),
       state: stageState(got?.state),
-      credits: Math.max(0, Math.round(Number(got?.estimate_credits ?? 0))),
-      spent: Math.max(0, Math.round(Number(got?.spent_credits ?? 0))),
+      /* The run's estimate when there is a run; the recipe's own price otherwise. */
+      credits: Math.max(0, round2(Number(got?.estimate_credits ?? params.credits ?? 0))),
+      spent: Math.max(0, round2(Number(got?.spent_credits ?? 0))),
       doneUnits: Math.max(0, Number(got?.done_units ?? 0)),
-      totalUnits: Math.max(0, Number(got?.total_units ?? 0)),
+      totalUnits: Math.max(0, Number(got?.total_units ?? params.units ?? 0)),
     };
   });
 
@@ -319,7 +326,7 @@ export async function applyFix(
     args: [state, fix.id, fix.label, by, ts, ts,
            /* A skipped stage will not run, so it stops quoting for work that
               will never happen; anything else keeps its estimate. */
-           fix.kind === "skip" ? 0 : Math.max(0, Math.round(Number(row.estimate_credits ?? 0))),
+           fix.kind === "skip" ? 0 : Math.max(0, round2(Number(row.estimate_credits ?? 0))),
            runId, stageId],
   });
   /* The stage is unblocked, and that is all. A run somebody paused stays
@@ -402,11 +409,17 @@ export async function createRecipe(projectId: string | null, name: string, stage
   for (let i = 0; i < stages.length; i++) {
     const s = stages[i];
     const inputs = (s.inputs ?? []).map((n) => idOf.get(n)).filter((v): v is string => Boolean(v));
+    /* A stage's own price and unit count (design/particl-v2 §9: every stage
+       priced as the recipe has it) live in `params`, so a recipe nobody has
+       run yet still quotes what a run would cost. */
+    const params: Record<string, unknown> = {};
+    if (s.units != null) params.units = Math.max(1, Math.round(s.units));
+    if (s.credits != null) params.credits = Math.max(0, round2(s.credits));
     await db().execute({
-      sql: `INSERT INTO recipe_stages (id, recipe_id, num, name, kind, engine, inputs, position, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      sql: `INSERT INTO recipe_stages (id, recipe_id, num, name, kind, engine, params, inputs, position, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       args: [idOf.get(s.num)!, rid, s.num, s.name.slice(0, 60), s.kind, (s.engine ?? "").slice(0, 60),
-             JSON.stringify(inputs), i, ts, ts],
+             JSON.stringify(params), JSON.stringify(inputs), i, ts, ts],
     });
   }
   return rid;

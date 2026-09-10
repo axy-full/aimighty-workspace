@@ -50,6 +50,19 @@ const SCHEMA = [
      cap_usd     REAL,
      created_at  INTEGER NOT NULL
    )`,
+  /* Boards (design/particl-v2 §8, §15): the Canvas as a generation graph.
+     A board belongs to a project; its nodes and wires are read and written
+     whole, as JSON, because a graph has no meaning outside its board. */
+  `CREATE TABLE IF NOT EXISTS boards (
+     id         TEXT PRIMARY KEY,
+     project_id TEXT NOT NULL,
+     name       TEXT NOT NULL DEFAULT 'Board',
+     nodes      TEXT NOT NULL DEFAULT '[]',
+     wires      TEXT NOT NULL DEFAULT '[]',
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id)`,
   `CREATE TABLE IF NOT EXISTS generations (
      id            TEXT PRIMARY KEY,
      project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,

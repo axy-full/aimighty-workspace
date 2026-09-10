@@ -20,7 +20,7 @@ const ROUTES = [
   "/", "/images", "/audio", "/productions", "/all", "/studio", "/studio/shot",
   "/usage", "/settings", "/policy", "/terms", "/privacy",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots",
-  "/projects/demo/rig", "/projects/demo/rig/elements", "/takes/demo", "/shots/demo", "/elements/demo",
+  "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/takes/demo", "/shots/demo", "/elements/demo",
 ];
 
 async function settle(page: Page) {
@@ -361,4 +361,45 @@ test("Shots: toolbar, one filled primary, five columns, and the 228px menu", asy
       await expect(menu).toHaveCount(0);
     }
   }
+});
+
+/**
+ * Rig · Canvas (design/particl-v2 §8, board 6a): the 44px sub-bar with the
+ * three tabs, the 56px strip, the 300px inspector, `+ Add node ⌘K`, and a
+ * node landing on the board from ⌘K — the inspector follows the selection.
+ * Nothing here runs a node: building is free, and the test keeps it so.
+ */
+test("Rig · Canvas: the 6a chrome, ⌘K adds a node, the inspector follows the selection", async ({ page }) => {
+  await page.goto("/productions");
+  await settle(page);
+  const signedIn = await page.getByRole("button", { name: "Account" }).count();
+  test.skip(!signedIn, "the canvas needs a workspace");
+  const tile = page.locator("section .grid a").first();
+  const href = (await tile.getAttribute("href"))!;
+  const projectId = href.split("/")[3];
+  await page.goto(`/rig/canvas/new?project=${projectId}`);
+  await page.waitForURL(/\/rig\/canvas\/brd_/);
+  await settle(page);
+  const tabs = page.getByRole("group", { name: "Rig" });
+  await expect(tabs.getByRole("button")).toHaveText(["Canvas", "Recipes", "Run"]);
+  expect(await tabs.evaluate((el) => el.parentElement!.getBoundingClientRect().height)).toBe(44);
+  expect(await tabs.evaluate((el) => getComputedStyle(el.parentElement!).paddingLeft)).toBe("76px");
+  await expect(page.getByRole("button", { name: /Add node/ })).toBeVisible();
+  const strip = page.getByRole("complementary", { name: "Atomik" });
+  expect(await strip.evaluate((el) => el.getBoundingClientRect().width)).toBe(56);
+  const inspector = page.getByRole("complementary", { name: "Inspector" });
+  expect(await inspector.evaluate((el) => el.getBoundingClientRect().width)).toBe(300);
+  const board = page.getByRole("region", { name: "Board" });
+  expect(await board.evaluate((el) => getComputedStyle(el).backgroundSize)).toBe("24px 24px");
+  await page.keyboard.press("Meta+k");
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await menu.getByRole("menuitem", { name: /^Prompt/ }).click();
+  await expect(page.getByRole("article", { name: "Prompt node" })).toBeVisible();
+  await expect(inspector.getByText("Node · Prompt")).toBeVisible();
+  const node = page.getByRole("article", { name: "Prompt node" });
+  expect(await node.evaluate((el) => el.getBoundingClientRect().width)).toBe(200);
+  expect(await node.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("12px");
+  await page.keyboard.press("Backspace");
+  await expect(page.getByRole("article", { name: "Prompt node" })).toHaveCount(0);
 });

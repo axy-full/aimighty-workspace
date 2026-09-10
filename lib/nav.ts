@@ -30,7 +30,7 @@ export const NAV: readonly NavItem[] = [
   },
   {
     label: "Rig",
-    href: ({ production }) => (production ? `/projects/${production}/rig` : "/projects"),   // §8 `/rig/canvas/…` — step 6
+    href: ({ production }) => (production ? `/rig/canvas/new?project=${encodeURIComponent(production)}` : "/productions"),
     match: (p) => starts(p, "/rig", "/elements") || p.includes("/rig"),
   },
   {

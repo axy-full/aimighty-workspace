@@ -7,10 +7,8 @@ import { AtomikMark } from "@/components/AtomikMark";
 /**
  * The nav across the top of a production.
  *
- * The node surface is called NODES here, not Rig — one vocabulary, decided
- * once (SOW rule 5). The route is still /rig; a URL is not the word people
- * read, and moving it is a redirect that belongs with the larger question of
- * whether this is a tab at all or a mode the whole production sits in.
+ * Rig is the v2 Canvas (design/particl-v2 §8): the tab opens the project's
+ * board. The old Nodes screen it replaces was deleted with step 6.
  *
  * It exists as a component because it was previously typed out by hand on
  * whichever production page happened to need it — and that is exactly how
@@ -26,7 +24,7 @@ import { AtomikMark } from "@/components/AtomikMark";
  * production-scoped: that is how they already worked, and this change is
  * about finding the Rig, not re-planning the nav.
  */
-export type ProductionTab = "production" | "shots" | "canvas" | "nodes";
+export type ProductionTab = "production" | "shots" | "canvas" | "rig";
 
 export default function ProductionNav({ id, on }: { id: string; on: ProductionTab }) {
   /* Shots is the v2 grid (design/particl-v2 §7), which lives under the
@@ -37,7 +35,7 @@ export default function ProductionNav({ id, on }: { id: string; on: ProductionTa
     ["production", "Production", `/projects/${id}`],
     ["shots", "Shots", productionId ? `/productions/${productionId}/${id}/shots` : "/productions"],
     ["canvas", "Canvas", `/projects/${id}/canvas`],
-    ["nodes", "Nodes", `/projects/${id}/rig`],
+    ["rig", "Rig", `/rig/canvas/new?project=${encodeURIComponent(id)}`],
   ];
   return (
     <nav className="subnav" aria-label="Production">
