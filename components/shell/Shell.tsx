@@ -5,6 +5,7 @@ import { useSession } from "@/lib/session";
 import { bindAtomikRail, setAtomikRail, toggleAtomikRail } from "@/lib/atomikRail";
 import { AtomikProvider } from "@/components/atomik/AtomikProvider";
 import AtomikRail from "@/components/atomik/AtomikRail";
+import AtomikSheet from "@/components/atomik/AtomikSheet";
 import Header from "./Header";
 import Dock from "./Dock";
 import SuspendedBar from "./SuspendedBar";
@@ -39,6 +40,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <div className="shell-body">
           <div className="shell-page">{children}</div>
           <div className="max-md:hidden contents"><AtomikRail /></div>
+          <div className="md:hidden contents"><AtomikSheet /></div>
         </div>
         <Dock />
       </div>

@@ -10,6 +10,7 @@ import { creditsNumber, useMoney } from "@/lib/price";
 import { usd } from "@/lib/format";
 import { Lockup } from "@/components/ui/Mark";
 import AtomikButton from "./AtomikButton";
+import { AtomikPhoneButton } from "@/components/atomik/AtomikSheet";
 import AccountMenu from "./AccountMenu";
 
 /**
@@ -61,6 +62,7 @@ export default function Header() {
           <span className="ui-mono text-ink-muted">Balance <span className="text-ink">{balance}</span></span>
         )}
         <span className="max-md:hidden"><AtomikButton /></span>
+        <span className="md:hidden"><AtomikPhoneButton /></span>
         <AccountMenu />
       </span>
     </header>
