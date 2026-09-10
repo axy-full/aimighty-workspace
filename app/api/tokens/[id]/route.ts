@@ -1,15 +1,21 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
-import { currentUser, withTenant } from "@/lib/auth";
+import { requireSession, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 /** Revoke a token. Session-only, and only your own — revocation is instant
- *  because every request checks revoked_at. */
+ *  because every request checks revoked_at.
+ *
+ *  "Session-only" was the intent and `currentUser()` was not it: that answers
+ *  for a bearer caller too, so a leaked token could revoke its siblings —
+ *  cutting off the CLI and the MCP client while keeping itself, which is how
+ *  somebody hides. `requireSession()` refuses a token caller outright. */
 export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Sign in to revoke a token" }, { status: 401 });
+  const got = await requireSession();
+  if (got.response) return got.response;
+  const user = got.user;
   await ready();
   const { id } = await params;
   await db().execute({

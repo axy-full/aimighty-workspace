@@ -240,6 +240,32 @@ export async function requireUser(): Promise<
   return { response: Response.json({ error: "Not signed in" }, { status: 401 }) };
 }
 
+/**
+ * For anything only a signed-in person may do: a token caller is refused.
+ *
+ * `currentUser()` answers for a BEARER caller too — `callerFromBearer` puts a
+ * user in the store — so "is there a user?" is not the same question as "is
+ * this a session?", and the token routes were asking the first while meaning
+ * the second. A read-only token could therefore mint a render-scoped one,
+ * which is the whole read-only guarantee undone: /connect hands that
+ * credential to third parties precisely because it "cannot bill".
+ */
+export async function requireSession(): Promise<
+  { user: User; response?: never } | { user?: never; response: Response }
+> {
+  const got = await requireUser();
+  if (got.response) return { response: got.response };
+  if (got.token) {
+    return {
+      response: Response.json(
+        { error: "Tokens are made and revoked while signed in. A token cannot mint or revoke another." },
+        { status: 403 },
+      ),
+    };
+  }
+  return { user: got.user };
+}
+
 /** For anything that spends money: a read-only token is refused here. */
 export async function requireRender(): Promise<
   { user: User; token?: TenantToken; response?: never } | { user?: never; token?: never; response: Response }
