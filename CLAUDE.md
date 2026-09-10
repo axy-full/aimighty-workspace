@@ -46,17 +46,39 @@ Reference rate card at launch (regenerate from live engine costs before publishi
 
 ### Tiers
 
+**AMENDED 10 September 2026 — panels are out of the tier rows, and expiry is
+on.** Two decisions taken after mapping §7A against the code:
+
+1. **The panel inclusions are cut. Tiers differentiate on credits alone for
+   launch.** "250 / 1,000 / 3,000 standard panels" is an allowance on a unit
+   that does not exist: there is no panel object, table, column, route, count
+   or cap anywhere in the code, nothing marks an engine "standard", and the
+   board pipeline those panels would come out of (§2.8, stages 1–5) is
+   entirely unbuilt. A standard board panel bills at exactly 1 credit, so the
+   value of each row is re-expressible in credits with nothing lost. **Panel
+   allowances wait for §2.8.** The original rows are kept below, struck
+   through, so the intent is not lost.
+2. **Credit expiry is no longer deferred; it comes first.** See §14.
+
+Three words in §7A also collide with words the code already uses, and the
+code's meanings are older. `tier` is a RESOLUTION BAND in the vendor rate
+table (`RateTier`, `TableTier`). `allowance` is a monthly DOLLAR CEILING on
+engine spend — a stop, not a grant, the opposite kind of object. `panel` is a
+region of UI (`--color-panel`). Rule 5 says one vocabulary, decided once, so
+the tier work uses **plan** for the subscription and keeps `tier` meaning what
+it already means.
+
 | Tier | Price | Included | Members | Worst-case cost | Worst-case gross |
 |---|---|---|---|---|---|
 | **Invite** | $0 | 50 cr once, 1 production, boards at 1 cr | 3 | $3.50 | marketing cost |
-| **Studio** | $49/mo | 400 cr, 250 standard panels, review links, exports, post tools | unlimited | $38 | $11 · 22% |
-| **Agency** | $199/mo | 1,600 cr, 1,000 panels, priority queue, branded review links, statements | unlimited | $153 | $46 · 23% |
-| **Production** | $999/mo | 9,000 cr, 3,000 panels, admin console, setup hours | unlimited | $750 | $249 · 25% |
+| **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited | $38 | $11 · 22% |
+| **Agency** | $199/mo | 1,600 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited | $153 | $46 · 23% |
+| **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited | $750 | $249 · 25% |
 
-- **Included credits and panels expire at cycle end. No rollover.** Breakage is real margin.
+- **Included credits expire at cycle end. No rollover.** Breakage is real margin. (Panels struck, 10 September — see the amendment above.)
 - **No seat fees on any paid tier.** Differentiate on credits, priority and features, never headcount.
 - **Annual: 20% off.** Auto-cancel: if a workspace has generated nothing in the 60 days before renewal, don't renew — let it lapse and say so.
-- Panel inclusions are on the standard engine only. Pro stills and all video draw credits regardless of tier.
+- ~~Panel inclusions are on the standard engine only.~~ Struck 10 September with the panel rows. Pro stills and all video draw credits regardless of plan — which, with panels gone, is simply: everything draws credits.
 
 ### Packs
 Unit stays $0.10. Discount only through bonus credits, capped at 20%. Purchased credits last 12 months.
