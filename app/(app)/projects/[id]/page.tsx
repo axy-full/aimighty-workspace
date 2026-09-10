@@ -140,9 +140,8 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
             <span className="grouplabel !pb-0">Export the selects</span>
             <a className="hdr-mono-link" href={`/api/export/selects?projectId=${encodeURIComponent(id)}&format=zip`}>ZIP ↓</a>
             <a className="hdr-mono-link" href={`/api/export/selects?projectId=${encodeURIComponent(id)}&format=csv`}>SHOT LIST ↓</a>
-            <a className="hdr-mono-link" href={`/api/export/selects?projectId=${encodeURIComponent(id)}&format=edl`}>EDL ↓</a>
           </div>
-          <p className="rvl-note">Every Approved take, in shot order: the masters named by your own convention, a shot list to bill from, and an edit list an editor can conform against. The zip carries all three.</p>
+          <p className="rvl-note">Every Approved take, in shot order: the masters named by your own convention, and a shot list to bill from. The zip carries both.</p>
         </section>
         {project && <BurnDown project={project} totals={t} byShot={data.byShot} shotCount={shots.length} />}
 

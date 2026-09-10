@@ -94,7 +94,7 @@ export function readout(pos: number, span: number): string {
  * The workflow runs at 24fps, decided once and stated here.
  *
  * It was two numbers before: 24 for the billing maths (lib/models.ts) and 25
- * for the timecode on the EDL export (lib/selects.ts). Nothing reconciled
+ * for the timecode on what was then an EDL export. Nothing reconciled
  * them, so a cut listed at 25 was being conformed against masters rendered
  * at 24 — every timecode drifting a frame every 25. One rate, named once,
  * is rule 5 applied to a number rather than a word.
