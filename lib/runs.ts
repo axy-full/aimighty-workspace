@@ -346,7 +346,40 @@ export async function setRunState(runId: string, state: "running" | "paused", by
 
 /* ── Making one ─────────────────────────────────────────────────────── */
 
-export type NewStage = { num: number; name: string; kind: "write" | "render" | "assemble"; engine?: string; units?: number; credits?: number };
+/**
+ * The eight stages a production is written down as (SOW §9, surface 1a).
+ *
+ * Named there and nowhere else in code until now, which is part of why the
+ * node layer stayed empty: `createRecipe` has always worked, and nothing has
+ * ever had a list of stages to hand it.
+ *
+ * `kind` is the only thing the graph reads off a stage to decide how it
+ * draws, so it is the only thing set here. `engine` is deliberately left
+ * empty: §7A routes stages to engines by price band (boards to a standard
+ * panel, drafts to Kling Standard, heroes to Seedance or Kling Pro) and that
+ * routing is not built, so writing engine ids in now would be inventing the
+ * pricing behaviour rather than recording it.
+ */
+export const DEFAULT_STAGES: NewStage[] = [
+  { num: 1, name: "Brief", kind: "write", inputs: [] },
+  { num: 2, name: "Scene", kind: "write", inputs: [1] },
+  { num: 3, name: "Shot list", kind: "write", inputs: [2] },
+  { num: 4, name: "Keyframes", kind: "render", inputs: [3] },
+  { num: 5, name: "Motion", kind: "render", inputs: [4] },
+  { num: 6, name: "Post", kind: "render", inputs: [5] },
+  /* Audio branches off the shot list rather than waiting for the picture,
+     and Assembly joins both — which is the whole reason `inputs` exists and
+     the recipe is not a list. The column's own comment says so. */
+  { num: 7, name: "Audio", kind: "render", inputs: [3] },
+  { num: 8, name: "Assembly", kind: "assemble", inputs: [6, 7] },
+];
+
+export type NewStage = {
+  num: number; name: string; kind: "write" | "render" | "assemble";
+  engine?: string; units?: number; credits?: number;
+  /** The `num`s of the stages that feed this one. Resolved to ids on insert. */
+  inputs?: number[];
+};
 
 /** A recipe and its stages, for a production that has none. */
 export async function createRecipe(projectId: string | null, name: string, stages: NewStage[], by: string): Promise<string> {
@@ -357,12 +390,23 @@ export async function createRecipe(projectId: string | null, name: string, stage
     sql: `INSERT INTO recipes (id, project_id, name, draft, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
     args: [rid, projectId, name.slice(0, 80), 0, by, ts, ts],
   });
+  /* Ids first, because a stage's inputs are OTHER stages' ids and half of
+     them are not written yet. `inputs` is given as `num`s — the number a
+     person reads on the node — and resolved here, so a caller never has to
+     know what an id looks like. A num nothing matches is dropped rather than
+     written as a dangling wire: `wiresOf` skips an input it cannot place, so
+     a bad one would vanish from the canvas while staying in the row. */
+  const idOf = new Map<number, string>();
+  for (const s of stages) idOf.set(s.num, id("rst"));
+
   for (let i = 0; i < stages.length; i++) {
     const s = stages[i];
+    const inputs = (s.inputs ?? []).map((n) => idOf.get(n)).filter((v): v is string => Boolean(v));
     await db().execute({
-      sql: `INSERT INTO recipe_stages (id, recipe_id, num, name, kind, engine, position, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?)`,
-      args: [id("rst"), rid, s.num, s.name.slice(0, 60), s.kind, (s.engine ?? "").slice(0, 60), i, ts, ts],
+      sql: `INSERT INTO recipe_stages (id, recipe_id, num, name, kind, engine, inputs, position, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      args: [idOf.get(s.num)!, rid, s.num, s.name.slice(0, 60), s.kind, (s.engine ?? "").slice(0, 60),
+             JSON.stringify(inputs), i, ts, ts],
     });
   }
   return rid;
