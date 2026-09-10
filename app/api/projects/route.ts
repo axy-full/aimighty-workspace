@@ -3,9 +3,10 @@ import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { cached, putCache, invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { billedCreditsSum } from "@/lib/creditSql";
-import { getPlatformLayer } from "@/lib/platform";
+import { getPlatformLayer, planOf } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
+import { ceilingFor, wouldExceed, ceilingMessage } from "@/lib/planLimits";
 
 export const dynamic = "force-dynamic";
 
@@ -121,6 +122,21 @@ export const POST = withTenant(async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const name = String(body.name ?? "").trim();
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+
+  /* Invite is one production (§7A). A workspace on no plan has no ceiling,
+     which is every workspace until somebody is put on one — so this is inert
+     today and becomes real the moment a plan is assigned. Counted here rather
+     than trusted from the client, and counted in the workspace's OWN database,
+     which `db()` is already scoped to. */
+  const ws = requireTenant();
+  const plan = await planOf(ws).catch(() => null);
+  const ceiling = ceilingFor(plan, "productions");
+  if (ceiling != null) {
+    const have = await db().execute(`SELECT COUNT(*) AS n FROM projects`);
+    if (wouldExceed(Number((have.rows[0] as { n?: number })?.n ?? 0), ceiling)) {
+      return NextResponse.json({ error: ceilingMessage(plan!, "productions", ceiling) }, { status: 402 });
+    }
+  }
 
   const pid = id("prj");
   // A new production starts at the platform layer's default cap, when the workspace pays in credits.

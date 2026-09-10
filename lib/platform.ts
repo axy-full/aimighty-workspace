@@ -1,6 +1,6 @@
 import { createClient, type Client } from "@libsql/client";
 import { signupCredits, isPaidKind, type GrantKind } from "./creditTerms";
-import { asPlanId, type PlanId } from "./plans";
+import { asPlanId, planById, DEFAULT_PLANS, type PlanId, type PlanDef } from "./plans";
 import { gatewayMintConfigured, mintGatewayKey } from "./vercelKeys";
 import { randomBytes, createHash } from "node:crypto";
 import { seal, open } from "./keyring";
@@ -791,6 +791,29 @@ export async function resetPlatformLayer(key: LayerKey): Promise<PlatformLayer> 
  * which is still undecided. Recording WHICH plan is the part that can be
  * true today, and it is what the console has had no way to say.
  */
+/**
+ * The plan a workspace is on, resolved against the platform layer.
+ *
+ * Null for a workspace on none — which is every workspace until somebody is
+ * put on one — and null rather than a default, because "no plan" and "the
+ * cheapest plan" are different states and only one of them carries ceilings.
+ */
+export async function planOf(ws: { planId?: PlanId | null } | null | undefined): Promise<PlanDef | null> {
+  if (!ws?.planId) return null;
+  const layer = await getPlatformLayer().catch(() => null);
+  return planById(layer?.plans ?? DEFAULT_PLANS, ws.planId);
+}
+
+/** How many people can still open this workspace. Disabled seats do not count. */
+export async function memberCount(workspaceId: string): Promise<number> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT COUNT(*) AS n FROM memberships WHERE workspace_id = ? AND disabled = 0`,
+    args: [workspaceId],
+  });
+  return Number((rs.rows[0] as { n?: number })?.n ?? 0);
+}
+
 export async function setWorkspacePlan(id: string, plan: PlanId | null): Promise<void> {
   await platformReady();
   await platformDb().execute({
