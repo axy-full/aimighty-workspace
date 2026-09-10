@@ -3,11 +3,18 @@
 /**
  * Welcome + Sign in, one screen — from the pipeline handoff.
  *
- * The left half says what Particl is: the lockup, one sentence, the four
- * rooms with their own site copy, and the honest footnote about what runs
- * underneath. The right half is the door: email, password, sign in, and
- * two smaller ways in — ask management for an invitation, or look around
- * signed out, because the interface is open to browse and closed to use.
+ * The left half says what particl is, in a lockup and one sentence. The
+ * right half is the door: email, password, sign in, and two smaller ways
+ * in — ask management for an invitation, or look around signed out,
+ * because the interface is open to browse and closed to use.
+ *
+ * It used to carry a four-cell tour of the app and a paragraph naming
+ * every vendor underneath. Both are gone (rule 9). This is the screen a
+ * returning member sees every time their session lapses, and their whole
+ * business here is one password; a site-map of rooms they already know,
+ * linking to pages they are not signed in to reach, is a wall to read
+ * past. Whoever genuinely wants the tour has LOOK AROUND, which is the
+ * app itself and cannot go stale the way a description of it does.
  *
  * `next` arrives from the URL, so it is attacker-controlled: it is kept
  * only if it resolves to this origin.
@@ -18,13 +25,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { RequestAccessButton } from "@/components/RequestAccess";
 import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
-
-const ROOMS = [
-  { eyebrow: "01 · VIDEO · IMAGES · AUDIO", name: "Generate", href: "/", line: "A prompt, an engine, a duration. The cost is on the button before you press it." },
-  { eyebrow: "02 · STUDIO", name: "Studio", href: "/studio", line: "Name a face, a place or a look once. Cite it by name in every shot after." },
-  { eyebrow: "03 · PRODUCTIONS", name: "Productions", href: "/projects", line: "Every take under its shot, in order, next to the references it came from." },
-  { eyebrow: "04 · USAGE", name: "Usage", href: "/usage", line: "What the job cost, who spent it, and which shot is taking the most takes." },
-];
 
 export default function WelcomeSignIn() {
   return (
@@ -43,19 +43,7 @@ export default function WelcomeSignIn() {
           <p className="wl-tag">The studio&rsquo;s own room for making shots — and for knowing what they cost.</p>
         </div>
 
-        <span className="wl-rooms" aria-hidden="true">THE FOUR ROOMS</span>
-        <div className="wl-grid">
-          {ROOMS.map((r) => (
-            <Link key={r.name} href={r.href} className="wl-cell">
-              <span className="mono !tracking-[.18em] !text-[10px]">{r.eyebrow}</span>
-              <span className="wl-cell-h">{r.name}</span>
-              <span className="wl-cell-p">{r.line}</span>
-            </Link>
-          ))}
-        </div>
-
         <div className="wl-foot">
-          <p>particl studio runs Seedance on BytePlus ModelArk, Nano Banana on Google, Kling and Topaz on fal.ai, and ElevenLabs for sound. Masters are stored byte-for-byte and never compressed to suit an API.</p>
           <Link href="/atomik/ideas" className="wl-atomik"><AtomikMark size={16} /> IDEA TO SHOT LIST · ATOMIK →</Link>
         </div>
       </section>
