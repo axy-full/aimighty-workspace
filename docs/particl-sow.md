@@ -472,3 +472,62 @@ Per surface, state which of the three layouts it supports and what the mobile ve
 6. Every mobile change keeps the Phase 0 suite green.
 7. Where a decision gets built on by later sections — schemas, ledgers, scoping, inheritance, sync — give two or three structures, argue against your preferred one, and name what breaks. Don't write code until it's agreed.
 8. Any task that would spend real money on an engine: stop and ask.
+
+---
+
+## 14. Built — state of the code, 10 September 2026
+
+Appended, not part of the master as handed over: the master is written as a
+plan, and a plan that does not say what already exists sends the next session
+to rebuild it. Everything below is in `main` and deployed. Delete this section
+whenever the master is reissued with the same facts folded in.
+
+**§4 theme — no longer open. particl is dark; there is no appearance setting.**
+Decided and shipped 10 September, after §4's own note asked for it to be
+settled before Rig work. Not "dark by default": Auto and Light are gone from
+the product, the `prefers-color-scheme` query is gone from the stylesheet, and
+nothing is stamped on `<html>`. The paper ground is a route list —
+`lib/ground.ts`, read by the shell and by the command palette — holding
+atomik's stages and the statement page, which is a document before it is a
+screen. `app/global-error.tsx` is written out dark because it renders when the
+stylesheet never arrived. The rule that made this a default change rather than
+a rework still stands and is now the only thing holding the theme together:
+**no component hard-codes a colour; a literal hex in one is a bug.** Guarded at
+`tests/desktop.spec.ts` by emulating a light machine.
+
+**§5 bindings — a shot overrides one attribute without leaving the element.**
+`bindings UNIQUE (shot_id, slot, ordinal)` could not represent the handoff's
+own sentence: one slot held one row, so pinning WARDROBE replaced the bundle,
+`portsForShot` emitted a single port, and the shot stopped citing the
+character's face, hair and voice. Three shapes were put up; the key was
+widened, so a bundle row and an override row coexist.
+
+**§10 4.1 — panes resize and stay put.** Four surfaces carry a seam: the
+composer rail, the canvas shot rail, Studio's rail and the shot builder's,
+each with its own default and stops (`lib/panes.ts`). The seam is a
+`role="separator"` with a live `aria-valuenow`. Widths are per browser and
+clamped to the window as well as the spec, so a split chosen on a 27" display
+cannot swallow a laptop.
+
+**§10 4.2 — the command palette, the shortcut registry and the `?` overlay.**
+`lib/shortcuts.ts` is the table as data, because 5.1 says the Mac menus carry
+every shortcut and a menu can only carry what it can enumerate. Rows marked
+`owner: "global"` are handled in `CommandPalette.tsx`; the rest record which
+component owns the key. `?` reads the table, so a shortcut becomes
+discoverable the moment its row is added. Eight rows are live, nine planned.
+
+**§10 4.3 — the player, the filmstrip and comparison.** Theatre draws its own
+transport on desktop (frame-stepped scrub, timecode, loop, mute, position read
+every animation frame); the phone keeps the native bar, which carries
+fullscreen and picture-in-picture. The filmstrip is every take on the shot,
+oldest version first, derived from rows the browser already holds, and the
+arrows walk it when it is on screen. Compare elects the longest take as the
+clock and corrects the others past 125ms, rather than commanding every clip to
+play and trusting them. **One frame rate: 24, decided 9 September.** No EDL
+export — not wanted.
+
+**Not built, and named here so it is not assumed:** §7A's tiers, floor guard,
+`internal: true` multiplier and guardrails 1–6; invoicing. The per-engine
+margin table in `lib/creditTerms.ts` (1.25–1.5, dated 6 September) still
+disagrees with §7A's flat 1.5×, so the reference rate card and the prices on
+the buttons differ by a credit or three per take.
