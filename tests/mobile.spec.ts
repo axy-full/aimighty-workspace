@@ -77,6 +77,15 @@ test.describe("the app shell", () => {
     test(`the dock on ${route} is padded by the safe-area inset`, async ({ page }) => {
       await page.goto(route);
       await settle(page);
+      /* §14: mobile is below 768. A phone on its side is 844 wide, so it
+         gets the desktop nav in the header and no dock — check that
+         instead, and the dock only where it exists. */
+      const width = await page.evaluate(() => window.innerWidth);
+      if (width >= 768) {
+        await expect(page.getByRole("banner").getByRole("navigation", { name: "Sections" }).getByRole("link")).toHaveText(["Make", "Productions", "Rig", "Library"]);
+        await expect(page.locator(".shell-dock")).toBeHidden();
+        return;
+      }
       const bar = page.locator(".shell-dock");
       await expect(bar).toBeVisible();
       await expect(bar.getByRole("link")).toHaveText(["Needs you", "Make", "Productions"]);

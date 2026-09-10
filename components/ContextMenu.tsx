@@ -107,6 +107,8 @@ export default function ContextMenu() {
      *  `touch` skips the text-field and plain-selection branches — native
      *  selection handles those better on phones. Returns whether it opened. */
     function openFor(t: HTMLElement, x: number, y: number, touch = false): boolean {
+      // A v2 surface that draws its own right-click menu (the Shots grid, §7) owns the click.
+      if (t.closest("[data-owns-menu]")) return false;
       const items: Item[] = [];
 
       const field = !touch && isEditable(t) ? t : null;

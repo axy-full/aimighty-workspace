@@ -284,9 +284,12 @@ test("Atomik: nothing when closed, compact on ⌘J, expanded on Expand, and it r
   expect(await rail.evaluate((el) => el.getBoundingClientRect().width)).toBe(420);
   await expect(rail.getByText("Production agent")).toBeVisible();
   expect(await rail.getByRole("textbox", { name: "Ask Atomik" }).evaluate((el) => el.getBoundingClientRect().height)).toBe(46);
-  // The page beside it got narrower, not covered.
-  const pageWidth = await page.locator(".shell-page").evaluate((el) => el.getBoundingClientRect().width);
-  expect(pageWidth).toBe(1440 - 420);
+  // The page beside it got narrower, not covered — by exactly the rail, at any width.
+  const [pageWidth, viewport] = await Promise.all([
+    page.locator(".shell-page").evaluate((el) => el.getBoundingClientRect().width),
+    page.evaluate(() => window.innerWidth),
+  ]);
+  expect(pageWidth).toBe(viewport - 420);
   await page.reload();
   await settle(page);
   expect(await page.getByRole("complementary", { name: "Atomik" }).evaluate((el) => el.getBoundingClientRect().width)).toBe(420);
@@ -319,5 +322,43 @@ test("Productions: the 7a header, one filled primary, rows with five-column tile
     expect(await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(5);
     await expect(grid.getByRole("button", { name: "+ Project" })).toBeVisible();
     await expect(page.locator("text=/\\d+ productions · \\d+ projects · \\d+ need you/i")).toBeVisible();
+  }
+});
+
+/**
+ * §7, the grid of board 10a: the toolbar with Grid | Filmstrip, the mono
+ * stats, `+ Shot`, and the one filled primary priced before it enables;
+ * five columns; the right-click menu at 228px with its items and footnote.
+ */
+test("Shots: toolbar, one filled primary, five columns, and the 228px menu", async ({ page }) => {
+  await page.goto("/productions");
+  await settle(page);
+  const signedIn = await page.getByRole("button", { name: "Account" }).count();
+  test.skip(!signedIn, "the grid needs a workspace");
+  const tile = page.locator("section .grid a").first();
+  const href = (await tile.getAttribute("href"))!.replace(/\/media$/, "/shots");
+  await page.goto(href);
+  await settle(page);
+  await expect(page.getByRole("group", { name: "View" }).getByRole("button")).toHaveText(["Grid", "Filmstrip"]);
+  await expect(page.getByRole("button", { name: "+ Shot" })).toBeVisible();
+  const filled = await page.locator(".shell-page button").evaluateAll((els) => els.filter((b) => getComputedStyle(b).backgroundColor === "rgb(245, 246, 248)").map((b) => b.textContent ?? ""));
+  expect(filled.length, "at most one filled primary on the page").toBeLessThanOrEqual(1);
+  const grid = page.locator(".shell-page .grid:has(article)").first();
+  if (await grid.count()) {
+    expect(await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(5);
+    expect(await grid.evaluate((el) => getComputedStyle(el).columnGap)).toBe("12px");
+    const card = grid.locator("article").first();
+    if (await card.count()) {
+      await card.click({ button: "right" });
+      const menu = page.getByRole("menu");
+      await expect(menu).toBeVisible();
+      expect(await menu.evaluate((el) => el.getBoundingClientRect().width)).toBe(228);
+      await expect(menu.getByRole("menuitem", { name: /^Copy/ })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: /^Paste after/ })).toBeDisabled();
+      await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeVisible();
+      await expect(menu.getByText("Takes and masters are never deleted with a shot")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+    }
   }
 });

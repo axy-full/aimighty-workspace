@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useProject } from "@/lib/projectContext";
 import { AtomikMark } from "@/components/AtomikMark";
 
 /**
@@ -25,11 +26,16 @@ import { AtomikMark } from "@/components/AtomikMark";
  * production-scoped: that is how they already worked, and this change is
  * about finding the Rig, not re-planning the nav.
  */
-export type ProductionTab = "shots" | "canvas" | "nodes";
+export type ProductionTab = "production" | "shots" | "canvas" | "nodes";
 
 export default function ProductionNav({ id, on }: { id: string; on: ProductionTab }) {
+  /* Shots is the v2 grid (design/particl-v2 §7), which lives under the
+     project's production; the overview here is the cap and the numbers. */
+  const { projects } = useProject();
+  const productionId = projects.find((p) => p.id === id)?.productionId ?? null;
   const tabs: [ProductionTab, string, string][] = [
-    ["shots", "Shots", `/projects/${id}`],
+    ["production", "Production", `/projects/${id}`],
+    ["shots", "Shots", productionId ? `/productions/${productionId}/${id}/shots` : "/productions"],
     ["canvas", "Canvas", `/projects/${id}/canvas`],
     ["nodes", "Nodes", `/projects/${id}/rig`],
   ];

@@ -38,6 +38,8 @@ export type Project = {
   id: string; name: string; description: string; code?: string;
   createdAt: number; genCount: number; spend: number; credits?: number;
   capUsd?: number | null; capCredits?: number | null; capUnlocked?: boolean; starter?: boolean; kind?: string | null; runtimeTarget?: number | null; stage?: string | null;
+  /** §15's project (design/particl-v2): the production it belongs to, its format, its step. */
+  productionId?: string | null; format?: string; step?: number;
 };
 
 type Ctx = {
