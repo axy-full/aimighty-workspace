@@ -27,6 +27,7 @@ type Admin = {
   platformKeysByDefault: boolean; defaultAllowanceUsd: number | null; gatewayMint: boolean;
   creditUsd: number; signupCredits: number;
   plans: PlanDef[];
+  concurrency: { byEngine: { engine: string; peak: number; at: number; jobs: number }[]; overall: { peak: number; at: number }; days: number } | null;
   workspaces: Ws[];
 };
 type Ws = {
@@ -132,6 +133,7 @@ export default function AdminPage() {
             <TopupsCard onChanged={refresh} />
 
             <EnginesCard />
+            <ConcurrencyCard c={data.concurrency} />
 
             <PlatformLayerCard />
 
@@ -372,6 +374,52 @@ function PlanChip({ w, plans, busy, patch }: {
       </select>
       {label}
     </label>
+  );
+}
+
+/**
+ * The most an engine ever ran at once (SOW §7).
+ *
+ * This is the number to take to a provider when asking for a higher limit,
+ * and it is DERIVED rather than sampled: every meter row records when its
+ * job began and when it stopped, so the peak is a property of the intervals
+ * and can be read for any window, including ones that ended before anybody
+ * thought to measure them.
+ *
+ * The platform's own peak is shown apart from the engines' and is NOT their
+ * sum — those happen at different moments, and adding them would quote a
+ * number the platform never reached.
+ */
+function ConcurrencyCard({ c }: { c: Admin["concurrency"] }) {
+  if (!c || !c.byEngine.length) return null;
+  const when = (ms: number) => (ms ? new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "—");
+  return (
+    <section className="scard">
+      <div className="scard-h">
+        <span>Peak concurrency</span>
+        <span>The most that ever ran at once on each engine, over {c.days} days, on the platform&rsquo;s keys. Read from the meter&rsquo;s own intervals, so it is exact rather than sampled — this is the figure to quote when asking a provider for a higher limit.</span>
+      </div>
+      <div className="flex flex-col">
+        <div className="steam is-head !grid-cols-[minmax(0,1fr)_90px_90px_190px]">
+          <span>ENGINE</span><span className="text-right">PEAK</span><span className="text-right">JOBS</span><span className="text-right">WHEN</span>
+        </div>
+        {c.byEngine.map((e: { engine: string; peak: number; at: number; jobs: number }) => (
+          <div key={e.engine} className="steam !grid-cols-[minmax(0,1fr)_90px_90px_190px]">
+            <span className="font-medium">{e.engine}</span>
+            <span className="mono-v text-right">{e.peak}</span>
+            <span className="mono-s text-right text-dim">{e.jobs}</span>
+            <span className="mono-s text-right text-dim">{when(e.at)}</span>
+          </div>
+        ))}
+        <div className="steam !grid-cols-[minmax(0,1fr)_90px_90px_190px] opacity-70">
+          <span>Everything at once</span>
+          <span className="mono-v text-right">{c.overall.peak}</span>
+          <span className="mono-s text-right text-dim">—</span>
+          <span className="mono-s text-right text-dim">{when(c.overall.at)}</span>
+        </div>
+      </div>
+      <span className="rail-help">The platform figure is not the engines&rsquo; added together: those peaks happen at different moments.</span>
+    </section>
   );
 }
 
