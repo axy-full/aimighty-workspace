@@ -183,3 +183,105 @@ test("two productions open in two tabs do not fight over the switcher", async ({
   expect(wa, `tab A wrote the selection ${wa} times`).toBeLessThan(5);
   expect(wb, `tab B wrote the selection ${wb} times`).toBeLessThan(5);
 });
+
+/**
+ * One ground (§4, decided 10 September 2026).
+ *
+ * particl has no appearance setting and no system query any more, so the
+ * thing to guard is the failure this replaces: a reader whose machine is set
+ * to light seeing a light particl. The check emulates exactly that machine.
+ *
+ * atomik is checked in the same breath because it is the one light thing
+ * left, and the way it stays light — `.theme-light` re-tokening a subtree —
+ * is easy to delete by accident when the word "light" is being removed from
+ * a stylesheet.
+ */
+test("particl is dark on a light machine, and atomik is still paper", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+
+  await page.goto("/");
+  await settle(page);
+  const particl = await page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      desk: cs.getPropertyValue("--color-desk").trim().toUpperCase(),
+      ink: cs.getPropertyValue("--color-bone").trim().toUpperCase(),
+      scheme: cs.colorScheme.trim(),
+      stamped: document.documentElement.getAttribute("data-theme"),
+    };
+  });
+  expect(particl.desk, "the page ground").toBe("#1D1F24");
+  expect(particl.ink, "primary text").toBe("#F5F6F8");
+  // Native controls and scrollbars have to come with it, or the page is dark
+  // with light dropdowns in it.
+  expect(particl.scheme).toBe("dark");
+  // Nothing is stamped on <html> any more: there is nothing left to choose.
+  expect(particl.stamped).toBeNull();
+
+  await page.goto("/atomik/ideas");
+  await settle(page);
+  const atomik = await page.evaluate(() => {
+    const el = document.querySelector(".theme-light");
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { desk: cs.getPropertyValue("--color-desk").trim().toUpperCase(), scheme: cs.colorScheme.trim() };
+  });
+  expect(atomik, "atomik still wraps itself in .theme-light").not.toBeNull();
+  expect(atomik!.desk, "atomik's ground").toBe("#ECEDEF");
+  expect(atomik!.scheme).toBe("light");
+});
+
+/**
+ * The paper list is one list (`lib/ground.ts`).
+ *
+ * A statement is particl's own screen and still paper — it is a document
+ * before it is a screen, printed or sent to whoever pays. It used to become
+ * paper only once the data arrived, so the route changed ground mid-load;
+ * the ground is decided by the shell now, which is why this checks it signed
+ * out, where there is no statement to render at all.
+ *
+ * The palette is checked in the same breath because it renders OUTSIDE the
+ * shell and re-applies the ground by hand. That is a second copy of the same
+ * rule, and it drifted once already.
+ */
+test("a statement is paper in every state, and the palette agrees", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/statements/2026-09");
+  await settle(page);
+
+  const ground = () => page.evaluate(() => {
+    const el = document.querySelector(".theme-light");
+    return el ? getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase() : null;
+  });
+  // Signed out there is no statement, only the "these are private" screen —
+  // and it is still on paper, because the shell decided, not the page.
+  expect(await ground(), "the statement route signed out").toBe("#ECEDEF");
+
+  await page.keyboard.press("Meta+k");
+  await page.waitForTimeout(300);
+  const palette = await page.evaluate(() => {
+    const el = document.querySelector(".cmdk-scrim");
+    if (!el) return null;
+    return {
+      light: el.classList.contains("theme-light"),
+      desk: getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase(),
+    };
+  });
+  expect(palette, "the palette opened").not.toBeNull();
+  expect(palette!.light, "the palette is on paper where the page is").toBe(true);
+  expect(palette!.desk).toBe("#ECEDEF");
+
+  // ...and dark where the page is, which is everywhere else.
+  await page.keyboard.press("Escape");
+  await page.goto("/");
+  await settle(page);
+  await page.keyboard.press("Meta+k");
+  await page.waitForTimeout(300);
+  const onInk = await page.evaluate(() => {
+    const el = document.querySelector(".cmdk-scrim");
+    return el ? { light: el.classList.contains("theme-light"), desk: getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase() } : null;
+  });
+  expect(onInk, "the palette opened on the wall").not.toBeNull();
+  expect(onInk!.light).toBe(false);
+  expect(onInk!.desk).toBe("#1D1F24");
+});

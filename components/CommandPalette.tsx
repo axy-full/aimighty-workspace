@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useProject } from "@/lib/projectContext";
 import { byScope, SCOPE_LABEL } from "@/lib/shortcuts";
+import { onPaper } from "@/lib/ground";
 import {
   type Cmd, actionCommands, routeCommands, productionCommands,
   shotCommands, castCommands, takeCommands, search, flatten,
@@ -16,8 +17,9 @@ import {
  * place that sees both providers and sits outside `.shell` — outside the
  * backdrop-filter containing block that has already broken fixed positioning
  * once in the composer island. The cost of being outside `.shell` is that
- * Shell's `.theme-light` no longer reaches us, so Atomik's paper ground has
- * to be re-applied here by hand. That is the `light` class below; without it
+ * Shell's `.theme-light` no longer reaches us, so the paper ground has to be
+ * re-applied here by hand — from `onPaper`, the same list Shell reads, because
+ * two copies of it drifted once already. That is the `light` class below; without it
  * the palette renders dark over a white page.
  *
  * MOBILE (SOW §12, which says a surface with no declared mobile behaviour
@@ -111,7 +113,7 @@ function Palette({ onClose, onHelp }: { onClose: () => void; onHelp: () => void 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const light = path?.startsWith("/atomik") ?? false;
+  const light = onPaper(path);
 
   /* Focus in, focus back out. The nearest thing to a focus trap this repo
      has: there is exactly one focusable inside, so holding focus on it is
@@ -251,7 +253,7 @@ function Palette({ onClose, onHelp }: { onClose: () => void; onHelp: () => void 
 
 function Help({ onClose }: { onClose: () => void }) {
   const path = usePathname();
-  const light = path?.startsWith("/atomik") ?? false;
+  const light = onPaper(path);
   return (
     <div className={`cmdk-scrim${light ? " theme-light" : ""}`} onMouseDown={onClose}>
       <div className="cmdk cmdk-help" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts"

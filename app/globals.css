@@ -124,98 +124,19 @@
   --ease-spring: cubic-bezier(.2, .8, .2, 1);
 }
 
-/* ── Light ─────────────────────────────────────────────────────────────
-   The same system on paper: the same four ink weights, the same absence of
-   accent, the same hairlines. Six values are given by the design tokens
-   (page, panel, surface, ink, muted, border); the neighbours are stepped
-   from them so the two schemes stay the same shape.
+/* ── Light is atomik's, and only atomik's ────────────────────────────
+   particl is dark. There is no appearance setting and no system query
+   (§4, decided 10 September 2026): one ground is one thing to design
+   against, one thing to screenshot and one thing to answer "what does
+   particl look like" with, and dark is the convention for a suite that
+   is used at a desk all day (§13.2).
 
-   Two selectors, one palette, so they cannot drift: the system's preference
-   governs unless a person has chosen, and a chosen theme is stamped on
-   <html> before first paint. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-  --color-desk: #ECEDEF;
-  --color-chrome: #FCFCFD;
-  --color-panel: #FCFCFD;
-  --color-panel2: #F5F6F8;
-  --color-panel3: #ECEDEF;
-  --color-thumb: #F5F6F8;
-  --color-hair: rgba(0, 0, 0, 0.07);
-  --color-line: rgba(0, 0, 0, 0.10);
-  --color-edge: rgba(0, 0, 0, 0.16);
-  --color-picked: rgba(0, 0, 0, 0.28);
-  --color-chip: rgba(0, 0, 0, 0.05);
-  --color-chip2: rgba(0, 0, 0, 0.09);
-  --color-ink: #15171C;
-  --color-bone: #15171C;
-  --color-approved: oklch(55% 0.12 200);
-  --color-edge-hover: rgba(21, 23, 28, 0.40);
-  --color-fill-on: rgba(21, 23, 28, 0.09);
-  --color-soft: #2A2D34;
-  --color-lead: #3A3D44;
-  --color-dim: #666A72;
-  --color-mute: #767A83;
-  --color-faint: #C9CCD2;
-  --color-blue: #15171C;
-  --color-blue-hover: #000000;
-  --color-on-ink: #FCFCFD;
-  --color-ok: #15171C;
-  --color-run: #15171C;
-  --color-warn: #666A72;
-  --color-lift: #C5292E;
-  --color-red: #C5292E;
-  --color-note: #F5F6F8;
-  --color-switch-off: #C9CCD2;
-  --color-scrim: rgba(6, 7, 10, 0.45);
-  --scroll-thumb: rgba(0, 0, 0, .16);
-  --scroll-thumb-hover: rgba(0, 0, 0, .28);
-  color-scheme: light;
-  }
-}
-:root[data-theme="light"] {
-  --color-desk: #ECEDEF;
-  --color-chrome: #FCFCFD;
-  --color-panel: #FCFCFD;
-  --color-panel2: #F5F6F8;
-  --color-panel3: #ECEDEF;
-  --color-thumb: #F5F6F8;
-  --color-hair: rgba(0, 0, 0, 0.07);
-  --color-line: rgba(0, 0, 0, 0.10);
-  --color-edge: rgba(0, 0, 0, 0.16);
-  --color-picked: rgba(0, 0, 0, 0.28);
-  --color-chip: rgba(0, 0, 0, 0.05);
-  --color-chip2: rgba(0, 0, 0, 0.09);
-  --color-ink: #15171C;
-  --color-bone: #15171C;
-  --color-approved: oklch(55% 0.12 200);
-  --color-edge-hover: rgba(21, 23, 28, 0.40);
-  --color-fill-on: rgba(21, 23, 28, 0.09);
-  --color-soft: #2A2D34;
-  --color-lead: #3A3D44;
-  --color-dim: #666A72;
-  --color-mute: #767A83;
-  --color-faint: #C9CCD2;
-  --color-blue: #15171C;
-  --color-blue-hover: #000000;
-  --color-on-ink: #FCFCFD;
-  --color-ok: #15171C;
-  --color-run: #15171C;
-  --color-warn: #666A72;
-  --color-lift: #C5292E;
-  --color-red: #C5292E;
-  --color-note: #F5F6F8;
-  --color-switch-off: #C9CCD2;
-  --color-scrim: rgba(6, 7, 10, 0.45);
-  --scroll-thumb: rgba(0, 0, 0, .16);
-  --scroll-thumb-hover: rgba(0, 0, 0, .28);
-  color-scheme: light;
-}
-/* ── A light island inside the dark app ──────────────────────────────
-   atomik's four screens are paper; particl's are ink. They share one
-   layout and one session, so instead of a second theme switch the atomik
-   subtree simply re-tokens itself: every var() below it resolves to the
-   light value, and every component keeps speaking the same names. */
+   atomik's screens are paper, and they share this layout and this
+   session, so the subtree re-tokens itself rather than carrying a second
+   theme switch: every var() below resolves to the light value,
+   `color-scheme` comes with it so native controls and scrollbars follow,
+   and every component keeps speaking the same names. A statement uses it
+   too — a statement is a document before it is a screen. */
 .theme-light {
   --color-desk: #ECEDEF;
   --color-chrome: #FCFCFD;

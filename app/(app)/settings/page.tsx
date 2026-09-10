@@ -29,7 +29,6 @@ import { IconChevron } from "@/components/Icons";
 import WorkspaceSettings from "@/components/WorkspaceSettings";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useSession, clearPrivateLocal } from "@/lib/session";
-import ThemeRow from "@/components/ThemeRow";
 import { ParticlMark, Empty } from "@/components/ParticlMark";
 import { AtomikMark } from "@/components/AtomikMark";
 import { useMoney } from "@/lib/price";
@@ -404,7 +403,6 @@ export default function SettingsPage() {
           <section id="account" className="scard">
             <div className="scard-h"><span>Account</span><span>{me ? `Signed in as ${me.name} · ${me.email}` : signedIn ? "…" : "Signed out — the interface is open to browse."}</span></div>
             <div className="rows">
-              <ThemeRow />
               <PushRow />
               <button className="row" onClick={() => router.push("/connect")}>Connect apps &amp; tokens<span className="row-value">Claude · ChatGPT · CLI<IconChevron className="!text-mute" /></span></button>
               <button className="row" onClick={() => router.push("/platform")}>Platform<span className="row-value">Assets · APIs · security · IP<IconChevron className="!text-mute" /></span></button>

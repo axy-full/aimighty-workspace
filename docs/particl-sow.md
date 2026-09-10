@@ -52,22 +52,7 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 
 Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-screen) and `README.md` (node-graph surfaces, light tokens). Both are **high-fidelity and final-intent** — colours, type, spacing, radii, copy and geometry. The graph geometry in the canvas surfaces is exact: node positions, port centres and wire endpoints were measured. Keep port-to-slot alignment when rebuilding; a wire that misses its port breaks the one idea the screen exists to show.
 
-**Open decision — theme. STILL OPEN, and now cheap to settle.** The handoff
-describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light
-(`#FCFCFD`). The live site is light with an Auto appearance setting and
-per-scheme `theme-color`. §13.2 adds that dark is the convention for desktop
-suites, which points at dark rather than at both.
-
-**Where the code stands:** every Rig surface built so far uses the app's own
-tokens rather than the handoff's absolute values, so each already renders
-correctly in both themes and follows whatever the reader has chosen. That was
-done to avoid pre-empting this decision, and it means choosing dark now costs a
-default change, not a rework — the expensive outcome the original note warned
-about has been avoided either way.
-
-The remaining question is only what a *new* workspace opens on, and whether
-Auto stays. Answer it and the default flips in one place. The standing rule
-meanwhile: no Rig component hard-codes a colour; a literal hex in one is a bug.
+**Open decision — theme.** The handoff describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light (`#FCFCFD`). The live site is light with an Auto appearance setting and per-scheme `theme-color`. Resolve this before building Rig: either particl is dark and the live light theme is the exception, or both themes are first-class and every new surface ships in both. Don't let it stay ambiguous — the node surfaces are token-heavy and reworking them later is expensive.
 
 **Type.** Outfit for UI and body; Kode Mono 11px/0.12em tracking for eyebrows, costs, states and IDs. **Radius** 4–10 by component. **No motion, no shadows** — hover raises border alpha only.
 
@@ -102,63 +87,25 @@ usage         { byProduction[], byPerson[], byShot[], byEngine[], period }
 settings      { team[], engines[], storage, atomikConnection, defaults }
 ```
 
-Added by Rig (Phase 3). **As shipped**, updated against the code per §13.4.
-Each difference from the original sketch was a decision, so each is named.
+Added by Rig (Phase 3):
 
 ```
-recipes        { id, projectId, name, draft }
-recipe_stages  { id, recipeId, num, name, kind: write|render|assemble, engine, params{},
-                 inputs[stageId], locks[elementId], position }
-runs           { id, recipeId, projectId, num, state: running|paused|done,
-                 estimateCredits, startedBy, startedAt, finishedAt }
-stage_runs     { id, runId, stageId, state: queued|running|done|needs_you|skipped,
-                 doneUnits, totalUnits, spentCredits, estimateCredits,
-                 failure{unit,reason,fixes[]}|null, fixedWith, fixedLabel, fixedBy, fixedAt }
-elements       { id, projectId|null, castId|null, kind, name, description,
-                 locked, lockedBy, lockedAt, fromShotId, fromGenId, mirroredAt }
-element_attributes { id, elementId, kind, label, currentId|null, locked, position }
-attribute_versions { id, attributeId, elementId, label, status: pending|ready|failed,
-                     uploadId | genId | identityId }        // exactly one source
-bindings       { id, shotId, projectId, slot, ordinal, elementId,
-                 attributeId|null, versionId|null }
-                 // address = (shotId, slot, ordinal, attributeId)
-                 // two PARTIAL unique indexes, not one four-column UNIQUE:
-                 //   attributeId IS NULL      -> one bundle per slot
-                 //   attributeId IS NOT NULL  -> one override per attribute
-take_provenance{ takeId, shotId, recorded{ engine, model, provider, ports[], cast[],
-                 setup{}, rules[], conditions{...}, by, at } }
-take_ports     { takeId, elementId, attributeId, versionId, slot, ordinal }
+recipe        { id, projectId, draft, stages[], estimateCredits }
+stage         { id, num, name, engineId, params{}, inputs[ref], state, credits, perUnit, results[] }
+run           { id, recipeId, startedAt, state, spentCredits, estimateCredits,
+                stageRuns[{ stageId, state, progress, spent, failure }] }
+failure       { stageId, unit, reason, fixes[{ id, label, note, credits, kind }] }
+element       { id, kind: character|location|prop|look|voice, name, locked, lockedBy, lockedAt,
+                attributes[], plates[], views[], createdFrom{shotId,takeId}|null }
+attribute     { id, elementId, kind: face|hair|wardrobe|voice, versions[], currentVersionId, locked }
+version       { id, label, thumbUrl, createdAt, usedByShotIds[] }
+binding       { shotId, slot: character|background|element|look|keyframe,
+                elementId, versionId, overridden: bool }
+provenance    { takeId, bindings[], setup{}, engineId, engineParams{}, seed, rules[], credits, by, at }
+impact        { elementId, versionId, dependents[{shotId,state}],
+                options[{key, shotCount, credits, consequence}] }
+quote         { unitCredits, units, totalCredits }   // resolved before any action enables
 ```
-
-**What changed from the sketch, and why:**
-
-- **`element` is its own row with a link back to the cast member**, not the cast
-  row grown, so a migration here cannot take the composer down with it. `castId`
-  keeps the two from becoming two truths about one face.
-- **`binding.overridden: bool` is gone.** `versionId` carries it: null means
-  *follow current*, a value means *pinned*. One nullable column replaces a flag
-  plus a value that could disagree, and it is what draws the inherited wire and
-  the override wire on the canvas.
-- **`binding.ordinal`**, because a shot can hold two characters and a wire lands
-  on a slot, not a node (rule 6).
-- **`binding.attributeId` may be null** — the bundle, every current version at
-  once. A swap must ask "which ports FOLLOW current", a different question from
-  "which ports does this version reach"; conflating them prices shots the change
-  cannot touch.
-- **`version` has no `thumbUrl` or `usedByShotIds`.** Its source is exactly one
-  of an upload, a take or a trained identity; what uses it is the reverse lookup
-  on `bindings` and `take_ports`, which cannot go stale.
-- **`provenance` is two tables.** The blob is one statement about one moment,
-  read whole or not at all; `take_ports` answers the one question asked across
-  takes — which takes used a given version — that the blob cannot.
-- **`failure` is JSON on `stage_runs`**, not a table: it is why this attempt
-  stopped, replaced whole on the next, and never outlives it.
-- **`impact` and `quote` are computed, never stored.** A stored quote is a
-  second ledger that can disagree with the first. A quote carries `pricedAt` and
-  a stamp of its inputs; a stale one is re-taken before anything is charged.
-- **Not recorded: the seed.** The vendor path does not return one on the render
-  route, so provenance stores it as absent, and the card says "not recorded" and
-  drops the word *exactly* from its own button.
 
 **Port identity is `elementId:attributeId:versionId`.** That triple is what a wire carries and what provenance records. It is the single most important line in this document; everything else in Rig is bookkeeping on top of it.
 
@@ -166,127 +113,23 @@ Everything above is workspace-scoped.
 
 ---
 
-## 6. Phase 0 — Mobile foundations · COMPLETE BUT FOR TWO DECISIONS
+## 6. Phase 0 — Mobile foundations · LARGELY COMPLETE
 
 Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow on any route, no inputs under 16px, per-scheme `theme-color`, composer sheet opens with Close and Generate both in the viewport, vocabulary corrected (Request an invite / Takes / Productions / Generate), 1920×1080 replacing 1080P/1088, positional copy removed.
 
 **Outstanding:**
 
-- ~~**Safe area.**~~ **Resolved — not a bug.** The dock already carries
-  `padding: 0 6px env(safe-area-inset-bottom, 22px)`, and `viewport-fit=cover`
-  is set. The 0px reading is emulation: a probe with
-  `padding-bottom: env(safe-area-inset-bottom, 99px)` also computes to 0px, so
-  Chrome defines the variable as zero and the fallback is never reached. A Face
-  ID iPhone reports 34px. The mobile suite asserts the *declaration* for exactly
-  this reason. Re-check on device before the iOS build if you want certainty.
-- **Credits not in the composer — and the margin is on the client, which is the
-  bigger half.** The conversion works, gated on `creditsApply(ws)`: signed out
-  there is no workspace, so it falls through to dollars, and the same button
-  inside a platform-keys workspace reads `Generate 40 cr + 1 cr writer`.
+- **Safe area.** Dock `padding-bottom` reads 0px despite `viewport-fit=cover`. Apply `env(safe-area-inset-bottom)` to the dock, composer bar and every bottom sheet. Blocking for the iOS app.
+- **Credits not in the composer.** The Generate button still reads `$2.86 · 244.8k TOK`. Should read `29 cr`. A Balance link to `/settings#credits` exists, so credits exist somewhere — establish whether the conversion is partial or absent.
+- **Token count on the button** — noise once it's credits. Remove.
+- **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.
+- **Sticky context in the shot builder** — the assembled prompt and the `N OF 12 ROWS SET` counter scroll away, so tapping a chip far down the page gives no feedback. Put a one-line preview and the counter in the sticky bar.
+- **`aria-pressed` on chips** — currently `is-on` class only.
+- **`/images` hydration** — the SSR HTML previously carried the video composer. Confirm resolved.
+- **Audio tab** — if ElevenLabs is wired, show its composer signed out like Video and Images; if not, hide the tab.
+- **Usage signed out** is blank while the copy promises otherwise. Show the shape with placeholder numbers.
 
-  The stated fix — price the signed-out composer in credits at the platform
-  default margin — **fixes the display and not the leak.** Measured on the built
-  bundle, §2's "margin … never shown" is broken structurally, twice over:
-
-  1. **The vendor rate table is in a public static chunk**, no sign-in needed.
-     `grep -o "withoutAudio:\.[0-9]*" .next/static/chunks/*.js` returns
-     `.084`, `.112`, `.3`, `.5` — the engines' real per-second rates. The
-     estimator (`lib/models.ts`, `estimateCostUsd`) is imported by
-     `components/Workspace.tsx`, so it is bundled for the browser by design:
-     that is how the button prices a duration change without a round trip.
-  2. **`/api/me` returns `credits.margins`**, the per-engine multiplier map, to
-     every credit workspace. With `creditUsd` beside it,
-     `credits × 0.10 ÷ margin` is the platform's cost exactly.
-
-  Either half alone is enough to compute the markup; a paying customer has both.
-  **Not a display bug and not fixable by changing a label.** The options, and
-  none is free:
-
-  - **Estimate on the server.** The composer asks for a price and is told
-    credits; no rate table and no margin ever reach the browser. Correct, and
-    the most work: every reactive control — duration, resolution, count, engine,
-    the batch multiplier — becomes a request, and the button's price has to stay
-    honest while one is in flight.
-  - **Ship credit rates, not dollar rates.** Bake the per-engine
-    credits-per-second into the bundle instead of USD, and drop `margins` from
-    the session. The button stays instant and the arithmetic gives nothing away,
-    because there is no dollar figure to divide. Cheaper, and it means the
-    client can no longer show dollars at all — which is a problem only for the
-    legacy and own-keys workspaces, who are the ones entitled to see them.
-  - **Accept it and say so.** Write down that margin is derivable by anyone who
-    opens devtools, and stop claiming otherwise in §2.
-
-  **DECIDED: ship credit rates, not dollar rates.** The bundle carries
-  per-engine credits-per-second instead of USD, and `margins` comes out of the
-  session. The button stays instant — no round trip to reprice a duration — and
-  the arithmetic gives nothing away because there is no dollar figure left to
-  divide.
-
-  The cost, accepted: **the client can then no longer show dollars at all**,
-  and the legacy and own-keys workspaces are exactly the ones entitled to see
-  them. They need their own path — a rate the server hands them, or a dollar
-  view that only their session is given. Until that path exists this is not
-  shippable, so it is one piece of work and not two.
-
-  What it touches: `lib/models.ts` (the rate tables the browser gets),
-  `lib/price.ts` (`useMoney`, which converts USD→credits client-side today),
-  `lib/session.tsx` and `/api/me` (dropping `margins`), and every caller of
-  `estimateCostUsd` / `estimateImageCostUsd` in a client component. The
-  signed-out composer and Usage's sample numbers both fall out of it in
-  credits, which is the two Phase 0 lines above closing together.
-- ~~**Token count on the button**~~ **Done.** It was on two chips, not one —
-  the rail button and the island cost button — and both now carry the price and
-  nothing else. How the engine bills is still explained in the cost popover,
-  which is where somebody who wants to know goes to look.
-- ~~**Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.~~
-  **Closed — not drift.** They name different things: GENERATE is the section,
-  Video / Images / Audio are the three media inside it, and "Generate → Video"
-  is how a person would say it out loud. Nothing to change, and rule 5's
-  settled word keeps its place in the navigation. Recorded rather than deleted
-  so the question is not re-opened by the next reader of the line.
-- ~~**`aria-pressed` on chips**~~ **Done, and not with `aria-pressed`
-  everywhere** — that would have been the wrong answer in most places. What a
-  control is decides what it says: a *link* that is the current page carries
-  `aria-current="page"` (the dock, both header nav rows, the make tabs); a
-  *menu item* holding the current choice carries `role="menuitemradio"` and
-  `aria-checked`; a control that opens a popup carries `aria-haspopup` and
-  `aria-expanded`; only genuine toggles take `aria-pressed`. Fourteen sites.
-  Two segmented controls turned out to be correct already — `Feed`'s and the
-  composer's Use-as both had `role="tab"` and `aria-selected` — so the item's
-  "currently `is-on` class only" was never true of them.
-- ~~**Sticky context in the shot builder**~~ **Already done.** Verified at
-  390×844: `.ws-rail-foot` computes to `position: fixed` and `.st-foot-line`
-  reads `10 OF 12 ROWS SET · wide shot, at eye level. the camera locked off…`,
-  in the viewport, with both halves the item asked for.
-- ~~**`/images` hydration**~~ **Confirmed resolved.** The signed-out SSR of
-  `/images` carries `Generate still` and none of the video-only controls — no
-  duration, no 60 fps, no resolution row.
-- ~~**Audio tab**~~ **Already done.** ElevenLabs is wired
-  (`lib/elevenlabs.ts`, `lib/engines/elevenlabs.ts`, `ELEVENLABS_API_KEY`), and
-  `/audio` shows its composer signed out exactly as Video and Images do —
-  `COMPOSER · FILES AS LOOSE · AMBIENT · AUTO` over a sample prompt.
-- ~~**Usage signed out**~~ **Already done** — it is not blank. It shows the
-  shape under `Sample numbers, to show the shape of the page.` **But it shows
-  them in dollars** (`$612.40`), which is the same open question as the
-  composer above and resolves with it, not separately.
-
-**Acceptance suite** (keep it green for every later phase). Rule 7 makes this
-**five viewports, not three** — 360×640, 390×844, 844×390, 1440×900, 1920×1080
-— because a desktop-only defect is invisible to a phone sweep and two of them
-had already shipped unseen.
-
-*Phone*: visits every route signed out; asserts `scrollWidth === clientWidth`;
-opens the composer sheet and asserts Close and the primary are in-viewport;
-asserts dock `padding-bottom ≥` safe-area inset; asserts no input under 16px.
-
-*Desktop* (`tests/desktop.spec.ts`, built 8 September): the same overflow
-assertion at every width; **prose under ~95 characters a line**, measured with a
-probe in the element's own font because `1ch` is ~0.65em here and the obvious
-`width / (fontSize/2)` fails a correctly capped paragraph; no error boundary;
-and at 2560, that a wall's card is *larger* than the laptop-sized floor. That
-last one exists because every grid was `auto-fill` with one fixed minimum, which
-sawtooths: a library thumbnail measured 237px at 1280 and **217px at 2560**, a
-4K monitor showing smaller frames than a laptop.
+**Acceptance suite** (keep it green for every later phase): visits every route at three viewports signed out; asserts `scrollWidth === clientWidth`; opens the composer sheet and asserts Close and the primary are in-viewport; asserts dock `padding-bottom ≥` safe-area inset; asserts no input under 16px.
 
 ---
 
@@ -294,7 +137,7 @@ sawtooths: a library thumbnail measured 237px at 1280 and **217px at 2560**, a
 
 ### 1.0 Tenancy, billing, onboarding — gates everything
 
-**Keys and metering.** Platform holds the keys; workspaces don't bring their own (design the adapter so a workspace key *can* override later; don't build the UI). Every engine call goes through one server-side **metering layer** stamping `workspace_id`, `project_id`, `shot_id`, `engine`, `model`, `engine_cost`, `billed_credits`, `duration`, `status`. No engine is ever called from a route that bypasses it. Also record **peak concurrency per engine**, sampled per minute and retained — that reading is what justifies a provider limit increase later, and it can't be backfilled.
+**Keys and metering.** Platform holds the keys; workspaces don't bring their own (design the adapter so a workspace key *can* override later; don't build the UI). Every engine call goes through one server-side **metering layer** stamping `workspace_id`, `project_id`, `shot_id`, `engine`, `model`, `engine_cost`, `billed_credits`, `multiplier_applied`, `duration`, `status`. The multiplier resolves per workspace then per engine, so an internal workspace at 1.0× and a customer at 1.5× go through identical code. No engine is ever called from a route that bypasses it. Also record **peak concurrency per engine**, sampled per minute and retained — that reading is what justifies a provider limit increase later, and it can't be backfilled.
 
 **Billing.** Prepaid credit balance per workspace, bought in packs by card; invoicing for larger accounts later. Balance in the header beside the workspace switcher and on Usage. Project caps convert to credits; the workspace balance is the hard stop above them. At zero, renders queue with "top up to release", the owner and admins are notified, nothing is silently dropped. Statements per workspace / month / project, itemised by shot and take in credits with one USD line for the pack cost — this is how a workspace bills its own client.
 
@@ -306,7 +149,7 @@ sawtooths: a library thumbnail measured 237px at 1280 and **217px at 2560**, a
 
 **Policy.** Written content policy shown at signup. Engines refuse some prompts — failure reasons must say so plainly. Report path on review links, platform-side suspend for abuse, terms/privacy/retention visible from Settings → Account.
 
-**Open decisions to bring back with trade-offs:** credit pack sizes; per-engine margin so credit prices land on sensible numbers; whether invoicing ships now or later.
+**Pricing is decided — see section 7A. Implement it as specified; the only open item is whether invoicing ships now or later.**
 
 ### 1.1 Model breadth per shot
 
@@ -340,29 +183,9 @@ A queue strip on the make screen: rendering / queued / failed, per-job credits a
 
 Count control on the composer (1–4 video, 1–8 stills) — **shipped**; the button multiplies credits. Siblings file under the same shot; the wall groups them so picking is one screen.
 
-### 1.7 Starter production · THE SIGNED-OUT DEMO WALL IS CUT
+### 1.7 Demo and starter production
 
-**Cut, 9 September, on the owner's call.** The read-only demo production on
-the front door is gone — component, endpoint, stylesheet. What it was meant to
-be was proof the thing works before you sign in; what it actually was, until
-the platform published its own previews, was Big Buck Bunny footage of a rowing
-boat sitting under copy about *"The city, first light"* and *"The courier"*. It
-argued against itself, and a front door that undersells is worse than a front
-door that says less.
-
-The welcome page keeps what it had underneath: the four panels that say what
-Generate, Studio, Productions and Usage are for, and the sign-in beside them.
-
-**The starter production stays**, and it is a different thing: three shots with
-Setup filled, copied into a workspace when it is created, editable and
-deletable — a real production a new team can open, change and render, not a
-picture of one. `lib/demoProduction.ts` survives because that is where its
-takes are defined; `lib/starter.ts` is its only reader now.
-
-If the starter should go too, say so — it is one function and its seed data,
-and nothing else depends on either.
-
-The "sign in to generate" gate stays where it is.
+One platform demo production visible signed out and from every empty state: three shots, a few takes each, one approved, real credit numbers, a cast of two, Setup filled, read-only, generic and rights-clear. The same production copied into every new workspace as its starter, editable and deletable. The "sign in to generate" gate stays where it is.
 
 ### 1.8 Atomik — idea builder, shot builder, prompt enhancement
 
@@ -373,6 +196,80 @@ Every LLM call goes through the **Vercel API** adapter, metered in credits, so t
 - **Shot builder**: scene → shot list with every Setup row pre-filled, cast tagged `@Name`, recommended engine per shot, and estimated credits per shot and per scene **before anything renders**. This is the planned budget that flows to particl.
 - Use **structured output** so Setup rows land as fields, not prose to parse. Use **prompt caching** for the rule library and workspace Setup, identical on every call. Propose which Claude/GPT model per job with per-call credit cost — enhancement is high-volume and wants something fast and cheap; idea and shot building can afford stronger.
 - Every generated line shows which model wrote it and can be regenerated alone. Nothing auto-overwrites a human edit. Same workspace scoping and content policy as particl.
+
+---
+
+## 7A. Pricing — decided for launch
+
+The governing rule: **every tier is profitable even if the customer uses everything included.** Cost every inclusion at full use, at engine cost plus 3% payment fees. Typical usage (40–60% of inclusions) is where the margin lives; worst case is the floor.
+
+### Credits
+- **1 credit = US$0.10, fixed.** Sell price = engine cost × 1.5, rounded up to the next whole credit per job. Batches multiply before rounding.
+- The ledger stores `engine_cost_usd`, `billed_credits` and `margin_pct` per job. The rate card is generated from the adapter registry, never hand-edited.
+- **Floor guard:** if any engine's rolling 7-day margin drops under 10%, its sell multiplier auto-raises to restore 1.5× and the platform admin is alerted. This runs in the metering layer, not in a spreadsheet.
+- **The aimighty workspace is billed at cost.** For now, the aimighty workspace (and any other workspace flagged `internal: true` in the admin console) has its sell multiplier set to 1.0 — credits are charged at exact engine cost plus payment fees, with no platform margin, and no platform fee. It sits on the same ledger, the same metering, the same statements as every other workspace; the only difference is the multiplier. This is a per-workspace override on the same field that Phase B tunes per engine, so it costs nothing to build and nothing to remove. The admin console shows internal workspaces separately in spend and margin reporting so they never distort the platform's numbers.
+- **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe. This is how a production stays competitive while per-clip prices sit above aggregators with volume rates.
+
+Reference rate card at launch (regenerate from live engine costs before publishing):
+
+| Action | Engine cost | Sells at |
+|---|---|---|
+| Standard panel (Nano Banana fast) | ~$0.04 | 1 cr |
+| Keyframe still (Nano Banana Pro) | ~$0.15 | 3 cr |
+| Wan 2.6 draft, 5s | ~$0.25 | 4 cr |
+| Kling 3.0 Standard, 5s | ~$0.50 | 8 cr |
+| Kling 3.0 Pro, 5s, audio | ~$1.68 | 26 cr |
+| Seedance 2.5, 5s, 720p | ~$1.60 | 24 cr |
+| Seedance 2.5, 5s, 1080p | ~$2.86 | 43 cr |
+| Veo 3.1, 5s, audio | ~$2.00 | 30 cr |
+| Topaz upscale, 5s | ~$0.40 | 6 cr |
+| VO line (ElevenLabs) | ~$0.03 | 1 cr |
+| Identity training | ~$2.00 | 30 cr |
+| Prompt enhancement | ~$0.01 | 1 cr |
+
+### Tiers
+
+| Tier | Price | Included | Members | Worst-case cost | Worst-case gross |
+|---|---|---|---|---|---|
+| **Invite** | $0 | 50 cr once, 1 production, boards at 1 cr | 3 | $3.50 | marketing cost |
+| **Studio** | $49/mo | 400 cr, 250 standard panels, review links, exports, post tools | unlimited | $38 | $11 · 22% |
+| **Agency** | $199/mo | 1,600 cr, 1,000 panels, priority queue, branded review links, statements | unlimited | $153 | $46 · 23% |
+| **Production** | $999/mo | 9,000 cr, 3,000 panels, admin console, setup hours | unlimited | $750 | $249 · 25% |
+
+- **Included credits and panels expire at cycle end. No rollover.** Breakage is real margin.
+- **No seat fees on any paid tier.** Differentiate on credits, priority and features, never headcount.
+- **Annual: 20% off.** Auto-cancel: if a workspace has generated nothing in the 60 days before renewal, don't renew — let it lapse and say so.
+- Panel inclusions are on the standard engine only. Pro stills and all video draw credits regardless of tier.
+
+### Packs
+Unit stays $0.10. Discount only through bonus credits, capped at 20%. Purchased credits last 12 months.
+
+| Pack | Price | Credits | Effective |
+|---|---|---|---|
+| Starter | $50 | 500 | $0.100 |
+| Team | $200 | 2,000 + 200 | $0.091 |
+| Studio | $500 | 5,000 + 750 | $0.087 |
+| Agency | $2,000 | 20,000 + 4,000 | $0.083 |
+
+### Guardrails in code
+1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`); each approval costs ~$3.50.
+2. Bonus credits never exceed 20% of a pack.
+3. Any workspace consuming more than 25% of the platform's monthly engine spend is flagged to the admin console.
+4. Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.
+5. Included-credit consumption is metered separately from purchased credits, so statements show what was free and what was paid.
+6. Workspaces flagged `internal: true` bill at multiplier 1.0 and pay no platform fee. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.
+
+### What changes at volume (do not build now — flags only)
+- **Phase B (~$20–50k/mo engine spend):** volume rates from ModelArk, Kling and fal at committed spend, target 20–30% off. **Hold sell prices flat**; margin rises to ~50%. Move standard panels to GPU-hour open weights (panel cost under 1¢). Per-engine multipliers tuned from the ledger: premium 1.7×, commodity 1.4×.
+- **Phase C (300+ workspaces):** own GPU pool for open-weight draft video, enterprise contracts, BYOK for large studios on a higher platform fee, recipe marketplace with revenue share.
+
+Build the adapter so the multiplier is per engine from day one, even though it launches at a flat 1.5×. That's a config change later, not a refactor.
+
+### Milestones
+Hard fixed costs ≈ $300/mo. Typical contribution: Studio ~$32, Agency ~$110, Production ~$550.
+- Break-even on hard costs: ~10 Studio or 3 Agency.
+- One salary (~$4k/mo): ~15 Agency + 30 Studio, or 4 Production + 10 Agency.
+- ~$25k/mo contribution: ~40 Agency + 100 Studio + 8 Production — roughly where Phase B rates lift every number by ~15 points.
 
 ---
 
@@ -388,23 +285,6 @@ Every shot on the wall shows `takes so far · spent so far` (`6 takes · 172 cr`
 
 ### 2.3 Setup you can see and override
 The composer shows a live diff: which rows are active, which the current shot overrides (`Setup: 35mm · Golden hour · Handheld — this shot overrides: Locked off`). Per-shot override without touching workspace Setup, and one-tap clear. **Four layers** — platform default → workspace → project → shot — each inheriting and overriding the one above, with the UI showing where every active value came from. The live composer already labels rows `PLATFORM`; extend that to all four.
-
-**Done, 9 September: the rows are controls, not a read-out.** Every Setup row
-in the composer is a dropdown of its own category's options, plus `—`. Picking
-sets the row for this render; picking `—` clears it. Before this the rows
-arrived filled from the platform layer and the only way to touch any of them
-was to leave for Studio — good defaults, no way to disagree with them.
-
-Clearing needed one change underneath: **`null` in a layer is an explicit
-clear.** `layerSetup` has always skipped empty strings, so a shot that
-"cleared" a row inherited the platform's value straight back and the person
-who cleared it watched it reappear. A layer's type (`Spec`) now allows `null`
-and the resolved type (`Effective`) does not — only an input can say *not
-this*.
-
-A native `<select>` on purpose: correct for the keyboard and a screen reader
-with no work, and on a phone it opens the system's own picker, which beats
-anything a custom menu does at 390px.
 
 ### 2.4 Cast that carries
 A cast member's page shows every take and still made with it across the workspace's projects, fast. Consistency check: a take rendered with `@Name` shows the cast still beside it so likeness drift is visible at a glance. Identical behaviour in stills and video composers. Never crosses a workspace boundary.
@@ -430,6 +310,34 @@ Workspace rules are plain sentences a team writes ("our brand never shows logos 
 
 ### 2.7 Team on a phone
 The four things a producer does on a phone: see what rendered, compare and approve, see the burn-down, unlock a cap or top up. Each one tap from the make screen, tested at 360×640. Push notifications for take finished, cap at 80%, approval needed, balance low — per-user, per-workspace preferences. **The push service is server-side work and gates the iOS app**: device token registration per user per workspace, an APNs key, and triggers on those four events.
+
+### 2.8 The board pipeline
+
+**The principle: the board is the cheap draft of the shot, and an approved panel becomes the keyframe.** A still on Nano Banana costs a fraction of a credit; a video take costs ~29. You can board seventy panels for the price of one take. So decide on the cheap layer and commit on the expensive one — and unlike every other boarding tool, the panel doesn't die at export. It is the frame Motion starts from.
+
+That continuity is the whole differentiator. Boords, StudioBinder and the rest generate or draw a board, you export a PDF, and then you shoot separately; the board and the footage never share a source. Here the board, the keyframe and the take are three states of one object.
+
+**Where it lives.** Boarding happens in **Atomik's Breakdown**, which already has the 16:7 board wells and the per-shot Setup chips. particl consumes the result. The board is not a separate app or a separate model of a shot.
+
+**The stages:**
+
+1. **Panel generation** — every shot in the breakdown generates 2–3 panels at once from its description, Setup chips and cast tags, on the stills engine at low resolution. Price the whole scene before it runs (`12 shots × 3 panels · 15 cr`). Auto-pick per shot by face-similarity against the cast still; show the alternates but don't make the user choose.
+2. **Panel iteration** — this is where boarding actually happens. Re-roll one panel, nudge it by chips not prose (tighter, wider, other side of the line, different hour), or replace it with an uploaded reference or a drawing. Every re-roll is priced and cheap. Panel history is versioned per shot.
+3. **Continuity check across the scene** — panels laid out in sequence with the crossing-the-line and eyeline direction flagged where consecutive shots contradict. This is what a board is *for* and no AI board tool does it. Start with screen-direction only; it's the error that survives to the edit.
+4. **Promote to keyframe** — an approved panel becomes the shot's `KEYFRAME` binding in particl. The shot arrives on the wall with its first frame already decided, and provenance records which panel version it came from.
+5. **Board → take → board.** If a take is approved and the board no longer matches, the board updates from the take, not the other way round. The board is always the current truth of the shot.
+
+**Animatic.** A timed board with scratch audio answers pacing questions no static board can, and it is the single feature that separates a real boarding tool from a panel grid. Build it: panels held for their planned durations, scratch VO from ElevenLabs or a recorded track, a music bed, cuts on the beat, and a scrub bar. Atomik already computes runtime against scene lengths and flags a scene that runs over — the animatic is the audible version of that bar. Export as MP4.
+
+**Consistency comes from the element model, not from prompting.** Panels bind to the same elements as takes — `@cast` with its versioned attributes, locations with their plates, looks locked with the brief. A character boarded in scene 1 and scene 9 is the same bound version, so it looks the same. This depends on Phase 3's element and binding schema; a simpler version can ship earlier off cast stills, but plan the schema so panels are first-class bindable objects from the start.
+
+**Deliverables** — the board is a client-facing artefact, so it must leave the building well:
+- Numbered panel PDF with shot number, description, Setup line, duration and cast, in scene order, with the workspace's branding.
+- PNG sequence.
+- MP4 animatic.
+- The review link from 2.6, pointed at panels instead of takes, so a client approves the board before a credit is spent on video. **This is the highest-value use of the review link** — approval at the cheap stage is the entire economic argument for the product.
+
+**Sequencing.** Panel generation and iteration can ship as soon as the stills engine is metered (after 1.0). The animatic needs ElevenLabs wired (1.1). Promotion to keyframe and full consistency want Phase 3's bindings. Ship in that order; don't wait for Rig to start boarding.
 
 ---
 
@@ -471,117 +379,15 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 **Build order — data model first, mobile before desktop, canvas last:**
 1. Schema and the migration from what 1.0 shipped. Be specific about how existing takes get backfilled with provenance, or why they can't.
 2. The quote/impact engine — what a change costs before it happens. Everything visible depends on it.
-3. `1a` **built** → `1b` **built** → `1c` **built** → `2c` **built** → `2b` **built**.
-4. Desktop: `1d` **built** → `2a` **built**. Both were brought forward on
-   8 September under a desktop-first instruction, which rule 7 has since made
-   the settled shape rather than a detour. The step names "mobile" and
-   "desktop" no longer describe the work: under rule 7 each surface ships in
-   both shapes at once, and `2c` was built that way — two panes at 1440 where
-   the take stays in view beside the picker, one column on a phone.
-
-**One thing `2c` had to add that the handoff does not draw: binding an EMPTY
-slot.** The handoff's shot holds one of everything, so every row it draws is a
-change to something already wired. But nothing else in the product writes a
-binding — this route is the only writer — so a surface that could only
-re-point would have shown five empty rows on every real workspace and been
-unable to do anything about any of them. An empty row therefore offers the
-elements whose kind maps to that slot, and binds the **bundle**: no attribute,
-no version, following the library until somebody pins it. `keyframe` offers
-nothing, because a keyframe is a frame of this shot's own take rather than a
-member of the library, and the row says so.
-
-**BUILT — a shot overrides one attribute without leaving the element.** 2b
-exposed that `bindings UNIQUE (shot_id, slot, ordinal)` cannot represent the
-handoff's own sentence: one slot holds one row, so pinning WARDROBE
-**replaces** the bundle and `portsForShot` emits a single port — the shot stops
-citing the character's face, hair and voice, renders a coat attached to nobody,
-and provenance records it that way.
-
-Three shapes were put up. **Chosen: widen the key**, so a bundle row and an
-override row coexist on one slot and the override supersedes the bundle for
-that attribute alone. It is the closest to what the design says and needs no
-new concept. It is also the most invasive, and the cost was accepted with eyes
-open: *"one slot, one wire" stops being true*, which is the rule the canvas
-draws, so anything counting per slot has to learn the difference between a wire
-and a wire that beats another one.
-
-The two rejected shapes, kept because the reasons still bite:
-
-- **Overrides as JSON on the single row.** No key change and no second wire,
-  but the port stops being a row — so "which shots pin this version", the query
-  the impact panel is built on, goes from an index scan to a table scan.
-- **Leave it, and bind the override on the next ordinal.** Two ordinals on the
-  character slot reads as two characters everywhere else in the product,
-  including on the row labels `2c` added.
-
-**Shipped, all six at once, because they are one rule seen from six places:**
-
-1. **The key.** `UNIQUE (shot_id, slot, ordinal)` becomes two *partial* unique
-   indexes, not a four-column UNIQUE: SQLite treats NULLs as distinct, so a
-   four-column constraint would happily allow a slot to hold five bundles. One
-   index over `(shot_id, slot, ordinal, attribute_id) WHERE attribute_id IS NOT
-   NULL`, one over `(shot_id, slot, ordinal) WHERE attribute_id IS NULL`.
-2. **`setBinding` / `clearBinding`.** The upsert's conflict target and the
-   clear both address a row by slot alone today; both need the attribute.
-3. **`dependentsOf` and `elementUsage`.** A bundle reaches an attribute only
-   where no override row covers it. Without this the panel counts a shot as
-   following current when it is pinned, and prices a re-render that changes
-   nothing.
-4. **`portsForShot`.** A bundle must expand to every attribute's current
-   version, minus the ones an override covers, so provenance records what
-   actually produced the take rather than a row.
-5. **The asset layer.** A slot can now have two wires; the override is the one
-   drawn in ink.
-6. **`2c`.** A row shows the element plus which of its attributes this shot has
-   stepped out of line on — which is what the row was always trying to say. A
-   bundle row's ports each carry their own pin, and picking a version writes an
-   override wire beside the bundle rather than over it. Pending edits are keyed
-   by wire, not by row: keyed by row, an override overwrote the bundle's
-   pending entry — the same mistake the schema used to make, one layer up.
-
-`bindings` had never shipped: every Rig branch is unmerged, so the table
-existed only in development databases. A guarded rebuild runs at bootstrap
-anyway, keyed on the table's own DDL — "it has never shipped" is true exactly
-once, and the person who finds out it stopped being true should not find out
-from a uniqueness error.
-
-**The rule that decides what a take was made from is `expandPorts` in
-`lib/rig.ts`** — pure, and tested rather than trusted. Provenance records its
-output and 2b's version counts read it back; a bundle recorded as itself said
-nothing at all, so a take made through one carried no version for anything and
-every version's take count read zero.
-
-**And one the handoff implies but does not draw: narrowing a bundle is two
-steps.** The handoff's sentence is that "a shot can override one attribute
-without leaving the character", and the CHARACTER row is a bundle —
-`attribute_id` null, every attribute at its current version. The first build
-flattened that: the row quietly adopted the element's first attribute so it
-would have versions to show, and picking any of them rewrote a four-port
-binding into a face-only one, dropping hair, wardrobe and voice off the shot
-with no message and no way back. So a bundle row now expands to its **ports**
-first — each with where it stands and whether it is locked — and only a
-version of a chosen port writes the narrowed binding. Narrowing is a decision,
-so it is a thing a person does on purpose.
+3. Mobile: `1a` → `1b` → `1c` → `2c` → `2b`.
+4. Desktop: `1d` → `2a`.
 5. Chat drives the graph; the canvas is a view of what chat did, never the only way to edit.
 
 **Where it lives.** Recipe authoring and the canvas belong in Atomik (planning); running recipes and their outputs belong in particl (rendering). Same graph, same scoping, one database.
 
 **Constraints that don't relax:** rule 6 — a new user must never need to open Rig to make a first render. Rule 7 — five of seven surfaces are 390×844 and must pass the Phase 0 suite. Desktop canvas is min-width 1180px and may be hidden below that; the mobile surfaces may not.
 
-**Geometry — resolved: neither option, because the positions are computed.** The
-trade-off assumed the handoff's fixed coordinates and a fixed 1040px graph.
-`lib/graph.ts` derives positions from the recipe's own shape on the handoff's
-grid — a stage sits one column right of the furthest thing feeding it, and a
-branch drops a row when two want the same column — so the graph is exactly as
-wide as the recipe needs and the canvas scrolls. The inspector keeps its 272px
-and no column is pulled in. When the chat panel lands it takes its 288px from
-the scrollable area, costing viewport rather than layout.
-
-One consequence to know: the stage layer draws Audio under **Keyframes** where
-the handoff draws it under **Motion**, because Audio depends only on the shot
-list. The placement follows the dependency rather than the drawing, and says
-something truer — Audio can start as soon as the shot list is done, which is
-what the handoff's own "runs alongside Post" means.
+**Known geometry trade-off.** With the chat panel restored, the graph viewport is ~878px against a 1040px graph, so ~162px scrolls off at rest and the collapsed stages node is partly cut. Acceptable for a scrollable canvas. If it must read at rest: pull the column x-positions in ~120px, or narrow the inspector to 240px. **Pick one before building** — the geometry is measured and exact.
 
 ---
 
@@ -592,37 +398,6 @@ particl is a workstation tool that happens to have a phone client. Everything be
 ### 4.1 Breakpoints and density
 Three layouts, not two: **mobile** (<768), **compact desktop** (1024–1439, two-pane), **full desktop** (≥1440, three-pane — library, work surface, rail). Above 1920 the layout gains columns rather than margins; a 400px composer rail on a 2560px display is wasted real estate. Rig canvas requires ≥1180. Panes are **resizable and persisted per user per surface**; a director and an artist do not want the same split.
 
-**BUILT — the panes resize and stay where they are put.** The second of the
-two §13.3 queue-jumpers, after the palette. Four surfaces carry a seam now:
-the composer rail, the canvas shot rail, Studio's rail and the shot builder's,
-each with its own default, its own stops and its own memory.
-
-The seam is a `role="separator"` with a live `aria-valuenow`, absolutely
-positioned inside the rail so the grid stays two columns and nothing has to
-make room for it — seven pixels of target, one painted. It is reachable
-without a mouse, which §10 4.2 argues for and this is the first surface to
-owe it: arrows nudge by 12, shift-arrow by 48, Home and End go to the stops,
-Enter or a double-click restores the default.
-
-Two ceilings, not one. Each surface has its own maximum, and a rail may never
-take more than half the window whatever that maximum says — a split chosen on
-a 27" display should not swallow a laptop. Below 1024 the rails are sheets
-rather than columns, so there is no seam to drag and the handle is not
-rendered at all.
-
-**Kept in the browser, deliberately, and it is the opposite call to Setup.**
-A production's Setup was moved OUT of localStorage in the same week because
-it is a decision a team shares and one producer should not be its only owner.
-A pane split is the other kind of thing: personal, and shaped by the screen
-it was chosen on. Storing it server-side would carry a 27" split onto a
-laptop. It is also not synced between tabs, for the reason the chosen
-production is not — a value another window can change under you is a value
-that moves while you are using it.
-
-Still open in 4.1: the three named layouts (mobile / compact desktop /
-full desktop) and gaining columns rather than margins above 1920. The rails
-resize; the breakpoints are unchanged.
-
 ### 4.2 Keyboard-first
 A production tool lives on shortcuts. Minimum set, discoverable through a `?` overlay:
 - `⌘K` command palette — jump to a shot, production, cast member or setting; run an action by name. This is the single highest-value desktop feature and it makes every later addition discoverable for free.
@@ -631,177 +406,18 @@ A production tool lives on shortcuts. Minimum set, discoverable through a `?` ov
 - Rig: `⌘1/2/3` switch Assets / Stages / Runs, `space` pan, `⌘0` fit graph, `⌘F` find node.
 Every shortcut has a menu-bar equivalent in the Mac app.
 
-**BUILT — the palette, the registry and the `?` overlay.** `lib/shortcuts.ts`
-is the whole table above as data, because 5.1 says the Mac menus carry every
-one of these and a menu can only carry what it can enumerate. Most rows were
-already implemented as ad-hoc listeners in whichever component owned the key;
-the table records where, and only rows marked `owner: "global"` are handled by
-the layer in `CommandPalette.tsx`. `?` reads the table, so a shortcut added in
-a component becomes discoverable the moment someone adds its row.
-
-The palette (`⌘K`, or `/`) finds all four nouns 4.2 names — production, shot,
-cast member, screen — plus takes, via the one server-side search parameter the
-API has (`q` on `/api/jobs`). Everything else is matched in the browser by
-`lib/match.ts`. Three decisions worth keeping:
-
-- **No spending action is in it, and this is the rule not an omission.** Twelve
-  actions in this product call a vendor and write a `meter()` row. A palette is
-  a text field where Return fires the top match, so listing any of them would
-  put a mistyped query one keystroke from a customer's credits — §3 rule 1.
-  The palette navigates; it does `help` and `select`, both free and reversible.
-  `tests/unit/palette.spec.ts` asserts the verb list, so a future row that
-  wants a new verb has to argue for it there. Related: `/atomik/agent?c=<id>`
-  auto-approves a pending step when the chat is in auto mode — a render on
-  arrival, with no click. The bare route is safe and is the only form listed.
-- **Groups are ordered by their best member, not by a fixed sequence.** The
-  first draft pinned the sections; typing "sh" then put "Keyboard shortcuts"
-  above "Shot list" and Return fired the wrong thing. The top row is a promise
-  about what Return does.
-- **A shot lands on `…/canvas?shot=`, not `/shots/[id]`.** That route is the
-  Rig bindings screen — five slots — where canvas already deep-links to the
-  shot in its context. `/studio?cast=` is new: Studio held its selection in
-  React state, so before this the palette could only land near a cast member.
-
-Mobile (§12): no touch entry point, deliberately. `⌘K` presumes a hardware
-keyboard and §3 rule 7 puts navigating an index on the desktop side. It lays
-out full-bleed at 360px if a keyboard is attached, and never focuses the field
-on a touch surface. Mounted outside `.shell` — the only place that sees both
-providers and escapes the backdrop-filter containing block — which costs it
-Shell's `.theme-light`, so it re-applies the paper ground itself on Atomik.
-
-The overlay shows only shortcuts that WORK. §10 4.2 above is a set to build,
-and most of it does not exist: auditing the actual handlers found seven live
-keys — `⌘K`, `/`, `?`, `esc`, `←/→`, `space`, `⌘↵` — against eleven planned
-ones. An overlay listing `⌘0 fit graph` while `⌘0` does nothing is worse than
-no overlay: the reader tries it, nothing happens, and they stop believing the
-rest. So the registry carries every row with a `live` flag, the overlay
-renders the live ones, and `PLANNED` is what is left to wire. One live key
-was also mis-described by 4.2 and is recorded as it behaves: `space` plays
-and pauses in Compare, not everywhere.
-
-**ALL FOUR ARROWS now do their 4.2 job**, decided 9 September: `←/→` step one
-frame and `↑/↓` walk the takes. Theatre shipped `←/→` on takes, which this
-document recorded as a divergence rather than a plan; the remap was made in
-one move rather than the two-step handover first proposed, because a key that
-is bound but does nothing is worse than a key that changes meaning once. The
-prerequisite was removing `video` from Theatre's typing guard: with the
-player in that list, one click on the native control bar gave the `<video>`
-focus and every arrow after it was swallowed and handled by the browser as a
-±5s seek — the same key meaning two things with nothing on screen saying
-which.
-
-Still to wire, all present as `live: false`: `J K L`, `[ ]`, `P`, `A`, `S`,
-batch generate, the rail toggle, and Rig's layer switch, fit and find. Each
-is a one-line flip here when its handler lands.
-
 ### 4.3 Review at speed
 The desktop version of 2.1, and the reason an editor keeps the app open.
-
-**ONE FRAME RATE: 24, decided 9 September.** It was two numbers with nothing
-reconciling them — 24 for the billing maths (`lib/models.ts`) and 25 for the
-EDL's timecode (`lib/selects.ts`) — so a cut listed at 25 was conformed
-against masters rendered at 24, drifting a frame every 25. Both now read one
-exported constant. It is a constant rather than a measurement on purpose:
-frame rate is not stored on a take, and probing each master's sample table
-would buy accuracy this pipeline does not want. The workflow is 24, so a
-frame is 1/24s. EDL export gains nothing further; it is not a direction this
-product is taking.
 - **Player**: scrub, frame-step, loop, in/out, and a comparison mode with synced playhead across two to four takes — side by side, or A/B wipe for two.
 - **Filmstrip** of every take on the shot under the player; arrow through them without leaving playback.
 - **Pop-out review window** to a second display. Studios review on a reference monitor; the grading suite is not a laptop screen.
 - **Notes with a timecode** — click on the scrub bar to attach a note at 0:03. This is what a director actually gives back, and it feeds the send-back note in 2.1.
 
-**BUILT — the comparison half of the first bullet, 9 September.** Compare
-claimed "in step" in its header, its docblock and on screen, and was not: the
-transport COMMANDED every clip to play and then trusted them, the read-out
-took its position from whichever tile was leftmost, a clip still loading
-joined at its own zero and stayed behind for the session, and `loop` sat on
-each tile so every clip wrapped on its own length. That is not a rounding
-error on this data — every multi-take shot in the workspace has takes of
-different lengths (5,10,10,10,4,5 on one), so past the shortest clip the grid
-showed four unrelated moments under one bar claiming a single position, and a
-director picks a take off that screen.
-
-The rules are `lib/transport.ts`, pure and tested: the span and the clock are
-the LONGEST take, because a shorter one cannot express positions past its own
-end — exactly where the leftmost reading went wrong; every other tile is
-CORRECTED to it past 125ms rather than merely told to play; a take shorter
-than the group holds its last frame and says ENDED instead of looping to an
-unrelated moment; a late clip joins where the group is; the group wraps as
-one. Measured on real video: a tile forced to its own zero was 10.0s adrift
-and back within 0.04s after two corrections.
-
-A comparison also took the newest four takes and dropped the rest silently,
-which hid takes AND made "A/B wipe for two" impossible to ask for — you got
-the newest four whether or not those were the two you wanted to weigh. Every
-playable take is now a candidate behind a row of version chips; it still
-opens on the newest four, so nothing changes for anyone who ignores the row.
-The bounds live in the chips rather than a sentence: at four the rest cannot
-be pressed, at two the chosen cannot be dropped. Refusing beats evicting
-somebody's oldest pick to make room.
-
-The A/B wipe is offered at exactly two — a wipe puts one take under another
-and reveals across a seam, which means something for a pair and nothing for
-three. Both takes fill the same box with the same object-fit and the upper
-one is CLIPPED rather than resized, so the pictures stay registered and the
-seam shows a difference in content rather than in crop; measured at an
-identical 638×358 box from the same origin. The handle carries
-`role="slider"` and moves on arrows, because a comparison is the screen a
-producer holds and half of them are on a keyboard.
-
-**BUILT — the player, 9 September.** Theatre handed scrub, loop and in/out to
-the browser's own control bar, where nothing in this product could reach
-them. On desktop the app now draws the transport: play/pause, a scrub that
-steps in frames, a timecode read-out, a loop toggle and a mute, with position
-read every animation frame rather than from `timeupdate` (which fires about
-four times a second — fine for a number, visibly stuttery under a playhead).
-On a phone the native bar stays, because it carries fullscreen and
-picture-in-picture that this bar does not replace. Timecode is M:SS:FF, not
-decimals: a director asking for a change seven frames in is asking about a
-frame, and it is where the workflow's 24 becomes visible rather than assumed.
-
-**BUILT — the filmstrip, the second bullet.** Every take on the shot under
-the player, oldest version first, derived from the rows the browser already
-holds — a Gen carries its shotId, so opening a take costs no round trip to
-be told what it knows. With a strip on screen the arrows walk IT rather than
-the wall behind it: a key that moves the highlight somewhere the eye cannot
-follow is worse than no key. Without one they walk the list the player was
-opened with, exactly as before. The strip counts what it SHOWS rather than
-claiming to be every take that exists — opened from a shot-scoped wall that
-is all of them, opened from the library it is the ones on screen — because
-"3 takes" of something not exhaustive is a small lie a producer eventually
-catches.
-
-**Still open:** the pop-out review window, and notes with a timecode. The
-scrub bar they both need now exists and is the app's own.
-
 ### 4.4 Bulk operations
 Desktop is where someone acts on forty things at once. Multi-select with click, shift-click ranges and `⌘A`; a persistent selection bar showing count and total credits. Bulk: approve, send back, file against shots, download masters, add to a review link, delete drafts. Every bulk action that spends credits quotes the total before enabling, same as a single action.
 
 ### 4.5 Drag and drop, and local files
-
-**Partly done in Atomik, 9 September**, brought forward because the composer
-would not take a file and nothing said why. Drag onto the Atomik composer now
-shows a drop target — it always accepted one and never looked like it, which
-for anyone who did not happen to try is the same as not having it. A batch
-uploads together with a bar per file, and **one refusal no longer takes the
-rest with it**: the loop used to sit inside one `try`, so a 200px thumbnail
-the engine won't accept killed the three files behind it and named none of
-them. Each file settles on its own and the ones that fail are listed with the
-reason the server gave.
-
-The accept list is widened to what `lib/imagemeta.ts` actually reads — GIF,
-BMP, TIFF, HEIC and HEIF alongside PNG, JPEG, WebP, MP4 and MOV. It was
-narrower than the server's own capability, so files that would have worked
-were never offered. **Not widened to PDF, WebM or ProRes**: the sniffer does
-not read them and no engine in §2 takes them, so offering them would be
-promising a conversion nothing does.
-
-**Still to do here**, which is the original spec minus what shipped: a folder
-of stills into Studio to create cast entries; a take dragged onto a shot to
-file it; drag to reorder the sequence canvas; a plate dragged onto a slot in
-Rig; resumable failures; and a remembered download folder, so masters land
-named by the convention without a Save dialog each time.
+Drag references into the composer; drag a folder of stills into Studio to create cast entries; drag a take onto a shot to file it; drag to reorder the sequence canvas; drag a plate onto a slot in Rig. Batch upload with per-file progress and resumable failures. Download: pick a destination folder once and remember it; masters land named by the convention without a Save dialog each time.
 
 ### 4.6 Scale
 A production reaches thousands of takes. Virtualised lists and grids, thumbnail sprite sheets or a poster-frame service rather than loading video, lazy provenance, and a Rig canvas that stays responsive at 200+ nodes. Set a budget: the library at 2,000 takes scrolls at 60fps and first paint stays under 1.5s on a cold load.
@@ -849,10 +465,69 @@ Per surface, state which of the three layouts it supports and what the mobile ve
 ## 13. How to work
 
 1. Confirm or correct every assumption in sections 2 and 5 against the code before changing anything. Specifically: where keys live, whether `workspace_id` is on every table, whether the metering layer exists and **which call paths bypass it**, how Atomik shares auth and data, and what "its own database" means in the schema. Report back.
-2. Resolve the two open decisions in section 4 (theme — and note that dark is the convention for desktop suites) and section 9 (graph geometry), and bring back the 1.0 pricing decisions with trade-offs.
+2. Resolve the two open decisions in section 4 (theme — and note that dark is the convention for desktop suites) and section 9 (graph geometry). Pricing is decided in 7A — implement it as written; the multiplier, tiers, packs and guardrails are config-driven so Phase B changes are settings, not code.
 3. Phase order: finish Phase 0 → 1.0 → 1.1 → the rest of Phase 1 → Phase 2 (2.1 and 2.2 first, they're what a paying team feels) → Phase 3 → Phase 4 → Phase 5. Two things from Phase 4 can jump the queue because everything after them gets easier: the ⌘K command palette (4.2) and resizable persisted panes (4.1).
 4. For anything schema-touching, summarise what changed as a diff against this document and update it. A scope of work that drifts from the code is worse than none.
 5. Each PR states: what it costs a workspace to use, how it's mocked in tests, what changed in the prompt compiler, and where the new code is workspace-scoped.
 6. Every mobile change keeps the Phase 0 suite green.
 7. Where a decision gets built on by later sections — schemas, ledgers, scoping, inheritance, sync — give two or three structures, argue against your preferred one, and name what breaks. Don't write code until it's agreed.
 8. Any task that would spend real money on an engine: stop and ask.
+
+---
+
+## 14. Built — state of the code, 10 September 2026
+
+Appended, not part of the master as handed over: the master is written as a
+plan, and a plan that does not say what already exists sends the next session
+to rebuild it. Everything below is in `main` and deployed. Delete this section
+whenever the master is reissued with the same facts folded in.
+
+**§4 theme — no longer open. particl is dark; there is no appearance setting.**
+Decided and shipped 10 September, after §4's own note asked for it to be
+settled before Rig work. Not "dark by default": Auto and Light are gone from
+the product, the `prefers-color-scheme` query is gone from the stylesheet, and
+nothing is stamped on `<html>`. The paper ground is a route list —
+`lib/ground.ts`, read by the shell and by the command palette — holding
+atomik's stages and the statement page, which is a document before it is a
+screen. `app/global-error.tsx` is written out dark because it renders when the
+stylesheet never arrived. The rule that made this a default change rather than
+a rework still stands and is now the only thing holding the theme together:
+**no component hard-codes a colour; a literal hex in one is a bug.** Guarded at
+`tests/desktop.spec.ts` by emulating a light machine.
+
+**§5 bindings — a shot overrides one attribute without leaving the element.**
+`bindings UNIQUE (shot_id, slot, ordinal)` could not represent the handoff's
+own sentence: one slot held one row, so pinning WARDROBE replaced the bundle,
+`portsForShot` emitted a single port, and the shot stopped citing the
+character's face, hair and voice. Three shapes were put up; the key was
+widened, so a bundle row and an override row coexist.
+
+**§10 4.1 — panes resize and stay put.** Four surfaces carry a seam: the
+composer rail, the canvas shot rail, Studio's rail and the shot builder's,
+each with its own default and stops (`lib/panes.ts`). The seam is a
+`role="separator"` with a live `aria-valuenow`. Widths are per browser and
+clamped to the window as well as the spec, so a split chosen on a 27" display
+cannot swallow a laptop.
+
+**§10 4.2 — the command palette, the shortcut registry and the `?` overlay.**
+`lib/shortcuts.ts` is the table as data, because 5.1 says the Mac menus carry
+every shortcut and a menu can only carry what it can enumerate. Rows marked
+`owner: "global"` are handled in `CommandPalette.tsx`; the rest record which
+component owns the key. `?` reads the table, so a shortcut becomes
+discoverable the moment its row is added. Eight rows are live, nine planned.
+
+**§10 4.3 — the player, the filmstrip and comparison.** Theatre draws its own
+transport on desktop (frame-stepped scrub, timecode, loop, mute, position read
+every animation frame); the phone keeps the native bar, which carries
+fullscreen and picture-in-picture. The filmstrip is every take on the shot,
+oldest version first, derived from rows the browser already holds, and the
+arrows walk it when it is on screen. Compare elects the longest take as the
+clock and corrects the others past 125ms, rather than commanding every clip to
+play and trusting them. **One frame rate: 24, decided 9 September.** No EDL
+export — not wanted.
+
+**Not built, and named here so it is not assumed:** §7A's tiers, floor guard,
+`internal: true` multiplier and guardrails 1–6; invoicing. The per-engine
+margin table in `lib/creditTerms.ts` (1.25–1.5, dated 6 September) still
+disagrees with §7A's flat 1.5×, so the reference rate card and the prices on
+the buttons differ by a credit or three per take.
