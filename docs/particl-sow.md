@@ -526,8 +526,25 @@ clock and corrects the others past 125ms, rather than commanding every clip to
 play and trusting them. **One frame rate: 24, decided 9 September.** No EDL
 export — not wanted.
 
+**§7A margin — done, 10 September.** `lib/creditTerms.ts` carried a per-engine
+table dated 6 September running from 1.25 to 1.5, so every price it produced
+was under §7A's rate card and the card and the buttons disagreed — a 5-second
+Seedance 2.5 1080p take billed 40 credits where the card says 43. The card is
+right: all twelve of its lines are `ceil(engine cost × 1.5 ÷ 0.10)` exactly.
+The table is now a single `"*": 1.5` entry and stays keyed by engine, which is
+what §7A asks for — "the multiplier is per engine from day one, even though it
+launches at a flat 1.5×" — so Phase B's premium 1.7 / commodity 1.4 is a key
+added here, not a refactor. A test asserts the published card line by line.
+
+Two things the raise exposed, fixed with it. `lib/creditSql.ts` built
+`CASE model … ELSE … END` from the engine keys and emitted an **empty CASE** —
+a SQL syntax error — once there were none; that expression is inlined into the
+usage, admin and statement queries, so a one-entry table took all three down.
+And `lib/held.ts` compared a take's **stored** estimate against the balance
+while billing it at the current rate, so a take held at 40 credits would
+release as soon as the balance covered 40 and then charge 43. `needs` is
+re-derived at release now.
+
 **Not built, and named here so it is not assumed:** §7A's tiers, floor guard,
-`internal: true` multiplier and guardrails 1–6; invoicing. The per-engine
-margin table in `lib/creditTerms.ts` (1.25–1.5, dated 6 September) still
-disagrees with §7A's flat 1.5×, so the reference rate card and the prices on
-the buttons differ by a credit or three per take.
+`internal: true` multiplier and guardrails 1–6; invoicing. The packs are still
+the old three (500 / 2,000 / 10,000, no bonus credits), not §7A's four.

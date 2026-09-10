@@ -1,7 +1,7 @@
 import { currentTenant, type TenantWorkspace } from "./tenant";
 import { creditsGranted } from "./platform";
 import { paidByPlatform } from "./platformSpend";
-import { creditUsd, margins, billCredits, type CreditState } from "./creditTerms";
+import { creditUsd, billCredits, type CreditState } from "./creditTerms";
 import type { VendorKeyName } from "./vendorKeys";
 import { creditsUsed } from "./meter";
 
@@ -27,7 +27,7 @@ export function creditsApply(ws: TenantWorkspace | null | undefined): boolean {
 export async function creditStateFor(ws: TenantWorkspace): Promise<CreditState | null> {
   if (!creditsApply(ws)) return null;
   const [granted, used] = await Promise.all([creditsGranted(ws.id), creditsUsed(ws.id)]);
-  return { creditUsd: creditUsd(), margins: margins(), granted, used, balance: granted - used };
+  return { creditUsd: creditUsd(), granted, used, balance: granted - used };
 }
 
 export async function creditState(): Promise<CreditState | null> {

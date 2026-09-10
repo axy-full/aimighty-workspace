@@ -8,11 +8,28 @@
  * before they round.
  *
  * The margin sits between what the vendor charges and what the workspace
- * pays, per engine, so headline prices land on round numbers (a 5-second
- * Seedance 1080p shot is 40 credits, a Kling shot 6, a still 2). The table
- * below is the one agreed on 6 September 2026; CREDIT_MARGINS, a JSON
- * object of the same shape, overrides any entry. SIGNUP_CREDITS is what a
- * workspace starts with the day it signs up.
+ * pays. **SOW §7A: sell price = engine cost x 1.5.** One multiplier, flat,
+ * for every engine — which is why the table below has a single entry.
+ *
+ * The table is keyed by engine anyway, and stays keyed by engine, because
+ * §7A asks for exactly that: "Build the adapter so the multiplier is per
+ * engine from day one, even though it launches at a flat 1.5x. That's a
+ * config change later, not a refactor." Phase B tunes premium to 1.7 and
+ * commodity to 1.4 by adding keys here or setting CREDIT_MARGINS; nothing
+ * downstream has to change for that to work.
+ *
+ * It is one entry rather than fourteen identical ones on purpose. A table
+ * of the same number repeated pretends there are fourteen decisions when
+ * §7A made one, and every copy is a place for the launch rate to drift.
+ *
+ * This replaced a per-engine table dated 6 September that ran from 1.25 to
+ * 1.5. Every price it produced was under §7A's rate card — a 5-second
+ * Seedance 2.5 1080p take billed 40 credits where the card says 43 — so
+ * the card and the buttons disagreed. The card is right; it derives from
+ * cost x 1.5 exactly, on all twelve of its lines.
+ *
+ * CREDIT_MARGINS, a JSON object of the same shape, overrides any entry.
+ * SIGNUP_CREDITS is what a workspace starts with the day it signs up.
  *
  * No imports, so both the platform record and the tenant code — and the
  * browser, for the price on a button — can read the terms without pulling
@@ -28,23 +45,13 @@ export function signupCredits(): number {
   return Number.isFinite(n) && n >= 0 ? n : 250;
 }
 
-/** Margin over vendor cost, by engine id; "*" is the fallback. */
+/**
+ * Margin over vendor cost, by engine id; "*" is the fallback and, at
+ * launch, the only entry. Add a key to price one engine differently.
+ */
+export const LAUNCH_MARGIN = 1.5;
 export const DEFAULT_MARGINS: Record<string, number> = {
-  "*": 1.4,
-  "dreamina-seedance-2-5-260628": 1.39,
-  "dreamina-seedance-2-0-260128": 1.32,
-  "fal-ai/kling-video/v3/standard": 1.42,
-  "fal-ai/kling-video/v3/pro": 1.42,
-  "topaz/upscale/video/creative": 1.33,
-  "fal-ai/luma-dream-machine/ray-2-flash/reframe": 1.4,
-  "fal-ai/bria/expand": 1.4,
-  "fal-ai/bria/background/remove": 1.4,
-  "gemini-3-pro-image": 1.49,
-  "gemini-3.1-flash-image": 1.49,
-  "fal-ai/flux-lora": 1.5,
-  "identity-training": 1.38,
-  "elevenlabs": 1.25,
-  "text": 1.0,
+  "*": LAUNCH_MARGIN,
 };
 
 let _margins: Record<string, number> | null = null;
@@ -86,10 +93,19 @@ export const usdToCredits = (usd: number, engine?: string | null): number => (us
 /** Dollars of vendor cost a number of credits buys at no margin. */
 export const creditsToUsd = (credits: number): number => credits * creditUsd();
 
-/** What the client needs to show and convert prices. */
+/**
+ * What the client needs to show a balance.
+ *
+ * **No `margins` here, on purpose (SOW §2: "margin ... never shown").** It
+ * was in this shape while the browser converted vendor dollars into credits
+ * itself; that conversion moved to the server, and the field stayed behind as
+ * payload nobody read. Dead weight is one thing while it is a table of
+ * fourteen numbers somebody has to interpret, and another once §7A makes it
+ * `{"*": 1.5}` — a single number in `/api/me` that states the markup outright.
+ * Every figure that reaches the browser is already in credits.
+ */
 export type CreditState = {
   creditUsd: number;
-  margins: Record<string, number>;
   granted: number;
   used: number;
   balance: number;

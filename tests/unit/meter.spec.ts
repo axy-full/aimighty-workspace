@@ -32,10 +32,10 @@ test("one id, one row: the completion updates the running event", async () => {
   const r = rows.rows[0] as Record<string, unknown>;
   expect(r.status).toBe("succeeded");
   expect(Number(r.engine_cost_usd)).toBeCloseTo(2.9, 6);
-  expect(Number(r.billed_credits)).toBe(41);
+  expect(Number(r.billed_credits)).toBe(44);
   expect(r.project_id).toBe("p1");
   expect(Number(r.duration_ms)).toBe(40_000);
-  expect(await creditsUsed("ws_unit")).toBe(41);
+  expect(await creditsUsed("ws_unit")).toBe(44);
   const s = await meterSummary("ws_unit");
   expect(s.jobs).toBe(1);
   expect(s.byEngine[0].engine).toBe("byteplus");
@@ -49,7 +49,7 @@ test("a completion without a cost keeps the estimate's billing", async () => {
   const before = await creditsUsed("ws_unit");
   await runInTenant(ws, () => meter({ id: "id_train", kind: "training", engine: "fal", model: "trainer", status: "running", engineCostUsd: 3.6 }));
   await runInTenant(ws, () => meter({ id: "id_train", kind: "training", engine: "fal", model: "trainer", status: "succeeded" }, { critical: false }));
-  expect(await creditsUsed("ws_unit") - before).toBe(50);
+  expect(await creditsUsed("ws_unit") - before).toBe(54);
 });
 
 test("a workspace on its own key is metered at zero credits", async () => {
