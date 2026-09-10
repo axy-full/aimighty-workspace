@@ -1,5 +1,6 @@
 import { createClient, type Client } from "@libsql/client";
 import { signupCredits, isPaidKind, type GrantKind } from "./creditTerms";
+import { asPlanId, type PlanId } from "./plans";
 import { gatewayMintConfigured, mintGatewayKey } from "./vercelKeys";
 import { randomBytes, createHash } from "node:crypto";
 import { seal, open } from "./keyring";
@@ -65,6 +66,7 @@ const SCHEMA = [
      allowance_usd      REAL,
      gateway_key_id     TEXT,
      owner_id           TEXT NOT NULL,
+     plan_id            TEXT,
      created_at         INTEGER NOT NULL,
      updated_at         INTEGER NOT NULL
    )`,
@@ -254,6 +256,13 @@ export function rowToWorkspace(r: any): TenantWorkspace {
     concurrency: r.concurrency == null ? null : Number(r.concurrency),
     rendersPerHour: r.renders_per_hour == null ? null : Number(r.renders_per_hour),
     storageQuotaBytes: r.storage_quota_bytes == null ? null : Number(r.storage_quota_bytes),
+    /* NULL is "on no plan", which is every workspace until somebody is put
+       on one — and it is also what a workspace created by older code lands
+       on during a rolling deploy, so the safe value and the correct value
+       are the same value. Not defaulted to `invite`: Invite carries a
+       1-production and 3-member ceiling, and applying that to workspaces
+       already past it would lock people out of their own work. */
+    planId: asPlanId(r.plan_id),
     internalTest: Number(r.internal_test ?? 0) === 1,
     deletedAt: r.deleted_at == null ? null : Number(r.deleted_at),
   };
@@ -328,7 +337,7 @@ export function platformReady(): Promise<void> {
       for (const stmt of SCHEMA) await p.execute(stmt);
       /* Columns added after the table first shipped reach an existing
          database only by ALTER; a duplicate is the one error to ignore. */
-      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`, `internal_test INTEGER`]) {
+      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`, `internal_test INTEGER`, `plan_id TEXT`]) {
         try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
       }
@@ -774,6 +783,22 @@ export async function resetPlatformLayer(key: LayerKey): Promise<PlatformLayer> 
 }
 
 /** Mark a workspace as the platform's own internal test workspace — the one place a real engine call may be made for the platform's sake (brief 1.4). */
+/**
+ * Put a workspace on a plan, or take it off one.
+ *
+ * Nothing about credits moves here. A plan's included credits are granted per
+ * cycle, and that grant does not exist yet — it waits on the draw order,
+ * which is still undecided. Recording WHICH plan is the part that can be
+ * true today, and it is what the console has had no way to say.
+ */
+export async function setWorkspacePlan(id: string, plan: PlanId | null): Promise<void> {
+  await platformReady();
+  await platformDb().execute({
+    sql: `UPDATE workspaces SET plan_id = ?, updated_at = ? WHERE id = ?`,
+    args: [plan, now(), id],
+  });
+}
+
 export async function setWorkspaceInternalTest(id: string, on: boolean): Promise<void> {
   await platformReady();
   await platformDb().execute({ sql: `UPDATE workspaces SET internal_test = ?, updated_at = ? WHERE id = ?`, args: [on ? 1 : 0, now(), id] });
