@@ -1,4 +1,5 @@
 import { db, ready } from "./db";
+import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
@@ -19,10 +20,6 @@ export type ExportRow = {
   credits: number; usd: number; prompt: string; filename: string; url: string; bytes: number | null;
 };
 
-const csvCell = (v: string | number | null): string => {
-  const s = v == null ? "" : String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 /** One row per take, the money column in the workspace's unit. */
 export function takesCsv(rows: ExportRow[], unit: "cr" | "$"): string {

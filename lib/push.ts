@@ -16,6 +16,35 @@ function configured(): boolean {
   return Boolean(process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
 }
 
+/**
+ * The push services a browser can actually hand out an endpoint for.
+ *
+ * A stored endpoint is a URL this server POSTs to on its own initiative,
+ * for as long as the row exists — an outbound request primitive with a
+ * scheduler attached. The route checked only that it began `https://`, so
+ * any host would do, including one inside a private network.
+ *
+ * An allowlist rather than a private-range blocklist: DNS can be pointed
+ * anywhere after the check, and rebinding beats every blocklist eventually.
+ * These four are who issues push endpoints; a fifth browser is a one-line
+ * change, made deliberately.
+ */
+const PUSH_HOSTS = [
+  "fcm.googleapis.com",          // Chrome, Edge, and everything Chromium
+  "updates.push.services.mozilla.com",
+  "push.services.mozilla.com",   // Firefox
+  "notify.windows.com",          // legacy Edge / WNS
+  "web.push.apple.com",          // Safari
+];
+
+export function knownPushService(endpoint: string): boolean {
+  let u: URL;
+  try { u = new URL(endpoint); } catch { return false; }
+  if (u.protocol !== "https:") return false;
+  const host = u.hostname.toLowerCase();
+  return PUSH_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
 export async function saveSubscription(
   userId: string,
   sub: { endpoint: string; keys: { p256dh: string; auth: string } }

@@ -3,6 +3,7 @@ import { resolveShare } from "@/lib/shares";
 import { getSetting } from "@/lib/settings";
 import { openUploadStream } from "@/lib/storage";
 import { db, ready } from "@/lib/db";
+import { servingFor } from "@/lib/serveType";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -22,5 +23,21 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
     try { const up = await openUploadStream(uploadId, String(row.ext ?? "png")); return { stream: up.stream, mime: String(row.mime ?? "image/png") }; } catch { return null; }
   });
   if (!out) return new Response("No logo", { status: 404 });
-  return new Response(out.stream, { headers: { "Content-Type": out.mime, "Cache-Control": "public, max-age=3600" } });
+  /* The stored mime decides nothing on its own: this route is
+     UNAUTHENTICATED — anybody with a review link reaches it — and it was
+     echoing a column back as the content type. A logo is a raster image or
+     it is not served as one. `servingFor` is the same allowlist the media
+     route uses, which excludes SVG: an SVG is a document that can carry
+     script, and this one would run on the app's own origin in front of a
+     client who was handed the link. */
+  const serve = servingFor(out.mime);
+  if (!serve.inline) return new Response("No logo", { status: 404 });
+  return new Response(out.stream, {
+    headers: {
+      "Content-Type": serve.contentType,
+      "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox; default-src 'none'",
+    },
+  });
 };

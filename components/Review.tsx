@@ -7,7 +7,11 @@ import { timeAgo } from "@/lib/format";
 import { trailLine, type Trail } from "@/lib/approval";
 import { splitMentions, isNamed } from "@/lib/mentions";
 
-type Note = { id: string; text: string; author: string; userId: string; createdAt: number ; mentions?: string[] };
+type Note = {
+  id: string; text: string; author: string; userId: string; createdAt: number; mentions?: string[];
+  /** Left by somebody holding a review link, not a member of the workspace. */
+  guest?: boolean;
+};
 
 /**
  * Sign-off and notes for one shot.
@@ -100,7 +104,14 @@ export default function Review({ genId, state, reviewBy, trail, reason, onChange
         <ul className="mt-3 flex flex-col gap-2">
           {notes.map((n) => (
             <li key={n.id} className="text-[13.5px] leading-relaxed">
-              <span className="font-medium">{n.author}</span>{" "}
+              {/* A guest note says so. The name on it is whatever the person
+                  holding the review link typed — the API has always returned
+                  the flag and this list dropped it, so a note signed with a
+                  colleague's name rendered exactly like that colleague's own.
+                  Approving a take because "Akshay said it looks right" is the
+                  kind of thing a review link should never be able to stage. */}
+              <span className="font-medium">{n.author}</span>
+              {n.guest && <span className="mono-s !text-[10px] ml-1.5 text-mute">VIA REVIEW LINK</span>}{" "}
               <span className="text-mute">{timeAgo(n.createdAt)}</span>
               <p className="whitespace-pre-wrap text-dim">{splitMentions(n.text, n.mentions ?? []).map((part, i) => (isNamed(part, n.mentions ?? []) ? <span key={i} className="note-at">{part.text}</span> : <span key={i}>{part.text}</span>))}</p>
             </li>

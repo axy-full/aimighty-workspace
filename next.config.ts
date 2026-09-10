@@ -14,7 +14,36 @@ const headers = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
-  { key: "Content-Security-Policy", value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" },
+  /* The policy had no `default-src`, so every fetch destination was open and
+     an injected script could exfiltrate anywhere it liked. These directives
+     bound WHERE things may go.
+     `script-src` is set EXPLICITLY, and permissively, on purpose. Writing
+     `default-src 'self'` alone does not leave scripts alone — `default-src`
+     is the fallback for `script-src`, so it silently became `script-src
+     'self'` and blocked Next's own inline bootstrap. The app rendered a
+     stub. Naming `script-src` with 'unsafe-inline' keeps today's behaviour
+     exactly, which is the point: this change is about where data may GO, not
+     about what may run. Locking down what may run needs per-request nonces
+     through the whole app, and that is its own change, not a line in a
+     security sweep. `unsafe-eval` is dev-only — Turbopack's HMR needs it and
+     a production build does not. */
+  {
+    key: "Content-Security-Policy",
+    value: [
+      "default-src 'self'",
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}`,
+      "img-src 'self' data: blob: https:",
+      "media-src 'self' data: blob: https:",
+      "connect-src 'self' https:",
+      "font-src 'self' data:",
+      "style-src 'self' 'unsafe-inline'",
+      "frame-src 'none'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join("; "),
+  },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
 ];
 

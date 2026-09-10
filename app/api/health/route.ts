@@ -60,10 +60,19 @@ export async function GET(req: Request) {
     }
   } catch { /* leave as unreachable */ }
 
-  // Live storage probe: write one tiny private object, then remove it.
-  let storage = "local-disk";
+  /* Live storage probe: write one tiny private object, then remove it.
+     GATED ON `full`, which means signed in. It used to run for everyone, so
+     an unauthenticated caller made this deployment write and delete a Blob
+     object on every request — a loop against a public URL turning into
+     storage operations and their billing, on somebody else's account.
+     A monitor does not need it: what it asks is whether the app is alive and
+     can reach its dependencies, and an anonymous caller now gets storage
+     reported as configured-or-not rather than proven by a write. The probe
+     exists because a hand-pasted token proved nothing by being present, and
+     the person who needs that proof is the one signed in looking for it. */
+  let storage = process.env.BLOB_READ_WRITE_TOKEN ? "blob-configured" : "local-disk";
   let storageError: string | null = null;
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  if (full && process.env.BLOB_READ_WRITE_TOKEN) {
     try {
       const { put, del } = await import("@vercel/blob");
       const probe = await put("health/probe.txt", `ok ${Date.now()}`, {
@@ -107,6 +116,8 @@ export async function GET(req: Request) {
      A monitor needs exactly this and nothing more. */
   if (!full) {
     return NextResponse.json({
+      /* "blob-BROKEN" is only reachable when signed in now, so for a monitor
+         this is the database answer — which is the one that goes down. */
       ok: database !== "unreachable" && storage !== "blob-BROKEN",
     mock: engineMock(),
       database: database === "unreachable" ? "unreachable" : "ok",

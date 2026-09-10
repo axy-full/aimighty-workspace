@@ -116,6 +116,7 @@ const SCHEMA = [
    )`,
   `CREATE TABLE IF NOT EXISTS reports (
      id            TEXT PRIMARY KEY,
+     ip_hash       TEXT,
      url           TEXT NOT NULL,
      reason        TEXT NOT NULL,
      details       TEXT,
@@ -364,6 +365,14 @@ export function platformReady(): Promise<void> {
       }
       for (const col of [TOPUP_BONUS_COLUMN]) {
         try { await p.execute(`ALTER TABLE topup_requests ADD COLUMN ${col}`); }
+        catch (e) { if (!/duplicate column|already exists/i.test(String((e as Error).message))) throw e; }
+      }
+      /* Reporting content is open to anybody — a victim must not need an
+         account — so the counting has to be by something an anonymous caller
+         still has. Salted and truncated, the same shape access_requests
+         already uses: this exists to count, not to identify. */
+      for (const col of [`ip_hash TEXT`]) {
+        try { await p.execute(`ALTER TABLE reports ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column|already exists/i.test(String((e as Error).message))) throw e; }
       }
       const count = await p.execute(`SELECT COUNT(*) AS n FROM workspaces`);
