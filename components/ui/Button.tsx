@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import { fmtCredits } from "@/lib/price";
+import { useMoney } from "@/lib/price";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
 
 /**
@@ -32,8 +32,10 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  * is the thing the eye lands on. When a rail opens, the page's primary
  * drops to `outlined` so the rail's own primary is the one.
  *
- * `cost` is credits, as a number, and it comes from the engine — the button
- * formats it, it never knows it. A button with no cost shows nothing where
+ * `cost` is a number in the workspace's own unit — credits, or dollars for
+ * a workspace still billed at cost — and it comes from the engine; the
+ * button formats it through `useMoney` like every other price, and never
+ * knows it. A button with no cost shows nothing where
  * the price would be, not "0 cr" (unless the caller says `0`, which is a
  * fact worth stating: `Download 2 masters · 0 CR`).
  *
@@ -94,6 +96,7 @@ export default function Button({
   variant = "secondary", placement = "header", outlined = false, muted = false, cost, costSuffix,
   busy = false, busyLabel, children, className = "", disabled, type = "button", ...rest
 }: Props) {
+  const { price } = useMoney();
   const filled = variant === "primary" && !outlined;
   const paint = filled
     ? "bg-ink text-ground"
@@ -122,7 +125,7 @@ export default function Button({
       </span>
       {cost !== undefined && (
         <span className={`ui-mono ui-mono-cost ${filled ? "text-on-primary-cost" : "text-ink-muted"}`}>
-          {fmtCredits(cost)}{costSuffix}
+          {price(cost)}{costSuffix}
         </span>
       )}
     </button>
