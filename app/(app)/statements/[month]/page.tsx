@@ -50,7 +50,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
     </tr>
   );
   return (
-    <div className="theme-light statement">
+    <div className="statement">
       <div className="statement-actions">
         <Link href="/settings#statements" className="text-[14px] text-blue">← Statements</Link>
         <span className="ml-auto flex gap-2">

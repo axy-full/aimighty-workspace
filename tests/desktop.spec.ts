@@ -230,3 +230,58 @@ test("particl is dark on a light machine, and atomik is still paper", async ({ p
   expect(atomik!.desk, "atomik's ground").toBe("#ECEDEF");
   expect(atomik!.scheme).toBe("light");
 });
+
+/**
+ * The paper list is one list (`lib/ground.ts`).
+ *
+ * A statement is particl's own screen and still paper — it is a document
+ * before it is a screen, printed or sent to whoever pays. It used to become
+ * paper only once the data arrived, so the route changed ground mid-load;
+ * the ground is decided by the shell now, which is why this checks it signed
+ * out, where there is no statement to render at all.
+ *
+ * The palette is checked in the same breath because it renders OUTSIDE the
+ * shell and re-applies the ground by hand. That is a second copy of the same
+ * rule, and it drifted once already.
+ */
+test("a statement is paper in every state, and the palette agrees", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/statements/2026-09");
+  await settle(page);
+
+  const ground = () => page.evaluate(() => {
+    const el = document.querySelector(".theme-light");
+    return el ? getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase() : null;
+  });
+  // Signed out there is no statement, only the "these are private" screen —
+  // and it is still on paper, because the shell decided, not the page.
+  expect(await ground(), "the statement route signed out").toBe("#ECEDEF");
+
+  await page.keyboard.press("Meta+k");
+  await page.waitForTimeout(300);
+  const palette = await page.evaluate(() => {
+    const el = document.querySelector(".cmdk-scrim");
+    if (!el) return null;
+    return {
+      light: el.classList.contains("theme-light"),
+      desk: getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase(),
+    };
+  });
+  expect(palette, "the palette opened").not.toBeNull();
+  expect(palette!.light, "the palette is on paper where the page is").toBe(true);
+  expect(palette!.desk).toBe("#ECEDEF");
+
+  // ...and dark where the page is, which is everywhere else.
+  await page.keyboard.press("Escape");
+  await page.goto("/");
+  await settle(page);
+  await page.keyboard.press("Meta+k");
+  await page.waitForTimeout(300);
+  const onInk = await page.evaluate(() => {
+    const el = document.querySelector(".cmdk-scrim");
+    return el ? { light: el.classList.contains("theme-light"), desk: getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase() } : null;
+  });
+  expect(onInk, "the palette opened on the wall").not.toBeNull();
+  expect(onInk!.light).toBe(false);
+  expect(onInk!.desk).toBe("#1D1F24");
+});
