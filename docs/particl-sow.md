@@ -22,13 +22,13 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 
 | Provider | Models | Notes |
 |---|---|---|
-| **ByteDance** (BytePlus ModelArk) | Seedance 2.5 | Video. Currently the default and only wired video engine. |
-| **Google** | Nano Banana Pro | Stills. Called **directly on Google's APIs** — not via Vercel AI Gateway. |
-| **fal** | Kling 3.0, Kling 3.0 Motion, Topaz, Soul ID, Flux character | One adapter, several **media** models behind it. `FAL_KEY` not set — nothing here works yet. **No LLMs through fal.** |
+| **ByteDance** (BytePlus ModelArk) | Seedance 2.5, Seedance 2.0 | Video. Seedance 2.5 is the default (`DEFAULT_MODEL_ID`). Not the only wired video engine — fal's four are wired too. |
+| **Google** | Nano Banana Pro, Nano Banana 2 | Stills (`gemini-3-pro-image`, `gemini-3.1-flash-image`). Runs through the **Vercel AI Gateway by default**, and bills gateway credit; goes direct to Google only when `STILLS_VIA=google` with a key set, or when the gateway is unreachable. See `stillsDoor()`. |
+| **fal** | Kling 3.0, Kling 3.0 Pro, Topaz Astra, Luma Ray 2 (reframe), Bria Expand + Cutout (hidden still tools), Flux · Identity | One adapter, several **media** models behind it. Built end to end (`lib/engines/fal.ts`, `lib/falVideo.ts`, `lib/falImage.ts`). `FAL_KEY` is unset in local dev, so fal renders only run against the mock — nothing about the wiring is outstanding. **No LLMs through fal.** |
 | **ElevenLabs** | Voice / audio | The Audio tab's engine. |
 | **Vercel API** | Claude, GPT | **Every LLM call in either app.** Atomik's enhancement, idea builder and shot builder; anything in particl needing an LLM. |
 
-**Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost` in USD and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears once, on the top-up screen (`500 credits · $50`), and nowhere else.
+**Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears once, on the top-up screen (`500 credits · $50`), and nowhere else.
 
 Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × 0.10`) and only ever secondary.
 
@@ -119,7 +119,7 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 
 **Outstanding:**
 
-- **Safe area.** Dock `padding-bottom` reads 0px despite `viewport-fit=cover`. Apply `env(safe-area-inset-bottom)` to the dock, composer bar and every bottom sheet. Blocking for the iOS app.
+- ~~**Safe area.** Dock `padding-bottom` reads 0px despite `viewport-fit=cover`.~~ **Shipped.** `env(safe-area-inset-bottom)` is on the tab bar, the composer and the bottom sheets (`app/globals.css`), and the phone suite asserts it.
 - **Credits not in the composer.** The Generate button still reads `$2.86 · 244.8k TOK`. Should read `29 cr`. A Balance link to `/settings#credits` exists, so credits exist somewhere — establish whether the conversion is partial or absent.
 - **Token count on the button** — noise once it's credits. Remove.
 - **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.
@@ -153,7 +153,7 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 
 ### 1.1 Model breadth per shot
 
-One interface (`estimate`, `render`, `poll`, `fetchMaster`), one adapter per provider: ByteDance/Seedance and Google/Nano Banana Pro (existing), ElevenLabs, **fal** carrying Kling 3.0, Kling 3.0 Motion, Topaz and Soul ID / Flux behind one adapter, and **Vercel** as the single LLM adapter with the same shape so text calls meter like everything else. Every adapter goes through the metering layer.
+One interface (`estimate`, `render`, `poll`, `fetchMaster`), one adapter per provider: ByteDance/Seedance and Google/Nano Banana Pro (existing), ElevenLabs, **fal** carrying Kling 3.0, Kling 3.0 Pro, Topaz Astra, Luma Ray 2 and Flux · Identity behind one adapter, and **Vercel** as the single LLM adapter with the same shape so text calls meter like everything else. Every adapter goes through the metering layer.
 
 Wiring `FAL_KEY` and the fal adapter properly unlocks 1.1, 1.2 and 1.3 at once — do it first and do it once.
 
@@ -169,7 +169,7 @@ In order: **Reframe** (aspect change with content-aware fill, new take under the
 
 ### 1.3 Identities
 
-Wire fal end to end: photo intake → Soul ID / Flux character training → status → available as a cast member. Credit price shown before pressing; training is asynchronous and appears in the queue. `@Name` resolves to the trained model for stills and the hero still for video, automatically. Trained identities are workspace-scoped and never shared, listed or reused across workspaces. The uploader confirms they have the right to train on that face; store that confirmation with the identity.
+Wire fal end to end: photo intake → Flux · Identity (`fal-ai/flux-lora`) training → status → available as a cast member. Credit price shown before pressing; training is asynchronous and appears in the queue. `@Name` resolves to the trained model for stills and the hero still for video, automatically. Trained identities are workspace-scoped and never shared, listed or reused across workspaces. The uploader confirms they have the right to train on that face; store that confirmation with the identity.
 
 ### 1.4 Visual camera bank
 
@@ -212,20 +212,44 @@ The governing rule: **every tier is profitable even if the customer uses everyth
 
 Reference rate card at launch (regenerate from live engine costs before publishing):
 
+**CORRECTED 10 September 2026, from `lib/vendorRates.ts`.** The card below was
+written from costs that did not match the code, and it was wrong in both
+directions — Kling 3.0 Pro read $1.68 for what the rates say is $0.84 (the
+per-second figure doubled), and Topaz read $0.40 for what is really $1.50.
+Published, it would have over-quoted one row twofold and under-quoted another
+fourfold. The app has always billed from the real rates; it was the card that
+lied. Two rows named engines that do not exist and are gone.
+
+Every figure is computed, not asserted: per-second engines are
+`rate x seconds` (`secondRateOf`), Seedance is token-priced off the billed
+frame (`billedFrame` rounds each side up to a multiple of 16, which is why
+1080p is metered at 1088), stills come from `imagePricing`, and every "sells
+at" is `ceil(cost x 1.5 / 0.10)`.
+
 | Action | Engine cost | Sells at |
 |---|---|---|
-| Standard panel (Nano Banana fast) | ~$0.04 | 1 cr |
-| Keyframe still (Nano Banana Pro) | ~$0.15 | 3 cr |
-| Wan 2.6 draft, 5s | ~$0.25 | 4 cr |
-| Kling 3.0 Standard, 5s | ~$0.50 | 8 cr |
-| Kling 3.0 Pro, 5s, audio | ~$1.68 | 26 cr |
-| Seedance 2.5, 5s, 720p | ~$1.60 | 24 cr |
-| Seedance 2.5, 5s, 1080p | ~$2.86 | 43 cr |
-| Veo 3.1, 5s, audio | ~$2.00 | 30 cr |
-| Topaz upscale, 5s | ~$0.40 | 6 cr |
-| VO line (ElevenLabs) | ~$0.03 | 1 cr |
-| Identity training | ~$2.00 | 30 cr |
+| Standard still (Nano Banana 2, 512) | ~$0.045 | 1 cr |
+| Keyframe still (Nano Banana Pro, 1K) | ~$0.134 | 3 cr |
+| Kling 3.0 Standard, 5s 1080p | ~$0.42 | 7 cr |
+| Kling 3.0 Standard, 5s 1080p, audio | ~$0.63 | 10 cr |
+| Kling 3.0 Pro, 5s 1080p, audio | ~$0.84 | 13 cr |
+| Seedance 2.0, 5s 1080p | ~$1.88 | 29 cr |
+| Seedance 2.5, 5s 720p | ~$1.16 | 18 cr |
+| Seedance 2.5, 5s 1080p | ~$2.86 | 43 cr |
+| Topaz upscale, 5s 1080p | ~$1.50 | 23 cr |
+| Topaz upscale, 5s 4K | ~$2.50 | 38 cr |
+| Identity training (1,500 steps) | ~$3.60 | 54 cr |
 | Prompt enhancement | ~$0.01 | 1 cr |
+
+Gone from the card, because the engine is not in the product: **Wan 2.6** —
+`alibaba/wan-v3.0-video` appears only in the gateway shortlist and gateway
+video is explicitly unrunnable — and **Veo 3.1**, which is in neither
+`lib/models.ts` nor `lib/vendorRates.ts`. A VO line is priced per character by
+ElevenLabs rather than per call, so it has no single figure and is not a card
+row; see the audio terms.
+
+Identity training is $3.60, not $2.00: 1,500 steps at $0.0024 (`TRAIN_STEPS`,
+`TRAIN_USD_PER_STEP` in `lib/identities.ts`), with a 1,000-step floor.
 
 ### Tiers
 
@@ -253,7 +277,7 @@ it already means.
 
 | Tier | Price | Included | Members | Worst-case cost | Worst-case gross |
 |---|---|---|---|---|---|
-| **Invite** | $0 | 50 cr once, 1 production, boards at 1 cr | 3 | $3.50 | marketing cost |
+| **Invite** | $0 | 250 cr once, 1 production | 3 | $3.50 | marketing cost |
 | **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited | $38 | $11 · 22% |
 | **Agency** | $199/mo | 1,600 cr, ~~1,000 panels~~, priority queue, branded review links, statements | unlimited | $153 | $46 · 23% |
 | **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited | $750 | $249 · 25% |
@@ -329,7 +353,7 @@ Compare view — two to four sibling takes side by side, synced playback, one-ta
 Every shot on the wall shows `takes so far · spent so far` (`6 takes · 172 cr`). Per project: cap burn-down — spent against cap, projected finish from takes-per-shot so far, and which shots are burning it. `Which shot is taking the most takes` becomes the headline of Usage. Per workspace: balance and burn rate, days of runway at the current pace. The cost approval rule surfaces in the composer when it applies (`Over 50 credits needs an admin`). Statements cut by project and by client-facing shot names so a workspace bills its client directly from them.
 
 ### 2.3 Setup you can see and override
-The composer shows a live diff: which rows are active, which the current shot overrides (`Setup: 35mm · Golden hour · Handheld — this shot overrides: Locked off`). Per-shot override without touching workspace Setup, and one-tap clear. **Four layers** — platform default → workspace → project → shot — each inheriting and overriding the one above, with the UI showing where every active value came from. The live composer already labels rows `PLATFORM`; extend that to all four.
+The composer shows a live diff: which rows are active, which the current shot overrides (`Setup: 35mm · Golden hour · Handheld — this shot overrides: Locked off`). Per-shot override without touching workspace Setup, and one-tap clear. **Four layers** — platform default → workspace → project → shot — each inheriting and overriding the one above, with the UI showing where every active value came from. **Shipped:** all four labels exist — `lib/setupLayers.ts` carries `platform | workspace | production | shot` and the composer renders each.
 
 ### 2.4 Cast that carries
 A cast member's page shows every take and still made with it across the workspace's projects, fast. Consistency check: a take rendered with `@Name` shows the cast still beside it so likeness drift is visible at a glance. Identical behaviour in stills and video composers. Never crosses a workspace boundary.
@@ -438,7 +462,7 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 
 ## 10. Phase 4 — Desktop depth
 
-particl is a workstation tool that happens to have a phone client. Everything below assumes a 27" display, a keyboard, a mouse and a user who is in the app for six hours. None of it exists yet.
+particl is a workstation tool that happens to have a phone client. Everything below assumes a 27" display, a keyboard, a mouse and a user who is in the app for six hours. Most of it does not exist yet — but **4.1 (resizable persisted panes), 4.2 (the command palette and shortcut registry) and most of 4.3 (the player, the filmstrip, comparison) have shipped**, and §14 records each.
 
 ### 4.1 Breakpoints and density
 Three layouts, not two: **mobile** (<768), **compact desktop** (1024–1439, two-pane), **full desktop** (≥1440, three-pane — library, work surface, rail). Above 1920 the layout gains columns rather than margins; a 400px composer rail on a 2560px display is wasted real estate. Rig canvas requires ≥1180. Panes are **resizable and persisted per user per surface**; a director and an artist do not want the same split.
@@ -568,8 +592,14 @@ fullscreen and picture-in-picture. The filmstrip is every take on the shot,
 oldest version first, derived from rows the browser already holds, and the
 arrows walk it when it is on screen. Compare elects the longest take as the
 clock and corrects the others past 125ms, rather than commanding every clip to
-play and trusting them. **One frame rate: 24, decided 9 September.** No EDL
-export — not wanted.
+play and trusting them. **One frame rate: 24, decided 9 September.**
+
+That note used to end "no EDL export — not wanted", and it was false. An EDL
+export exists and is served: `edl()` in `lib/selects.ts` writes CMX 3600 at
+the same 24, and `app/api/export/selects/route.ts` returns it for
+`?format=edl` and inside the selects zip. It predates the instruction to drop
+the feature and was never removed. Whether it goes is open; what is not open
+is the document claiming it is absent while the route serves it.
 
 **§7A margin — done, 10 September.** `lib/creditTerms.ts` carried a per-engine
 table dated 6 September running from 1.25 to 1.5, so every price it produced
