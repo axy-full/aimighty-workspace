@@ -183,3 +183,50 @@ test("two productions open in two tabs do not fight over the switcher", async ({
   expect(wa, `tab A wrote the selection ${wa} times`).toBeLessThan(5);
   expect(wb, `tab B wrote the selection ${wb} times`).toBeLessThan(5);
 });
+
+/**
+ * One ground (§4, decided 10 September 2026).
+ *
+ * particl has no appearance setting and no system query any more, so the
+ * thing to guard is the failure this replaces: a reader whose machine is set
+ * to light seeing a light particl. The check emulates exactly that machine.
+ *
+ * atomik is checked in the same breath because it is the one light thing
+ * left, and the way it stays light — `.theme-light` re-tokening a subtree —
+ * is easy to delete by accident when the word "light" is being removed from
+ * a stylesheet.
+ */
+test("particl is dark on a light machine, and atomik is still paper", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+
+  await page.goto("/");
+  await settle(page);
+  const particl = await page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      desk: cs.getPropertyValue("--color-desk").trim().toUpperCase(),
+      ink: cs.getPropertyValue("--color-bone").trim().toUpperCase(),
+      scheme: cs.colorScheme.trim(),
+      stamped: document.documentElement.getAttribute("data-theme"),
+    };
+  });
+  expect(particl.desk, "the page ground").toBe("#1D1F24");
+  expect(particl.ink, "primary text").toBe("#F5F6F8");
+  // Native controls and scrollbars have to come with it, or the page is dark
+  // with light dropdowns in it.
+  expect(particl.scheme).toBe("dark");
+  // Nothing is stamped on <html> any more: there is nothing left to choose.
+  expect(particl.stamped).toBeNull();
+
+  await page.goto("/atomik/ideas");
+  await settle(page);
+  const atomik = await page.evaluate(() => {
+    const el = document.querySelector(".theme-light");
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { desk: cs.getPropertyValue("--color-desk").trim().toUpperCase(), scheme: cs.colorScheme.trim() };
+  });
+  expect(atomik, "atomik still wraps itself in .theme-light").not.toBeNull();
+  expect(atomik!.desk, "atomik's ground").toBe("#ECEDEF");
+  expect(atomik!.scheme).toBe("light");
+});

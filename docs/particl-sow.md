@@ -52,22 +52,30 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 
 Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-screen) and `README.md` (node-graph surfaces, light tokens). Both are **high-fidelity and final-intent** — colours, type, spacing, radii, copy and geometry. The graph geometry in the canvas surfaces is exact: node positions, port centres and wire endpoints were measured. Keep port-to-slot alignment when rebuilding; a wire that misses its port breaks the one idea the screen exists to show.
 
-**Open decision — theme. STILL OPEN, and now cheap to settle.** The handoff
-describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light
-(`#FCFCFD`). The live site is light with an Auto appearance setting and
-per-scheme `theme-color`. §13.2 adds that dark is the convention for desktop
-suites, which points at dark rather than at both.
+**DECIDED 10 September 2026 — particl is dark. There is no appearance setting.**
+Not "dark by default": dark only. Auto and Light are gone from the product, the
+`prefers-color-scheme` query is gone from the stylesheet, and nothing is stamped
+on `<html>` any more. atomik stays paper, by the mechanism it already used —
+`.theme-light` on the shell re-tokens that subtree, `color-scheme` included, so
+native controls and scrollbars come with it. A statement page uses the same
+class, because a statement is a document before it is a screen.
 
-**Where the code stands:** every Rig surface built so far uses the app's own
-tokens rather than the handoff's absolute values, so each already renders
-correctly in both themes and follows whatever the reader has chosen. That was
-done to avoid pre-empting this decision, and it means choosing dark now costs a
-default change, not a rework — the expensive outcome the original note warned
-about has been avoided either way.
+The argument for one ground rather than three: a product with three appearances
+has no answer to "what does particl look like", and every screenshot, doc and
+marketing frame disagrees with some fraction of readers' screens. Dark is the
+convention for a suite someone sits in front of all day (§13.2) and it is what
+the handoff describes (`#0B0D11` ground, `#F5F6F8` ink). The cost is real and
+accepted: someone working in a bright room no longer has a switch.
 
-The remaining question is only what a *new* workspace opens on, and whether
-Auto stays. Answer it and the default flips in one place. The standing rule
-meanwhile: no Rig component hard-codes a colour; a literal hex in one is a bug.
+It cost a default change rather than a rework because every Rig surface was
+built against the app's own tokens instead of the handoff's absolute values.
+**That rule still stands, and is now the only thing holding the theme together:
+no component hard-codes a colour; a literal hex in one is a bug.** The one place
+colours are written out is `app/global-error.tsx`, which must render when the
+stylesheet never arrived — it is written out dark for the same reason.
+
+Guarded by a check at `tests/desktop.spec.ts` that emulates a light machine and
+asserts particl's ground is `#1D1F24` and atomik's is `#ECEDEF`.
 
 **Type.** Outfit for UI and body; Kode Mono 11px/0.12em tracking for eyebrows, costs, states and IDs. **Radius** 4–10 by component. **No motion, no shadows** — hover raises border alpha only.
 
@@ -168,7 +176,7 @@ Everything above is workspace-scoped.
 
 ## 6. Phase 0 — Mobile foundations · COMPLETE BUT FOR TWO DECISIONS
 
-Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow on any route, no inputs under 16px, per-scheme `theme-color`, composer sheet opens with Close and Generate both in the viewport, vocabulary corrected (Request an invite / Takes / Productions / Generate), 1920×1080 replacing 1080P/1088, positional copy removed.
+Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow on any route, no inputs under 16px, a `theme-color` that matches the ground (per-scheme until 10 September 2026, one dark value since — see §4), composer sheet opens with Close and Generate both in the viewport, vocabulary corrected (Request an invite / Takes / Productions / Generate), 1920×1080 replacing 1080P/1088, positional copy removed.
 
 **Outstanding:**
 
@@ -849,7 +857,7 @@ Per surface, state which of the three layouts it supports and what the mobile ve
 ## 13. How to work
 
 1. Confirm or correct every assumption in sections 2 and 5 against the code before changing anything. Specifically: where keys live, whether `workspace_id` is on every table, whether the metering layer exists and **which call paths bypass it**, how Atomik shares auth and data, and what "its own database" means in the schema. Report back.
-2. Resolve the two open decisions in section 4 (theme — and note that dark is the convention for desktop suites) and section 9 (graph geometry), and bring back the 1.0 pricing decisions with trade-offs.
+2. ~~Resolve the two open decisions in section 4 (theme — and note that dark is the convention for desktop suites)~~ **theme decided 10 September 2026: dark only, see §4** — and section 9 (graph geometry), and bring back the 1.0 pricing decisions with trade-offs (**answered 10 September 2026, see §7**).
 3. Phase order: finish Phase 0 → 1.0 → 1.1 → the rest of Phase 1 → Phase 2 (2.1 and 2.2 first, they're what a paying team feels) → Phase 3 → Phase 4 → Phase 5. Two things from Phase 4 can jump the queue because everything after them gets easier: the ⌘K command palette (4.2) and resizable persisted panes (4.1).
 4. For anything schema-touching, summarise what changed as a diff against this document and update it. A scope of work that drifts from the code is worse than none.
 5. Each PR states: what it costs a workspace to use, how it's mocked in tests, what changed in the prompt compiler, and where the new code is workspace-scoped.

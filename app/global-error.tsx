@@ -4,29 +4,31 @@ import { useEffect } from "react";
 
 /**
  * The last wall. This one catches a throw in the ROOT layout, which means
- * everything else — the shell, the fonts, the theme script, the providers —
- * never ran. Next replaces the whole document with this, so it has to bring
+ * everything else — the shell, the fonts, the providers — never ran. Next replaces the whole document with this, so it has to bring
  * its own <html> and <body>.
  *
  * It deliberately depends on nothing: no globals.css, no font variables, no
- * components. Every colour is written out, in both schemes, so this page
- * renders correctly even when the reason we are here is that the stylesheet
- * or the font never arrived.
+ * components. Every colour is written out, so this page renders correctly
+ * even when the reason we are here is that the stylesheet or the font never
+ * arrived — and it is written out DARK, because particl is dark (§4). A
+ * failure page that flips to paper on a light system would be the one screen
+ * that does not look like the product, at the one moment the reader is
+ * already wondering what broke.
  */
 
 const CSS = `
-  :root { color-scheme: light dark; }
+  :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100dvh;
     display: grid; place-items: center; padding: 24px;
-    background: #ECEDEF; color: #15171C;
+    background: #1D1F24; color: #F5F6F8;
     font: 400 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   .box { max-width: 46ch; text-align: center; }
   h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
-  p { margin: 10px 0 0; color: #666A72; }
+  p { margin: 10px 0 0; color: #9A9EA6; }
   .row { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
   button, a.btn {
     font: inherit; font-size: 14px; font-weight: 500;
@@ -34,16 +36,10 @@ const CSS = `
     text-decoration: none; display: inline-block;
   }
   .primary { background: #007AFF; color: #fff; }
-  .plain { background: rgba(0,0,0,.06); color: #15171C; }
+  .plain { background: rgba(255,255,255,.09); color: #F5F6F8; }
   .ref {
-    margin-top: 18px; font-size: 11.5px; color: #8A8E96; word-break: break-word;
+    margin-top: 18px; font-size: 11.5px; color: #767A82; word-break: break-word;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    body { background: #1D1F24; color: #F5F6F8; }
-    p { color: #9A9EA6; }
-    .plain { background: rgba(255,255,255,.09); color: #F5F6F8; }
-    .ref { color: #767A82; }
   }
 `;
 
