@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { ceilingFor, wouldExceed, ceilingMessage } from "@/lib/planLimits";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, createSession, passwordProblem, hashPassword, currentContext } from "@/lib/auth";
-import { platformDb, platformReady, findAccountByEmail, createAccount, getWorkspace, addMember, now } from "@/lib/platform";
+import { platformDb, platformReady, findAccountByEmail, createAccount, getWorkspace, addMember, now, planOf, memberCount } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,20 @@ export async function POST(req: Request) {
   const got = await lookup(code);
   if ("problem" in got) return NextResponse.json({ error: got.problem }, { status: got.status });
   const email = String(got.inv.email).toLowerCase();
+
+  /* Invite is three members (§7A). Checked BEFORE an account is created, so
+     somebody turned away is not left holding a half-made account with no
+     workspace to open — and before the invite is marked used, so the code
+     still works once there is room.
+     A workspace on no plan has no ceiling, which is every workspace today.
+     Already-over is only stopped from adding: nothing here removes anybody,
+     because shrinking a plan should never quietly evict a colleague. */
+  const plan = await planOf(got.ws).catch(() => null);
+  const seats = ceilingFor(plan, "members");
+  if (seats != null && wouldExceed(await memberCount(got.ws.id), seats)) {
+    return NextResponse.json({ error: ceilingMessage(plan!, "members", seats) }, { status: 402 });
+  }
+
   const existing = await findAccountByEmail(email);
 
   let accountId: string;
