@@ -1,5 +1,5 @@
 import { createClient, type Client } from "@libsql/client";
-import { signupCredits } from "./creditTerms";
+import { signupCredits, isPaidKind, type GrantKind } from "./creditTerms";
 import { gatewayMintConfigured, mintGatewayKey } from "./vercelKeys";
 import { randomBytes, createHash } from "node:crypto";
 import { seal, open } from "./keyring";
@@ -76,6 +76,7 @@ const SCHEMA = [
      workspace_id  TEXT NOT NULL,
      credits       REAL NOT NULL,
      note          TEXT,
+     kind          TEXT NOT NULL DEFAULT 'manual',
      created_by    TEXT,
      created_at    INTEGER NOT NULL
    )`,
@@ -288,6 +289,22 @@ export async function setWorkspaceFlag(id: string, flagged: boolean, note: strin
   });
 }
 
+/**
+ * The grant-kind migration, as statements rather than inline SQL, so
+ * `tests/unit/grantMigration.spec.ts` can run THESE against a populated
+ * database instead of a copy of them that could drift.
+ *
+ * Classified by the note, because on a row written before there were kinds
+ * the note is all there is. The welcome grant writes a fixed string; a top-up
+ * writes "<Label> pack · N credits". Anything else was an admin, which is
+ * what the column's default already says, so there is no third statement.
+ */
+export const GRANT_KIND_COLUMN = `kind TEXT NOT NULL DEFAULT 'manual'`;
+export const GRANT_KIND_BACKFILL = [
+  `UPDATE credit_grants SET kind = 'welcome' WHERE note = 'Welcome credits'`,
+  `UPDATE credit_grants SET kind = 'purchase' WHERE note LIKE '% pack · %'`,
+];
+
 let _ready: Promise<void> | null = null;
 /**
  * Create the platform tables, and — once — turn the studio's own database
@@ -308,6 +325,23 @@ export function platformReady(): Promise<void> {
       for (const col of [`accepted_policy_at INTEGER`]) {
         try { await p.execute(`ALTER TABLE accounts ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
+      }
+      /* The grant's kind, and the one classification of the rows written
+         before there was one.
+         The backfill sits INSIDE the try, after the ALTER, on purpose: the
+         ALTER succeeding is the single moment this database gains the column,
+         so it is the one moment the old rows need reading and the only time
+         it is worth scanning them. `platformReady` is memoised per process,
+         not per deployment — a backfill outside this branch would replay two
+         full table scans on every cold container, for ever.
+         Classified by the note, because the note is all there is: the welcome
+         grant writes a fixed string, and a top-up writes "<Label> pack · N
+         credits". Anything else was an admin, which is what the default says. */
+      for (const col of [GRANT_KIND_COLUMN]) {
+        try {
+          await p.execute(`ALTER TABLE credit_grants ADD COLUMN ${col}`);
+          for (const stmt of GRANT_KIND_BACKFILL) await p.execute(stmt);
+        } catch (e) { if (!/duplicate column|already exists/i.test(String((e as Error).message))) throw e; }
       }
       const count = await p.execute(`SELECT COUNT(*) AS n FROM workspaces`);
       if (Number((count.rows[0] as any)?.n ?? 0) === 0) await importLegacy();
@@ -461,8 +495,8 @@ export async function createWorkspace(input: { name: string; owner: { id: string
   const welcome = (await getPlatformLayer().catch(() => null))?.caps.signupCredits ?? signupCredits();
   if (platformKeys && welcome > 0) {
     await p.execute({
-      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, created_by, created_at) VALUES (?,?,?,?,?,?)`,
-      args: [newId("cg"), id, welcome, "Welcome credits", input.owner.id, ts],
+      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
+      args: [newId("cg"), id, welcome, "Welcome credits", "welcome" satisfies GrantKind, input.owner.id, ts],
     });
   }
   if (gatewayMintConfigured()) {
@@ -504,12 +538,48 @@ export async function setWorkspaceAllowance(id: string, usd: number | null): Pro
 }
 
 /** Credits added to a workspace, by management. Negative takes them away. */
-export async function grantCredits(workspaceId: string, credits: number, note: string, by: string | null): Promise<void> {
+/**
+ * Add credits to a workspace, saying where they came from.
+ *
+ * `kind` has no default. Every caller has to decide whether money arrived for
+ * these credits, because that is the question the platform's own margin
+ * figure is answered from, and a default would let the next caller not think
+ * about it — which is exactly how the welcome grant came to read as revenue.
+ */
+export async function grantCredits(workspaceId: string, credits: number, note: string, by: string | null, kind: GrantKind): Promise<void> {
   await platformReady();
   await platformDb().execute({
-    sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, created_by, created_at) VALUES (?,?,?,?,?,?)`,
-    args: [newId("cg"), workspaceId, credits, note.slice(0, 200), by, now()],
+    sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
+    args: [newId("cg"), workspaceId, credits, note.slice(0, 200), kind, by, now()],
   });
+}
+
+export type GrantSplit = { paid: number; free: number };
+
+/**
+ * Bought credits and given credits, per workspace, in one query.
+ *
+ * One query rather than one per workspace because the admin console asks for
+ * every workspace at once and is polled; a per-workspace call there is a
+ * table scan a minute per workspace.
+ */
+export async function grantsByKind(): Promise<Map<string, GrantSplit>> {
+  await platformReady();
+  const rs = await platformDb().execute(
+    `SELECT workspace_id, kind, COALESCE(SUM(credits), 0) AS n FROM credit_grants GROUP BY workspace_id, kind`,
+  );
+  const out = new Map<string, GrantSplit>();
+  for (const row of rs.rows as unknown as Record<string, unknown>[]) {
+    const id = String(row.workspace_id);
+    const at = out.get(id) ?? { paid: 0, free: 0 };
+    /* A negative grant is management taking credits back. It comes off the
+       side it was added to, which for an adjustment is the free side — so a
+       clawback cannot make a workspace look better funded than it is. */
+    if (isPaidKind(String(row.kind))) at.paid += Number(row.n ?? 0);
+    else at.free += Number(row.n ?? 0);
+    out.set(id, at);
+  }
+  return out;
 }
 
 export async function creditsGranted(workspaceId: string): Promise<number> {

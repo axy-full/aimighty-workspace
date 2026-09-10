@@ -132,7 +132,10 @@ export async function decideTopup(opts: { id: string; action: "approve" | "decli
   const request = { ...req, status: next, decidedAt: ts, decidedBy: opts.by, decisionNote: (opts.note ?? "") || null };
   let released = 0;
   if (next === "approved") {
-    await grantCredits(req.workspaceId, req.credits, `${req.label} pack · ${req.credits.toLocaleString("en-US")} credits`, opts.by);
+    /* A pack is the one thing a workspace pays for, so it is the one grant
+       that counts as revenue. Bonus credits, when §7A's packs land, are a
+       SECOND grant marked `bonus` — free, because no money arrives for them. */
+    await grantCredits(req.workspaceId, req.credits, `${req.label} pack · ${req.credits.toLocaleString("en-US")} credits`, opts.by, "purchase");
     const ws = await getWorkspace(req.workspaceId);
     if (ws) {
       try {

@@ -128,8 +128,21 @@ export async function meterSummary(workspaceId: string, sinceMs = 0): Promise<Me
   };
 }
 
-/** The platform's margin on what it billed: credits at the rate, less what the engines charged. */
-export const marginUsd = (billedCredits: number, engineCostUsd: number, perCredit: number): number => billedCredits * perCredit - engineCostUsd;
+/**
+ * The platform's margin on what it billed: credits at the rate, less what the
+ * engines charged — and only the share of those credits somebody paid for.
+ *
+ * `funded` is `fundedFraction(paid, free)` for the workspace. Without it this
+ * priced EVERY spent credit at the full rate, including the welcome grant, so
+ * a workspace burning free credits reported its whole balance as revenue: 250
+ * welcome credits read as $25 the platform never took. §7A's bonus credits
+ * would have made that up to a fifth of every pack.
+ *
+ * Required rather than defaulted to 1, because a caller that forgets it gets
+ * the old wrong number back silently.
+ */
+export const marginUsd = (billedCredits: number, engineCostUsd: number, perCredit: number, funded: number): number =>
+  billedCredits * perCredit * funded - engineCostUsd;
 
 export type WorkspaceMeter = { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number };
 
