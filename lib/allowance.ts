@@ -2,6 +2,7 @@ import { currentTenant } from "./tenant";
 import { creditCheck } from "./credits";
 import { paidByPlatform, platformSpendSince } from "./platformSpend";
 import type { VendorKeyName } from "./vendorKeys";
+import { cycleBounds } from "./cycle";
 
 export { paidByPlatform, platformSpendSince } from "./platformSpend";
 
@@ -32,11 +33,17 @@ export function allowanceUsd(): number | null {
   return ws.allowanceUsd ?? defaultAllowanceUsd();
 }
 
-/** Month-to-date spend that the platform paid for this workspace. */
+/**
+ * Cycle-to-date spend that the platform paid for this workspace.
+ *
+ * The window comes from `lib/cycle.ts` rather than being walked back to the
+ * 1st here. Same answer — anchored on the 1st, a cycle IS the calendar month,
+ * and a test asserts that against the other implementation this replaces —
+ * but there is one place that knows where a period begins now, which is what
+ * §7A's "expire at cycle end" will need when the anchor stops being the 1st.
+ */
 export async function platformSpendThisMonth(): Promise<number> {
-  const start = new Date();
-  start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
-  return platformSpendSince(start.getTime());
+  return platformSpendSince(cycleBounds(1, Date.now()).start);
 }
 
 /**
