@@ -205,6 +205,30 @@ function ShotBuilder() {
   })).filter((c) => !query || c.options.length);
   const setupName = scoped ? current?.name ?? "this production" : "workspace";
 
+  /* Two different things persist on this screen, and only one of them is the
+     production's.
+
+     The picks go through `useDraft`, which is unsaved-work protection: this
+     browser's, private, so ten considered rows survive a stray reload. The
+     SETUP is what `Save` writes to the server, and that is the one carried
+     into every shot for everybody.
+
+     The screen used to assert the second while doing the first — the header
+     read "carried into every shot" in the present tense while the button
+     beside it read "Save", so the picks looked either already live or
+     already lost, depending on which you believed. Neither was true. This is
+     the one comparison that tells them apart. */
+  const savedCount = savedSpec ? specCount(savedSpec) : 0;
+  const unsaved = useMemo(() => {
+    const mine: Record<string, string> = {};
+    for (const [k, v] of Object.entries(spec)) if (v) mine[k] = v as string;
+    const theirs: Record<string, string> = {};
+    for (const [k, v] of Object.entries(savedSpec ?? {})) if (v) theirs[k] = v as string;
+    const keys = new Set([...Object.keys(mine), ...Object.keys(theirs)]);
+    for (const k of keys) if (mine[k] !== theirs[k]) return true;
+    return false;
+  }, [spec, savedSpec]);
+
   return (
     <>
       <nav className="subnav !px-6" aria-label="Studio">
@@ -213,7 +237,11 @@ function ShotBuilder() {
         <span className="subnav-note">
           {shot
             ? <>Building for <span className="text-ink">{shot.code} · {shot.title || "Untitled shot"}</span> · from the shot list</>
-            : scoped ? <>Building <span className="text-ink">{current?.name ?? "this production"}</span>&rsquo;s setup — carried into every shot</>
+            : scoped ? (
+              savedCount
+                ? <><span className="text-ink">{current?.name ?? "this production"}</span>&rsquo;s setup — {savedCount} row{savedCount === 1 ? "" : "s"}, carried into every shot{unsaved ? <> · <span className="text-lift">your changes aren&rsquo;t saved yet</span></> : null}</>
+                : <>No setup saved for <span className="text-ink">{current?.name ?? "this production"}</span> yet{unsaved ? <> · <span className="text-lift">your picks are yours alone until you save</span></> : null}</>
+            )
               : "Building a setup for the whole workspace — pick a production to file it against a shot"}
         </span>
       </nav>
@@ -306,8 +334,8 @@ function ShotBuilder() {
               <span>Take it to Video</span>
               <span className="btn-primary-cost">{shot ? `${shot.code} · V${(shot.takes ?? 0) + 1}` : "UNFILED"}</span>
             </button>
-            <button type="button" className="btn-secondary !h-[38px] justify-center" onClick={saveSetup} disabled={n === 0}>
-              {saved ? "Saved" : `Save as ${setupName} setup`}
+            <button type="button" className="btn-secondary !h-[38px] justify-center" onClick={saveSetup} disabled={n === 0 || (!unsaved && savedCount > 0)}>
+              {saved ? "Saved" : !unsaved && savedCount > 0 ? "Saved" : `Save as ${setupName} setup`}
             </button>
             <span className="mono-s text-center" style={{ letterSpacing: 0 }}>nothing is rendered here — the composer keeps the model, duration and references</span>
           </div>
