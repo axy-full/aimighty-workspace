@@ -5,12 +5,13 @@ import { platformDb, platformReady, now, platformKeysByDefault, rowToWorkspace, 
 import { creditStateFor } from "@/lib/credits";
 import { creditUsd, signupCredits, fundedFraction } from "@/lib/creditTerms";
 import { asPlanId, DEFAULT_PLANS } from "@/lib/plans";
+import { peakByEngine, peakOverall } from "@/lib/concurrency";
 import { defaultAllowanceUsd } from "@/lib/allowance";
 import { gatewayMintConfigured } from "@/lib/vercelKeys";
 import { mailConfigured, sendMail, inviteOrigin } from "@/lib/mail";
 import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
-import { meterByWorkspace, marginUsd } from "@/lib/meter";
+import { meterByWorkspace, marginUsd, engineSpansSince } from "@/lib/meter";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 14;
@@ -38,6 +39,11 @@ export async function GET() {
      polled by the console; a per-workspace call here would be a scan a minute
      per workspace. */
   const split = await grantsByKind().catch(() => new Map());
+  /* Peak concurrency per engine (§7): derived from the intervals the meter
+     already holds, so it answers for all of history rather than from the
+     day a sampler was switched on. Thirty days, matching the spend window
+     beside it. */
+  const spans = await engineSpansSince(now() - 30 * 86_400_000).catch(() => []);
   const credits = await Promise.all((workspaces.rows as any[]).map(async (r) => {
     try { return await creditStateFor(rowToWorkspace(r)); } catch { return null; }
   }));
@@ -47,6 +53,7 @@ export async function GET() {
        name them and show what each costs, and the platform layer is where
        they can be edited. */
     plans: layer?.plans ?? DEFAULT_PLANS,
+    concurrency: { byEngine: peakByEngine(spans, now()), overall: peakOverall(spans, now()), days: 30 },
     creditUsd: creditUsd(),
     signupCredits: signupCredits(),
     ready: provisioningConfigured() && keyringConfigured(),

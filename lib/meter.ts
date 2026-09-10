@@ -1,6 +1,7 @@
 import { platformDb, platformReady, now } from "./platform";
 import { currentTenant } from "./tenant";
 import { billCredits, marginKeyOf } from "./creditTerms";
+import type { Span } from "./concurrency";
 import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
 
 /**
@@ -143,6 +144,34 @@ export async function meterSummary(workspaceId: string, sinceMs = 0): Promise<Me
  */
 export const marginUsd = (billedCredits: number, engineCostUsd: number, perCredit: number, funded: number): number =>
   billedCredits * perCredit * funded - engineCostUsd;
+
+/**
+ * Every job's interval since a moment, for the concurrency sweep (§7).
+ *
+ * `updated_at` is the completion — the upsert moves it when a render
+ * finishes — so `[created_at, updated_at)` is the job's life. A row still
+ * `running` has not been moved yet, and its end is reported as null so the
+ * sweep can count it up to now rather than reading it as instantaneous.
+ *
+ * Only the platform's own jobs: a workspace on its own keys queues against
+ * its OWN provider limit, so counting it here would inflate the number this
+ * exists to produce — the one taken to a provider to ask for more.
+ */
+export async function engineSpansSince(sinceMs: number): Promise<Span[]> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT engine, status, created_at, updated_at
+            FROM meter_events
+           WHERE created_at >= ? AND paid_by_platform = 1
+           ORDER BY created_at`,
+    args: [sinceMs],
+  });
+  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+    engine: String(r.engine ?? ""),
+    startedAt: Number(r.created_at ?? 0),
+    endedAt: String(r.status) === "running" ? null : Number(r.updated_at ?? 0),
+  }));
+}
 
 export type WorkspaceMeter = { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number };
 

@@ -28,7 +28,7 @@ Source of truth. The site's own copy has been wrong about this before; the Setti
 | **ElevenLabs** | Voice / audio | The Audio tab's engine. |
 | **Vercel API** | Claude, GPT | **Every LLM call in either app.** Atomik's enhancement, idea builder and shot builder; anything in particl needing an LLM. |
 
-**Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears once, on the top-up screen (`500 credits · $50`), and nowhere else.
+**Credits are the unit. 1 credit = US$0.10, fixed.** Every price in either product is in whole credits — buttons, post tools, training, caps, statements. The ledger keeps exact `engine_cost_usd` and `billed_credits`; margin is the gap, set platform-side per engine, never shown. Estimates round **up** to the next whole credit per job; batches multiply before rounding. USD appears on the top-up screen — each pack as `2,200 credits / $200 · 200 free` — and in one line on Settings › Vendors for a platform-keyed workspace, stating what a credit is worth in vendor cost and the monthly cap. **Nowhere else, and never on anything that spends.**
 
 Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (`credits × 0.10`) and only ever secondary.
 
@@ -54,7 +54,7 @@ Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-
 
 **Open decision — theme.** The handoff describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light (`#FCFCFD`). The live site is light with an Auto appearance setting and per-scheme `theme-color`. Resolve this before building Rig: either particl is dark and the live light theme is the exception, or both themes are first-class and every new surface ships in both. Don't let it stay ambiguous — the node surfaces are token-heavy and reworking them later is expensive.
 
-**Type.** Outfit for UI and body; Kode Mono 11px/0.12em tracking for eyebrows, costs, states and IDs. **Radius** 4–10 by component. **No motion, no shadows** — hover raises border alpha only.
+**Type.** Outfit for UI and body; Kode Mono 11px/0.12em tracking for eyebrows, costs, states and IDs. **Radius** 4–10 by component. **No motion, no shadows** in the sense that matters: nothing slides, nothing drops a soft shadow. Literally there are transitions and `box-shadow` in the stylesheet — the shadow tokens paint HAIRLINES (`0 0 0 1px`) rather than depth, and transitions are short and limited to colour and border alpha. Hover raises border alpha only.
 
 **Components** (spec'd in the handoff): app shell header with project switcher and cap readout, project sub-nav, segmented filter, primary button with cost inline, secondary, dashed add, dropdown chip, toggle, cast chip, `@mention` inline, state dot, take card, search field, composer rail, and for Rig: node with ports, wire layer, inspector, impact sheet, stage card.
 
@@ -120,14 +120,14 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 **Outstanding:**
 
 - ~~**Safe area.** Dock `padding-bottom` reads 0px despite `viewport-fit=cover`.~~ **Shipped.** `env(safe-area-inset-bottom)` is on the tab bar, the composer and the bottom sheets (`app/globals.css`), and the phone suite asserts it.
-- **Credits not in the composer.** The Generate button still reads `$2.86 · 244.8k TOK`. Should read `29 cr`. A Balance link to `/settings#credits` exists, so credits exist somewhere — establish whether the conversion is partial or absent.
-- **Token count on the button** — noise once it's credits. Remove.
+- ~~**Credits not in the composer.**~~ **Shipped.** The Generate button reads credits alone — `43 cr` for a 5-second Seedance 1080p take, no dollars and no token count. The margin no longer reaches the browser at all (`CreditState` dropped it, 10 September).
+- ~~**Token count on the button**~~ **Shipped.** Gone; the button carries the credit figure alone.
 - **Vocabulary**: dock `GENERATE` vs segmented Video / Images / Audio.
 - **Sticky context in the shot builder** — the assembled prompt and the `N OF 12 ROWS SET` counter scroll away, so tapping a chip far down the page gives no feedback. Put a one-line preview and the counter in the sticky bar.
-- **`aria-pressed` on chips** — currently `is-on` class only.
+- ~~**`aria-pressed` on chips**~~ **Shipped.** `aria-pressed` is on the toggles in Theatre, Feed, ShotRow, Studio and the identity sheet.
 - **`/images` hydration** — the SSR HTML previously carried the video composer. Confirm resolved.
-- **Audio tab** — if ElevenLabs is wired, show its composer signed out like Video and Images; if not, hide the tab.
-- **Usage signed out** is blank while the copy promises otherwise. Show the shape with placeholder numbers.
+- ~~**Audio tab**~~ **Shipped.** Signed out, the audio composer renders against `VISITOR_SETUP`, the same way Video and Images do.
+- **Usage signed out** is no longer blank — it explains that the ledgers are for the team — but it still does not SHOW the shape with placeholder numbers.
 
 **Acceptance suite** (keep it green for every later phase): visits every route at three viewports signed out; asserts `scrollWidth === clientWidth`; opens the composer sheet and asserts Close and the primary are in-viewport; asserts dock `padding-bottom ≥` safe-area inset; asserts no input under 16px.
 
@@ -137,11 +137,11 @@ Verified fixed on particl.app at 390×844 and 360×640: no horizontal overflow o
 
 ### 1.0 Tenancy, billing, onboarding — gates everything
 
-**Keys and metering.** Platform holds the keys; workspaces don't bring their own (design the adapter so a workspace key *can* override later; don't build the UI). Every engine call goes through one server-side **metering layer** stamping `workspace_id`, `project_id`, `shot_id`, `engine`, `model`, `engine_cost`, `billed_credits`, `multiplier_applied`, `duration`, `status`. The multiplier resolves per workspace then per engine, so an internal workspace at 1.0× and a customer at 1.5× go through identical code. No engine is ever called from a route that bypasses it. Also record **peak concurrency per engine**, sampled per minute and retained — that reading is what justifies a provider limit increase later, and it can't be backfilled.
+**Keys and metering.** Platform holds the keys; workspaces don't bring their own (design the adapter so a workspace key *can* override later; don't build the UI). Every engine call goes through one server-side **metering layer** stamping `workspace_id`, `kind`, `model`, `engine_cost_usd`, `billed_credits`, `paid_by_platform`, `duration_ms`, `status` and `created_by` (`meter_events`, `lib/meter.ts`). **What is NOT there, so it is not assumed:** there is no `multiplier_applied` and no per-workspace multiplier, so §7A's internal-at-1.0× case is unbuilt. (`project_id` and `shot_id` ARE columns and are written — an earlier note here claimed otherwise and was wrong.) The margin is derivable per row rather than stored. The intent below stands: no engine is ever called from a route that bypasses the meter. Still to build: the per-workspace multiplier. **Peak concurrency per engine is NOT a sampler and never needed to be** — every job already records when it began and how long it ran, so the peak is derived from the intervals themselves, exactly and for all history. That is strictly better than sampling, which can only see the instants it happens to look at. The line below asked for it sampled per minute and retained — that reading is what justifies a provider limit increase later, and it can't be backfilled.
 
 **Billing.** Prepaid credit balance per workspace, bought in packs by card; invoicing for larger accounts later. Balance in the header beside the workspace switcher and on Usage. Project caps convert to credits; the workspace balance is the hard stop above them. At zero, renders queue with "top up to release", the owner and admins are notified, nothing is silently dropped. Statements per workspace / month / project, itemised by shot and take in credits with one USD line for the pack cost — this is how a workspace bills its own client.
 
-**Onboarding.** Request an invite → platform admin queue → approve → expiring invite code → account → create or join a workspace → workspace seeded with platform Setup defaults, camera bank, rules and a copy of the demo production as a starter project → **a free credit grant** (≈50 cr, enough for three or four real shots) → first render. Time this path against rule 6. Owners and admins invite their team by email with a role; pending invites visible in Team & roles. Workspace switcher in the header lists every workspace the user belongs to.
+**Onboarding.** Request an invite → platform admin queue → approve → expiring invite code → account → create or join a workspace → workspace seeded with platform Setup defaults, camera bank, rules and a copy of the demo production as a starter project → **a free credit grant** (250 cr by default — `signupCredits()`, overridable per deployment and from the platform layer) → first render. Time this path against rule 6. Owners and admins invite their team by email with a role; pending invites visible in Team & roles. Workspace switcher in the header lists every workspace the user belongs to.
 
 **Platform admin console** — separate route, platform-role gated: invite queue, workspace list with spend / balance / margin, engine health and error rates, per-workspace suspend, content-policy flags, and a platform-layer editor for default Setup, camera bank, compiler rules and default caps.
 
@@ -205,7 +205,7 @@ The governing rule: **every tier is profitable even if the customer uses everyth
 
 ### Credits
 - **1 credit = US$0.10, fixed.** Sell price = engine cost × 1.5, rounded up to the next whole credit per job. Batches multiply before rounding.
-- The ledger stores `engine_cost_usd`, `billed_credits` and `margin_pct` per job. The rate card is generated from the adapter registry, never hand-edited.
+- The ledger stores `engine_cost_usd` and `billed_credits` per job. There is no `margin_pct` column and there does not need to be: the margin is `billed_credits x creditUsd() - engine_cost_usd`, derivable per row, and storing it would be a second copy of a number that can only disagree with the first. The rate card is generated from the adapter registry, never hand-edited.
 - **Floor guard:** if any engine's rolling 7-day margin drops under 10%, its sell multiplier auto-raises to restore 1.5× and the platform admin is alerted. This runs in the metering layer, not in a spreadsheet.
 - **The aimighty workspace is billed at cost.** For now, the aimighty workspace (and any other workspace flagged `internal: true` in the admin console) has its sell multiplier set to 1.0 — credits are charged at exact engine cost plus payment fees, with no platform margin, and no platform fee. It sits on the same ledger, the same metering, the same statements as every other workspace; the only difference is the multiplier. This is a per-workspace override on the same field that Phase B tunes per engine, so it costs nothing to build and nothing to remove. The admin console shows internal workspaces separately in spend and margin reporting so they never distort the platform's numbers.
 - **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe. This is how a production stays competitive while per-clip prices sit above aggregators with volume rates.
@@ -414,11 +414,11 @@ That continuity is the whole differentiator. Boords, StudioBinder and the rest g
 
 The node layer. Design handoff at `docs/handoff/nodegraph/`.
 
-**Name.** The surface is **Rig** — Canvas is already taken by the sequence wall at `/projects/:id/canvas`. Rig works twice: on a set it's the wiring and mounting that holds a setup together; in animation, rigging is exactly binding a character's attributes to controls that everything downstream reads. Nav `RIG`, route `/projects/:id/rig`. Nouns inside it: recipes, runs, elements, ports, bindings, provenance.
+**Name.** The surface is **Rig** — Canvas is already taken by the sequence wall at `/projects/:id/canvas`. Rig works twice: on a set it's the wiring and mounting that holds a setup together; in animation, rigging is exactly binding a character's attributes to controls that everything downstream reads. Nav **`NODES`**, route `/projects/:id/rig`. The nav word changed on 10 September (rule 5: `rig` reads as jargon beside Shots and Canvas); the route did not, because a URL is not the word people read and moving it is a redirect that belongs with the larger question of whether this is a tab or a mode. Nouns inside it: recipes, runs, elements, ports, bindings, provenance.
 
 **The seven rules the surfaces enforce — these are the acceptance criteria:**
 1. The price is on the action, quoted before the button enables.
-2. State vocabulary: `queued → running → done`, plus `needs you` for failure and `locked` for pinned.
+2. State vocabulary: `queued → running → done`, plus `needs you` when a stage stops and `skipped`. Five, not four — `lib/runState.ts` is the list. `locked` is NOT a stage state: it belongs to a pinned ELEMENT, which the stage layer draws in its own band.
 3. Take states stay `draft → picked → approved`; only approved reaches assembly.
 4. A failure never restarts a run — it offers fixes in place, each priced.
 5. Nothing re-renders silently; any edit to a shared element opens the impact panel first.
