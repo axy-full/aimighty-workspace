@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createProduction } from "@/lib/productions";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { cached, putCache, invalidate, PROJECTS_KEY } from "@/lib/cache";
@@ -99,6 +100,10 @@ export const GET = withTenant(async function GET() {
       kind: r.kind ?? null,
       runtimeTarget: r.runtime_target == null ? null : Number(r.runtime_target),
       stage: r.stage ?? null,
+      /* §15's project. */
+      productionId: r.production_id ? String(r.production_id) : null,
+      format: String(r.format ?? ""),
+      step: Number(r.step ?? 0),
       live: Number(r.live ?? 0),
       shots: Number(r.shots ?? 0),
       approvedShots: Number(r.approved_shots ?? 0),
@@ -122,6 +127,13 @@ export const POST = withTenant(async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const name = String(body.name ?? "").trim();
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+  let productionId = typeof body.productionId === "string" && body.productionId ? body.productionId : null;
+  if (productionId) {
+    const p = await db().execute({ sql: `SELECT id FROM productions WHERE id = ?`, args: [productionId] });
+    if (!p.rows.length) return NextResponse.json({ error: "No such production." }, { status: 404 });
+  } else {
+    productionId = await createProduction({ name });
+  }
 
   /* Invite is one production (§7A). A workspace on no plan has no ceiling,
      which is every workspace until somebody is put on one — so this is inert
@@ -142,10 +154,14 @@ export const POST = withTenant(async function POST(req: Request) {
   // A new production starts at the platform layer's default cap, when the workspace pays in credits.
   const defaultCap = creditsApply(requireTenant()) ? ((await getPlatformLayer().catch(() => null))?.caps.defaultCapCredits ?? null) : null;
   await db().execute({
-    sql: `INSERT INTO projects (id, name, description, created_at, code, cap_credits) VALUES (?,?,?,?,?,?)`,
+    sql: `INSERT INTO projects (id, name, description, created_at, code, cap_credits, production_id, format) VALUES (?,?,?,?,?,?,?,?)`,
     args: [pid, name.slice(0, 120), String(body.description ?? "").slice(0, 500), now(),
            // A short code is what makes {projectcode} usable in a filename.
-           String(body.code ?? "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16), defaultCap],
+           String(body.code ?? "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16), defaultCap,
+           /* §15: a project lives in a production. Given one, it goes there;
+              given none (an older caller), it gets a production of its own,
+              named after it, exactly as the backfill would have done. */
+           productionId, String(body.format ?? "").trim().slice(0, 40)],
   });
   invalidate(PROJECTS_KEY);
   return NextResponse.json({ id: pid, name });

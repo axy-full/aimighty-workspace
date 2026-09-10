@@ -38,6 +38,18 @@ const SCHEMA = [
      description TEXT NOT NULL DEFAULT '',
      created_at  INTEGER NOT NULL
    )`,
+  /* Productions (design/particl-v2 §15): the client job above the
+     deliverables. `projects` is §15's `project`; this is the level above
+     it, and every project belongs to exactly one (backfilled at bootstrap). */
+  `CREATE TABLE IF NOT EXISTS productions (
+     id          TEXT PRIMARY KEY,
+     name        TEXT NOT NULL,
+     client      TEXT NOT NULL DEFAULT '',
+     status      TEXT NOT NULL DEFAULT 'active',
+     cap_credits INTEGER,
+     cap_usd     REAL,
+     created_at  INTEGER NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS generations (
      id            TEXT PRIMARY KEY,
      project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
@@ -893,8 +905,30 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
            a shared decision kept in one browser. The shot's own Setup has
            been a column all along; this is the layer above it. */
         `setup TEXT NOT NULL DEFAULT '{}'`,
+        /* §15's project: the production it belongs to, its format
+           (`16:9`), and where it is on the six steps (Brief · Shots ·
+           Boards · Takes · Approve · Deliver). */
+        `production_id TEXT`,
+        `format TEXT NOT NULL DEFAULT ''`,
+        `step INTEGER NOT NULL DEFAULT 0`,
 ]) {
         await addColumn(c, "projects", col);
+      }
+      await c.execute(`CREATE INDEX IF NOT EXISTS idx_projects_production ON projects(production_id)`);
+      /* Every project under a production, once (§15). A project with none
+         gets one named after it, carrying its cap and — read from its old
+         free-text stage — its status and step, so the day this lands
+         nothing is orphaned and nothing is renamed. */
+      const orphans = await c.execute(`SELECT id, name, stage, cap_credits, cap_usd, created_at FROM projects WHERE production_id IS NULL OR production_id = ''`);
+      for (const r of orphans.rows as Array<Record<string, unknown>>) {
+        const pid = id("prod");
+        const stage = String(r.stage ?? "").toLowerCase();
+        const step = stage.startsWith("deliver") ? 5 : /review|approv/.test(stage) ? 4 : /take|render/.test(stage) ? 3 : stage.includes("board") ? 2 : stage.includes("shot") ? 1 : 0;
+        await c.execute({
+          sql: `INSERT INTO productions (id, name, client, status, cap_credits, cap_usd, created_at) VALUES (?,?,?,?,?,?,?)`,
+          args: [pid, String(r.name), "", step === 5 ? "delivered" : "active", (r.cap_credits as number | null) ?? null, (r.cap_usd as number | null) ?? null, Number(r.created_at) || now()],
+        });
+        await c.execute({ sql: `UPDATE projects SET production_id = ?, step = ? WHERE id = ?`, args: [pid, step, String(r.id)] });
       }
       for (const col of [
         `refine_model TEXT`, `refine_in_tokens INTEGER`,

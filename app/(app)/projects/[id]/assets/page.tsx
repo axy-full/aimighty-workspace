@@ -90,7 +90,7 @@ export default function ProjectAssets({ params }: { params: Promise<{ id: string
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <Link href="/projects" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
+        <Link href="/productions" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
 
         <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
           <h1 className="h1">{project?.name ?? "Project"}</h1>

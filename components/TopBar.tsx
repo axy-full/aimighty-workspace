@@ -44,7 +44,7 @@ export default function TopBar({ action }: { action?: React.ReactNode }) {
         <>
           <span className="text-[15px] text-mute" aria-hidden="true">/</span>
           <button
-            onClick={() => router.push("/projects")}
+            onClick={() => router.push("/productions")}
             className="min-w-0 truncate text-[15px] font-medium text-dim transition-colors hover:text-ink"
             title="Back to productions"
           >
