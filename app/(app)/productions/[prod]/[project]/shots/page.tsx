@@ -10,6 +10,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { estimateVideo } from "@/lib/rateTable";
 import { estimateTokens, costUsd } from "@/lib/models";
 import type { Shot } from "@/lib/shots";
+import NewAssetSheet from "@/components/assets/NewAssetSheet";
 import type { ProductionRow } from "@/lib/productions";
 import { Segmented, Button, Chip, Mono, MediaCard, Placeholder } from "@/components/ui";
 import type { DotState } from "@/components/ui";
@@ -69,6 +70,7 @@ function Shots() {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<{ x: number; y: number; id: string; sub: boolean } | null>(null);
+  const [assetFor, setAssetFor] = useState<ShotRow | null>(null);
   const [clip, setClip] = useState<ShotRow | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -227,6 +229,7 @@ function Shots() {
     { kind: "item", label: "Paste after", keys: "⌘V", disabled: !clip, onSelect: () => pasteAfter(menuShot) },
     { kind: "item", label: "Rename", keys: "↵", onSelect: () => startRename(menuShot) },
     { kind: "item", label: "Open in Rig", keys: "⌘R", onSelect: () => router.push(`/rig/canvas/new?project=${encodeURIComponent(projectId)}&shot=${encodeURIComponent(menuShot.id)}`) },
+    { kind: "item", label: "Promote to asset", keys: money.price(0), disabled: !menuShot.master, onSelect: () => setAssetFor(menuShot) },
     { kind: "divider" },
     { kind: "sub", label: "Move to production", open: menu!.sub, onToggle: () => setMenu((m) => m && { ...m, sub: !m.sub }),
       items: others.map((t) => ({ label: t.production.projects.length > 1 ? `${t.production.name} › ${t.project.name}` : t.production.name, note: "takes go too", onSelect: () => moveTo(menuShot, t) })) },
@@ -286,6 +289,9 @@ function Shots() {
         <Filmstrip shots={shots} fmt={fmt} inCredits={money.inCredits} />
       )}
       {menu && menuShot && <Menu x={menu.x} y={menu.y} title={`${menuShot.code} · shot`} items={menuItems} onClose={() => setMenu(null)} />}
+      <NewAssetSheet open={assetFor != null} from="take" onClose={() => setAssetFor(null)}
+        initial={assetFor ? { name: (assetFor.cast[0] ?? "").replace(/^@/, ""), references: assetFor.master ? [{ genId: assetFor.master.id, url: assetFor.master.url, label: `${assetFor.code} v${assetFor.master.version ?? 1}`, kind: "video" as const }] : [] } : undefined}
+        onCreated={(c) => toast(`@${c.name} promoted from ${assetFor?.code ?? "the take"} · 0 CR`)} />
     </div>
   );
 }

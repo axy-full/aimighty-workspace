@@ -13,7 +13,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 const ROUTES = [
   "/welcome", "/login", "/signup", "/reset",
-  "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio", "/studio/shot",
+  "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio/shot",
   "/usage", "/settings", "/connect", "/platform", "/statements/2026-09", "/admin",
   "/policy", "/terms", "/privacy", "/report",
   "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/takes/demo", "/shots/demo", "/elements/demo",

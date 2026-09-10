@@ -802,3 +802,35 @@ export async function overridesOf(elementId: string): Promise<
     versionId: String(r.version_id ?? ""),
   }));
 }
+
+/**
+ * The trained face, once the trainer is done (design/particl-v2 §12: `Train
+ * the face now`). A version made from an identity is written pending; this
+ * asks the trainer about each one still pending and, when the identity is
+ * ready, marks the version ready and makes it the attribute's current — the
+ * trained face is the face from then on. A failed training marks it failed
+ * and leaves the still current. Called on the Library's read, so nothing
+ * polls on its own.
+ */
+export async function syncTrainedVersions(): Promise<number> {
+  await ready();
+  const rs = await db().execute(`SELECT id, attribute_id, identity_id FROM attribute_versions WHERE identity_id IS NOT NULL AND status = 'pending' LIMIT 20`);
+  if (!rs.rows.length) return 0;
+  const { getIdentity, syncIdentity } = await import("./identities");
+  let changed = 0;
+  for (const row of rs.rows as unknown as { id: string; attribute_id: string; identity_id: string }[]) {
+    const found = await getIdentity(String(row.identity_id));
+    if (!found) continue;
+    const identity = found.status === "training" ? (await syncIdentity(found)).identity : found;
+    if (identity.status === "ready") {
+      await db().execute({ sql: `UPDATE attribute_versions SET status = 'ready' WHERE id = ?`, args: [String(row.id)] });
+      await setCurrentVersion(String(row.attribute_id), String(row.id));
+      changed++;
+    } else if (identity.status === "failed") {
+      await db().execute({ sql: `UPDATE attribute_versions SET status = 'failed' WHERE id = ?`, args: [String(row.id)] });
+      changed++;
+    }
+  }
+  return changed;
+}
+

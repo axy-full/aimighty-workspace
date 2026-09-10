@@ -65,7 +65,7 @@ async function shoot(page: Page, file: string): Promise<void> {
 }
 const SHOTS: [string, string][] = [
   ["/welcome", "welcome"], ["/make/video", "make-video"], ["/make/images", "make-images"], ["/make/audio", "make-audio"], ["/library", "library"],
-  ["/productions", "productions"], ["/studio", "studio"], ["/studio/shot", "shot-builder"],
+  ["/productions", "productions"], ["/studio/shot", "shot-builder"],
   ["/usage", "usage"], ["/settings", "settings"], ["/atomik/ideas", "atomik-ideas"], ["/atomik/shots", "atomik-shots"],
 ];
 

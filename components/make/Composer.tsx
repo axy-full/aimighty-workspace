@@ -18,6 +18,8 @@ import { Button, Mono, Segmented } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import { useAtomikRail } from "@/lib/atomikRail";
+import NewAssetSheet from "@/components/assets/NewAssetSheet";
+import type { ElementKind } from "@/lib/rig";
 
 /**
  * The one composer (design/particl-v2/README.md §10; board 8a), identical
@@ -162,7 +164,16 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   const rows = CATEGORIES.map((c) => ({ c, value: spec[c.key] ?? null })).filter((r) => r.value);
   const setRow = (key: string, value: string | null) => setSpec((s) => ({ ...s, [key]: value }));
   const { data: castData, refresh: refreshCast } = useApi<{ cast: CastMember[] }>(signedIn && kind !== "audio" ? "/api/cast?projectId=all" : null, 0);
-  const cast = castData?.cast ?? [];
+  const cast = useMemo(() => castData?.cast ?? [], [castData]);
+  const { data: elsData, refresh: refreshEls } = useApi<{ elements: { name: string }[] }>(signedIn && kind !== "audio" ? "/api/rig/elements" : null, 60_000);
+  const { data: idTerms } = useApi<{ terms: { trainCostUsd: number } }>(signedIn && kind !== "audio" ? "/api/identities" : null, 0);
+  /* 3b: a name the prompt cites that nobody has made yet. */
+  const known = useMemo(() => new Set([...cast.map((m) => m.name.toLowerCase()), ...(elsData?.elements ?? []).map((e) => e.name.toLowerCase())]), [cast, elsData]);
+  const unknown = useMemo(() => kind === "audio" || !signedIn ? [] : [...new Set([...prompt.matchAll(NAME_RE)].map((m) => m[1]).filter((n) => !known.has(n.toLowerCase())))], [prompt, known, kind, signedIn]);
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+  const [sheetKind, setSheetKind] = useState<ElementKind>("character");
+  const [pickFor, setPickFor] = useState<{ name: string; x: number; y: number } | null>(null);
+  const replaceName = (from: string, to: string) => setPrompt(prompt.replace(new RegExp(`@${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w'-])`, "g"), `@${to}`));
   const addCast = async () => {
     const name = await appPrompt("New cast member", "", "@Name", "Type the name the prompt will cite — you'll write it as @Name.");
     if (!name?.trim()) return;
@@ -204,7 +215,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   const ready = prompt.trim().length > 0 && !uploading && (kind !== "audio" || (track !== "speech" || Boolean(voice)));
   const render = async () => {
     if (!signedIn) { router.push(signIn); return; }
-    if (!ready || busy) return;
+    if (!ready || busy || unknown.length) return;
     setBusy(true);
     try {
       if (kind === "audio") {
@@ -280,7 +291,22 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
         {kind === "audio" && (
           <Segmented label="Track kind" placement="bar" value={track} onChange={(t) => setTrack(t)} options={TRACKS.map((t) => ({ value: t.id, label: t.label }))} />
         )}
-        <PromptField value={prompt} onChange={setPrompt} fieldRef={field} placeholder={kind === "audio" ? TRACKS.find((t) => t.id === track)!.placeholder : kind === "image" ? "A brass key on marble, dust in the light. @Noor's hand at the edge of frame." : "A hand turns a brass key in a door that is not there. Dust in the light. @Noor watches from the corridor."} names={kind !== "audio"} />
+        <PromptField value={prompt} onChange={setPrompt} fieldRef={field} placeholder={kind === "audio" ? TRACKS.find((t) => t.id === track)!.placeholder : kind === "image" ? "A brass key on marble, dust in the light. @Noor's hand at the edge of frame." : "A hand turns a brass key in a door that is not there. Dust in the light. @Noor watches from the corridor."} names={kind !== "audio"} unknown={unknown} />
+        {unknown.length > 0 && (() => { const nm = unknown[0]; const thumbs = refs.filter((r) => r.kind === "image").slice(0, 3); return (
+          <div className="flex flex-col gap-[10px] rounded-card border border-[rgba(245,246,248,.2)] bg-ground px-[13px] py-[12px]" role="group" aria-label={`Not an asset yet: @${nm}`}>
+            <span className="flex items-center gap-[8px]"><Mono>Not an asset yet</Mono><span className="text-[15px] font-semibold leading-none text-ink">@{nm}</span></span>
+            <span className="text-[13.5px] leading-[1.45] text-ink-body" style={{ textWrap: "pretty" }}>{thumbs.length ? `Make one from the ${thumbs.length === 1 ? "reference" : `${thumbs.length} references`} already on this prompt, or pick someone who exists.` : "Make one — a name and one picture is enough — or pick someone who exists."}</span>
+            <div className="flex items-center gap-[6px]">
+              {thumbs.map((r) => <span key={r.id} className="relative h-[52px] w-[52px] flex-none overflow-hidden rounded-ctl border border-[rgba(245,246,248,.1)] ui-placeholder"><img src={r.url} alt="" className="absolute inset-0 h-full w-full object-cover" /></span>)}
+              <span className="ml-auto flex flex-col items-end gap-[5px]"><Mono>Kind</Mono><span className="flex gap-[4px]">{(["character", "prop"] as ElementKind[]).map((k) => <button key={k} type="button" aria-pressed={sheetKind === k} onClick={() => setSheetKind(k)} className={`tap44 rounded-pill border px-[9px] py-[6px] text-[12px] font-medium leading-none ${sheetKind === k ? "border-[rgba(245,246,248,.3)] bg-[rgba(245,246,248,.12)] text-ink" : "border-[rgba(245,246,248,.12)] text-ink-body"}`}>{k === "character" ? "Character" : "Prop"}</button>)}</span></span>
+            </div>
+            <div className="flex gap-[6px]">
+              <button type="button" onClick={() => setSheetFor(nm)} className="flex h-[44px] flex-1 items-center justify-center gap-[10px] rounded-tile bg-ink text-[13.5px] font-semibold leading-none text-ground">Create @{nm}<span className="ui-mono ui-mono-cost text-on-primary-cost">{money.price(0)}</span></button>
+              <button type="button" onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPickFor({ name: nm, x: r.left, y: r.bottom + 6 }); }} className="flex h-[44px] flex-1 items-center justify-center rounded-tile border border-border-mid text-[13.5px] font-medium leading-none text-ink">Pick existing</button>
+            </div>
+            <Mono cost className="!leading-[1.4]">Carries a still for now · train the face later in Rig{idTerms?.terms.trainCostUsd != null ? ` · ${money.price(idTerms.terms.trainCostUsd)}` : ""}</Mono>
+          </div>
+        ); })()}
 
         {kind !== "audio" && (
           <div className="flex items-center gap-[8px]" onDragOver={(e) => { e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
@@ -412,12 +438,16 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
         )}
       </div>
       <div className="flex flex-none flex-col gap-[8px] border-t border-border px-[16px] pb-[16px] pt-[12px]">
-        <Button variant="primary" placement="composer" cost={cost} costSuffix={suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open} disabled={signedIn && !ready} onClick={render} data-render="">
+        <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
           {signedIn ? "Render" : "Sign in to render"}
         </Button>
         <Mono cost className="text-center !leading-[1.4]">Lands on the wall unfiled · file to a shot any time</Mono>
       </div>
       {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "setup" ? "Setup · add a row" : menu.which === "ratio" ? "Aspect" : menu.which === "seconds" ? "Length" : menu.which === "count" ? "How many" : menu.which === "resolution" ? "Resolution" : menu.which === "length" ? "Length" : "Duration"} items={menuItems()} onClose={() => { setMenu(null); setOpenCat(null); }} />}
+      {pickFor && <Menu x={pickFor.x} y={pickFor.y} title={`Instead of @${pickFor.name}`} items={cast.length ? cast.map((m): MenuItem => ({ kind: "item", label: `@${m.name}`, keys: m.kind.toUpperCase(), onSelect: () => replaceName(pickFor.name, m.name) })) : [{ kind: "note", text: "Nobody in the cast yet." }]} onClose={() => setPickFor(null)} />}
+      <NewAssetSheet open={sheetFor != null} from="prompt" onClose={() => setSheetFor(null)}
+        initial={{ name: sheetFor ?? "", kind: sheetKind, references: refs.filter((r) => r.kind === "image").map((r) => ({ uploadId: r.id, url: r.url, label: r.filename, kind: "image" as const })) }}
+        onCreated={(c) => { if (sheetFor && c.name !== sheetFor) replaceName(sheetFor, c.name.replace(/\s+/g, "")); refreshCast(); refreshEls(); }} />
     </div>
   );
 }
@@ -427,13 +457,14 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
  * transparent over a mirror that draws the same words with the names marked.
  * Same font, same padding, same width — the caret sits on the words.
  */
-function PromptField({ value, onChange, fieldRef, placeholder, names }: { value: string; onChange: (v: string) => void; fieldRef: React.RefObject<HTMLTextAreaElement | null>; placeholder: string; names: boolean }) {
-  const parts: { text: string; name: boolean }[] = [];
+function PromptField({ value, onChange, fieldRef, placeholder, names, unknown = [] }: { value: string; onChange: (v: string) => void; fieldRef: React.RefObject<HTMLTextAreaElement | null>; placeholder: string; names: boolean; unknown?: string[] }) {
+  const parts: { text: string; name: boolean; unknown?: boolean }[] = [];
+  const notYet = new Set(unknown.map((n) => n.toLowerCase()));
   if (names) {
     let last = 0;
     for (const m of value.matchAll(NAME_RE)) {
       if (m.index! > last) parts.push({ text: value.slice(last, m.index), name: false });
-      parts.push({ text: m[0], name: true });
+      parts.push({ text: m[0], name: true, unknown: notYet.has(m[1].toLowerCase()) });
       last = m.index! + m[0].length;
     }
     if (last < value.length) parts.push({ text: value.slice(last), name: false });
@@ -442,7 +473,7 @@ function PromptField({ value, onChange, fieldRef, placeholder, names }: { value:
   return (
     <div className="relative min-h-[104px] rounded-card border border-border-mid bg-card">
       <div aria-hidden="true" className={`whitespace-pre-wrap break-words px-[13px] py-[12px] ${font} max-md:text-[16px] text-ink`}>
-        {parts.map((p, i) => p.name ? <mark key={i} className="rounded-badge bg-[rgba(245,246,248,.1)] px-[4px] font-medium text-ink">{p.text}</mark> : <span key={i}>{p.text}</span>)}
+        {parts.map((p, i) => p.name ? (p.unknown ? <span key={i} className="border-b-[1.5px] border-dashed border-ink font-medium text-ink">{p.text}</span> : <mark key={i} className="rounded-badge bg-[rgba(245,246,248,.1)] px-[4px] font-medium text-ink">{p.text}</mark>) : <span key={i}>{p.text}</span>)}
         {value.endsWith("\n") || !value ? "​" : null}
       </div>
       <textarea ref={fieldRef} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label="Prompt" spellCheck={false}

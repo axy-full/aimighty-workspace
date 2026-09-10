@@ -12,12 +12,12 @@ import { ELEMENT_KINDS, type ElementKind } from "@/lib/rig";
 import type { ElementFull } from "@/lib/elements";
 import type { ProductionRow } from "@/lib/productions";
 import type { Generation } from "@/lib/jobs";
-import { appPrompt } from "@/components/dialog";
 import { Button, Mono, Segmented } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
 import UnfiledWall from "@/components/make/UnfiledWall";
+import NewAssetSheet, { type SheetRef } from "@/components/assets/NewAssetSheet";
 
 /**
  * Library (design/particl-v2/README.md §11; board 8b): one collection,
@@ -59,9 +59,10 @@ function Library() {
   const [kind, setKind] = useState<ElementKind | null>(null);
   const [production, setProduction] = useState<string | null>(null);
   const [locked, setLocked] = useState<boolean | null>(null);
-  const [menu, setMenu] = useState<{ which: "kind" | "production" | "locked" | "new" | "promote"; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ which: "kind" | "production" | "locked"; x: number; y: number } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [full, setFull] = useState(false);
+  const [sheet, setSheet] = useState<{ refs: SheetRef[]; name?: string } | null>(null);
 
   const { data: els, refresh: refreshEls } = useApi<{ elements: ElementFull[] }>(signedIn ? "/api/rig/elements" : null, 30_000);
   const { data: ups, refresh: refreshUps } = useApi<{ uploads: Upload[] }>(signedIn ? "/api/uploads?limit=300" : null, 30_000);
@@ -94,24 +95,12 @@ function Library() {
     catch (e) { toast((e as Error).message); }
   };
 
-  /** A new asset — free; the sheet of §12 lands in step 8, so this asks the two things it needs. */
-  const create = async (k: ElementKind, fromUploadId?: string) => {
-    const name = await appPrompt(`New ${KIND_WORD[k].toLowerCase()}`, sel && fromUploadId ? sel.filename.replace(/\.[a-z0-9]+$/i, "") : "", "Name", "You'll type it as @Name in any prompt. Creating is free.");
-    if (!name?.trim()) return;
-    const r = await fetch("/api/rig/elements", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), kind: k, fromUploadId: fromUploadId ?? null }) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) { toast(j.error ?? "Not created."); return; }
-    toast(`@${j.element?.name ?? name.trim()} created · 0 CR${fromUploadId ? " · the reference is its first version" : ""}`);
-    refreshEls(); setLens("assets"); setSelected(null);
-  };
   const kindItems = (onPick: (k: ElementKind) => void): MenuItem[] => ELEMENT_KINDS.map((k) => ({ kind: "item", label: KIND_WORD[k], onSelect: () => onPick(k) }));
   const menuItems: MenuItem[] = !menu ? [] : menu.which === "kind"
     ? [{ kind: "item", label: "Any", onSelect: () => setKind(null) }, ...kindItems((k) => setKind(k))]
     : menu.which === "production"
       ? [{ kind: "item", label: "Any", onSelect: () => setProduction(null) }, ...(prods?.productions ?? []).map((p): MenuItem => ({ kind: "item", label: p.name, onSelect: () => setProduction(p.id) }))]
-      : menu.which === "locked"
-        ? [{ kind: "item", label: "Any", onSelect: () => setLocked(null) }, { kind: "item", label: "Locked", onSelect: () => setLocked(true) }, { kind: "item", label: "Open", onSelect: () => setLocked(false) }]
-        : kindItems((k) => create(k, menu.which === "promote" ? sel?.id : undefined));
+      : [{ kind: "item", label: "Any", onSelect: () => setLocked(null) }, { kind: "item", label: "Locked", onSelect: () => setLocked(true) }, { kind: "item", label: "Open", onSelect: () => setLocked(false) }];
   const at = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); return { x: r.left, y: r.bottom + 6 }; };
 
   const counts = { assets: els?.elements.length ?? 0, refs: ups?.uploads.length ?? 0, unfiled: unfiled?.generations.length ?? 0 };
@@ -139,7 +128,7 @@ function Library() {
             <span className="ui-mono !text-[12px] tracking-normal">⌕</span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search assets, references, @names…" aria-label="Search the Library" className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-0 placeholder:text-ink-muted max-md:text-[16px]" />
           </label>
-          <Button variant="primary" placement="header" cost={0} outlined={rail.open} onClick={(e) => setMenu({ which: "new", ...at(e) })}>New asset</Button>
+          <Button variant="primary" placement="header" cost={0} outlined={rail.open} onClick={() => setSheet({ refs: [] })}>New asset</Button>
         </span>
       </div>
       {lens === "unfiled" ? (
@@ -199,7 +188,7 @@ function Library() {
                 })}
                 {sel && (() => { const p = placed.find((x) => x.u.id === sel.id)!; return (
                   <span className="absolute z-[3] flex gap-[6px]" style={{ left: p.x, top: p.y + p.h + 36 + 8 }}>
-                    <button type="button" onClick={(e) => setMenu({ which: "promote", ...at(e) })} className="tap44 flex h-[34px] items-center gap-[8px] rounded-pill border border-[rgba(245,246,248,.3)] bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink">Promote to asset<Mono cost>0 cr</Mono></button>
+                    <button type="button" onClick={() => setSheet({ refs: [{ uploadId: sel.id, url: sel.url, label: sel.filename, kind: sel.kind }], name: sel.filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9 ]+/g, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() + w.slice(1)).join("") })} className="tap44 flex h-[34px] items-center gap-[8px] rounded-pill border border-[rgba(245,246,248,.3)] bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink">Promote to asset<Mono cost>0 cr</Mono></button>
                     <button type="button" onClick={() => router.push(`/make/${sel.kind === "video" ? "video" : "images"}?ref=${encodeURIComponent(sel.id)}`)} className="tap44 flex h-[34px] items-center rounded-pill border border-border-mid bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink">Use in Make</button>
                     <button type="button" onClick={() => current ? router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(sel.id)}`) : toast("Pick a production first — Canvas belongs to a project.")} className="tap44 flex h-[34px] items-center rounded-pill border border-border-mid bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink-body">Add to Canvas</button>
                   </span>
@@ -211,7 +200,8 @@ function Library() {
           )}
         </div>
       )}
-      {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "new" ? "New asset · kind" : menu.which === "promote" ? `Promote · ${sel?.filename.slice(0, 24) ?? ""}` : menu.which === "kind" ? "Kind" : menu.which === "production" ? "Production" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
+      {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "kind" ? "Kind" : menu.which === "production" ? "Production" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
+      <NewAssetSheet open={sheet != null} from="library" onClose={() => setSheet(null)} initial={sheet ? { name: sheet.name, references: sheet.refs } : undefined} onCreated={() => { refreshEls(); setLens("assets"); setSelected(null); }} />
     </div>
   );
 }
