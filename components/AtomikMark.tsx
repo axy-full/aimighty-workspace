@@ -1,5 +1,7 @@
 "use client";
 
+import { RING_DOTS } from "@/lib/ring";
+
 /**
  * The atomik mark, from the pipeline handoff.
  *
@@ -18,11 +20,9 @@
  * per-dot colour, never rotated.
  */
 
-/** cx, cy, r on the 200 × 200 grid, verbatim from the handoff. */
-export const ATOMIK_RING: [number, number, number][] = [
-  [100, 38, 16], [56.16, 56.16, 11.9], [38, 100, 8.8], [56.16, 143.84, 6.5],
-  [100, 162, 4.8], [143.84, 143.84, 3.6], [162, 100, 2.7], [143.84, 56.16, 2],
-];
+/** cx, cy, r on the 200 × 200 grid. One table: the ring that draws runs
+    and the loader (`lib/ring.ts`) is the same eight dots as this mark. */
+export const ATOMIK_RING = RING_DOTS;
 
 /** The ring alone, as a badge. `size` is its height and width. */
 export function AtomikMark({ size = 16, className = "" }: {
