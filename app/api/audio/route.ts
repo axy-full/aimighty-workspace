@@ -33,7 +33,7 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json({ error: `${HELD_LIMIT} takes are already held for credits. Top up to release them before adding more.` }, { status: 402 });
   }
   if (!elevenConfigured()) {
-    return NextResponse.json({ error: "ElevenLabs isn't connected for this workspace — add its key under Settings › Vendors & keys." }, { status: 400 });
+    return NextResponse.json({ error: "Sound isn't connected for this workspace. Ask the platform to connect it." }, { status: 400 });
   }
   const body = await req.json().catch(() => ({}));
   const task = ["speech", "sound", "music"].includes(String(body.task)) ? String(body.task) as "speech" | "sound" | "music" : "speech";

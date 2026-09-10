@@ -3,9 +3,9 @@
 /**
  * Settings — from the pipeline handoff.
  *
- * A sticky index on the left, six panel cards on the right: who is on the
- * team and what their role lets them do; which engines have keys and what
- * they charge; where the masters live and how they are named; the Atomik
+ * A sticky index on the left, panel cards on the right: who is on the
+ * team and what their role lets them do; which model writes the prompts;
+ * where the masters live and how they are named; the Atomik
  * connection (which is not a connection at all — one database); what a
  * new composer opens with and what happens at the cap; and the account.
  *
@@ -18,11 +18,10 @@ import Link from "next/link";
 import { creditsNumber } from "@/lib/price";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MODELS, getModel, estimateTokens, costUsd, DEFAULT_MODEL_ID } from "@/lib/models";
-import { estimateVideo, secondRateOf } from "@/lib/rateTable";
+import { MODELS, getModel } from "@/lib/models";
 import { usePrefs, setPrefs } from "@/lib/prefs";
 import { useApi } from "@/lib/useApi";
-import { usd, compactTokens, timeAgo } from "@/lib/format";
+import { usd, timeAgo } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Switch } from "@/components/Panel";
 import { IconChevron } from "@/components/Icons";
@@ -37,7 +36,6 @@ import { NOTIFY_KINDS, NOTIFY_LABELS } from "@/lib/notifyPrefs";
 import Runway from "@/components/Runway";
 
 type Me = { name: string; email: string; role: string; owner?: boolean };
-type Usage = { spentUsd: number; purchasedUsd: number; remainingUsd: number; promptSpendUsd?: number };
 type Credits = { balanceUsd: number; usedUsd: number } | null;
 type EngineInfo = {
   id: string; label: string; envKey: string; docs: string; configured: boolean; safety?: string;
@@ -51,8 +49,6 @@ type RefinerTest = {
 type TeamMember = { id: string; email: string; name: string; role?: string; lastSeen: number | null; disabled: boolean; permanent?: boolean };
 type Team = { users: TeamMember[]; canSeeRoles?: boolean };
 type Ws = { platformModels?: { video: string; image: string } | null; settings: Record<string, string>; defaults: Record<string, string> };
-type IdTerms = { terms: { configured: boolean; trainer: string; trainCostUsd: number | null; trainCredits: number | null } };
-type AudioSetup = { configured: boolean; envKey: string; terms: { sfxCredits: number; musicCreditsPerMinute: number }; account: { tier: string } | null };
 type Ledger = { storage: { bytes: number; counted: number; unmeasured: number; monthlyUsd: number } | null };
 type TopupsView = {
   applies: boolean; provider: "manual" | "stripe" | "razorpay"; canRequest: boolean; openLimit: number;
@@ -61,15 +57,9 @@ type TopupsView = {
   requests: { id: string; packId: string; label: string; credits: number; bonus: number; usd: number; status: "requested" | "approved" | "declined" | "cancelled"; note: string; createdAt: number; decidedAt: number | null }[];
   history: { id: string; credits: number; note: string; createdAt: number }[];
 };
-type Keys = {
-  usesPlatformKeys: boolean; mode: "legacy" | "platform" | "own"; canPlatform: boolean; keyring: boolean;
-  allowance: { usd: number; spentUsd: number } | null; gatewayMinted: boolean;
-  credits: { creditUsd: number; granted: number; used: number; balance: number } | null;
-  keys: { name: string; label: string; does: string; set: boolean; masked: string | null }[];
-};
 
 const SECTIONS = [
-  ["workspace", "Workspace"], ["team", "Team & roles"], ["credits", "Credits"], ["statements", "Statements"], ["engines", "Vendors & keys"], ["masters", "Storage & masters"],
+  ["workspace", "Workspace"], ["team", "Team & roles"], ["credits", "Credits"], ["statements", "Statements"], ["writer", "Prompt writer"], ["masters", "Storage & masters"],
   ["atomik", "Atomik connection"], ["defaults", "Defaults & caps"], ["account", "Account"],
 ] as const;
 const CAN: Record<string, string> = {
@@ -87,24 +77,19 @@ function gb(bytes: number): string {
 
 export default function SettingsPage() {
   usePageTitle("Settings");
-  const { signedIn, workspace, role, owner, superAdmin, workspaces, rates } = useSession();
+  const { signedIn, workspace, role, superAdmin, workspaces } = useSession();
   const money = useMoney();
   const prefs = usePrefs();
   const router = useRouter();
   const { data: me } = useApi<Me>(signedIn ? "/api/me" : null);
-  const { data: usage } = useApi<Usage>(signedIn ? "/api/usage/summary" : null, 30000);
   const { data: engineData, refresh: refreshEngines } = useApi<{ engines: EngineInfo[]; refiner?: Refiner; gatewayCredits?: Credits }>("/api/engines");
   const { data: topups, refresh: refreshTopups } = useApi<TopupsView>(signedIn ? "/api/workspaces/topups" : null, 30_000);
   const { data: limits } = useApi<{ limits: { concurrency: number; rendersPerHour: number; storageBytes: number }; standing: { running: number; startedLastHour: number; usedBytes: number } }>(signedIn ? "/api/limits" : null, 60_000);
   const { data: team } = useApi<Team>(signedIn ? "/api/team" : null, 60000);
   const { data: ws, refresh: refreshWs } = useApi<Ws>(signedIn ? "/api/settings" : null, 0);
-  const { data: idTerms } = useApi<IdTerms>(signedIn ? "/api/identities" : null, 0);
-  const { data: audio } = useApi<AudioSetup>(signedIn ? "/api/audio" : null, 0);
   const { data: ledger } = useApi<Ledger>(signedIn ? "/api/usage" : null, 120000);
-  const { data: keys, refresh: refreshKeys } = useApi<Keys>(signedIn && owner ? "/api/workspaces/keys" : null, 0);
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState<string>("team");
-  const [modeBusy, setModeBusy] = useState(false);
   const isAdmin = me?.role === "admin";
   const setting = (k: string) => ws?.settings[k] ?? ws?.defaults[k] ?? "";
   const model = getModel(setting("defaultVideoModel") || ws?.platformModels?.video || prefs.modelId);
@@ -137,57 +122,6 @@ export default function SettingsPage() {
     router.refresh();
   }
 
-  /* The rate lines: the same estimates the render button shows, off the same
-     table. The vendors' own per-second figures used to be typed into the copy
-     below — `money.rate(0.084, …)` — which is the platform's cost printed on
-     a settings page in a workspace's own browser. */
-  const seed = estimateVideo(rates, DEFAULT_MODEL_ID, "1080p", 5,
-    estimateTokens("1080p", "16:9", 5), costUsd, {});
-  const seedTok = estimateTokens("1080p", "16:9", 5);
-  const klingRate = secondRateOf(rates, "fal-ai/kling-video/v3/standard", "1080p");
-  const topazRate = secondRateOf(rates, "topaz/upscale/video/creative", "adaptive");
-  /* /api/engines already lists every vendor, fal and ElevenLabs included;
-     the rate line is the same estimate the render button shows. */
-  const rateFor = (e: EngineInfo): string => {
-    const id = e.id.toLowerCase();
-    if (id.includes("byteplus") || id.includes("ark")) return seed != null ? `${money.price(seed)} per 5s at 1080P${seedTok && !money.inCredits ? ` (${compactTokens(seedTok)} tok)` : ""}. 10s doubles.` : "Billed per token of output video.";
-    if (id.includes("fal")) return [
-      klingRate != null ? `Kling 3.0 from ${money.rate(klingRate)} a second` : null,
-      topazRate != null ? `Topaz Astra from ${money.rate(topazRate)} a second` : null,
-      idTerms?.terms.trainCredits != null ? `~${money.price(idTerms.terms.trainCredits)} per identity trained` : null,
-    ].filter(Boolean).join(" · ") + ".";
-    if (id.includes("eleven")) return audio?.terms ? `${audio.terms.sfxCredits} credits per sound effect · ${audio.terms.musicCreditsPerMinute} per minute of music${audio.account ? ` · ${audio.account.tier} plan` : ""}.` : "Bought in credits; the ledger counts them.";
-    if (id.includes("gateway")) return "The prompt writer and Google stills bill here, on the deployment's own credit.";
-    if (e.via === "gateway") return "Billed per still through Vercel AI Gateway, on the same credit as the prompt writer.";
-    return e.configured ? "Billed by the vendor per render." : "Not routed — its models stay greyed out in the composer.";
-  };
-  const engines = (engineData?.engines ?? []).map((e) => ({
-    id: e.id, name: e.label, does: e.models.map((m) => m.label).join(" · ") || (e.id.toLowerCase().includes("gateway") ? "Prompt writer · Google stills" : "—"),
-    on: e.configured, via: e.via, rate: rateFor(e),
-  }));
-
-  /* Whose key an engine runs on for this workspace: its own, the platform's
-     (within the allowance), or — for the studio's own workspace — the
-     deployment's, which is not managed here at all. */
-  const KEY_OF: Record<string, string> = { byteplus: "ark", google: "gemini", vercel: "gateway", fal: "fal", elevenlabs: "elevenlabs" };
-  const mode = keys?.mode ?? "legacy";
-  const ownKeyFor = (engineId: string) => Boolean(keys?.keys.find((k) => k.name === KEY_OF[engineId])?.set);
-  const ekeyLine = (e: { id: string; on: boolean; via?: "key" | "gateway" | null }) => {
-    if (mode === "platform" && !ownKeyFor(e.id)) return e.on ? "ON THE PLATFORM'S KEY · COUNTS AGAINST THE ALLOWANCE" : "NOT ON THE PLATFORM EITHER";
-    if (e.via === "gateway" && mode !== "own" && !ownKeyFor(e.id)) return "SIGNED IN AS THE DEPLOYMENT · NO KEY TO KEEP";
-    return e.on ? "KEY HELD SEALED ON THE SERVER" : "NO KEY YET";
-  };
-  async function setMode(next: "platform" | "own") {
-    if (!keys || keys.mode === next) return;
-    setModeBusy(true);
-    try {
-      const res = await fetch("/api/workspaces/keys", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: next }) });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
-      refreshKeys(); refreshEngines();
-    } catch (e) { await appAlert("Not changed", (e as Error).message); }
-    finally { setModeBusy(false); }
-  }
 
   return (
     <div className="page">
@@ -202,7 +136,7 @@ export default function SettingsPage() {
         <div className="flex min-w-0 flex-col gap-5">
           {/* ── Workspace ── */}
           <section id="workspace" className="scard">
-            <div className="scard-h"><span>Workspace</span><span>Every workspace has its own database, its own keys and its own team. Nothing in one can be seen from another.</span></div>
+            <div className="scard-h"><span>Workspace</span><span>Every workspace has its own database and its own team. Nothing in one can be seen from another.</span></div>
             {!signedIn ? <Empty compact title="Sign in to see your workspace" /> : (
               <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 max-[900px]:grid-cols-1">
                 <div className="srow"><span>This workspace</span><span className="font-medium">{workspace?.name ?? "—"}</span></div>
@@ -265,54 +199,29 @@ export default function SettingsPage() {
             {isAdmin ? <StatementsCard /> : <span className="rail-help">The owner and admins read statements.</span>}
           </section>
 
-          {/* ── Engines & keys ── */}
-          <section id="engines" className="scard">
-            <div className="scard-h"><span>Vendors &amp; keys</span><span>{
-              mode === "platform"
-                ? `This workspace runs on the platform's engines and pays in credits${keys?.credits ? `: ${creditsNumber(keys.credits.balance)} left of ${creditsNumber(keys.credits.granted)} granted, one credit being ${usd(keys.credits.creditUsd, 2)} of vendor cost` : ""}${keys?.allowance ? `, within a ${usd(keys.allowance.usd, 0)} monthly cap (${usd(keys.allowance.spentUsd, 2)} used this month)` : ""}. Add your own key for any vendor and it takes over for that vendor; the rest stay on the platform.`
-                : mode === "own"
-                  ? "This workspace's own keys, sealed on the server and shown only to its owner, and only masked. Costs on the render button come from these routes."
-                  : "Keys are set by an admin and never shown here — not even their names. Costs on the render button come from these routes."
-            }</span></div>
-            {owner && keys && keys.mode !== "legacy" && (
-              <div className="flex flex-col gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[12.5px] text-dim">Engines run on</span>
-                  <span className="inline-flex rounded-[10px] bg-chip p-[3px]" role="radiogroup" aria-label="Whose keys the engines run on">
-                    {([["platform", "The platform's keys"], ["own", "My own keys"]] as const).map(([m, label]) => (
-                      <button key={m} type="button" role="radio" aria-checked={keys.mode === m}
-                        disabled={modeBusy || (m === "platform" && !keys.canPlatform)} onClick={() => setMode(m)}
-                        className={`rounded-[8px] px-3 py-1 text-[13px] font-medium transition-colors disabled:cursor-default ${keys.mode === m ? "bg-panel text-ink shadow-[var(--shadow-card)]" : "text-dim"}`}>{label}</button>
-                    ))}
-                  </span>
-                  {keys.gatewayMinted && <span className="mono-s !text-[10.5px]">OWN GATEWAY KEY · MINTED AT SIGN-UP</span>}
-                </div>
-                {!keys.keyring && <p className="rail-help text-lift">The deployment can&rsquo;t hold keys yet — KEYRING_SECRET is not set.</p>}
-                {keys.keys.map((k) => <KeyRow key={k.name} k={k} platform={keys.mode === "platform"} onChanged={() => { refreshKeys(); refreshEngines(); }} />)}
-                <span className="rail-help">Keys are sealed before they are stored and never shown again in full. Only you, the owner, can see this card; the team sees only which engines are connected.</span>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-2.5 max-[900px]:grid-cols-1">
-              {engines.map((e) => (
-                <div key={e.id} className="ecard">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="flex flex-col gap-[3px]"><span className="text-[13.5px] font-semibold">{e.name}</span><span className="text-[12px] text-dim">{e.does}</span></span>
-                    <span className={`ak-state !text-[10.5px] ${e.on ? "is-approved" : ""}`}><span className={`dot !h-[7px] !w-[7px] ${e.on ? "dot-approved" : "dot-none"}`} />{e.on ? "CONNECTED" : "NOT ROUTED"}</span>
-                  </div>
-                  <div className="ekey"><span>{ekeyLine(e)}</span>{owner && <span className="text-ink">{mode === "legacy" ? (e.on ? "Rotate in Vercel" : "Add in Vercel") : "Managed above"}</span>}</div>
-                  <span className="text-[11.5px] leading-[1.35] text-dim">{e.rate}</span>
-                </div>
-              ))}
-              {!engineData && <span className="rail-help">{signedIn ? "Checking the keys…" : "Sign in to see which engines are connected."}</span>}
-            </div>
+          {/* ── Prompt writer ──
+              This was "Vendors & keys", and everything about keys is gone
+              from it: the key card, the platform-or-own mode switch, and the
+              per-engine CONNECTED / NOT ROUTED badges. Those badges were the
+              real disclosure — they told every member of the workspace which
+              vendor integrations are configured, which is a list of things to
+              go at and nothing the reader could act on.
+
+              KEY MANAGEMENT IS NO LONGER IN THE PRODUCT. Nothing was deleted
+              and existing keys keep working, but an owner can no longer add,
+              rotate, or switch to their own key from here; that has to happen
+              platform-side until it has somewhere else to live.
+
+              What stayed is the one row in here that was never about keys:
+              which model writes the prompts, which is a workspace's own
+              choice and says nothing about credentials. */}
+          <section id="writer" className="scard">
+            <div className="scard-h"><span>Prompt writer</span><span>Which model turns a line into a shot&rsquo;s prompt. It writes; it never renders.</span></div>
             <div className="rows">
               {engineData?.refiner
                 ? <WriterRow writer={engineData.refiner} credits={engineData.gatewayCredits ?? null} isAdmin={isAdmin} onChanged={refreshEngines} />
                 : <div className="row"><span className="text-[14px] text-mute">{signedIn ? "Reading the workspace's choice…" : "Sign in to see who writes the prompts."}</span></div>}
             </div>
-            {usage && !money.inCredits && (
-              <span className="rail-help">Credit: spent {usd(usage.spentUsd, 2)} all time · added {usd(usage.purchasedUsd, 2)} · remaining {usd(usage.remainingUsd, 2)}. Each vendor&rsquo;s own count is on <Link href="/usage" className="text-ink">Usage</Link>.</span>
-            )}
           </section>
 
           {/* ── Storage & masters ── */}
@@ -415,7 +324,11 @@ export default function SettingsPage() {
               {me?.owner && <MastersRow />}
               {me?.owner && <a className="row" href="/api/export" download title="Every prompt, cost and account record, as JSON — the owner's alone">Export data<span className="row-value">JSON · owner</span></a>}
               {signedIn && <button className="row !text-lift" onClick={signOut} disabled={busy}>{busy ? "Signing out…" : "Sign out"}</button>}
-              {me?.owner && keys && keys.mode !== "legacy" && <DeleteWorkspaceRow name={workspace?.name ?? ""} />}
+              {/* The legacy gate here used to come from the keys payload, which this
+                  page no longer fetches. It was belt-and-braces anyway: DELETE
+                  /api/workspaces runs `deletionAllowed({ legacy })` and refuses the
+                  studio's own workspace server-side, which is the check that counts. */}
+              {me?.owner && <DeleteWorkspaceRow name={workspace?.name ?? ""} />}
             </div>
             <div className="flex items-center gap-2 text-[12px] text-mute"><ParticlMark size={12} className="text-mute/70" /><span>particl studio · Seedance on BytePlus ModelArk · Nano Banana through Vercel AI Gateway</span></div>
           </section>
@@ -425,50 +338,6 @@ export default function SettingsPage() {
   );
 }
 
-/** One vendor's key: what it does, whether it is set, and a field to set or rotate it. */
-function KeyRow({ k, platform = false, onChanged }: { k: Keys["keys"][number]; platform?: boolean; onChanged: () => void }) {
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState(false);
-  async function save() {
-    if (!value.trim()) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/workspaces/keys", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: k.name, value: value.trim() }) });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
-      setValue(""); setEditing(false); onChanged();
-    } catch (e) { await appAlert("Not saved", (e as Error).message); }
-    finally { setBusy(false); }
-  }
-  async function remove() {
-    setBusy(true);
-    try {
-      await fetch("/api/workspaces/keys", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: k.name }) });
-      onChanged();
-    } finally { setBusy(false); }
-  }
-  return (
-    <div className="ecard !gap-2">
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex flex-col gap-[3px]"><span className="text-[13.5px] font-semibold">{k.label}</span><span className="text-[12px] text-dim">{k.does}</span></span>
-        <span className={`ak-state !text-[10.5px] ${k.set ? "is-approved" : ""}`}><span className={`dot !h-[7px] !w-[7px] ${k.set ? "dot-approved" : "dot-none"}`} />{k.set ? `SET · ${k.masked}` : platform ? "PLATFORM'S KEY" : "NOT SET"}</span>
-      </div>
-      {editing ? (
-        <div className="flex gap-1.5">
-          <input className="ctl !h-9 flex-1 font-mono !text-[12px]" type="password" autoComplete="off" spellCheck={false} value={value} onChange={(e) => setValue(e.target.value)} placeholder={`Paste the ${k.label} key`} autoFocus />
-          <button type="button" className="btn-primary !h-9 !px-3 !text-[12px]" onClick={save} disabled={busy || !value.trim()}>{k.set ? "Rotate" : "Save"}</button>
-          <button type="button" className="btn-secondary !h-9 !px-3 !text-[12px]" onClick={() => { setEditing(false); setValue(""); }}>Cancel</button>
-        </div>
-      ) : (
-        <div className="flex gap-1.5">
-          <button type="button" className="btn-secondary !h-8 !px-3 !text-[12px]" onClick={() => setEditing(true)}>{k.set ? "Rotate" : platform ? "Use my own" : "Add key"}</button>
-          {k.set && <button type="button" className="btn-secondary !h-8 !px-3 !text-[12px] text-lift" onClick={remove} disabled={busy}>Remove</button>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /**
  * The workspace's writer, as a three-way choice, and a way to hear it answer.

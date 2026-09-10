@@ -19,6 +19,7 @@ import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
 import { getProvider, providerConfigured, billedTo } from "@/lib/providers";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice, sourceProblem } from "@/lib/tasks";
+import { clipDoubt, clipDoubtMessage } from "@/lib/clipTrust";
 import {
   detectMove, hasCameraModule, detectSpec, inferMove, sceneLine, craftModules,
 } from "@/lib/studio";
@@ -118,7 +119,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const vendor = getProvider(model.provider);
   if (!providerConfigured(vendor)) {
     return NextResponse.json({
-      error: `${model.label} isn't connected for this workspace — add a ${vendor.label} key under Settings › Vendors & keys.`,
+      error: `${model.label} isn't connected for this workspace. Ask the platform to connect it.`,
     }, { status: 400 });
   }
   // On the platform's keys, a workspace has a monthly allowance — the wall
@@ -175,12 +176,22 @@ export const POST = withTenant(async function POST(req: Request) {
         args: [sourceUploadId],
       });
       if (!up.rows.length) return NextResponse.json({ error: "That uploaded clip no longer exists." }, { status: 400 });
-      const u = up.rows[0] as unknown as { id: string; mime: string; ext: string; stored_url: string; kind: string; duration_s: number | null; height: number | null };
+      const u = up.rows[0] as unknown as { id: string; mime: string; ext: string; stored_url: string; kind: string; duration_s: number | null; height: number | null; bytes: number | null };
       if (u.kind !== "video") return NextResponse.json({ error: `${task.label} works on video, and that upload is a still.` }, { status: 400 });
       sourceRef = { id: u.id, mime: u.mime || "video/mp4", ext: u.ext || "mp4", storedUrl: u.stored_url, role: "reference_video", kind: "video", fromGeneration: false };
       const sp = uploadSourceParams({ durationS: u.duration_s, height: u.height });
       if (typeof sp.duration === "number") sourceSeconds = sp.duration;
       if (typeof sp.resolution === "string") sourceResolution = sp.resolution;
+      /* A LOCKED task is priced by the second of THIS clip, and the second
+         count came out of the clip's own header — bytes the uploader chose.
+         So before any ceiling is applied, refuse a length that cannot be
+         believed: absent (which every ceiling below silently lets through,
+         since each is written `!= null && > max`) or shorter than the file's
+         own size permits. Unpriceable is not the same as cheap. */
+      if (task.locked) {
+        const doubt = clipDoubt(u.duration_s, u.bytes);
+        if (doubt) return NextResponse.json({ error: clipDoubtMessage(doubt, task.label) }, { status: 400 });
+      }
       const refused = sourceProblem(task, sp, "upload");
       if (refused) return NextResponse.json({ error: refused }, { status: 400 });
       const advice = sourceAdvice(task, typeof sp.duration === "number" ? sp.duration : null);

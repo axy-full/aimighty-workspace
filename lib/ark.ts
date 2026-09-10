@@ -92,7 +92,7 @@ export type ArkTask = {
 
 function apiKey(): string {
   const k = vendorKey("ark");
-  if (!k) throw new Error("BytePlus ModelArk isn't connected for this workspace — add its key under Settings › Vendors & keys.");
+  if (!k) throw new Error("That engine isn't connected for this workspace. Ask the platform to connect it.");
   return k;
 }
 

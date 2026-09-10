@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import {
-  currentUser, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
+  currentUser, requireSession, mintTokenSecret, tokenHash, type TokenScope, withTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -12,6 +12,16 @@ export const dynamic = "force-dynamic";
  * Deliberately session-only: a token may never mint another token, so a
  * leaked one can't quietly breed replacements or widen its own scope. You
  * make these while signed in, in Settings.
+ *
+ * THAT PARAGRAPH WAS TRUE AND UNENFORCED. The guard was `currentUser()`,
+ * which answers for a BEARER caller as well — `callerFromBearer` puts a user
+ * in the store — so "is there a user?" was being asked while "is this a
+ * session?" was meant. Any token of either scope passed it, and nothing
+ * looked at `currentTenant()?.token`. A read-only token could therefore mint
+ * a render-scoped one and start spending: the read-only guarantee undone in
+ * one request, by the credential /connect hands to third parties precisely
+ * because it "cannot bill". `requireSession()` asks the question the
+ * paragraph meant.
  */
 
 export const GET = withTenant(async function GET() {
@@ -47,8 +57,9 @@ export const GET = withTenant(async function GET() {
 });
 
 export const POST = withTenant(async function POST(req: Request) {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Sign in to create a token" }, { status: 401 });
+  const got = await requireSession();
+  if (got.response) return got.response;
+  const user = got.user;
   await ready();
 
   const body = await req.json().catch(() => ({}));

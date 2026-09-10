@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import { allowanceCheck } from "@/lib/allowance";
+import { checkLimits } from "@/lib/limits";
+import { estimateRefineUsd } from "@/lib/refineGate";
+import { vendorKeyNameFor } from "@/lib/platformSpend";
 import { requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { gatewayAuth, gatewayReachable, explainGatewayFailure } from "@/lib/gateway";
@@ -58,12 +62,22 @@ export const POST = withTenant(async function POST(req: Request) {
   const toneIn = String(body.tone ?? "").trim().slice(0, 300);
   if (!brief) return NextResponse.json({ error: "Write a few words first." }, { status: 400 });
   if (!gatewayReachable()) {
-    return NextResponse.json({ error: "Vercel AI Gateway isn't connected for this workspace — add a gateway key under Settings › Vendors & keys." }, { status: 503 });
+    return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
   }
 
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
   const auth = await gatewayAuth();
   const user = [`NOTE: ${brief}`, toneIn ? `TONE WORDS: ${toneIn}` : ""].filter(Boolean).join("\n");
+  /* The gateway's money is the platform's — `lib/platformSpend.ts` counts
+     atomik spend against it — so this asks the same question the render path
+     asks before spending any of it. Text is cheap per call and unlimited per
+     minute was the actual hole: nothing here refused a workspace at zero
+     credits or past its monthly allowance, and nothing rate-limited it. */
+  const estUsd = estimateRefineUsd(model, user.length, SYSTEM.length) ?? 0;
+  const wall = await allowanceCheck(vendorKeyNameFor("vercel"), estUsd, model);
+  if (!wall.ok) return NextResponse.json({ error: wall.error }, { status: wall.status });
+  const lim = await checkLimits();
+  if (!lim.allow) return NextResponse.json({ error: lim.error }, { status: lim.why === "rate" ? 429 : 409 });
   const res = await engineFor("vercel").chat!({ model, system: SYSTEM, user, maxTokens: 600, auth, timeoutMs: 90_000, mock: "idea" });
   const raw = res.text;
   if (!res.ok) {

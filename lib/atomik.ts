@@ -596,8 +596,16 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
 
 /** "auto" → the first featured planner the gateway is actually serving. */
 export async function resolveModel(want: string, job: "idea" | "shot" = "idea"): Promise<string> {
-  if (want && want !== "auto") return want;
   const cat = await catalog();
+  /* A named model has to BE one. This used to return `want` verbatim, so the
+     string travelled from the request body to the gateway untouched: a caller
+     could name any model the gateway would answer for — including one far
+     dearer than anything this product offers — and spend the platform's
+     gateway credit on it. The catalogue is the list of models that exist
+     here; anything else falls through to the platform's own routing rather
+     than being honoured or refused, because a stale model id in somebody's
+     saved request should degrade to the sensible default, not to an error. */
+  if (want && want !== "auto" && cat.some((m) => m.id === want)) return want;
   // "auto" is the platform's routing (brief 1.8): the layer names a model per job; the catalogue must know it.
   const routed = textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, job);
   if (cat.some((m) => m.id === routed)) return routed;

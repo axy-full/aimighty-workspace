@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
-import { startTraining } from "@/lib/identities";
+import { startTraining, trainCostUsd } from "@/lib/identities";
+import { allowanceCheck } from "@/lib/allowance";
+import { checkLimits } from "@/lib/limits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -16,6 +18,16 @@ type Ctx = { params: Promise<{ id: string }> };
  * clients precisely because /connect promises it cannot bill, could call
  * this in a loop. The paid route beside it (../render) already guards this
  * way; this one was the outlier, and it costs more per call.
+ *
+ * AND IT WAS STILL THE OUTLIER ON MONEY. That paragraph reasoned carefully
+ * about WHO may press the button and never asked whether the workspace can
+ * PAY for it: `allowanceCheck` was called from seven routes and this was not
+ * one of them, `checkLimits` from three and not this one either. `meter()`
+ * only records — it has never refused anything. So a member of any workspace,
+ * holding zero credits and past the monthly allowance, could press this in a
+ * loop at $3.60 of the platform's fal money a press, with no rate limit in
+ * front of it. Both sibling identity routes already checked; ground rule 1
+ * is "other people's money", and this was the one door with no lock.
  */
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
@@ -23,6 +35,22 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   if (body.consent !== true) return NextResponse.json({ error: "Confirm you have the right to train on this person's face." }, { status: 400 });
+
+  /* The same three walls the render path uses, in the same order, priced at
+     what this actually costs rather than at zero.
+     Not parked as `held` the way a refused take is: a training run has no
+     queue to wait in and no take to release, so it refuses outright and says
+     what it would cost. */
+  const usd = trainCostUsd();
+  const wall = await allowanceCheck("fal", usd, "identity-training");
+  if (!wall.ok) {
+    return NextResponse.json({ error: wall.error }, { status: wall.status });
+  }
+  const lim = await checkLimits();
+  if (!lim.allow) {
+    return NextResponse.json({ error: lim.error }, { status: lim.why === "rate" ? 429 : 409 });
+  }
+
   try {
     const identity = await startTraining(id, { by: got.user.id });
     return NextResponse.json({ identity: { ...identity, loraUrl: undefined, configUrl: undefined, trained: false } }, { status: 202 });

@@ -1,4 +1,5 @@
 import { db, ready } from "@/lib/db";
+import { servingFor } from "@/lib/serveType";
 import { requireUser, withTenant } from "@/lib/auth";
 import { readUploadBytes, deleteUpload, openUploadStream } from "@/lib/storage";
 
@@ -27,13 +28,23 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   } | undefined;
   if (!row) return new Response("Not found", { status: 404 });
 
-  const isMedia = row.kind === "image" || row.kind === "video";
+  /* The stored `mime` is not evidence, so it decides nothing on its own.
+     On the chat path the client named it and only its SHAPE was checked,
+     while `kind` was sniffed from three bytes — so `kind: "image"` with
+     `mime: "text/html"` was storable, and this route used to echo that back
+     inline on the app's own origin. `nosniff` does not save it: it makes a
+     browser HONOUR the declared type, which is the whole problem.
+     `servingFor` answers one question — may a browser render this type —
+     from an allowlist, and everything else leaves as a download. Applied
+     here rather than only at upload because rows written before this are
+     already in the database. */
+  const serve = servingFor(row.mime);
   const headers: Record<string, string> = {
-    "Content-Type": isMedia ? row.mime : "application/octet-stream",
+    "Content-Type": serve.contentType,
     "Cache-Control": "private, max-age=31536000, immutable",
     "X-Content-Type-Options": "nosniff",
   };
-  if (!isMedia) {
+  if (!serve.inline) {
     headers["Content-Disposition"] =
       `attachment; filename="${row.filename.replace(/[^\w. -]/g, "_")}"`;
   }

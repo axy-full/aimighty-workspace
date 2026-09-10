@@ -23,7 +23,7 @@ function auth(): string {
   const key = vendorKey("fal");
   if (!key) {
     throw new Error(
-      "fal.ai isn't connected for this workspace — add its key under Settings › Vendors & keys."
+      "That engine isn't connected for this workspace. Ask the platform to connect it."
     );
   }
   return `Key ${key}`;
