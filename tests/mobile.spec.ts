@@ -25,6 +25,13 @@ async function settle(page: Page) {
   await page.waitForTimeout(500);
 }
 
+/** The one composer: the rail on a desktop-sized screen, the M9 sheet (opened from M4's docked card) below 768. */
+async function openComposer(page: Page) {
+  if (page.viewportSize()!.width >= 768) return page.getByRole("complementary", { name: "Composer" });
+  await page.locator("[data-composer-dock]").getByRole("button", { name: "Open the composer" }).click();
+  return page.getByRole("dialog", { name: "Composer" });
+}
+
 const overflowReport = () => ({
   scrollWidth: document.documentElement.scrollWidth,
   clientWidth: document.documentElement.clientWidth,
@@ -123,33 +130,48 @@ test.describe("the app shell", () => {
     });
   }
 
-  /* design/particl-v2 §10 on a phone: the one composer sits first, in the
-     flow, the full width of the screen; Render is reachable by scrolling
-     down, never by panning sideways (SOW rule 7). */
+  /* design/particl-v2-mobile, boards M4 and M9: on a phone the one composer
+     is docked — a card above the pinned Render, the full width of the
+     screen, both inside the viewport without any scrolling — and opens as a
+     sheet that also fills the width and pins its own Render. A phone on
+     its side (844 wide) keeps the desktop rail; there Render is reachable
+     by scrolling, never by panning sideways (SOW rule 7). */
   test("the composer is the width of the screen and Render is reachable without panning", async ({ page }) => {
     await page.goto("/make/video");
     await settle(page);
+    const vp = page.viewportSize()!;
+    const within = (rb: { x: number; y: number; width: number; height: number }, what: string) => {
+      expect(rb.x, `${what} left`).toBeGreaterThanOrEqual(-1);
+      expect(rb.x + rb.width, `${what} right`).toBeLessThanOrEqual(vp.width + 1);
+      expect(rb.y, `${what} top`).toBeGreaterThanOrEqual(-1);
+      expect(rb.y + rb.height, `${what} bottom`).toBeLessThanOrEqual(vp.height + 1);
+      expect(rb.height, `${what} is at least 44pt`).toBeGreaterThanOrEqual(44);
+    };
+    if (vp.width < 768) {
+      const dock = page.locator("[data-composer-dock]");
+      await expect(dock).toBeVisible();
+      expect(Math.round((await dock.boundingBox())!.width), "the docked composer fills a phone's width").toBe(vp.width);
+      within((await dock.locator("[data-render]").boundingBox())!, "the pinned Render");
+      await dock.getByRole("button", { name: "Open the composer" }).click();
+      const sheet = page.getByRole("dialog", { name: "Composer" });
+      await expect(sheet).toBeVisible();
+      expect(Math.round((await sheet.boundingBox())!.width), "the composer sheet fills a phone's width").toBe(vp.width);
+      within((await sheet.locator("[data-render]").boundingBox())!, "the sheet's Render");
+      await page.screenshot({ path: `test-results/composer-${vp.width}x${vp.height}.png` });
+      return;
+    }
     const composer = page.getByRole("complementary", { name: "Composer" });
     await expect(composer).toBeVisible();
-    const vp = page.viewportSize()!;
-    const box = await composer.boundingBox();
-    expect(box, "the composer has no box").not.toBeNull();
-    if (vp.width < 768) expect(Math.round(box!.width), "the composer fills a phone's width").toBe(vp.width);
     const render = composer.locator("[data-render]");
     await render.scrollIntoViewIfNeeded();
-    const rb = (await render.boundingBox())!;
-    expect(rb.x, "Render left").toBeGreaterThanOrEqual(-1);
-    expect(rb.x + rb.width, "Render right").toBeLessThanOrEqual(vp.width + 1);
-    expect(rb.y, "Render top").toBeGreaterThanOrEqual(-1);
-    expect(rb.y + rb.height, "Render bottom").toBeLessThanOrEqual(vp.height + 1);
-    expect(rb.height, "the primary is 48px (§10) — at least 44pt on a phone").toBeGreaterThanOrEqual(44);
+    within((await render.boundingBox())!, "Render");
     await page.screenshot({ path: `test-results/composer-${vp.width}x${vp.height}.png` });
   });
 
   test("opening the engine picker commits no long task over 50ms", async ({ page }) => {
     await page.goto("/make/video");
     await settle(page);
-    const composer = page.getByRole("complementary", { name: "Composer" });
+    const composer = await openComposer(page);
     await expect(composer).toBeVisible();
     await page.evaluate(() => {
       const w = window as unknown as { __long: number[] };
@@ -177,7 +199,7 @@ test.describe("the audio composer", () => {
   test("every track kind opens for a visitor", async ({ page }) => {
     await page.goto("/make/audio");
     await settle(page);
-    const composer = page.getByRole("complementary", { name: "Composer" });
+    const composer = await openComposer(page);
     await expect(composer).toBeVisible();
     const kinds = composer.getByRole("group", { name: "Track kind" });
     for (const kind of ["Ambient", "Music", "Dialogue"]) {
@@ -243,6 +265,60 @@ test.describe("Productions on a phone", () => {
       if (await tile.count()) expect(await tile.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(200);
       expect(await strip.getByRole("button", { name: "+ Project" }).evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(96);
     }
+  });
+});
+
+/**
+ * Make on a phone (design/particl-v2-mobile, boards M4 and M9): the sticky
+ * block — `Video · Images · Audio` full width over `UNFILED · …` — no
+ * search; the composer docked as a card (radius 14, `10px 12px`, the mono
+ * eyebrow `COMPOSER · ENGINE · 16:9 · 5S`, `↑`) above the pinned primary
+ * (50px, radius 14); tapping the card opens the composer sheet 60px below
+ * the top with its 44px header (`Composer` 600 15), the prompt at 16px,
+ * the 40px pills, Render at 52px in the foot; Esc closes it.
+ */
+test.describe("Make on a phone", () => {
+  test("M4's block, docked composer and pinned Render; M9's sheet opens from the card", async ({ page }) => {
+    test.skip(page.viewportSize()!.width >= 768, "a phone on its side gets the desktop page (§14)");
+    await page.goto("/make/video");
+    await settle(page);
+    const vw = page.viewportSize()!.width, vh = page.viewportSize()!.height;
+    const head = page.locator("[data-make-head]");
+    const group = head.getByRole("group", { name: "Make" });
+    await expect(group.getByRole("button")).toHaveText(["Video", "Images", "Audio"]);
+    expect(await group.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(vw - 32);
+    for (const b of await group.getByRole("button").all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+    await expect(head.locator(".ui-mono").first()).toHaveText(/^Unfiled · /i);
+    await expect(page.getByRole("textbox", { name: "Search unfiled" })).toHaveCount(0);
+    const dock = page.locator("[data-composer-dock]");
+    const card = dock.getByRole("button", { name: "Open the composer" });
+    await expect(card).toBeVisible();
+    expect(await card.evaluate((el) => { const cs = getComputedStyle(el); return [cs.borderTopLeftRadius, cs.paddingTop, cs.paddingLeft, cs.marginLeft, cs.marginTop]; })).toEqual(["14px", "10px", "12px", "16px", "10px"]);
+    await expect(card.locator(".ui-mono").first()).toHaveText(/^Composer · .+ · 16:9 · 5s$/i);
+    const primary = dock.locator("[data-render]");
+    await expect(primary).toHaveText(/Sign in to render|Render/);
+    expect(await primary.evaluate((el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); return [Math.round(r.height), cs.borderTopLeftRadius, cs.paddingLeft]; })).toEqual([50, "14px", "16px"]);
+    await card.click();
+    const sheet = page.getByRole("dialog", { name: "Composer" });
+    await expect(sheet).toBeVisible();
+    const r = await sheet.evaluate((el) => { const b = el.getBoundingClientRect(); return { top: Math.round(b.top), h: Math.round(b.height) }; });
+    expect(r.top).toBe(60);
+    expect(r.h).toBe(vh - 60);
+    const title = sheet.getByText("Composer", { exact: true }).first();
+    expect(await title.evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el).fontWeight, Math.round(el.parentElement!.getBoundingClientRect().height)])).toEqual(["15px", "600", 44]);
+    const prompt = sheet.getByRole("textbox", { name: "Prompt" });
+    expect(await prompt.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+    expect(await prompt.evaluate((el) => Math.round(el.parentElement!.getBoundingClientRect().height))).toBeGreaterThanOrEqual(96);
+    expect((await sheet.getByRole("button", { name: /^16:9/ }).boundingBox())!.height).toBe(40);
+    expect(await sheet.locator("[data-render]").evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBe(52);
+    const short = await sheet.evaluate((root) => [...root.querySelectorAll<HTMLElement>("button")].filter((b) => {
+      const r = b.getBoundingClientRect(); if (r.height === 0) return false;
+      const band = parseFloat(getComputedStyle(b, "::after").height) || 0;
+      return r.height < 44 && band < 44;
+    }).map((b) => `${b.textContent?.trim().slice(0, 16)}:${Math.round(b.getBoundingClientRect().height)}`));
+    expect(short, "every target in the sheet is at least 44pt, or carries a 44pt touch band").toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
   });
 });
 

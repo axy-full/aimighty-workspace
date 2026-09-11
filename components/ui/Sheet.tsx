@@ -12,7 +12,10 @@ import Mono from "./Mono";
  * sheet's own actions, the 34px ×), a body that scrolls (`4px 16px 12px`,
  * 12 apart), and a footer pinned at the bottom with the 26px safe area.
  * Sizes: compact = 58% of the screen, expanded = 92%, full = from 44px
- * down, auto = as tall as its content up to 92%. The page behind stops
+ * down, auto = as tall as its content up to 92%; `top` fixes the sheet
+ * that many px below the top (M9's composer: 60), `max` caps an auto
+ * sheet (M5's inspector: 78%). A board with its own chrome under the
+ * grabber (M5, M8, M9) passes it as `header`. The page behind stops
  * scrolling while a sheet is open; Esc closes it.
  */
 export type SheetSize = "compact" | "expanded" | "full" | "auto";
@@ -26,6 +29,12 @@ type Props = {
   title?: ReactNode;
   context?: ReactNode;
   actions?: ReactNode;
+  /** The board's own chrome under the grabber, instead of the 48px header. */
+  header?: ReactNode;
+  /** Fixed: this many px below the top (M9 = 60, M8 = 44). */
+  top?: number;
+  /** An auto sheet's cap when it is not 92% (M5 = "78%"). */
+  max?: string;
   /** Pinned under the body: the one primary, or the ask field. */
   footer?: ReactNode;
   /** The footer's padding — `8px 16px 26px` for an ask field, `10px 16px 26px` for a pinned primary. */
@@ -36,7 +45,7 @@ type Props = {
 
 const MAX: Record<SheetSize, string> = { compact: "58%", expanded: "92%", full: "calc(100% - 44px)", auto: "92%" };
 
-export default function Sheet({ open, onClose, label, size = "auto", title, context, actions, footer, footerPad = "10px 16px 26px", children, bodyClassName = "" }: Props) {
+export default function Sheet({ open, onClose, label, size = "auto", title, context, actions, header, top, max, footer, footerPad = "10px 16px 26px", children, bodyClassName = "" }: Props) {
   useEffect(() => {
     if (!open) return;
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -50,10 +59,11 @@ export default function Sheet({ open, onClose, label, size = "auto", title, cont
     <div className="fixed inset-0 z-50 flex flex-col justify-end" data-sheet={size}>
       <button type="button" aria-label="Close" onClick={onClose} className="ui-sheet-scrim absolute inset-0" />
       <div role="dialog" aria-modal="true" aria-label={label}
-        className={`ui-rail relative flex flex-col rounded-t-[24px] border-t border-border-mid text-ink ${size === "full" ? "h-[calc(100%-44px)]" : ""}`}
-        style={{ maxHeight: MAX[size], paddingBottom: footer ? 0 : "calc(26px + env(safe-area-inset-bottom, 0px))" }}>
+        className={`ui-rail relative flex flex-col rounded-t-[24px] border-t border-border-mid text-ink ${size === "full" && top == null ? "h-[calc(100%-44px)]" : ""}`}
+        style={{ maxHeight: max ?? (top != null ? `calc(100% - ${top}px)` : MAX[size]), height: top != null ? `calc(100% - ${top}px)` : undefined, paddingBottom: footer ? 0 : "calc(26px + env(safe-area-inset-bottom, 0px))" }}>
         <span className="mx-auto mt-[10px] block h-[4px] w-[36px] flex-none rounded-[2px] bg-[rgba(245,246,248,.25)]" aria-hidden="true" />
-        {(title || context || actions) && (
+        {header}
+        {!header && (title || context || actions) && (
           <div className="flex h-[48px] flex-none items-center gap-[8px] px-[16px]">
             {title && <span className="text-[14px] font-semibold leading-none text-ink">{title}</span>}
             {context && <Mono className="min-w-0 truncate">{context}</Mono>}
