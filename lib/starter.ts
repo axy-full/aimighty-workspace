@@ -1,7 +1,10 @@
 import { db, ready, now, id } from "./db";
 import { createShot } from "./shots";
+import { createProduction } from "./productions";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { starterShotsWithSetup } from "./platformLayer";
+import { createElement } from "./elements";
+import { elementKind } from "./rig";
 import { listPlatformAssets, getPlatformLayer } from "./platform";
 import { DEMO_TAKES, demoMediaUrl } from "./demoProduction";
 
@@ -17,15 +20,30 @@ export async function seedStarterProduction(createdBy: string): Promise<{ projec
   const starter = layer.starter;
   const pid = id("prj");
   const ts = now();
+  /* The project is born under its production, the way every other project is — not left for the
+     next boot's orphan pass, which this process has already run. */
+  const productionId = await createProduction({ name: starter.name, capCredits: layer.caps.defaultCapCredits });
   await db().execute({
-    sql: `INSERT INTO projects (id, name, description, created_at, code, starter, cap_credits) VALUES (?,?,?,?,?,1,?)`,
-    args: [pid, starter.name, starter.description, ts, starter.code, layer.caps.defaultCapCredits],
+    sql: `INSERT INTO projects (id, name, description, created_at, code, starter, cap_credits, production_id) VALUES (?,?,?,?,?,1,?,?)`,
+    args: [pid, starter.name, starter.description, ts, starter.code, layer.caps.defaultCapCredits, productionId],
   });
   for (const c of starter.cast) {
     await db().execute({
       sql: `INSERT INTO cast_members (id, project_id, name, kind, description, upload_id, created_by, created_at) VALUES (?,?,?,?,?,NULL,?,?)`,
       args: [id("cast"), pid, c.name, c.kind, c.description, createdBy, ts],
     });
+  }
+  /* The Library is never empty on first open (docs/change-request-1.md §5):
+     every starter cast member is an asset under its label from the start —
+     nothing trained, no still yet, a version a minute away. `cast_id` and
+     `mirrored_at` tell the Library's backfill these are done. Best effort:
+     a failed asset never costs the workspace its production. */
+  const castRows = await db().execute({ sql: `SELECT id, name, kind, description FROM cast_members WHERE project_id = ?`, args: [pid] });
+  for (const c of castRows.rows as unknown as { id: string; name: string; kind: string; description: string }[]) {
+    try {
+      const el = await createElement({ name: c.name, kind: elementKind(c.kind), description: c.description, projectId: pid, castId: c.id }, createdBy);
+      await db().execute({ sql: `UPDATE elements SET mirrored_at = ?, updated_at = ? WHERE id = ?`, args: [ts, ts, el.id] });
+    } catch (e) { console.warn(`[starter] asset ${c.name} not seeded: ${(e as Error).message}`); }
   }
   for (const s of starterShotsWithSetup(layer)) {
     await createShot({

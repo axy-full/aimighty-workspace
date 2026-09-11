@@ -55,7 +55,12 @@ export const STARTER_PRODUCTION: StarterProduction = {
       description: "A close-up: the package changes hands on a doorstep, soft light, nothing said.",
       setup: { shot: "cu", light: "soft" }, cast: [STARTER_CAST.name] },
   ],
-  cast: [STARTER_CAST, { name: "Mule", kind: "prop", description: "A battered cargo bicycle, orange frame, canvas panniers, a bell that does not work." }],
+  cast: [
+    STARTER_CAST,
+    { name: "Mule", kind: "prop", description: "A battered cargo bicycle, orange frame, canvas panniers, a bell that does not work." },
+    { name: "WetStreet", kind: "location", description: "A narrow street at dawn, wet from the night, shutters down, the first light along the rooftops." },
+    { name: "FirstLight", kind: "style", description: "Dawn, soft and low. 35mm, natural light, muted colour, nothing polished." },
+  ],
 };
 
 /** Where a rule applies: a kind, or one engine family's dialect. */
@@ -177,7 +182,8 @@ export function cleanStarter(v: unknown): StarterProduction | null {
   const description = str(v.description, 500);
   const cast: StarterCast[] = (Array.isArray(v.cast) ? v.cast : []).map((c) => {
     if (!isObj(c)) return null;
-    const n = str(c.name, 40).replace(/^@/, ""); if (!n) return null;
+    /* A cast name is a citation — `@Name` in a prompt — so it is one word: letters, digits, underscores (lib/cast.ts nameProblem). */
+    const n = str(c.name, 40).replace(/^@/, ""); if (!/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(n)) return null;
     const kind = ["character", "location", "prop", "style"].includes(String(c.kind)) ? (c.kind as StarterCast["kind"]) : "character";
     return { name: n, kind, description: str(c.description, 600) };
   }).filter((c): c is StarterCast => Boolean(c)).slice(0, 6);
