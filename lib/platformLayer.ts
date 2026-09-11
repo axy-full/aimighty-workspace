@@ -64,10 +64,11 @@ export const STARTER_PRODUCTION: StarterProduction = {
 };
 
 /** Where a rule applies: a kind, or one engine family's dialect. */
-export type RuleScope = "all" | "video" | "image" | "seedance-2" | "kling-3" | "nano-banana";
-export const RULE_SCOPES: RuleScope[] = ["all", "video", "image", "seedance-2", "kling-3", "nano-banana"];
+export type RuleScope = "all" | "video" | "image" | "seedance-2" | "kling-3" | "nano-banana" | "veo-3" | "wan-2";
+export const RULE_SCOPES: RuleScope[] = ["all", "video", "image", "seedance-2", "kling-3", "nano-banana", "veo-3", "wan-2"];
 export const RULE_SCOPE_LABELS: Record<RuleScope, string> = {
   all: "video + stills", video: "video", image: "stills", "seedance-2": "Seedance only", "kling-3": "Kling only", "nano-banana": "Nano Banana only",
+  "veo-3": "Veo only", "wan-2": "Wan only",
 };
 export type RuleApply = "writer" | "prompt";
 export type PlatformRule = { id: string; text: string; scope: RuleScope; apply: RuleApply; on: boolean };

@@ -136,9 +136,24 @@ export type ModelDef = {
   maxReferenceVideos: number;
   maxVideoSecondsTotal: number;
   note?: string;
-  /** One line on what the engine is for, next to it in the composer's menu. */
+  /** One line on what the engine is for, next to it in the composer's menu (CR1 §3 calls it `does`). */
   use?: string;
+  /** CR1 §3: the exact fal endpoint per task — `text` and `image` for a generate
+   *  without / with a start frame — when the vendor's paths are not the
+   *  `/text-to-video` `/image-to-video` `/motion-control` family suffixes. */
+  falEndpoints?: Partial<Record<"text" | "image" | "edit" | "extend" | "motion" | "upscale" | "reframe" | "lipsync", string>>;
+  /** The engine starts from one still (an image-to-video-only engine, an edit engine) and cannot start from words alone. */
+  needsStartImage?: boolean;
+  /** The engine's builder sends one frame: a last frame would be dropped in silence, so the route refuses it. */
+  noLastFrame?: boolean;
+  /** CR1 §3 `atomikMayPropose`: may Atomik put this engine in a plan? Absent: any visible engine that generates from a prompt. */
+  atomikMayPropose?: boolean;
 };
+
+/** CR1 §3: may Atomik propose this engine? The field when set; else any visible engine that generates from a prompt. */
+export function atomikMayPropose(m: ModelDef): boolean {
+  return m.atomikMayPropose ?? (!m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate"));
+}
 
 export const MODELS: ModelDef[] = [
   {
@@ -417,6 +432,150 @@ export const MODELS: ModelDef[] = [
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
     note: "A trained identity, rendered by Flux. Made from the Studio.",
+  },
+  /* ── CR1 §3, the ten first — the six that were not here yet. Kling 3.0
+        Standard, Kling Motion, Topaz Astra 2 and Bria RMBG were. Endpoint
+        ids and rates as on fal's public pages, 11 September 2026. ─────── */
+  {
+    id: "bytedance/seedance-2.5/reference-to-video",
+    label: "Seedance 2.5 Edit",
+    short: "SD 2.5 EDIT",
+    family: "seedance-2",
+    provider: "fal",
+    kind: "video",
+    billing: "token",
+    paramStyle: "fields",
+    supportsTasks: ["generate", "edit", "extend"],
+    falEndpoints: {
+      text: "bytedance/seedance-2.5/reference-to-video", image: "bytedance/seedance-2.5/reference-to-video",
+      edit: "bytedance/seedance-2.5/reference-to-video", extend: "bytedance/seedance-2.5/reference-to-video",
+    },
+    /* No `adaptive` here: fal reports no token count, so the frame that is
+       priced must be a frame we can name — the ratio is always concrete. */
+    resolutions: ["480p", "720p"],
+    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+    durations: seconds(4, 30),
+    supportsAudio: true,
+    supportsCameraFixed: false,
+    maxReferenceImages: 30,
+    maxReferenceVideos: 10,
+    maxVideoSecondsTotal: 30,
+    use: "Seedance edit on fal: references as @Image1 @Video1, up to 30s.",
+    note: "The same Seedance 2.5, served by fal: reference, edit and extend through one endpoint, at 480p or 720p (1080p is ModelArk's), priced per token of output and 40% less with a video reference in.",
+  },
+  {
+    id: "wan/v2.6/image-to-video",
+    label: "Wan 2.6",
+    short: "WAN 2.6",
+    family: "wan-2",
+    provider: "fal",
+    kind: "video",
+    billing: "second",
+    paramStyle: "fields",
+    falEndpoints: { image: "wan/v2.6/image-to-video" },
+    needsStartImage: true,
+    noLastFrame: true,
+    atomikMayPropose: false,
+    resolutions: ["720p", "1080p"],
+    ratios: ["adaptive"],
+    durations: [5, 10, 15],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 1,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    use: "Cheapest 1080p drafts from a first frame.",
+    note: "Alibaba's Wan 2.6 on fal, image-to-video: the still sets the frame; 5, 10 or 15 seconds at 720p or 1080p, priced per second. No audio of its own.",
+  },
+  {
+    id: "fal-ai/veo3.1/fast",
+    label: "Veo 3.1 Fast",
+    short: "VEO 3.1",
+    family: "veo-3",
+    provider: "fal",
+    kind: "video",
+    billing: "second",
+    paramStyle: "fields",
+    falEndpoints: { text: "fal-ai/veo3.1/fast", image: "fal-ai/veo3.1/fast/image-to-video" },
+    noLastFrame: true,
+    resolutions: ["720p", "1080p", "4k"],
+    ratios: ["16:9", "9:16"],
+    durations: [4, 6, 8],
+    supportsAudio: true,
+    supportsCameraFixed: false,
+    maxReferenceImages: 1,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    use: "Audio-native drafts up to 4K, 8 seconds.",
+    note: "Google's Veo 3.1 Fast on fal: 4, 6 or 8 seconds at 720p, 1080p or 4K, audio by default, priced per second; a first frame makes it image-to-video.",
+  },
+  {
+    id: "fal-ai/nano-banana-2/edit",
+    label: "Nano Banana 2 Edit",
+    short: "NB 2 EDIT",
+    family: "nano-banana",
+    provider: "fal",
+    kind: "image",
+    billing: "image",
+    paramStyle: "fields",
+    falEndpoint: "fal-ai/nano-banana-2/edit",
+    needsStartImage: true,
+    atomikMayPropose: false,
+    resolutions: ["1K", "2K", "4K"],
+    ratios: ["adaptive", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 14,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    use: "Precise edits of a still, by instruction; up to 14 refs.",
+    note: "Google's quick still engine on fal, in edit mode: the prompt says what changes, the references say what stays. Priced per image, more at 2K and 4K.",
+  },
+  {
+    id: "fal-ai/flux-pro/kontext",
+    label: "Flux Kontext",
+    short: "KONTEXT",
+    family: "flux",
+    provider: "fal",
+    kind: "image",
+    billing: "image",
+    paramStyle: "fields",
+    falEndpoint: "fal-ai/flux-pro/kontext",
+    needsStartImage: true,
+    atomikMayPropose: false,
+    resolutions: ["adaptive"],
+    ratios: ["adaptive"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 1,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    use: "Edit one still against itself; what you don't mention stays.",
+    note: "FLUX.1 Kontext [pro] on fal: one reference in, the edit described in words, the output at the reference's own size. Its safety checker is on; a flagged render is refused.",
+  },
+  {
+    id: "fal-ai/sync-lipsync/v3",
+    label: "sync-3",
+    short: "SYNC 3",
+    family: "sync",
+    provider: "fal",
+    kind: "video",
+    billing: "second",
+    paramStyle: "fields",
+    supportsTasks: ["lipsync"],
+    falEndpoints: { lipsync: "fal-ai/sync-lipsync/v3" },
+    resolutions: ["adaptive"],
+    ratios: ["adaptive"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 0,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 300,
+    use: "Lip-sync a finished take to a voice track.",
+    note: "sync.'s lipsync-3 on fal: a finished clip and an audio take in, the mouth re-timed to the voice, as long as the clip; priced per minute of output.",
   },
 ];
 

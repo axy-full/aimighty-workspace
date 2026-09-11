@@ -7,7 +7,7 @@ import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { estimateVideo, estimateImage } from "@/lib/rateTable";
-import { estimateTokens, costUsd } from "@/lib/models";
+import { MODELS, estimateTokens, costUsd } from "@/lib/models";
 import type { Board, BoardNode, BoardWire, NodeKind } from "@/lib/boards";
 import { markStale } from "@/lib/boards";
 import type { ProductionRow } from "@/lib/productions";
@@ -185,7 +185,11 @@ function Canvas() {
       return (est ?? 0) * Number(n.settings.count ?? 1);
     }
     if (n.kind === "video") {
-      const secs = Number(n.settings.seconds ?? 5); const res = String(n.settings.resolution ?? "1080p");
+      /* A setting the engine does not offer is quoted at what it will actually render (the route snaps the same way). */
+      const def = MODELS.find((m) => m.id === engineOf(n));
+      const secs0 = Number(n.settings.seconds ?? 5); const res0 = String(n.settings.resolution ?? "1080p");
+      const secs = def?.durations.length && !def.durations.includes(secs0) ? (def.durations.includes(5) ? 5 : def.durations[0]) : secs0;
+      const res = def && !def.resolutions.includes(res0) ? def.resolutions[0] : res0;
       const est = estimateVideo(rates, engineOf(n), res, secs, estimateTokens(res, String(n.settings.ratio ?? "16:9"), secs), costUsd, { audio: Boolean(n.settings.audio) });
       return est ?? 0;
     }
@@ -631,7 +635,18 @@ function Canvas() {
         </section>
         <Inspector node={sel} board={b} price={sel ? priceOf(sel) : 0} fmt={fmt} engines={engines} engineOf={engineOf} shots={shotsData?.shots ?? []} production={production} projectId={projectId}
           onRun={() => sel && runNode(sel)} onSetting={(k, v) => sel && patchNode(sel.id, { settings: { ...sel.settings, [k]: v } }, true)}
-          onEngine={(id) => sel && patchNode(sel.id, { ref: { ...(sel.ref ?? {}), engine: id }, label: engineLabel(id) }, true)}
+          onEngine={(id) => {
+            if (!sel) return;
+            /* The node's settings snap to the engine's own lists, so the quote and the render agree (Veo: 4/6/8s; Seedance on fal: 480p/720p). */
+            const def = MODELS.find((m) => m.id === id);
+            const s = { ...sel.settings };
+            if (def) {
+              const secs = Number(s.seconds ?? 5); if (def.durations.length && !def.durations.includes(secs)) s.seconds = def.durations.includes(5) ? 5 : def.durations[0];
+              const res = String(s.resolution ?? (sel.kind === "video" ? "1080p" : "1K")); if (!def.resolutions.includes(res)) s.resolution = def.resolutions[0];
+              const ratio = String(s.ratio ?? "16:9"); if (!def.ratios.includes(ratio)) s.ratio = def.ratios[0];
+            }
+            patchNode(sel.id, { ref: { ...(sel.ref ?? {}), engine: id }, label: def?.label ?? engineLabel(id), settings: s }, true);
+          }}
           onRemove={() => sel && removeNode(sel.id)} running={sel ? running.has(sel.id) : false} />
       </div>
     </div>
@@ -855,8 +870,11 @@ function Inspector({ node: n, board, price, fmt, engines, engineOf, shots, produ
   const shot = n.output?.filedTo ? shots.find((s) => s.id === n.output!.filedTo!.shotId) ?? null : null;
   const gen = n.kind === "image" || n.kind === "video";
   const engineId = gen ? engineOf(n) : "";
-  const engine = engines.find((e) => e.id === engineId) ?? null;
-  const choices = engines.filter((e) => e.kind === (n.kind === "image" ? "image" : "video"));
+  /* The node offers every engine of its kind that generates (the registry's list) — what Atomik may PROPOSE is a
+     narrower question (CR1 §3 `atomikMayPropose`), answered in lib/atomik.ts, and never gates a person's choice. */
+  const def = MODELS.find((m) => m.id === engineId) ?? null;
+  const engine = def ? { label: def.label, durations: def.durations, resolutions: def.resolutions, ratios: def.ratios, supportsAudio: def.supportsAudio } : (engines.find((e) => e.id === engineId) ?? null);
+  const choices = MODELS.filter((m) => !m.hidden && m.kind === (n.kind === "image" ? "image" : "video") && (m.supportsTasks ?? ["generate"]).includes("generate")).map((m) => ({ id: m.id, label: m.label }));
   const took = n.output?.tookMs ? Math.max(1, Math.round(n.output.tookMs / 60_000)) : null;
   const seed = n.settings.seed;
   return (

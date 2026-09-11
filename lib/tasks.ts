@@ -20,7 +20,7 @@
  * decoration; a prompt without them is a different request.
  */
 
-export type TaskId = "generate" | "edit" | "extend" | "motion" | "upscale" | "reframe";
+export type TaskId = "generate" | "edit" | "extend" | "motion" | "upscale" | "reframe" | "lipsync";
 /** The tasks that work on an existing clip. */
 export type LockedTaskId = Exclude<TaskId, "generate">;
 
@@ -134,6 +134,21 @@ export const TASKS: TaskDef[] = [
     triggers: [],
     defaultTrigger: "",
   },
+  /* Lip-sync (CR1 §3, sync-3 on fal): a finished clip and one of our audio
+     takes — the voice — in; the mouth re-timed to the words, as long as the
+     clip. The audio travels beside the clip as a reference of kind `audio`. */
+  {
+    id: "lipsync",
+    label: "Lip-sync",
+    blurb: "Match a finished take's mouth to a voice track with sync-3.",
+    locked: true,
+    promptOptional: true,
+    forceRatio: "adaptive",
+    forceDuration: "source",
+    preferMov: false,
+    triggers: [],
+    defaultTrigger: "",
+  },
 ];
 
 /**
@@ -241,6 +256,10 @@ export function sourceProblem(
   if (task.id === "reframe") {
     // Any finished clip: Luma reads the resolution it is given, 1080p included.
     if (seconds != null && seconds > 300) return `Reframe takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
+    return null;
+  }
+  if (task.id === "lipsync") {
+    if (seconds != null && seconds > 300) return `Lip-sync takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
     return null;
   }
   if (task.id === "motion") {

@@ -7,7 +7,7 @@ import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useAtomikRail } from "@/lib/atomikRail";
-import { MODELS } from "@/lib/models";
+import { MODELS, atomikMayPropose } from "@/lib/models";
 import { estimateVideo, estimateImage } from "@/lib/rateTable";
 import { estimateTokens, costUsd } from "@/lib/models";
 import { NOTIFY_KINDS, NOTIFY_LABELS, type NotifyKind } from "@/lib/notifyPrefs";
@@ -304,7 +304,7 @@ function Settings() {
               const on = !off.includes(m.id); const ok = configuredFor(m.id);
               return (
                 <Row key={m.id} label={<span className="flex items-center gap-[8px]"><span className={`box-border block h-[7px] w-[7px] flex-none rounded-full ${ok ? "bg-ink" : "border border-dashed border-ink-muted"}`} />{m.label}</span>}>
-                  <span className="flex items-center gap-[10px]"><Mono cost tone="body" className="whitespace-nowrap">{rateOf(m.id)}</Mono><Switch on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /></span>
+                  <span className="flex items-center gap-[10px]"><Mono cost tone="body" className="whitespace-nowrap">{rateOf(m.id)}</Mono>{atomikMayPropose(m) ? <Switch on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /> : <Mono cost>Never proposed</Mono>}</span>
                 </Row>
               );
             })}
@@ -429,7 +429,7 @@ function Settings() {
                   <span className="text-[12.5px] leading-[1.3] text-ink-body">{m.use}</span>
                   <span className="flex items-center justify-between border-t border-[rgba(245,246,248,.07)] pt-[9px]">
                     <Mono cost tone="ink">{rateOf(m.id)}</Mono>
-                    <span className="flex items-center gap-[8px] ui-mono">Atomik may propose<Switch on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /></span>
+                    {atomikMayPropose(m) ? <span className="flex items-center gap-[8px] ui-mono">Atomik may propose<Switch on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /></span> : <Mono cost tone="muted">Never proposed · {(m.needsStartImage ? "needs a still" : (m.supportsTasks ?? ["generate"]).includes("generate") ? "an edit engine" : "a post tool")}</Mono>}
                   </span>
                 </div>
               );

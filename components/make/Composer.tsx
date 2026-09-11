@@ -195,8 +195,10 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   /** `19 CR / 5S` on a video chip; `3 CR / STILL` on an image chip. */
   const rateLine = (mId: string) => {
     const m = getModel(mId);
-    const p = priceOf(mId, m.kind === "image" ? (m.resolutions.includes(resolution) ? resolution : m.resolutions[0]) : (m.resolutions.includes(resolution) ? resolution : m.resolutions[0]), m.kind === "image" ? 0 : (m.durations.includes(seconds) ? seconds : 5), audio, 0);
-    return p == null ? "—" : `${money.price(p)} / ${m.kind === "image" ? "still" : `${m.durations.includes(seconds) ? seconds : 5}s`}`;
+    /* An engine that cannot do the chosen length is quoted at its own nearest one (Veo: 4, 6 or 8s), never at a length it does not offer. */
+    const secs = m.durations.includes(seconds) ? seconds : m.durations.includes(5) ? 5 : (m.durations[0] ?? 5);
+    const p = priceOf(mId, m.resolutions.includes(resolution) ? resolution : m.resolutions[0], m.kind === "image" ? 0 : secs, audio, 0);
+    return p == null ? "—" : `${money.price(p)} / ${m.kind === "image" ? "still" : `${secs}s`}`;
   };
 
   /* ── setup rows and cast (§10) ─────────────────────────────────────── */
@@ -253,7 +255,9 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
 
   /* ── the press ─────────────────────────────────────────────────────── */
   const [busy, setBusy] = useState(false);
-  const ready = prompt.trim().length > 0 && !uploading && (kind !== "audio" || (track !== "speech" || Boolean(voice)));
+  /* CR1 §3: an engine that starts from a still (Wan 2.6, Flux Kontext, Nano Banana 2 Edit) waits for one. */
+  const needsStill = Boolean(model.needsStartImage) && !refs.some((r) => r.kind === "image");
+  const ready = prompt.trim().length > 0 && !uploading && !needsStill && (kind !== "audio" || (track !== "speech" || Boolean(voice)));
   const render = async () => {
     if (!signedIn) { router.push(signIn); return; }
     if (!ready || busy || unknown.length) return;
@@ -391,7 +395,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
               </span>
             )}
             {kind === "video" ? (
-              !(phone && !frame) && <span className="ml-auto text-right text-[12px] leading-[1.3] text-ink-body">first frame · optional</span>
+              !(phone && !frame) && <span className="ml-auto text-right text-[12px] leading-[1.3] text-ink-body">{model.needsStartImage ? "first frame · required" : "first frame · optional"}</span>
             ) : (
               <Segmented label="Reference use" placement="bar" className="ml-auto flex-none" value={useAs} onChange={setUseAs} options={[{ value: "loose", label: "Loose" }, { value: "first", label: "Exact" }]} />
             )}
@@ -559,7 +563,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto p-[16px]">{body}</div>
           <div className="flex flex-none flex-col gap-[8px] border-t border-border px-[16px] pb-[16px] pt-[12px]">
-            <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
+            <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : needsStill ? " · attach a still first" : suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
               {signedIn ? "Render" : "Sign in to render"}
             </Button>
             <Mono cost className="text-center !leading-[1.4]">Lands on the wall unfiled · file to a shot any time</Mono>
