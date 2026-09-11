@@ -22,6 +22,7 @@ import Loader, { PageLoader, LOADER_SIZES } from "@/components/atomik/Loader";
 import { useAtomik } from "@/components/atomik/AtomikProvider";
 import LazyMedia from "@/components/LazyMedia";
 import { RigBar, RigStrip, rigHrefs, Avatar } from "@/components/rig/RigBar";
+import NewAssetSheet from "@/components/assets/NewAssetSheet";
 import {
   KIND_TAG, KIND_WORD, KINDS, NODE_W, TAKES_DOT_LEFT, isGen,
   outputDotTop, outputPoint, portPoint, wirePath, wireMid, endpoints, newNode, nid,
@@ -91,7 +92,8 @@ function Canvas() {
   const projectId = loaded?.board.projectId ?? null;
   const { data: prods } = useApi<{ productions: ProductionRow[] }>(signedIn ? "/api/productions" : null, 60_000);
   const { data: shotsData } = useApi<{ shots: ShotRow[] }>(projectId ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
-  const { data: elements } = useApi<{ elements: ElementFull[] }>(projectId ? `/api/rig/elements?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
+  const { data: elements, refresh: refreshElements } = useApi<{ elements: ElementFull[] }>(projectId ? `/api/rig/elements?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
+  const [assetSheet, setAssetSheet] = useState(false);
   const production = prods?.productions.find((p) => p.projects.some((j) => j.id === projectId)) ?? null;
   usePageTitle(loaded ? `${loaded.board.name} · Canvas` : "Canvas");
 
@@ -357,6 +359,8 @@ function Canvas() {
   const unrunCost = unrun.reduce((a, n) => a + priceOf(n), 0);
   const hrefs = rigHrefs(projectId ?? "", b.id, null);
   const addItems: MenuItem[] = [
+    { kind: "item", label: "New asset", keys: fmt(0), onSelect: () => setAssetSheet(true) },
+    { kind: "divider" },
     ...(elements?.elements ?? []).slice(0, 8).map((el): MenuItem => ({ kind: "item", label: `@${el.name}`, keys: el.kind.toUpperCase(), onSelect: () => { addAsset(el); } })),
     ...((elements?.elements ?? []).length ? [{ kind: "divider" } as MenuItem] : []),
     ...(shotsData?.shots ?? []).slice(0, 8).map((s): MenuItem => ({ kind: "item", label: `${s.code} · ${s.description || s.title || "shot"}`.slice(0, 40), keys: "SHOT", onSelect: () => { addShot(s); } })),
@@ -408,6 +412,7 @@ function Canvas() {
             <button type="button" onClick={runUnrun} disabled={!unrun.length} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink-body disabled:opacity-60">Run unrun · {fmt(unrunCost)}</button>
           </div>
           {addMenu && <Menu x={addMenu.x} y={addMenu.y} title="Add node" items={addItems} onClose={() => setAddMenu(null)} />}
+          <NewAssetSheet open={assetSheet} from="rig" onClose={() => setAssetSheet(false)} onCreated={() => refreshElements()} />
         </section>
         <Inspector node={sel} board={b} price={sel ? priceOf(sel) : 0} fmt={fmt} engines={engines} engineOf={engineOf} shots={shotsData?.shots ?? []} production={production} projectId={projectId}
           onRun={() => sel && runNode(sel)} onSetting={(k, v) => sel && patchNode(sel.id, { settings: { ...sel.settings, [k]: v } }, true)}

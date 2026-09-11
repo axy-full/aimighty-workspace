@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
-import { listElements, ensureRig, createElement, addVersion } from "@/lib/elements";
+import { listElements, ensureRig, createElement, addVersion, syncTrainedVersions } from "@/lib/elements";
 import { isElementKind } from "@/lib/rig";
 
 /**
@@ -18,6 +18,8 @@ export const GET = withTenant(async function GET(req: Request) {
   if (got.response) return got.response;
 
   const backfill = await ensureRig(got.user.id);
+  /* A face that finished training since the last read becomes its asset's current version. */
+  try { await syncTrainedVersions(); } catch { /* the list still answers */ }
 
   const projectId = new URL(req.url).searchParams.get("projectId");
   const scoped = projectId && projectId !== "all" && projectId !== "unfiled" ? projectId : null;
@@ -43,10 +45,22 @@ export const POST = withTenant(async function POST(req: Request) {
   const projectId = typeof b?.projectId === "string" && b.projectId ? b.projectId : null;
   const fromGenId = typeof b?.fromGenId === "string" && b.fromGenId ? b.fromGenId : null;
   const fromUploadId = typeof b?.fromUploadId === "string" && b.fromUploadId ? b.fromUploadId : null;
-  const el = await createElement({ name, kind, projectId, fromGenId }, got.user.id);
+  const castId = typeof b?.castId === "string" && b.castId ? b.castId : null;
+  const identityId = typeof b?.identityId === "string" && b.identityId ? b.identityId : null;
+  const description = typeof b?.description === "string" ? b.description.slice(0, 400) : "";
+  const refs: { uploadId: string | null; genId: string | null }[] = Array.isArray(b?.references)
+    ? b.references.filter((r: unknown) => r && typeof r === "object").map((r: Record<string, unknown>) => ({ uploadId: typeof r.uploadId === "string" ? r.uploadId : null, genId: typeof r.genId === "string" ? r.genId : null })).filter((r: { uploadId: string | null; genId: string | null }) => r.uploadId || r.genId).slice(0, 24)
+    : (fromUploadId || fromGenId) ? [{ uploadId: fromUploadId, genId: fromGenId }] : [];
+  const el = await createElement({ name, kind, description, projectId, castId, fromGenId: fromGenId ?? refs[0]?.genId ?? null }, got.user.id);
   const first = el.attributes[0];
-  if (first && (fromUploadId || fromGenId)) {
-    await addVersion(first.id, fromUploadId ? { uploadId: fromUploadId } : { genId: fromGenId }, { label: "v1", makeCurrent: true }, got.user.id);
+  if (first) {
+    /* Every reference is a version of the first attribute (the canonical still, the plate, the look), the first one current (§12: attributes are read from references). */
+    for (let i = 0; i < refs.length; i++) {
+      const r = refs[i];
+      await addVersion(first.id, r.uploadId ? { uploadId: r.uploadId } : { genId: r.genId }, { label: `v${i + 1}`, makeCurrent: i === 0 }, got.user.id);
+    }
+    /* A trained face is a version too — pending until the trainer finishes, so nothing points at it yet. */
+    if (identityId) await addVersion(first.id, { identityId }, { label: "trained", status: "pending" }, got.user.id);
   }
   const { getElement } = await import("@/lib/elements");
   return NextResponse.json({ element: (await getElement(el.id)) ?? el }, { status: 201 });

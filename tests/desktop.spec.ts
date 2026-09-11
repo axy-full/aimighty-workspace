@@ -17,7 +17,7 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 const ROUTES = [
-  "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio", "/studio/shot",
+  "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio/shot",
   "/usage", "/settings", "/policy", "/terms", "/privacy",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots",
   "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/takes/demo", "/shots/demo", "/elements/demo",
@@ -400,4 +400,44 @@ test("Rig · Canvas: the 6a chrome, ⌘K adds a node, the inspector follows the 
   expect(await node.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("12px");
   await page.keyboard.press("Backspace");
   await expect(page.getByRole("article", { name: "Prompt node" })).toHaveCount(0);
+});
+
+/**
+ * Append to tests/desktop.spec.ts (design/particl-v2 §12, board 3a): the New
+ * asset sheet from the Library — 760 wide, radius 16, the header, the 48px
+ * name field and kind buttons, the dashed references well, the four port
+ * tiles a character derives, the train row with its switch, the foot's
+ * Cancel and the one filled primary; Esc closes it. Creating is free and
+ * nothing here creates: the sheet is opened and closed.
+ */
+test("New asset: the 3a sheet opens from the Library at its numbers and closes on Esc", async ({ page }) => {
+  await page.goto("/library");
+  await settle(page);
+  const signedIn = await page.getByRole("button", { name: "Account" }).count();
+  test.skip(!signedIn, "the Library needs a workspace");
+  await page.getByRole("button", { name: /^New asset/ }).click();
+  const sheet = page.getByRole("dialog", { name: "New asset" });
+  await expect(sheet).toBeVisible();
+  const box = await sheet.evaluate((el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return { w: Math.round(r.width), radius: cs.borderRadius, border: cs.borderColor, bg: cs.backgroundColor }; });
+  expect(box.w).toBe(760);
+  expect(box.radius).toBe("16px");
+  expect(box.bg).toBe("rgb(18, 20, 26)");
+  const name = sheet.getByRole("textbox", { name: "Name" });
+  expect(await name.evaluate((el) => el.getBoundingClientRect().height)).toBe(48);
+  expect(await name.evaluate((el) => getComputedStyle(el).fontSize)).toBe("20px");
+  const kinds = sheet.getByRole("group", { name: "Kind" }).getByRole("button");
+  await expect(kinds).toHaveText(["Character", "Prop", "Location", "Look", "Voice"]);
+  expect(await kinds.first().evaluate((el) => el.getBoundingClientRect().height)).toBe(48);
+  await expect(sheet.getByRole("list", { name: "Ports" }).getByRole("listitem")).toHaveCount(4);
+  await expect(sheet.getByText(/^READY|LATER|OPTIONAL$/i).first()).toBeVisible();
+  const sw = sheet.getByRole("switch");
+  expect(await sw.evaluate((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })).toEqual([36, 20]);
+  const create = sheet.locator("[data-create]");
+  expect(await create.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBe(46);
+  expect(await create.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(245, 246, 248)");
+  const filled = await page.locator("[role=dialog] button").evaluateAll((els) => els.filter((b) => getComputedStyle(b).backgroundColor === "rgb(245, 246, 248)").length);
+  expect(filled, "one filled primary in the sheet").toBe(1);
+  await expect(sheet.getByRole("button", { name: "Cancel" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
 });

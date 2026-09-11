@@ -308,7 +308,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
                 })}
                 {mentions.length === 0 && <span className="ak-sub !text-[12px]">No @names yet.</span>}
               </div>
-              <a href="/studio" className="hdr-mono-link self-start">GIVE THEM STILLS IN THE STUDIO →</a>
+              <a href="/library" className="hdr-mono-link self-start">GIVE THEM STILLS IN THE LIBRARY →</a>
             </>
           ) : (
             <NotesTab doc={doc} me={me ?? "—"} projectId={projectId} onChange={(notes) => edit((d) => ({ ...d, notes }))} />
