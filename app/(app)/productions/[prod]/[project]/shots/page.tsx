@@ -12,13 +12,15 @@ import { estimateTokens, costUsd } from "@/lib/models";
 import type { Shot } from "@/lib/shots";
 import NewAssetSheet from "@/components/assets/NewAssetSheet";
 import type { ProductionRow } from "@/lib/productions";
-import { Segmented, Button, Chip, Mono, MediaCard, Placeholder } from "@/components/ui";
+import { Segmented, Button, Chip, Mono, MediaCard, Placeholder, PinnedBar, PinnedPrimary, PinnedSquare } from "@/components/ui";
+import { usePhone } from "@/lib/usePhone";
+import { useLongPress } from "@/lib/useLongPress";
 import type { DotState } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
-import ProductionHeader from "@/components/production/ProductionHeader";
+import ProductionHeader, { clock } from "@/components/production/ProductionHeader";
 import { useAtomikRail } from "@/lib/atomikRail";
 
 /**
@@ -46,6 +48,13 @@ import { useAtomikRail } from "@/lib/atomikRail";
  * a production pill to move it, takes and spend going with it. Double-click
  * the description to rename inline — Enter commits, Esc cancels. Every
  * action narrates in the toast.
+ *
+ * Below 768 (design/particl-v2-mobile, board M3): the toolbar is gone —
+ * the sub-tabs are in the header, `+` (50×50) and `Render SH08–09 · 38 CR`
+ * are pinned above the dock (the primary outlines while any sheet is
+ * open); two columns of the phone's card, 10 apart, `12px 16px`. A long
+ * press opens the same menu as a sheet (48px rows; `Move to production`
+ * as a second sheet); a sideways drag reorders, a downward one scrolls.
  */
 type ShotRow = Shot & { takes: number; ok: number; failed: number; spend: number; credits?: number; state: "approved" | "picked" | "rendering" | "draft" | "none"; master: { id: string; version: number | null; url: string | null } | null; poster?: string | null };
 type View = "grid" | "filmstrip";
@@ -61,6 +70,7 @@ function Shots() {
   const router = useRouter();
   const { signedIn, rates, models } = useSession();
   const money = useMoney();
+  const phone = usePhone();
   const toast = useToast();
   const rail = useAtomikRail();
   const { data: prods } = useApi<{ productions: ProductionRow[] }>(signedIn ? "/api/productions" : null, 30_000);
@@ -240,8 +250,9 @@ function Shots() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink" onClick={() => { if (!menu) setSelected(new Set()); }}>
-      <ProductionHeader production={production} project={project} />
-      <div className="flex h-[52px] flex-none items-center gap-[14px] px-[24px] max-md:h-auto max-md:flex-wrap max-md:gap-[10px] max-md:px-[16px] max-md:py-[10px]">
+      <ProductionHeader production={production} project={project} phoneStepper={false}
+        phoneLine={[project.runtimeSecs ? clock(project.runtimeSecs) : `${stats.secs}s`, `${stats.approved} appr`, `${shots.filter((s) => s.state === "picked").length} picked`].join(" · ")} />
+      <div className="flex h-[52px] flex-none items-center gap-[14px] px-[24px] max-md:hidden">
         <Segmented label="View" placement="toolbar" value={view} onChange={setView} options={[{ value: "grid", label: "Grid" }, { value: "filmstrip", label: "Filmstrip" }]} />
         <Mono>{stats.shots} shots · {stats.approved} approved · {stats.secs}s planned · {fmt(stats.spent)} spent</Mono>
         {dragId && others.length > 0 && (
@@ -267,10 +278,14 @@ function Shots() {
         </span>
       </div>
       {view === "grid" ? (
-        <div className="min-h-0 flex-1 overflow-auto px-[24px] pb-[24px] max-md:px-[16px]">
-          <div data-owns-menu className={`grid gap-[12px] ${cols} max-md:grid-cols-2`}>
+        <div className="min-h-0 flex-1 overflow-auto px-[24px] pb-[24px] max-md:px-[16px] max-md:pb-[10px] max-md:pt-[12px]">
+          <div data-owns-menu className={`grid gap-[12px] ${cols} max-md:grid-cols-2 max-md:gap-[10px]`}>
             {shots.map((s, i) => (
-              <ShotCard key={s.id} shot={s} position={i + 1} quote={quote} fmt={fmt} inCredits={money.inCredits}
+              <ShotCard key={s.id} shot={s} position={i + 1} quote={quote} fmt={fmt} inCredits={money.inCredits} phone={phone}
+                onLongPress={(x, y) => { setSelected(new Set([s.id])); setMenu({ x, y, id: s.id, sub: false }); }}
+                onTouchDragStart={() => { setDragId(s.id); setMenu(null); }}
+                onTouchDragMove={(x, y) => { const id = (document.elementFromPoint(x, y)?.closest("[data-shot]") as HTMLElement | null)?.dataset.shot ?? null; if (id !== overId) setOverId(id); }}
+                onTouchDragEnd={(x, y) => { const id = x >= 0 ? ((document.elementFromPoint(x, y)?.closest("[data-shot]") as HTMLElement | null)?.dataset.shot ?? null) : null; if (dragId && id && id !== dragId) reorder(dragId, id); setDragId(null); setOverId(null); }}
                 selected={selected.has(s.id)} dragging={dragId === s.id} over={overId === s.id && !!dragId && dragId !== s.id}
                 renaming={renaming?.id === s.id ? renaming.value : null}
                 onRenameChange={(v) => setRenaming((r) => r && { ...r, value: v })} onRenameCommit={commitRename} onRenameCancel={() => setRenaming(null)}
@@ -288,6 +303,10 @@ function Shots() {
       ) : (
         <Filmstrip shots={shots} fmt={fmt} inCredits={money.inCredits} />
       )}
+      <PinnedBar>
+        <PinnedSquare label="+ Shot" onClick={addShot}>+</PinnedSquare>
+        <PinnedPrimary cost={fmt(renderCost)} outlined={rail.open || menu != null || assetFor != null} disabled={!toRender.length} busy={rendering} onClick={render}>{rendering ? "Rendering…" : renderLabel}</PinnedPrimary>
+      </PinnedBar>
       {menu && menuShot && <Menu x={menu.x} y={menu.y} title={`${menuShot.code} · shot`} items={menuItems} onClose={() => setMenu(null)} />}
       <NewAssetSheet open={assetFor != null} from="take" onClose={() => setAssetFor(null)}
         initial={assetFor ? { name: (assetFor.cast[0] ?? "").replace(/^@/, ""), references: assetFor.master ? [{ genId: assetFor.master.id, url: assetFor.master.url, label: `${assetFor.code} v${assetFor.master.version ?? 1}`, kind: "video" as const }] : [] } : undefined}
@@ -302,7 +321,8 @@ const STATE: Record<ShotRow["state"], { dot: DotState; word: string }> = {
 };
 
 function ShotCard(p: {
-  shot: ShotRow; position: number; quote: (s: ShotRow) => number; fmt: (n: number) => string; inCredits: boolean;
+  shot: ShotRow; position: number; quote: (s: ShotRow) => number; fmt: (n: number) => string; inCredits: boolean; phone?: boolean;
+  onLongPress?: (x: number, y: number) => void; onTouchDragStart?: () => void; onTouchDragMove?: (x: number, y: number) => void; onTouchDragEnd?: (x: number, y: number) => void;
   selected: boolean; dragging: boolean; over: boolean; renaming: string | null;
   onRenameChange: (v: string) => void; onRenameCommit: () => void; onRenameCancel: () => void;
   onSelect: (e: MouseEvent) => void; onContext: (e: MouseEvent) => void; onDoubleClick: () => void;
@@ -316,11 +336,17 @@ function ShotCard(p: {
   const well = s.master?.url
     ? <LazyMedia url={s.master.url} kind="video" className="absolute inset-0 h-full w-full object-cover" />
     : s.poster ? <LazyMedia url={s.poster} kind="image" className="absolute inset-0 h-full w-full object-cover" /> : null;
+  /* A phone's finger: hold for the menu, drag sideways to reorder (the HTML5 drag stays a mouse's). */
+  const press = useLongPress({
+    onPress: (x, y) => p.onLongPress?.(x, y),
+    onDragStart: p.onTouchDragStart ? () => p.onTouchDragStart?.() : undefined,
+    onDragMove: p.onTouchDragMove, onDragEnd: p.onTouchDragEnd,
+  });
   return (
-    <div draggable onDragStart={p.onDragStart} onDragOver={p.onDragOver} onDrop={p.onDrop} onDragEnd={p.onDragEnd}
-      onClick={p.onSelect} onContextMenu={p.onContext} onDoubleClick={p.onDoubleClick}
-      className={`relative ${p.dragging ? "opacity-[.35]" : ""}`} style={p.over ? { boxShadow: "inset 3px 0 0 var(--ink)" } : undefined}>
-      <MediaCard id={`${s.code} · ${String(p.position).padStart(2, "0")}`} state={st.dot} stateLabel={st.word}
+    <div draggable={!p.phone} onDragStart={p.onDragStart} onDragOver={p.onDragOver} onDrop={p.onDrop} onDragEnd={p.onDragEnd}
+      onClick={p.onSelect} onContextMenu={p.onContext} onDoubleClick={p.onDoubleClick} data-shot={s.id} {...(p.phone ? press : {})}
+      className={`relative ${p.dragging ? "opacity-[.35]" : ""}`} style={{ touchAction: "pan-y", ...(p.over ? { boxShadow: "inset 3px 0 0 var(--ink)" } : {}) }}>
+      <MediaCard phone={p.phone} id={p.phone ? s.code : `${s.code} · ${String(p.position).padStart(2, "0")}`} state={st.dot} stateLabel={st.word}
         well={well ?? (type || s.state === "none" ? null : <Placeholder />)}
         emptyLabel={s.state === "none" ? (type ? "Type only" : "No take yet") : undefined}
         loading={s.state === "rendering"}
@@ -331,13 +357,13 @@ function ShotCard(p: {
             onClick={(e) => e.stopPropagation()} aria-label="Rename the shot"
             className="h-[36px] w-full rounded-ctl border border-ink bg-ground px-[10px] text-[13.5px] leading-none text-ink outline-0" />
         ) : (s.description || s.title || "Untitled")}
-        setup={
+        setup={p.phone ? undefined :
           <span className="flex flex-col gap-[6px]">
             {s.cast?.length > 0 && <span className="flex min-h-[24px] flex-wrap gap-[4px]">{s.cast.map((c) => <Chip key={c} variant="composer">{c.startsWith("@") ? c : `@${c}`}</Chip>)}</span>}
             {setupLine && <span className="truncate">{setupLine}</span>}
           </span>
         }
-        footer={{ plan: `${s.planned ?? PLANNED}s · ${type ? p.fmt(0) : p.fmt(p.quote(s))}`, renders: s.takes ? `${s.takes} ${s.takes === 1 ? "take" : "takes"} · ${p.fmt(spent)}` : type ? "Never renders" : "Nothing yet", rendersMuted: !s.takes }} />
+        footer={{ plan: `${s.planned ?? PLANNED}s · ${type ? p.fmt(0) : p.fmt(p.quote(s))}`, renders: s.takes ? `${s.takes} ${p.phone ? "tk" : s.takes === 1 ? "take" : "takes"} · ${p.fmt(spent)}` : type ? "Never renders" : "Nothing yet", rendersMuted: !s.takes }} />
       {s.master && (
         <span className="ui-chip-scrim absolute bottom-[calc(100%/3)] right-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono ui-mono-cost text-accent">V{s.master.version ?? 1} ↓</span></span>
       )}

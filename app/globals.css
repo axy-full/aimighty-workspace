@@ -3739,3 +3739,14 @@ body:has(.pane-div.is-drag) { cursor: col-resize; user-select: none; }
    touch area on a phone — an invisible 44px band, centred on the control. */
 .tap44 { position: relative; }
 @media (max-width: 767px) { .tap44::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); } }
+
+/* ── v2 below 768 (design/particl-v2-mobile): the phone is the app frame.
+   The screen scrolls inside it; the pinned block and the dock sit at the
+   bottom (README: "One primary, pinned … above the dock"). This overrides
+   the older phone rule above, which let the document scroll. A route that
+   has no scroll container of its own scrolls in `.shell-page`. ── */
+@media (max-width: 767px) {
+  .shell { height: 100dvh; min-height: 0; }
+  .shell-body { display: flex; }
+  .shell-page { overflow-y: auto; }
+}

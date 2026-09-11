@@ -16,4 +16,5 @@ export { default as Rail, RAIL_WIDTHS } from "./Rail";
 export { default as Sheet } from "./Sheet";
 export { Mark, Wordmark, Lockup, TRAIL } from "./Mark";
 export { default as Menu, type MenuItem } from "./Menu";
+export { default as PinnedBar, PinnedPrimary, PinnedSquare } from "./PinnedBar";
 export { ToastHost, useToast } from "./Toast";
