@@ -13,6 +13,7 @@ import { estimateTokens, costUsd } from "@/lib/models";
 import { NOTIFY_KINDS, NOTIFY_LABELS, type NotifyKind } from "@/lib/notifyPrefs";
 import { appAlert, appPrompt } from "@/components/dialog";
 import { Mono, Button } from "@/components/ui";
+import { usePhone } from "@/lib/usePhone";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import Ring from "@/components/atomik/Ring";
@@ -37,6 +38,17 @@ import { PageLoader } from "@/components/atomik/Loader";
  * rows whose behaviour has one setting today say so without a caret
  * (Atomik checkpoints at every paid step; it proposes assets and never
  * creates them).
+ *
+ * Below 768 (design/particl-v2-mobile, board M10): the index as pills
+ * scrolling in a `10px 16px` row; then `12px 16px 40px`, 12 apart, one
+ * `--card` at radius 14 (`14px`) per section, each under its mono label —
+ * Credits first (the balance at 600 30 with the dollars beside it, `MONTH
+ * TO DATE`, `Top up · 500 CR · $50`), Workspace rows (48px, the value in
+ * mono with ▾), Team rows (a 30px avatar, the name, the role ▾, `Invite`),
+ * Engines, Production defaults, Atomik (`EVERY PAID STEP`, `PROPOSE ONLY`,
+ * `NEVER WITHOUT YOU · SPEND · UNLOCK · DELETE · APPROVE`), Rig, Storage,
+ * Notifications, Account. The board's auto top-up row has no setting
+ * behind it yet and is left out rather than drawn dead.
  */
 type Me = { name: string; email: string; role: string; owner?: boolean; workspace?: { name: string } | null };
 type Ws = { settings: Record<string, string>; defaults: Record<string, string>; models?: { video: string; image: string } | null };
@@ -85,7 +97,18 @@ function Section({ id, title, label, line, children, className = "", head }: { i
   );
 }
 function Row({ label, children, gap = false }: { label: ReactNode; children: ReactNode; gap?: boolean }) {
+  const phone = usePhone();
+  if (phone) return <span className="flex min-h-[48px] items-center justify-between gap-[12px] border-t border-[rgba(245,246,248,.07)] text-[13.5px] font-medium leading-[1.3] text-ink"><span>{label}</span>{children}</span>;
   return <span className={`flex items-center justify-between border-t border-[rgba(245,246,248,.07)] py-[10px] text-[13.5px] leading-none text-ink ${gap ? "gap-[10px]" : ""}`}><span>{label}</span>{children}</span>;
+}
+/** M10's card: `--card`, .08, radius 14, `14px`, its mono label first, an optional head at the right. */
+function Card({ id, label, head, children, className = "gap-[2px]" }: { id: string; label: ReactNode; head?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <section id={id} className={`flex flex-col rounded-mobile border border-border bg-card p-[14px] ${className}`} aria-label={typeof label === "string" ? label : undefined}>
+      <span className={`flex items-center justify-between gap-[10px] ${className === "gap-[2px]" ? "pb-[8px]" : ""}`}><Mono>{label}</Mono>{head}</span>
+      {children}
+    </section>
+  );
 }
 function Switch({ on, onChange, label, disabled = false }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
@@ -97,7 +120,16 @@ function Switch({ on, onChange, label, disabled = false }: { on: boolean; onChan
 }
 function ChipMenu({ value, items, label, fixed = false }: { value: ReactNode; items: MenuItem[]; label: string; fixed?: boolean }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const phone = usePhone();
   const cls = "tap44 flex items-center gap-[6px] rounded-pill border border-[rgba(245,246,248,.12)] px-[10px] py-[6px] text-[12.5px] font-medium leading-none text-ink";
+  /* M10: the value in mono with its caret, no pill; a fixed value keeps the caret the board draws but nothing opens. */
+  if (phone) return (
+    <>
+      <button type="button" aria-label={label} disabled={fixed} onClick={(e: RMouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setAt({ x: r.left, y: r.bottom + 6 }); }}
+        className="tap44 flex items-center gap-[4px] whitespace-nowrap ui-mono ui-mono-cost text-ink-body">{value} ▾</button>
+      {at && !fixed && <Menu x={at.x} y={at.y} title={label} items={items} onClose={() => setAt(null)} />}
+    </>
+  );
   if (fixed) return <span className={cls} title="The one behaviour the app has today">{value}</span>;
   return (
     <>
@@ -124,6 +156,7 @@ function Settings() {
   const { data: notify, refresh: refreshNotify } = useApi<{ prefs: Record<NotifyKind, boolean>; role: string }>(signedIn ? "/api/me/notify" : null, 0);
   const [current, setCurrent] = useState<string>(SECTIONS[0][0]);
   const column = useRef<HTMLDivElement>(null);
+  const phone = usePhone();
   const isAdmin = me?.role === "admin";
   const owner = Boolean(me?.owner);
   const settings = ws?.settings ?? {};
@@ -215,9 +248,117 @@ function Settings() {
   if (!ws || !me) return <PageLoader what="Opening · Settings" />;
 
   const monthName = MONTHS[new Date().getMonth()];
+  if (phone) {
+    const SHORT: Record<string, string> = { workspace: "Workspace", team: "Team", engines: "Engines", defaults: "Defaults", atomik: "Atomik", rig: "Rig", storage: "Storage", notifications: "Notifications", account: "Account" };
+    const pill = "tap44 flex flex-none items-center rounded-pill border border-[rgba(245,246,248,.14)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none text-ink";
+    return (
+      <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
+        <div className="flex flex-none gap-[6px] overflow-x-auto border-b border-border px-[16px] py-[10px]" role="navigation" aria-label="Sections" data-index="">
+          {SECTIONS.map(([id]) => (
+            <button key={id} type="button" onClick={() => jump(id)} aria-current={current === id ? "true" : undefined}
+              className={`tap44 flex-none rounded-pill border border-[rgba(245,246,248,.12)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none ${current === id ? "bg-[rgba(245,246,248,.1)] text-ink" : "text-ink-body"}`}>{SHORT[id]}</button>
+          ))}
+        </div>
+        <div ref={column} className="flex min-h-0 min-w-0 flex-col gap-[12px] overflow-y-auto px-[16px] pb-[40px] pt-[12px]">
+          <Card id="credits" label={`Credits · ${me.workspace?.name ?? "workspace"}`} className="gap-[12px]">
+            <span className="flex items-baseline gap-[8px]">
+              <span className="text-[30px] font-semibold leading-none tracking-[-0.02em] text-ink">{money.inCredits ? balance.toLocaleString() : money.price(usage?.spentUsd ?? 0)}</span>
+              <span className="text-[14px] leading-none text-ink-body">{money.inCredits ? `cr · $${(balance * creditUsd).toFixed(2)}` : "spent with your own vendors"}</span>
+            </span>
+            <span className="flex justify-between"><Mono>Month to date</Mono><Mono cost tone="ink">{monthSpent}</Mono></span>
+            {openRequests > 0 && <span className="flex justify-between"><Mono>Open top-up requests</Mono><Mono cost tone="ink">{openRequests}</Mono></span>}
+            {topups?.applies && pack ? (
+              <button type="button" disabled={!topups.canRequest} onClick={topUp} className={`flex h-[48px] items-center justify-between rounded-card px-[14px] text-[14px] font-semibold leading-none disabled:opacity-60 ${rail.open ? "border border-[rgba(245,246,248,.2)] text-ink-body" : "bg-ink text-ground"}`}>
+                Top up<span className={`ui-mono ui-mono-cost !text-[12px] ${rail.open ? "text-ink-muted" : "text-on-primary-cost"}`}>{pack.total.toLocaleString()} cr · ${pack.usd}</span>
+              </button>
+            ) : <span className="text-[13px] leading-[1.4] text-ink-body" style={{ textWrap: "pretty" }}>This workspace pays its vendors directly; there is nothing to top up.</span>}
+          </Card>
+          <Card id="workspace" label="Workspace">
+            <Row label="Workspace name"><Mono cost tone="body">{me.workspace?.name ?? "—"}</Mono></Row>
+            <Row label="Default model"><ChipMenu label="Default model" value={defaultModel?.label ?? "—"} items={videoModels.map((m): MenuItem => ({ kind: "item", label: m.label, keys: rateOf(m.id), onSelect: () => { if (isAdmin) save("defaultVideoModel", m.id, `${m.label} is the default`); else toast("An admin sets the default engine."); } }))} /></Row>
+            <Row label="Aspect · duration · resolution"><Mono cost tone="body">16:9 · 5s · 1080p</Mono></Row>
+            <Row label="Take states"><Mono cost tone="body">draft → picked → approved</Mono></Row>
+          </Card>
+          <Card id="team" label={`Team · ${team?.users.length ?? 0} ${team?.users.length === 1 ? "seat" : "seats"}`} className="gap-[10px]"
+            head={<button type="button" onClick={invite} className={pill}>Invite</button>}>
+            {(team?.users ?? []).map((m) => {
+              const role = m.permanent ? "owner" : (m.role ?? "member");
+              return (
+                <span key={m.id} className="flex min-h-[48px] items-center gap-[10px] border-t border-[rgba(245,246,248,.07)]">
+                  <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full border border-border-mid bg-ground ui-mono tracking-normal text-ink">{initials(m.name)}</span>
+                  <span className="truncate text-[13.5px] font-medium leading-none text-ink">{m.name}{m.disabled ? " · disabled" : ""}</span>
+                  <span className="ml-auto flex-none"><ChipMenu label={`${m.name}'s role`} fixed={m.permanent || !owner} value={role} items={[{ kind: "item", label: "Admin", onSelect: () => setRole(m.id, "admin") }, { kind: "item", label: "Member", onSelect: () => setRole(m.id, "member") }]} /></span>
+                </span>
+              );
+            })}
+            {(team?.invites ?? []).map((i) => (
+              <span key={i.code} className="flex min-h-[48px] items-center gap-[10px] border-t border-[rgba(245,246,248,.07)]">
+                <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full border border-dashed border-border-mid ui-mono tracking-normal text-ink-muted">{initials(i.name)}</span>
+                <span className="truncate text-[13.5px] font-medium leading-none text-ink">{i.name}</span>
+                <Mono cost className="ml-auto flex-none">Invited</Mono>
+              </span>
+            ))}
+          </Card>
+          <Card id="engines" label="Engines & rates">
+            {MODELS.filter((m) => !m.hidden).map((m) => {
+              const on = !off.includes(m.id); const ok = configuredFor(m.id);
+              return (
+                <Row key={m.id} label={<span className="flex items-center gap-[8px]"><span className={`box-border block h-[7px] w-[7px] flex-none rounded-full ${ok ? "bg-ink" : "border border-dashed border-ink-muted"}`} />{m.label}</span>}>
+                  <span className="flex items-center gap-[10px]"><Mono cost tone="body" className="whitespace-nowrap">{rateOf(m.id)}</Mono><Switch on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /></span>
+                </Row>
+              );
+            })}
+          </Card>
+          <Card id="defaults" label="Production defaults">
+            <Row label="Shot cap"><button type="button" className="tap44" onClick={async () => { const v = await appPrompt("Credits a shot may take before a member needs an admin", s("shotCapCredits"), "50"); if (v != null && /^\d+$/.test(v.trim())) save("shotCapCredits", v.trim(), `Shot cap · ${v.trim()} cr`); }}><Mono cost tone="body">{s("shotCapCredits")} cr ▾</Mono></button></Row>
+            <Row label="Warn the producer at"><ChipMenu label="Warn at" value={`${s("capWarnPct")}% of cap`} items={[50, 70, 80, 90].map((p): MenuItem => ({ kind: "item", label: `${p}%`, onSelect: () => save("capWarnPct", String(p), `Warn at ${p}%`) }))} /></Row>
+            <Row label="At the cap"><ChipMenu label="At the cap" value={s("atCap") === "stop" ? "Stop" : s("atCap") === "warn" ? "Warn only" : "Producer unlocks"} items={[["producer", "Producer unlocks"], ["stop", "Stop"], ["warn", "Warn only"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => save("atCap", v, `At the cap · ${l.toLowerCase()}`) }))} /></Row>
+            <Row label="Who approves takes"><ChipMenu label="Who approves" value={s("approvalRule") === "producer" ? "Producer" : s("approvalRule") === "cap" ? "Anyone under the cap" : "Anyone"} items={[["anyone", "Anyone"], ["cap", "Anyone under the cap"], ["producer", "Producer"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => save("approvalRule", v, `${l} approves`) }))} /></Row>
+            <Row label="Who renders"><ChipMenu label="Who renders" fixed value="Anyone" items={[]} /></Row>
+          </Card>
+          <Card id="atomik" label={<span className="flex items-center gap-[8px]"><Ring mode="idle" size={18} className="flex-none" />Atomik</span>} className="gap-[10px]">
+            <Row label="Checkpoint rule"><ChipMenu label="Checkpoint" fixed value="Every paid step" items={[]} /></Row>
+            <Row label="May create assets"><ChipMenu label="May create assets" fixed value="Propose only" items={[]} /></Row>
+            <Row label="Planning model">
+              <span className="flex items-center gap-[8px]">
+                <ChipMenu label="Planning model" value={eng?.refiner?.writer === "none" ? "None" : eng?.refiner?.label ?? "—"} items={[["claude", "Claude"], ["byteplus", "BytePlus"], ["none", "None"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => { if (isAdmin) save("promptWriter", v, `Planning by ${l}`); else toast("An admin chooses the planning model."); } }))} />
+                {eng?.refiner && eng.refiner.writer !== "none" && <Mono cost tone="ink" className="whitespace-nowrap">{money.price(eng.refiner.usdPerCall ?? 0)} / plan</Mono>}
+              </span>
+            </Row>
+            <Mono className="border-t border-[rgba(245,246,248,.07)] pt-[10px] !leading-[1.5]">Never without you · spend · unlock · delete · approve</Mono>
+          </Card>
+          <Card id="rig" label="Rig & locks">
+            <Row label="Lock new identities, voices, looks"><Switch on={s("lockNewAssets") === "1"} label="Lock new assets" disabled={!isAdmin} onChange={(v) => save("lockNewAssets", v ? "1" : "0", v ? "New assets start locked" : "New assets start open")} /></Row>
+            <Row label="Who may unlock"><ChipMenu label="Who may unlock" fixed value="Admin" items={[]} /></Row>
+            <Row label="Train on create"><ChipMenu label="Train on create" value={s("trainOnCreate") === "always" ? "Always" : s("trainOnCreate") === "never" ? "Never" : "Ask each time"} items={[["ask", "Ask each time"], ["always", "Always"], ["never", "Never"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => save("trainOnCreate", v, `Train on create · ${l.toLowerCase()}`) }))} /></Row>
+          </Card>
+          <Card id="storage" label="Storage & masters">
+            <Row label="Bucket"><Mono cost tone="body">{gb(used)}{limits ? ` of ${gb(limits.limits.storageBytes)}` : ""}</Mono></Row>
+            <Row label="File naming"><button type="button" className="tap44 min-w-0 text-right" onClick={async () => { const v = await appPrompt("File naming", s("namingTemplate"), "{project}_{scene}_{shot}_{model}_v{version}_{user}"); if (v?.trim()) save("namingTemplate", v.trim(), "Naming saved"); }}><Mono tone="body" className="!whitespace-normal break-all !tracking-[.04em] normal-case">{s("namingTemplate")}</Mono></button></Row>
+            <Row label="Keep every take"><Switch on={s("retentionDays") === "0"} label="Keep every take" disabled={!isAdmin} onChange={(v) => save("retentionDays", v ? "0" : "30", v ? "Every take is kept" : "Takes are kept for 30 days")} /></Row>
+          </Card>
+          <Card id="notifications" label="Notifications">
+            {NOTIFY_KINDS.filter((k) => !NOTIFY_LABELS[k].adminOnly || isAdmin).map((k) => (
+              <Row key={k} label={NOTIFY_LABELS[k].title}><Switch on={notify?.prefs[k] ?? true} label={NOTIFY_LABELS[k].title} onChange={(v) => setNotify(k, v)} /></Row>
+            ))}
+            <PushRow />
+          </Card>
+          <Card id="account" label="Account" className="gap-[10px]">
+            <span className="text-[13px] leading-[1.4] text-ink-body">{me.email} · {me.owner ? "owner" : me.role}{me.workspace ? ` · ${me.workspace.name}` : ""}</span>
+            <span className="flex flex-wrap gap-[8px]">
+              {owner && <a href="/api/export?format=csv" download className={`${pill} h-[44px]`}>Export · CSV</a>}
+              {owner && <a href="/api/export" download className={`${pill} h-[44px]`}>Export · JSON</a>}
+              <button type="button" onClick={signOut} className={`${pill} h-[44px]`}>Sign out</button>
+              {owner && <button type="button" onClick={deleteWorkspace} className={`${pill} h-[44px] text-ink-body`}>Delete workspace</button>}
+            </span>
+          </Card>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] bg-ground text-ink max-md:grid-cols-1">
-      <aside className="flex flex-col gap-[2px] border-r border-border px-[16px] py-[24px] max-md:hidden" aria-label="Sections">
+    <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] bg-ground text-ink">
+      <aside className="flex flex-col gap-[2px] border-r border-border px-[16px] py-[24px]" aria-label="Sections">
         <span className="px-[10px] pb-[16px] text-[22px] font-semibold leading-[1.1] tracking-[-0.02em] text-ink">Settings</span>
         {SECTIONS.map(([id, label]) => (
           <button key={id} type="button" onClick={() => jump(id)} aria-current={current === id ? "true" : undefined}
@@ -225,8 +366,8 @@ function Settings() {
         ))}
         <span className="mt-auto px-[10px] text-[12.5px] leading-[1.45] text-ink-muted" style={{ textWrap: "pretty" }}>Changes save as you make them. Prices are read from engines, never typed here.</span>
       </aside>
-      <div ref={column} className="flex min-h-0 min-w-0 flex-col gap-[14px] overflow-y-auto px-[28px] pb-[40px] pt-[24px] max-md:px-[16px]">
-        <div className="grid grid-cols-[minmax(0,1fr)_380px] gap-[14px] max-md:grid-cols-1">
+      <div ref={column} className="flex min-h-0 min-w-0 flex-col gap-[14px] overflow-y-auto px-[28px] pb-[40px] pt-[24px]">
+        <div className="grid grid-cols-[minmax(0,1fr)_380px] gap-[14px]">
           <Section id="workspace" title="Workspace" line="What every new composer opens with." className="gap-[14px]">
             <div className="grid grid-cols-2 gap-x-[20px] gap-y-[8px] max-md:grid-cols-1">
               <Row label="Workspace name"><span className="text-[13px] font-medium leading-none text-ink">{me.workspace?.name ?? "—"}</span></Row>
