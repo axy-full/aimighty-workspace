@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Segmented, Mono } from "@/components/ui";
+import { usePhone } from "@/lib/usePhone";
 import Ring from "@/components/atomik/Ring";
 import { useAtomik } from "@/components/atomik/AtomikProvider";
 import { useAtomikRail } from "@/lib/atomikRail";
@@ -16,17 +17,39 @@ import type { ReactNode } from "react";
  * strip: the ring in a 36px, radius-10 button (.14 idle, .3 at a
  * checkpoint) that opens the rail, with `ASK ATOMIK · ⌘J` — or
  * `CHECKPOINT · ⌘J` — written down it.
+ *
+ * Below 768 (design/particl-v2-mobile, boards M5 and M6): a 52px row
+ * (`0 16px`) with the page's title at 600 14 over its mono line, 3 apart
+ * (`SH04 board` / `9 NODES · 27 CR SPENT`; `Run 02` / `3 OF 8 STEPS · 19
+ * OF 253 CR`), then the `Canvas · Recipes · Run` segmented full width in
+ * a `10px 16px` row under a .08 rule. The page's own right-hand actions
+ * move to its pinned block; the strip is gone (the Atomik pill is in the
+ * header).
  */
 export type RigTab = "canvas" | "recipes" | "run";
 
-export function RigBar({ tab, hrefs, chip, mono, right }: { tab: RigTab; hrefs: Record<RigTab, string>; chip: ReactNode; mono: ReactNode; right?: ReactNode }) {
+export function RigBar({ tab, hrefs, chip, mono, right, phoneTitle, phoneMono }: { tab: RigTab; hrefs: Record<RigTab, string>; chip: ReactNode; mono: ReactNode; right?: ReactNode; phoneTitle?: ReactNode; phoneMono?: ReactNode }) {
   const router = useRouter();
+  const phone = usePhone();
+  const tabs = [{ value: "canvas" as const, label: "Canvas" }, { value: "recipes" as const, label: "Recipes" }, { value: "run" as const, label: "Run" }];
+  if (phone) return (
+    <div className="flex flex-none flex-col" data-rig-bar="">
+      <div className="flex h-[52px] flex-none items-center gap-[10px] border-b border-border px-[16px]">
+        <span className="flex min-w-0 flex-col gap-[3px]">
+          <span className="truncate text-[14px] font-semibold leading-none text-ink">{phoneTitle ?? chip}</span>
+          <Mono className="truncate">{phoneMono ?? mono}</Mono>
+        </span>
+      </div>
+      <div className="flex flex-none border-b border-border px-[16px] py-[10px]">
+        <Segmented label="Rig" fill value={tab} onChange={(t) => router.push(hrefs[t])} options={tabs} />
+      </div>
+    </div>
+  );
   return (
-    <div className="flex h-[44px] flex-none items-center gap-[12px] border-b border-border pl-[76px] pr-[20px] max-md:h-auto max-md:flex-wrap max-md:px-[16px] max-md:py-[10px]">
-      <Segmented label="Rig" placement="bar" value={tab} onChange={(t) => router.push(hrefs[t])}
-        options={[{ value: "canvas", label: "Canvas" }, { value: "recipes", label: "Recipes" }, { value: "run", label: "Run" }]} />
+    <div className="flex h-[44px] flex-none items-center gap-[12px] border-b border-border pl-[76px] pr-[20px]">
+      <Segmented label="Rig" placement="bar" value={tab} onChange={(t) => router.push(hrefs[t])} options={tabs} />
       <span className="flex items-center gap-[8px] whitespace-nowrap rounded-pill border border-[rgba(245,246,248,.12)] px-[10px] py-[6px] text-[13px] font-medium leading-none text-ink">{chip}</span>
-      <Mono className="max-md:hidden">{mono}</Mono>
+      <Mono>{mono}</Mono>
       {right && <span className="ml-auto flex items-center gap-[8px]">{right}</span>}
     </div>
   );

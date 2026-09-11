@@ -12,7 +12,8 @@ import type { RecipeGraph } from "@/lib/runs";
 import type { ProductionRow } from "@/lib/productions";
 import type { Generation } from "@/lib/jobs";
 import type { StepState } from "@/lib/ring";
-import { Button, Mono, Chip, CapBar, Placeholder } from "@/components/ui";
+import { Button, Mono, Chip, CapBar, Placeholder, PinnedBar } from "@/components/ui";
+import { usePhone } from "@/lib/usePhone";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import Ring from "@/components/atomik/Ring";
 import { PageLoader } from "@/components/atomik/Loader";
@@ -47,6 +48,17 @@ import { RigBar, RigStrip, rigHrefs } from "@/components/rig/RigBar";
  * Below: `What just finished` (the project's newest takes six-up, `PICKED`
  * on the picked ones) and `What's next` (engine, per-unit cost, the next
  * checkpoint's price, the stage's settings as chips).
+ *
+ * Below 768 (design/particl-v2-mobile, board M6): the checkpoint card
+ * first (`.3`, radius 14, `16px`: the ring at 48 beside `ATOMIK ·
+ * CHECKPOINT · BEFORE STEP 04` and the 19px headline; the next step and
+ * its price in one sentence; the planning line), then the steps as rows
+ * (`22px 72px 1fr auto`, 10 apart, `10px 12px`, radius 12): number, the
+ * 72×44 thumb (striped when done, dashed when queued), name over engine,
+ * the state dot and word over the cost (queued costs muted); the
+ * checkpoint row carries the selection ring. `Continue · keyframes · 24
+ * CR` at 52px, then `Change engine` / `Stop here` at 44px, pinned. The
+ * two cards below the track are desktop's.
  */
 export default function RunPage() {
   return <ToastHost><Run /></ToastHost>;
@@ -77,6 +89,7 @@ function Run() {
   const proj = production?.projects.find((j) => j.id === projectId) ?? null;
   usePageTitle(run ? `Run ${two(run.num)}` : "Run");
   const [busy, setBusy] = useState(false);
+  const phone = usePhone();
   const fmt = (n: number) => money.price(n);
 
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to open the Rig.</div>;
@@ -86,7 +99,7 @@ function Run() {
   if (!run) {
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-        <RigBar tab="run" hrefs={hrefs} chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">›</span> {proj?.name ?? "project"}</>} mono="no run yet" />
+        <RigBar tab="run" hrefs={hrefs} chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">›</span> {proj?.name ?? "project"}</>} mono="no run yet" phoneTitle={proj?.name ?? "Run"} />
         <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)] max-md:grid-cols-1"><RigStrip /><div className="p-[24px] text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>Nothing has run here yet. Save a board as a recipe, then run it to the first checkpoint from Recipes.</div></div>
       </div>
     );
@@ -117,13 +130,90 @@ function Run() {
   const ringSteps: StepState[] = run.stages.slice(0, 8).map((s) => (checkpoint && s.id === checkpoint.id ? "checkpoint" : RING[s.state]));
   const gens = latest?.generations ?? [];
   const picked = gens.filter((g) => g.reviewState === "picked" || g.reviewState === "approved").length;
+  const bar = (
+    <RigBar tab="run" hrefs={hrefs}
+      chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">›</span> {proj?.name ?? run.projectName} <span className="text-ink-muted">·</span> Run {two(run.num)}<span className="text-[9px] text-ink-muted">▼</span></>}
+      mono={`Recipe · ${recipeData?.recipe?.name ?? run.projectName} · started ${new Date(run.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${run.done} of ${run.total} steps`}
+      phoneTitle={`Run ${two(run.num)}`} phoneMono={`${run.done} of ${run.total} steps · ${fmt(run.spent)} of ${fmt(run.estimate || run.spent)}`}
+      right={<CapBar spent={run.spent} cap={run.estimate || run.spent || 1} placement="row" />} />
+  );
+
+  if (phone) return (
+    <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
+      {bar}
+      <div className="flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[16px] pb-[10px] pt-[12px]">
+        {checkpoint && (
+          <div className="flex flex-col gap-[10px] rounded-mobile border border-[rgba(245,246,248,.3)] bg-card p-[16px]" aria-label="Checkpoint">
+            <span className="flex items-center gap-[12px]">
+              <Ring steps={ringSteps} size={48} />
+              <span className="flex min-w-0 flex-col gap-[5px]">
+                <Mono>Atomik · {checkpoint.state === "needs_you" ? "needs you" : "checkpoint"} · {checkpoint.state === "needs_you" ? `step ${two(checkpoint.num)} stopped` : `before step ${two(checkpoint.num)}`}</Mono>
+                <span className="text-[19px] font-semibold leading-[1.2] text-ink">{lastDone ? `${lastDone.name} done · ${fmt(run.spent)} spent.` : "Ready."}</span>
+              </span>
+            </span>
+            <span className="text-[14px] leading-[1.45] text-ink-body" style={{ textWrap: "pretty" }}>
+              {checkpoint.state === "needs_you" && checkpoint.failure ? `${checkpoint.failure.unit}: ${checkpoint.failure.reason} Pick a fix — each one is priced — and the run carries on from here.`
+                : `Next: ${lower(checkpoint.name)}${engineOf(checkpoint) ? ` on ${engineOf(checkpoint)}` : ""} · ${fmt(checkpoint.credits)}. ${checkpoint.totalUnits ? `${checkpoint.totalUnits} units at ${fmt(checkpoint.credits / checkpoint.totalUnits)} each. ` : ""}Nothing runs until you say so.`}
+            </span>
+            <Mono>Planning · {fmt(atomik.totals.planning)}{atomik.chat?.model ? ` · ${atomik.engineLabel(atomik.chat.model)}` : ""}</Mono>
+          </div>
+        )}
+        <div className="flex flex-col gap-[12px]" role="list" aria-label="Stages">
+          {run.stages.map((s) => {
+            const at = checkpoint?.id === s.id;
+            const word = s.state === "done" ? "done" : at ? "checkpoint" : s.state === "needs_you" ? "needs you" : s.state === "running" ? "running" : s.state === "skipped" ? "skipped" : "queued";
+            const tone = s.state === "done" ? "text-accent" : at || s.state === "needs_you" ? "text-ink" : "text-ink-muted";
+            const dot = s.state === "done" ? "bg-accent" : s.state === "running" || at ? "border-2 border-accent" : s.state === "needs_you" ? "bg-ink" : "border-[1.5px] border-dashed border-ink-muted";
+            const def = recipeStage(s);
+            return (
+              <div key={s.id} role="listitem" className={`grid grid-cols-[22px_72px_minmax(0,1fr)_auto] items-center gap-[10px] rounded-card border bg-card px-[12px] py-[10px] ${at ? "border-ink ui-node-selected" : "border-border"}`}>
+                <span className="ui-mono tracking-normal text-ink-muted">{two(s.num)}</span>
+                <span className={`flex h-[44px] items-center justify-center rounded-[6px] border ${s.state === "done" ? (s.hasOutput ? "border-border ui-placeholder" : "border-border bg-ground") : "border-dashed border-[rgba(245,246,248,.16)]"}`}>
+                  <span className="ui-mono tracking-normal text-ink-muted">{s.state === "done" ? (s.hasOutput ? `${s.doneUnits || s.totalUnits || ""}` : "txt") : "—"}</span>
+                </span>
+                <span className="flex min-w-0 flex-col gap-[4px]">
+                  <span className="truncate text-[14px] font-medium leading-[1.2] text-ink">{s.name}</span>
+                  <Mono className="truncate">{def?.engine ? atomik.engineLabel(def.engine) : subOf(s) || "—"}</Mono>
+                  {s.state === "needs_you" && s.failure && !at && <span className="flex flex-wrap gap-[6px] pt-[2px]">{s.failure.fixes.map((f) => <Chip key={f.id} variant="filter" tone="ink" onClick={() => applyFix(s, f)}>{f.label} · {fmt(f.credits)}</Chip>)}</span>}
+                </span>
+                <span className="flex flex-col items-end gap-[5px]">
+                  <span className={`flex items-center gap-[5px] whitespace-nowrap ui-mono !tracking-[.1em] ${tone}`}><span className={`box-border block h-[7px] w-[7px] rounded-full ${dot}`} />{word}</span>
+                  <Mono cost tone={s.state === "queued" ? "muted" : "ink"}>{fmt(s.state === "done" ? s.spent : s.credits)}</Mono>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <PinnedBar className="flex-col">
+        {checkpoint ? (
+          checkpoint.state === "needs_you" && checkpoint.failure ? (
+            checkpoint.failure.fixes.map((f, i) => (
+              <button key={f.id} type="button" disabled={busy} onClick={() => applyFix(checkpoint, f)}
+                className={`flex ${i === 0 ? "h-[52px]" : "h-[44px]"} w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${i === 0 && !rail.open ? "bg-ink text-ground" : "border border-[rgba(245,246,248,.2)] text-ink-body"}`}>
+                <span className="truncate">{f.label}</span><span className={`ui-mono ui-mono-cost !text-[12px] ${i === 0 && !rail.open ? "text-on-primary-cost" : "text-ink-muted"}`}>{fmt(f.credits)}</span>
+              </button>
+            ))
+          ) : (
+            <>
+              <button type="button" disabled={busy} onClick={() => setState("running")} data-render=""
+                className={`flex h-[52px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${rail.open ? "border border-[rgba(245,246,248,.2)] text-ink-body" : "bg-ink text-ground"}`}>
+                <span className="truncate">{busy ? "Continuing…" : `Continue · ${lower(checkpoint.name)}`}</span><span className={`ui-mono ui-mono-cost !text-[12px] ${rail.open ? "text-ink-muted" : "text-on-primary-cost"}`}>{fmt(checkpoint.credits)}</span>
+              </button>
+              <span className="flex gap-[8px]">
+                <button type="button" onClick={() => { rail.compact(); toast("Change the engine in Atomik's sheet"); }} className="flex h-[44px] flex-1 items-center justify-center rounded-card border border-[rgba(245,246,248,.16)] text-[13.5px] font-medium leading-none text-ink">Change engine</button>
+                <button type="button" onClick={() => setState("paused")} className="flex h-[44px] flex-1 items-center justify-center rounded-card border border-[rgba(245,246,248,.16)] text-[13.5px] font-medium leading-none text-ink-body">Stop here</button>
+              </span>
+            </>
+          )
+        ) : <Mono className="py-[16px] text-center">{run.state === "done" ? "Every step has run" : "Nothing to decide right now"}</Mono>}
+      </PinnedBar>
+    </div>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-      <RigBar tab="run" hrefs={hrefs}
-        chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">›</span> {proj?.name ?? run.projectName} <span className="text-ink-muted">·</span> Run {two(run.num)}<span className="text-[9px] text-ink-muted">▼</span></>}
-        mono={`Recipe · ${recipeData?.recipe?.name ?? run.projectName} · started ${new Date(run.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${run.done} of ${run.total} steps`}
-        right={<CapBar spent={run.spent} cap={run.estimate || run.spent || 1} placement="row" />} />
+      {bar}
       <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)] max-md:grid-cols-1">
         <RigStrip />
         <div className="flex min-h-0 flex-col gap-[18px] overflow-auto px-[24px] pb-[24px] pt-[20px] max-md:px-[16px]">
