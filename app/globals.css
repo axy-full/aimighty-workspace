@@ -2395,7 +2395,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
    composer rail is a sheet opened from a docked bar; the wall is a strip
    of cards per shot; every tap target is at least 44px.
    ══════════════════════════════════════════════════════════════════════ */
-.sheet-scrim, .sheet-grab, .cv-refs-mobile { display: none; }
+.dock, .sheet-scrim, .sheet-grab, .cv-refs-mobile { display: none; }
 /* The floor under every route: the document is never wider than the
    viewport. A stray element still overflows its own box; it no longer pans
    the page sideways or shrinks the layout on Android. */

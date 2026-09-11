@@ -17,7 +17,7 @@ import { useProject } from "@/lib/projectContext";
 import { confirmDeleteProject } from "@/lib/deleteProject";
 import { useApi } from "@/lib/useApi";
 import { usd, hours, pct, timeAgo } from "@/lib/format";
-import { type Analytics, Headline, BarList, ShotTable, Patterns } from "@/components/Analytics";
+import { type Analytics, Headline, BarList, Patterns } from "@/components/Analytics";
 import { appPrompt, appAlert, appConfirm } from "@/components/dialog";
 import { Waiting, Trouble } from "@/components/ParticlMark";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -28,6 +28,8 @@ import { burnDown, biggestBurners, projectionLine } from "@/lib/burndown";
 type Project = {
   id: string; name: string; description: string; code?: string; category?: string;
   spend?: number; credits?: number; capUsd?: number | null; capCredits?: number | null; capUnlocked?: boolean;
+
+  productionId?: string | null;
 };
 type ShotRow = {
   id: string; code: string; scene: string; title: string; status: string;
@@ -44,35 +46,12 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   const { data, error, refresh } = useApi<Analytics>(`/api/analytics?projectId=${encodeURIComponent(id)}`, 30000);
   const { data: projects, refresh: refreshProjects } =
     useApi<{ projects: Project[] }>("/api/projects", 60000);
-  const { data: shotData, refresh: refreshShots } =
+  const { data: shotData } =
     useApi<{ shots: ShotRow[] }>(`/api/shots?projectId=${encodeURIComponent(id)}`, 30000);
-  const [busy, setBusy] = useState(false);
 
   const project = projects?.projects.find((p) => p.id === id);
 
-  async function addShot() {
-    if (busy) return;
-    const code = await appPrompt("Shot code", "", "SH010 — blank numbers it for you");
-    if (code === null) return;
-    const scene = await appPrompt("Scene", "", "SC04 (optional)");
-    if (scene === null) return;
-    const title = await appPrompt("What is the shot?", "", "Rooftop wide (optional)");
-    if (title === null) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/shots", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: id, code, scene, title }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Could not add the shot");
-      refreshShots();
-    } catch (e) {
-      await appAlert((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+
 
   async function remove() {
     if (!(await confirmDeleteProject(id, project?.name ?? "this production", data?.totals?.generations ?? null))) return;
@@ -109,12 +88,13 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
 
   const t = data.totals;
   const shots = shotData?.shots ?? [];
+  const productionId = project?.productionId ?? null;
 
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
         <Link href="/productions" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
-        <ProductionNav id={id} on="shots" />
+        <ProductionNav id={id} on="production" />
         <Headline a={data} title={project?.name ?? "Project"} />
 
         {project?.description && (
@@ -157,18 +137,13 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
           <section className="card px-5 py-5">
             <div className="flex items-center gap-3">
               <p className="grouplabel">Shots</p>
-              <button onClick={addShot} disabled={busy}
-                className="ml-auto text-[14px] text-blue disabled:opacity-50">+ Add shot</button>
+              <Link href={productionId ? `/productions/${productionId}/${id}/shots` : "/productions"} className="ml-auto text-[14px] text-blue">
+                Open the grid →
+              </Link>
             </div>
             <p className="mt-1 text-[13px] text-mute">
-              Every render filed against a shot becomes a numbered version of it.
+              {shots.length} {shots.length === 1 ? "shot" : "shots"} · every render filed against one becomes a numbered version of it. The grid is where they are made, ordered and rendered.
             </p>
-            <div className="mt-4">
-              <ShotTable rows={shots.map((s) => ({
-                id: s.id, code: s.code, scene: s.scene, title: s.title, status: s.status,
-                takes: s.takes, spend: s.spend, credits: s.credits, ok: s.ok, failed: s.failed, latest: 0,
-              }))} />
-            </div>
           </section>
 
           <div className="flex flex-col gap-6">

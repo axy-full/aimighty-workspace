@@ -17,6 +17,15 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   const sets: string[] = [];
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const args: any[] = [];
+  /* Move to another project (design/particl-v2 §1, §7): the shot goes, and
+     its media — takes, stills, masters — goes with it. Planning, takes and
+     spend arrive intact; nothing is copied and nothing is deleted. */
+  if (typeof body.projectId === "string" && body.projectId && body.projectId !== shot.projectId) {
+    const target = await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [body.projectId] });
+    if (!target.rows.length) return NextResponse.json({ error: "No such project." }, { status: 404 });
+    sets.push("project_id = ?"); args.push(body.projectId);
+    await db().execute({ sql: `UPDATE generations SET project_id = ? WHERE shot_id = ?`, args: [body.projectId, shotId] });
+  }
 
   if (typeof body.code === "string") {
     const problem = codeProblem(body.code.trim());

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
@@ -51,6 +51,7 @@ const initials = (name: string | null | undefined) => (name ?? "").split(/\s+/).
 
 export default function ProjectMediaPage() {
   const { prod, project: projectId } = useParams<{ prod: string; project: string }>();
+  const router = useRouter();
   const { signedIn } = useSession();
   const money = useMoney();
   const { data: prods } = useApi<{ productions: ProductionRow[] }>(signedIn ? "/api/productions" : null, 30_000);
@@ -106,7 +107,7 @@ export default function ProjectMediaPage() {
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <ProductionHeader production={production} project={project} />
       <div className="flex h-[52px] flex-none items-center gap-[14px] px-[24px] max-md:h-auto max-md:flex-wrap max-md:gap-[10px] max-md:px-[16px] max-md:py-[10px]">
-        <Segmented label="Project" placement="toolbar" value={tab} onChange={setTab}
+        <Segmented label="Project" placement="toolbar" value={tab} onChange={(t) => { setTab(t); if (t === "shots") router.push(`/productions/${prod}/${projectId}/shots`); }}
           options={[{ value: "shots", label: "Shots" }, { value: "boards", label: "Boards" }, { value: "approve", label: "Approve" }, { value: "media", label: "Media" }]} />
         <span className="flex gap-[6px]">
           <Chip variant="filter" active={kind === "all"} onClick={() => setKind("all")}>All · {counts.all}</Chip>
