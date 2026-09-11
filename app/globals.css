@@ -1774,7 +1774,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .shell-dock {
   flex: none; position: sticky; bottom: 0; z-index: 30;
   background: var(--ground); border-top: 1px solid var(--border);
-  padding: 0 0 env(safe-area-inset-bottom, 0px);
+  padding: 0 6px env(safe-area-inset-bottom, 0px);
 }
 
 

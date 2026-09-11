@@ -88,7 +88,10 @@ test.describe("the app shell", () => {
       }
       const bar = page.locator(".shell-dock");
       await expect(bar).toBeVisible();
-      await expect(bar.getByRole("link")).toHaveText(["Needs you", "Make", "Productions"]);
+      /* design/particl-v2-mobile (M1): Make · PRODS · Rig · Library — a 22px line icon over a 12px mono label. */
+      await expect(bar.getByRole("link")).toHaveText(["Make", "Prods", "Rig", "Library"]);
+      const icons = await bar.getByRole("link").evaluateAll((els) => els.map((a) => { const s = a.querySelector("svg")!; const r = s.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), s.getAttribute("stroke-width")]; }));
+      for (const [w, h, sw] of icons) { expect([w, h]).toEqual([22, 22]); expect(sw).toBe("1.6"); }
       const info = await page.evaluate(() => {
         const el = document.querySelector(".shell-dock")!;
         const pad = parseFloat(getComputedStyle(el).paddingBottom);
@@ -109,7 +112,7 @@ test.describe("the app shell", () => {
         }
         const inset = Number(getComputedStyle(document.documentElement).getPropertyValue("--pw-inset") || 0);
         const links = Array.from(el.querySelectorAll("a")).map((a) => a.getBoundingClientRect().height);
-        const mono = parseFloat(getComputedStyle(el.querySelector("a")!).fontSize);
+        const mono = parseFloat(getComputedStyle(el.querySelector("a span")!).fontSize);
         return { pad, declared, inset, bottom: el.getBoundingClientRect().bottom, vh: window.innerHeight, links, mono };
       });
       expect(info.declared, "the .shell-dock rule must pad with env(safe-area-inset-bottom)").toBe(true);

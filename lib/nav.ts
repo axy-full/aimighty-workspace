@@ -40,9 +40,7 @@ export const NAV: readonly NavItem[] = [
   },
 ];
 
-/** The mobile dock (§14): `Needs you · Make · Productions`. */
-export const DOCK: readonly { label: string; href: string; match: (path: string) => boolean }[] = [
-  { label: "Needs you", href: "/productions", match: (p) => starts(p, "/needs-you") },     // the approve queue — step 5
-  { label: "Make", href: "/make/video", match: NAV[0].match },
-  { label: "Productions", href: "/productions", match: (p) => NAV[1].match(p) || NAV[2].match(p) || NAV[3].match(p) },
-];
+/** The phone's dock (design/particl-v2-mobile/README.md, board M1): `Make · PRODS · Rig · Library` — the four nav items, Productions written short. */
+export const DOCK: readonly { label: NavItem["label"]; short: string; href: NavItem["href"]; match: (path: string) => boolean }[] = NAV.map((n) => ({
+  label: n.label, short: n.label === "Productions" ? "Prods" : n.label, href: n.href, match: n.match,
+}));

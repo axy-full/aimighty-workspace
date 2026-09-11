@@ -101,9 +101,10 @@ export function AtomikPhoneButton() {
   const { ring, word } = useAtomik();
   const rail = useAtomikRail();
   return (
-    <button type="button" onClick={rail.toggle} aria-label="Ask Atomik" className="tap44 flex h-[36px] items-center gap-[8px] rounded-pill border border-border-mid px-[10px]">
+    <button type="button" onClick={rail.toggle} aria-label="Ask Atomik" aria-expanded={rail.open}
+      className={`flex h-[44px] items-center gap-[6px] rounded-pill border px-[12px] text-[12.5px] font-medium leading-none text-ink ${rail.open ? "border-[rgba(245,246,248,.35)] bg-selected" : "border-border-mid"}`}>
       {"steps" in ring && ring.steps ? <Ring steps={ring.steps} size={14} /> : <Ring mode={"mode" in ring && ring.mode ? ring.mode : "idle"} size={14} />}
-      {word && <Mono cost tone="ink">{word}</Mono>}
+      Atomik{word && <Mono cost>{word}</Mono>}
     </button>
   );
 }
