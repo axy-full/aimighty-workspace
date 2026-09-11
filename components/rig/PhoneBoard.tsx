@@ -11,6 +11,7 @@ import Sheet from "@/components/ui/Sheet";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
 import { KIND_TAG, KIND_WORD } from "@/components/rig/nodes";
+import Pressable from "@/components/ui/Pressable";
 
 /**
  * The Rig on a phone (design/particl-v2-mobile/README.md, board M5):
@@ -37,9 +38,11 @@ type ShotLike = { id: string; code: string; title: string; description: string; 
 type Slot = { nodeId: string; slotId: string };
 type Subset = "approved" | "draft" | "all";
 
-export default function PhoneBoard({ board, fmt, priceOf, running, selected, onSelect, onRun, slot, onSlot, shots, elements, engineOf, rates, projectId, onRebind, toast }: {
+export default function PhoneBoard({ board, fmt, priceOf, running, selected, onSelect, onRun, onNodeMenu, slot, onSlot, shots, elements, engineOf, rates, projectId, onRebind, toast }: {
   board: Board; fmt: (n: number) => string; priceOf: (n: BoardNode) => number; running: Set<string>;
   selected: string | null; onSelect: (id: string | null) => void; onRun: (n: BoardNode) => void;
+  /** CR1 §10: a long-press on a node opens the one context menu as a sheet. */
+  onNodeMenu?: (nodeId: string, x: number, y: number) => void;
   slot: Slot | null; onSlot: (s: Slot | null) => void;
   shots: ShotLike[]; elements: ElementFull[]; engineOf: (n: BoardNode) => string; rates: RateTable; projectId: string | null;
   onRebind: (assetNodeId: string, portId: string, versionId: string, version: string) => void; toast: (m: string) => void;
@@ -81,7 +84,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
             if (n.kind === "shot") {
               const takes = Number(n.settings.takes ?? 0);
               return (
-                <div key={n.id} className={box} aria-label={`Shot ${n.label}`}>
+                <Pressable key={n.id} onMenu={(x, y) => onNodeMenu?.(n.id, x, y)} className={box} aria-label={`Shot ${n.label}`}>
                   {wire}{i > 0 && dot("top")}
                   <div className="flex h-[36px] items-center gap-[8px] px-[10px]">{tag("shot")}<Mono tone="ink">{n.label}</Mono><span className="min-w-0 truncate text-[13px] font-semibold leading-[1.2] text-ink">{String(n.settings.title ?? "")}</span></div>
                   <div className="flex flex-col px-[10px] pb-[4px]">
@@ -106,7 +109,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                     <Mono tone="ink">{n.output?.filedTo ? `v${n.output.filedTo.version} new` : ""}</Mono>
                   </div>
                   {!last && dot("bottom")}
-                </div>
+                </Pressable>
               );
             }
             if (n.kind === "prompt" || n.kind === "note") return (
@@ -124,7 +127,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
             const secs = Number(n.settings.seconds ?? 5);
             const filedTo = n.output?.filedTo ? board.nodes.find((x) => x.ref?.shotId === n.output?.filedTo?.shotId)?.label ?? "shot" : null;
             return (
-              <div key={n.id} className={`${box} ${on ? "border-ink ui-node-selected" : ""}`} aria-label={`${KIND_WORD[n.kind]} ${n.label}`} onClick={() => onSelect(n.id)}>
+              <Pressable key={n.id} onMenu={(x, y) => onNodeMenu?.(n.id, x, y)} className={`${box} ${on ? "border-ink ui-node-selected" : ""}`} aria-label={`${KIND_WORD[n.kind]} ${n.label}`} onClick={() => onSelect(n.id)}>
                 {wire}{i > 0 && dot("top")}
                 <div className="flex h-[32px] items-center gap-[6px] px-[10px]">{tag(n.kind)}<span className="truncate text-[13px] font-semibold leading-none text-ink">{n.label}</span>{done && <span aria-hidden="true" className="ml-auto block h-[8px] w-[8px] rounded-full bg-accent" />}</div>
                 {n.kind === "image" ? (
@@ -157,7 +160,7 @@ export default function PhoneBoard({ board, fmt, priceOf, running, selected, onS
                   <Mono cost>{fmt(done ? n.credits : priceOf(n))}</Mono>
                 </button>
                 {!last && dot("bottom")}
-              </div>
+              </Pressable>
             );
           })}
           {!stack.length && <span className="text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>An empty board. Build it on a desktop; run and file it from here.</span>}

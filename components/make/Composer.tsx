@@ -11,12 +11,15 @@ import { COUNTS, newBatchId } from "@/lib/variations";
 import { CATEGORIES, composePrompt, detectSpec, type ShotSpec } from "@/lib/studio";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { uploadFile } from "@/lib/uploadClient";
-import type { RefItem, ImageRole } from "@/lib/refs";
+import { ROLE_LABEL, type RefItem, type ImageRole } from "@/lib/refs";
 import type { CastMember } from "@/lib/cast";
 import { appPrompt } from "@/components/dialog";
 import { Button, Mono, Segmented, PinnedBar } from "@/components/ui";
 import Sheet from "@/components/ui/Sheet";
 import { usePhone } from "@/lib/usePhone";
+import { useDropTarget, type DragPayload } from "@/lib/useDnd";
+import { readDraggedAsset } from "@/lib/dnd";
+import { getClip, consumeClip } from "@/lib/clipboard";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import { useAtomikRail } from "@/lib/atomikRail";
@@ -62,6 +65,7 @@ import type { ElementKind } from "@/lib/rig";
  * setting are the same state whether the sheet is open or closed.
  */
 export type ComposerKind = "video" | "image" | "audio";
+const WELL_ACCEPTS: DragPayload["kind"][] = ["media", "reference"];
 
 type Voice = { id: string; name: string; category: string; labels: Record<string, string>; previewUrl: string | null; description: string };
 type SpeechModel = { id: string; label: string; creditsPerChar: number; note: string; alpha?: boolean };
@@ -126,6 +130,28 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
     } catch (e) { toast((e as Error).message); }
     finally { setUploading(false); }
   };
+  /* CR1 §11 / §10: a take or a reference dropped on the well, or pasted with ⌘V, becomes a reference — a take by its id, a reference by its upload. */
+  const addFromPayload = useCallback((p: { kind: "media" | "reference"; id: string; label: string; url?: string | null; data?: unknown }) => {
+    const mediaKind = (p.data as { kind?: string } | undefined)?.kind === "video" ? "video" : "image";
+    const role: ImageRole = mediaKind === "video" ? "reference_video" : kind === "video" && !refs.some((r) => r.role === "first_frame") ? "first_frame" : "reference_image";
+    setRefs((prev) => prev.some((r) => r.id === p.id) ? prev : [...prev, { id: p.id, filename: p.label, mime: mediaKind === "video" ? "video/mp4" : "image/*", kind: mediaKind, bytes: 0, width: null, height: null, durationS: null, sha256: "", url: p.url ?? "", base64Bytes: 0, role, verified: true, genId: p.kind === "media" ? p.id : undefined }]);
+    toast(`${p.label} · in the well as ${ROLE_LABEL[role].toLowerCase()}`);
+  }, [kind, refs, toast]);
+  const well = useDropTarget(WELL_ACCEPTS, (p) => { if (p.kind === "media" || p.kind === "reference") addFromPayload(p as { kind: "media" | "reference"; id: string; label: string; url?: string | null; data?: unknown }); });
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "v") return;
+      const c = getClip();
+      if (!c || (c.kind !== "media" && c.kind !== "reference")) return;
+      e.preventDefault();
+      addFromPayload({ kind: c.kind, id: c.id, label: c.label, url: (c.payload as { url?: string | null } | undefined)?.url ?? null, data: c.payload });
+      if (c.mode === "cut") consumeClip();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [addFromPayload]);
   const seededRef = useRef<string | null>(null);
   useEffect(() => {
     if (!initialRef || !signedIn || seededRef.current === initialRef) return;
@@ -247,7 +273,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
         const base = {
           prompt: composePrompt(prompt, applied), model: modelId, ratio, resolution, duration: seconds, generateAudio: audio && model.supportsAudio,
           projectId: null, shotId: null, task: "generate", shotSpec: applied,
-          references: refs.map((r) => ({ uploadId: r.id, role: r.role })),
+          references: refs.map((r) => (r.genId ? { genId: r.genId, role: r.role } : { uploadId: r.id, role: r.role })),
           useAs: kind === "image" ? useAs : undefined,
         };
         const batchId = count > 1 ? newBatchId() : undefined;
@@ -339,7 +365,8 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
         ); })()}
 
         {kind !== "audio" && (
-          <div className="flex items-center gap-[8px]" onDragOver={(e) => { e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
+          <div className={`flex items-center gap-[8px] rounded-ctl ${well.over ? "outline outline-2 outline-ink" : well.dragging ? "outline outline-1 outline-dashed outline-[rgba(245,246,248,.35)]" : ""}`} {...well.props} data-well=""
+            onDragOver={(e) => { e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) { addFiles(e.dataTransfer.files); return; } const d = readDraggedAsset(e); if (d) addFromPayload({ kind: "media", id: d.gen.id, label: d.gen.title || d.gen.prompt.slice(0, 24), url: d.gen.storedUrl ?? d.gen.sourceUrl ?? null, data: { kind: d.gen.kind } }); }}>
             <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
             <button type="button" onClick={() => picker.current?.click()} disabled={uploading} aria-label="Add a reference"
               className={`tap44 flex flex-none flex-col items-center justify-center gap-[2px] rounded-ctl border border-dashed border-[rgba(245,246,248,.22)] ${phone ? "ui-mono h-[56px] w-[56px] !text-[12px] tracking-normal text-ink-body" : "h-[52px] w-[52px] text-[11px] leading-[1.2] text-ink-muted"}`}>

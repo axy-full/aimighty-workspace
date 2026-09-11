@@ -18,6 +18,10 @@ import type { Generation } from "@/lib/jobs";
 import { Button, Mono, Chip } from "@/components/ui";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
+import { contextItems, ContextMenuHost } from "@/components/ui/ContextMenu";
+import { getClip, setClip, consumeClip, useClipboard } from "@/lib/clipboard";
+import { appPrompt } from "@/components/dialog";
+import { uploadFile } from "@/lib/uploadClient";
 import Loader, { PageLoader, LOADER_SIZES } from "@/components/atomik/Loader";
 import { useAtomik } from "@/components/atomik/AtomikProvider";
 import LazyMedia from "@/components/LazyMedia";
@@ -55,6 +59,12 @@ import { zoomAround, wheelFactor, panBy, stepZoom, resetZoom, fitView, pinchView
  * its next version through the ordinary generate route; `Save as recipe`
  * turns the board's generate nodes into stages.
  *
+ * The one context menu (CR1 §10) on a node — Cut · Copy · Paste (a copied
+ * node lands at the cursor) · Duplicate · Rename · Download (its output) ·
+ * Delete with Undo — by right-click, or by long-press on the phone's
+ * stack. A file dropped on the board becomes a note carrying its picture
+ * (CR1 §11).
+ *
  * Zoom and pan (docs/change-request-1.md §6): a `wheel` with ctrl/⌘ (a
  * trackpad pinch, ⌘-scroll) zooms about the cursor and a plain wheel pans;
  * both call `preventDefault` first, on a native non-passive listener, so
@@ -90,6 +100,9 @@ function Canvas() {
   const phone = usePhone();
   const rail = useAtomikRail();
   const [slotSel, setSlotSel] = useState<{ nodeId: string; slotId: string } | null>(null);
+  const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; id: string; sub: "move" | "share" | null } | null>(null);
+  const clip = useClipboard();
+  const undoNode = useRef<{ node: BoardNode; wires: BoardWire[] } | null>(null);
 
   /* `new?project=` opens the project's board — the latest one, or a fresh one when it has none — and lands on it. */
   const wantsNew = boardId === "new";
@@ -319,11 +332,64 @@ function Canvas() {
   const addShot = useCallback((s: ShotRow) => addNode("shot", undefined, undefined, {
     label: s.code, ref: { shotId: s.id }, settings: { title: s.description || s.title, takes: s.takes, spent: money.inCredits ? (s.credits ?? 0) : s.spend },
   }), [addNode, money.inCredits]);
-  const removeNode = (id: string) => {
+  const removeNode = useCallback((id: string, say = false) => {
     const b = latest.current;
     if (!b) return;
+    const node = b.nodes.find((n) => n.id === id);
+    const wires = b.wires.filter((w) => w.from.nodeId === id || w.to.nodeId === id);
     commit({ ...b, nodes: b.nodes.filter((n) => n.id !== id), wires: b.wires.filter((w) => w.from.nodeId !== id && w.to.nodeId !== id) });
-    setSelected(null);
+    setSelected(null); setNodeMenu(null);
+    if (say && node) {
+      undoNode.current = { node, wires };
+      toast(`${node.label} removed · its wires with it`, () => { const cur = latest.current; const u = undoNode.current; if (!cur || !u) return; commit({ ...cur, nodes: [...cur.nodes, u.node], wires: [...cur.wires, ...u.wires] }); undoNode.current = null; });
+    }
+  }, [commit, toast]);
+  /* ── CR1 §10: the menu's verbs on a node ──────────────────────────────── */
+  const nodeClip = useCallback((n: BoardNode, mode: "cut" | "copy") => {
+    const { id: _id, x: _x, y: _y, output: _o, ...rest } = n; void _id; void _x; void _y; void _o;
+    setClip({ kind: "node", mode, id: n.id, label: n.label, payload: { ...rest, output: null, state: "idle", credits: 0, staleSince: null } });
+    setNodeMenu(null); toast(`${n.label} ${mode === "cut" ? "cut" : "copied"} · paste it on a board`);
+    if (mode === "cut") removeNode(n.id);
+  }, [removeNode, toast]);
+  const pasteNode = useCallback((at?: { x: number; y: number }) => {
+    const c = getClip();
+    if (!c || c.kind !== "node") return;
+    const b = latest.current; if (!b) return;
+    const p = c.payload as Partial<BoardNode> & { kind: NodeKind };
+    const base = at ?? (b.nodes.find((n) => n.id === selected) ?? null);
+    const node = newNode(p.kind, Math.round((base?.x ?? 120) + (at ? 0 : 24)), Math.round((base?.y ?? 120) + (at ? 0 : 24)), { ...p, id: undefined, x: undefined, y: undefined, output: null, state: "idle", credits: 0, staleSince: null } as Partial<BoardNode>);
+    commit({ ...b, nodes: [...b.nodes, node] });
+    setSelected(node.id); setNodeMenu(null);
+    if (c.mode === "cut") consumeClip();
+    toast(`${node.label} pasted`);
+  }, [commit, selected, toast]);
+  const duplicateNode = useCallback((n: BoardNode) => {
+    const b = latest.current; if (!b) return;
+    const { id: _id, x: _x, y: _y, output: _o, ...rest } = n; void _id; void _x; void _y; void _o;
+    const node = newNode(n.kind, n.x + 24, n.y + 24, { ...rest, output: null, state: "idle", credits: 0, staleSince: null });
+    commit({ ...b, nodes: [...b.nodes, node] });
+    setSelected(node.id); setNodeMenu(null); toast(`${n.label} duplicated · not run, 0 cr`);
+  }, [commit, toast]);
+  const renameNode = async (n: BoardNode) => { setNodeMenu(null); const v = await appPrompt("Rename the node", n.label, "Name"); if (!v?.trim()) return; patchNode(n.id, { label: v.trim().slice(0, 60) }); toast(`Now ${v.trim()}`); };
+  const menuNode = nodeMenu ? (shownBoard?.nodes.find((n) => n.id === nodeMenu.id) ?? null) : null;
+  const nodeItems = (): MenuItem[] => menuNode ? contextItems({
+    cut: () => nodeClip(menuNode, "cut"), copy: () => nodeClip(menuNode, "copy"),
+    paste: clip?.kind === "node" ? () => pasteNode() : null,
+    duplicate: () => duplicateNode(menuNode), rename: () => renameNode(menuNode),
+    download: menuNode.output?.url ? () => { setNodeMenu(null); window.open(menuNode.output!.url!, "_blank", "noopener"); } : undefined,
+    remove: () => removeNode(menuNode.id, true),
+    note: menuNode.kind === "shot" ? "Removing a shot node leaves the shot and its takes untouched." : undefined,
+  }) : [];
+  /* CR1 §11: a file dropped on the board is a note carrying its picture, where it was dropped. */
+  const dropFiles = async (files: FileList, x: number, y: number) => {
+    const list = Array.from(files).slice(0, 6);
+    for (let i = 0; i < list.length; i++) {
+      try {
+        const up = await uploadFile(list[i], "reference");
+        addNode("note", x + i * 24, y + i * 24, { label: up.filename, text: `REF · ${up.filename}`, output: { url: `/api/uploads/${encodeURIComponent(up.id)}`, kind: up.kind === "video" ? "video" : "image" } });
+      } catch (e) { toast((e as Error).message); }
+    }
+    if (list.length) toast(`${list.length} ${list.length === 1 ? "reference" : "references"} on the board · free`);
   };
 
   /* `?shot=` from the grid's `Open in Rig`: the shot lands on the board once. */
@@ -427,11 +493,15 @@ function Canvas() {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setAddMenu({ x: 76 + 16, y: 56 + 44 + 16 + 36 + 6 }); }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "x" && selected) { const n = latest.current?.nodes.find((x) => x.id === selected); if (n) { e.preventDefault(); nodeClip(n, "cut"); } }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && selected) { const n = latest.current?.nodes.find((x) => x.id === selected); if (n) { e.preventDefault(); nodeClip(n, "copy"); } }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v" && getClip()?.kind === "node") { e.preventDefault(); pasteNode(); }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d" && selected) { const n = latest.current?.nodes.find((x) => x.id === selected); if (n) { e.preventDefault(); duplicateNode(n); } }
       else if ((e.metaKey || e.ctrlKey) && e.key === "0") { e.preventDefault(); fit(); }
       else if ((e.metaKey || e.ctrlKey) && (e.key === "=" || e.key === "+")) { e.preventDefault(); setView((v) => stepZoom(v, 1, surfaceCentre())); }
       else if ((e.metaKey || e.ctrlKey) && (e.key === "-" || e.key === "_")) { e.preventDefault(); setView((v) => stepZoom(v, -1, surfaceCentre())); }
       else if (e.key === "Escape") { setAddMenu(null); setWiring(null); }
-      else if ((e.key === "Backspace" || e.key === "Delete") && selected) { e.preventDefault(); removeNode(selected); }
+      else if ((e.key === "Backspace" || e.key === "Delete") && selected) { e.preventDefault(); removeNode(selected, true); }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -467,7 +537,8 @@ function Canvas() {
           chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">·</span> {b.name}</>}
           mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
           phoneTitle={b.name} phoneMono={`${b.nodes.length} nodes · ${fmt(spent)} spent`} />
-        <PhoneBoard board={b} fmt={fmt} priceOf={priceOf} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
+        <ContextMenuHost title={menuNode ? `${menuNode.label} · ${KIND_WORD[menuNode.kind].toLowerCase()}` : "Node"} menu={menuNode ? nodeMenu : null} items={nodeItems} onClose={() => setNodeMenu(null)} />
+        <PhoneBoard board={b} fmt={fmt} priceOf={priceOf} running={running} selected={selected} onSelect={setSelected} onRun={runNode} onNodeMenu={(id, x, y) => { setSelected(id); setNodeMenu({ x, y, id, sub: null }); }}
           slot={slotSel} onSlot={setSlotSel} shots={shotsData?.shots ?? []} elements={elements?.elements ?? []} engineOf={engineOf} rates={rates} projectId={projectId}
           onRebind={(assetNodeId, portId, versionId, version) => {
             const cur = latest.current; if (!cur) return;
@@ -504,6 +575,7 @@ function Canvas() {
         <RigStrip />
         <section ref={surfaceRef} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
           onPointerDownCapture={onTouchCapture} onPointerMoveCapture={onTouchMoveCapture} onPointerUpCapture={onTouchEndCapture} onPointerCancelCapture={onTouchEndCapture}
+          onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); const p = toBoardXY(e); dropFiles(e.dataTransfer.files, p.x, p.y); } }}
           aria-label="Board" data-zoom={zoom}
           className={`relative min-w-0 overflow-hidden ${tool === "hand" ? "cursor-grab" : tool === "wire" ? "cursor-crosshair" : ""}`}
           style={{ touchAction: "none", backgroundImage: "radial-gradient(rgba(245,246,248,.07) 1px, transparent 1px)", backgroundSize: `${24 * zoom}px ${24 * zoom}px`, backgroundPosition: `${pan.x}px ${pan.y}px` }}>
@@ -511,7 +583,7 @@ function Canvas() {
             <Wires board={b} selected={selectedWire} onSelect={setSelectedWire} wiring={wiring} />
             {b.nodes.map((n) => (
               <Node key={n.id} n={n} board={b} selected={selected === n.id} running={running.has(n.id)} price={priceOf(n)} fmt={fmt}
-                onDown={onNodeDown(n)} onStartWire={startWire} onLand={landWire} onRun={() => runNode(n)}
+                onDown={onNodeDown(n)} onStartWire={startWire} onLand={landWire} onRun={() => runNode(n)} onContext={(e) => { e.preventDefault(); e.stopPropagation(); setSelected(n.id); setNodeMenu({ x: e.clientX, y: e.clientY, id: n.id, sub: null }); }}
                 onText={(t) => patchNode(n.id, { text: t }, true)} onSetting={(k, v) => patchNode(n.id, { settings: { ...n.settings, [k]: v } }, true)} />
             ))}
           </div>
@@ -543,6 +615,7 @@ function Canvas() {
             <button type="button" onClick={fit} aria-label="Fit the board" className="rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none text-ink-body">Fit</button>
           </div>
           {addMenu && <Menu x={addMenu.x} y={addMenu.y} title="Add node" items={addItems} onClose={() => setAddMenu(null)} />}
+          <ContextMenuHost title={menuNode ? `${menuNode.label} · ${KIND_WORD[menuNode.kind].toLowerCase()}` : "Node"} menu={menuNode ? nodeMenu : null} items={nodeItems} onClose={() => setNodeMenu(null)} />
           <NewAssetSheet open={assetSheet} from="rig" onClose={() => setAssetSheet(false)} onCreated={() => refreshElements()} />
         </section>
         <Inspector node={sel} board={b} price={sel ? priceOf(sel) : 0} fmt={fmt} engines={engines} engineOf={engineOf} shots={shotsData?.shots ?? []} production={production} projectId={projectId}
@@ -598,8 +671,9 @@ function Dot({ style, dashed, onDown, onUp, title }: { style: React.CSSPropertie
   );
 }
 
-function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, onLand, onRun, onText, onSetting }: {
+function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, onLand, onRun, onText, onSetting, onContext }: {
   n: BoardNode; board: Board; selected: boolean; running: boolean; price: number; fmt: (v: number) => string;
+  onContext: (e: React.MouseEvent) => void;
   onDown: (e: RPointerEvent) => void; onStartWire: (nodeId: string, portId: string) => (e: RPointerEvent) => void;
   onLand: (to: BoardNode, slotId: string) => (e: RPointerEvent) => void; onRun: () => void; onText: (t: string) => void; onSetting: (k: string, v: unknown) => void;
 }) {
@@ -613,7 +687,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
 
   if (n.kind === "asset") {
     return (
-      <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} aria-label={`${KIND_WORD[n.kind]} ${n.label}`}>
+      <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} onContextMenu={onContext} aria-label={`${KIND_WORD[n.kind]} ${n.label}`}>
         <div className="relative flex h-[32px] items-center gap-[6px] px-[10px]">
           {tag}<span className="text-[13px] font-semibold leading-none text-ink">{n.label}</span>
           <Mono cost className={n.settings.locked ? "" : "ml-auto"}>{String(n.settings.kind ?? "")}</Mono>
@@ -636,7 +710,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
     const takes = Number(n.settings.takes ?? 0);
     const specTop = outputDotTop(n);
     return (
-      <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} aria-label={`Shot ${n.label}`}>
+      <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} onContextMenu={onContext} aria-label={`Shot ${n.label}`}>
         <div className="flex h-[36px] items-center gap-[8px] px-[10px]">
           {tag}<Mono tone="ink">{n.label}</Mono><span className="min-w-0 truncate text-[13px] font-semibold leading-[1.2] text-ink">{String(n.settings.title ?? "")}</span>
         </div>
@@ -666,7 +740,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
   }
   if (n.kind === "prompt" || n.kind === "note") {
     return (
-      <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} aria-label={`${KIND_WORD[n.kind]} node`}>
+      <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} onContextMenu={onContext} aria-label={`${KIND_WORD[n.kind]} node`}>
         <div className="flex h-[32px] items-center gap-[6px] px-[10px]">{tag}<span className="text-[13px] font-semibold leading-none text-ink">{KIND_WORD[n.kind]}</span><Mono cost className="ml-auto">{n.kind === "prompt" ? "free" : ""}</Mono></div>
         <textarea value={n.text ?? ""} onChange={(e) => onText(e.target.value)} onPointerDown={stop} placeholder={n.kind === "prompt" ? "@Noor's hands on @The bag…" : "A note"} aria-label={KIND_WORD[n.kind]}
           className="mx-[10px] mb-[10px] box-border h-[96px] w-[calc(100%-20px)] resize-none rounded-ctl border border-[rgba(245,246,248,.1)] bg-ground px-[10px] py-[8px] text-[13px] leading-[1.45] text-ink outline-0 placeholder:text-ink-muted" />
@@ -679,7 +753,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
   const dotTop = outputDotTop(n);
   const secs = Number(n.settings.seconds ?? 5);
   return (
-    <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} aria-label={`${KIND_WORD[n.kind]} ${n.label}`}>
+    <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} onContextMenu={onContext} aria-label={`${KIND_WORD[n.kind]} ${n.label}`}>
       <div className="flex h-[32px] items-center gap-[6px] px-[10px]">
         {tag}<span className="truncate text-[13px] font-semibold leading-none text-ink">{n.label}</span>
         {n.kind === "image" && <Mono cost className="ml-auto whitespace-nowrap">{String(n.settings.resolution ?? "1K")} · ×{Number(n.settings.count ?? 1)}</Mono>}

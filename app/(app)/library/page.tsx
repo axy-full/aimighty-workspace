@@ -16,6 +16,11 @@ import { Button, Mono, Segmented, PinnedBar, PinnedPrimary } from "@/components/
 import { usePhone } from "@/lib/usePhone";
 import { useMoney } from "@/lib/price";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
+import { contextItems, ContextMenuHost } from "@/components/ui/ContextMenu";
+import Pressable from "@/components/ui/Pressable";
+import { getClip, setClip, useClipboard } from "@/lib/clipboard";
+import { scheduleDelete, cancelDelete } from "@/lib/undoDelete";
+import { appPrompt } from "@/components/dialog";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
 import UnfiledWall from "@/components/make/UnfiledWall";
@@ -49,6 +54,15 @@ import NewAssetSheet, { type SheetRef } from "@/components/assets/NewAssetSheet"
  * `--card-raised`). The references lens is the same grid of references —
  * tap one for `Promote to asset · 0 CR`, `Use in Make`, `Add to Canvas` as
  * a sheet; the unfiled lens is Make's wall. `New asset · 0 CR` pinned.
+ *
+ * CR1 §10: right-click (long-press on a phone) on an asset or a reference
+ * opens the one context menu. An asset: Cut · Copy (paste = a new asset,
+ * nothing trained) · Duplicate · Rename · Move to ▸ a production · Share
+ * (a workspace link) · Download (its still) · Open in Rig · Delete with
+ * Undo (soft, `deleted_at`). A reference: Copy (into the composer's well)
+ * · Rename · Share · Download · Open in Rig · Delete with Undo, then its
+ * own three — Promote to asset · Use in Make · Add to Canvas. CR1 §11:
+ * files dropped on the assets grid open New asset with them as references.
  */
 type Lens = "assets" | "references" | "unfiled";
 type Upload = { id: string; filename: string; mime: string; bytes: number; width: number | null; height: number | null; kind: "image" | "video"; durationS: number | null; url: string; createdAt: number };
@@ -69,6 +83,9 @@ function Library() {
   const money = useMoney();
   const [searchOpen, setSearchOpen] = useState(false);
   const [refMenu, setRefMenu] = useState<string | null>(null);
+  const [card, setCard] = useState<{ x: number; y: number; kind: "asset" | "reference"; id: string; sub: "move" | "share" | null } | null>(null);
+  const [hiddenRefs, setHiddenRefs] = useState<Set<string>>(new Set());
+  const clip = useClipboard();
   usePageTitle("Library");
   const [lens, setLens] = useState<Lens>(() => (search.get("view") === "unfiled" ? "unfiled" : search.get("view") === "references" ? "references" : "assets"));
   const [q, setQ] = useState("");
@@ -90,7 +107,7 @@ function Library() {
   const assets = useMemo(() => (els?.elements ?? []).filter((e) =>
     (!kind || e.kind === kind) && (!production || productionOf(e.projectId)?.id === production) && (locked == null || e.locked === locked)
     && (!needle || `${e.name} @${e.name} ${e.kind} ${e.description}`.toLowerCase().includes(needle))), [els, kind, production, locked, needle, prods]); // eslint-disable-line react-hooks/exhaustive-deps
-  const refs = useMemo(() => (ups?.uploads ?? []).filter((u) => !needle || u.filename.toLowerCase().includes(needle)), [ups, needle]);
+  const refs = useMemo(() => (ups?.uploads ?? []).filter((u) => !hiddenRefs.has(u.id) && (!needle || u.filename.toLowerCase().includes(needle))), [ups, needle, hiddenRefs]);
   const sel = refs.find((u) => u.id === selected) ?? null;
 
   /* The loose board: each reference in its own place, laid in four columns as it arrived. */
@@ -118,6 +135,74 @@ function Library() {
       ? [{ kind: "item", label: "Any", onSelect: () => setProduction(null) }, ...(prods?.productions ?? []).map((p): MenuItem => ({ kind: "item", label: p.name, onSelect: () => setProduction(p.id) }))]
       : [{ kind: "item", label: "Any", onSelect: () => setLocked(null) }, { kind: "item", label: "Locked", onSelect: () => setLocked(true) }, { kind: "item", label: "Open", onSelect: () => setLocked(false) }];
   const at = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); return { x: r.left, y: r.bottom + 6 }; };
+
+  /* ── CR1 §10: the menu's verbs on an asset and on a reference ─────────── */
+  const stillOf = (a: ElementFull) => { const first = a.attributes[0]; const cur = first?.versions.find((v) => v.id === first.currentId) ?? first?.versions[0] ?? null; return cur?.uploadId ? `/api/uploads/${encodeURIComponent(cur.uploadId)}` : null; };
+  const putAsset = (id: string, body: Record<string, unknown>) => fetch(`/api/rig/elements/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const cloneAsset = async (id: string, said: string) => {
+    setCard(null);
+    const r = await fetch("/api/rig/elements", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cloneOf: id }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error ?? "Not duplicated."); return; }
+    refreshEls(); toast(`@${j.element?.name ?? "copy"} · ${said}`);
+  };
+  const toggleSub = (which: "move" | "share") => setCard((m) => m && { ...m, sub: m.sub === which ? null : which });
+  const assetActions = (a: ElementFull): MenuItem[] => contextItems({
+    cut: () => { setClip({ kind: "asset", mode: "cut", id: a.id, label: `@${a.name}` }); setCard(null); toast(`@${a.name} cut · paste it under a production to move it there`); },
+    copy: () => { setClip({ kind: "asset", mode: "copy", id: a.id, label: `@${a.name}` }); setCard(null); toast(`@${a.name} copied · paste makes a new asset with nothing trained`); },
+    paste: clip?.kind === "asset" ? () => { const c = getClip()!; if (c.mode === "copy") cloneAsset(c.id, "pasted as a new asset, nothing trained"); else { setCard(null); toast("A cut asset moves with Move to ▸ — pick the production there."); } } : null,
+    duplicate: () => cloneAsset(a.id, "a copy, nothing trained"),
+    rename: async () => { setCard(null); const v = await appPrompt("Rename the asset", a.name, "Name"); if (!v?.trim()) return; const r = await putAsset(a.id, { name: v.trim() }); if (!r.ok) { toast("That didn't stick."); return; } refreshEls(); toast(`Now @${v.trim().replace(/\s+/g, "")}`); },
+    moveTo: { open: card?.sub === "move", onToggle: () => toggleSub("move"), items: [
+      { label: "All productions", note: "shared", onSelect: async () => { setCard(null); await putAsset(a.id, { projectId: null }); refreshEls(); toast(`@${a.name} · every production`); } },
+      ...(prods?.productions ?? []).flatMap((p) => p.projects.map((j) => ({ label: p.projects.length > 1 ? `${p.name} › ${j.name}` : p.name, onSelect: async () => { setCard(null); await putAsset(a.id, { projectId: j.id }); refreshEls(); toast(`@${a.name} moved to ${p.name}`); } }))),
+    ] },
+    share: { open: card?.sub === "share", onToggle: () => toggleSub("share"), copyLink: () => { setCard(null); navigator.clipboard?.writeText(`${location.origin}/library?asset=${encodeURIComponent(a.id)}`).then(() => toast(`Link to @${a.name} copied · opens for this workspace`)); } },
+    download: stillOf(a) ? () => { setCard(null); window.open(stillOf(a)!, "_blank", "noopener"); } : undefined,
+    openInRig: a.projectId || current ? () => { setCard(null); router.push(`/rig/canvas/new?project=${encodeURIComponent(a.projectId ?? current!.id)}`); } : undefined,
+    remove: async () => {
+      setCard(null);
+      const r = await fetch(`/api/rig/elements/${a.id}`, { method: "DELETE" });
+      if (!r.ok) { toast("Not deleted."); return; }
+      refreshEls();
+      toast(`@${a.name} deleted`, async () => { await putAsset(a.id, { restore: true }); refreshEls(); });
+    },
+    note: a.locked ? "Locked: it stays bound where it is used; unlock before changing what it binds." : undefined,
+  });
+  const promote = (u: Upload) => setSheet({ refs: [{ uploadId: u.id, url: u.url, label: u.filename, kind: u.kind }], name: u.filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9 ]+/g, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() + w.slice(1)).join("") });
+  const referenceActions = (u: Upload): MenuItem[] => [
+    ...contextItems({
+      copy: () => { setClip({ kind: "reference", mode: "copy", id: u.id, label: u.filename, payload: { url: u.url, kind: u.kind } }); setCard(null); toast(`${u.filename} copied · paste it into the composer's well`); },
+      rename: async () => { setCard(null); const v = await appPrompt("Rename the reference", u.filename, "Name"); if (!v?.trim()) return; const r = await fetch(`/api/uploads/${u.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: v.trim() }) }); if (!r.ok) { toast("That didn't stick."); return; } refreshUps(); toast(`Now ${v.trim()}`); },
+      share: { open: card?.sub === "share", onToggle: () => toggleSub("share"), copyLink: () => { setCard(null); navigator.clipboard?.writeText(`${location.origin}/api/uploads/${encodeURIComponent(u.id)}`).then(() => toast("Link copied · opens for this workspace")); } },
+      download: () => { setCard(null); window.open(`/api/uploads/${encodeURIComponent(u.id)}`, "_blank", "noopener"); },
+      openInRig: current ? () => { setCard(null); router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(u.id)}`); } : undefined,
+      remove: () => {
+        setCard(null); setSelected(null);
+        setHiddenRefs((h) => new Set(h).add(u.id));
+        scheduleDelete(u.id, async () => { await fetch(`/api/uploads/${u.id}`, { method: "DELETE" }); refreshUps(); });
+        toast(`${u.filename} deleted`, () => { cancelDelete(u.id); setHiddenRefs((h) => { const n = new Set(h); n.delete(u.id); return n; }); });
+      },
+    }),
+    { kind: "divider" },
+    { kind: "item", label: "Promote to asset", keys: "0 cr", onSelect: () => { setCard(null); promote(u); } },
+    { kind: "item", label: "Use in Make", onSelect: () => router.push(`/make/${u.kind === "video" ? "video" : "images"}?ref=${encodeURIComponent(u.id)}`) },
+    { kind: "item", label: "Add to Canvas", onSelect: () => current ? router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(u.id)}`) : toast("Pick a production first — Canvas belongs to a project.") },
+  ];
+  const cardAsset = card?.kind === "asset" ? (els?.elements ?? []).find((a) => a.id === card.id) ?? null : null;
+  const cardRef = card?.kind === "reference" ? (ups?.uploads ?? []).find((u) => u.id === card.id) ?? null : null;
+  const cardItems: MenuItem[] = cardAsset ? assetActions(cardAsset) : cardRef ? referenceActions(cardRef) : [];
+  const cardTitle = cardAsset ? `@${cardAsset.name} · ${KIND_WORD[cardAsset.kind].toLowerCase()}` : cardRef ? `Ref · ${cardRef.filename.slice(0, 24)}` : "";
+  /* CR1 §11: files dropped on the assets grid become the references of a new asset. */
+  const dropOnAssets = async (files: FileList) => {
+    const list = Array.from(files).slice(0, 12);
+    if (!list.length) return;
+    try {
+      const refs: SheetRef[] = [];
+      for (const f of list) { const up = await uploadFile(f, "reference"); refs.push({ uploadId: up.id, url: up.url, label: up.filename, kind: up.kind === "video" ? "video" : "image" }); }
+      refreshUps(); setSheet({ refs });
+    } catch (e) { toast((e as Error).message); }
+  };
 
   const counts = { assets: els?.elements.length ?? 0, refs: ups?.uploads.length ?? 0, unfiled: unfiled?.generations.length ?? 0 };
   const filter = "tap44 flex items-center gap-[5px] rounded-pill border border-[rgba(245,246,248,.12)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none text-ink";
@@ -167,7 +252,7 @@ function Library() {
                 const vn = cur ? first!.versions.findIndex((v) => v.id === cur.id) + 1 : 0;
                 const prod = productionOf(a.projectId);
                 return (
-                  <article key={a.id} className={`flex flex-col overflow-hidden rounded-card border border-border ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
+                  <Pressable as="article" key={a.id} onMenu={(x, y) => setCard({ x, y, kind: "asset", id: a.id, sub: null })} className={`flex flex-col overflow-hidden rounded-card border border-border ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
                     <span className="relative block aspect-[4/3] border-b border-hairline ui-placeholder">
                       {cur?.uploadId && <img src={`/api/uploads/${encodeURIComponent(cur.uploadId)}`} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                       <span className="ui-chip-scrim absolute left-[7px] top-[7px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{a.kind}</span></span>
@@ -178,7 +263,7 @@ function Library() {
                       <span className="truncate text-[13.5px] font-semibold leading-[1.2] text-ink">@{a.name}</span>
                       <Mono cost className="truncate">{a.attributes.length} {a.attributes.length === 1 ? "port" : "ports"} · {prod ? prod.name : "all productions"}</Mono>
                     </span>
-                  </article>
+                  </Pressable>
                 );
               })}
               {!assets.length && <span className="col-span-2 text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>{els.elements.length ? "Nothing matches those filters." : "No assets yet. Promote a reference, or make one with New asset — creating is free."}</span>}
@@ -188,11 +273,11 @@ function Library() {
             <div className="grid grid-cols-2 gap-[10px]" data-references="">
               <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) drop(e.target.files); e.target.value = ""; }} />
               {refs.map((u) => (
-                <button key={u.id} type="button" onClick={() => setRefMenu(u.id)} aria-label={`Reference · ${u.filename}`}
+                <Pressable as="button" key={u.id} type="button" onMenu={(x, y) => setCard({ x, y, kind: "reference", id: u.id, sub: null })} onClick={() => setRefMenu(u.id)} aria-label={`Reference · ${u.filename}`}
                   className="relative box-border aspect-[4/3] overflow-hidden rounded-tile border border-[rgba(245,246,248,.1)] text-left ui-placeholder">
                   {u.kind === "image" && <img src={u.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                   <span className="ui-chip-scrim absolute bottom-[6px] left-[6px] max-w-[calc(100%-12px)] truncate rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">Ref · {u.filename.replace(/\.[a-z0-9]+$/i, "").slice(0, 18)}</span></span>
-                </button>
+                </Pressable>
               ))}
               {!refs.length && <span className="col-span-2 text-[13px] leading-[1.5] text-ink-body">Nothing on the board yet. Add images or clips.</span>}
             </div>
@@ -204,6 +289,7 @@ function Library() {
         </PinnedBar>
         {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "kind" ? "Kind" : menu.which === "production" ? "Production" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
         {refSel && <Menu x={0} y={0} title={`Ref · ${refSel.filename.slice(0, 24)}`} items={refItems} onClose={() => setRefMenu(null)} />}
+        <ContextMenuHost title={cardTitle} menu={cardAsset || cardRef ? card : null} items={cardItems} onClose={() => setCard(null)} />
         <NewAssetSheet open={sheet != null} from="library" onClose={() => setSheet(null)} initial={sheet ? { name: sheet.name, references: sheet.refs } : undefined} onCreated={() => { refreshEls(); setLens("assets"); setSelected(null); }} />
       </div>
     );
@@ -236,8 +322,8 @@ function Library() {
       ) : (
         <div className={`grid min-h-0 flex-1 ${lens === "references" || full ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_720px]"} max-md:grid-cols-1`}>
           {showAssets && lens === "assets" && !full && (
-            <div className="flex min-h-0 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px] pt-[18px] max-md:px-[16px]">
-              <Mono>Assets · canonical still · version · ports · where used</Mono>
+            <div className="flex min-h-0 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px] pt-[18px] max-md:px-[16px]" onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); dropOnAssets(e.dataTransfer.files); } }}>
+              <Mono>Assets · canonical still · version · ports · where used · drop files for a new asset</Mono>
               <div className="grid grid-cols-3 gap-[10px] max-md:grid-cols-2" data-assets="">
                 {assets.map((a) => {
                   const first = a.attributes[0];
@@ -245,7 +331,7 @@ function Library() {
                   const vn = cur ? first!.versions.findIndex((v) => v.id === cur.id) + 1 : 0;
                   const prod = productionOf(a.projectId);
                   return (
-                    <article key={a.id} className={`flex flex-col overflow-hidden rounded-card border border-[rgba(245,246,248,.1)] ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
+                    <Pressable as="article" key={a.id} onMenu={(x, y) => setCard({ x, y, kind: "asset", id: a.id, sub: null })} className={`flex flex-col overflow-hidden rounded-card border border-[rgba(245,246,248,.1)] ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
                       <span className="relative block aspect-[4/3] border-b border-hairline ui-placeholder">
                         {cur?.uploadId && <img src={`/api/uploads/${encodeURIComponent(cur.uploadId)}`} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                         <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{a.kind}</span></span>
@@ -256,7 +342,7 @@ function Library() {
                         <span className="truncate text-[13.5px] font-semibold leading-[1.2] text-ink">@{a.name}</span>
                         <span className="truncate text-[12px] leading-[1.3] text-ink-body">{a.attributes.length} {a.attributes.length === 1 ? "port" : "ports"} · {prod ? prod.name : "all productions"}</span>
                       </span>
-                    </article>
+                    </Pressable>
                   );
                 })}
                 {!assets.length && <span className="col-span-3 text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>{els.elements.length ? "Nothing matches those filters." : "No assets yet. Promote a reference from the board, or make one with New asset — creating is free."}</span>}
@@ -277,11 +363,11 @@ function Library() {
                 {placed.map(({ u, x, y, w, h }) => {
                   const on = selected === u.id;
                   return (
-                    <button key={u.id} type="button" onClick={(e) => { e.stopPropagation(); setSelected(on ? null : u.id); }} aria-label={`Reference · ${u.filename}`} aria-pressed={on}
+                    <Pressable as="button" key={u.id} type="button" onMenu={(x, y) => { setSelected(u.id); setCard({ x, y, kind: "reference", id: u.id, sub: null }); }} onClick={(e) => { e.stopPropagation(); setSelected(on ? null : u.id); }} aria-label={`Reference · ${u.filename}`} aria-pressed={on}
                       className={`absolute mt-[36px] box-border overflow-hidden rounded-tile border ui-placeholder ${on ? "border-ink shadow-[0_0_0_3px_rgba(245,246,248,.1)]" : "border-[rgba(245,246,248,.1)]"}`} style={{ left: x, top: y, width: w, height: h }}>
                       {u.kind === "image" && <img src={u.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                       <span className="ui-chip-scrim absolute bottom-[6px] left-[6px] max-w-[calc(100%-12px)] truncate rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">Ref · {u.filename.replace(/\.[a-z0-9]+$/i, "").slice(0, 18)}</span></span>
-                    </button>
+                    </Pressable>
                   );
                 })}
                 {sel && (() => { const p = placed.find((x) => x.u.id === sel.id)!; return (
@@ -299,6 +385,7 @@ function Library() {
         </div>
       )}
       {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "kind" ? "Kind" : menu.which === "production" ? "Production" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
+      <ContextMenuHost title={cardTitle} menu={cardAsset || cardRef ? card : null} items={cardItems} onClose={() => setCard(null)} />
       <NewAssetSheet open={sheet != null} from="library" onClose={() => setSheet(null)} initial={sheet ? { name: sheet.name, references: sheet.refs } : undefined} onCreated={() => { refreshEls(); setLens("assets"); setSelected(null); }} />
     </div>
   );

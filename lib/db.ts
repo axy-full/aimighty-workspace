@@ -928,6 +928,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         await addColumn(c, "projects", col);
       }
       await c.execute(`CREATE INDEX IF NOT EXISTS idx_projects_production ON projects(production_id)`);
+      /* CR1 §10: Delete always offers Undo — an asset is soft-deleted (deleted_at) and listed nowhere until restored. */
+      await addColumn(c, "elements", `deleted_at INTEGER`);
       /* Every project under a production, once (§15). A project with none
          gets one named after it, carrying its cap and — read from its old
          free-text stage — its status and step, so the day this lands
