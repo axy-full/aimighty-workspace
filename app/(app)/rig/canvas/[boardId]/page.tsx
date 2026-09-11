@@ -111,7 +111,9 @@ function Canvas() {
   useEffect(() => {
     if (!wantsNew || !projectFromUrl || !signedIn) return;
     let live = true;
-    const suffix = shotFromUrl ? `?shot=${encodeURIComponent(shotFromUrl)}` : "";
+    /* Every rider but `project` comes along — `shot`, `ref`, `asset` — so what the Library sent lands on the real board. */
+    const rest = new URLSearchParams(search.toString()); rest.delete("project");
+    const q = rest.toString(); const suffix = q ? `?${q}` : "";
     (async () => {
       const list = await fetch(`/api/rig/boards?projectId=${encodeURIComponent(projectFromUrl)}`).then((r) => r.json()).catch(() => ({}));
       const boards: Board[] = Array.isArray(list.boards) ? list.boards : [];
@@ -121,7 +123,7 @@ function Canvas() {
       if (live && made.board?.id) router.replace(`/rig/canvas/${made.board.id}${suffix}`);
     })();
     return () => { live = false; };
-  }, [wantsNew, projectFromUrl, shotFromUrl, signedIn, router]);
+  }, [wantsNew, projectFromUrl, search, signedIn, router]);
 
   const { data: loaded, status: loadStatus } = useApi<Loaded>(signedIn && !wantsNew ? `/api/rig/boards/${encodeURIComponent(boardId)}` : null, 0);
   const projectId = loaded?.board.projectId ?? null;
@@ -324,11 +326,11 @@ function Canvas() {
     toast(`${from?.label ?? "Output"} → ${toNode.label} · ${slotId.toUpperCase()}`);
   };
 
-  const addAsset = (el: ElementFull) => addNode("asset", undefined, undefined, {
+  const addAsset = useCallback((el: ElementFull) => addNode("asset", undefined, undefined, {
     label: `@${el.name}`, ref: { elementId: el.id },
     ports: el.attributes.map((a) => { const cur = a.versions.findIndex((v) => v.id === a.currentId); return { id: a.id, label: (a.label || a.kind).toUpperCase(), version: a.currentId ? `v${cur >= 0 ? cur + 1 : a.versions.length || 1}` : null, attributeId: a.id, versionId: a.currentId ?? null, idle: !a.currentId }; }),
     settings: { kind: el.kind, locked: Boolean(el.locked) },
-  });
+  }), [addNode]);
   const addShot = useCallback((s: ShotRow) => addNode("shot", undefined, undefined, {
     label: s.code, ref: { shotId: s.id }, settings: { title: s.description || s.title, takes: s.takes, spent: money.inCredits ? (s.credits ?? 0) : s.spend },
   }), [addNode, money.inCredits]);
@@ -413,6 +415,15 @@ function Canvas() {
       addNode("note", undefined, undefined, { label: u?.filename ?? "Reference", text: `REF · ${u?.filename ?? refFromUrl}`, output: { url: `/api/uploads/${encodeURIComponent(refFromUrl)}`, kind: "image" } });
     }).catch(() => {});
   }, [shownBoard, refFromUrl, addNode]);
+  /* `?asset=` from the Library's `Add to Canvas` (CR1 §5): the asset lands as an asset node with its ports. */
+  const assetFromUrl = search.get("asset");
+  const seededAsset = useRef<string | null>(null);
+  useEffect(() => {
+    if (!shownBoard || !assetFromUrl || seededAsset.current === assetFromUrl) return;
+    seededAsset.current = assetFromUrl;
+    if (shownBoard.nodes.some((n) => n.kind === "asset" && n.ref?.elementId === assetFromUrl)) return;
+    fetch(`/api/rig/elements/${encodeURIComponent(assetFromUrl)}`).then((r) => r.json()).then((j) => { if (j?.element) addAsset(j.element as ElementFull); }).catch(() => {});
+  }, [shownBoard, assetFromUrl, addAsset]);
 
   /* ── running a node: through the ordinary generate route; the output lives in the node ── */
   const runNode = async (n: BoardNode) => {

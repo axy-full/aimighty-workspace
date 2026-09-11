@@ -25,7 +25,7 @@ Delete the old UI route by route as each replacement lands; do not run both.
 
 ## 1. Information architecture
 
-**Top nav — four items:** Make · Productions · Rig · Library. Usage and Settings live in the **account menu** (avatar, top right). A **balance** readout (`BALANCE 1,240 CR`) sits left of the Atomik button on every screen.
+**Top nav — four items:** Make · Library · Productions · Rig (CR1 §9 order). Usage and Settings live in the **account menu** (avatar, top right). A **balance** readout (`BALANCE 1,240 CR`) sits left of the Atomik button on every screen.
 
 **Productions › Projects › Media.** A production is the client job. A project is a deliverable inside it (30s hero, 15s cutdown, 9:16 socials, key visuals), each with its own six-step stepper — Brief · Shots · Boards · Takes · Approve · Deliver — its own cap and its own "need you" count. All projects in a production share the production's assets in Rig. Media (takes, stills, audio, masters) belongs to the project that made it, grouped by shot; it survives shot deletion and travels when a shot moves.
 
@@ -179,7 +179,7 @@ Route `/settings`. 240px sticky index + one scrolling column of `--card` section
 
 Same tokens, copy, data and rules as desktop. What changes, and only this:
 
-- **Dock** replaces the top nav: Make · Productions · Rig · Library, 22px line icons over 12px Kode Mono labels (PRODS for Productions), 52–56px tall, 22px safe-area padding (`env(safe-area-inset-bottom)` in production). Usage and Settings stay behind the avatar. Inside a production the header becomes `‹ Production name` + title; the dock stays.
+- **Dock** replaces the top nav: Make · Library · Productions · Rig (CR1 §9 order), 22px line icons over 12px Kode Mono labels (PRODS for Productions), 52–56px tall, 22px safe-area padding (`env(safe-area-inset-bottom)` in production). Usage and Settings stay behind the avatar. Inside a production the header becomes `‹ Production name` + title; the dock stays.
 - **Header** 52px: mark + wordmark (or back link), balance mono, Atomik button (ring 14 in its live state + `Atomik` + state word), avatar 32.
 - **Every right rail becomes a bottom sheet**: `#0F1116`, radius 24 top, 36×4 grabber, scrim `rgba(5,6,8,.55)`, × top right, primary pinned at the bottom with the 26px safe area. Atomik sheet: compact = 58% height (context line, one checkpoint card, Continue / Change engine / Stop, ask field) → expanded = 92% (conversation + plan card above the same checkpoint card). Slot inspector, composer and new asset are sheets too.
 - **One primary, pinned**: the screen's filled button lives in a bottom block above the dock, 50–52px, cost right-aligned; it outlines while a sheet is open.

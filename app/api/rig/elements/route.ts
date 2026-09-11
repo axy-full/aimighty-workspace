@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
-import { listElements, ensureRig, createElement, addVersion, syncTrainedVersions } from "@/lib/elements";
+import { listElements, ensureRig, createElement, addVersion, syncTrainedVersions, usageCounts } from "@/lib/elements";
 import { isElementKind } from "@/lib/rig";
 import { getSetting } from "@/lib/settings";
 
@@ -22,9 +22,15 @@ export const GET = withTenant(async function GET(req: Request) {
   /* A face that finished training since the last read becomes its asset's current version. */
   try { await syncTrainedVersions(); } catch { /* the list still answers */ }
 
-  const projectId = new URL(req.url).searchParams.get("projectId");
+  const params = new URL(req.url).searchParams;
+  const projectId = params.get("projectId");
   const scoped = projectId && projectId !== "all" && projectId !== "unfiled" ? projectId : null;
-  const elements = await listElements(scoped);
+  let elements = await listElements(scoped);
+  /* `?usage=1` (CR1 §5): the Library's cards say where each asset is used — one query for all of them. */
+  if (params.get("usage") === "1" && elements.length) {
+    const usage = await usageCounts(elements.map((e) => e.id));
+    elements = elements.map((e) => ({ ...e, usage: usage.get(e.id) ?? { shots: 0, productions: 0 } }));
+  }
 
   return NextResponse.json({ elements, backfill });
 });

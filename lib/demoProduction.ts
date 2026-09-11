@@ -1,4 +1,4 @@
-import { STARTER_PRODUCTION, STARTER_CAST, DEFAULT_SETUP, type StarterCast, type StarterShot } from "./platformLayer";
+import { STARTER_PRODUCTION, DEFAULT_SETUP, type StarterCast, type StarterShot } from "./platformLayer";
 import { DEFAULT_MODEL_ID } from "./models";
 import { estimateCostUsd } from "./vendorPricing";
 import { specToPhrase, type ShotSpec } from "./studio";
@@ -7,15 +7,13 @@ import { specToPhrase, type ShotSpec } from "./studio";
  * The platform's demo production (brief 1.7): what a production looks like,
  * shown signed out and from every empty state, and copied into every new
  * workspace as its starter. Three shots, a few takes each, one Approved,
- * real credit numbers, a cast of two, Setup filled. Made from generic,
+ * real credit numbers, the starter's cast, Setup filled. Made from generic,
  * rights-clear content: the takes' pictures are the platform's own neutral
  * previews when they are published, else the fixture clip (Big Buck Bunny,
  * CC BY). No client work, no real people. No Node imports.
  */
-export const DEMO_CAST: StarterCast[] = [
-  STARTER_CAST,
-  { name: "Mule", kind: "prop", description: "A battered cargo bicycle, orange frame, canvas panniers, a bell that does not work." },
-];
+/** The demo's cast is the starter's — one list, so what a visitor sees is what a new workspace gets. */
+export const DEMO_CAST: StarterCast[] = STARTER_PRODUCTION.cast;
 
 export type DemoTake = {
   key: string; shotCode: string; version: number; model: string; resolution: string; duration: number;

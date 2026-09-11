@@ -25,7 +25,7 @@ Delete the old UI route by route as each replacement lands; do not run both.
 
 ## 1. Information architecture
 
-**Top nav — four items:** Make · Productions · Rig · Library. Usage and Settings live in the **account menu** (avatar, top right). A **balance** readout (`BALANCE 1,240 CR`) sits left of the Atomik button on every screen.
+**Top nav — four items:** Make · Library · Productions · Rig (reordered by docs/change-request-1.md §9; the Library is the asset home, Productions consume it). Usage and Settings live in the **account menu** (avatar, top right). A **balance** readout (`BALANCE 1,240 CR`) sits left of the Atomik button on every screen.
 
 **Productions › Projects › Media.** A production is the client job. A project is a deliverable inside it (30s hero, 15s cutdown, 9:16 socials, key visuals), each with its own six-step stepper — Brief · Shots · Boards · Takes · Approve · Deliver — its own cap and its own "need you" count. All projects in a production share the production's assets in Rig. Media (takes, stills, audio, masters) belongs to the project that made it, grouped by shot; it survives shot deletion and travels when a shot moves.
 
@@ -165,7 +165,7 @@ Right: **the one composer** (400px rail, `#0F1116`): prompt (14.5px, `@Name` hig
 
 ## 11. Library (board 8b)
 
-Route `/library`. Header: `Library` + mono totals; segmented `Assets · References · Unfiled`; filters `Kind · Production · Locked`; search; primary `New asset · 0 CR`. Two panes: **Assets grid** (3 columns; 4:3 canonical still, kind chip, lock chip, version chip; name; `ports · where-used`; locked assets on `--card-raised`) and the **References board** (dotted, loose; items with `REF · …` chips; selecting one shows `Promote to asset · 0 CR`, `Use in Make`, `Add to Canvas`; `Open full board`). Library indexes project media; it never stores a second copy.
+Route `/library`. **Amended by docs/change-request-1.md §5 (2026-09-11):** the three lenses became labelled sections — Characters · Locations · Props · Looks · Voices · References · Unfiled — each a titled grid with its own `+ New` and count, a 240px index on the left that follows the scroll; every asset card carries its where-used (`6 shots · 2 productions`) and, on hover, `Use in Make · Add to Canvas · Open`. The rest of this paragraph is the original board. Header: `Library` + mono totals; segmented `Assets · References · Unfiled`; filters `Kind · Production · Locked`; search; primary `New asset · 0 CR`. Two panes: **Assets grid** (3 columns; 4:3 canonical still, kind chip, lock chip, version chip; name; `ports · where-used`; locked assets on `--card-raised`) and the **References board** (dotted, loose; items with `REF · …` chips; selecting one shows `Promote to asset · 0 CR`, `Use in Make`, `Add to Canvas`; `Open full board`). Library indexes project media; it never stores a second copy.
 
 ## 12. New asset sheet (boards 3a, 3b)
 

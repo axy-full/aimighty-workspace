@@ -219,7 +219,7 @@ test("four nav items, a balance, and Usage / Settings only behind the avatar", a
   await settle(page);
   const header = page.locator("header").first();
   const nav = header.getByRole("navigation", { name: "Sections" });
-  await expect(nav.getByRole("link")).toHaveText(["Make", "Productions", "Rig", "Library"]);
+  await expect(nav.getByRole("link")).toHaveText(["Make", "Library", "Productions", "Rig"]);   // CR1 §9: the Library is the asset home
   await expect(nav.getByRole("link", { name: "Productions" })).toHaveAttribute("aria-current", "page");
   // Usage and Settings are not in the nav…
   await expect(nav.getByRole("link", { name: /usage|settings/i })).toHaveCount(0);
@@ -481,6 +481,7 @@ test("New asset: the 3a sheet opens from the Library at its numbers and closes o
   await settle(page);
   const signedIn = await page.getByRole("button", { name: "Account" }).count();
   test.skip(!signedIn, "the Library needs a workspace");
+  await expect(page.getByRole("button", { name: /^New asset/ }), "one primary on the screen").toHaveCount(1);
   await page.getByRole("button", { name: /^New asset/ }).click();
   const sheet = page.getByRole("dialog", { name: "New asset" });
   await expect(sheet).toBeVisible();
@@ -534,4 +535,40 @@ test("Settings: the 4a index, sections and controls at their numbers", async ({ 
   expect(await sw.evaluate((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })).toEqual([34, 20]);
   await expect(page.getByRole("region", { name: "Engines & rates" }).getByText(/\/ (5s|still)$/).first()).toBeVisible();
   await expect(page.getByRole("region", { name: "Account" })).toBeVisible();
+});
+
+/**
+ * Library, restructured (docs/change-request-1.md §5): the three lenses are
+ * gone; seven labelled sections — Characters · Locations · Props · Looks ·
+ * Voices · References · Unfiled — each a titled grid with its count and its
+ * own `+ New`; a 240px index on the left follows the scroll and jumps; one
+ * filled primary; `+ Location` opens New asset with Location picked; every
+ * card says where it is used. Nothing here creates or renders.
+ */
+test("Library: labelled sections under a sticky index, one primary, + Location opens the sheet on Location", async ({ page }) => {
+  await page.goto("/library");
+  await settle(page);
+  const signedIn = await page.getByRole("button", { name: "Account" }).count();
+  test.skip(!signedIn, "the Library needs a workspace");
+  await expect(page.getByRole("group", { name: "Lens" })).toHaveCount(0);
+  const index = page.getByRole("navigation", { name: "Library index" });
+  await expect(index.getByRole("button")).toHaveText([/^Characters/, /^Locations/, /^Props/, /^Looks/, /^Voices/, /^References/, /^Unfiled/]);
+  expect(await index.evaluate((el) => el.getBoundingClientRect().width)).toBe(240);
+  for (const name of ["Characters", "Locations", "Props", "Looks", "Voices", "References", "Unfiled"]) await expect(page.getByRole("region", { name })).toBeVisible();
+  const filled = await page.locator(".shell-page button").evaluateAll((els) => els.filter((b) => getComputedStyle(b).backgroundColor === "rgb(245, 246, 248)").map((b) => b.textContent ?? ""));
+  expect(filled.length, "one filled primary on the screen").toBe(1);
+  /* The index follows a jump, and the column — not the page — is what scrolled. */
+  await index.getByRole("button", { name: /^Unfiled/ }).click();
+  await expect(index.getByRole("button", { name: /^Unfiled/ })).toHaveAttribute("aria-current", "true");
+  expect(await page.evaluate(() => document.documentElement.scrollTop)).toBe(0);
+  /* A card says where it is used, in the one form. */
+  const card = page.locator("[data-asset]").first();
+  if (await card.count()) await expect(card.locator("span.truncate").last()).toHaveText(/^(not in a shot yet|\d+ shots? · \d+ productions?)$/);
+  /* + Location under its label opens the sheet with Location already picked. */
+  await page.getByRole("region", { name: "Locations" }).getByRole("button", { name: "+ Location" }).click();
+  const sheet = page.getByRole("dialog", { name: "New asset" });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("group", { name: "Kind" }).getByRole("button", { name: "Location" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
 });

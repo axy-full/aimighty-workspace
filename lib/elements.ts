@@ -116,9 +116,32 @@ function rowToBinding(r: any): BindingRow {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-export type ElementFull = ElementRow & { attributes: AttributeRow[] };
+export type ElementFull = ElementRow & { attributes: AttributeRow[]; /** CR1 §5, on the Library's read only: where it is used. */ usage?: ElementUsageCount };
+export type ElementUsageCount = { shots: number; productions: number };
 
 /** Everything in this production, plus everything shared across the workspace. */
+/**
+ * Where each element is used (docs/change-request-1.md §5): distinct shots
+ * and productions bound to it, for the whole Library in one query. The same
+ * reading as `elementUsage` — through the shot, so a deleted shot is gone
+ * and a title card does not count — so the card and the element screen
+ * never disagree.
+ */
+export async function usageCounts(ids: string[]): Promise<Map<string, ElementUsageCount>> {
+  const out = new Map<string, ElementUsageCount>();
+  if (!ids.length) return out;
+  await ready();
+  const holes = ids.map(() => "?").join(",");
+  const rs = await db().execute({
+    sql: `SELECT b.element_id AS id, COUNT(DISTINCT b.shot_id) AS shots, COUNT(DISTINCT p.production_id) AS productions
+          FROM bindings b JOIN shots s ON s.id = b.shot_id LEFT JOIN projects p ON p.id = s.project_id
+          WHERE COALESCE(s.kind, 'render') != 'type' AND b.element_id IN (${holes}) GROUP BY b.element_id`,
+    args: ids,
+  });
+  for (const r of rs.rows as unknown as { id: string; shots: number; productions: number }[]) out.set(String(r.id), { shots: Number(r.shots), productions: Number(r.productions) });
+  return out;
+}
+
 export async function listElements(projectId?: string | null): Promise<ElementFull[]> {
   await ready();
   const rs = projectId

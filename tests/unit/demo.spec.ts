@@ -3,10 +3,10 @@ import { DEMO_PRODUCTION, DEMO_TAKES, demoMediaUrl, demoTotals, demoShots } from
 import { estimateCostUsd } from "../../lib/vendorPricing";
 import { CATEGORIES } from "../../lib/studio";
 
-/** The demo production (brief 1.7): three shots, a few takes each, one Approved, real credit numbers, a cast of two, Setup filled, rights-clear pictures. */
+/** The demo production (brief 1.7): three shots, a few takes each, one Approved, real credit numbers, the starter's cast of four, Setup filled, rights-clear pictures. */
 test("the demo production has the shape the brief asks for, with the catalogue's own prices", () => {
   expect(DEMO_PRODUCTION.shots.length).toBe(3);
-  expect(DEMO_PRODUCTION.cast.length).toBe(2);
+  expect(DEMO_PRODUCTION.cast.length).toBe(4);
   expect(DEMO_TAKES.length).toBeGreaterThanOrEqual(6);
   expect(DEMO_TAKES.filter((t) => t.approved).length).toBe(1);
   for (const t of DEMO_TAKES) {

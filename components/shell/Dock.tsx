@@ -6,8 +6,8 @@ import { DOCK } from "@/lib/nav";
 import { useProject } from "@/lib/projectContext";
 
 /**
- * The phone's dock (design/particl-v2-mobile/README.md; board M1): `Make ·
- * PRODS · Rig · Library` at the bottom, over the home indicator — four
+ * The phone's dock (design/particl-v2-mobile/README.md; board M1; CR1 §9
+ * order): `Make · LIBRARY · PRODS · Rig` at the bottom, over the home indicator — four
  * equal cells, 56px, on `--ground` under a .08 hairline, `0 6px` plus the
  * safe area; a 22px line icon (1.6 stroke, round caps) over a 12px mono
  * label at .04em; ink where you are, muted elsewhere. Usage and Settings

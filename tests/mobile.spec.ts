@@ -89,14 +89,14 @@ test.describe("the app shell", () => {
          instead, and the dock only where it exists. */
       const width = await page.evaluate(() => window.innerWidth);
       if (width >= 768) {
-        await expect(page.getByRole("banner").getByRole("navigation", { name: "Sections" }).getByRole("link")).toHaveText(["Make", "Productions", "Rig", "Library"]);
+        await expect(page.getByRole("banner").getByRole("navigation", { name: "Sections" }).getByRole("link")).toHaveText(["Make", "Library", "Productions", "Rig"]);
         await expect(page.locator(".shell-dock")).toBeHidden();
         return;
       }
       const bar = page.locator(".shell-dock");
       await expect(bar).toBeVisible();
-      /* design/particl-v2-mobile (M1): Make · PRODS · Rig · Library — a 22px line icon over a 12px mono label. */
-      await expect(bar.getByRole("link")).toHaveText(["Make", "Prods", "Rig", "Library"]);
+      /* design/particl-v2-mobile (M1), in CR1 §9's order: Make · LIBRARY · PRODS · Rig — a 22px line icon over a 12px mono label. */
+      await expect(bar.getByRole("link")).toHaveText(["Make", "Library", "Prods", "Rig"]);
       const icons = await bar.getByRole("link").evaluateAll((els) => els.map((a) => { const s = a.querySelector("svg")!; const r = s.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), s.getAttribute("stroke-width")]; }));
       for (const [w, h, sw] of icons) { expect([w, h]).toEqual([22, 22]); expect(sw).toBe("1.6"); }
       const info = await page.evaluate(() => {
@@ -397,5 +397,52 @@ test.describe("Atomik on a phone", () => {
     expect(await sheet.evaluate((el) => getComputedStyle(el).maxHeight)).toBe("58%");
     await page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
+  });
+});
+
+/**
+ * Library on a phone (design/particl-v2-mobile M7, restructured by CR1 §5):
+ * the index is one row of pills that scrolls edge to edge — Filter ▾, ⌕
+ * Search, then the seven labels with their counts — over two-up sections;
+ * no segmented; `New asset · 0 CR` pinned; nothing wider than the screen.
+ */
+test.describe("Library on a phone", () => {
+  test.skip(({ viewport }) => !viewport || viewport.width >= 768, "portrait phones only");
+  test("the index pills scroll in their own row and the sections are labelled", async ({ page }) => {
+    await page.goto("/library");
+    await settle(page);
+    const signedIn = await page.getByRole("button", { name: "Account" }).count();
+    test.skip(!signedIn, "the Library needs a workspace");
+    await expect(page.getByRole("group", { name: "Lens" })).toHaveCount(0);
+    const index = page.locator("[data-index]");
+    await expect(index).toBeVisible();
+    expect(await index.evaluate((el) => getComputedStyle(el).overflowX)).toBe("auto");
+    await expect(index.getByRole("button")).toHaveText([/^Filter/, /^⌕ Search/, /^Characters · \d+/, /^Locations · \d+/, /^Props · \d+/, /^Looks · \d+/, /^Voices · \d+/, /^References · \d+/, /^Unfiled · \d+/]);
+    for (const b of await index.getByRole("button").all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(30);
+    for (const name of ["Characters", "References", "Unfiled"]) await expect(page.getByRole("region", { name })).toBeAttached();
+    const m = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+    expect(m.scrollWidth).toBe(m.clientWidth);
+    /* The column itself never pans sideways either — a section head that overflows would hide its + New off-screen. */
+    const body = await page.locator("[data-phone-body]").evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+    expect(body.scrollWidth, "the phone body pans sideways").toBe(body.clientWidth);
+    await expect(page.getByRole("button", { name: /^New asset/ })).toBeVisible();
+  });
+});
+
+/** A phone on its side (844×390) gets the desktop Library: the one primary must still sit inside the screen, the column must not pan. */
+test.describe("Library on a phone on its side", () => {
+  test.skip(({ viewport }) => !viewport || viewport.width < 768, "landscape only");
+  test("the header fits and the primary is on screen", async ({ page }) => {
+    await page.goto("/library");
+    await settle(page);
+    const signedIn = await page.getByRole("button", { name: "Account" }).count();
+    test.skip(!signedIn, "the Library needs a workspace");
+    const primary = page.getByRole("button", { name: /^New asset/ });
+    const box = (await primary.boundingBox())!;
+    const width = await page.evaluate(() => window.innerWidth);
+    expect(box.x + box.width, "the primary is pushed off the screen").toBeLessThanOrEqual(width);
+    await expect(page.getByRole("button", { name: /^Filter/ }), "the three filters fold into one below 1024").toBeVisible();
+    const col = await page.locator("[data-library]").evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+    expect(col.scrollWidth).toBe(col.clientWidth);
   });
 });
