@@ -28,6 +28,7 @@ import AccountMenu from "./AccountMenu";
  * shows what it has left in dollars — the same readout, its own unit.
  */
 type Summary = { credits?: { balance: number } | null; remainingUsd?: number };
+type Productions = { productions: { id: string; name: string; projects: { id: string }[] }[] };
 
 export default function Header() {
   const path = usePathname();
@@ -35,6 +36,12 @@ export default function Header() {
   const { current } = useProject();
   const { inCredits } = useMoney();
   const { data: summary } = useApi<Summary>(signedIn ? "/api/usage/summary" : null, 30_000);
+  /* Inside a production, a phone's header starts with `‹ Production name` (M2, M3); the dock stays. */
+  const inProduction = /^\/productions\/[^/]+\/|^\/rig\//.test(path);
+  const { data: prods } = useApi<Productions>(signedIn && inProduction ? "/api/productions" : null, 60_000);
+  const prodId = path.match(/^\/productions\/([^/]+)\//)?.[1] ?? null;
+  const production = prods?.productions.find((p) => (prodId ? p.id === prodId : p.projects.some((j) => j.id === current?.id))) ?? null;
+  const back = inProduction ? { href: prodId ? "/productions" : "/productions", label: production?.name ?? "Productions" } : null;
   const creditBalance = summary?.credits?.balance ?? credits?.balance ?? null;
   const balance = !signedIn ? null
     : inCredits && creditBalance !== null ? `${creditsNumber(creditBalance)} cr`
@@ -42,9 +49,13 @@ export default function Header() {
     : null;
 
   return (
-    <header className="relative flex h-[56px] flex-none items-center gap-[22px] border-b border-border bg-ground px-[20px] text-ink max-md:gap-[10px] max-md:px-[16px]">
+    <header className="relative flex h-[56px] flex-none items-center gap-[22px] border-b border-border bg-ground px-[20px] text-ink max-md:h-[52px] max-md:gap-[10px] max-md:px-[16px]">
       <Link href="/" aria-label="particl" className="max-md:hidden"><Lockup /></Link>
-      <Link href="/" aria-label="particl" className="md:hidden"><Lockup mobile /></Link>
+      {back ? (
+        <Link href={back.href} className="flex min-h-[44px] items-center gap-[6px] text-[13px] font-medium leading-none text-ink-body md:hidden">‹ {back.label}</Link>
+      ) : (
+        <Link href="/" aria-label="particl" className="md:hidden"><Lockup mobile /></Link>
+      )}
       <nav aria-label="Sections" className="flex h-[56px] items-center gap-[2px] max-md:hidden">
         {NAV.map((item) => {
           const on = item.match(path);
@@ -59,7 +70,7 @@ export default function Header() {
       </nav>
       <span className="ml-auto flex items-center gap-[12px]">
         {balance !== null && (
-          <span className="ui-mono text-ink-muted">Balance <span className="text-ink">{balance}</span></span>
+          <span className="ui-mono text-ink-muted"><span className="max-md:hidden">Balance </span><span className="text-ink max-md:text-ink-muted">{balance}</span></span>
         )}
         <span className="max-md:hidden"><AtomikButton /></span>
         <span className="md:hidden"><AtomikPhoneButton /></span>

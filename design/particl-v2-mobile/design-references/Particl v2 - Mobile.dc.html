@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Kode+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#050608}a{color:#F5F6F8;text-decoration:none}a:hover{color:#FFFFFF}button{font-family:inherit;cursor:pointer}*{scrollbar-width:none}*::-webkit-scrollbar{display:none}@keyframes atomikPulse{0%,100%{opacity:.22}18%{opacity:1}55%{opacity:.22}}</style>
+</helmet>
+
+<section style="padding:44px 44px 64px;display:flex;flex-direction:column;gap:28px;font-family:Outfit,sans-serif;color:#F5F6F8">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:32px;max-width:1700px">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">PARTICL V2 · MOBILE · 390 × 844 · THE SHIPPED SCREENS</span>
+      <h1 style="margin:0;font:600 32px/1.05 Outfit,sans-serif;letter-spacing:-0.025em">The same product, one column wide</h1>
+      <p style="margin:0;max-width:960px;font:400 15px/1.5 Outfit,sans-serif;color:#B4B7BE;text-wrap:pretty">Same tokens, copy and rules as desktop. What changes: a four-tab dock replaces the top nav (Make · Productions · Rig · Library) with Usage and Settings behind the avatar; every right rail becomes a bottom sheet; the one composer docks above the dock as a bar and opens as a sheet; Atomik is a header button that opens a sheet, compact first; Rig's canvas is read-and-run on a phone, built on desktop. Nothing below 12px, every target 44pt (segmented options 40px inside a 44px control).</p>
+    </div>
+    <span style="flex:none;font:500 11px/1.7 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;text-align:right">M1–M10 · TAP THE ATOMIK BUTTON ON M3<br>TAP A SLOT ON M5 · A KIND ON M8</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(4,390px);gap:44px 32px;align-items:start">
+
+    <div id="m1" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M1</span><span style="font:600 14px/1 Outfit,sans-serif">Productions</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">7a · rows become stacks, tiles become a strip</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <span style="display:flex;align-items:center;gap:7px"><svg viewBox="30 68 140 64" width="26" height="12" fill="#F5F6F8" aria-hidden="true"><circle cx="38.7" cy="120.8" r="1.8"></circle><circle cx="50.9" cy="100.5" r="2.8"></circle><circle cx="69.8" cy="86.3" r="4"></circle><circle cx="92.7" cy="80.1" r="5.5"></circle><circle cx="116.2" cy="83" r="7.2"></circle><circle cx="136.9" cy="94.5" r="9.2"></circle><circle cx="151.7" cy="112.9" r="12"></circle></svg><span style="font:600 15px/1 Outfit,sans-serif;letter-spacing:-0.03em">partıcl</span></span>
+          <span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">1,240 CR</span>
+          <span style="display:flex;align-items:center;gap:6px;height:44px;padding:0 12px;border:1px solid rgba(245,246,248,.14);border-radius:999px;font:500 12.5px/1 Outfit,sans-serif">{{ ringHeader }}Atomik</span>
+          <span style="width:32px;height:32px;border-radius:50%;background:#12141A;border:1px solid rgba(245,246,248,.14);display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace">MR</span>
+        </div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:16px 16px 100px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font:600 24px/1.05 Outfit,sans-serif;letter-spacing:-0.02em">Productions</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">4 · 9 PROJECTS · 8 NEED YOU</span></div>
+          <div style="display:flex;gap:2px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:999px;padding:2px"><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;background:rgba(245,246,248,.12)">Active</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Delivered</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">All</span></div>
+          <sc-for list="{{ productions }}" as="p" hint-placeholder-count="3">
+            <div style="background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:14px;padding:14px 0 14px;display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:10px;padding:0 14px">
+                <span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font:600 16px/1.1 Outfit,sans-serif">{{ p.name }}</span><span style="font:400 12.5px/1.2 Outfit,sans-serif;color:#B4B7BE;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.client }}</span></span>
+                <sc-if value="{{ p.hasNeed }}" hint-placeholder-val="{{ false }}"><span style="margin-left:auto;flex:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid rgba(245,246,248,.14);border-radius:999px;font:500 12px/1 Outfit,sans-serif;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:#F5F6F8"></span>{{ p.needLabel }}</span></sc-if>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:5px;padding:0 14px"><span style="display:flex;justify-content:space-between;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em"><span>{{ p.spentLine }}</span><span style="color:#8A8E96">{{ p.count }}</span></span><span style="height:3px;border-radius:2px;background:rgba(245,246,248,.1);overflow:hidden;display:block"><span style="display:block;height:100%;width:{{ p.pct }};background:#F5F6F8"></span></span></div>
+              <div style="display:flex;gap:8px;overflow-x:auto;padding:0 14px;scroll-snap-type:x mandatory">
+                <sc-for list="{{ p.projects }}" as="j" hint-placeholder-count="2">
+                  <a href="#m2" style="flex:none;width:200px;scroll-snap-align:start;display:flex;flex-direction:column;background:#0B0D11;border:1px solid rgba(245,246,248,.08);border-radius:10px;overflow:hidden">
+                    <span style="display:block;aspect-ratio:16/7;background:{{ j.thumb }};border-bottom:1px solid rgba(245,246,248,.06);position:relative"><span style="position:absolute;left:8px;top:8px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">{{ j.media }}</span><sc-if value="{{ j.hasNeed }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:8px;top:8px;display:flex;align-items:center;gap:6px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace"><span style="width:6px;height:6px;border-radius:50%;background:#F5F6F8"></span>{{ j.need }}</span></sc-if></span>
+                    <span style="display:flex;flex-direction:column;gap:7px;padding:10px 12px 12px"><span style="font:600 13.5px/1.2 Outfit,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ j.name }}</span><span style="display:flex;align-items:center;gap:8px"><span style="display:flex;gap:4px"><sc-for list="{{ j.dots }}" as="d" hint-placeholder-count="6"><span style="width:7px;height:7px;border-radius:50%;background:{{ d.bg }};border:{{ d.border }};box-sizing:border-box"></span></sc-for></span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">{{ j.stepLabel }}</span></span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em">{{ j.spent }}</span></span>
+                  </a>
+                </sc-for>
+                <span style="flex:none;width:96px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(245,246,248,.18);border-radius:10px;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">+ Project</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#0B0D11;border-top:1px solid rgba(245,246,248,.08);padding:0 6px 22px;display:grid;grid-template-columns:repeat(4,1fr)">
+          <span style="height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v13l10-6.5z"></path></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">MAKE</span></span>
+          <span style="height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#F5F6F8"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="16" height="5" rx="1.5"></rect><rect x="3" y="13" width="16" height="5" rx="1.5"></rect></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">PRODS</span></span>
+          <span style="height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.5"></circle><circle cx="16" cy="15" r="2.5"></circle><path d="M8.5 7h4a3 3 0 0 1 3 3v2.5"></path></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">RIG</span></span>
+          <span style="height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="12" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="12" width="7" height="7" rx="1.5"></rect><rect x="12" y="12" width="7" height="7" rx="1.5"></rect></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">LIBRARY</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="m2" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M2</span><span style="font:600 14px/1 Outfit,sans-serif">Project › Media</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">7b · sticky header, 2-up</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <a href="#m1" style="min-height:44px;display:flex;align-items:center;gap:6px;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">‹ Handbag TVC</a>
+          <span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">1,240 CR</span>
+          <span style="display:flex;align-items:center;gap:6px;height:44px;padding:0 12px;border:1px solid rgba(245,246,248,.14);border-radius:999px;font:500 12.5px/1 Outfit,sans-serif">{{ ringHeader }}Atomik</span>
+        </div>
+        <div style="flex:none;padding:12px 16px 10px;border-bottom:1px solid rgba(245,246,248,.08);display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px"><span style="display:flex;flex-direction:column;gap:4px"><span style="font:600 18px/1.1 Outfit,sans-serif">30s hero spot</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">0:30 · 10 SHOTS · DUE FRI</span></span><span style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><span style="font:500 13px/1 Outfit,sans-serif"><span style="font-weight:600">228</span> <span style="color:#B4B7BE">of 400 cr</span></span><span style="width:110px;height:3px;border-radius:2px;background:rgba(245,246,248,.1);overflow:hidden;display:block"><span style="display:block;height:100%;width:57%;background:#F5F6F8"></span></span></span></div>
+          <div style="display:flex;align-items:center;gap:0">
+            <sc-for list="{{ steps }}" as="s" hint-placeholder-count="6"><span style="display:flex;align-items:center"><sc-if value="{{ s.notFirst }}" hint-placeholder-val="{{ false }}"><span style="width:16px;height:1px;background:rgba(245,246,248,.14)"></span></sc-if><span style="display:flex;align-items:center;gap:5px;padding:0 4px"><span style="width:8px;height:8px;border-radius:50%;background:{{ s.dotBg }};border:{{ s.dotBorder }};box-sizing:border-box"></span><sc-if value="{{ s.isCurrent }}" hint-placeholder-val="{{ false }}"><span style="font:600 12px/1 Outfit,sans-serif">{{ s.label }}</span></sc-if></span></span></sc-for>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid rgba(245,246,248,.14);border-radius:999px;font:500 12px/1 Outfit,sans-serif"><span style="width:7px;height:7px;border-radius:50%;background:#F5F6F8"></span>3 need you</span>
+          </div>
+          <div style="display:flex;gap:2px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:999px;padding:2px"><a href="#m3" style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Shots</a><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Boards</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Approve</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;background:rgba(245,246,248,.12)">Media</span></div>
+        </div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:12px 16px 110px;display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;gap:6px;overflow-x:auto;margin:0 -16px;padding:0 16px"><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;background:rgba(245,246,248,.1)">All · 41</span><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;color:#B4B7BE">Takes · 22</span><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;color:#B4B7BE">Stills · 12</span><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;color:#B4B7BE">Audio · 5</span><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;color:#B4B7BE">Masters · 2</span></div>
+          <sc-for list="{{ mediaGroups }}" as="g" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:baseline;gap:8px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">{{ g.id }}</span><span style="font:600 14px/1.2 Outfit,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ g.title }}</span><span style="margin-left:auto;flex:none;font:400 12px/1 Outfit,sans-serif;color:#B4B7BE">{{ g.meta }}</span></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <sc-for list="{{ g.items }}" as="m" hint-placeholder-count="4">
+                  <div style="background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:10px;overflow:hidden">
+                    <span style="display:block;aspect-ratio:16/9;background:{{ m.thumb }};border-bottom:1px solid rgba(245,246,248,.06);position:relative"><span style="position:absolute;left:7px;top:7px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">{{ m.kind }}</span><sc-if value="{{ m.isMaster }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:7px;bottom:7px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace;color:oklch(75% 0.12 200)">↓ 1080P</span></sc-if><sc-if value="{{ m.isAudio }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:10px;right:10px;top:50%;height:20px;transform:translateY(-50%);background:repeating-linear-gradient(90deg,rgba(245,246,248,.32) 0 2px,transparent 2px 5px)"></span></sc-if></span>
+                    <span style="display:flex;flex-direction:column;gap:6px;padding:9px 10px 10px"><span style="display:flex;justify-content:space-between;align-items:center;gap:6px"><span style="font:500 12.5px/1 Outfit,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.id }}</span><span style="display:flex;align-items:center;gap:5px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:{{ m.stateColor }};white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:{{ m.dotBg }};border:{{ m.dotBorder }};box-sizing:border-box"></span>{{ m.state }}</span></span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#8A8E96;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.cost }} · {{ m.by }} · {{ m.model }}</span></span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#0B0D11;border-top:1px solid rgba(245,246,248,.08);padding:10px 16px 26px"><span style="height:50px;border-radius:14px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">Download 2 masters<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#4A4E56">0 CR</span></span></div>
+      </div>
+    </div>
+
+    <div id="m3" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M3</span><span style="font:600 14px/1 Outfit,sans-serif">Shots + Atomik</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">10a · live · tap Atomik, then Expand</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <a href="#m1" style="min-height:44px;display:flex;align-items:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">‹ Handbag TVC</a>
+          <span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">1,221 CR</span>
+          <button onClick="{{ openAtomik }}" style="display:flex;align-items:center;gap:6px;height:44px;padding:0 12px;border:1px solid {{ atomikBtnBorder }};border-radius:999px;background:{{ atomikBtnBg }};color:#F5F6F8;font:500 12.5px/1 Outfit,sans-serif">{{ ringCheckpoint14 }}Atomik<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#8A8E96">CHECKPOINT</span></button>
+        </div>
+        <div style="flex:none;padding:12px 16px 10px;border-bottom:1px solid rgba(245,246,248,.08);display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px"><span style="display:flex;flex-direction:column;gap:4px"><span style="font:600 18px/1.1 Outfit,sans-serif">30s hero spot</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">0:30 · 2 APPR · 3 PICKED</span></span><span style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><span style="font:500 13px/1 Outfit,sans-serif"><span style="font-weight:600">228</span> <span style="color:#B4B7BE">of 400 cr</span></span><span style="width:110px;height:3px;border-radius:2px;background:rgba(245,246,248,.1);overflow:hidden;display:block"><span style="display:block;height:100%;width:57%;background:#F5F6F8"></span></span></span></div>
+          <div style="display:flex;gap:2px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:999px;padding:2px"><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;background:rgba(245,246,248,.12)">Shots</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Boards</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Approve</span><a href="#m2" style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Media</a></div>
+        </div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:12px 16px 110px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start">
+          <sc-for list="{{ shots }}" as="s" hint-placeholder-count="10">
+            <div style="background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="aspect-ratio:16/9;background:{{ s.thumbBg }};border-bottom:1px solid rgba(245,246,248,.06);position:relative">
+                <span style="position:absolute;left:7px;top:7px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">{{ s.id }}</span>
+                <span style="position:absolute;right:7px;top:7px;width:8px;height:8px;border-radius:50%;background:{{ s.dotBg }};border:{{ s.dotBorder }};box-sizing:border-box"></span>
+                <sc-if value="{{ s.empty }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">{{ s.emptyLabel }}</span></sc-if>
+              </div>
+              <div style="padding:9px 10px 0;display:flex;flex-direction:column;gap:6px;flex:1"><span style="font:400 13px/1.35 Outfit,sans-serif;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:35px">{{ s.desc }}</span></div>
+              <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;border-top:1px solid rgba(245,246,248,.08)"><span style="padding:8px 10px;border-right:1px solid rgba(245,246,248,.08);font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;white-space:nowrap">{{ s.planLine }}</span><span style="padding:8px 10px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:{{ s.renderColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.renderLine }}</span></div>
+            </div>
+          </sc-for>
+        </div></div>
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#0B0D11;border-top:1px solid rgba(245,246,248,.08);padding:10px 16px 26px;display:flex;gap:8px"><span style="width:50px;height:50px;border:1px solid rgba(245,246,248,.16);border-radius:14px;display:flex;align-items:center;justify-content:center;font:500 20px/1 Outfit,sans-serif">+</span><span style="flex:1;height:50px;border-radius:14px;background:{{ pagePrimaryBg }};border:1px solid {{ pagePrimaryBorder }};color:{{ pagePrimaryFg }};display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">Render SH08–09<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:{{ pagePrimaryCost }}">38 CR</span></span></div>
+
+        <sc-if value="{{ atomikOpen }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ closeAtomik }}" style="position:absolute;inset:0;background:rgba(5,6,8,.55);z-index:6"></div>
+          <div style="position:absolute;left:0;right:0;bottom:0;max-height:{{ sheetMax }};background:#0F1116;border-top:1px solid rgba(245,246,248,.14);border-radius:24px 24px 0 0;z-index:7;display:flex;flex-direction:column">
+            <span style="flex:none;width:36px;height:4px;border-radius:2px;background:rgba(245,246,248,.25);margin:10px auto 0"></span>
+            <div style="flex:none;height:48px;display:flex;align-items:center;gap:8px;padding:0 16px">{{ ringCheckpoint18 }}<span style="font:600 14px/1 Outfit,sans-serif">Atomik</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">RUN 02 · 3 OF 8</span>
+              <sc-if value="{{ atomikCompact }}" hint-placeholder-val="{{ true }}"><button onClick="{{ expandAtomik }}" style="margin-left:auto;height:34px;border:1px solid rgba(245,246,248,.14);border-radius:8px;background:transparent;color:#F5F6F8;padding:0 10px;font:500 12.5px/1 Outfit,sans-serif">Expand ↑</button></sc-if>
+              <sc-if value="{{ atomikExpanded }}" hint-placeholder-val="{{ false }}"><button onClick="{{ compactAtomik }}" style="margin-left:auto;height:34px;border:1px solid rgba(245,246,248,.14);border-radius:8px;background:transparent;color:#F5F6F8;padding:0 10px;font:500 12.5px/1 Outfit,sans-serif">Compact ↓</button></sc-if>
+              <button onClick="{{ closeAtomik }}" style="width:34px;height:34px;border:1px solid rgba(245,246,248,.14);border-radius:8px;background:transparent;color:#F5F6F8;font:400 15px/1 Outfit,sans-serif">×</button>
+            </div>
+            <div style="flex:1;min-height:0;overflow:auto;padding:4px 16px 12px;display:flex;flex-direction:column;gap:12px">
+              <sc-if value="{{ atomikExpanded }}" hint-placeholder-val="{{ false }}">
+                <sc-for list="{{ atomikChat }}" as="m" hint-placeholder-count="3"><div style="display:flex;flex-direction:column;gap:5px;align-items:{{ m.align }}"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">{{ m.who }}</span><span style="background:{{ m.bg }};border:{{ m.border }};border-radius:12px;padding:10px 12px;font:400 13.5px/1.45 Outfit,sans-serif;color:{{ m.fg }};max-width:300px;text-wrap:pretty">{{ m.text }}</span></div></sc-for>
+                <div style="background:#12141A;border:1px solid rgba(245,246,248,.12);border-radius:12px;overflow:hidden">
+                  <sc-for list="{{ plan }}" as="p" hint-placeholder-count="6"><div style="display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;height:48px;padding:0 12px;border-bottom:1px solid rgba(245,246,248,.06);background:{{ p.bg }}"><span style="font:500 12px/1 'Kode Mono',monospace;color:#8A8E96">{{ p.n }}</span><span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font:500 13px/1.2 Outfit,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.stage }}</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.engine }}</span></span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em">{{ p.cost }}</span></div><sc-if value="{{ p.checkpoint }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-bottom:1px solid rgba(245,246,248,.06);font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em"><span style="width:8px;height:8px;border-radius:50%;border:2px solid oklch(75% 0.12 200);box-sizing:border-box"></span>CHECKPOINT · YOU ARE HERE</div></sc-if></sc-for>
+                </div>
+              </sc-if>
+              <div style="background:#12141A;border:1px solid rgba(245,246,248,.3);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px">
+                <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">CHECKPOINT · STOPPED</span>
+                <span style="font:600 20px/1.2 Outfit,sans-serif">Boards done · 12 cr spent.</span>
+                <span style="font:400 14px/1.45 Outfit,sans-serif;color:#B4B7BE">Next: keyframes on Nano Banana Pro. Twelve stills from the picked boards.</span>
+                <span style="height:52px;border-radius:14px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">Continue<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#4A4E56">24 CR</span></span>
+                <span style="display:flex;gap:8px"><span style="flex:1;height:44px;border:1px solid rgba(245,246,248,.16);border-radius:12px;display:flex;align-items:center;justify-content:center;font:500 13.5px/1 Outfit,sans-serif">Change engine</span><span style="flex:1;height:44px;border:1px solid rgba(245,246,248,.16);border-radius:12px;display:flex;align-items:center;justify-content:center;font:500 13.5px/1 Outfit,sans-serif;color:#B4B7BE">Stop here</span></span>
+                <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;text-align:center">19 OF 253 CR · PLANNING 3 CR</span>
+              </div>
+            </div>
+            <div style="flex:none;padding:8px 16px 26px;border-top:1px solid rgba(245,246,248,.08);display:flex;gap:8px"><span style="flex:1;height:48px;box-sizing:border-box;background:#12141A;border:1px solid rgba(245,246,248,.12);border-radius:12px;padding:0 12px;display:flex;align-items:center;font:400 14px/1 Outfit,sans-serif;color:#8A8E96">Ask Atomik…</span><span style="width:48px;height:48px;border:1px solid rgba(245,246,248,.14);border-radius:12px;display:flex;align-items:center;justify-content:center;font:500 16px/1 Outfit,sans-serif">↑</span></div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div id="m4" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M4</span><span style="font:600 14px/1 Outfit,sans-serif">Make · Video</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">8a · wall + docked composer</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <span style="display:flex;align-items:center;gap:7px"><svg viewBox="30 68 140 64" width="26" height="12" fill="#F5F6F8" aria-hidden="true"><circle cx="38.7" cy="120.8" r="1.8"></circle><circle cx="50.9" cy="100.5" r="2.8"></circle><circle cx="69.8" cy="86.3" r="4"></circle><circle cx="92.7" cy="80.1" r="5.5"></circle><circle cx="116.2" cy="83" r="7.2"></circle><circle cx="136.9" cy="94.5" r="9.2"></circle><circle cx="151.7" cy="112.9" r="12"></circle></svg><span style="font:600 15px/1 Outfit,sans-serif;letter-spacing:-0.03em">partıcl</span></span>
+          <span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">1,240 CR</span>
+          <span style="display:flex;align-items:center;gap:6px;height:44px;padding:0 12px;border:1px solid rgba(245,246,248,.14);border-radius:999px;font:500 12.5px/1 Outfit,sans-serif">{{ ringHeader }}Atomik</span>
+          <span style="width:32px;height:32px;border-radius:50%;background:#12141A;border:1px solid rgba(245,246,248,.14);display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace">MR</span>
+        </div>
+        <div style="flex:none;padding:12px 16px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <div style="display:flex;gap:2px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:999px;padding:2px"><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;background:rgba(245,246,248,.12)">Video</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Images</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Audio</span></div>
+          <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">UNFILED · 9 TAKES · 117 CR</span>
+        </div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:12px 16px 220px;display:flex;flex-direction:column;gap:14px">
+          <sc-for list="{{ wallDays }}" as="d" hint-placeholder-count="2">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">{{ d.label }}</span>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <sc-for list="{{ d.items }}" as="t" hint-placeholder-count="4">
+                  <div style="background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
+                    <span style="display:block;aspect-ratio:16/9;background:{{ t.thumb }};border-bottom:1px solid rgba(245,246,248,.06);position:relative"><span style="position:absolute;left:7px;top:7px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">{{ t.spec }}</span><span style="position:absolute;right:7px;top:7px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace">{{ t.cost }}</span><sc-if value="{{ t.loading }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">{{ loader36 }}</span></sc-if></span>
+                    <span style="display:flex;flex-direction:column;gap:6px;padding:9px 10px 10px;flex:1"><span style="font:400 12.5px/1.35 Outfit,sans-serif;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ t.prompt }}</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#8A8E96;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.meta }}</span></span>
+                    <span style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid rgba(245,246,248,.08)"><span style="height:40px;display:flex;align-items:center;justify-content:center;border-right:1px solid rgba(245,246,248,.08);font:500 12.5px/1 Outfit,sans-serif">File to shot</span><span style="height:40px;display:flex;align-items:center;justify-content:center;font:500 12.5px/1 Outfit,sans-serif;color:#B4B7BE">Again</span></span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#0B0D11;border-top:1px solid rgba(245,246,248,.08);display:flex;flex-direction:column">
+          <a href="#m9" style="margin:10px 16px 0;background:#12141A;border:1px solid rgba(245,246,248,.12);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:6px"><span style="display:flex;justify-content:space-between;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96"><span>COMPOSER · SEEDANCE 2.5 · 16:9 · 5S</span><span style="color:#F5F6F8">↑</span></span><span style="font:400 13.5px/1.3 Outfit,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="background:rgba(245,246,248,.1);border-radius:4px;padding:0 4px;font-weight:500">@Noor</span> steps off the lift, bag first, corridor lights…</span></a>
+          <div style="padding:8px 16px 0;display:flex;gap:8px"><span style="flex:1;height:50px;border-radius:14px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">Render<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#4A4E56">19 CR · 5S · 1080P</span></span></div>
+          <div style="padding:6px 6px 22px;display:grid;grid-template-columns:repeat(4,1fr)">
+            <span style="height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#F5F6F8"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v13l10-6.5z"></path></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">MAKE</span></span>
+            <a href="#m1" style="height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="16" height="5" rx="1.5"></rect><rect x="3" y="13" width="16" height="5" rx="1.5"></rect></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">PRODS</span></a>
+            <a href="#m5" style="height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.5"></circle><circle cx="16" cy="15" r="2.5"></circle><path d="M8.5 7h4a3 3 0 0 1 3 3v2.5"></path></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">RIG</span></a>
+            <a href="#m7" style="height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="12" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="12" width="7" height="7" rx="1.5"></rect><rect x="12" y="12" width="7" height="7" rx="1.5"></rect></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">LIBRARY</span></a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="m5" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M5</span><span style="font:600 14px/1 Outfit,sans-serif">Rig · Canvas</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">6a · read and run · tap a slot</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 14px/1 Outfit,sans-serif">SH04 board</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">9 NODES · 27 CR SPENT</span></span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:6px;height:44px;padding:0 12px;border:1px solid rgba(245,246,248,.14);border-radius:999px;font:500 12.5px/1 Outfit,sans-serif">{{ ringHeader }}Atomik</span>
+        </div>
+        <div style="flex:none;padding:10px 16px;display:flex;gap:2px;background:#0B0D11;border-bottom:1px solid rgba(245,246,248,.08)"><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;background:rgba(245,246,248,.12)">Canvas</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Recipes</span><a href="#m6" style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Run</a></div>
+        <div style="flex:1;min-height:0;overflow:auto;position:relative;background-image:radial-gradient(rgba(245,246,248,.07) 1px,transparent 1px);background-size:24px 24px">
+          <div style="position:relative;width:390px;height:1170px">
+            <svg viewBox="0 0 390 1040" width="390" height="1040" style="position:absolute;left:0;top:0;pointer-events:none" aria-hidden="true">
+              <g style="fill:none;stroke:rgba(245,246,248,.3);stroke-width:1.5">
+                <path d="M195,146 C195,176 195,176 195,206"></path>
+                <path d="M195,446 C195,476 195,476 195,506"></path>
+                <path d="M195,700 C195,730 195,730 195,760"></path>
+              </g>
+              <g style="fill:none;stroke:#F5F6F8;stroke-width:2"><path d="M195,146 C195,176 195,176 195,206"></path></g>
+            </svg>
+            <div style="position:absolute;left:16px;top:16px;width:358px;background:#12141A;border:1px solid rgba(245,246,248,.1);border-radius:12px">
+              <div style="height:32px;padding:0 10px;display:flex;align-items:center;gap:6px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#B4B7BE;border:1px solid rgba(245,246,248,.14);border-radius:4px;padding:3px 4px">AST</span><span style="font:600 13px/1 Outfit,sans-serif">Assets in this board</span><span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">4 WIRED</span></div>
+              <div style="display:flex;gap:6px;padding:0 10px 10px;overflow-x:auto">
+                <sc-for list="{{ boardAssets }}" as="a" hint-placeholder-count="4"><span style="flex:none;width:96px;display:flex;flex-direction:column;gap:5px"><span style="height:56px;border-radius:7px;background:{{ a.tile }};background-color:#1A1D24;border:1px solid rgba(245,246,248,.08);position:relative"><span style="position:absolute;left:5px;top:5px;background:rgba(11,13,17,.85);border-radius:4px;padding:3px 5px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em">{{ a.port }}</span></span><span style="font:500 12px/1.2 Outfit,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.name }} <span style="color:#8A8E96">{{ a.v }}</span></span></span></sc-for>
+              </div>
+              <span style="position:absolute;left:50%;bottom:-5px;width:8px;height:8px;border-radius:50%;background:#F5F6F8;transform:translateX(-50%)"></span>
+            </div>
+            <div style="position:absolute;left:16px;top:206px;width:358px;background:#12141A;border:1px solid rgba(245,246,248,.1);border-radius:12px">
+              <span style="position:absolute;left:50%;top:-5px;width:8px;height:8px;border-radius:50%;background:#F5F6F8;transform:translateX(-50%)"></span>
+              <div style="height:36px;padding:0 10px;display:flex;align-items:center;gap:8px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#B4B7BE;border:1px solid rgba(245,246,248,.14);border-radius:4px;padding:3px 4px">SHOT</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">SH04</span><span style="font:600 13px/1.2 Outfit,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">Hands on the clasp</span></div>
+              <div style="padding:0 10px 4px;display:flex;flex-direction:column">
+                <sc-for list="{{ mSlots }}" as="k" hint-placeholder-count="4">
+                  <button onClick="{{ k.select }}" style="height:44px;display:flex;align-items:center;gap:10px;border:0;border-radius:8px;background:{{ k.bg }};box-shadow:{{ k.ring }};padding:0 6px;color:#F5F6F8;text-align:left"><span style="flex:none;width:48px;height:30px;border-radius:5px;background:repeating-linear-gradient(135deg,#1A1D24 0 5px,#20242B 5px 10px);border:1px solid rgba(245,246,248,.08)"></span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:{{ k.tagColor }}">{{ k.tag }}</span><span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;color:#B4B7BE">{{ k.value }}</span><sc-if value="{{ k.over }}" hint-placeholder-val="{{ false }}"><span style="background:#F5F6F8;color:#0B0D11;border-radius:4px;padding:4px 5px;font:500 12px/1 'Kode Mono',monospace">OVR</span></sc-if></button>
+                </sc-for>
+              </div>
+              <div style="height:34px;margin-top:2px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(245,246,248,.08);font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96"><span>3 TAKES · 57 CR</span><span style="color:#F5F6F8">v4 NEW</span></div>
+              <span style="position:absolute;left:50%;bottom:-5px;width:8px;height:8px;border-radius:50%;background:#F5F6F8;transform:translateX(-50%)"></span>
+            </div>
+            <div style="position:absolute;left:16px;top:506px;width:358px;background:#12141A;border:1px solid rgba(245,246,248,.1);border-radius:12px">
+              <span style="position:absolute;left:50%;top:-5px;width:8px;height:8px;border-radius:50%;background:#F5F6F8;transform:translateX(-50%)"></span>
+              <div style="height:32px;padding:0 10px;display:flex;align-items:center;gap:6px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#B4B7BE;border:1px solid rgba(245,246,248,.14);border-radius:4px;padding:3px 4px">IMG</span><span style="font:600 13px/1 Outfit,sans-serif">Nano Banana Pro</span><span style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:oklch(75% 0.12 200)"></span></div>
+              <div style="margin:0 10px;display:grid;grid-template-columns:repeat(4,1fr);gap:5px"><sc-for list="{{ variants }}" as="v" hint-placeholder-count="4"><span style="aspect-ratio:1;border-radius:6px;background:repeating-linear-gradient(135deg,#1A1D24 0 5px,#20242B 5px 10px);border:{{ v.border }};box-sizing:border-box;position:relative"><sc-if value="{{ v.out }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:4px;bottom:4px;background:#F5F6F8;color:#0B0D11;border-radius:3px;padding:3px 4px;font:500 12px/1 'Kode Mono',monospace">OUT</span></sc-if></span></sc-for></div>
+              <div style="margin:8px 10px 10px;height:44px;border:1px solid rgba(245,246,248,.16);border-radius:10px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font:500 13px/1 Outfit,sans-serif"><span>Again ×4</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#8A8E96">8 CR</span></div>
+              <span style="position:absolute;left:50%;bottom:-5px;width:8px;height:8px;border-radius:50%;background:#F5F6F8;transform:translateX(-50%)"></span>
+            </div>
+            <div style="position:absolute;left:16px;top:760px;width:358px;background:#12141A;border:1px solid rgba(245,246,248,.1);border-radius:12px">
+              <span style="position:absolute;left:50%;top:-5px;width:8px;height:8px;border-radius:50%;background:#F5F6F8;transform:translateX(-50%)"></span>
+              <div style="height:32px;padding:0 10px;display:flex;align-items:center;gap:6px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.06em;color:#B4B7BE;border:1px solid rgba(245,246,248,.14);border-radius:4px;padding:3px 4px">VID</span><span style="font:600 13px/1 Outfit,sans-serif">Seedance 2.5</span><span style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:oklch(75% 0.12 200)"></span></div>
+              <div style="margin:0 10px;aspect-ratio:16/9;border-radius:8px;background:repeating-linear-gradient(135deg,#1A1D24 0 6px,#20242B 6px 12px);border:1px solid rgba(245,246,248,.08);position:relative;display:flex;align-items:center;justify-content:center"><span style="width:44px;height:44px;border-radius:50%;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:center;font:600 14px/1 Outfit,sans-serif">▶</span><span style="position:absolute;left:8px;bottom:8px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:oklch(75% 0.12 200)">DONE · 0:05 · 1080P</span></div>
+              <div style="margin:8px 10px 10px;height:44px;border:1px solid rgba(245,246,248,.16);border-radius:10px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE"><span>Filed · SH04 v4</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#8A8E96">19 CR</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#0B0D11;border-top:1px solid rgba(245,246,248,.08);padding:10px 16px 26px;display:flex;flex-direction:column;gap:8px">
+          <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;text-align:center">BUILT ON DESKTOP · RUN AND FILE FROM HERE</span>
+          <span style="height:50px;border-radius:14px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">Run node again<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#4A4E56">19 CR</span></span>
+        </div>
+        <sc-if value="{{ slotSheet }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ closeSlot }}" style="position:absolute;inset:0;background:rgba(5,6,8,.55);z-index:6"></div>
+          <div style="position:absolute;left:0;right:0;bottom:0;background:#0F1116;border-top:1px solid rgba(245,246,248,.14);border-radius:24px 24px 0 0;z-index:7;display:flex;flex-direction:column;max-height:78%">
+            <span style="flex:none;width:36px;height:4px;border-radius:2px;background:rgba(245,246,248,.25);margin:10px auto 0"></span>
+            <div style="flex:none;padding:12px 16px 10px;display:flex;flex-direction:column;gap:6px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">SLOT · SH04 · {{ slotTag }}</span><span style="font:600 20px/1.15 Outfit,sans-serif">{{ slotName }}</span><span style="font:400 13.5px/1.45 Outfit,sans-serif;color:#B4B7BE">{{ slotBlurb }}</span></div>
+            <div style="flex:1;min-height:0;overflow:auto;padding:0 16px 12px;display:flex;flex-direction:column;gap:12px">
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                <sc-for list="{{ slotVersions }}" as="v" hint-placeholder-count="3"><button onClick="{{ v.select }}" style="padding:0;border:1px solid {{ v.border }};border-radius:10px;overflow:hidden;background:#12141A;text-align:left;color:#F5F6F8;box-shadow:{{ v.ring }}"><span style="display:block;aspect-ratio:4/3;background:repeating-linear-gradient(135deg,#1A1D24 0 5px,#20242B 5px 10px);position:relative"><sc-if value="{{ v.bound }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:5px;top:5px;background:#F5F6F8;color:#0B0D11;border-radius:3px;padding:3px 4px;font:500 12px/1 'Kode Mono',monospace">BOUND</span></sc-if></span><span style="display:flex;flex-direction:column;gap:3px;padding:8px 9px"><span style="font:600 13px/1 Outfit,sans-serif">{{ v.v }}</span><span style="font:400 12px/1.25 Outfit,sans-serif;color:#B4B7BE">{{ v.note }}</span></span></button></sc-for>
+              </div>
+              <sc-if value="{{ slotChanging }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#12141A;border:1px solid rgba(245,246,248,.14);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px">
+                  <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">BEFORE YOU CHANGE THIS</span>
+                  <span style="font:600 15px/1.25 Outfit,sans-serif">7 shots use {{ slotBoundLabel }}</span>
+                  <span style="font:400 13px/1.4 Outfit,sans-serif;color:#B4B7BE">3 approved · 4 draft. Nothing has re-rendered yet.</span>
+                  <div style="display:flex;height:8px;border-radius:3px;overflow:hidden;gap:2px"><span style="flex:3;background:oklch(75% 0.12 200)"></span><span style="flex:4;background:rgba(245,246,248,.22)"></span></div>
+                  <sc-for list="{{ subsets }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.select }}" style="min-height:48px;text-align:left;display:flex;align-items:center;gap:10px;background:{{ o.bg }};border:1px solid {{ o.border }};border-radius:10px;padding:9px 11px;color:#F5F6F8"><span style="flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid {{ o.markBorder }};background:{{ o.markBg }};box-sizing:border-box"></span><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font:500 13.5px/1.2 Outfit,sans-serif">{{ o.label }}</span><span style="font:400 12px/1.3 Outfit,sans-serif;color:#B4B7BE">{{ o.note }}</span></span><span style="margin-left:auto;flex:none;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em">{{ o.cost }}</span></button></sc-for>
+                </div>
+              </sc-if>
+            </div>
+            <div style="flex:none;padding:8px 16px 26px;border-top:1px solid rgba(245,246,248,.08)"><span style="height:52px;border-radius:14px;background:{{ applyBg }};border:1px solid {{ applyBorder }};color:{{ applyFg }};display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">{{ applyLabel }}<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:{{ applyCostColor }}">{{ applyCost }}</span></span></div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div id="m6" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M6</span><span style="font:600 14px/1 Outfit,sans-serif">Rig · Run</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">9b · checkpoint pinned, steps stacked</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 14px/1 Outfit,sans-serif">Run 02</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">3 OF 8 STEPS · 19 OF 253 CR</span></span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:6px;height:44px;padding:0 12px;border:1px solid rgba(245,246,248,.35);border-radius:999px;background:rgba(245,246,248,.12);font:500 12.5px/1 Outfit,sans-serif">{{ ringCheckpoint14 }}Atomik</span>
+        </div>
+        <div style="flex:none;padding:10px 16px;display:flex;gap:2px;border-bottom:1px solid rgba(245,246,248,.08)"><a href="#m5" style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Canvas</a><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Recipes</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;background:rgba(245,246,248,.12)">Run</span></div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:12px 16px 170px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:#12141A;border:1px solid rgba(245,246,248,.3);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px">
+            <span style="display:flex;align-items:center;gap:12px">{{ ringCheckpoint48 }}<span style="display:flex;flex-direction:column;gap:5px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">ATOMIK · CHECKPOINT · BEFORE STEP 04</span><span style="font:600 19px/1.2 Outfit,sans-serif">Boards done · 12 cr spent.</span></span></span>
+            <span style="font:400 14px/1.45 Outfit,sans-serif;color:#B4B7BE">Next: keyframes on Nano Banana Pro · 24 cr. Twelve stills from the picked boards, one per shot.</span>
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">PLANNING · 3 CR · CLAUDE SONNET 4.5</span>
+          </div>
+          <sc-for list="{{ runSteps }}" as="r" hint-placeholder-count="8">
+            <div style="display:grid;grid-template-columns:22px 72px minmax(0,1fr) auto;gap:10px;align-items:center;background:#12141A;border:1px solid {{ r.border }};border-radius:12px;padding:10px 12px;box-shadow:{{ r.ring }}">
+              <span style="font:500 12px/1 'Kode Mono',monospace;color:#8A8E96">{{ r.n }}</span>
+              <span style="height:44px;border-radius:6px;background:{{ r.thumb }};border:{{ r.thumbBorder }};box-sizing:border-box;display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace;color:#8A8E96">{{ r.thumbLabel }}</span>
+              <span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font:500 14px/1.2 Outfit,sans-serif">{{ r.name }}</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.engine }}</span></span>
+              <span style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><span style="display:flex;align-items:center;gap:5px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.1em;color:{{ r.stateColor }}"><span style="width:7px;height:7px;border-radius:50%;background:{{ r.dotBg }};border:{{ r.dotBorder }};box-sizing:border-box"></span>{{ r.state }}</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:{{ r.costColor }}">{{ r.cost }}</span></span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#0B0D11;border-top:1px solid rgba(245,246,248,.08);padding:10px 16px 26px;display:flex;flex-direction:column;gap:8px">
+          <span style="height:52px;border-radius:14px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">Continue · keyframes<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#4A4E56">24 CR</span></span>
+          <span style="display:flex;gap:8px"><span style="flex:1;height:44px;border:1px solid rgba(245,246,248,.16);border-radius:12px;display:flex;align-items:center;justify-content:center;font:500 13.5px/1 Outfit,sans-serif">Change engine</span><span style="flex:1;height:44px;border:1px solid rgba(245,246,248,.16);border-radius:12px;display:flex;align-items:center;justify-content:center;font:500 13.5px/1 Outfit,sans-serif;color:#B4B7BE">Stop here</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="m7" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M7</span><span style="font:600 14px/1 Outfit,sans-serif">Library</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">8b · three lenses, one grid</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <span style="display:flex;align-items:center;gap:7px"><svg viewBox="30 68 140 64" width="26" height="12" fill="#F5F6F8" aria-hidden="true"><circle cx="38.7" cy="120.8" r="1.8"></circle><circle cx="50.9" cy="100.5" r="2.8"></circle><circle cx="69.8" cy="86.3" r="4"></circle><circle cx="92.7" cy="80.1" r="5.5"></circle><circle cx="116.2" cy="83" r="7.2"></circle><circle cx="136.9" cy="94.5" r="9.2"></circle><circle cx="151.7" cy="112.9" r="12"></circle></svg><span style="font:600 15px/1 Outfit,sans-serif;letter-spacing:-0.03em">partıcl</span></span>
+          <span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">1,240 CR</span>
+          <span style="display:flex;align-items:center;gap:6px;height:44px;padding:0 12px;border:1px solid rgba(245,246,248,.14);border-radius:999px;font:500 12.5px/1 Outfit,sans-serif">{{ ringHeader }}Atomik</span>
+          <span style="width:32px;height:32px;border-radius:50%;background:#12141A;border:1px solid rgba(245,246,248,.14);display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace">MR</span>
+        </div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:16px 16px 170px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font:600 24px/1.05 Outfit,sans-serif;letter-spacing:-0.02em">Library</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">14 ASSETS · 31 REFERENCES · 9 UNFILED</span></div>
+          <div style="display:flex;gap:2px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:999px;padding:2px"><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;background:rgba(245,246,248,.12)">Assets</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">References</span><span style="flex:1;text-align:center;border-radius:999px;min-height:40px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">Unfiled</span></div>
+          <div style="display:flex;gap:6px;overflow-x:auto;margin:0 -16px;padding:0 16px"><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;color:#B4B7BE">Kind ▾</span><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;color:#B4B7BE">Production ▾</span><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;color:#B4B7BE">Locked</span><span style="flex:none;display:flex;align-items:center;gap:6px;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;color:#8A8E96">⌕ Search</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <sc-for list="{{ libAssets }}" as="a" hint-placeholder-count="6">
+              <div style="background:{{ a.bg }};border:1px solid rgba(245,246,248,.08);border-radius:12px;overflow:hidden">
+                <span style="display:block;aspect-ratio:4/3;background:repeating-linear-gradient(135deg,#1A1D24 0 6px,#20242B 6px 12px);border-bottom:1px solid rgba(245,246,248,.06);position:relative"><span style="position:absolute;left:7px;top:7px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">{{ a.kind }}</span><sc-if value="{{ a.locked }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:7px;top:7px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;display:flex"><svg viewBox="0 0 12 12" width="11" height="11" style="fill:none;stroke:#F5F6F8;stroke-width:1.3" aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2"></rect><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4"></path></svg></span></sc-if><span style="position:absolute;right:7px;bottom:7px;background:rgba(11,13,17,.85);border-radius:4px;padding:4px 6px;font:500 12px/1 'Kode Mono',monospace">{{ a.v }}</span></span>
+                <span style="display:flex;flex-direction:column;gap:5px;padding:9px 10px 10px"><span style="font:600 13.5px/1.2 Outfit,sans-serif">{{ a.name }}</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#8A8E96;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.meta }}</span></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#0B0D11;border-top:1px solid rgba(245,246,248,.08);display:flex;flex-direction:column">
+          <div style="padding:10px 16px 0"><a href="#m8" style="height:50px;border-radius:14px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">New asset<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#4A4E56">0 CR</span></a></div>
+          <div style="padding:6px 6px 22px;display:grid;grid-template-columns:repeat(4,1fr)">
+            <a href="#m4" style="height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v13l10-6.5z"></path></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">MAKE</span></a>
+            <a href="#m1" style="height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="16" height="5" rx="1.5"></rect><rect x="3" y="13" width="16" height="5" rx="1.5"></rect></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">PRODS</span></a>
+            <a href="#m5" style="height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#8A8E96"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.5"></circle><circle cx="16" cy="15" r="2.5"></circle><path d="M8.5 7h4a3 3 0 0 1 3 3v2.5"></path></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">RIG</span></a>
+            <span style="height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#F5F6F8"><svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="12" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="12" width="7" height="7" rx="1.5"></rect><rect x="12" y="12" width="7" height="7" rx="1.5"></rect></svg><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.04em">LIBRARY</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="m8" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M8</span><span style="font:600 14px/1 Outfit,sans-serif">New asset</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">3a · full-height sheet · tap a kind</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="position:absolute;inset:0;background:rgba(5,6,8,.55)"></div>
+        <div style="position:absolute;left:0;right:0;bottom:0;top:44px;background:#0F1116;border-top:1px solid rgba(245,246,248,.14);border-radius:24px 24px 0 0;display:flex;flex-direction:column">
+          <span style="flex:none;width:36px;height:4px;border-radius:2px;background:rgba(245,246,248,.25);margin:10px auto 0"></span>
+          <div style="flex:none;padding:12px 16px 10px;display:flex;align-items:center;gap:10px"><span style="display:flex;flex-direction:column;gap:5px"><span style="font:600 20px/1.1 Outfit,sans-serif">New asset</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">NAME · KIND · REFERENCES · THAT'S IT</span></span><span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;border:1px solid rgba(245,246,248,.14);border-radius:999px;padding:7px 9px">FROM LIBRARY</span></div>
+          <div style="flex:1;min-height:0;overflow:auto;padding:4px 16px 12px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;flex-direction:column;gap:6px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">NAME · YOU'LL TYPE IT AS {{ kindTag }}</span><span style="height:52px;box-sizing:border-box;background:#12141A;border:1px solid rgba(245,246,248,.2);border-radius:12px;display:flex;align-items:center;padding:0 14px;font:600 20px/1 Outfit,sans-serif">Iver<span style="width:2px;height:22px;background:#F5F6F8;margin-left:2px"></span></span></div>
+            <div style="display:flex;flex-direction:column;gap:6px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">KIND</span><div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ kinds }}" as="k" hint-placeholder-count="5"><button onClick="{{ k.select }}" style="height:44px;padding:0 14px;border:1px solid {{ k.border }};border-radius:999px;background:{{ k.bg }};color:{{ k.fg }};font:500 13.5px/1 Outfit,sans-serif">{{ k.name }}</button></sc-for></div></div>
+            <div style="display:flex;flex-direction:column;gap:6px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">REFERENCES · 3 · UPLOAD · A TAKE · MAKE · CANVAS</span><div style="display:flex;gap:6px;border:1px dashed rgba(245,246,248,.22);border-radius:12px;padding:8px"><span style="width:64px;height:64px;border-radius:8px;background:repeating-linear-gradient(135deg,#1A1D24 0 5px,#20242B 5px 10px);border:1px solid rgba(245,246,248,.08)"></span><span style="width:64px;height:64px;border-radius:8px;background:repeating-linear-gradient(135deg,#1A1D24 0 5px,#20242B 5px 10px);border:1px solid rgba(245,246,248,.08)"></span><span style="width:64px;height:64px;border-radius:8px;background:repeating-linear-gradient(135deg,#1A1D24 0 5px,#20242B 5px 10px);border:1px solid rgba(245,246,248,.08)"></span><span style="flex:1;min-height:64px;display:flex;align-items:center;justify-content:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">+ Add</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:6px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">WHAT PARTICL READS FROM THESE</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><sc-for list="{{ derived }}" as="d" hint-placeholder-count="4"><span style="display:flex;align-items:center;gap:8px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:10px;padding:10px 11px"><span style="width:34px;height:26px;border-radius:5px;background:{{ d.tile }};background-color:#1A1D24;border:1px solid rgba(245,246,248,.08);flex:none"></span><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">{{ d.port }}</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:{{ d.stateColor }}">{{ d.state }}</span></span></span></sc-for></div></div>
+            <div style="display:flex;align-items:center;gap:12px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:12px;padding:12px 14px"><span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font:500 14px/1.2 Outfit,sans-serif">{{ trainLabel }}</span><span style="font:400 12.5px/1.35 Outfit,sans-serif;color:#B4B7BE">{{ trainNote }}</span></span><button onClick="{{ toggleTrain }}" style="margin-left:auto;flex:none;width:52px;height:32px;border-radius:16px;border:0;background:{{ trainBg }};position:relative;padding:0"><span style="position:absolute;top:3px;left:{{ trainKnob }};width:26px;height:26px;border-radius:50%;background:{{ trainKnobBg }}"></span></button></div>
+          </div>
+          <div style="flex:none;padding:8px 16px 26px;border-top:1px solid rgba(245,246,248,.08);display:flex;flex-direction:column;gap:8px"><span style="font:500 12px/1.4 'Kode Mono',monospace;letter-spacing:0.08em;color:#8A8E96;text-align:center">{{ createNote }}</span><span style="height:52px;border-radius:14px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">Create Iver<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#4A4E56">{{ createCost }}</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="m9" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M9</span><span style="font:600 14px/1 Outfit,sans-serif">Composer sheet</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">8a · the one composer, opened · @Iver not an asset yet (3b)</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="position:absolute;inset:0;background:rgba(5,6,8,.55)"></div>
+        <div style="position:absolute;left:0;right:0;bottom:0;top:60px;background:#0F1116;border-top:1px solid rgba(245,246,248,.14);border-radius:24px 24px 0 0;display:flex;flex-direction:column">
+          <span style="flex:none;width:36px;height:4px;border-radius:2px;background:rgba(245,246,248,.25);margin:10px auto 0"></span>
+          <div style="flex:none;height:44px;display:flex;align-items:center;gap:8px;padding:0 16px"><span style="font:600 15px/1 Outfit,sans-serif">Composer</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">VIDEO · UNFILED</span><a href="#m4" style="margin-left:auto;width:34px;height:34px;border:1px solid rgba(245,246,248,.14);border-radius:8px;display:flex;align-items:center;justify-content:center;font:400 15px/1 Outfit,sans-serif">×</a></div>
+          <div style="flex:1;min-height:0;overflow:auto;padding:4px 16px 12px;display:flex;flex-direction:column;gap:12px">
+            <div style="background:#12141A;border:1px solid rgba(245,246,248,.14);border-radius:12px;padding:12px 13px;min-height:96px;font:400 15px/1.5 Outfit,sans-serif"><span style="background:rgba(245,246,248,.1);border-radius:4px;padding:0 4px;font-weight:500">@Noor</span> steps off the lift, bag first, corridor lights flickering on ahead of her. <span style="background:rgba(245,246,248,.1);border-radius:4px;padding:0 4px;font-weight:500">@Iver</span> is already at the door.<span style="display:inline-block;width:2px;height:16px;background:#F5F6F8;vertical-align:-3px;margin-left:1px"></span></div>
+            <div style="background:#12141A;border:1px solid rgba(245,246,248,.2);border-radius:12px;padding:12px 13px;display:flex;flex-direction:column;gap:10px">
+              <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">NOT AN ASSET YET · @IVER</span>
+              <span style="font:400 13.5px/1.4 Outfit,sans-serif;color:#B4B7BE">Give him three references and a kind and he exists everywhere. Render stays outlined until then.</span>
+              <div style="display:flex;gap:6px"><span style="width:52px;height:52px;border-radius:8px;background:repeating-linear-gradient(135deg,#1A1D24 0 5px,#20242B 5px 10px);border:1px solid rgba(245,246,248,.08)"></span><span style="width:52px;height:52px;border-radius:8px;background:repeating-linear-gradient(135deg,#1A1D24 0 5px,#20242B 5px 10px);border:1px solid rgba(245,246,248,.08)"></span><span style="width:52px;height:52px;border-radius:8px;border:1px dashed rgba(245,246,248,.22);display:flex;align-items:center;justify-content:center;font:500 16px/1 Outfit,sans-serif;color:#B4B7BE">+</span><span style="margin-left:auto;align-self:center;border:1px solid rgba(245,246,248,.14);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif">Character ▾</span></div>
+              <div style="display:flex;gap:8px"><a href="#m8" style="flex:1;height:44px;border-radius:12px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font:600 13.5px/1 Outfit,sans-serif">Create @Iver<span style="font:500 12px/1 'Kode Mono',monospace;color:#4A4E56">0 CR</span></a><span style="flex:1;height:44px;border:1px solid rgba(245,246,248,.16);border-radius:12px;display:flex;align-items:center;justify-content:center;font:500 13.5px/1 Outfit,sans-serif">Pick existing</span></div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center"><span style="width:56px;height:56px;border-radius:8px;border:1px dashed rgba(245,246,248,.22);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:500 12px/1 'Kode Mono',monospace;color:#B4B7BE"><span style="font:500 16px/1 Outfit,sans-serif">+</span>REF</span><span style="font:400 12.5px/1.35 Outfit,sans-serif;color:#B4B7BE">First frame optional. A reference steers the look, not the story.</span></div>
+            <div style="background:#12141A;border:1px solid rgba(245,246,248,.1);border-radius:12px;padding:12px 13px;display:flex;align-items:center;gap:10px"><span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font:600 14px/1.1 Outfit,sans-serif">Seedance 2.5</span><span style="font:400 12.5px/1.3 Outfit,sans-serif;color:#B4B7BE">Cinematic motion with native sound. The default for shots.</span></span><span style="margin-left:auto;flex:none;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em">19 CR / 5S ▾</span></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span style="height:40px;padding:0 13px;border:1px solid rgba(245,246,248,.12);border-radius:999px;display:flex;align-items:center;font:500 13px/1 Outfit,sans-serif">16:9</span><span style="height:40px;padding:0 13px;border:1px solid rgba(245,246,248,.12);border-radius:999px;display:flex;align-items:center;font:500 13px/1 Outfit,sans-serif">5s</span><span style="height:40px;padding:0 13px;border:1px solid rgba(245,246,248,.12);border-radius:999px;display:flex;align-items:center;font:500 13px/1 Outfit,sans-serif">×1</span><span style="height:40px;padding:0 13px;border:1px solid rgba(245,246,248,.12);border-radius:999px;display:flex;align-items:center;font:500 13px/1 Outfit,sans-serif">1080P</span><span style="height:40px;padding:0 13px;border:1px solid rgba(245,246,248,.12);border-radius:999px;display:flex;align-items:center;gap:8px;font:500 13px/1 Outfit,sans-serif">Audio<span style="width:26px;height:14px;border-radius:7px;background:#F5F6F8;position:relative;display:inline-block"><span style="position:absolute;right:2px;top:2px;width:10px;height:10px;border-radius:50%;background:#0B0D11"></span></span></span></div>
+            <div style="display:flex;flex-direction:column;gap:8px"><span style="display:flex;justify-content:space-between;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96"><span>SETUP · NONE CARRIED · UNFILED</span><span style="color:#F5F6F8">+ ROW</span></span><span style="display:flex;justify-content:space-between;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96"><span>CAST</span></span><div style="display:flex;gap:6px;flex-wrap:wrap"><span style="height:40px;padding:0 12px 0 6px;border:1px solid rgba(245,246,248,.12);border-radius:999px;display:flex;align-items:center;gap:8px;font:500 13px/1 Outfit,sans-serif"><span style="width:26px;height:26px;border-radius:50%;background:repeating-linear-gradient(135deg,#1A1D24 0 4px,#20242B 4px 8px)"></span>@Noor</span><span style="height:40px;padding:0 12px 0 6px;border:1px dashed rgba(245,246,248,.22);border-radius:999px;display:flex;align-items:center;gap:8px;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE"><span style="width:26px;height:26px;border-radius:50%;border:1px dashed rgba(245,246,248,.3);box-sizing:border-box"></span>@Iver · new</span><span style="height:40px;padding:0 13px;border:1px dashed rgba(245,246,248,.22);border-radius:999px;display:flex;align-items:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">+ Add</span></div></div>
+          </div>
+          <div style="flex:none;padding:8px 16px 26px;border-top:1px solid rgba(245,246,248,.08);display:flex;flex-direction:column;gap:6px"><span style="height:52px;border-radius:14px;border:1px solid rgba(245,246,248,.2);color:#B4B7BE;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:600 15px/1 Outfit,sans-serif">Render<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#8A8E96">19 CR · 5S · 1080P</span></span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;text-align:center">CREATE @IVER FIRST · LANDS ON THE WALL UNFILED</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="m10" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="background:#F5F6F8;color:#0B0D11;border-radius:6px;padding:5px 8px;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em">M10</span><span style="font:600 14px/1 Outfit,sans-serif">Settings</span><span style="font:400 12.5px/1 Outfit,sans-serif;color:#B4B7BE">4a · from the avatar · index then sections</span></div>
+      <div style="width:390px;height:844px;box-sizing:border-box;overflow:hidden;background:#0B0D11;border-radius:28px;border:1px solid rgba(245,246,248,.12);display:flex;flex-direction:column;position:relative">
+        <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(245,246,248,.08)">
+          <a href="#m1" style="min-height:44px;display:flex;align-items:center;font:500 13px/1 Outfit,sans-serif;color:#B4B7BE">‹ Back</a>
+          <span style="font:600 16px/1 Outfit,sans-serif;margin-left:4px">Settings</span>
+          <span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">MARA · ADMIN</span>
+        </div>
+        <div style="flex:none;padding:10px 16px;border-bottom:1px solid rgba(245,246,248,.08);display:flex;gap:6px;overflow-x:auto"><sc-for list="{{ settingsIndex }}" as="s" hint-placeholder-count="6"><span style="flex:none;border:1px solid rgba(245,246,248,.12);border-radius:999px;padding:8px 11px;font:500 12.5px/1 Outfit,sans-serif;background:{{ s.bg }};color:{{ s.fg }}">{{ s.name }}</span></sc-for></div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:12px 16px 40px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">CREDITS · WORKSPACE</span>
+            <span style="display:flex;align-items:baseline;gap:8px"><span style="font:600 30px/1 Outfit,sans-serif;letter-spacing:-0.02em">1,240</span><span style="font:400 14px/1 Outfit,sans-serif;color:#B4B7BE">cr · $124.00</span></span>
+            <span style="display:flex;justify-content:space-between;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96"><span>MONTH TO DATE</span><span style="color:#F5F6F8">612 CR</span></span>
+            <span style="display:flex;justify-content:space-between;align-items:center;font:500 13.5px/1 Outfit,sans-serif"><span>Auto top-up at 200 cr</span><span style="width:44px;height:26px;border-radius:13px;background:#F5F6F8;position:relative;display:inline-block"><span style="position:absolute;right:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#0B0D11"></span></span></span>
+            <span style="height:48px;border-radius:12px;background:#F5F6F8;color:#0B0D11;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font:600 14px/1 Outfit,sans-serif">Top up<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#4A4E56">500 CR · $50</span></span>
+          </div>
+          <div style="background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:2px">
+            <span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;padding-bottom:8px">WORKSPACE</span>
+            <sc-for list="{{ settingsRows }}" as="r" hint-placeholder-count="5"><span style="min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid rgba(245,246,248,.07);font:500 13.5px/1.3 Outfit,sans-serif"><span>{{ r.label }}</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#B4B7BE;white-space:nowrap">{{ r.value }} ▾</span></span></sc-for>
+          </div>
+          <div style="background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px">
+            <span style="display:flex;justify-content:space-between;align-items:center"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">TEAM · 6 SEATS</span><span style="font:500 12.5px/1 Outfit,sans-serif;border:1px solid rgba(245,246,248,.14);border-radius:999px;padding:8px 11px">Invite</span></span>
+            <sc-for list="{{ team }}" as="t" hint-placeholder-count="4"><span style="min-height:48px;display:flex;align-items:center;gap:10px;border-top:1px solid rgba(245,246,248,.07)"><span style="width:30px;height:30px;border-radius:50%;background:#0B0D11;border:1px solid rgba(245,246,248,.14);display:flex;align-items:center;justify-content:center;font:500 12px/1 'Kode Mono',monospace">{{ t.ini }}</span><span style="font:500 13.5px/1 Outfit,sans-serif">{{ t.name }}</span><span style="margin-left:auto;font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#B4B7BE">{{ t.role }} ▾</span></span></sc-for>
+          </div>
+          <div style="background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px">
+            <span style="display:flex;align-items:center;gap:8px">{{ ringHeader18 }}<span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">ATOMIK</span></span>
+            <span style="min-height:48px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(245,246,248,.07);font:500 13.5px/1 Outfit,sans-serif"><span>Checkpoint rule</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#B4B7BE">EVERY PAID STEP ▾</span></span>
+            <span style="min-height:48px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(245,246,248,.07);font:500 13.5px/1 Outfit,sans-serif"><span>May create assets</span><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.08em;color:#B4B7BE">PROPOSE ONLY ▾</span></span>
+            <span style="font:500 12px/1.5 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96;border-top:1px solid rgba(245,246,248,.07);padding-top:10px">NEVER WITHOUT YOU · SPEND · UNLOCK · DELETE · APPROVE</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;max-width:1700px">
+    <span style="display:flex;flex-direction:column;gap:6px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:12px;padding:14px 16px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">NAV</span><span style="font:400 13px/1.45 Outfit,sans-serif;color:#B4B7BE">Bottom dock: Make · Productions · Rig · Library, 22px line icons over 10px mono labels, 22px safe area. Inside a production the header becomes ‹ back + title; the dock stays.</span></span>
+    <span style="display:flex;flex-direction:column;gap:6px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:12px;padding:14px 16px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">RAILS → SHEETS</span><span style="font:400 13px/1.45 Outfit,sans-serif;color:#B4B7BE">Every desktop right rail is a bottom sheet: Atomik (compact 58% → expanded 92%), slot inspector, composer, new asset. Scrim .55, grabber, × at top right, primary pinned at the bottom.</span></span>
+    <span style="display:flex;flex-direction:column;gap:6px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:12px;padding:14px 16px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">ONE PRIMARY, PINNED</span><span style="font:400 13px/1.45 Outfit,sans-serif;color:#B4B7BE">The screen's one filled button lives in the bottom block above the dock, 50–52px, cost right-aligned. It outlines while a sheet is open, exactly as on desktop.</span></span>
+    <span style="display:flex;flex-direction:column;gap:6px;background:#12141A;border:1px solid rgba(245,246,248,.08);border-radius:12px;padding:14px 16px"><span style="font:500 12px/1 'Kode Mono',monospace;letter-spacing:0.12em;color:#8A8E96">RIG ON A PHONE</span><span style="font:400 13px/1.45 Outfit,sans-serif;color:#B4B7BE">Canvas is a vertical, read-and-run view of a board built on desktop: assets strip, shot, generators stacked down one wire. You can rebind a slot, run a node, file a take. No dragging wires.</span></span>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1780,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  state = { atomik: 'closed', slot: null, version: 'v2', subset: 'approved', kind: 'Character', train: true };
+
+  renderVals() {
+    const teal = 'oklch(75% 0.12 200)';
+    const stripe = 'repeating-linear-gradient(135deg,#1A1D24 0 6px,#20242B 6px 12px)';
+    const wave = 'linear-gradient(180deg,#1A1D24 0 30%,transparent 30% 70%,#1A1D24 70%),repeating-linear-gradient(90deg,rgba(245,246,248,.3) 0 2px,transparent 2px 5px)';
+    const ringBase = [[100,38,16],[56.16,56.16,11.9],[38,100,8.8],[56.16,143.84,6.5],[100,162,4.8],[143.84,143.84,3.6],[162,100,2.7],[143.84,56.16,2]];
+    const h = React.createElement;
+    const ring = (size, states) => h('svg', { viewBox: '0 0 200 200', width: size, height: size, 'aria-hidden': 'true', style: { display: 'block', flex: 'none' } },
+      ringBase.map(([cx, cy, r], i) => {
+        const st = states ? states[i] : 'idle';
+        if (st === 'checkpoint') return h('circle', { key: i, cx, cy, r: Math.max(1.2, r - 2), style: { fill: 'none', stroke: teal, strokeWidth: 4 } });
+        if (st === 'queued') return h('circle', { key: i, cx, cy, r: Math.max(1, r - 1.5), style: { fill: 'none', stroke: 'rgba(245,246,248,.35)', strokeWidth: 3 } });
+        return h('circle', { key: i, cx, cy, r, style: { fill: '#F5F6F8' } });
+      }));
+    const cp = ['done','done','done','checkpoint','queued','queued','queued','queued'];
+    const loader = (size) => h('svg', { viewBox: '0 0 200 200', width: size, height: size, 'aria-label': 'Loading', role: 'img', style: { display: 'block', flex: 'none' } },
+      ringBase.map(([cx, cy, r], i) => h('circle', { key: i, cx, cy, r, style: { fill: '#F5F6F8', animation: 'atomikPulse 1.6s cubic-bezier(.4,0,.2,1) infinite', animationDelay: (i * 0.2) + 's' } })));
+
+    const word = { approved: 'APPROVED', picked: 'PICKED', draft: 'DRAFT', rendering: 'RENDERING', none: 'NO TAKE', type: 'TYPE ONLY' };
+    const dot = st => ({
+      dotBg: st === 'approved' ? teal : st === 'picked' ? '#F5F6F8' : 'transparent',
+      dotBorder: st === 'draft' ? '1.5px solid #8A8E96' : st === 'rendering' ? '2px solid ' + teal : (st === 'none' || st === 'type') ? '1.5px dashed #8A8E96' : '0',
+      stateColor: st === 'approved' ? teal : (st === 'picked' || st === 'rendering') ? '#F5F6F8' : '#8A8E96',
+    });
+    const stepNames = ['Brief', 'Shots', 'Boards', 'Takes', 'Approve', 'Deliver'];
+    const steps = stepNames.map((label, i) => ({ label, notFirst: i > 0, isCurrent: i === 1, dotBg: i <= 1 ? '#F5F6F8' : 'transparent', dotBorder: i <= 1 ? '0' : '1.5px solid rgba(245,246,248,.3)' }));
+
+    // productions
+    const proj = (name, step, spent, cap, need, media) => ({ name, media: media + ' MEDIA', need: need ? need + ' need you' : '', hasNeed: !!need, spent: spent + ' / ' + cap + ' CR', stepLabel: stepNames[step].toUpperCase(), thumb: media ? stripe : 'transparent', dots: stepNames.map((s, i) => ({ bg: i < step ? 'rgba(245,246,248,.45)' : i === step ? '#F5F6F8' : 'transparent', border: i > step ? '1px solid rgba(245,246,248,.25)' : '0' })) });
+    const productions = [
+      { name: 'Handbag TVC', client: 'Maison Ardent · due Fri', spent: 278, cap: 650, projects: [proj('30s hero spot', 1, 228, 400, 3, 41), proj('15s cutdown', 0, 0, 120, 0, 0), proj('Social 9:16 ×3', 3, 36, 90, 1, 12), proj('Key visuals', 4, 14, 40, 2, 8)] },
+      { name: 'Saltwater', client: 'Fragrance house · in review', spent: 188, cap: 300, projects: [proj('60s film', 4, 176, 240, 2, 38), proj('Cutdowns 30 / 15', 0, 12, 60, 0, 2)] },
+      { name: 'Meridian', client: 'Launch film · brief only', spent: 0, cap: 200, projects: [proj('45s launch film', 0, 0, 200, 0, 0)] },
+    ].map(p => { const need = p.projects.reduce((a, x) => a + (parseInt(x.need) || 0), 0); return { ...p, spentLine: p.spent + ' OF ' + p.cap + ' CR', pct: Math.round(p.spent / p.cap * 100) + '%', count: p.projects.length + (p.projects.length === 1 ? ' PROJECT' : ' PROJECTS'), needLabel: need + ' need you', hasNeed: !!need }; });
+
+    // media
+    const M = (kind, id, st, cost, by) => ({ kind, id, cost: cost + ' CR', by, model: ({ TAKE: 'Seedance', STILL: 'Nano Banana', AUDIO: 'Stable Audio', MASTER: 'Topaz' })[kind], ...dot(st), state: word[st], isAudio: kind === 'AUDIO', isMaster: kind === 'MASTER', thumb: kind === 'AUDIO' ? '#0B0D11' : stripe });
+    const mediaGroups = [
+      { id: 'SH01', title: 'Corridor, establishing', items: [M('MASTER', 'SH01 · V2', 'approved', 2, 'DN'), M('TAKE', 'v2', 'approved', 19, 'TO'), M('TAKE', 'v1', 'draft', 19, 'TO'), M('AUDIO', 'A1 · bed', 'approved', 6, 'TO')] },
+      { id: 'SH02', title: 'The bag on the console', items: [M('MASTER', 'SH02 · V1', 'approved', 2, 'DN'), M('TAKE', 'v1', 'approved', 19, 'TO'), M('STILL', 'S1 · keyframe', 'picked', 2, 'JL')] },
+      { id: 'SH04', title: 'Hands on the clasp', items: [M('TAKE', 'v4 · Canvas', 'draft', 19, 'MR'), M('TAKE', 'v2', 'picked', 19, 'TO'), M('STILL', 'S3 · keyframe', 'picked', 2, 'MR'), M('TAKE', 'v1', 'draft', 19, 'TO')] },
+    ].map(g => ({ ...g, meta: g.items.length + ' · ' + g.items.reduce((a, x) => a + parseInt(x.cost), 0) + ' cr' }));
+
+    // shots
+    const rows = [
+      ['SH01', 'Corridor, establishing. Noor walks to camera, bag on her shoulder.', 4, 'approved', 2, 38],
+      ['SH02', 'The bag on the marble console, insert.', 2, 'approved', 1, 19],
+      ['SH03', 'Noor at the lift doors, medium close.', 3, 'picked', 3, 57],
+      ['SH04', 'Hands on the clasp.', 2, 'picked', 2, 38],
+      ['SH05', 'Rooftop, golden hour. Noor turns.', 4, 'picked', 2, 38],
+      ['SH06', 'The bag swings, slow motion.', 3, 'rendering', 1, 19],
+      ['SH07', 'Noor, over shoulder, city behind.', 3, 'draft', 1, 19],
+      ['SH08', 'The bag, turntable, studio white.', 4, 'none', 0, 0],
+      ['SH09', 'Noor laughs, close.', 3, 'none', 0, 0],
+      ['SH10', 'End card. Type only.', 2, 'type', 0, 0],
+    ];
+    const shots = rows.map(([id, desc, secs, st, takes, spent]) => { const has = st !== 'none' && st !== 'type'; return { id, desc, ...dot(st), state: word[st], empty: !has, emptyLabel: st === 'type' ? 'TYPE ONLY' : 'NO TAKE YET', thumbBg: has ? stripe : 'transparent', planLine: secs + 'S · ' + (st === 'type' ? '0' : '19') + ' CR', renderLine: has ? takes + ' TK · ' + spent + ' CR' : '—', renderColor: has ? '#F5F6F8' : '#8A8E96' }; });
+
+    // atomik
+    const at = this.state.atomik;
+    const chat = [
+      { who: 'MARA', me: true, text: 'Three shots open, Friday deadline. Get me to a cut under the cap, boards first.' },
+      { who: 'ATOMIK', text: '172 cr left. SH04\u2019s clasp drifts because the prop is bound to the hero view only; I\u2019d bind the detail view and retake it once.' },
+      { who: 'MARA', me: true, text: 'Do it. Stop before anything expensive.' },
+    ].map(m => ({ ...m, align: m.me ? 'flex-end' : 'flex-start', bg: m.me ? '#F5F6F8' : '#12141A', fg: m.me ? '#0B0D11' : '#F5F6F8', border: m.me ? '0' : '1px solid rgba(245,246,248,.1)' }));
+    const plan = [['Boards & keyframes · SH08, SH09', 'NANO BANANA PRO', 18, true], ['Motion · SH08, SH09 + SH04 retake', 'SEEDANCE 2.5 · 5S · 1080P', 57], ['Post · upscale 5 approved', 'TOPAZ VIDEO AI', 10], ['Audio bed · 0:30', 'STABLE AUDIO 2', 6], ['Voice · two lines, Noor', 'ELEVENLABS V3', 2], ['Assembly', 'PARTICL', 2]].map(([stage, engine, cost, checkpoint], i) => ({ n: '0' + (i + 1), stage, engine, cost: cost + ' CR', checkpoint: !!checkpoint, bg: i === 0 ? 'rgba(245,246,248,.04)' : 'transparent' }));
+
+    // wall
+    const T = (spec, cost, prompt, meta, loading) => ({ spec, cost: cost + ' CR', prompt, meta, loading: !!loading, thumb: loading ? '#0B0D11' : stripe });
+    const wallDays = [
+      { label: 'TODAY · 5 TAKES · 71 CR', items: [T('5S · 1080P', 19, 'Noor steps off the lift, bag first, corridor lights…', 'SEEDANCE 2.5 · MR · NOW', true), T('5S · 1080P', 19, 'The bag on marble, slow push, hard key from the left.', 'SEEDANCE 2.5 · MR · 9 MIN'), T('8S · 1080P', 28, 'Noor: “Leave it. We’re late.” Lift doors closing.', 'VEO 3.1 · TO · 40 MIN'), T('5S · 1080P', 19, 'Rooftop, golden hour, orbit, no people.', 'SEEDANCE 2.5 · TO · 1 H')] },
+      { label: 'YESTERDAY · 4 TAKES · 46 CR', items: [T('5S · 1080P', 19, 'Test: bleach bypass on a face, 85mm.', 'SEEDANCE 2.5 · JL'), T('5S · 1080P', 19, 'Hands on a clasp, macro, rack focus.', 'KLING 3.0 · JL')] },
+    ];
+
+    // rig canvas
+    const boardAssets = [{ name: 'Noor', port: 'FACE', v: 'v3', tile: stripe }, { name: 'The bag', port: 'HERO', v: 'v2', tile: stripe }, { name: 'Corridor', port: 'PLATE 02', v: 'lift', tile: stripe }, { name: 'Warm film', port: 'LOOK', v: 'v2', tile: stripe }, { name: 'Noor', port: 'VOICE', v: 'v1', tile: wave }];
+    const slotDefs = [
+      { tag: 'CHARACTER', value: 'all current', name: 'Noor', blurb: 'The character bundle: face v3, hair v1, wardrobe v2. Override one attribute for this shot without leaving the character.', over: false },
+      { tag: 'PROP', value: 'hero v2', name: 'The bag', blurb: 'This slot is bound to the hero view, v2. Pick another version to see what it would change before anything renders.', over: false },
+      { tag: 'BACKGROUND', value: 'plate 02', name: 'Hotel corridor', blurb: 'A location holds plates; the shot binds to one. Plate 02 is the lift end.', over: false },
+      { tag: 'LOOK', value: 'v2', name: 'Warm film', blurb: 'Locked with the brief. Unlocking is a production-level decision.', over: false },
+    ];
+    const selSlot = this.state.slot;
+    const mSlots = slotDefs.map(s => ({ ...s, select: () => this.setState({ slot: s.tag, version: 'v2', subset: 'approved' }), bg: selSlot === s.tag ? 'rgba(245,246,248,.06)' : 'transparent', ring: selSlot === s.tag ? 'inset 0 0 0 1px #F5F6F8' : 'none', tagColor: selSlot === s.tag ? '#F5F6F8' : '#8A8E96' }));
+    const cur = slotDefs.find(s => s.tag === selSlot) || slotDefs[1];
+    const ver = this.state.version, sub = this.state.subset;
+    const slotVersions = [{ v: 'v1', note: 'first pass', bound: false }, { v: 'v2', note: 'bound · 7 shots', bound: true }, { v: 'v3', note: 'new · clasp fixed', bound: false }].map(x => ({ ...x, select: () => this.setState({ version: x.v }), border: ver === x.v ? '#F5F6F8' : 'rgba(245,246,248,.1)', ring: ver === x.v ? '0 0 0 3px rgba(245,246,248,.12)' : 'none' }));
+    const changing = ver !== 'v2';
+    const subsetDefs = [{ key: 'approved', label: 'Re-render approved only', note: '3 approved return to draft on ' + ver + '. 4 drafts stay.', cost: 57 }, { key: 'all', label: 'Re-render all 7', note: 'Every shot comes back on ' + ver + '.', cost: 133 }, { key: 'none', label: 'Only shots from now', note: 'Existing takes keep v2.', cost: 0 }];
+    const subsets = subsetDefs.map(o => { const on = sub === o.key; return { ...o, cost: o.cost + ' CR', select: () => this.setState({ subset: o.key }), bg: on ? 'rgba(245,246,248,.06)' : 'transparent', border: on ? 'rgba(245,246,248,.5)' : 'rgba(245,246,248,.12)', markBorder: on ? '#F5F6F8' : 'rgba(245,246,248,.3)', markBg: on ? '#F5F6F8' : 'transparent' }; });
+    const chosen = subsetDefs.find(o => o.key === sub);
+    const variants = [0, 1, 2, 3].map(i => ({ out: i === 1, border: i === 1 ? '2px solid #F5F6F8' : '1px solid rgba(245,246,248,.1)' }));
+
+    // run
+    const R = (n, name, engine, cost, st, label) => ({ n: '0' + n, name, engine, cost: cost + ' CR', costColor: st === 'queued' ? '#8A8E96' : '#F5F6F8', state: st.toUpperCase(), stateColor: st === 'done' ? teal : st === 'checkpoint' ? '#F5F6F8' : '#8A8E96', dotBg: st === 'done' ? teal : 'transparent', dotBorder: st === 'checkpoint' ? '2px solid ' + teal : st === 'queued' ? '1.5px dashed #8A8E96' : '0', thumb: st === 'done' ? stripe : 'transparent', thumbBorder: st === 'done' ? '1px solid rgba(245,246,248,.08)' : '1px dashed rgba(245,246,248,.2)', thumbLabel: st === 'done' ? '' : label || '', border: st === 'checkpoint' ? '#F5F6F8' : 'rgba(245,246,248,.08)', ring: st === 'checkpoint' ? '0 0 0 3px rgba(245,246,248,.12)' : 'none' });
+    const runSteps = [R(1, 'Brief', 'CLAUDE SONNET 4.5', 1, 'done'), R(2, 'Shots', 'CLAUDE SONNET 4.5', 2, 'done'), R(3, 'Boards', 'NANO BANANA PRO', 9, 'done'), R(4, 'Keyframes', 'NANO BANANA PRO · 12 STILLS', 24, 'checkpoint', '—'), R(5, 'Motion', 'SEEDANCE 2.5 · 10 SHOTS', 190, 'queued', '—'), R(6, 'Post', 'TOPAZ VIDEO AI', 10, 'queued', '—'), R(7, 'Audio', 'STABLE AUDIO 2 · ELEVENLABS', 15, 'queued', '—'), R(8, 'Assembly', 'PARTICL', 2, 'queued', '—')];
+
+    // library
+    const A = (name, kind, v, meta, locked) => ({ name, kind, v, meta, locked: !!locked, bg: locked ? '#171A21' : '#12141A' });
+    const libAssets = [A('Noor', 'CHARACTER', 'v3', '4 PORTS · 14 SHOTS', true), A('The bag', 'PROP', 'v2', '2 VIEWS · 7 SHOTS'), A('Hotel corridor', 'LOCATION', '2 pl', '2 PLATES · 5 SHOTS'), A('Rooftop', 'LOCATION', '2 pl', '2 PLATES · 3 SHOTS'), A('Warm film', 'LOOK', 'v2', 'LOCKED WITH BRIEF', true), A('Cass', 'CHARACTER', 'v3', 'NORTHLINE · 6 SHOTS', true)];
+
+    // new asset
+    const kind = this.state.kind, train = this.state.train;
+    const kindDefs = {
+      Character: { tag: '@IVER', derived: [['FACE', 'READY'], ['HAIR', 'READY'], ['WARDROBE', 'READY'], ['VOICE', 'LATER']], train: ['Train the face now', 'Reads 3 refs; 10+ photos train better.', 12] },
+      Prop: { tag: '@IVER', derived: [['HERO', 'READY'], ['DETAIL', 'OPTIONAL'], ['TURNTABLE', 'LATER']], train: ['Make a turntable now', '8 views from the hero reference.', 4] },
+      Location: { tag: '@IVER', derived: [['PLATE · DAY', 'READY'], ['PLATE · DUSK', 'LATER'], ['PLATE · NIGHT', 'LATER']], train: ['Fill the missing hours', 'Two plates derived from the day plate.', 2] },
+      Look: { tag: '@IVER', derived: [['LOOK', 'READY'], ['GRAIN', 'OPTIONAL']], train: ['Apply to existing keyframes', '12 keyframes re-graded, not re-rendered.', 5] },
+      Voice: { tag: '@IVER', derived: [['VOICE', 'READY'], ['LANGUAGE', 'READY']], train: ['Train the voice now', 'From the audio in the references.', 8] },
+    };
+    const kd = kindDefs[kind];
+    const kinds = Object.keys(kindDefs).map(k => ({ name: k, select: () => this.setState({ kind: k }), border: kind === k ? '#F5F6F8' : 'rgba(245,246,248,.14)', bg: kind === k ? '#F5F6F8' : 'transparent', fg: kind === k ? '#0B0D11' : '#F5F6F8' }));
+    const derived = kd.derived.map(([port, state]) => ({ port, state, stateColor: state === 'READY' ? teal : '#8A8E96', tile: port === 'VOICE' ? wave : stripe }));
+    const trainCost = train ? kd.train[2] : 0;
+
+    const settingsIndex = ['Credits', 'Workspace', 'Team', 'Engines', 'Defaults', 'Atomik', 'Rig', 'Masters', 'Account'].map((name, i) => ({ name, bg: i === 0 ? 'rgba(245,246,248,.1)' : 'transparent', fg: i === 0 ? '#F5F6F8' : '#B4B7BE' }));
+    const settingsRows = [['Default model', 'SEEDANCE 2.5'], ['Defaults', '16:9 · 5S · 1080P'], ['Take states', 'DRAFT · PICKED · APPROVED'], ['Warn at', '80% OF CAP'], ['Who approves', 'DIRECTOR']].map(([label, value]) => ({ label, value }));
+    const team = [['MR', 'Mara Reyes', 'DIRECTOR'], ['PK', 'Priya Kaur', 'PRODUCER'], ['TO', 'Tomas Ortega', 'ARTIST'], ['DN', 'Dan Novak', 'EDITOR']].map(([ini, name, role]) => ({ ini, name, role }));
+
+    return {
+      ringHeader: ring(14), ringHeader18: ring(18), ringCheckpoint14: ring(14, cp), ringCheckpoint18: ring(18, cp), ringCheckpoint48: ring(48, cp), loader36: loader(36),
+      steps, productions, mediaGroups, shots,
+      atomikOpen: at !== 'closed', atomikCompact: at === 'compact', atomikExpanded: at === 'expanded',
+      openAtomik: () => this.setState({ atomik: 'compact' }), expandAtomik: () => this.setState({ atomik: 'expanded' }), compactAtomik: () => this.setState({ atomik: 'compact' }), closeAtomik: () => this.setState({ atomik: 'closed' }),
+      sheetMax: at === 'expanded' ? '92%' : '58%',
+      atomikBtnBg: at === 'closed' ? 'transparent' : 'rgba(245,246,248,.12)', atomikBtnBorder: at === 'closed' ? 'rgba(245,246,248,.14)' : 'rgba(245,246,248,.35)',
+      pagePrimaryBg: at === 'closed' ? '#F5F6F8' : 'transparent', pagePrimaryBorder: at === 'closed' ? '#F5F6F8' : 'rgba(245,246,248,.2)', pagePrimaryFg: at === 'closed' ? '#0B0D11' : '#B4B7BE', pagePrimaryCost: at === 'closed' ? '#4A4E56' : '#8A8E96',
+      atomikChat: chat, plan, wallDays,
+      boardAssets, mSlots, variants, slotSheet: !!selSlot, closeSlot: () => this.setState({ slot: null }),
+      slotTag: cur.tag, slotName: cur.name, slotBlurb: cur.blurb, slotVersions, slotChanging: changing, slotBoundLabel: cur.value, subsets,
+      applyLabel: changing ? 'Apply ' + ver + (sub === 'approved' ? ' to approved' : sub === 'all' ? ' to all 7' : ' from now') : 'Bound to v2',
+      applyCost: changing ? chosen.cost + ' CR' : 'PICK ANOTHER VERSION', applyBg: changing ? '#F5F6F8' : 'transparent', applyBorder: changing ? '#F5F6F8' : 'rgba(245,246,248,.2)', applyFg: changing ? '#0B0D11' : '#B4B7BE', applyCostColor: changing ? '#4A4E56' : '#8A8E96',
+      runSteps, libAssets,
+      kinds, kindTag: kd.tag, derived, trainLabel: kd.train[0], trainNote: kd.train[1], toggleTrain: () => this.setState(s => ({ train: !s.train })), trainBg: train ? '#F5F6F8' : 'rgba(245,246,248,.14)', trainKnob: train ? '23px' : '3px', trainKnobBg: train ? '#0B0D11' : '#F5F6F8',
+      createCost: trainCost + ' CR', createNote: train ? 'CREATING IS FREE · ' + kd.train[0].toUpperCase() + ' COSTS ' + trainCost + ' CR' : 'CREATING IS FREE · LEARN LATER FROM ANY TAKE',
+      settingsIndex, settingsRows, team,
+    };
+  }
+}
+</script>
+</body>
+</html>
