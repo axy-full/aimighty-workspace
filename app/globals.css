@@ -41,7 +41,7 @@
   --color-chip2:   rgba(255, 255, 255, 0.10);
 
   /* ── Ink ── four weights, no hue. */
-  --color-ink:     #F5F6F8;   /* titles, marks, primary fills */
+  /* --color-ink is the v2 --ink; see the particl v2 block below. */
   --color-bone:    #F5F6F8;   /* primary text */
   --color-soft:    #E6E8EC;   /* prompt text, primary hover */
   --color-lead:    #B4B7BE;   /* body copy, descriptions */
@@ -86,6 +86,40 @@
   --font-mono:    var(--font-kode-mono), ui-monospace, "SF Mono", Menlo, monospace;
   --font-display: var(--font-outfit), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-kode:    var(--font-kode-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ── particl v2 (design/particl-v2/README.md §2) ─────────────────────
+     The theme itself is declared under `:root` below, under the handoff's
+     exact names (`--ground`, `--card`, `--ink-body` …). These entries only
+     put each one in Tailwind's `--color-` namespace so it is a utility as
+     well — `bg-ground`, `text-ink-body`, `border-border-mid` — and they
+     add nothing §2 does not list. Dark only: `.theme-light` overrides none
+     of them. The older desk / panel / bone / dim names carry the routes v2
+     has not yet replaced, and go with them. */
+  --color-ground:          var(--ground);
+  --color-card:            var(--card);
+  --color-card-raised:     var(--card-raised);
+  --color-ink:             var(--ink);
+  --color-ink-body:        var(--ink-body);
+  --color-ink-muted:       var(--ink-muted);
+  --color-hairline:        var(--hairline);
+  --color-border:          var(--border);
+  --color-border-mid:      var(--border-mid);
+  --color-border-hover:    var(--border-hover);
+  --color-selected:        var(--selected);
+  --color-accent:          var(--accent);
+  --color-on-primary-cost: var(--on-primary-cost);
+
+  /* §2 radii: 4 badges · 6 small chips · 8–10 buttons, tiles, rows · 12
+     cards, nodes, rails · 14 mobile buttons, pinned cards · 999 pills. The
+     scale has no names in the handoff; these are only so the utilities
+     exist (`rounded-card`). */
+  --radius-badge:  4px;
+  --radius-chip:   6px;
+  --radius-ctl:    8px;
+  --radius-tile:   10px;
+  --radius-card:   12px;
+  --radius-mobile: 14px;
+  --radius-pill:   999px;
 }
 
 :root {
@@ -122,7 +156,81 @@
   --scroll-thumb-hover: rgba(255, 255, 255, .30);
   color-scheme: dark;
   --ease-spring: cubic-bezier(.2, .8, .2, 1);
+
 }
+
+/* ── particl v2 theme (design/particl-v2/README.md §2) — verbatim ──────────
+   Copied from the handoff as generated, name for name and value for value.
+   Dark only; there is no light theme. Two tokens are given as ranges in
+   the handoff — `--border-mid .12–.14` and `--border-hover .22–.30` — and
+   a variable holds one value, so each is set to what the valid boards
+   actually use: buttons, chips and the sheet edge sit at .14 (the kind
+   filter pills and the rail's left edge at .12 are the exceptions, and are
+   drawn at .12 where they occur); every hover in the boards raises to .24.
+   `--placeholder` is declared with the older wells further down, at these
+   values, so there is one declaration of it. */
+:root {
+  --ground:          #0B0D11;
+  --card:            #12141A;                    /* one step lighter than ground */
+  --card-raised:     #171A21;                    /* locked assets, hover rows */
+  --ink:             #F5F6F8;
+  --ink-body:        #B4B7BE;                    /* secondary body; never lower than this for prose */
+  --ink-muted:       #8A8E96;                    /* eyebrows, mono labels, states (labels only, not prose) */
+  --hairline:        rgba(245,246,248,.06);
+  --border:          rgba(245,246,248,.08);      /* cards */
+  --border-mid:      rgba(245,246,248,.14);      /* buttons, inputs, chips (.12–.14) */
+  --border-hover:    rgba(245,246,248,.24);      /* hover raises border alpha only (.22–.30) */
+  --selected:        rgba(245,246,248,.12);      /* segmented active, selected row fill */
+  --accent:          oklch(75% 0.12 200);        /* ONLY for approved, done, running progress, checkpoint ring */
+  --on-primary-cost: #4A4E56;                    /* the cost text inside a filled primary button */
+  --waveform:        repeating-linear-gradient(90deg,rgba(245,246,248,.32) 0 2px,transparent 2px 5px);
+}
+
+/* ── particl v2 primitives' CSS (design/particl-v2/README.md §2–§3) ──────
+   Namespaced `ui-` and `atomik-` so they coexist with the classes of the
+   routes not yet replaced. Only what a utility cannot say lives here. */
+
+/* Type (§2). h1 32/1.05 −0.025em; page title 20 (−0.02em in the boards);
+   section title 16. Card titles, body and UI labels are ranges in the
+   handoff and are set per primitive, at the board's own value. */
+.ui-h1 { font: 600 32px/1.05 var(--font-sans); letter-spacing: -0.025em; margin: 0; }
+.ui-page-title { font: 600 20px/1 var(--font-sans); letter-spacing: -0.02em; margin: 0; }
+.ui-section-title { font: 600 16px/1 var(--font-sans); margin: 0; }
+
+/* Kode Mono 500 11px uppercase, letter-spacing .12em — eyebrows, IDs,
+   states, engine names, timestamps. A cost inside a mono string sits at
+   .08em. Nothing under 11px on desktop, nothing under 12px on a phone. */
+.ui-mono {
+  font: 500 11px/1 var(--font-mono);
+  text-transform: uppercase; letter-spacing: .12em; font-variant-numeric: tabular-nums;
+}
+.ui-mono-cost { letter-spacing: .08em; }
+@media (max-width: 767px) { .ui-mono { font-size: 12px; } }   /* mobile is below 768 (§14) */
+
+.ui-placeholder { background: var(--placeholder); }
+.ui-waveform { background: var(--waveform); }
+
+/* §3 surfaces the theme does not name, at the handoff's literal values:
+   the rail's ground, the chips over media, the sheet's scrim, and the one
+   ring in the product — on a selected node (§2). */
+.ui-rail { background: #0F1116; }
+.ui-chip-scrim { background: rgba(11,13,17,.85); }
+.ui-sheet-scrim { background: rgba(5,6,8,.55); }
+.ui-node-selected { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(245,246,248,.12); }   /* the boards pair the ring with an ink edge (6a, 8b) */
+
+/* The ring's one motion (board 11a): opacity .22 → 1 → .22, 1.6s a lap,
+   each dot 0.2s behind the one before. The dots never move and never
+   scale. The handoff has no reduced-motion rule and none is added: an
+   opacity pulse is not a vestibular trigger, and a loader that holds
+   still is not a loader. */
+@keyframes atomikPulse { 0%, 100% { opacity: .22 } 18% { opacity: 1 } 55% { opacity: .22 } }
+.atomik-pulse { animation: atomikPulse 1.6s cubic-bezier(.4, 0, .2, 1) infinite; }
+
+/* The one progress bar: 3px under an Atomik message while it plans. The
+   track is the boards' .1, the same track every cap bar sits on. */
+@keyframes atomikBar { 0% { width: 12% } 50% { width: 64% } 100% { width: 12% } }
+.atomik-bar { display: block; height: 3px; border-radius: 2px; background: rgba(245,246,248,.1); overflow: hidden; }
+.atomik-bar > span { display: block; height: 100%; background: var(--ink); animation: atomikBar 2.4s ease-in-out infinite; }
 
 /* ── Light is atomik's, and only atomik's ────────────────────────────
    particl is dark. There is no appearance setting and no system query
@@ -1828,7 +1936,11 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .dot-sm { width: 7px; height: 7px; }
 
 /* Placeholders: striped wells for a master, still, board or photo not yet made. */
-:root, .theme-dark { --placeholder: repeating-linear-gradient(135deg, #15181E 0 6px, #191C22 6px 12px); --placeholder-fine: repeating-linear-gradient(135deg, #15181E 0 3px, #22262D 3px 6px); }
+/* The placeholder stripes, at the v2 values (design/particl-v2 §2) — the
+   one declaration; `.ui-placeholder` and the older wells read the same.
+   `--placeholder-fine` is not a §2 token: it is the 3px pitch the boards
+   use on small thumbs (8a, 3b), kept for the older wells that read it. */
+:root, .theme-dark { --placeholder: repeating-linear-gradient(135deg,#1A1D24 0 6px,#20242B 6px 12px); --placeholder-fine: repeating-linear-gradient(135deg,#1A1D24 0 3px,#22262D 3px 6px); }
 .theme-light { --placeholder: repeating-linear-gradient(135deg, #E2E3E6 0 6px, #E9EAEC 6px 12px); --placeholder-fine: repeating-linear-gradient(135deg, #E2E3E6 0 3px, #E9EAEC 3px 6px); }
 .well { background: var(--placeholder); border: 1px solid var(--color-line); position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .well-cap { font: 400 11px/1 var(--font-kode); color: var(--color-dim); letter-spacing: .04em; }
