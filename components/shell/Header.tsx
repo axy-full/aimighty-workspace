@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { NAV } from "@/lib/nav";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
@@ -9,6 +9,7 @@ import { useApi } from "@/lib/useApi";
 import { creditsNumber, useMoney } from "@/lib/price";
 import { usd } from "@/lib/format";
 import { Lockup } from "@/components/ui/Mark";
+import { Mono } from "@/components/ui";
 import AtomikButton from "./AtomikButton";
 import { AtomikPhoneButton } from "@/components/atomik/AtomikSheet";
 import AccountMenu from "./AccountMenu";
@@ -20,7 +21,9 @@ import AccountMenu from "./AccountMenu";
  * ink with `inset 0 -2px 0 ink`; then, from the right: the balance in mono
  * (`BALANCE 1,240 CR`, the figure in ink), the Atomik button, the avatar.
  * On a phone (9c): `0 16px`, 10px apart, the smaller lockup, and the nav
- * goes to the dock (§14).
+ * goes to the dock (§14). On `/settings` a phone's header is M10's: `‹
+ * Back`, `Settings` at 600 16, and `NAME · ROLE` in mono at the right —
+ * no balance, no Atomik pill, no avatar.
  *
  * The balance is the workspace's credit balance from the session, refreshed
  * from /api/usage/summary so a render that just billed shows here without
@@ -32,7 +35,9 @@ type Productions = { productions: { id: string; name: string; projects: { id: st
 
 export default function Header() {
   const path = usePathname();
-  const { signedIn, credits } = useSession();
+  const router = useRouter();
+  const { signedIn, credits, name, role } = useSession();
+  const onSettings = path === "/settings";
   const { current } = useProject();
   const { inCredits } = useMoney();
   const { data: summary } = useApi<Summary>(signedIn ? "/api/usage/summary" : null, 30_000);
@@ -51,7 +56,12 @@ export default function Header() {
   return (
     <header className="relative flex h-[56px] flex-none items-center gap-[22px] border-b border-border bg-ground px-[20px] text-ink max-md:h-[52px] max-md:gap-[10px] max-md:px-[16px]">
       <Link href="/" aria-label="particl" className="max-md:hidden"><Lockup /></Link>
-      {back ? (
+      {onSettings ? (
+        <span className="flex items-center md:hidden">
+          <button type="button" onClick={() => router.back()} className="flex min-h-[44px] items-center text-[13px] font-medium leading-none text-ink-body">‹ Back</button>
+          <span className="ml-[4px] text-[16px] font-semibold leading-none text-ink">Settings</span>
+        </span>
+      ) : back ? (
         <Link href={back.href} className="flex min-h-[44px] items-center gap-[6px] text-[13px] font-medium leading-none text-ink-body md:hidden">‹ {back.label}</Link>
       ) : (
         <Link href="/" aria-label="particl" className="md:hidden"><Lockup mobile /></Link>
@@ -68,7 +78,7 @@ export default function Header() {
           );
         })}
       </nav>
-      <span className="ml-auto flex items-center gap-[12px]">
+      <span className={`ml-auto flex items-center gap-[12px] ${onSettings ? "max-md:hidden" : ""}`}>
         {balance !== null && (
           <span className="ui-mono text-ink-muted"><span className="max-md:hidden">Balance </span><span className="text-ink max-md:text-ink-muted">{balance}</span></span>
         )}
@@ -76,6 +86,7 @@ export default function Header() {
         <span className="md:hidden"><AtomikPhoneButton /></span>
         <AccountMenu />
       </span>
+      {onSettings && signedIn && <Mono className="ml-auto md:hidden">{name ?? ""}{role ? ` · ${role}` : ""}</Mono>}
     </header>
   );
 }

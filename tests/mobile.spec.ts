@@ -323,6 +323,36 @@ test.describe("Make on a phone", () => {
 });
 
 /**
+ * Settings on a phone (design/particl-v2-mobile, board M10): the header is
+ * `‹ Back` (44pt), `Settings` at 600 16, and the person's `NAME · ROLE` in
+ * mono at the right — no balance, no Atomik pill, no avatar. A visitor
+ * sees the header and the sign-in line; the index pills and the cards
+ * need a workspace.
+ */
+test.describe("Settings on a phone", () => {
+  test("the M10 header: ‹ Back, Settings, no Atomik pill", async ({ page }) => {
+    test.skip(page.viewportSize()!.width >= 768, "a phone on its side gets the desktop header (§14)");
+    await page.goto("/settings");
+    await settle(page);
+    const banner = page.getByRole("banner");
+    const back = banner.getByRole("button", { name: "‹ Back" });
+    await expect(back).toBeVisible();
+    expect((await back.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const title = banner.getByText("Settings", { exact: true });
+    expect(await title.evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el).fontWeight])).toEqual(["16px", "600"]);
+    await expect(banner.getByRole("button", { name: "Ask Atomik" })).toBeHidden();
+    const signedIn = await page.getByRole("button", { name: "Account" }).count();
+    if (signedIn) {
+      const index = page.locator("[data-index]");
+      await expect(index).toBeVisible();
+      for (const b of await index.getByRole("button").all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(30);
+      const card = page.locator("section#credits");
+      expect(await card.evaluate((el) => { const cs = getComputedStyle(el); return [cs.borderTopLeftRadius, cs.paddingTop]; })).toEqual(["14px", "14px"]);
+    }
+  });
+});
+
+/**
  * Atomik on a phone (design/particl-v2-mobile, board M3): the header's pill
  * opens the sheet compact — `#0F1116`, radius 24 above, the .14 rule, the
  * 36×4 grabber, the 48px header with the ring at 18 and `Expand ↑`, one
