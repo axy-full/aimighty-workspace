@@ -37,7 +37,8 @@ export default function Header() {
   const path = usePathname();
   const router = useRouter();
   const { signedIn, credits, name, role } = useSession();
-  const onSettings = path === "/settings";
+  /* The two account-menu routes wear the M10 header on a phone: `‹ Back` and the page's name. */
+  const menuRoute = path === "/settings" ? "Settings" : path === "/usage" ? "Usage" : null;
   const { current } = useProject();
   const { inCredits } = useMoney();
   const { data: summary } = useApi<Summary>(signedIn ? "/api/usage/summary" : null, 30_000);
@@ -56,10 +57,10 @@ export default function Header() {
   return (
     <header className="relative flex h-[56px] flex-none items-center gap-[22px] border-b border-border bg-ground px-[20px] text-ink max-md:h-[52px] max-md:gap-[10px] max-md:px-[16px]">
       <Link href="/" aria-label="particl" className="max-md:hidden"><Lockup /></Link>
-      {onSettings ? (
+      {menuRoute ? (
         <span className="flex items-center md:hidden">
           <button type="button" onClick={() => router.back()} className="flex min-h-[44px] items-center text-[13px] font-medium leading-none text-ink-body">‹ Back</button>
-          <span className="ml-[4px] text-[16px] font-semibold leading-none text-ink">Settings</span>
+          <span className="ml-[4px] text-[16px] font-semibold leading-none text-ink">{menuRoute}</span>
         </span>
       ) : back ? (
         <Link href={back.href} className="flex min-h-[44px] items-center gap-[6px] text-[13px] font-medium leading-none text-ink-body md:hidden">‹ {back.label}</Link>
@@ -78,7 +79,7 @@ export default function Header() {
           );
         })}
       </nav>
-      <span className={`ml-auto flex items-center gap-[12px] ${onSettings ? "max-md:hidden" : ""}`}>
+      <span className={`ml-auto flex items-center gap-[12px] ${menuRoute ? "max-md:hidden" : ""}`}>
         {balance !== null && (
           <span className="ui-mono text-ink-muted"><span className="max-md:hidden">Balance </span><span className="text-ink max-md:text-ink-muted">{balance}</span></span>
         )}
@@ -86,7 +87,7 @@ export default function Header() {
         <span className="md:hidden"><AtomikPhoneButton /></span>
         <AccountMenu />
       </span>
-      {onSettings && signedIn && <Mono className="ml-auto md:hidden">{name ?? ""}{role ? ` · ${role}` : ""}</Mono>}
+      {menuRoute && signedIn && <Mono className="ml-auto md:hidden">{name ?? ""}{role ? ` · ${role}` : ""}</Mono>}
     </header>
   );
 }

@@ -221,3 +221,43 @@ export async function engineHealth(sinceMs: number): Promise<EngineHealthRow[]> 
     };
   });
 }
+
+/**
+ * Usage's breakdowns (SOW v2 §7.12, board 12f): what the one ledger billed a
+ * workspace in a window — by model and kind, by day, by project, by person,
+ * by shot. Five grouped reads, one source, so the headline, the bars and the
+ * statement never disagree by a rounding.
+ */
+export type MeterBreakdown = {
+  byModel: { model: string; kind: string; billedCredits: number }[];
+  byDay: { day: number; billedCredits: number }[];
+  byProject: { projectId: string | null; billedCredits: number }[];
+  byPerson: { userId: string | null; kind: string; billedCredits: number }[];
+  byShot: { shotId: string | null; billedCredits: number }[];
+  /** Calendar months (UTC), the statement's own key, oldest first. */
+  byMonth: { month: string; billedCredits: number }[];
+};
+export async function meterBreakdown(workspaceId: string, sinceMs: number, untilMs = Number.MAX_SAFE_INTEGER): Promise<MeterBreakdown> {
+  await platformReady();
+  const where = `workspace_id = ? AND paid_by_platform = 1 AND created_at >= ? AND created_at < ?`;
+  const args = [workspaceId, sinceMs, untilMs];
+  const q = (sql: string) => platformDb().execute({ sql, args });
+  const [m, d, p, u, s, mo] = await Promise.all([
+    q(`SELECT model, kind, COALESCE(SUM(COALESCE(billed_credits, 0)), 0) AS n FROM meter_events WHERE ${where} GROUP BY model, kind ORDER BY n DESC`),
+    q(`SELECT (created_at / 86400000) * 86400000 AS day, COALESCE(SUM(COALESCE(billed_credits, 0)), 0) AS n FROM meter_events WHERE ${where} GROUP BY day ORDER BY day`),
+    q(`SELECT project_id, COALESCE(SUM(COALESCE(billed_credits, 0)), 0) AS n FROM meter_events WHERE ${where} GROUP BY project_id ORDER BY n DESC`),
+    q(`SELECT created_by, kind, COALESCE(SUM(COALESCE(billed_credits, 0)), 0) AS n FROM meter_events WHERE ${where} GROUP BY created_by, kind ORDER BY n DESC`),
+    q(`SELECT shot_id, COALESCE(SUM(COALESCE(billed_credits, 0)), 0) AS n FROM meter_events WHERE ${where} GROUP BY shot_id`),
+    q(`SELECT strftime('%Y-%m', created_at / 1000, 'unixepoch') AS month, COALESCE(SUM(COALESCE(billed_credits, 0)), 0) AS n FROM meter_events WHERE ${where} GROUP BY month ORDER BY month`),
+  ]);
+  const rows = (rs: { rows: unknown[] }) => rs.rows as Record<string, unknown>[];
+  const idOrNull = (v: unknown) => (v == null || v === "" ? null : String(v));
+  return {
+    byModel: rows(m).map((r) => ({ model: String(r.model ?? ""), kind: String(r.kind ?? "video"), billedCredits: Number(r.n ?? 0) })),
+    byDay: rows(d).map((r) => ({ day: Number(r.day ?? 0), billedCredits: Number(r.n ?? 0) })),
+    byProject: rows(p).map((r) => ({ projectId: idOrNull(r.project_id), billedCredits: Number(r.n ?? 0) })),
+    byPerson: rows(u).map((r) => ({ userId: idOrNull(r.created_by), kind: String(r.kind ?? "video"), billedCredits: Number(r.n ?? 0) })),
+    byShot: rows(s).map((r) => ({ shotId: idOrNull(r.shot_id), billedCredits: Number(r.n ?? 0) })),
+    byMonth: rows(mo).map((r) => ({ month: String(r.month ?? ""), billedCredits: Number(r.n ?? 0) })),
+  };
+}
