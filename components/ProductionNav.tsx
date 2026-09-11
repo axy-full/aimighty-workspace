@@ -44,7 +44,7 @@ export default function ProductionNav({ id, on }: { id: string; on: ProductionTa
           ? <span key={key} className="subnav-item is-on" aria-current="page">{label}</span>
           : <Link key={key} href={href} className="subnav-item">{label}</Link>
       )}
-      <Link href="/studio" className="subnav-item">Cast</Link>
+      <Link href="/library" className="subnav-item">Library</Link>
       <Link href="/usage" className="subnav-item">Cost</Link>
       <Link href="/atomik/shots" className="subnav-note hdr-mono-link flex items-center gap-2">
         <AtomikMark size={14} /> SHOT LIST · ATOMIK →

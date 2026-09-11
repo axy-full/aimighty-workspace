@@ -1,9 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-/** Stills have their own door: the same composer, showing only the still
- *  engines and only the stills on the wall. */
-import Workspace from "@/components/Workspace";
-
-export default function ImagesPage() {
-  return <Workspace kind="image" />;
+/** Stills are made at /make/images now (§10). */
+export default function Moved() {
+  redirect("/make/images");
 }

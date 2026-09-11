@@ -17,7 +17,7 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 const ROUTES = [
-  "/", "/images", "/audio", "/productions", "/all", "/studio", "/studio/shot",
+  "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio", "/studio/shot",
   "/usage", "/settings", "/policy", "/terms", "/privacy",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots",
   "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/takes/demo", "/shots/demo", "/elements/demo",
@@ -89,11 +89,11 @@ for (const route of ROUTES) {
    missing. */
 test("a wide screen shows bigger frames, not more small ones", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-2560", "measured at the widest viewport");
-  for (const route of ["/", "/all"]) {
+  for (const route of ["/make/video", "/library?view=unfiled"]) {
     await page.goto(route);
     await settle(page);
     const card = await page.evaluate(() => {
-      const grid = Array.from(document.querySelectorAll<HTMLElement>(".grp-grid"))
+      const grid = Array.from(document.querySelectorAll<HTMLElement>("[data-wall]"))
         .filter((g) => g.children.length > 1)
         .sort((a, b) => b.children.length - a.children.length)[0];
       if (!grid) return null;
@@ -119,7 +119,7 @@ test("a wide screen shows bigger frames, not more small ones", async ({ page }, 
  * own terms — which is what they would pay if they signed up.
  */
 test("signed out, nothing is priced in dollars", async ({ page }) => {
-  for (const route of ["/", "/images", "/audio"]) {
+  for (const route of ["/make/video", "/make/images", "/make/audio"]) {
     await page.goto(route);
     await settle(page);
     const text = await page.evaluate(() => document.body.innerText);
@@ -134,11 +134,9 @@ test("signed out, the composer still quotes a price", async ({ page }) => {
   /* A guard on the guard: no dollars is trivially true if nothing is priced
      at all, and a composer that has stopped quoting is worse than one
      quoting the wrong unit. */
-  await page.goto("/");
+  await page.goto("/make/video");
   await settle(page);
-  const cost = await page.evaluate(() =>
-    document.querySelector(".btn-primary-cost")?.textContent?.trim()
-    ?? document.querySelector(".island-cost")?.textContent?.trim() ?? "");
+  const cost = await page.evaluate(() => document.querySelector("[data-render]")?.textContent?.trim() ?? "");
   expect(cost, "the composer quotes nothing at all").toMatch(/\d/);
   expect(cost).toMatch(/cr\b/);
 });

@@ -54,7 +54,7 @@ export default function Chip({ variant = "pill", tone = "body", active, children
   const cls = `inline-flex items-center whitespace-nowrap leading-none ${LOOK[variant]} ${
     variant === "filter" ? (tone === "ink" ? "text-ink" : "text-ink-body") : ""} ${
     active ? "bg-[rgba(245,246,248,.1)] text-ink" : ""} ${
-    rest.onClick ? "hover:border-border-hover" : ""} ${className}`;
+    rest.onClick ? "tap44 hover:border-border-hover" : ""} ${className}`;
   const dot = variant === "need" ? 7 : variant === "needHeader" ? 8 : 0;
   const body = (
     <>

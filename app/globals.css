@@ -2762,10 +2762,6 @@ html, body { overflow-x: clip; }
 .ak-prop-shot { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--color-line); }
 
 /* Setup you can see (brief 2.3): where each row came from, what the prompt overrides, the shot's own rows. */
-.setup-diff { margin: 2px 0 6px; font-size: 12.5px; line-height: 1.45; color: var(--color-dim); }
-.kv-src { margin-left: 6px; font: 500 9px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-mute); vertical-align: 1px; }
-.kv-was { color: var(--color-mute); text-decoration-thickness: 1px; }
-.setup-shot { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
 
 /* The cast still beside a cited name in the theatre (brief 2.4). */
 .theatre-cast { display: inline-flex; align-items: center; gap: 6px; }
@@ -3738,3 +3734,8 @@ html, body { overflow-x: clip; }
 body:has(.pane-div.is-drag) { cursor: col-resize; user-select: none; }
 @media (prefers-reduced-motion: reduce) { .pane-div::after { transition: none; } }
 @media (max-width: 1023px) { .pane-div { display: none; } }
+
+/* §14 / §16: a control drawn smaller than 44pt keeps the board's size and grows its
+   touch area on a phone — an invisible 44px band, centred on the control. */
+.tap44 { position: relative; }
+@media (max-width: 767px) { .tap44::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); } }

@@ -30,6 +30,7 @@ export const GET = withTenant(async function GET(req: Request) {
     kind: url.searchParams.get("kind") ?? undefined,
     identityId: url.searchParams.get("identityId") ?? undefined,
     castName: url.searchParams.get("castName") ?? undefined,
+    unfiled: url.searchParams.get("unfiled") === "1",
     search,
     before,
     limit,

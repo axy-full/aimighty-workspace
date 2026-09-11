@@ -1,4 +1,4 @@
-import type { RefItem } from "@/components/References";
+import type { RefItem } from "@/lib/refs";
 
 /**
  * An uploaded clip as the thing an edit works on.

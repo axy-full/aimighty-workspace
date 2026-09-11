@@ -246,6 +246,18 @@ function Canvas() {
     const s = shotsData.shots.find((x) => x.id === shotFromUrl);
     if (s) addShot(s);
   }, [shownBoard, shotFromUrl, shotsData, addShot]);
+  /* `?ref=` from the Library's `Add to Canvas` (§11): the reference lands as a note carrying its picture. */
+  const refFromUrl = search.get("ref");
+  const seededRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!shownBoard || !refFromUrl || seededRef.current === refFromUrl) return;
+    seededRef.current = refFromUrl;
+    if (shownBoard.nodes.some((n) => n.kind === "note" && n.output?.url === `/api/uploads/${encodeURIComponent(refFromUrl)}`)) return;
+    fetch("/api/uploads?limit=500").then((r) => r.json()).then((j) => {
+      const u = (j.uploads as { id: string; filename: string }[] | undefined)?.find((x) => x.id === refFromUrl);
+      addNode("note", undefined, undefined, { label: u?.filename ?? "Reference", text: `REF · ${u?.filename ?? refFromUrl}`, output: { url: `/api/uploads/${encodeURIComponent(refFromUrl)}`, kind: "image" } });
+    }).catch(() => {});
+  }, [shownBoard, refFromUrl, addNode]);
 
   /* ── running a node: through the ordinary generate route; the output lives in the node ── */
   const runNode = async (n: BoardNode) => {
