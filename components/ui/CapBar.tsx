@@ -1,4 +1,4 @@
-import { creditsNumber } from "@/lib/price";
+import { creditsNumber, useMoney } from "@/lib/price";
 import Mono from "./Mono";
 
 /**
@@ -12,6 +12,10 @@ import Mono from "./Mono";
  *   row     the same line at 500 13px, all in ink, over a 160px bar (board 7a)
  *   tile    `228 / 400 CR` and `57%` in mono, .08em, the percentage muted,
  *           over a full-width bar (board 7a project tiles)
+ *
+ * The figures are in the workspace's unit (§1: prices are read, never
+ * typed): whole credits with `cr` after them, or — for a workspace that
+ * pays its vendors in dollars — `$0.13 of $2.86`, with no `cr`.
  */
 type Props = {
   spent: number;
@@ -21,6 +25,9 @@ type Props = {
 };
 
 export default function CapBar({ spent, cap, placement = "header", className = "" }: Props) {
+  const money = useMoney();
+  const num = (n: number) => (money.inCredits ? creditsNumber(n) : money.price(n));
+  const unit = money.inCredits ? " cr" : "";
   const pct = cap > 0 ? Math.max(0, Math.round((spent / cap) * 100)) : 0;
   const bar = (
     <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[rgba(245,246,248,.1)]" style={placement === "tile" ? undefined : { width: placement === "header" ? 180 : 160 }}>
@@ -29,13 +36,13 @@ export default function CapBar({ spent, cap, placement = "header", className = "
   );
   const meter = {
     role: "meter" as const, "aria-valuemin": 0, "aria-valuemax": cap, "aria-valuenow": spent,
-    "aria-label": `${creditsNumber(spent)} of ${creditsNumber(cap)} credits spent`,
+    "aria-label": `${num(spent)} of ${num(cap)}${money.inCredits ? " credits" : ""} spent`,
   };
   if (placement === "tile") {
     return (
       <span {...meter} className={`flex flex-col gap-[5px] ${className}`}>
         <span className="flex justify-between">
-          <Mono cost tone="ink">{creditsNumber(spent)} / {creditsNumber(cap)} cr</Mono>
+          <Mono cost tone="ink">{num(spent)} / {num(cap)}{unit}</Mono>
           <Mono cost>{pct}%</Mono>
         </span>
         {bar}
@@ -46,10 +53,10 @@ export default function CapBar({ spent, cap, placement = "header", className = "
     <span {...meter} className={`flex flex-col items-end gap-[6px] ${className}`}>
       {placement === "header" ? (
         <span className="text-[14px] font-medium leading-none text-ink">
-          <span className="font-semibold">{creditsNumber(spent)}</span> <span className="text-ink-body">of {creditsNumber(cap)} cr</span>
+          <span className="font-semibold">{num(spent)}</span> <span className="text-ink-body">of {num(cap)}{unit}</span>
         </span>
       ) : (
-        <span className="text-[13px] font-medium leading-none text-ink">{creditsNumber(spent)} of {creditsNumber(cap)} cr</span>
+        <span className="text-[13px] font-medium leading-none text-ink">{num(spent)} of {num(cap)}{unit}</span>
       )}
       {bar}
     </span>

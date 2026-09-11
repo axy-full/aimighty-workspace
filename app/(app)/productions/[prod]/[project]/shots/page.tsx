@@ -208,7 +208,7 @@ function Shots() {
       const one = selected.size === 1 ? shots.find((s) => selected.has(s.id)) ?? null : null;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && one) { e.preventDefault(); copy(one); }
       else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v" && clip) { e.preventDefault(); pasteAfter(one); }
-      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r" && one) { e.preventDefault(); router.push(`/projects/${projectId}/rig`); }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r" && one) { e.preventDefault(); router.push(`/rig/canvas/new?project=${encodeURIComponent(projectId)}&shot=${encodeURIComponent(one.id)}`); }
       else if (e.key === "Enter" && one) { e.preventDefault(); startRename(one); }
       else if ((e.key === "Backspace" || e.key === "Delete") && one) { e.preventDefault(); remove(one); }
     };
@@ -226,7 +226,7 @@ function Shots() {
     { kind: "item", label: "Copy", keys: "⌘C", onSelect: () => copy(menuShot) },
     { kind: "item", label: "Paste after", keys: "⌘V", disabled: !clip, onSelect: () => pasteAfter(menuShot) },
     { kind: "item", label: "Rename", keys: "↵", onSelect: () => startRename(menuShot) },
-    { kind: "item", label: "Open in Rig", keys: "⌘R", onSelect: () => router.push(`/projects/${projectId}/rig`) },
+    { kind: "item", label: "Open in Rig", keys: "⌘R", onSelect: () => router.push(`/rig/canvas/new?project=${encodeURIComponent(projectId)}&shot=${encodeURIComponent(menuShot.id)}`) },
     { kind: "divider" },
     { kind: "sub", label: "Move to production", open: menu!.sub, onToggle: () => setMenu((m) => m && { ...m, sub: !m.sub }),
       items: others.map((t) => ({ label: t.production.projects.length > 1 ? `${t.production.name} › ${t.project.name}` : t.production.name, note: "takes go too", onSelect: () => moveTo(menuShot, t) })) },

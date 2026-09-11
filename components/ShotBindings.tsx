@@ -165,7 +165,7 @@ export default function ShotBindings({ shotId }: { shotId: string }) {
           </p>
         </div>
         {shot.projectId ? (
-          <Link className="bnd-up" href={`/projects/${encodeURIComponent(shot.projectId)}/rig`}>Nodes</Link>
+          <Link className="bnd-up" href={`/rig/canvas/new?project=${encodeURIComponent(shot.projectId)}&shot=${encodeURIComponent(shot.id)}`}>Rig</Link>
         ) : null}
       </header>
 
