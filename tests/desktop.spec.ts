@@ -185,103 +185,80 @@ test("two productions open in two tabs do not fight over the switcher", async ({
 });
 
 /**
- * One ground (§4, decided 10 September 2026).
- *
- * particl has no appearance setting and no system query any more, so the
- * thing to guard is the failure this replaces: a reader whose machine is set
- * to light seeing a light particl. The check emulates exactly that machine.
- *
- * atomik is checked in the same breath because it is the one light thing
- * left, and the way it stays light — `.theme-light` re-tokening a subtree —
- * is easy to delete by accident when the word "light" is being removed from
- * a stylesheet.
+ * One ground (design/particl-v2/README.md §2: "dark only — there is no light
+ * theme"). The paper routes used to re-token themselves light; that is gone
+ * with the second brand, so the thing to guard is that nothing brings it
+ * back — on the wall, on an atomik route, on a statement — even on a machine
+ * set to light.
  */
-test("particl is dark on a light machine, and atomik is still paper", async ({ page }) => {
+test("the app is dark everywhere, on a light machine too", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
-
-  await page.goto("/");
-  await settle(page);
-  const particl = await page.evaluate(() => {
-    const cs = getComputedStyle(document.documentElement);
-    return {
-      desk: cs.getPropertyValue("--color-desk").trim().toUpperCase(),
-      ink: cs.getPropertyValue("--color-bone").trim().toUpperCase(),
-      scheme: cs.colorScheme.trim(),
+  for (const route of ["/", "/atomik/ideas", "/statements/2026-09"]) {
+    await page.goto(route);
+    await settle(page);
+    const ground = await page.evaluate(() => ({
+      paper: document.querySelector(".theme-light") !== null,
+      ground: getComputedStyle(document.documentElement).getPropertyValue("--ground").trim().toUpperCase(),
+      header: getComputedStyle(document.querySelector("header")!).backgroundColor,
+      scheme: getComputedStyle(document.documentElement).colorScheme.trim(),
       stamped: document.documentElement.getAttribute("data-theme"),
-    };
-  });
-  expect(particl.desk, "the page ground").toBe("#1D1F24");
-  expect(particl.ink, "primary text").toBe("#F5F6F8");
-  // Native controls and scrollbars have to come with it, or the page is dark
-  // with light dropdowns in it.
-  expect(particl.scheme).toBe("dark");
-  // Nothing is stamped on <html> any more: there is nothing left to choose.
-  expect(particl.stamped).toBeNull();
-
-  await page.goto("/atomik/ideas");
-  await settle(page);
-  const atomik = await page.evaluate(() => {
-    const el = document.querySelector(".theme-light");
-    if (!el) return null;
-    const cs = getComputedStyle(el);
-    return { desk: cs.getPropertyValue("--color-desk").trim().toUpperCase(), scheme: cs.colorScheme.trim() };
-  });
-  expect(atomik, "atomik still wraps itself in .theme-light").not.toBeNull();
-  expect(atomik!.desk, "atomik's ground").toBe("#ECEDEF");
-  expect(atomik!.scheme).toBe("light");
+    }));
+    expect(ground.paper, `${route} is not on paper`).toBe(false);
+    expect(ground.ground, `${route} --ground`).toBe("#0B0D11");
+    expect(ground.header, `${route} header on --ground`).toBe("rgb(11, 13, 17)");
+    expect(ground.scheme).toBe("dark");
+    expect(ground.stamped).toBeNull();
+  }
 });
 
 /**
- * The paper list is one list (`lib/ground.ts`).
- *
- * A statement is particl's own screen and still paper — it is a document
- * before it is a screen, printed or sent to whoever pays. It used to become
- * paper only once the data arrived, so the route changed ground mid-load;
- * the ground is decided by the shell now, which is why this checks it signed
- * out, where there is no statement to render at all.
- *
- * The palette is checked in the same breath because it renders OUTSIDE the
- * shell and re-applies the ground by hand. That is a second copy of the same
- * rule, and it drifted once already.
+ * The shell (§1, §3, §4; §16 line one): four nav items and only four; the
+ * balance always visible; Usage and Settings in the account menu, nowhere
+ * else; the Atomik button with its shortcut.
  */
-test("a statement is paper in every state, and the palette agrees", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "dark" });
-  await page.goto("/statements/2026-09");
+test("four nav items, a balance, and Usage / Settings only behind the avatar", async ({ page }) => {
+  await page.goto("/projects");
   await settle(page);
+  const header = page.locator("header").first();
+  const nav = header.getByRole("navigation", { name: "Sections" });
+  await expect(nav.getByRole("link")).toHaveText(["Make", "Productions", "Rig", "Library"]);
+  await expect(nav.getByRole("link", { name: "Productions" })).toHaveAttribute("aria-current", "page");
+  // Usage and Settings are not in the nav…
+  await expect(nav.getByRole("link", { name: /usage|settings/i })).toHaveCount(0);
+  // …the Atomik button carries its shortcut…
+  const atomik = header.getByRole("button", { name: /Ask Atomik/ });
+  await expect(atomik).toBeVisible();
+  await expect(atomik).toContainText("⌘J");
+  // …and signed in, the balance sits left of it and the account menu holds
+  // Usage and Settings; signed out there is no workspace to have a balance,
+  // and the avatar's place offers the way in.
+  const avatar = header.getByRole("button", { name: "Account" });
+  if (await avatar.count()) {
+    await expect(header.getByText(/^Balance/i)).toBeVisible();
+    await avatar.click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem", { name: /^Usage/ })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: /^Settings/ })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: /^Sign out/ })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+  } else {
+    await expect(header.getByRole("link", { name: "Sign in" })).toBeVisible();
+  }
+  // The header is the handoff's 56px.
+  expect(await header.evaluate((el) => el.getBoundingClientRect().height)).toBe(56);
+});
 
-  const ground = () => page.evaluate(() => {
-    const el = document.querySelector(".theme-light");
-    return el ? getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase() : null;
-  });
-  // Signed out there is no statement, only the "these are private" screen —
-  // and it is still on paper, because the shell decided, not the page.
-  expect(await ground(), "the statement route signed out").toBe("#ECEDEF");
-
-  await page.keyboard.press("Meta+k");
-  await page.waitForTimeout(300);
-  const palette = await page.evaluate(() => {
-    const el = document.querySelector(".cmdk-scrim");
-    if (!el) return null;
-    return {
-      light: el.classList.contains("theme-light"),
-      desk: getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase(),
-    };
-  });
-  expect(palette, "the palette opened").not.toBeNull();
-  expect(palette!.light, "the palette is on paper where the page is").toBe(true);
-  expect(palette!.desk).toBe("#ECEDEF");
-
-  // ...and dark where the page is, which is everywhere else.
-  await page.keyboard.press("Escape");
+/** §5: ⌘J toggles the rail state, Esc closes it — the button shows which. */
+test("⌘J opens Atomik and Esc closes it", async ({ page }) => {
   await page.goto("/");
   await settle(page);
-  await page.keyboard.press("Meta+k");
-  await page.waitForTimeout(300);
-  const onInk = await page.evaluate(() => {
-    const el = document.querySelector(".cmdk-scrim");
-    return el ? { light: el.classList.contains("theme-light"), desk: getComputedStyle(el).getPropertyValue("--color-desk").trim().toUpperCase() } : null;
-  });
-  expect(onInk, "the palette opened on the wall").not.toBeNull();
-  expect(onInk!.light).toBe(false);
-  expect(onInk!.desk).toBe("#1D1F24");
+  const atomik = page.locator("header").getByRole("button", { name: /Atomik/ });
+  await expect(atomik).toHaveAttribute("aria-pressed", "false");
+  await page.keyboard.press("Meta+j");
+  await expect(atomik).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(atomik).toHaveAttribute("aria-pressed", "false");
+  await atomik.click();
+  await expect(atomik).toHaveAttribute("aria-pressed", "true");
 });

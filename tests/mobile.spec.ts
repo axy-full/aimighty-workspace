@@ -74,13 +74,14 @@ for (const route of ROUTES) {
 
 test.describe("the app shell", () => {
   for (const route of ["/", "/projects", "/atomik/ideas"]) {
-    test(`tab bar on ${route} is padded by the safe-area inset`, async ({ page }) => {
+    test(`the dock on ${route} is padded by the safe-area inset`, async ({ page }) => {
       await page.goto(route);
       await settle(page);
-      const bar = page.locator(".tabbar");
+      const bar = page.locator(".shell-dock");
       await expect(bar).toBeVisible();
+      await expect(bar.getByRole("link")).toHaveText(["Needs you", "Make", "Productions"]);
       const info = await page.evaluate(() => {
-        const el = document.querySelector(".tabbar")!;
+        const el = document.querySelector(".shell-dock")!;
         const pad = parseFloat(getComputedStyle(el).paddingBottom);
         // The declared rule has to name the inset: emulation reports 0 for it,
         // a Face ID iPhone reports 34px, and only the declaration proves the
@@ -91,18 +92,22 @@ test.describe("the app shell", () => {
           try { rules = sheet.cssRules; } catch { continue; }
           const walk = (list: CSSRuleList) => {
             for (const r of Array.from(list)) {
-              if (r instanceof CSSStyleRule && r.selectorText.includes(".tabbar") && r.cssText.includes("safe-area-inset-bottom")) declared = true;
+              if (r instanceof CSSStyleRule && r.selectorText.includes(".shell-dock") && r.cssText.includes("safe-area-inset-bottom")) declared = true;
               if ("cssRules" in r) walk((r as CSSGroupingRule).cssRules);
             }
           };
           walk(rules);
         }
         const inset = Number(getComputedStyle(document.documentElement).getPropertyValue("--pw-inset") || 0);
-        return { pad, declared, inset, bottom: el.getBoundingClientRect().bottom, vh: window.innerHeight };
+        const links = Array.from(el.querySelectorAll("a")).map((a) => a.getBoundingClientRect().height);
+        const mono = parseFloat(getComputedStyle(el.querySelector("a")!).fontSize);
+        return { pad, declared, inset, bottom: el.getBoundingClientRect().bottom, vh: window.innerHeight, links, mono };
       });
-      expect(info.declared, "the .tabbar rule must pad with env(safe-area-inset-bottom)").toBe(true);
+      expect(info.declared, "the .shell-dock rule must pad with env(safe-area-inset-bottom)").toBe(true);
       expect(info.pad).toBeGreaterThanOrEqual(info.inset);
       expect(info.bottom).toBeLessThanOrEqual(info.vh + 1);
+      for (const h of info.links) expect(h, "every dock target is at least 44pt").toBeGreaterThanOrEqual(44);
+      expect(info.mono, "nothing under 12px on a phone").toBeGreaterThanOrEqual(12);
     });
   }
 

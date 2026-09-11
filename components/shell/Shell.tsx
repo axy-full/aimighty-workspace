@@ -1,40 +1,38 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { onPaper } from "@/lib/ground";
-import AppHeader from "./AppHeader";
-import AtomikHeader from "./AtomikHeader";
-import TabBar, { MakeTabs } from "./TabBar";
+import { useEffect } from "react";
+import { useSession } from "@/lib/session";
+import { bindAtomikRail, setAtomikRail, toggleAtomikRail } from "@/lib/atomikRail";
+import Header from "./Header";
+import Dock from "./Dock";
 import SuspendedBar from "./SuspendedBar";
 
 /**
- * One shell, two grounds.
+ * One shell, one ground (design/particl-v2/README.md §2–§5).
  *
- * Every screen sits under a 52px header and fills the rest of the viewport.
- * Which header, and which ground, is decided here by the route — and they are
- * two questions, not one. The header is a brand question: atomik's stages get
- * atomik's header. The ground is `onPaper`, which is a slightly longer list,
- * because a statement is particl's own screen and still paper.
- *
- * The subtree is wrapped in `.theme-light`, which re-tokens every var()
- * beneath it — so the same components, the same classes and the same session
- * render both halves, and only the values change. Putting it on the shell
- * rather than on the page is what makes a route paper in every state it has:
- * signed out, loading, in error, and rendered.
- *
- * This is the one place that knows there are two brands. A page never asks
- * which ground it is on.
+ * The 56px header, the screen, and on a phone the dock. There is no light
+ * theme any more and no second brand: Atomik is a rail on this same ground
+ * (step 3), opened by its header button or ⌘J and closed by Esc, and its
+ * state lives at app level, bound here to the signed-in user so it is
+ * theirs across sessions.
  */
 export default function Shell({ children }: { children: React.ReactNode }) {
-  const path = usePathname();
-  const atomik = path.startsWith("/atomik");
+  const { email } = useSession();
+  useEffect(() => { bindAtomikRail(email ?? "visitor"); }, [email]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); toggleAtomikRail(); }
+      else if (e.key === "Escape") setAtomikRail("closed");
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   return (
-    <div className={`shell ${onPaper(path) ? "theme-light" : ""}`}>
-      {atomik ? <AtomikHeader /> : <AppHeader />}
+    <div className="shell">
+      <Header />
       <SuspendedBar />
-      {!atomik && <MakeTabs />}
       <div className="shell-body">{children}</div>
-      <TabBar />
+      <Dock />
     </div>
   );
 }

@@ -15,10 +15,11 @@
  * only, and the planned rows stay here, enumerable, as the table 5.1 needs
  * and the list of what is left to wire.
  *
- * `owner` records who actually handles a live key. Only `"global"` rows are
- * handled by the layer in CommandPalette.tsx; the rest were implemented as
- * ad-hoc listeners long before this file existed, and this is the index of
- * where they live.
+ * `owner` records who actually handles a live key: the shell for ⌘J and
+ * Esc, the account menu for ⌘,; the rest were implemented as ad-hoc
+ * listeners long before this file existed, and this is the index of where
+ * they live. (The ⌘K palette and its `?` overlay left with the old shell;
+ * ⌘K is the canvas's `+ Add node` in v2, §8.)
  */
 
 export type Scope = "global" | "review" | "compose" | "rig";
@@ -43,9 +44,8 @@ export const SCOPE_LABEL: Record<Scope, string> = {
 };
 
 export const SHORTCUTS: Shortcut[] = [
-  { id: "palette",   keys: "⌘K",   label: "Command palette",       scope: "global",  live: true,  owner: "global" },
-  { id: "search",    keys: "/",    label: "Search — same palette", scope: "global",  live: true,  owner: "global" },
-  { id: "help",      keys: "?",    label: "This list",             scope: "global",  live: true,  owner: "global" },
+  { id: "atomik",    keys: "⌘J",   label: "Atomik — open or close the rail", scope: "global", live: true, owner: "Shell" },
+  { id: "settings",  keys: "⌘,",   label: "Settings",              scope: "global",  live: true,  owner: "AccountMenu" },
   { id: "esc",       keys: "esc",  label: "Close what is open",    scope: "global",  live: true,  owner: "dialog, sheets, Theatre" },
 
   /* All four arrows now do their §4.2 job: ←/→ step a frame, ↑/↓ walk the
