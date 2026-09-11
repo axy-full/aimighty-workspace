@@ -276,10 +276,11 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
             WHERE id=?`,
       args: [produced.storedUrl, produced.tokens, produced.cost, ratePerM, ms,
              t.queueMs, t.engineMs, t.storeMs, produced.bytes,
-             produced.via, produced.via === "google" ? "google" : "vercel",
+             produced.via, produced.via === "fal" ? "fal" : produced.via === "google" ? "google" : "vercel",
              now(), job.genId],
     });
-    await meter({ id: job.genId, kind: "image", engine: produced.via === "google" ? "google" : "vercel", model: job.modelId,
+    /* The ledger names the vendor that drew it: Google direct, fal for its edit engines and tools, else the gateway. */
+    await meter({ id: job.genId, kind: "image", engine: produced.via === "fal" ? "fal" : produced.via === "google" ? "google" : "vercel", model: job.modelId,
                   status: "succeeded", engineCostUsd: produced.cost, durationMs: ms }, { critical: false });
   } else {
     // Price from the plan the account is on; the tier is read once per render.
@@ -329,7 +330,7 @@ export async function failJob(genId: string, message: string): Promise<void> {
     args: [message.slice(0, 600), ms, spentUsd, spentCredits, now(), genId],
   }).catch(() => {});
   if (job) {
-    await meter({ id: genId, kind: job.kind, engine: job.kind === "audio" ? "elevenlabs" : billedTo("google"), model: job.modelId, status: "failed",
+    await meter({ id: genId, kind: job.kind, engine: job.kind === "audio" ? "elevenlabs" : billedTo(getModel(job.modelId).provider), model: job.modelId, status: "failed",
                   engineCostUsd: job.kind === "audio" ? usdForCredits(spentCredits ?? 0, null) : (spentUsd ?? 0), durationMs: ms }, { critical: false }).catch(() => {});
   }
   invalidate(PROJECTS_KEY);

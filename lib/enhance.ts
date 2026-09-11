@@ -218,7 +218,7 @@ function familyOf(modelId: string | undefined): string {
 /** The dialect's name, for the instruction. */
 function dialectName(modelId: string | undefined): string {
   const f = familyOf(modelId);
-  return f === "kling-3" ? "Kling" : f === "nano-banana" ? "Nano Banana" : "Seedance";
+  return f === "kling-3" ? "Kling" : f === "nano-banana" ? "Nano Banana" : f === "veo-3" ? "Veo" : f === "wan-2" ? "Wan" : f === "flux" ? "Flux" : "Seedance";
 }
 
 function targetBlock(
@@ -252,7 +252,10 @@ This CONTINUES an existing video, cited as @Video1. Rewrite it as a continuation
   const is25 = !modelId || /2-5|2\.5/.test(modelId);
   const dur = durationS && Number.isFinite(durationS) ? Math.round(durationS) : null;
 
-  const segments = familyOf(modelId) === "kling-3"
+  const fam = familyOf(modelId);
+  const segments = fam === "veo-3" || fam === "wan-2"
+    ? `This is ${dialectName(modelId)}, not Seedance: it reads ONE plain paragraph — subject, what it does, where, then the camera and the light. No timestamps, no "Shot 1" numbering, no headers, no labels, no upload numbers.`
+    : fam === "kling-3"
     ? `This is Kuaishou's Kling, not Seedance: it reads ONE plain paragraph. No timestamps, no "Shot 1" numbering, no headers or labels — subject, what it does, where, then the camera and the light, in that order.`
     : is25
     ? `Segment the plot with INTEGER-SECOND TIMESTAMPS in whole-second units, continuous and without gaps — "0-3s: …", "3-8s: …". Do not use timestamps to choreograph high-frequency action ("shakes their head three times a second"); a timestamp marks a beat, not a metronome. A single moment may be pinned instead ("at the 4-second mark, …") or expressed relatively ("after three seconds of stillness, …").`

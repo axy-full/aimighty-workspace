@@ -17,6 +17,7 @@ import { falSubmit, } from "./fal";
 import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
   readImageBytes, readUploadBytes, readVideoBytes, storeVideo,
+  audioPath, readAudioBytes,
 } from "./storage";
 import { getModel, type ModelDef } from "./models";
 import { estimateCostUsd } from "./vendorPricing";
@@ -36,6 +37,12 @@ const UNREACHABLE_CEILING_MS = 6 * 60 * 60_000;
 
 /** The exact fal endpoint a render goes to. */
 export function falEndpointFor(model: ModelDef, task: TaskId, hasStartImage: boolean): string {
+  /* CR1 §3: an engine that names its endpoints exactly is sent there, verbatim. */
+  const exact = model.falEndpoints;
+  if (exact) {
+    const hit = task === "generate" ? (hasStartImage ? exact.image ?? exact.text : exact.text ?? exact.image) : exact[task];
+    if (hit) return hit;
+  }
   const base = model.falEndpoint ?? model.id;
   if (task === "upscale" || task === "reframe") return base;
   if (task === "motion") return `${base}/motion-control`;
@@ -48,6 +55,10 @@ export function falEndpointFor(model: ModelDef, task: TaskId, hasStartImage: boo
  * inline as a data URI (a transport encoding, bit-identical).
  */
 export async function mediaUrl(ref: Reference): Promise<string> {
+  if (ref.kind === "audio") {
+    if (usingBlob()) return presignedReadUrl(audioPath(ref.id));
+    return `data:audio/mpeg;base64,${(await readAudioBytes(ref.id)).toString("base64")}`;
+  }
   if (ref.kind === "video") {
     if (usingBlob()) return presignedReadUrl(ref.fromGeneration ? videoPath(ref.id) : uploadPath(ref.id, ref.ext));
     const bytes = ref.fromGeneration ? await readVideoBytes(ref.id) : await readUploadBytes(ref.id, ref.ext, ref.storedUrl);
@@ -129,6 +140,53 @@ export async function buildFalInput(opts: {
 
   /* Generate: text-to-video, or image-to-video the moment a frame is
      attached — a first frame, and a second image as the last frame. */
+  /* ── CR1 §3: lip-sync — a finished clip and a voice track, the mouth re-timed (sync-3) ── */
+  if (task.id === "lipsync") {
+    if (!source) throw new Error("Lip-sync needs the clip to work on.");
+    const voice = references.find((r) => r.kind === "audio");
+    if (!voice) throw new Error("Lip-sync needs a voice track — an audio take.");
+    return { endpoint: falEndpointFor(model, "lipsync", false), input: { video_url: await mediaUrl(source), audio_url: await mediaUrl(voice), sync_mode: "cut_off" } };
+  }
+  /* ── CR1 §3: Seedance 2.5 on fal — one reference-to-video endpoint for generate, edit and
+        extend; the prompt cites the media as @Image1 / @Video1 in the order attached ── */
+  if (model.provider === "fal" && model.family === "seedance-2") {
+    const clips = [...(source ? [source] : []), ...references.filter((r) => r.kind === "video" && r !== source)];
+    /* Never `auto`: fal reports no usage, so the length and the frame that are
+       billed (lib/falVideo.ts falVideoCostUsd) are the ones the vendor is told. */
+    const input: Record<string, unknown> = {
+      prompt: prompt.trim(),
+      task: task.id === "edit" ? "editing" : task.id === "extend" ? "extension" : "reference",
+      duration: String(params.duration),
+      resolution: model.resolutions.includes(params.resolution) ? params.resolution : model.resolutions[0],
+      aspect_ratio: model.ratios.includes(params.ratio) ? params.ratio : model.ratios[0],
+      generate_audio: Boolean(params.generateAudio),
+    };
+    if (images.length) input.image_urls = await Promise.all(images.map(mediaUrl));
+    if (clips.length) input.video_urls = await Promise.all(clips.map(mediaUrl));
+    return { endpoint: falEndpointFor(model, task.id, images.length > 0), input };
+  }
+  /* ── CR1 §3: Wan 2.6 — image-to-video only; the still sets the frame ── */
+  if (model.family === "wan-2") {
+    const still = images.find((r) => r.role === "first_frame") ?? images[0];
+    if (!still) throw new Error(`${model.label} needs a first frame — attach a still.`);
+    return { endpoint: falEndpointFor(model, "generate", true), input: {
+      prompt: prompt.trim(), image_url: await mediaUrl(still),
+      resolution: model.resolutions.includes(params.resolution) ? params.resolution : "1080p",
+      duration: String(params.duration), enable_safety_checker: true,
+    } };
+  }
+  /* ── CR1 §3: Veo 3.1 Fast — `duration` as "8s", a 4K tier, audio by default; a first frame makes it image-to-video ── */
+  if (model.family === "veo-3") {
+    const still = images.find((r) => r.role === "first_frame") ?? images[0] ?? null;
+    const input: Record<string, unknown> = {
+      prompt: prompt.trim(), duration: `${params.duration}s`,
+      resolution: model.resolutions.includes(params.resolution) ? params.resolution : "720p",
+      generate_audio: Boolean(params.generateAudio),
+    };
+    if (still) input.image_url = await mediaUrl(still);
+    else input.aspect_ratio = params.ratio === "9:16" ? "9:16" : "16:9";
+    return { endpoint: falEndpointFor(model, "generate", Boolean(still)), input };
+  }
   const first = images.find((r) => r.role === "first_frame") ?? images[0] ?? null;
   const last = images.find((r) => r.role === "last_frame" && r !== first)
     ?? (first ? images.find((r) => r !== first) ?? null : null);
@@ -155,9 +213,10 @@ export async function submitFalVideo(opts: Parameters<typeof buildFalInput>[0]):
   return { requestId: queued.request_id, endpoint };
 }
 
-/** What a finished fal render cost, from the row's own params: seconds × the rate. */
-export function falVideoCostUsd(modelId: string, p: FalVideoParams & { task?: string }): number | null {
-  const est = estimateCostUsd(modelId, String(p.resolution ?? "1080p"), String(p.ratio ?? "16:9"), Number(p.duration ?? 0), 0, false, {
+/** What a finished fal render cost, from the row's own params: seconds × the rate — or, for a token-billed
+ *  engine, the same frame arithmetic the button quoted, video input included (the route stores both). */
+export function falVideoCostUsd(modelId: string, p: FalVideoParams & { task?: string; hasVideoInput?: boolean; inputSeconds?: number }): number | null {
+  const est = estimateCostUsd(modelId, String(p.resolution ?? "1080p"), String(p.ratio ?? "16:9"), Number(p.duration ?? 0), Number(p.inputSeconds ?? 0), Boolean(p.hasVideoInput), {
     audio: Boolean(p.generateAudio), task: p.task as TaskId | undefined, fps60: Boolean(p.fps60),
   });
   return est ? est.net : null;

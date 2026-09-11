@@ -136,9 +136,10 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
       const g = own.get(r.genId);
       if (!g) continue; // deleted since: dropped rather than fatal, the prompt still describes the shot
       const video = g.kind === "video";
+      const audio = g.kind === "audio";   // a voice track for lip-sync (CR1 §3)
       out.push({
-        id: g.id, mime: video ? "video/mp4" : "image/png", ext: video ? "mp4" : "png", storedUrl: g.stored_url,
-        role: (r.role as ImageRole) ?? (video ? "reference_video" : "reference_image"), kind: video ? "video" : "image",
+        id: g.id, mime: audio ? "audio/mpeg" : video ? "video/mp4" : "image/png", ext: audio ? "mp3" : video ? "mp4" : "png", storedUrl: g.stored_url,
+        role: audio ? "audio" : (r.role as ImageRole) ?? (video ? "reference_video" : "reference_image"), kind: audio ? "audio" : video ? "video" : "image",
         fromGeneration: true,
       });
       continue;
@@ -166,10 +167,13 @@ export async function submitVideoRow(genId: string): Promise<SubmitOutcome> {
   if (!row) return { ok: false, error: "No such take.", cls: "fatal" };
   const model = getModel(String(row.model));
   const task = getTask(String(row.task ?? "generate"));
-  const params = JSON.parse(String(row.params ?? "{}")) as VideoParams & { references?: StoredRef[] };
+  const params = JSON.parse(String(row.params ?? "{}")) as VideoParams & { references?: StoredRef[]; sourceUploadId?: string };
   const references = await hydrateRefs(params.references ?? []);
+  /* The clip a locked task works on: one of our renders, or the uploaded clip the row remembers. */
   const source = row.source_gen_id
     ? references.find((r) => r.fromGeneration && r.id === row.source_gen_id) ?? null
-    : null;
+    : params.sourceUploadId
+      ? references.find((r) => !r.fromGeneration && r.id === params.sourceUploadId) ?? null
+      : null;
   return submitVideoJob({ genId, model, task, prompt: String(row.prompt), params, references, source, ts: Number(row.created_at) });
 }

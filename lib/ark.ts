@@ -40,7 +40,7 @@ export type VideoParams = {
   sourceResolution?: string;
 };
 
-export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
+export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video" | "audio";
 
 export type Reference = {
   id: string;
@@ -48,7 +48,8 @@ export type Reference = {
   ext: string;
   storedUrl: string;
   role: ImageRole;
-  kind: "image" | "video";
+  /** `audio` is a voice track beside a clip (lip-sync, CR1 §3); one of our audio takes. */
+  kind: "image" | "video" | "audio";
   /** Set when the master was too large or too extreme for this vendor and a
    *  delivery copy was derived at upload time. The master is never sent. */
   deliveryUrl?: string | null;

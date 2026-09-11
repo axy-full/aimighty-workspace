@@ -58,12 +58,37 @@ at" is `ceil(cost x 1.5 / 0.10)`.
 | Identity training (1,500 steps) | ~$3.60 | 54 cr |
 | Prompt enhancement | ~$0.01 | 1 cr |
 
-Gone from the card, because the engine is not in the product: **Wan 2.6** —
-`alibaba/wan-v3.0-video` appears only in the gateway shortlist and gateway
-video is explicitly unrunnable — and **Veo 3.1**, which is in neither
-`lib/models.ts` nor `lib/vendorRates.ts`. A VO line is priced per character by
-ElevenLabs rather than per call, so it has no single figure and is not a card
-row; see the audio terms.
+**ADDED 11 September 2026 (docs/change-request-1.md §3, the ten first) — the
+six engines that were not in the registry, from fal's public pages, each
+computed the same way (`ceil(cost × 1.5 / 0.10)`):**
+
+| Action | Engine cost | Sells at |
+|---|---|---|
+| Seedance 2.5 on fal, 5s 720p (token-priced, $0.0214 per 1,000) | ~$2.31 | 35 cr |
+| Seedance 2.5 on fal, 5s 720p with a 5s video reference (input seconds count, then ×0.6) | ~$2.77 | 42 cr |
+| Wan 2.6 image-to-video, 5s 1080p | ~$0.75 | 12 cr |
+| Wan 2.6 image-to-video, 5s 720p | ~$0.50 | 8 cr |
+| Veo 3.1 Fast, 8s 1080p, audio | ~$1.20 | 18 cr |
+| Veo 3.1 Fast, 8s 4K, audio | ~$2.80 | 42 cr |
+| Nano Banana 2 Edit, 1K | ~$0.08 | 2 cr |
+| Flux Kontext, one still | ~$0.04 | 1 cr |
+| sync-3 lip-sync, 10s ($8 a minute) | ~$1.33 | 20 cr |
+
+Kling 3.0 Standard ($0.084 / $0.126 a second), Kling 3.0 Motion ($0.126 a
+second), Topaz Astra 2 ($0.30 / $0.50 a second) and Bria RMBG 2.0 ($0.018)
+were already on the card above and their rates were re-checked against fal
+the same day. Two ids in the change request differ from fal's: Kling 3.0
+Standard is a family (`…/v3/standard/text-to-video`, `…/image-to-video`,
+`…/motion-control`), which the adapter has always spelt out; Wan 2.6 lives
+under the bare `wan/` namespace and its text-to-video page did not answer,
+so only image-to-video is wired.
+
+Gone from the card, because the engine is not in the product: **Veo 3.1** (the
+non-Fast tier) and the gateway's `alibaba/wan-v3.0-video`, which appears only
+in the gateway shortlist where video is explicitly unrunnable. Veo 3.1 Fast and
+Wan 2.6 are on fal and priced above, since 11 September. A VO line is priced
+per character by ElevenLabs rather than per call, so it has no single figure
+and is not a card row; see the audio terms.
 
 Identity training is $3.60, not $2.00: 1,500 steps at $0.0024 (`TRAIN_STEPS`,
 `TRAIN_USD_PER_STEP` in `lib/identities.ts`), with a 1,000-step floor.

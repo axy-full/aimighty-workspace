@@ -1,7 +1,7 @@
 import { db, ready, now, id as newId } from "./db";
 import { gatewayAuth, gatewayReachable, explainGatewayFailure } from "./gateway";
 import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd, textCostUsd } from "./catalog";
-import { MODELS } from "./models";
+import { MODELS, atomikMayPropose } from "./models";
 import { getSetting } from "./settings";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { gatewayPost } from "./gateway";
@@ -343,7 +343,7 @@ export async function engines(): Promise<Engine[]> {
      `ATOMIK MAY PROPOSE`). */
   let off: string[] = [];
   try { const raw = JSON.parse(await getSetting("atomikEngines")); if (Array.isArray(raw)) off = raw.map(String); } catch { off = []; }
-  const own = MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate") && !off.includes(m.id));
+  const own = MODELS.filter((m) => atomikMayPropose(m) && !off.includes(m.id));
   const out: Engine[] = own.map((m) => ({
     id: m.id, label: m.label, kind: m.kind as StepKind, own: true,
     note: m.kind === "video"
@@ -671,7 +671,7 @@ function extractTurn(text: string): ParsedTurn | null {
        filed against a stills engine: it passed validation here and was
        priced as video, then rendered as whatever the engine actually is. */
     let model = String(s.model ?? "").trim();
-    const named = MODELS.find((m) => !m.hidden && m.id === model);
+    const named = MODELS.find((m) => atomikMayPropose(m) && m.id === model);
     if (kind === "audio") model = "elevenlabs";
     else if (!named || named.kind !== kind) model = defaultFor(kind);
 

@@ -124,7 +124,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "fal",
     label: "fal.ai",
-    serves: "Kling 3.0 · Topaz Astra · Characters",
+    serves: "Seedance 2.5 · Kling 3.0 · Veo 3.1 · Wan 2.6 · Nano Banana 2 Edit · Flux Kontext · sync-3 · Topaz Astra · Characters",
     envKey: "FAL_KEY",
     baseUrlEnv: "FAL_BASE_URL",
     defaultBaseUrl: "https://queue.fal.run",

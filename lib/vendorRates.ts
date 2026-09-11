@@ -147,6 +147,47 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
     },
     imageRefInUsd: 0
   },
+  /* ── CR1 §3, from fal's public pages on 11 September 2026 ─────────────── */
+  "bytedance/seedance-2.5/reference-to-video": {
+    /* $0.0214 per 1,000 tokens at 480p and 720p; ×0.6 with a video reference in.
+       Twice ModelArk's figure for the same model. fal returns no token count, so
+       the seal is our own frame arithmetic (lib/falVideo.ts falVideoCostUsd) —
+       check the first fal invoice against Usage before trusting the unit. */
+    tiers: [{ resolutions: ["480p", "720p"], withoutVideo: 21.4, withVideo: 12.84 }],
+  },
+  "wan/v2.6/image-to-video": {
+    tiers: [],
+    secondRates: [
+      { resolutions: ["720p"], withoutAudio: 0.10, withAudio: 0.10 },
+      { resolutions: ["1080p"], withoutAudio: 0.15, withAudio: 0.15 },
+    ],
+  },
+  "fal-ai/veo3.1/fast": {
+    tiers: [],
+    secondRates: [
+      { resolutions: ["720p", "1080p"], withoutAudio: 0.10, withAudio: 0.15 },
+      { resolutions: ["4k"], withoutAudio: 0.30, withAudio: 0.35 },
+    ],
+  },
+  "fal-ai/nano-banana-2/edit": {
+    tiers: [],
+    imagePricing: { "1K": 0.08, "2K": 0.12, "4K": 0.16 },
+    imageRefInUsd: 0,
+  },
+  "fal-ai/flux-pro/kontext": {
+    tiers: [],
+    imagePricing: { adaptive: 0.04 },
+    imageRefInUsd: 0,
+  },
+  "fal-ai/sync-lipsync/v3": {
+    /* $8 a minute of output. Written as 0.1333, not 8/60: the server rounds a job's dollars to four places
+       before the credit ceil and the browser's table does not, so 0.13333… disagrees with itself by one credit
+       at some lengths (tests/unit/rateTable.spec.ts holds the two paths equal). 0.1333 bills exactly two credits a
+       second at every length under the five-minute ceiling, and records the engine's dollars 0.025% under. */
+    tiers: [],
+    secondRates: [{ resolutions: ["adaptive"], withoutAudio: 0.1333, withAudio: 0.1333 }],
+    taskRates: { lipsync: 0.1333 },
+  },
 };
 
 export function ratesFor(modelId: string): VendorRates | null {

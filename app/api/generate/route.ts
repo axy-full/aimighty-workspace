@@ -245,7 +245,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const params: VideoParams = {
     ratio: model.ratios.includes(body.ratio) ? body.ratio : model.ratios[0],
     resolution: model.resolutions.includes(body.resolution) ? body.resolution : model.resolutions[0],
-    duration: task.forceDuration === "source"
+    /* An edit on fal is as long as its source: the vendor reports no usage, so the length billed must be the length asked for. */
+    duration: task.forceDuration === "source" || (task.id === "edit" && model.provider === "fal" && sourceSeconds != null)
       ? (sourceSeconds ?? model.durations[0] ?? 5)
       : model.durations.includes(Number(body.duration)) ? Number(body.duration) : (model.durations[0] ?? 5),
     watermark: Boolean(body.watermark ?? false),
@@ -278,8 +279,13 @@ export const POST = withTenant(async function POST(req: Request) {
    * --------------------------------------------------------------- */
   // The source clip is the vendor's @Video 1, not a reference: never both.
   if (sourceUploadId) { const i = wanted.findIndex((w) => w.uploadId === sourceUploadId); if (i >= 0) wanted.splice(i, 1); }
+  /* A voice track persisted on a lip-sync row (`role: "audio"`) comes back as that, not as a visual reference (Again on the wall). */
+  const voiceFromRefs: string | null = Array.isArray(body.references)
+    ? (body.references.find((r: { genId?: string; role?: string; kind?: string }) => r?.genId && (r.role === "audio" || r.kind === "audio"))?.genId ?? null)
+    : null;
   const wantedGens: { genId: string; role: ImageRole }[] = Array.isArray(body.references)
     ? body.references
+        .filter((r: { role?: string; kind?: string }) => r?.role !== "audio" && r?.kind !== "audio")
         .map((r: { genId?: string; role?: string }) => ({
           genId: String(r?.genId ?? ""),
           role: (ROLES.includes(r?.role as ImageRole) ? r!.role : "reference_image") as ImageRole,
@@ -470,6 +476,26 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json(
       { error: `${task.label} needs a still of the character — attach one, or cite a cast member.` }, { status: 400 });
   }
+  /* CR1 §3: an engine that starts from a still (Wan 2.6, Flux Kontext) cannot start from words alone. */
+  if (model.needsStartImage && !references.some((r) => r.kind === "image")) {
+    return NextResponse.json(
+      { error: `${model.label} needs a still to start from — attach one, or cite a cast member.` }, { status: 400 });
+  }
+  /* CR1 §3: an engine whose builder sends one frame must not be handed a last frame it would drop in silence. */
+  if (model.noLastFrame && references.some((r) => r.role === "last_frame")) {
+    return NextResponse.json({ error: `${model.label} takes a first frame only — remove the last frame.` }, { status: 400 });
+  }
+  /* CR1 §3: lip-sync carries a voice track — one of our audio takes — beside the clip. */
+  if (task.id === "lipsync") {
+    const audioGenId = body.audioGenId ? String(body.audioGenId) : voiceFromRefs;
+    if (!audioGenId) return NextResponse.json({ error: "Lip-sync needs a voice track — pick an audio take." }, { status: 400 });
+    const a = await db().execute({ sql: `SELECT id, kind, status, stored_url FROM generations WHERE id = ? AND deleted = 0 LIMIT 1`, args: [audioGenId] });
+    const row = a.rows[0] as unknown as { id: string; kind: string; status: string; stored_url: string | null } | undefined;
+    if (!row || row.kind !== "audio" || row.status !== "succeeded" || !row.stored_url) {
+      return NextResponse.json({ error: "That audio take isn't there to sync to." }, { status: 400 });
+    }
+    references.push({ id: row.id, mime: "audio/mpeg", ext: "mp3", storedUrl: row.stored_url, role: "audio", kind: "audio", fromGeneration: true });
+  }
 
   /* ── Still engines (Nano Banana Pro) ─────────────────────────────────
    * Google renders synchronously and thinks before it draws, so there is no
@@ -653,8 +679,8 @@ export const POST = withTenant(async function POST(req: Request) {
 
   const refineCall = shouldRefine(castPrompt, detectedAxes);
   const writer = await activeWriter();
-  if (task.id === "motion" || task.id === "upscale" || task.id === "reframe") {
-    // The clip is the brief: nothing here for a prompt writer to improve.
+  if (task.id === "motion" || task.id === "upscale" || task.id === "reframe" || task.id === "lipsync") {
+    // The clip is the brief: nothing here for a prompt writer to improve (sync-3 reads no prompt at all).
   } else if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
   } else if (writer.writer === "none") {
@@ -773,7 +799,7 @@ export const POST = withTenant(async function POST(req: Request) {
 
   /* The platform's rules in scope, as plain sentences at the end — never on
      a raw: prompt, never on a clip that is itself the brief. */
-  if (!/^raw:/i.test(castPrompt) && task.id !== "motion" && task.id !== "upscale" && task.id !== "reframe") {
+  if (!/^raw:/i.test(castPrompt) && task.id !== "motion" && task.id !== "upscale" && task.id !== "reframe" && task.id !== "lipsync") {
     const promptRules = rulesBlock(rules, "video", "prompt", model.family);
     if (promptRules && !finalPrompt.includes(promptRules)) finalPrompt = `${finalPrompt.trim()}\n\n${promptRules}`;
   }
@@ -812,10 +838,16 @@ export const POST = withTenant(async function POST(req: Request) {
     version = await nextVersion(shotId);
   }
 
-  const estUsd = estimateCostUsd(
+  const estimate = estimateCostUsd(
     modelId, params.resolution, params.ratio, params.duration, inputSeconds, references.some((r) => r.kind === "video"),
     { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
-  )?.net ?? 0;
+  );
+  /* A token-billed engine that reports no usage (Seedance on fal) is sealed from this same arithmetic — a render it
+     cannot price would be a free one, so it is refused here rather than let through at $0. */
+  if (!estimate && model.provider === "fal" && model.billing === "token") {
+    return NextResponse.json({ error: `${model.label} can't be priced at ${params.ratio} ${params.resolution} — pick another ratio or resolution.` }, { status: 400 });
+  }
+  const estUsd = estimate?.net ?? 0;
   /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
   if (shotId && shotCode) {
     const stop = await shotCapGate({ shotId: shotId, code: shotCode, takeUsd: estUsd, modelId, isAdmin: got.user.role === "admin" });

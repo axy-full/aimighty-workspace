@@ -24,7 +24,7 @@ export const fal: EngineAdapter = {
   },
   async render(req) {
     if (req.kind === "image") {
-      const out = await renderFalStill({ model: req.model, ratio: req.ratio, prompt: req.prompt, references: req.references });
+      const out = await renderFalStill({ model: req.model, ratio: req.ratio, size: req.size, prompt: req.prompt, references: req.references });
       return { produced: { bytes: out.bytes, mime: out.mime, costUsd: out.costUsd, totalTokens: null, via: "fal" } };
     }
     if (req.kind !== "video") throw new Error("Identities on fal are driven from lib/identities.ts.");

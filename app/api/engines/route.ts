@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
-import { MODELS } from "@/lib/models";
+import { MODELS, atomikMayPropose } from "@/lib/models";
 import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
 import { safetyThreshold } from "@/lib/gemini";
@@ -45,7 +45,7 @@ export const GET = withTenant(async function GET() {
       /** Google only: where its adjustable safety thresholds sit. */
       safety: p.id === "google" ? (safetyThreshold() ?? "Google default") : undefined,
       models: MODELS.filter((m) => m.provider === p.id)
-        .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
+        .map((m) => ({ id: m.id, label: m.label, kind: m.kind, use: m.use ?? null, atomikMayPropose: atomikMayPropose(m) })),
     })),
   });
 });
