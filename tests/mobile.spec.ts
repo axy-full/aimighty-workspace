@@ -198,3 +198,39 @@ test.describe("the audio composer", () => {
     expect(short, "every target on a phone is at least 44pt, or carries a 44pt touch band").toEqual([]);
   });
 });
+
+/**
+ * Atomik on a phone (design/particl-v2 §14, board 9c): the header's ring
+ * opens the sheet — radius 24 above, `0 20px 28px`, the 36×4 grabber, the
+ * ring at 88, the 26px headline — and Esc closes it. A visitor has nothing
+ * to decide, so the sheet says so; the numbers are the same either way.
+ */
+test.describe("Atomik on a phone", () => {
+  test("the header ring opens the 9c sheet at its numbers", async ({ page }) => {
+    test.skip(page.viewportSize()!.width >= 768, "a phone on its side gets the desktop rail (§14)");
+    await page.goto("/productions");
+    await settle(page);
+    const ring = page.getByRole("banner").getByRole("button", { name: "Ask Atomik" });
+    await expect(ring).toBeVisible();
+    await ring.click();
+    const sheet = page.getByRole("dialog", { name: "Atomik" });
+    await expect(sheet).toBeVisible();
+    const box = await sheet.evaluate((el) => { const cs = getComputedStyle(el); return { radius: cs.borderTopLeftRadius, padL: cs.paddingLeft, padB: cs.paddingBottom, border: cs.borderTopColor, bg: cs.backgroundColor }; });
+    expect(box.radius).toBe("24px");
+    expect(box.padL).toBe("20px");
+    expect(parseFloat(box.padB)).toBeGreaterThanOrEqual(28);
+    expect(box.bg).toBe("rgb(18, 20, 26)");
+    const grab = sheet.locator("span.h-\\[4px\\]").first();
+    expect(await grab.evaluate((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })).toEqual([36, 4]);
+    const ringSvg = sheet.locator("svg").first();
+    expect(await ringSvg.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(88);
+    const head = sheet.locator("[data-headline]");
+    expect(await head.evaluate((el) => getComputedStyle(el).fontSize)).toBe("26px");
+    for (const b of await sheet.getByRole("button").all()) {
+      const r = await b.boundingBox();
+      if (r && r.height > 0) expect(r.height, "every target in the sheet is at least 44pt").toBeGreaterThanOrEqual(44);
+    }
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+  });
+});
