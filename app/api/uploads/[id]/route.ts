@@ -63,6 +63,20 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   }
 });
 
+/** CR1 §10 Rename on a reference: the filename is the name the board shows. */
+export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
+  const got = await requireUser();
+  if (got.response) return got.response;
+  await ready();
+  const { id } = await params;
+  const body = await req.json().catch(() => ({}));
+  const filename = String(body?.filename ?? "").replace(/[\u0000-\u001f\u007f/\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!filename) return Response.json({ error: "Name it." }, { status: 400 });
+  const rs = await db().execute({ sql: `UPDATE uploads SET filename = ? WHERE id = ?`, args: [filename, id] });
+  if (!rs.rowsAffected) return Response.json({ error: "No such reference." }, { status: 404 });
+  return Response.json({ ok: true, filename });
+});
+
 export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ButtonHTMLAttributes } from "react";
 import { StateDot, STATE_TONE, Waveform, type DotState } from "@/components/ui";
 import LazyMedia from "@/components/LazyMedia";
 
@@ -20,9 +21,9 @@ export type MediaItem = {
   model: string; cost: string; by: string; resolution?: string | null;
 };
 
-export default function MediaTile({ m, onOpen, phone = false }: { m: MediaItem; onOpen?: () => void; phone?: boolean }) {
+export default function MediaTile({ m, onOpen, phone = false, handlers }: { m: MediaItem; onOpen?: () => void; phone?: boolean; handlers?: ButtonHTMLAttributes<HTMLButtonElement> }) {
   return (
-    <button type="button" onClick={onOpen} className="flex flex-col overflow-hidden rounded-tile border border-border bg-card text-left hover:border-border-hover">
+    <button type="button" onClick={onOpen} {...handlers} data-media={m.id} className="flex flex-col overflow-hidden rounded-tile border border-border bg-card text-left hover:border-border-hover">
       <span className="relative block aspect-video w-full border-b border-hairline">
         {m.kind === "audio" ? <Waveform /> : m.url ? (
           <LazyMedia url={m.url} kind={m.kind === "still" ? "image" : "video"} className="absolute inset-0 h-full w-full object-cover" />

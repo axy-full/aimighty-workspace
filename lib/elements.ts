@@ -123,10 +123,10 @@ export async function listElements(projectId?: string | null): Promise<ElementFu
   await ready();
   const rs = projectId
     ? await db().execute({
-        sql: `SELECT * FROM elements WHERE project_id = ? OR project_id IS NULL ORDER BY kind, LOWER(name)`,
+        sql: `SELECT * FROM elements WHERE deleted_at IS NULL AND (project_id = ? OR project_id IS NULL) ORDER BY kind, LOWER(name)`,
         args: [projectId],
       })
-    : await db().execute(`SELECT * FROM elements ORDER BY kind, LOWER(name)`);
+    : await db().execute(`SELECT * FROM elements WHERE deleted_at IS NULL ORDER BY kind, LOWER(name)`);
 
   const elements = rs.rows.map(rowToElement);
   if (!elements.length) return [];
@@ -216,6 +216,49 @@ export async function createElement(input: NewElement, by: string): Promise<Elem
     });
   }
   return (await getElement(eid))!;
+}
+
+/* ── CR1 §10: the context menu's verbs on an asset ─────────────────────── */
+
+/** Soft delete: the row stays for Undo; every list and lookup that matters skips it. */
+export async function deleteElement(elementId: string): Promise<boolean> {
+  await ready();
+  const rs = await db().execute({ sql: `UPDATE elements SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`, args: [now(), now(), elementId] });
+  return rs.rowsAffected > 0;
+}
+export async function restoreElement(elementId: string): Promise<boolean> {
+  await ready();
+  const rs = await db().execute({ sql: `UPDATE elements SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL`, args: [now(), elementId] });
+  return rs.rowsAffected > 0;
+}
+export async function renameElement(elementId: string, name: string): Promise<void> {
+  await ready();
+  await db().execute({ sql: `UPDATE elements SET name = ?, updated_at = ? WHERE id = ?`, args: [name.trim().slice(0, 60), now(), elementId] });
+}
+/** Move to a production's project, or to the workspace (null). */
+export async function moveElement(elementId: string, projectId: string | null): Promise<void> {
+  await ready();
+  await db().execute({ sql: `UPDATE elements SET project_id = ?, updated_at = ? WHERE id = ?`, args: [projectId, now(), elementId] });
+}
+/**
+ * Duplicate: a new asset of the same kind with the same references — every
+ * upload- or take-backed version copied under the same attribute, the same
+ * one current — and nothing trained (a trained face is an identity, and
+ * that stays with the original). Locks, bindings and where-used do not copy.
+ */
+export async function cloneElement(elementId: string, by: string, name?: string): Promise<ElementFull | null> {
+  const src = await getElement(elementId);
+  if (!src) return null;
+  const el = await createElement({ name: (name ?? `${src.name} copy`).slice(0, 60), kind: src.kind, description: src.description, projectId: src.projectId }, by);
+  for (const a of src.attributes) {
+    const target = el.attributes.find((t) => t.kind === a.kind) ?? null;
+    if (!target) continue;
+    for (const v of a.versions) {
+      if (v.identityId || v.status === "failed") continue;
+      await addVersion(target.id, v.uploadId ? { uploadId: v.uploadId } : { genId: v.genId }, { label: v.label, makeCurrent: v.id === a.currentId }, by);
+    }
+  }
+  return getElement(el.id);
 }
 
 export type VersionSource = { uploadId?: string | null; genId?: string | null; identityId?: string | null };

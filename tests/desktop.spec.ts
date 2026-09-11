@@ -351,9 +351,11 @@ test("Shots: toolbar, one filled primary, five columns, and the 228px menu", asy
       const menu = page.getByRole("menu");
       await expect(menu).toBeVisible();
       expect(await menu.evaluate((el) => el.getBoundingClientRect().width)).toBe(228);
-      await expect(menu.getByRole("menuitem", { name: /^Copy/ })).toBeVisible();
-      await expect(menu.getByRole("menuitem", { name: /^Paste after/ })).toBeDisabled();
-      await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeVisible();
+      /* CR1 §10: the one menu, ten items in one order; Paste is there, disabled, with nothing on the clipboard. */
+      const names = await menu.getByRole("menuitem").allTextContents();
+      expect(names.map((n) => n.replace(/\s*(⌘[A-Z]|↵|⌫|▸|\d+ cr)\s*$/u, "").trim()).slice(0, 10)).toEqual(["Cut", "Copy", "Paste", "Duplicate", "Rename", "Move to ▸", "Share ▸", "Download", "Open in Rig", "Delete"]);
+      await expect(menu.getByRole("menuitem", { name: /^Paste/ })).toBeDisabled();
+      await expect(menu.getByRole("menuitem", { name: /^Promote to asset/ })).toBeVisible();
       await expect(menu.getByText("Takes and masters are never deleted with a shot")).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(menu).toHaveCount(0);
@@ -443,6 +445,24 @@ test("Rig · Canvas: the 6a chrome, ⌘K adds a node, the inspector follows the 
   expect(await alignment(), "…and at 200%").toBeLessThan(1);
   await page.keyboard.press("Meta+0");
   expect(await zoomOf(), "⌘0 fits").toBeLessThanOrEqual(1);
+  /* CR1 §10 — the one menu on a node: right-click, the ten items in order,
+     Duplicate lands a copy 24px down and right (not run, 0 cr), Delete
+     removes it with Undo in the toast. */
+  await prompt.click({ button: "right", position: { x: 100, y: 16 } });
+  const nodeMenu = page.getByRole("menu");
+  await expect(nodeMenu).toBeVisible();
+  const nodeNames = await nodeMenu.getByRole("menuitem").allTextContents();
+  expect(nodeNames.map((n) => n.replace(/\s*(⌘[A-Z]|↵|⌫|▸)\s*$/u, "").trim())).toEqual(["Cut", "Copy", "Paste", "Duplicate", "Rename", "Move to ▸", "Share ▸", "Download", "Open in Rig", "Delete"]);
+  await expect(nodeMenu.getByRole("menuitem", { name: /^Paste/ })).toBeDisabled();
+  await expect(nodeMenu.getByRole("menuitem", { name: /^Move to/ })).toBeDisabled();
+  await nodeMenu.getByRole("menuitem", { name: /^Duplicate/ }).click();
+  await expect(page.getByRole("article", { name: "Prompt node" })).toHaveCount(2);
+  const [a, b] = await page.getByRole("article", { name: "Prompt node" }).evaluateAll((els) => els.map((el) => [parseFloat((el as HTMLElement).style.left), parseFloat((el as HTMLElement).style.top)]));
+  expect([b[0] - a[0], b[1] - a[1]]).toEqual([24, 24]);
+  await page.getByRole("article", { name: "Prompt node" }).nth(1).click({ button: "right", position: { x: 100, y: 16 } });
+  await page.getByRole("menu").getByRole("menuitem", { name: /^Delete/ }).click();
+  await expect(page.getByRole("article", { name: "Prompt node" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
   await prompt.click({ position: { x: 100, y: 16 } });   // the header, not the textarea
   await page.keyboard.press("Backspace");
   await expect(page.getByRole("article", { name: "Prompt node" })).toHaveCount(0);

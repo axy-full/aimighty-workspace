@@ -11,6 +11,8 @@ export type RefItem = {
   durationS: number | null;
   sha256: string; url: string; base64Bytes: number;
   role: ImageRole; verified: boolean;
+  /** CR1 §11: a take dragged or pasted into the well — sent to the engine by its take id, not an upload. */
+  genId?: string;
 };
 
 export const ROLE_LABEL: Record<ImageRole, string> = {

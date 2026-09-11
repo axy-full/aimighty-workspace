@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type DragEvent, type MouseEvent } from "react";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
@@ -16,7 +16,10 @@ import { Segmented, Button, Chip, Mono, MediaCard, Placeholder, PinnedBar, Pinne
 import { usePhone } from "@/lib/usePhone";
 import { useLongPress } from "@/lib/useLongPress";
 import type { DotState } from "@/components/ui";
-import Menu, { type MenuItem } from "@/components/ui/Menu";
+import { contextItems, ContextMenuHost } from "@/components/ui/ContextMenu";
+import { getClip, setClip as setClipboard, consumeClip, useClipboard } from "@/lib/clipboard";
+import { scheduleDelete, cancelDelete } from "@/lib/undoDelete";
+import { useDropTarget, type DragPayload } from "@/lib/useDnd";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
@@ -39,11 +42,13 @@ import { useAtomikRail } from "@/lib/atomikRail";
  * two lines, the cast `@Name` pills, `size · move · lens`; the split footer
  * `PLAN 4S · 19 CR` / `RENDERS 2 TAKES · 38 CR`.
  *
- * Right-click: the 228px menu — Copy ⌘C, Paste after ⌘V (until something
- * is copied), Rename ↵, Open in Rig ⌘R, Move to production ▸ (`TAKES GO
- * TOO`), Delete ⌫, and the footnote. Paste copies planning only: a new id,
- * no takes, 0 cr. Delete offers Undo in the toast, and the row is only
- * really deleted once the toast has gone. Drag a card onto another to
+ * Right-click (CR1 §10, the one context menu): Cut ⌘X · Copy ⌘C · Paste
+ * ⌘V · Duplicate ⌘D · Rename ↵ · Move to ▸ · Share ▸ · Download · Open in
+ * Rig ⌘R · Delete ⌫, and the footnote. A copied shot pastes planning only
+ * (a new id, no takes, 0 cr); a cut shot pastes as a move — takes and cost
+ * go too; a cut or copied take pasted here files to this shot. Delete
+ * offers Undo for 30 seconds, and the row is only really deleted once the
+ * toast has gone. On a phone the long-press opens the same menu as a sheet. Drag a card onto another to
  * reorder (the insertion edge is a 3px ink inset on the target); drop it on
  * a production pill to move it, takes and spend going with it. Double-click
  * the description to rename inline — Enter commits, Esc cancels. Every
@@ -79,15 +84,14 @@ function Shots() {
   const [order, setOrder] = useState<string[] | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<{ x: number; y: number; id: string; sub: boolean } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string; sub: "move" | "share" | null } | null>(null);
   const [assetFor, setAssetFor] = useState<ShotRow | null>(null);
-  const [clip, setClip] = useState<ShotRow | null>(null);
+  const clip = useClipboard();
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [overProd, setOverProd] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
-  const pendingDelete = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const production = prods?.productions.find((p) => p.id === prod) ?? null;
   const project = production?.projects.find((j) => j.id === projectId) ?? null;
@@ -123,15 +127,16 @@ function Shots() {
     if (!r.ok) { const j = await r.json().catch(() => ({})); toast(j.error ?? `That didn't stick (${r.status}).`); }
     return r.ok;
   };
-  const copy = (s: ShotRow) => { setClip(s); setMenu(null); toast(`${s.code} copied · planning only, takes stay`); };
-  const pasteAfter = async (after: ShotRow | null) => {
-    if (!clip) return;
-    setMenu(null);
+  /* The clipboard holds the shot's planning (for a copy) or its id (for a cut), never its takes. */
+  const planning = (s: ShotRow) => ({ title: s.title, description: s.description, planned: s.planned, setup: s.setup, cast: s.cast, kind: s.kind });
+  const copy = (s: ShotRow) => { setClipboard({ kind: "shot", mode: "copy", id: s.id, label: s.code, payload: planning(s) }); setMenu(null); toast(`${s.code} copied · planning only, takes stay`); };
+  const cut = (s: ShotRow) => { setClipboard({ kind: "shot", mode: "cut", id: s.id, label: s.code, payload: { ...planning(s), projectId, takes: s.takes, spend: money.inCredits ? (s.credits ?? 0) : s.spend } }); setMenu(null); toast(`${s.code} cut · paste it in a project's Shots to move it, takes and cost go too`); };
+  /** A new shot after `after` carrying planning only — the paste of a copied shot, and Duplicate. */
+  const plantAfter = async (after: ShotRow | null, plan: ReturnType<typeof planning>, said: (code: string) => string) => {
     const codes = shots.map((s) => s.code);
     const n = Math.max(0, ...codes.map((c) => parseInt(c.replace(/\D/g, ""), 10) || 0)) + 1;
     const code = `SH${String(n).padStart(2, "0")}`;
-    const r = await fetch("/api/shots", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-      projectId, code, title: clip.title, description: clip.description, planned: clip.planned, setup: clip.setup, cast: clip.cast, kind: clip.kind }) });
+    const r = await fetch("/api/shots", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, code, ...plan }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { toast(j.error ?? "Paste failed."); return; }
     const ids = shots.map((s) => s.id);
@@ -139,8 +144,42 @@ function Shots() {
     ids.splice(at, 0, String(j.id ?? j.shot?.id));
     await fetch("/api/shots/reorder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, ids }) });
     refresh();
-    toast(`${code} pasted after ${after?.code ?? "the end"} · planning copied, no takes, 0 cr`);
+    toast(said(code));
   };
+  const pasteAfter = async (after: ShotRow | null) => {
+    const c = getClip();
+    if (!c) return;
+    setMenu(null);
+    if (c.kind === "shot" && c.mode === "copy") {
+      await plantAfter(after, c.payload as ReturnType<typeof planning>, (code) => `${code} pasted after ${after?.code ?? "the end"} · planning copied, no takes, 0 cr`);
+    } else if (c.kind === "shot" && c.mode === "cut") {
+      /* A move: the shot, its takes and its cost come here, after the shot it was pasted on. */
+      const from = (c.payload as { projectId?: string; takes?: number; spend?: number }) ?? {};
+      if (from.projectId !== projectId) { if (!(await patch(c.id, { projectId }))) return; }
+      const ids = shots.map((s) => s.id).filter((id) => id !== c.id);
+      const at = after ? ids.indexOf(after.id) + 1 : ids.length;
+      ids.splice(at, 0, c.id);
+      await fetch("/api/shots/reorder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, ids }) });
+      consumeClip(); refresh();
+      toast(`${c.label} moved here · ${from.takes ? `${from.takes} takes and ${fmt(from.spend ?? 0)} came with it` : "planning only, nothing spent"}`);
+    } else if (c.kind === "media" && after) {
+      /* A take pasted on a shot files to it as its next version. */
+      const r = await fetch(`/api/jobs/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shotId: after.id }) });
+      if (!r.ok) { toast("That take wasn't filed."); return; }
+      if (c.mode === "cut") consumeClip();
+      refresh(); toast(`${c.label} filed as ${after.code} · its next version`);
+    } else toast(`Nothing here takes a ${c.kind}.`);
+  };
+  const duplicate = (s: ShotRow) => { setMenu(null); plantAfter(s, planning(s), (code) => `${code} · a copy of ${s.code} · planning only, no takes, 0 cr`); };
+  const shareLink = (s: ShotRow) => { setMenu(null); navigator.clipboard?.writeText(`${location.origin}/productions/${prod}/${projectId}/shots?shot=${encodeURIComponent(s.id)}`).then(() => toast(`Link to ${s.code} copied`)); };
+  const addToReview = async (s: ShotRow) => {
+    setMenu(null);
+    const r = await fetch("/api/shares", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, label: `${s.code}` }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error ?? "No review link made."); return; }
+    navigator.clipboard?.writeText(j.url).then(() => toast(`Review link copied · ${s.code} and every approved take in ${project?.name ?? "the project"}`));
+  };
+  const download = (s: ShotRow) => { setMenu(null); if (s.master?.url) window.open(`/api/media/${encodeURIComponent(s.master.id)}?download=1`, "_blank", "noopener"); else toast(`${s.code} has no approved take to download yet`); };
   const startRename = (s: ShotRow) => { setMenu(null); setRenaming({ id: s.id, value: s.description || s.title }); };
   const commitRename = async () => {
     if (!renaming) return;
@@ -153,19 +192,12 @@ function Shots() {
   const remove = (s: ShotRow) => {
     setMenu(null);
     setHidden((h) => new Set(h).add(s.id));
-    const t = setTimeout(async () => {
-      pendingDelete.current.delete(s.id);
-      await fetch(`/api/shots/${s.id}`, { method: "DELETE" });
-      refresh();
-    }, 6000);
-    pendingDelete.current.set(s.id, t);
+    scheduleDelete(s.id, async () => { await fetch(`/api/shots/${s.id}`, { method: "DELETE" }); refresh(); });
     toast(`${s.code} deleted · ${s.takes ? `${s.takes} takes kept in Library` : "it had no takes"}`, () => {
-      const pending = pendingDelete.current.get(s.id);
-      if (pending) { clearTimeout(pending); pendingDelete.current.delete(s.id); }
+      cancelDelete(s.id);
       setHidden((h) => { const n = new Set(h); n.delete(s.id); return n; });
     });
   };
-  useEffect(() => { const map = pendingDelete.current; return () => { for (const t of map.values()) clearTimeout(t); }; }, []);
   const moveTo = async (s: ShotRow, target: { production: ProductionRow; project: { id: string; name: string } }) => {
     setMenu(null); setDragId(null); setOverId(null); setOverProd(null);
     setHidden((h) => new Set(h).add(s.id));
@@ -213,12 +245,14 @@ function Shots() {
     }
   };
 
-  /* ── keys: ⌘C / ⌘V / ↵ / ⌘R on the selection, ⌫ deletes ─────────────── */
+  /* ── keys: ⌘X ⌘C ⌘V ⌘D / ↵ / ⌘R on the selection, ⌫ deletes ──────────── */
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (renaming || (e.target as HTMLElement)?.tagName === "INPUT") return;
+      if (renaming || (e.target as HTMLElement)?.tagName === "INPUT" || (e.target as HTMLElement)?.tagName === "TEXTAREA") return;
       const one = selected.size === 1 ? shots.find((s) => selected.has(s.id)) ?? null : null;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && one) { e.preventDefault(); copy(one); }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "x" && one) { e.preventDefault(); cut(one); }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && one) { e.preventDefault(); copy(one); }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d" && one) { e.preventDefault(); duplicate(one); }
       else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v" && clip) { e.preventDefault(); pasteAfter(one); }
       else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r" && one) { e.preventDefault(); router.push(`/rig/canvas/new?project=${encodeURIComponent(projectId)}&shot=${encodeURIComponent(one.id)}`); }
       else if (e.key === "Enter" && one) { e.preventDefault(); startRename(one); }
@@ -234,18 +268,21 @@ function Shots() {
 
   const cols = rail.state === "expanded" ? "grid-cols-3" : rail.state === "compact" ? "grid-cols-4" : "grid-cols-5";
   const menuShot = menu ? shots.find((s) => s.id === menu.id) ?? null : null;
-  const menuItems: MenuItem[] = menuShot ? [
-    { kind: "item", label: "Copy", keys: "⌘C", onSelect: () => copy(menuShot) },
-    { kind: "item", label: "Paste after", keys: "⌘V", disabled: !clip, onSelect: () => pasteAfter(menuShot) },
-    { kind: "item", label: "Rename", keys: "↵", onSelect: () => startRename(menuShot) },
-    { kind: "item", label: "Open in Rig", keys: "⌘R", onSelect: () => router.push(`/rig/canvas/new?project=${encodeURIComponent(projectId)}&shot=${encodeURIComponent(menuShot.id)}`) },
-    { kind: "item", label: "Promote to asset", keys: money.price(0), disabled: !menuShot.master, onSelect: () => setAssetFor(menuShot) },
-    { kind: "divider" },
-    { kind: "sub", label: "Move to production", open: menu!.sub, onToggle: () => setMenu((m) => m && { ...m, sub: !m.sub }),
-      items: others.map((t) => ({ label: t.production.projects.length > 1 ? `${t.production.name} › ${t.project.name}` : t.production.name, note: "takes go too", onSelect: () => moveTo(menuShot, t) })) },
-    { kind: "divider" },
-    { kind: "item", label: "Delete", keys: "⌫", onSelect: () => remove(menuShot) },
-    { kind: "note", text: "Takes and masters are never deleted with a shot; they stay in Library." },
+  const toggleSub = (which: "move" | "share") => setMenu((m) => m && { ...m, sub: m.sub === which ? null : which });
+  const menuItems = menuShot ? [
+    ...contextItems({
+      cut: () => cut(menuShot), copy: () => copy(menuShot),
+      paste: clip && (clip.kind === "shot" || clip.kind === "media") ? () => pasteAfter(menuShot) : null,
+      duplicate: () => duplicate(menuShot), rename: () => startRename(menuShot),
+      moveTo: { open: menu!.sub === "move", onToggle: () => toggleSub("move"), items: others.map((t) => ({ label: t.production.projects.length > 1 ? `${t.production.name} › ${t.project.name}` : t.production.name, note: "takes go too", onSelect: () => moveTo(menuShot, t) })) },
+      share: { open: menu!.sub === "share", onToggle: () => toggleSub("share"), copyLink: () => shareLink(menuShot), addToReview: () => addToReview(menuShot) },
+      download: () => download(menuShot),
+      openInRig: () => router.push(`/rig/canvas/new?project=${encodeURIComponent(projectId)}&shot=${encodeURIComponent(menuShot.id)}`),
+      remove: () => remove(menuShot),
+      note: "Takes and masters are never deleted with a shot; they stay in Library.",
+    }),
+    { kind: "divider" as const },
+    { kind: "item" as const, label: "Promote to asset", keys: money.price(0), disabled: !menuShot.master, onSelect: () => setAssetFor(menuShot) },
   ] : [];
 
   return (
@@ -282,7 +319,8 @@ function Shots() {
           <div data-owns-menu className={`grid gap-[12px] ${cols} max-md:grid-cols-2 max-md:gap-[10px]`}>
             {shots.map((s, i) => (
               <ShotCard key={s.id} shot={s} position={i + 1} quote={quote} fmt={fmt} inCredits={money.inCredits} phone={phone}
-                onLongPress={(x, y) => { setSelected(new Set([s.id])); setMenu({ x, y, id: s.id, sub: false }); }}
+                onFileTake={async (genId, label) => { const r = await fetch(`/api/jobs/${genId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shotId: s.id }) }); if (!r.ok) { toast("That take wasn't filed."); return; } refresh(); toast(`${label} filed as ${s.code} · its next version`); }}
+                onLongPress={(x, y) => { setSelected(new Set([s.id])); setMenu({ x, y, id: s.id, sub: null }); }}
                 onTouchDragStart={() => { setDragId(s.id); setMenu(null); }}
                 onTouchDragMove={(x, y) => { const id = (document.elementFromPoint(x, y)?.closest("[data-shot]") as HTMLElement | null)?.dataset.shot ?? null; if (id !== overId) setOverId(id); }}
                 onTouchDragEnd={(x, y) => { const id = x >= 0 ? ((document.elementFromPoint(x, y)?.closest("[data-shot]") as HTMLElement | null)?.dataset.shot ?? null) : null; if (dragId && id && id !== dragId) reorder(dragId, id); setDragId(null); setOverId(null); }}
@@ -290,7 +328,7 @@ function Shots() {
                 renaming={renaming?.id === s.id ? renaming.value : null}
                 onRenameChange={(v) => setRenaming((r) => r && { ...r, value: v })} onRenameCommit={commitRename} onRenameCancel={() => setRenaming(null)}
                 onSelect={(e) => { e.stopPropagation(); setSelected((sel) => { const n = e.metaKey || e.shiftKey ? new Set(sel) : new Set<string>(); if (n.has(s.id)) n.delete(s.id); else n.add(s.id); return n; }); }}
-                onContext={(e) => { e.preventDefault(); e.stopPropagation(); setSelected(new Set([s.id])); setMenu({ x: e.clientX, y: e.clientY, id: s.id, sub: false }); }}
+                onContext={(e) => { e.preventDefault(); e.stopPropagation(); setSelected(new Set([s.id])); setMenu({ x: e.clientX, y: e.clientY, id: s.id, sub: null }); }}
                 onDoubleClick={() => startRename(s)}
                 onDragStart={(e) => { e.dataTransfer.setData("text/plain", s.id); e.dataTransfer.effectAllowed = "move"; setDragId(s.id); setMenu(null); }}
                 onDragOver={(e) => { e.preventDefault(); if (overId !== s.id) setOverId(s.id); }}
@@ -307,7 +345,7 @@ function Shots() {
         <PinnedSquare label="+ Shot" onClick={addShot}>+</PinnedSquare>
         <PinnedPrimary cost={fmt(renderCost)} outlined={rail.open || menu != null || assetFor != null} disabled={!toRender.length} busy={rendering} onClick={render}>{rendering ? "Rendering…" : renderLabel}</PinnedPrimary>
       </PinnedBar>
-      {menu && menuShot && <Menu x={menu.x} y={menu.y} title={`${menuShot.code} · shot`} items={menuItems} onClose={() => setMenu(null)} />}
+      <ContextMenuHost title={menuShot ? `${menuShot.code} · shot` : "Shot"} menu={menuShot ? menu : null} items={menuItems} onClose={() => setMenu(null)} />
       <NewAssetSheet open={assetFor != null} from="take" onClose={() => setAssetFor(null)}
         initial={assetFor ? { name: (assetFor.cast[0] ?? "").replace(/^@/, ""), references: assetFor.master ? [{ genId: assetFor.master.id, url: assetFor.master.url, label: `${assetFor.code} v${assetFor.master.version ?? 1}`, kind: "video" as const }] : [] } : undefined}
         onCreated={(c) => toast(`@${c.name} promoted from ${assetFor?.code ?? "the take"} · 0 CR`)} />
@@ -320,8 +358,10 @@ const STATE: Record<ShotRow["state"], { dot: DotState; word: string }> = {
   rendering: { dot: "running", word: "rendering" }, draft: { dot: "draft", word: "draft" }, none: { dot: "none", word: "no take" },
 };
 
+const MEDIA_DROP: DragPayload["kind"][] = ["media"];
 function ShotCard(p: {
   shot: ShotRow; position: number; quote: (s: ShotRow) => number; fmt: (n: number) => string; inCredits: boolean; phone?: boolean;
+  onFileTake?: (genId: string, label: string) => void;
   onLongPress?: (x: number, y: number) => void; onTouchDragStart?: () => void; onTouchDragMove?: (x: number, y: number) => void; onTouchDragEnd?: (x: number, y: number) => void;
   selected: boolean; dragging: boolean; over: boolean; renaming: string | null;
   onRenameChange: (v: string) => void; onRenameCommit: () => void; onRenameCancel: () => void;
@@ -342,10 +382,11 @@ function ShotCard(p: {
     onDragStart: p.onTouchDragStart ? () => p.onTouchDragStart?.() : undefined,
     onDragMove: p.onTouchDragMove, onDragEnd: p.onTouchDragEnd,
   });
+  const landing = useDropTarget(MEDIA_DROP, (payload) => p.onFileTake?.(payload.id, payload.label));
   return (
     <div draggable={!p.phone} onDragStart={p.onDragStart} onDragOver={p.onDragOver} onDrop={p.onDrop} onDragEnd={p.onDragEnd}
       onClick={p.onSelect} onContextMenu={p.onContext} onDoubleClick={p.onDoubleClick} data-shot={s.id} {...(p.phone ? press : {})}
-      className={`relative ${p.dragging ? "opacity-[.35]" : ""}`} style={{ touchAction: "pan-y", ...(p.over ? { boxShadow: "inset 3px 0 0 var(--ink)" } : {}) }}>
+      {...landing.props} className={`relative ${p.dragging ? "opacity-[.35]" : ""}`} style={{ touchAction: "pan-y", ...(p.over || landing.over ? { boxShadow: "inset 3px 0 0 var(--ink)" } : {}) }}>
       <MediaCard phone={p.phone} id={p.phone ? s.code : `${s.code} · ${String(p.position).padStart(2, "0")}`} state={st.dot} stateLabel={st.word}
         well={well ?? (type || s.state === "none" ? null : <Placeholder />)}
         emptyLabel={s.state === "none" ? (type ? "Type only" : "No take yet") : undefined}

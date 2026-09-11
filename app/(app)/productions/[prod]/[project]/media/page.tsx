@@ -14,6 +14,14 @@ import type { DotState } from "@/components/ui";
 import { PageLoader } from "@/components/atomik/Loader";
 import ProductionHeader from "@/components/production/ProductionHeader";
 import MediaTile, { type MediaItem } from "@/components/production/MediaTile";
+import { contextItems, ContextMenuHost, useCardPress } from "@/components/ui/ContextMenu";
+import { setClip, useClipboard } from "@/lib/clipboard";
+import { scheduleDelete, cancelDelete } from "@/lib/undoDelete";
+import { useDragSource } from "@/lib/useDnd";
+import { appPrompt } from "@/components/dialog";
+import type { Shot } from "@/lib/shots";
+import { useToast } from "@/components/ui/Toast";
+import type { MenuItem } from "@/components/ui/Menu";
 import type { ProductionRow } from "@/lib/productions";
 import type { Gen } from "@/components/GenCard";
 
@@ -65,8 +73,13 @@ export default function ProjectMediaPage() {
   const phone = usePhone();
   const rail = useAtomikRail();
   const { data: prods } = useApi<{ productions: ProductionRow[] }>(signedIn ? "/api/productions" : null, 30_000);
-  const { data: jobs } = useApi<{ generations: Gen[] }>(signedIn ? `/api/jobs?projectId=${encodeURIComponent(projectId)}&limit=500` : null, 15_000);
+  const { data: jobs, refresh: refreshJobs } = useApi<{ generations: Gen[] }>(signedIn ? `/api/jobs?projectId=${encodeURIComponent(projectId)}&limit=500` : null, 15_000);
   const [kind, setKind] = useState<Kind>("all");
+  const toast = useToast();
+  const [card, setCard] = useState<{ x: number; y: number; id: string; sub: "move" | "share" | null } | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const clip = useClipboard();
+  const { data: shotsData } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<Tab>("media");
 
@@ -94,7 +107,7 @@ export default function ProjectMediaPage() {
     for (const m of items) c[m.kind]++;
     return c;
   }, [items]);
-  const shown = items.filter((m) => (kind === "all" || m.kind === kind) && (!q.trim() || m.search.includes(q.trim().toLowerCase())));
+  const shown = items.filter((m) => !hidden.has(m.id) && (kind === "all" || m.kind === kind) && (!q.trim() || m.search.includes(q.trim().toLowerCase())));
   const groups = useMemo(() => {
     const by = new Map<string, { id: string; code: string; title: string; items: typeof shown }>();
     for (const m of shown) {
@@ -112,6 +125,32 @@ export default function ProjectMediaPage() {
 
   const fmt = (n: number) => money.inCredits ? money.price(n) : money.price(n);
   const download = () => { for (const m of masters) window.open(m.url!, "_blank", "noopener"); };
+  /* ── CR1 §10: the menu's verbs on a take, still, track or master ────────── */
+  const cardItem = card ? items.find((m) => m.id === card.id) ?? null : null;
+  const toggleSub = (which: "move" | "share") => setCard((c) => c && { ...c, sub: c.sub === which ? null : which });
+  const refile = async (m: MediaItem, shotId: string | null, said: string) => { setCard(null); const r = await fetch(`/api/jobs/${m.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shotId }) }); if (!r.ok) { toast("That didn't move."); return; } refreshJobs(); toast(said); };
+  const cardItems: MenuItem[] = cardItem ? contextItems({
+    cut: () => { setClip({ kind: "media", mode: "cut", id: cardItem.id, label: cardItem.label, payload: { kind: cardItem.kind === "still" ? "image" : cardItem.kind === "audio" ? "audio" : "video", url: cardItem.url } }); setCard(null); toast(`${cardItem.label} cut · paste it on a shot to file it there`); },
+    copy: () => { setClip({ kind: "media", mode: "copy", id: cardItem.id, label: cardItem.label, payload: { kind: cardItem.kind === "still" ? "image" : cardItem.kind === "audio" ? "audio" : "video", url: cardItem.url } }); setCard(null); toast(`${cardItem.label} copied · paste it into the composer's well or on a shot`); },
+    paste: null,
+    rename: async () => { setCard(null); const v = await appPrompt("Rename", "", "A name for this take"); if (v == null) return; const r = await fetch(`/api/jobs/${cardItem.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: v.trim() }) }); if (!r.ok) { toast("That didn't stick."); return; } refreshJobs(); toast(v.trim() ? `Renamed · ${v.trim()}` : "Name cleared"); },
+    moveTo: { open: card?.sub === "move", onToggle: () => toggleSub("move"), items: [
+      ...(shotsData?.shots ?? []).filter((s) => s.id !== cardItem.shotId).map((s) => ({ label: `${s.code} · ${s.description || s.title || "shot"}`.slice(0, 40), note: "next version", onSelect: () => refile(cardItem, s.id, `${cardItem.label} filed as ${s.code} · its next version`) })),
+      ...(cardItem.shotId ? [{ label: "Unfiled", note: "keeps the project", onSelect: () => refile(cardItem, null, `${cardItem.label} unfiled`) }] : []),
+    ] },
+    share: { open: card?.sub === "share", onToggle: () => toggleSub("share"),
+      copyLink: () => { setCard(null); navigator.clipboard?.writeText(`${location.origin}/api/media/${encodeURIComponent(cardItem.id)}`).then(() => toast("Link copied · opens for this workspace")); },
+      addToReview: async () => { setCard(null); const r = await fetch("/api/shares", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId }) }); const j = await r.json().catch(() => ({})); if (!r.ok) { toast(j.error ?? "No review link made."); return; } navigator.clipboard?.writeText(j.url).then(() => toast(`Review link copied · ${project?.name ?? "the project"}'s approved takes`)); } },
+    download: cardItem.url ? () => { setCard(null); window.open(`/api/media/${encodeURIComponent(cardItem.id)}?download=1`, "_blank", "noopener"); } : undefined,
+    openInRig: () => { setCard(null); router.push(`/rig/canvas/new?project=${encodeURIComponent(projectId)}${cardItem.shotId ? `&shot=${encodeURIComponent(cardItem.shotId)}` : ""}`); },
+    remove: () => {
+      setCard(null);
+      setHidden((h) => new Set(h).add(cardItem.id));
+      scheduleDelete(cardItem.id, async () => { await fetch(`/api/jobs/${cardItem.id}`, { method: "DELETE" }); refreshJobs(); });
+      toast(`${cardItem.label} deleted`, () => { cancelDelete(cardItem.id); setHidden((h) => { const n = new Set(h); n.delete(cardItem.id); return n; }); });
+    },
+    note: clip?.kind === "media" ? `${clip.label} is on the clipboard · paste it on a shot` : undefined,
+  }) : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
@@ -156,15 +195,32 @@ export default function ProjectMediaPage() {
               {g.id !== "unfiled" && <Link href={`/shots/${g.id}`} className="ui-mono text-ink-muted max-md:hidden">Open shot →</Link>}
             </div>
             <div className="grid grid-cols-6 gap-[10px] max-md:grid-cols-2 max-md:gap-[8px]">
-              {g.items.map((m) => <MediaTile key={m.id} m={m} phone={phone} onOpen={() => { if (m.url) window.open(m.url, "_blank", "noopener"); }} />)}
+              {g.items.map((m) => <Tile key={m.id} m={m} phone={phone} onOpen={() => { if (m.url) window.open(m.url, "_blank", "noopener"); }} onMenu={(x, y) => setCard({ x, y, id: m.id, sub: null })} />)}
             </div>
           </section>
         ))}
         {!groups.length && <span className="py-[24px] text-[13px] leading-[1.5] text-ink-body">Nothing here yet. Takes, stills, audio and masters land here as the project makes them.</span>}
       </div>
       <PinnedBar>
-        <PinnedPrimary cost={fmt(0)} outlined={rail.open} disabled={!masters.length} onClick={download}>Download {masters.length} {masters.length === 1 ? "master" : "masters"}</PinnedPrimary>
+        <PinnedPrimary cost={fmt(0)} outlined={rail.open || card != null} disabled={!masters.length} onClick={download}>Download {masters.length} {masters.length === 1 ? "master" : "masters"}</PinnedPrimary>
       </PinnedBar>
+      <ContextMenuHost title={cardItem ? `${cardItem.label} · ${cardItem.kind}` : "Media"} menu={cardItem ? card : null} items={cardItems} onClose={() => setCard(null)} />
     </div>
+  );
+}
+
+/** One tile with its right-click, its long-press (the same menu as a sheet on a phone) and its drag handle (CR1 §10, §11). */
+function Tile({ m, phone, onOpen, onMenu }: { m: MediaItem; phone: boolean; onOpen: () => void; onMenu: (x: number, y: number) => void }) {
+  const press = useCardPress(m, (_t, x, y) => onMenu(x, y));
+  const drag = useDragSource(m.url ? { kind: "media", id: m.id, label: m.label, url: m.url, data: { kind: m.kind === "still" ? "image" : m.kind === "audio" ? "audio" : "video" } } : null);
+  return (
+    <MediaTile m={m} phone={phone} onOpen={onOpen} handlers={{
+      onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); onMenu(e.clientX, e.clientY); },
+      onPointerDown: (e) => { press.onPointerDown(e); drag.onPointerDown(e); },
+      onPointerMove: (e) => { press.onPointerMove(e); drag.onPointerMove(e); },
+      onPointerUp: (e) => { press.onPointerUp(e); drag.onPointerUp(e); },
+      onPointerCancel: (e) => { press.onPointerCancel(); drag.onPointerCancel(e); },
+      onClickCapture: drag.onClickCapture, style: { touchAction: "pan-y" },
+    }} />
   );
 }

@@ -120,8 +120,23 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
 
   const body = await req.json().catch(() => ({}));
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  const locked = (body as any)?.locked;
+  const b = body as any;
+  /* CR1 §10: Rename, Move to, and Undo of a delete come through the same verb, each spending nothing. */
+  if (typeof b?.name === "string" && b.name.trim()) {
+    const { renameElement } = await import("@/lib/elements");
+    await renameElement(id, b.name);
+  }
+  if (b?.projectId !== undefined) {
+    const { moveElement } = await import("@/lib/elements");
+    await moveElement(id, typeof b.projectId === "string" && b.projectId ? b.projectId : null);
+  }
+  if (b?.restore === true) {
+    const { restoreElement } = await import("@/lib/elements");
+    await restoreElement(id);
+  }
+  const locked = b?.locked;
   if (typeof locked !== "boolean") {
+    if (typeof b?.name === "string" || b?.projectId !== undefined || b?.restore === true) return NextResponse.json({ ok: true, element: await getElement(id) });
     return NextResponse.json({ error: "Say whether it is locked." }, { status: 400 });
   }
   if (locked === element.locked) return NextResponse.json({ ok: true, unchanged: true });
@@ -131,4 +146,16 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
      the brief's own line is that unlocking is explicit and logged. */
   await setElementLock(id, locked, got.user.email);
   return NextResponse.json({ ok: true, locked, by: got.user.email, at: now() });
+});
+
+/** CR1 §10: Delete with Undo — soft, so `restore: true` on PUT brings it back within the toast's 30 seconds or later. */
+export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
+  const got = await requireRender();
+  if (got.response) return got.response;
+  await ready();
+  const { id } = await params;
+  const { deleteElement } = await import("@/lib/elements");
+  const gone = await deleteElement(id);
+  if (!gone) return NextResponse.json({ error: "No such element." }, { status: 404 });
+  return NextResponse.json({ ok: true });
 });

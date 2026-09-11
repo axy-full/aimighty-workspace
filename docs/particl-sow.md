@@ -96,7 +96,8 @@ run           { id, recipeId, startedAt, state, spentCredits, estimateCredits,
                 stageRuns[{ stageId, state, progress, spent, failure }] }
 failure       { stageId, unit, reason, fixes[{ id, label, note, credits, kind }] }
 element       { id, kind: character|location|prop|look|voice, name, locked, lockedBy, lockedAt,
-                attributes[], plates[], views[], createdFrom{shotId,takeId}|null }
+                attributes[], plates[], views[], createdFrom{shotId,takeId}|null,
+                deletedAt|null }   // CR1 §10: Delete is soft, Undo restores (2026-09-11)
 attribute     { id, elementId, kind: face|hair|wardrobe|voice, versions[], currentVersionId, locked }
 version       { id, label, thumbUrl, createdAt, usedByShotIds[] }
 binding       { shotId, slot: character|background|element|look|keyframe,

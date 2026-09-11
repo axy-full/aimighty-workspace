@@ -9,6 +9,7 @@ import AtomikSheet from "@/components/atomik/AtomikSheet";
 import Header from "./Header";
 import Dock from "./Dock";
 import SuspendedBar from "./SuspendedBar";
+import DragGhost from "@/components/ui/DragGhost";
 
 /**
  * One shell, one ground (design/particl-v2/README.md §2–§5).
@@ -32,6 +33,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
+  /* CR1 §11: a file dropped anywhere that is not a well must never make the browser navigate to it. */
+  useEffect(() => {
+    const guard = (e: DragEvent) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); };
+    window.addEventListener("dragover", guard);
+    window.addEventListener("drop", guard);
+    return () => { window.removeEventListener("dragover", guard); window.removeEventListener("drop", guard); };
+  }, []);
   return (
     <AtomikProvider>
       <div className="shell">
@@ -43,6 +51,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div className="md:hidden contents"><AtomikSheet /></div>
         </div>
         <Dock />
+        <DragGhost />
       </div>
     </AtomikProvider>
   );

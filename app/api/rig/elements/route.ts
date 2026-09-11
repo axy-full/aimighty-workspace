@@ -40,6 +40,13 @@ export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const b = await req.json().catch(() => ({}));
+  /* CR1 §10 Duplicate: a copy of an existing asset — same kind, same references, nothing trained. */
+  if (typeof b?.cloneOf === "string" && b.cloneOf) {
+    const { cloneElement } = await import("@/lib/elements");
+    const copy = await cloneElement(b.cloneOf, got.user.id, typeof b?.name === "string" && b.name.trim() ? b.name.trim() : undefined);
+    if (!copy) return NextResponse.json({ error: "No such element." }, { status: 404 });
+    return NextResponse.json({ element: copy }, { status: 201 });
+  }
   const name = String(b?.name ?? "").trim().slice(0, 60);
   if (!name) return NextResponse.json({ error: "Name it first — you'll type it as @Name." }, { status: 400 });
   const kind = isElementKind(b?.kind) ? b.kind : "character";
