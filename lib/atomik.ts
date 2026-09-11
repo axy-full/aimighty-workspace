@@ -2,6 +2,7 @@ import { db, ready, now, id as newId } from "./db";
 import { gatewayAuth, gatewayReachable, explainGatewayFailure } from "./gateway";
 import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd, textCostUsd } from "./catalog";
 import { MODELS } from "./models";
+import { getSetting } from "./settings";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { gatewayPost } from "./gateway";
 import { meter } from "./meter";
@@ -337,8 +338,12 @@ export type Engine = {
  */
 export async function engines(): Promise<Engine[]> {
   /* An engine with no generate mode (Topaz only upscales) cannot make a
-     shot from a prompt, so the planner is never offered it. */
-  const own = MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate"));
+     shot from a prompt, so the planner is never offered it. Nor is one the
+     workspace switched off under Settings › Engines & rates (§13:
+     `ATOMIK MAY PROPOSE`). */
+  let off: string[] = [];
+  try { const raw = JSON.parse(await getSetting("atomikEngines")); if (Array.isArray(raw)) off = raw.map(String); } catch { off = []; }
+  const own = MODELS.filter((m) => !m.hidden && (m.supportsTasks ?? ["generate"]).includes("generate") && !off.includes(m.id));
   const out: Engine[] = own.map((m) => ({
     id: m.id, label: m.label, kind: m.kind as StepKind, own: true,
     note: m.kind === "video"

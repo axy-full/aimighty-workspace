@@ -70,6 +70,12 @@ export const DEFAULTS = {
    * migration anything is waiting on.
    */
   rigBackfilledAt: "",
+  /* design/particl-v2 §13 · Engines & rates: the model ids Atomik may NOT propose, as a JSON array. Empty means every engine. */
+  atomikEngines: "[]",
+  /* §13 · Rig & locks: a new asset starts locked ("1") or open ("0"). */
+  lockNewAssets: "0",
+  /* §13 · Rig & locks · Train on create: "ask" (the switch, off), "always" (the switch, on), "never" (no switch). */
+  trainOnCreate: "ask",
 } as const;
 
 export type SettingKey = keyof typeof DEFAULTS;
