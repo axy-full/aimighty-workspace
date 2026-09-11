@@ -9,7 +9,8 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { useAtomikRail } from "@/lib/atomikRail";
 import type { RecipeGraph } from "@/lib/runs";
 import type { ProductionRow } from "@/lib/productions";
-import { Button, Mono } from "@/components/ui";
+import { Button, Mono, PinnedBar, PinnedPrimary } from "@/components/ui";
+import { usePhone } from "@/lib/usePhone";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
 import { useAtomik } from "@/components/atomik/AtomikProvider";
@@ -45,6 +46,7 @@ function Recipes() {
   const proj = production?.projects.find((j) => j.id === projectId) ?? null;
   usePageTitle("Recipes");
   const [busy, setBusy] = useState(false);
+  const phone = usePhone();
   const fmt = (n: number) => money.price(n);
 
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to open the Rig.</div>;
@@ -75,11 +77,12 @@ function Recipes() {
       <RigBar tab="recipes" hrefs={hrefs}
         chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">›</span> {proj?.name ?? "project"}</>}
         mono={recipe ? `${recipe.name} · ${recipe.stages.length} stages · ${fmt(total)} a run` : "no recipe yet"}
-        right={recipe ? <Button variant="primary" placement="header" cost={firstPaid?.credits ?? 0} busy={busy} busyLabel="Starting…" outlined={rail.open} onClick={run}>Run to first checkpoint</Button>
+        phoneTitle={recipe?.name ?? proj?.name ?? "Recipes"} phoneMono={recipe ? `${recipe.stages.length} stages · ${fmt(total)} a run` : "no recipe yet"}
+        right={phone ? undefined : recipe ? <Button variant="primary" placement="header" cost={firstPaid?.credits ?? 0} busy={busy} busyLabel="Starting…" outlined={rail.open} onClick={run}>Run to first checkpoint</Button>
           : <Button variant="primary" placement="header" cost={0} busy={busy} busyLabel="Saving…" outlined={rail.open} onClick={make}>Save the eight stages as a recipe</Button>} />
       <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)] max-md:grid-cols-1">
         <RigStrip />
-        <div className="flex min-h-0 flex-col gap-[18px] overflow-auto px-[24px] pb-[24px] pt-[20px] max-md:px-[16px]">
+        <div className="flex min-h-0 flex-col gap-[18px] overflow-auto px-[24px] pb-[24px] pt-[20px] max-md:gap-[12px] max-md:px-[16px] max-md:pb-[10px] max-md:pt-[12px]">
           {recipe ? (
             <div className="flex flex-col gap-[10px]">
               <Mono>{recipe.name} · {recipe.stages.length} stages · an engine and a price per stage · building is free</Mono>
@@ -102,6 +105,11 @@ function Recipes() {
           )}
         </div>
       </div>
+      <PinnedBar>
+        {recipe
+          ? <PinnedPrimary cost={fmt(firstPaid?.credits ?? 0)} outlined={rail.open} busy={busy} onClick={run}>{busy ? "Starting…" : "Run to first checkpoint"}</PinnedPrimary>
+          : <PinnedPrimary cost={fmt(0)} outlined={rail.open} busy={busy} onClick={make}>{busy ? "Saving…" : "Save the eight stages as a recipe"}</PinnedPrimary>}
+      </PinnedBar>
     </div>
   );
 }

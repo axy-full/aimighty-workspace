@@ -22,6 +22,9 @@ import Loader, { PageLoader, LOADER_SIZES } from "@/components/atomik/Loader";
 import { useAtomik } from "@/components/atomik/AtomikProvider";
 import LazyMedia from "@/components/LazyMedia";
 import { RigBar, RigStrip, rigHrefs, Avatar } from "@/components/rig/RigBar";
+import PhoneBoard from "@/components/rig/PhoneBoard";
+import { usePhone } from "@/lib/usePhone";
+import { useAtomikRail } from "@/lib/atomikRail";
 import NewAssetSheet from "@/components/assets/NewAssetSheet";
 import {
   KIND_TAG, KIND_WORD, KINDS, NODE_W, TAKES_DOT_LEFT, isGen,
@@ -50,6 +53,12 @@ import {
  * downstream nodes stale, never re-runs them; an output files to a shot as
  * its next version through the ordinary generate route; `Save as recipe`
  * turns the board's generate nodes into stages.
+ *
+ * Below 768 (design/particl-v2-mobile, board M5) the Rig is read-and-run:
+ * the board built on a desktop is shown as one stack down one wire
+ * (`components/rig/PhoneBoard.tsx`), a slot opens its inspector sheet, and
+ * `Run node again · 19 CR` is pinned under `BUILT ON DESKTOP · RUN AND
+ * FILE FROM HERE`. No adding, no dragging, no wiring on a phone.
  */
 type Tool = "select" | "hand" | "wire" | "note";
 type Loaded = { board: Board };
@@ -68,6 +77,9 @@ function Canvas() {
   const money = useMoney();
   const toast = useToast();
   const { engines, engineLabel } = useAtomik();
+  const phone = usePhone();
+  const rail = useAtomikRail();
+  const [slotSel, setSlotSel] = useState<{ nodeId: string; slotId: string } | null>(null);
 
   /* `new?project=` opens the project's board — the latest one, or a fresh one when it has none — and lands on it. */
   const wantsNew = boardId === "new";
@@ -368,6 +380,38 @@ function Canvas() {
     ...KINDS.filter((k) => k !== "asset" && k !== "shot").map((k): MenuItem => ({ kind: "item", label: KIND_WORD[k], keys: KIND_TAG[k], onSelect: () => { addNode(k); } })),
   ];
 
+  if (phone) {
+    const gens = b.nodes.filter((n) => n.kind === "image" || n.kind === "video");
+    const target = gens.find((n) => n.id === selected) ?? gens[gens.length - 1] ?? null;
+    return (
+      <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
+        <RigBar tab="canvas" hrefs={hrefs}
+          chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">·</span> {b.name}</>}
+          mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
+          phoneTitle={b.name} phoneMono={`${b.nodes.length} nodes · ${fmt(spent)} spent`} />
+        <PhoneBoard board={b} fmt={fmt} priceOf={priceOf} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
+          slot={slotSel} onSlot={setSlotSel} shots={shotsData?.shots ?? []} elements={elements?.elements ?? []} engineOf={engineOf} rates={rates} projectId={projectId}
+          onRebind={(assetNodeId, portId, versionId, version) => {
+            const cur = latest.current; if (!cur) return;
+            const nodes = cur.nodes.map((n) => (n.id === assetNodeId ? { ...n, ports: n.ports.map((p) => (p.id === portId ? { ...p, versionId, version } : p)) } : n));
+            let next: Board = { ...cur, nodes };
+            next = { ...next, nodes: markStale(next, assetNodeId) };
+            commit(next);
+          }}
+          toast={toast} />
+        <div className="flex flex-none flex-col gap-[8px] border-t border-border bg-ground px-[16px] pb-[6px] pt-[10px]" data-pinned="">
+          <Mono className="text-center">Built on desktop · run and file from here</Mono>
+          <button type="button" disabled={!target || running.has(target.id)} onClick={() => target && runNode(target)} data-render=""
+            className={`flex h-[50px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${!target || rail.open || slotSel ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-ink text-ground"}`}>
+            <span className="truncate">{target && running.has(target.id) ? "Running…" : target?.output?.genId ? "Run node again" : "Run node"}</span>
+            <span className={`ui-mono ui-mono-cost !text-[12px] ${!target || rail.open || slotSel ? "text-ink-muted" : "text-on-primary-cost"}`}>{fmt(target ? priceOf(target) : 0)}</span>
+          </button>
+        </div>
+        <NewAssetSheet open={assetSheet} from="rig" onClose={() => setAssetSheet(false)} onCreated={() => refreshElements()} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <RigBar tab="canvas" hrefs={hrefs}
@@ -378,7 +422,7 @@ function Canvas() {
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={() => navigator.clipboard?.writeText(location.href).then(() => toast("Link copied"))}>Share</Button>
           <Button placement="header" className="!h-[34px] !px-[12px]" onClick={saveAsRecipe}>Save as recipe</Button>
         </>} />
-      <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)_300px] max-md:min-h-[560px] max-md:grid-cols-1">
+      <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)_300px]">
         <RigStrip />
         <section ref={surface} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
           aria-label="Board"
