@@ -145,7 +145,7 @@ export default function LibraryPage() {
   return (
     <>
       <nav className="subnav !h-[52px] !px-6 !gap-3.5" aria-label="All takes">
-        <Link href="/projects" className="subnav-item">All productions</Link>
+        <Link href="/productions" className="subnav-item">All productions</Link>
         <span className="subnav-item is-on" aria-current="page">All takes</span>
         <span className="h-4 w-px bg-line" />
         <div className="flex gap-1.5">

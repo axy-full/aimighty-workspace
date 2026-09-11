@@ -18,7 +18,7 @@ export default function NotFound() {
           <Link href="/" className="btn-render inline-flex h-[38px] items-center px-5 text-[14px]">
             Go to Video
           </Link>
-          <Link href="/projects" className="chip">Productions</Link>
+          <Link href="/productions" className="chip">Productions</Link>
           <Link href="/all" className="chip">All takes</Link>
         </div>
       </div>

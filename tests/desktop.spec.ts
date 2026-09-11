@@ -17,7 +17,7 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 const ROUTES = [
-  "/", "/images", "/audio", "/projects", "/all", "/studio", "/studio/shot",
+  "/", "/images", "/audio", "/productions", "/all", "/studio", "/studio/shot",
   "/usage", "/settings", "/policy", "/terms", "/privacy",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots",
   "/projects/demo/rig", "/projects/demo/rig/elements", "/takes/demo", "/shots/demo", "/elements/demo",
@@ -217,7 +217,7 @@ test("the app is dark everywhere, on a light machine too", async ({ page }) => {
  * else; the Atomik button with its shortcut.
  */
 test("four nav items, a balance, and Usage / Settings only behind the avatar", async ({ page }) => {
-  await page.goto("/projects");
+  await page.goto("/productions");
   await settle(page);
   const header = page.locator("header").first();
   const nav = header.getByRole("navigation", { name: "Sections" });
@@ -270,7 +270,7 @@ test("⌘J opens Atomik and Esc closes it", async ({ page }) => {
  * 300 and 420 wide, a 52px header, the composer at 44 / 46.
  */
 test("Atomik: nothing when closed, compact on ⌘J, expanded on Expand, and it remembers", async ({ page }) => {
-  await page.goto("/projects");
+  await page.goto("/productions");
   await settle(page);
   await expect(page.getByRole("complementary", { name: "Atomik" })).toHaveCount(0);
   await page.keyboard.press("Meta+j");
@@ -294,4 +294,30 @@ test("Atomik: nothing when closed, compact on ⌘J, expanded on Expand, and it r
   await expect(page.getByRole("complementary", { name: "Atomik" })).toHaveCount(0);
   await page.getByRole("banner").getByRole("button", { name: /Atomik/ }).click();
   expect(await page.getByRole("complementary", { name: "Atomik" }).evaluate((el) => el.getBoundingClientRect().width)).toBe(420);
+});
+
+/**
+ * §6, board 7a: the Productions page — the 64px header with the mono
+ * totals, the segmented, the two header pills (one filled), and a
+ * production row with its project tiles in five columns.
+ */
+test("Productions: the 7a header, one filled primary, rows with five-column tiles", async ({ page }) => {
+  await page.goto("/productions");
+  await settle(page);
+  const h1 = page.getByRole("heading", { name: "Productions" });
+  await expect(h1).toBeVisible();
+  const head = h1.locator("xpath=ancestor::div[contains(@class,'h-[64px]')][1]");
+  expect(await head.evaluate((el) => el.getBoundingClientRect().height)).toBe(64);
+  await expect(head.getByRole("group", { name: "Show" }).getByRole("button")).toHaveText(["Active", "Delivered", "All"]);
+  const filled = await head.locator("button").evaluateAll((els) => els.filter((b) => getComputedStyle(b).backgroundColor === "rgb(245, 246, 248)").map((b) => b.textContent));
+  expect(filled, "exactly one filled primary in the header").toEqual(["New production"]);
+  const signedIn = await page.getByRole("button", { name: "Account" }).count();
+  if (signedIn) {
+    const row = page.locator("section").first();
+    await expect(row).toBeVisible();
+    const grid = row.locator(".grid");
+    expect(await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(5);
+    await expect(grid.getByRole("button", { name: "+ Project" })).toBeVisible();
+    await expect(page.locator("text=/\\d+ productions · \\d+ projects · \\d+ need you/i")).toBeVisible();
+  }
 });

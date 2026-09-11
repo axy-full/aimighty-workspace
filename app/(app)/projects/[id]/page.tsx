@@ -78,7 +78,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
     if (!(await confirmDeleteProject(id, project?.name ?? "this production", data?.totals?.generations ?? null))) return;
     if (selection === id) setSelection("all");
     refreshCtx();
-    router.push("/projects");
+    router.push("/productions");
   }
 
   async function setCode() {
@@ -113,7 +113,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <Link href="/projects" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
+        <Link href="/productions" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
         <ProductionNav id={id} on="shots" />
         <Headline a={data} title={project?.name ?? "Project"} />
 

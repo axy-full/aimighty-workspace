@@ -25,7 +25,7 @@ export const NAV: readonly NavItem[] = [
   },
   {
     label: "Productions",
-    href: () => "/projects",                           // §6 `/productions` — step 4
+    href: () => "/productions",
     match: (p) => starts(p, "/projects", "/productions", "/shots", "/takes", "/canvas", "/all", "/dashboard") && !p.includes("/rig"),
   },
   {
@@ -42,7 +42,7 @@ export const NAV: readonly NavItem[] = [
 
 /** The mobile dock (§14): `Needs you · Make · Productions`. */
 export const DOCK: readonly { label: string; href: string; match: (path: string) => boolean }[] = [
-  { label: "Needs you", href: "/projects", match: (p) => starts(p, "/needs-you") },     // the approve queue — step 4/5
+  { label: "Needs you", href: "/productions", match: (p) => starts(p, "/needs-you") },     // the approve queue — step 5
   { label: "Make", href: "/", match: NAV[0].match },
-  { label: "Productions", href: "/projects", match: (p) => NAV[1].match(p) || NAV[2].match(p) || NAV[3].match(p) },
+  { label: "Productions", href: "/productions", match: (p) => NAV[1].match(p) || NAV[2].match(p) || NAV[3].match(p) },
 ];

@@ -13,7 +13,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 const ROUTES = [
   "/welcome", "/login", "/signup", "/reset",
-  "/", "/images", "/audio", "/projects", "/all", "/studio", "/studio/shot",
+  "/", "/images", "/audio", "/productions", "/all", "/studio", "/studio/shot",
   "/usage", "/settings", "/connect", "/platform", "/statements/2026-09", "/admin",
   "/policy", "/terms", "/privacy", "/report",
   "/projects/demo/rig", "/projects/demo/rig/elements", "/takes/demo", "/shots/demo", "/elements/demo",
@@ -73,7 +73,7 @@ for (const route of ROUTES) {
 }
 
 test.describe("the app shell", () => {
-  for (const route of ["/", "/projects", "/atomik/ideas"]) {
+  for (const route of ["/", "/productions", "/atomik/ideas"]) {
     test(`the dock on ${route} is padded by the safe-area inset`, async ({ page }) => {
       await page.goto(route);
       await settle(page);
