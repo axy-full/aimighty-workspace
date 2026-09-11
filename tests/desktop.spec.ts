@@ -398,6 +398,52 @@ test("Rig · Canvas: the 6a chrome, ⌘K adds a node, the inspector follows the 
   const node = page.getByRole("article", { name: "Prompt node" });
   expect(await node.evaluate((el) => el.getBoundingClientRect().width)).toBe(200);
   expect(await node.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("12px");
+  /* CR1 §6 — zoom and pan. A trackpad pinch arrives as ctrl+wheel: the handler
+     prevents the default FIRST (so the browser never zooms), then zooms about
+     the cursor; the cluster reads the percentage; the view survives a reload;
+     and the prompt node's output dot sits exactly where its wire would end at
+     25% and at 200%, because both live in the one transformed group. */
+  await page.evaluate(() => { (window as unknown as { __wheel: boolean[] }).__wheel = []; document.addEventListener("wheel", (e) => (window as unknown as { __wheel: boolean[] }).__wheel.push(e.defaultPrevented)); });
+  const bb = (await board.boundingBox())!;
+  await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -40);
+  await page.keyboard.up("Control");
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => (window as unknown as { __wheel: boolean[] }).__wheel), "every wheel over the board is defaultPrevented").toEqual([true]);
+  const zoomOf = () => board.evaluate((el) => Number(el.getAttribute("data-zoom")));
+  const z1 = await zoomOf();
+  expect(z1, "ctrl+wheel up zooms in").toBeGreaterThan(1);
+  await expect(page.locator("[data-zoom-readout]")).toHaveText(`${Math.round(z1 * 100)}%`);
+  await page.mouse.wheel(30, 20);
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => (window as unknown as { __wheel: boolean[] }).__wheel)).toEqual([true, true]);
+  expect(await zoomOf(), "a plain wheel pans, it does not zoom").toBeCloseTo(z1, 6);
+  await page.reload();
+  await settle(page);
+  expect(await page.getByRole("region", { name: "Board" }).evaluate((el) => Number(el.getAttribute("data-zoom"))), "the zoom survives a reload").toBeCloseTo(z1, 6);
+  /* Port dots stay exact at both ends of the range. */
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("menu").getByRole("menuitem", { name: /^Prompt/ }).click();
+  const prompt = page.getByRole("article", { name: "Prompt node" });
+  await expect(prompt).toBeVisible();
+  const alignment = async () => prompt.evaluate((el) => {
+    const surface = el.closest("section")!; const group = el.parentElement!;
+    const m = new DOMMatrix(getComputedStyle(group).transform); const s = surface.getBoundingClientRect();
+    const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+    const expected = { x: s.left + m.e + m.a * (x + 200), y: s.top + m.f + m.d * (y + 1 + 77 + 4) };      // nodes.ts outputPoint for a prompt
+    const dot = el.querySelector("[data-dot]")!.getBoundingClientRect();
+    return Math.hypot(dot.left + dot.width / 2 - expected.x, dot.top + dot.height / 2 - expected.y);
+  });
+  for (let i = 0; i < 12; i++) await page.getByRole("button", { name: "Zoom out" }).click();
+  expect(await zoomOf()).toBe(0.25);
+  expect(await alignment(), "the output dot centres on the wire's endpoint at 25%").toBeLessThan(1);
+  for (let i = 0; i < 12; i++) await page.getByRole("button", { name: "Zoom in" }).click();
+  expect(await zoomOf()).toBe(2);
+  expect(await alignment(), "…and at 200%").toBeLessThan(1);
+  await page.keyboard.press("Meta+0");
+  expect(await zoomOf(), "⌘0 fits").toBeLessThanOrEqual(1);
+  await prompt.click({ position: { x: 100, y: 16 } });   // the header, not the textarea
   await page.keyboard.press("Backspace");
   await expect(page.getByRole("article", { name: "Prompt node" })).toHaveCount(0);
 });
