@@ -203,36 +203,48 @@ test.describe("the audio composer", () => {
 });
 
 /**
- * Atomik on a phone (design/particl-v2 §14, board 9c): the header's ring
- * opens the sheet — radius 24 above, `0 20px 28px`, the 36×4 grabber, the
- * ring at 88, the 26px headline — and Esc closes it. A visitor has nothing
- * to decide, so the sheet says so; the numbers are the same either way.
+ * Atomik on a phone (design/particl-v2-mobile, board M3): the header's pill
+ * opens the sheet compact — `#0F1116`, radius 24 above, the .14 rule, the
+ * 36×4 grabber, the 48px header with the ring at 18 and `Expand ↑`, one
+ * checkpoint card (20px headline), the ask field pinned at 48px — then
+ * `Expand ↑` makes it 92% tall, `Compact ↓` returns, and Esc closes. A
+ * visitor has nothing to decide, so the card says so; the numbers hold.
  */
 test.describe("Atomik on a phone", () => {
-  test("the header ring opens the 9c sheet at its numbers", async ({ page }) => {
+  test("the header pill opens the M3 sheet compact, expands, compacts and closes", async ({ page }) => {
     test.skip(page.viewportSize()!.width >= 768, "a phone on its side gets the desktop rail (§14)");
     await page.goto("/productions");
     await settle(page);
-    const ring = page.getByRole("banner").getByRole("button", { name: "Ask Atomik" });
-    await expect(ring).toBeVisible();
-    await ring.click();
+    const pill = page.getByRole("banner").getByRole("button", { name: "Ask Atomik" });
+    expect(await pill.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBe(44);
+    await pill.click();
     const sheet = page.getByRole("dialog", { name: "Atomik" });
     await expect(sheet).toBeVisible();
-    const box = await sheet.evaluate((el) => { const cs = getComputedStyle(el); return { radius: cs.borderTopLeftRadius, padL: cs.paddingLeft, padB: cs.paddingBottom, border: cs.borderTopColor, bg: cs.backgroundColor }; });
+    const vh = page.viewportSize()!.height;
+    const box = await sheet.evaluate((el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); return { radius: cs.borderTopLeftRadius, border: cs.borderTopColor, bg: cs.backgroundColor, h: r.height, maxH: cs.maxHeight }; });
     expect(box.radius).toBe("24px");
-    expect(box.padL).toBe("20px");
-    expect(parseFloat(box.padB)).toBeGreaterThanOrEqual(28);
-    expect(box.bg).toBe("rgb(18, 20, 26)");
+    expect(box.bg).toBe("rgb(15, 17, 22)");
+    expect(box.maxH).toBe("58%");
+    expect(box.h).toBeLessThanOrEqual(vh * 0.58 + 1);
     const grab = sheet.locator("span.h-\\[4px\\]").first();
     expect(await grab.evaluate((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })).toEqual([36, 4]);
-    const ringSvg = sheet.locator("svg").first();
-    expect(await ringSvg.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(88);
-    const head = sheet.locator("[data-headline]");
-    expect(await head.evaluate((el) => getComputedStyle(el).fontSize)).toBe("26px");
-    for (const b of await sheet.getByRole("button").all()) {
-      const r = await b.boundingBox();
-      if (r && r.height > 0) expect(r.height, "every target in the sheet is at least 44pt").toBeGreaterThanOrEqual(44);
-    }
+    const ring = sheet.locator("svg").first();
+    expect(await ring.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(18);
+    expect(await sheet.locator("[data-headline]").evaluate((el) => getComputedStyle(el).fontSize)).toBe("20px");
+    const ask = sheet.getByRole("textbox", { name: "Ask Atomik" });
+    expect(await ask.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBe(48);
+    expect(await ask.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+    /* §14: every target is at least 44pt — the control, or its invisible touch band. */
+    const short = await sheet.evaluate((root) => [...root.querySelectorAll<HTMLElement>("button")].filter((b) => {
+      const r = b.getBoundingClientRect(); if (r.height === 0) return false;
+      const band = parseFloat(getComputedStyle(b, "::after").height) || 0;
+      return r.height < 44 && band < 44;
+    }).map((b) => `${b.textContent?.trim().slice(0, 16)}:${Math.round(b.getBoundingClientRect().height)}`));
+    expect(short).toEqual([]);
+    await sheet.getByRole("button", { name: /Expand/ }).click();
+    expect(await sheet.evaluate((el) => getComputedStyle(el).maxHeight)).toBe("92%");
+    await sheet.getByRole("button", { name: /Compact/ }).click();
+    expect(await sheet.evaluate((el) => getComputedStyle(el).maxHeight)).toBe("58%");
     await page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
   });
