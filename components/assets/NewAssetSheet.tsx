@@ -10,6 +10,8 @@ import { uploadFile } from "@/lib/uploadClient";
 import type { ElementKind } from "@/lib/rig";
 import type { Generation } from "@/lib/jobs";
 import { Mono } from "@/components/ui";
+import Sheet from "@/components/ui/Sheet";
+import { usePhone } from "@/lib/usePhone";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
@@ -39,6 +41,16 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  * workspace's identity trainer, at its price, with consent on record — so
  * the switch is real for a character and says so for the kinds whose
  * engine is not connected yet.
+ *
+ * Below 768 (design/particl-v2-mobile, board M8) the same sheet is full
+ * height from 44px: `New asset` at 600 20 over `NAME · KIND · REFERENCES
+ * · THAT'S IT` with `FROM LIBRARY` at the right; the name field at 52px
+ * in 20px type; the kind pills at 44px (the chosen one filled ink); the
+ * references well (64px thumbs, `+ Add` opening Upload · A take · Make ·
+ * Canvas as a sheet); `WHAT PARTICL READS FROM THESE` as two-up tiles
+ * (`READY` in the accent, `LATER` muted, `OPTIONAL` body); the train row
+ * with its 52×32 switch; and the pinned `Create Iver · 12 CR` under the
+ * consequence line. The dock is hidden behind it.
  */
 export type SheetFrom = "library" | "rig" | "take" | "canvas" | "prompt" | "atomik";
 export type SheetRef = { uploadId?: string | null; genId?: string | null; url: string | null; label: string; kind: "image" | "video" | "audio" };
@@ -110,6 +122,8 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [takeMenu, setTakeMenu] = useState<{ x: number; y: number } | null>(null);
+  const [sourceMenu, setSourceMenu] = useState(false);
+  const phone = usePhone();
   const picker = useRef<HTMLInputElement>(null);
   const nameField = useRef<HTMLInputElement>(null);
   const { data: terms } = useApi<{ terms: { configured: boolean; minPhotos: number; trainCostUsd: number } }>(signedIn ? "/api/identities" : null, 0);
@@ -201,6 +215,90 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
 
   const kindBtn = (k: ElementKind) => `tap44 h-[48px] rounded-tile border px-[14px] text-[13.5px] font-medium leading-none ${k === kind ? "border-[rgba(245,246,248,.3)] bg-[rgba(245,246,248,.12)] text-ink" : "border-[rgba(245,246,248,.12)] text-ink-body"}`;
   const source = "tap44 whitespace-nowrap rounded-pill border border-border-mid px-[9px] py-[7px] text-[12px] font-medium leading-none text-ink";
+  const sourceItems: MenuItem[] = [
+    { kind: "item", label: "Upload", onSelect: () => picker.current?.click() },
+    { kind: "item", label: "A take", onSelect: () => setTakeMenu({ x: 0, y: 0 }) },
+    { kind: "item", label: "Make", onSelect: () => { onClose(); router.push("/make/images"); } },
+    { kind: "item", label: "Canvas", onSelect: () => { if (!current) { toast("Pick a production first — Canvas belongs to a project."); return; } onClose(); router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}`); } },
+  ];
+  const takesMenu = takeMenu && <Menu x={takeMenu.x} y={takeMenu.y} title="A take · the newest stills" items={takeItems.length ? takeItems : [{ kind: "note", text: takes ? "No finished stills yet." : "Loading…" }]} onClose={() => setTakeMenu(null)} />;
+
+  if (phone) return (
+    <>
+      <Sheet open onClose={onClose} label="New asset" top={44} footerPad="8px 16px 26px" bodyClassName="!gap-[14px]"
+        header={
+          <div className="flex flex-none items-center gap-[10px] px-[16px] pb-[10px] pt-[12px]">
+            <span className="flex min-w-0 flex-col gap-[5px]"><span className="text-[20px] font-semibold leading-[1.1] text-ink">New asset</span><Mono className="truncate">Name · kind · references · that&rsquo;s it</Mono></span>
+            <Mono className="ml-auto flex-none rounded-pill border border-border-mid px-[9px] py-[7px]">From {FROM_LABEL[from]}</Mono>
+          </div>
+        }
+        footer={
+          <span className="flex w-full flex-col gap-[8px]">
+            <Mono cost className="text-center !leading-[1.4]">{note}</Mono>
+            <button type="button" onClick={create} disabled={busy || !signedIn} data-create=""
+              className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-ink px-[16px] text-[15px] font-semibold leading-none text-ground disabled:opacity-60">
+              <span className="flex items-center gap-[10px]">{busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}Create {name.trim() || "asset"}</span>
+              <span className="ui-mono ui-mono-cost !text-[12px] text-on-primary-cost">{money.price(cost)}</span>
+            </button>
+          </span>
+        }>
+        <label className="flex flex-col gap-[6px]">
+          <Mono>Name · you&rsquo;ll type it as {tag}</Mono>
+          <input ref={nameField} value={name} onChange={(e) => setName(e.target.value)} placeholder="Iver" aria-label="Name"
+            className="box-border flex h-[52px] items-center rounded-card border border-[rgba(245,246,248,.2)] bg-card px-[14px] text-[20px] font-semibold leading-none text-ink outline-0 placeholder:text-ink-muted" />
+        </label>
+        <div className="flex flex-col gap-[6px]">
+          <Mono>Kind</Mono>
+          <span className="flex flex-wrap gap-[6px]" role="group" aria-label="Kind">
+            {KIND_ORDER.map((k) => <button key={k} type="button" aria-pressed={k === kind} onClick={() => setKind(k)} className={`h-[44px] rounded-pill border px-[14px] text-[13.5px] font-medium leading-none ${k === kind ? "border-ink bg-ink text-ground" : "border-border-mid text-ink-body"}`}>{KIND_WORD[k]}</button>)}
+          </span>
+        </div>
+        <div className="flex flex-col gap-[6px]">
+          <Mono>References · {refs.length} · upload · a take · make · canvas</Mono>
+          <div className="flex gap-[6px] overflow-x-auto rounded-card border border-dashed border-[rgba(245,246,248,.22)] p-[8px]" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
+            <input ref={picker} type="file" accept="image/*,video/*,audio/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
+            {refs.map((r, i) => (
+              <span key={`${r.uploadId ?? r.genId}-${i}`} className="relative h-[64px] w-[64px] flex-none overflow-hidden rounded-ctl border border-[rgba(245,246,248,.08)] ui-placeholder">
+                {r.url && r.kind === "image" && <img src={r.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+                {r.kind !== "image" && <span className="ui-mono absolute inset-0 flex items-center justify-center tracking-normal text-ink-body">{r.kind === "video" ? "Clip" : "Audio"}</span>}
+                <button type="button" onClick={() => setRefs((p) => p.filter((_, k) => k !== i))} aria-label={`Remove ${r.label}`} className="ui-chip-scrim absolute right-[2px] top-[2px] rounded-badge px-[5px] py-[3px] text-[12px] leading-none text-ink">×</button>
+              </span>
+            ))}
+            {uploading && <span className="flex h-[64px] w-[64px] flex-none items-center justify-center rounded-ctl border border-[rgba(245,246,248,.08)]"><Loader size={LOADER_SIZES.message} /></span>}
+            <button type="button" onClick={() => setSourceMenu(true)} className="flex min-h-[64px] min-w-[64px] flex-1 items-center justify-center text-[13px] font-medium leading-none text-ink-body">+ Add</button>
+          </div>
+        </div>
+        <div className="flex flex-col gap-[6px]">
+          <Mono>What particl reads from these</Mono>
+          <div className="grid grid-cols-2 gap-[6px]" role="list" aria-label="Ports">
+            {ports.map((p) => (
+              <span key={p.tag} role="listitem" className="flex items-center gap-[8px] rounded-tile border border-border bg-card px-[11px] py-[10px]">
+                <span className="relative h-[26px] w-[34px] flex-none overflow-hidden rounded-[5px] border border-border bg-[#1A1D24] ui-placeholder">{p.state === "ready" && stills[0]?.url && <img src={stills[0].url} alt="" className="absolute inset-0 h-full w-full object-cover" />}</span>
+                <span className="flex min-w-0 flex-col gap-[3px]"><span className="ui-mono text-ink">{p.tag}</span><span className={`ui-mono ui-mono-cost ${p.state === "ready" ? "text-accent" : p.state === "later" ? "text-ink-muted" : "text-ink-body"}`}>{p.state}</span></span>
+              </span>
+            ))}
+          </div>
+        </div>
+        {trainRule !== "never" && (
+          <div className="flex items-center gap-[12px] rounded-card border border-border bg-card px-[14px] py-[12px]">
+            <span className="flex min-w-0 flex-col gap-[4px]">
+              <span className="text-[14px] font-medium leading-[1.2] text-ink">{trainLabel}{trainable && trainCost != null ? <Mono cost tone="ink" className="ml-[8px]">{money.price(trainCost)}</Mono> : null}</span>
+              <span className="text-[12.5px] leading-[1.35] text-ink-body" style={{ textWrap: "pretty" }}>{trainNote}</span>
+              {trainable && train && enoughPhotos && terms?.terms.configured && (
+                <label className="mt-[4px] flex items-start gap-[8px] text-[13px] leading-[1.4] text-ink"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} aria-label="Consent to train" className="mt-[3px]" />I have the right to train on this person&rsquo;s face.</label>
+              )}
+            </span>
+            <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!trainable || !terms?.terms.configured} onClick={() => setTrainOverride(!train)}
+              className={`relative ml-auto h-[32px] w-[52px] flex-none rounded-[16px] disabled:opacity-40 ${trainable && train ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}>
+              <span className={`absolute top-[3px] h-[26px] w-[26px] rounded-full ${trainable && train ? "left-[23px] bg-ground" : "left-[3px] bg-ink"}`} />
+            </button>
+          </div>
+        )}
+      </Sheet>
+      {sourceMenu && <Menu x={0} y={0} title="Pick from" items={sourceItems} onClose={() => setSourceMenu(false)} />}
+      {takesMenu}
+    </>
+  );
 
   return (
     <div className="ui-sheet-scrim fixed inset-0 z-[60] flex items-center justify-center p-[16px]" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="presentation">
@@ -293,7 +391,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           </span>
         </div>
       </div>
-      {takeMenu && <Menu x={takeMenu.x} y={takeMenu.y} title="A take · the newest stills" items={takeItems.length ? takeItems : [{ kind: "note", text: takes ? "No finished stills yet." : "Loading…" }]} onClose={() => setTakeMenu(null)} />}
+      {takesMenu}
     </div>
   );
 }

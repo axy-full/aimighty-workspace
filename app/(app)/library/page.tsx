@@ -12,7 +12,9 @@ import { ELEMENT_KINDS, type ElementKind } from "@/lib/rig";
 import type { ElementFull } from "@/lib/elements";
 import type { ProductionRow } from "@/lib/productions";
 import type { Generation } from "@/lib/jobs";
-import { Button, Mono, Segmented } from "@/components/ui";
+import { Button, Mono, Segmented, PinnedBar, PinnedPrimary } from "@/components/ui";
+import { usePhone } from "@/lib/usePhone";
+import { useMoney } from "@/lib/price";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
@@ -37,6 +39,16 @@ import NewAssetSheet, { type SheetRef } from "@/components/assets/NewAssetSheet"
  * …` chips; the selected item in the ring with `Promote to asset · 0 CR`,
  * `Use in Make`, `Add to Canvas`; `Open full board`). The segmented says
  * which lens fills the screen.
+ *
+ * Below 768 (design/particl-v2-mobile, board M7): `16px 16px`, 12 apart —
+ * `Library` at 600 24/1.05 −0.02em over `14 ASSETS · 31 REFERENCES · 9
+ * UNFILED`, the segmented full width, the filter pills scrolling edge to
+ * edge (`Kind ▾`, `Production ▾`, `Locked`, `⌕ Search`), then the assets
+ * two-up (radius 12; the 4:3 still with the kind, lock and version chips
+ * at 7/7; the name at 600 13.5; `4 PORTS · HANDBAG TVC` in mono; locked on
+ * `--card-raised`). The references lens is the same grid of references —
+ * tap one for `Promote to asset · 0 CR`, `Use in Make`, `Add to Canvas` as
+ * a sheet; the unfiled lens is Make's wall. `New asset · 0 CR` pinned.
  */
 type Lens = "assets" | "references" | "unfiled";
 type Upload = { id: string; filename: string; mime: string; bytes: number; width: number | null; height: number | null; kind: "image" | "video"; durationS: number | null; url: string; createdAt: number };
@@ -53,6 +65,10 @@ function Library() {
   const { current } = useProject();
   const toast = useToast();
   const rail = useAtomikRail();
+  const phone = usePhone();
+  const money = useMoney();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [refMenu, setRefMenu] = useState<string | null>(null);
   usePageTitle("Library");
   const [lens, setLens] = useState<Lens>(() => (search.get("view") === "unfiled" ? "unfiled" : search.get("view") === "references" ? "references" : "assets"));
   const [q, setQ] = useState("");
@@ -111,10 +127,92 @@ function Library() {
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to open the Library.</div>;
   if (!els || !ups || !prods) return <PageLoader what="Opening · Library" />;
 
+  if (phone) {
+    const pill = (on: boolean) => `tap44 flex flex-none items-center gap-[6px] rounded-pill border border-[rgba(245,246,248,.12)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none ${on ? "bg-[rgba(245,246,248,.1)] text-ink" : "text-ink-body"}`;
+    const refSel = refs.find((u) => u.id === refMenu) ?? null;
+    const refItems: MenuItem[] = refSel ? [
+      { kind: "item", label: "Promote to asset", keys: money.price(0), onSelect: () => setSheet({ refs: [{ uploadId: refSel.id, url: refSel.url, label: refSel.filename, kind: refSel.kind }], name: refSel.filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9 ]+/g, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() + w.slice(1)).join("") }) },
+      { kind: "item", label: "Use in Make", onSelect: () => router.push(`/make/${refSel.kind === "video" ? "video" : "images"}?ref=${encodeURIComponent(refSel.id)}`) },
+      { kind: "item", label: "Add to Canvas", onSelect: () => current ? router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(refSel.id)}`) : toast("Pick a production first — Canvas belongs to a project.") },
+      { kind: "note", text: "References are free and unversioned until promoted." },
+    ] : [];
+    return (
+      <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
+        <div className="flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[16px] pb-[10px] pt-[16px]" data-phone-body="">
+          <span className="flex flex-col gap-[6px]">
+            <h1 className="text-[24px] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">Library</h1>
+            <Mono>{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled</Mono>
+          </span>
+          <Segmented label="Lens" fill value={lens} onChange={(l) => { setLens(l); setFull(false); }} options={[{ value: "assets", label: "Assets" }, { value: "references", label: "References" }, { value: "unfiled", label: "Unfiled" }]} />
+          <div className="-mx-[16px] flex gap-[6px] overflow-x-auto px-[16px]" data-filters="">
+            {lens === "assets" && <>
+              <button type="button" className={pill(kind != null)} onClick={(e) => setMenu({ which: "kind", ...at(e) })}>Kind{kind ? ` · ${KIND_WORD[kind]}` : ""} ▾</button>
+              <button type="button" className={pill(production != null)} onClick={(e) => setMenu({ which: "production", ...at(e) })}>Production{production ? ` · ${prods.productions.find((p) => p.id === production)?.name ?? ""}` : ""} ▾</button>
+              <button type="button" className={pill(locked === true)} aria-pressed={locked === true} onClick={() => setLocked((l) => (l === true ? null : true))}>Locked</button>
+            </>}
+            {lens === "references" && <button type="button" className={pill(false)} onClick={() => picker.current?.click()}>+ Add references</button>}
+            {lens !== "unfiled" && <button type="button" className={`${pill(searchOpen)} text-ink-muted`} aria-expanded={searchOpen} onClick={() => setSearchOpen((o) => !o)}>⌕ Search</button>}
+          </div>
+          {searchOpen && lens !== "unfiled" && (
+            <label className="flex h-[44px] items-center gap-[8px] rounded-pill border border-border bg-card px-[12px] text-ink-muted">
+              <span className="ui-mono tracking-normal">⌕</span>
+              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search assets, references, @names…" aria-label="Search the Library" className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-0 placeholder:text-ink-muted" />
+            </label>
+          )}
+          {lens === "assets" && (
+            <div className="grid grid-cols-2 gap-[10px]" data-assets="">
+              {assets.map((a) => {
+                const first = a.attributes[0];
+                const cur = first?.versions.find((v) => v.id === first.currentId) ?? first?.versions[0] ?? null;
+                const vn = cur ? first!.versions.findIndex((v) => v.id === cur.id) + 1 : 0;
+                const prod = productionOf(a.projectId);
+                return (
+                  <article key={a.id} className={`flex flex-col overflow-hidden rounded-card border border-border ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
+                    <span className="relative block aspect-[4/3] border-b border-hairline ui-placeholder">
+                      {cur?.uploadId && <img src={`/api/uploads/${encodeURIComponent(cur.uploadId)}`} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+                      <span className="ui-chip-scrim absolute left-[7px] top-[7px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{a.kind}</span></span>
+                      {a.locked && <span className="ui-chip-scrim absolute right-[7px] top-[7px] flex rounded-badge px-[6px] py-[4px]" title={`Locked${a.lockedBy ? ` by ${a.lockedBy}` : ""}`}><svg viewBox="0 0 12 12" width="11" height="11" style={{ fill: "none", stroke: "var(--ink)", strokeWidth: 1.3 }} aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2" /><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4" /></svg></span>}
+                      <span className="ui-chip-scrim absolute bottom-[7px] right-[7px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono tracking-normal text-ink">{vn ? `v${vn}` : "—"}</span></span>
+                    </span>
+                    <span className="flex flex-col gap-[5px] px-[10px] pb-[10px] pt-[9px]">
+                      <span className="truncate text-[13.5px] font-semibold leading-[1.2] text-ink">@{a.name}</span>
+                      <Mono cost className="truncate">{a.attributes.length} {a.attributes.length === 1 ? "port" : "ports"} · {prod ? prod.name : "all productions"}</Mono>
+                    </span>
+                  </article>
+                );
+              })}
+              {!assets.length && <span className="col-span-2 text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>{els.elements.length ? "Nothing matches those filters." : "No assets yet. Promote a reference, or make one with New asset — creating is free."}</span>}
+            </div>
+          )}
+          {lens === "references" && (
+            <div className="grid grid-cols-2 gap-[10px]" data-references="">
+              <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) drop(e.target.files); e.target.value = ""; }} />
+              {refs.map((u) => (
+                <button key={u.id} type="button" onClick={() => setRefMenu(u.id)} aria-label={`Reference · ${u.filename}`}
+                  className="relative box-border aspect-[4/3] overflow-hidden rounded-tile border border-[rgba(245,246,248,.1)] text-left ui-placeholder">
+                  {u.kind === "image" && <img src={u.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+                  <span className="ui-chip-scrim absolute bottom-[6px] left-[6px] max-w-[calc(100%-12px)] truncate rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">Ref · {u.filename.replace(/\.[a-z0-9]+$/i, "").slice(0, 18)}</span></span>
+                </button>
+              ))}
+              {!refs.length && <span className="col-span-2 text-[13px] leading-[1.5] text-ink-body">Nothing on the board yet. Add images or clips.</span>}
+            </div>
+          )}
+          {lens === "unfiled" && <UnfiledWall kind="all" search={q} phone />}
+        </div>
+        <PinnedBar>
+          <PinnedPrimary cost={money.price(0)} outlined={rail.open || sheet != null || menu != null || refMenu != null} onClick={() => setSheet({ refs: [] })}>New asset</PinnedPrimary>
+        </PinnedBar>
+        {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "kind" ? "Kind" : menu.which === "production" ? "Production" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
+        {refSel && <Menu x={0} y={0} title={`Ref · ${refSel.filename.slice(0, 24)}`} items={refItems} onClose={() => setRefMenu(null)} />}
+        <NewAssetSheet open={sheet != null} from="library" onClose={() => setSheet(null)} initial={sheet ? { name: sheet.name, references: sheet.refs } : undefined} onCreated={() => { refreshEls(); setLens("assets"); setSelected(null); }} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-      <div className="flex h-[52px] flex-none items-center gap-[14px] border-b border-hairline px-[24px] max-md:h-auto max-md:flex-wrap max-md:px-[16px] max-md:py-[10px]">
-        <span className="flex flex-none flex-col gap-[4px]"><span className="text-[16px] font-semibold leading-none text-ink">Library</span><Mono className="whitespace-nowrap max-md:hidden">{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled {counts.unfiled === 1 ? "take" : "takes"} · all productions</Mono></span>
+      <div className="flex h-[52px] flex-none items-center gap-[14px] border-b border-hairline px-[24px]">
+        <span className="flex flex-none flex-col gap-[4px]"><span className="text-[16px] font-semibold leading-none text-ink">Library</span><Mono className="whitespace-nowrap">{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled {counts.unfiled === 1 ? "take" : "takes"} · all productions</Mono></span>
         <Segmented label="Lens" placement="toolbar" className="ml-[10px] max-md:ml-0" value={lens} onChange={(l) => { setLens(l); setFull(false); }} options={[{ value: "assets", label: "Assets" }, { value: "references", label: "References" }, { value: "unfiled", label: "Unfiled" }]} />
         {lens === "assets" && (
           <span className="flex flex-none gap-[6px] max-md:hidden">
