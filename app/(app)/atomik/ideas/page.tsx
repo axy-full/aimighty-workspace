@@ -1,5 +1,7 @@
 "use client";
 
+import { setAtomikRail } from "@/lib/atomikRail";
+
 /**
  * Atomik · Ideas — from the pipeline handoff.
  *
@@ -52,7 +54,7 @@ const modelTail = (id: string | null) => (id ?? "auto").split("/").pop() ?? "aut
 export default function IdeasPage() {
   usePageTitle("Atomik · Ideas");
   const router = useRouter();
-  const { signedIn, rates } = useSession();
+  const { signedIn } = useSession();
   const { setSelection, refreshProjects } = useProject();
   const { data, refresh } = useApi<{ ideas: Row[] }>(signedIn ? "/api/atomik/ideas" : null, 15_000);
   /* The planner menu rides along with the agent's index — a cached read of
@@ -69,7 +71,6 @@ export default function IdeasPage() {
   const shown = ideas.filter((i) => filter === "all" || shownState(i) === filter);
   const counts = { all: ideas.length, pinned: 0, production: 0, parked: 0 };
   for (const i of ideas) { const s = shownState(i); if (s !== "open") counts[s]++; }
-  const agentHref = draft.value.model !== "auto" ? `/atomik/agent?model=${encodeURIComponent(draft.value.model)}` : "/atomik/agent";
 
   async function patch(i: Row, body: Record<string, unknown>) {
     const res = await fetch(`/api/atomik/ideas/${i.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -113,7 +114,7 @@ export default function IdeasPage() {
               <button key={k} type="button" role="tab" aria-selected={filter === k} className={`seg-opt ${filter === k ? "is-on" : ""}`} onClick={() => setFilter(k)}>{l}<span className="seg-n">{counts[k]}</span></button>
             ))}
           </div>
-          <Link href={agentHref} className="btn-secondary !h-[38px]">Ask the agent →</Link>
+          <button type="button" onClick={() => setAtomikRail("compact")} className="btn-secondary !h-[38px]">Ask Atomik →</button>
           <button type="button" className="btn-primary !px-4" onClick={() => setComposingChoice(true)} disabled={!signedIn} title={signedIn ? undefined : "Sign in to write an idea"}>New idea</button>
         </div>
       </div>

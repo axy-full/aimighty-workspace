@@ -1764,7 +1764,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
    itself is a component now (components/shell/Header.tsx, v2 §3); the
    ground classes below carry the routes v2 has not yet replaced. */
 .shell { height: 100dvh; display: flex; flex-direction: column; background: var(--color-desk); color: var(--color-ink); }
-.shell-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.shell-body { flex: 1; min-height: 0; display: flex; flex-direction: row; }
+/* The screen: a column that fills what the rail leaves (§5: the page
+   reflows to the remaining width). Every route renders inside it. */
+.shell-page { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
 /* The phone's dock (§14): three cells over the home indicator. Hidden from
    768 up by the `md:hidden` on the element; below that it is the nav. */

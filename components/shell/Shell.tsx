@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { useSession } from "@/lib/session";
 import { bindAtomikRail, setAtomikRail, toggleAtomikRail } from "@/lib/atomikRail";
+import { AtomikProvider } from "@/components/atomik/AtomikProvider";
+import AtomikRail from "@/components/atomik/AtomikRail";
 import Header from "./Header";
 import Dock from "./Dock";
 import SuspendedBar from "./SuspendedBar";
@@ -10,11 +12,13 @@ import SuspendedBar from "./SuspendedBar";
 /**
  * One shell, one ground (design/particl-v2/README.md §2–§5).
  *
- * The 56px header, the screen, and on a phone the dock. There is no light
- * theme any more and no second brand: Atomik is a rail on this same ground
- * (step 3), opened by its header button or ⌘J and closed by Esc, and its
- * state lives at app level, bound here to the signed-in user so it is
- * theirs across sessions.
+ * The 56px header; beneath it the screen with Atomik's rail on its right
+ * when the rail is open (compact 300, expanded 420 — the screen reflows to
+ * what is left); on a phone the dock. There is no light theme and no
+ * second brand: Atomik is this rail, opened by its header button or ⌘J,
+ * closed by Esc, its state kept per user across sessions. Atomik's own
+ * state — the conversation, the plan, the checkpoint — lives here too, so
+ * the header button shows it whether the rail is open or not.
  */
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { email } = useSession();
@@ -28,11 +32,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", key);
   }, []);
   return (
-    <div className="shell">
-      <Header />
-      <SuspendedBar />
-      <div className="shell-body">{children}</div>
-      <Dock />
-    </div>
+    <AtomikProvider>
+      <div className="shell">
+        <Header />
+        <SuspendedBar />
+        <div className="shell-body">
+          <div className="shell-page">{children}</div>
+          <div className="max-md:hidden contents"><AtomikRail /></div>
+        </div>
+        <Dock />
+      </div>
+    </AtomikProvider>
   );
 }

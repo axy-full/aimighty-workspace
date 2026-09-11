@@ -253,7 +253,8 @@ test("four nav items, a balance, and Usage / Settings only behind the avatar", a
 test("⌘J opens Atomik and Esc closes it", async ({ page }) => {
   await page.goto("/");
   await settle(page);
-  const atomik = page.locator("header").getByRole("button", { name: /Atomik/ });
+  // The shell header is the page's banner; the rail has a header of its own.
+  const atomik = page.getByRole("banner").getByRole("button", { name: /Atomik/ });
   await expect(atomik).toHaveAttribute("aria-pressed", "false");
   await page.keyboard.press("Meta+j");
   await expect(atomik).toHaveAttribute("aria-pressed", "true");
@@ -261,4 +262,36 @@ test("⌘J opens Atomik and Esc closes it", async ({ page }) => {
   await expect(atomik).toHaveAttribute("aria-pressed", "false");
   await atomik.click();
   await expect(atomik).toHaveAttribute("aria-pressed", "true");
+});
+
+/**
+ * §5, §16: Atomik renders nothing when closed; opens compact on click / ⌘J;
+ * expands; Esc closes; the state survives a reload. The board's numbers:
+ * 300 and 420 wide, a 52px header, the composer at 44 / 46.
+ */
+test("Atomik: nothing when closed, compact on ⌘J, expanded on Expand, and it remembers", async ({ page }) => {
+  await page.goto("/projects");
+  await settle(page);
+  await expect(page.getByRole("complementary", { name: "Atomik" })).toHaveCount(0);
+  await page.keyboard.press("Meta+j");
+  const rail = page.getByRole("complementary", { name: "Atomik" });
+  await expect(rail).toBeVisible();
+  expect(await rail.evaluate((el) => el.getBoundingClientRect().width)).toBe(300);
+  expect(await rail.locator("header").evaluate((el) => el.getBoundingClientRect().height)).toBe(52);
+  await expect(rail.getByRole("textbox", { name: "Ask Atomik" })).toBeVisible();
+  expect(await rail.getByRole("textbox", { name: "Ask Atomik" }).evaluate((el) => el.getBoundingClientRect().height)).toBe(44);
+  await rail.getByRole("button", { name: /^Expand/ }).click();
+  expect(await rail.evaluate((el) => el.getBoundingClientRect().width)).toBe(420);
+  await expect(rail.getByText("Production agent")).toBeVisible();
+  expect(await rail.getByRole("textbox", { name: "Ask Atomik" }).evaluate((el) => el.getBoundingClientRect().height)).toBe(46);
+  // The page beside it got narrower, not covered.
+  const pageWidth = await page.locator(".shell-page").evaluate((el) => el.getBoundingClientRect().width);
+  expect(pageWidth).toBe(1440 - 420);
+  await page.reload();
+  await settle(page);
+  expect(await page.getByRole("complementary", { name: "Atomik" }).evaluate((el) => el.getBoundingClientRect().width)).toBe(420);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("complementary", { name: "Atomik" })).toHaveCount(0);
+  await page.getByRole("banner").getByRole("button", { name: /Atomik/ }).click();
+  expect(await page.getByRole("complementary", { name: "Atomik" }).evaluate((el) => el.getBoundingClientRect().width)).toBe(420);
 });
