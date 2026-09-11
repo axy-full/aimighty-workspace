@@ -8,7 +8,8 @@ import Mono from "./Mono";
  * `--ink-body`, the current one 600 in ink; done and current dots filled
  * ink, upcoming a 1.5px outline at .3. On a project tile (7a): 8px dots
  * 4px apart — done at .45 ink, current ink, upcoming a 1px outline at .25
- * — then the current step's name in mono.
+ * — then the current step's name in mono; on a phone's M1 tile the same
+ * dots at 7px (`dot`).
  */
 export const STEPS = ["Brief", "Shots", "Boards", "Takes", "Approve", "Deliver"] as const;
 export type StepName = (typeof STEPS)[number];
@@ -18,10 +19,12 @@ type Props = {
   current: number;
   /** Dots and the current step's name only (project tiles). */
   compact?: boolean;
+  /** The compact dots' size: 8 on a 7a tile, 7 on an M1 tile. */
+  dot?: number;
   className?: string;
 };
 
-export default function Stepper({ current, compact = false, className = "" }: Props) {
+export default function Stepper({ current, compact = false, dot: dotPx = 8, className = "" }: Props) {
   const at = Math.max(0, Math.min(STEPS.length - 1, current));
   const dot = (i: number, px: number) => (
     <span aria-hidden="true" className={`block flex-none rounded-full ${
@@ -32,7 +35,7 @@ export default function Stepper({ current, compact = false, className = "" }: Pr
       <span className={`flex items-center gap-[8px] ${className}`} aria-label={`Step ${at + 1} of ${STEPS.length}: ${STEPS[at]}`}>
         <span className="flex gap-[4px]">
           {STEPS.map((name, i) => (
-            <span key={name} aria-hidden="true" className={`block h-[8px] w-[8px] flex-none rounded-full ${
+            <span key={name} aria-hidden="true" style={{ width: dotPx, height: dotPx }} className={`block flex-none rounded-full ${
               i < at ? "bg-[rgba(245,246,248,.45)]" : i === at ? "bg-ink" : "border border-[rgba(245,246,248,.25)]"}`} />
           ))}
         </span>

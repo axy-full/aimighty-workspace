@@ -19,6 +19,11 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  * an empty shot; while a take arrives (`loading`, board 11a) it is ground
  * with the 36px ring and nothing else — no skeleton. The card does not
  * fetch and does not guess.
+ *
+ * `phone` is the M3 cut (design/particl-v2-mobile): the same card two-up —
+ * the ID chip at 7/7, the state as an 8px dot top-right, the body `9px
+ * 10px 0` with the description at 400 13/1.35 (min 35), the footer at
+ * `8px 10px` with each side one mono line (`4S · 19 CR` / `2 TK · 38 CR`).
  */
 type Props = {
   id: string;
@@ -33,10 +38,32 @@ type Props = {
   title?: ReactNode;
   setup?: ReactNode;
   footer?: { plan: ReactNode; renders: ReactNode; rendersMuted?: boolean };
+  phone?: boolean;
   className?: string;
 };
 
-export default function MediaCard({ id, state, stateLabel, well, emptyLabel, loading = false, title, setup, footer, className = "" }: Props) {
+export default function MediaCard({ id, state, stateLabel, well, emptyLabel, loading = false, title, setup, footer, phone = false, className = "" }: Props) {
+  if (phone) return (
+    <article className={`flex flex-col overflow-hidden rounded-card border border-border bg-card ${className}`}>
+      <div className="relative aspect-video border-b border-hairline">
+        {well}
+        {loading && <span className="absolute inset-0 flex items-center justify-center bg-ground"><Loader size={LOADER_SIZES.well} /></span>}
+        {emptyLabel && !loading && <span className="absolute inset-0 flex items-center justify-center"><Mono>{emptyLabel}</Mono></span>}
+        <span className="ui-chip-scrim absolute left-[7px] top-[7px] rounded-badge px-[6px] py-[4px]"><Mono tone="ink">{id}</Mono></span>
+        {state && <span className="absolute right-[7px] top-[7px] flex"><StateDot state={state} size={8} /></span>}
+      </div>
+      <div className="flex flex-1 flex-col gap-[6px] px-[10px] pt-[9px]">
+        {title && <span className="line-clamp-2 min-h-[35px] text-[13px] leading-[1.35] text-ink">{title}</span>}
+        {setup && <span className="truncate text-[12px] leading-[1.3] text-ink-body">{setup}</span>}
+      </div>
+      {footer && (
+        <div className="mt-[8px] grid grid-cols-[1fr_1fr] border-t border-border">
+          <Mono cost tone="ink" className="truncate border-r border-border px-[10px] py-[8px]">{footer.plan}</Mono>
+          <Mono cost tone={footer.rendersMuted ? "muted" : "ink"} className="truncate px-[10px] py-[8px]">{footer.renders}</Mono>
+        </div>
+      )}
+    </article>
+  );
   return (
     <article className={`flex flex-col overflow-hidden rounded-card border border-border bg-card ${className}`}>
       <div className="relative aspect-video border-b border-hairline">

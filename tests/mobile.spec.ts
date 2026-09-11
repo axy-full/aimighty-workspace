@@ -203,6 +203,50 @@ test.describe("the audio composer", () => {
 });
 
 /**
+ * Productions on a phone (design/particl-v2-mobile, board M1): the title
+ * at 600 24/1.05 −0.02em over `N · N PROJECTS · N NEED YOU`, the
+ * `Active · Delivered · All` segmented filling the row with 40px options,
+ * no header buttons (a production starts on a desktop), the body at
+ * `16px 16px 100px`. A visitor sees the frame and the sign-in line; the
+ * rows and the 200px strip need a workspace and are measured when the
+ * suite runs signed in.
+ */
+test.describe("Productions on a phone", () => {
+  test("the M1 frame: title, mono totals, the full-width segmented, no header buttons", async ({ page }) => {
+    test.skip(page.viewportSize()!.width >= 768, "a phone on its side gets the desktop page (§14)");
+    await page.goto("/productions");
+    await settle(page);
+    const h1 = page.getByRole("heading", { name: "Productions" });
+    await expect(h1).toBeVisible();
+    const t = await h1.evaluate((el) => { const cs = getComputedStyle(el); return { size: cs.fontSize, weight: cs.fontWeight, track: cs.letterSpacing }; });
+    expect(t).toEqual({ size: "24px", weight: "600", track: "-0.48px" });
+    await expect(page.locator("[data-phone-body] .ui-mono").first()).toHaveText(/^\d+ · \d+ projects · \d+ need you$/i);
+    const body = page.locator("[data-phone-body]");
+    expect(await body.evaluate((el) => { const cs = getComputedStyle(el); return [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft]; })).toEqual(["16px", "16px", "100px", "16px"]);
+    const group = page.getByRole("group", { name: "Show" });
+    const vw = page.viewportSize()!.width;
+    expect(await group.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(vw - 32);
+    for (const b of await group.getByRole("button").all()) {
+      const r = await b.boundingBox();
+      expect(r!.height, "each option is 40px tall").toBeGreaterThanOrEqual(40);
+    }
+    await expect(page.getByRole("button", { name: "New production" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "New project in…" })).toHaveCount(0);
+    const signedIn = await page.getByRole("button", { name: "Account" }).count();
+    if (signedIn) {
+      const row = page.locator("section").first();
+      await expect(row).toBeVisible();
+      expect(await row.evaluate((el) => { const cs = getComputedStyle(el); return [cs.borderTopLeftRadius, cs.paddingTop, cs.paddingLeft]; })).toEqual(["14px", "14px", "0px"]);
+      const strip = row.locator("[data-strip]");
+      expect(await strip.evaluate((el) => getComputedStyle(el).scrollSnapType)).toBe("x mandatory");
+      const tile = strip.locator("a").first();
+      if (await tile.count()) expect(await tile.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(200);
+      expect(await strip.getByRole("button", { name: "+ Project" }).evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(96);
+    }
+  });
+});
+
+/**
  * Atomik on a phone (design/particl-v2-mobile, board M3): the header's pill
  * opens the sheet compact — `#0F1116`, radius 24 above, the .14 rule, the
  * 36×4 grabber, the 48px header with the ring at 18 and `Expand ↑`, one

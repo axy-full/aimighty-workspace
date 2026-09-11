@@ -12,6 +12,8 @@ import Mono from "./Mono";
  *   row     the same line at 500 13px, all in ink, over a 160px bar (board 7a)
  *   tile    `228 / 400 CR` and `57%` in mono, .08em, the percentage muted,
  *           over a full-width bar (board 7a project tiles)
+ *   phone   the header's line at 500 13px (the figure 600, the rest
+ *           `--ink-body`) over a 110px bar, 5 apart (boards M2, M3)
  *
  * The figures are in the workspace's unit (§1: prices are read, never
  * typed): whole credits with `cr` after them, or — for a workspace that
@@ -20,7 +22,7 @@ import Mono from "./Mono";
 type Props = {
   spent: number;
   cap: number;
-  placement?: "header" | "row" | "tile";
+  placement?: "header" | "row" | "tile" | "phone";
   className?: string;
 };
 
@@ -30,7 +32,7 @@ export default function CapBar({ spent, cap, placement = "header", className = "
   const unit = money.inCredits ? " cr" : "";
   const pct = cap > 0 ? Math.max(0, Math.round((spent / cap) * 100)) : 0;
   const bar = (
-    <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[rgba(245,246,248,.1)]" style={placement === "tile" ? undefined : { width: placement === "header" ? 180 : 160 }}>
+    <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[rgba(245,246,248,.1)]" style={placement === "tile" ? undefined : { width: placement === "header" ? 180 : placement === "phone" ? 110 : 160 }}>
       <span className="block h-full bg-ink" style={{ width: `${Math.min(100, pct)}%` }} />
     </span>
   );
@@ -50,8 +52,12 @@ export default function CapBar({ spent, cap, placement = "header", className = "
     );
   }
   return (
-    <span {...meter} className={`flex flex-col items-end gap-[6px] ${className}`}>
-      {placement === "header" ? (
+    <span {...meter} className={`flex flex-col items-end ${placement === "phone" ? "gap-[5px]" : "gap-[6px]"} ${className}`}>
+      {placement === "phone" ? (
+        <span className="text-[13px] font-medium leading-none text-ink">
+          <span className="font-semibold">{num(spent)}</span> <span className="text-ink-body">of {num(cap)}{unit}</span>
+        </span>
+      ) : placement === "header" ? (
         <span className="text-[14px] font-medium leading-none text-ink">
           <span className="font-semibold">{num(spent)}</span> <span className="text-ink-body">of {num(cap)}{unit}</span>
         </span>

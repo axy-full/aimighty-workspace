@@ -9,6 +9,7 @@ import { useMoney, creditsNumber } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { appPrompt, appAlert } from "@/components/dialog";
 import { Segmented, Button, Chip, CapBar, Stepper, Mono, Placeholder } from "@/components/ui";
+import { usePhone } from "@/lib/usePhone";
 import { PageLoader } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
 import type { ProductionRow, ProjectRow } from "@/lib/productions";
@@ -32,6 +33,14 @@ import { clock } from "@/components/production/ProductionHeader";
  * `10px 12px 12px`, 7 apart: name 600 13.5/1.2, `format · N SHOTS` 400
  * 12/1.2 `--ink-body`, the six dots and the step's name, `228 / 400 CR ·
  * 57%` over a 3px bar. The last cell is the dashed `+ Project`.
+ *
+ * Below 768 (design/particl-v2-mobile, board M1): `16px 16px 100px`, 14
+ * apart — `Productions` at 600 24/1.05 −0.02em over `4 · 9 PROJECTS · 8
+ * NEED YOU`, the segmented full width, then the rows: `--card`, .08,
+ * radius 14, `14px 0`, 12 apart — name and client (`0 14px`), the need
+ * pill; the spent line in mono over the 3px bar; the projects as a strip
+ * of 200px snap tiles (`0 14px`, 8 apart) ending in a 96px `+ Project`.
+ * No header buttons: a production starts on a desktop.
  */
 type Filter = "active" | "delivered" | "all";
 
@@ -40,6 +49,7 @@ export default function ProductionsPage() {
   const router = useRouter();
   const { signedIn } = useSession();
   const money = useMoney();
+  const phone = usePhone();
   const { data, refresh } = useApi<{ productions: ProductionRow[] }>(signedIn ? "/api/productions" : null, 30_000);
   const [filter, setFilter] = useState<Filter>("active");
   const all = useMemo(() => data?.productions ?? [], [data]);
@@ -79,9 +89,26 @@ export default function ProductionsPage() {
   const fmt = (n: number) => money.inCredits ? `${creditsNumber(n)} cr` : money.price(n);
 
   if (!data && signedIn) return <PageLoader what="Opening · Productions" />;
+  if (phone) return (
+    <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
+      <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-auto px-[16px] pb-[100px] pt-[16px]" data-phone-body="">
+        <span className="flex flex-col gap-[6px]">
+          <h1 className="text-[24px] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">Productions</h1>
+          <Mono>{totals.productions} · {totals.projects} projects · {totals.need} need you</Mono>
+        </span>
+        <Segmented label="Show" fill value={filter} onChange={setFilter} options={[{ value: "active", label: "Active" }, { value: "delivered", label: "Delivered" }, { value: "all", label: "All" }]} />
+        {shown.map((p) => <ProductionCard key={p.id} production={p} fmt={fmt} inCredits={money.inCredits} onNewProject={() => newProject(p)} phone />)}
+        {!shown.length && (
+          <span className="py-[24px] text-[13px] leading-[1.5] text-ink-body">
+            {signedIn ? (all.length ? "Nothing here under this filter." : "No productions yet. Start one on a desktop — the client job — and put its deliverables inside.") : "Sign in to see your productions."}
+          </span>
+        )}
+      </div>
+    </div>
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-      <div className="flex h-[64px] flex-none items-center gap-[16px] px-[24px] max-md:h-auto max-md:flex-wrap max-md:gap-[10px] max-md:px-[16px] max-md:py-[12px]">
+      <div className="flex h-[64px] flex-none items-center gap-[16px] px-[24px]">
         <span className="flex flex-col gap-[5px]">
           <h1 className="ui-page-title">Productions</h1>
           <Mono>{totals.productions} productions · {totals.projects} projects · {totals.need} need you · {totals.cap > 0 ? `${fmt(totals.spent)} of ${fmt(totals.cap)}` : `${fmt(totals.spent)} spent`}</Mono>
@@ -93,7 +120,7 @@ export default function ProductionsPage() {
           <Button variant="primary" placement="header" onClick={newProduction}>New production</Button>
         </span>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px] max-md:px-[16px]">
+      <div className="flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px]">
         {shown.map((p) => <ProductionCard key={p.id} production={p} fmt={fmt} inCredits={money.inCredits} onNewProject={() => newProject(p)} />)}
         {!shown.length && (
           <span className="py-[24px] text-[13px] leading-[1.5] text-ink-body">
@@ -105,12 +132,34 @@ export default function ProductionsPage() {
   );
 }
 
-function ProductionCard({ production: p, fmt, inCredits, onNewProject }: { production: ProductionRow; fmt: (n: number) => string; inCredits: boolean; onNewProject: () => void }) {
+function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = false }: { production: ProductionRow; fmt: (n: number) => string; inCredits: boolean; onNewProject: () => void; phone?: boolean }) {
   const spent = inCredits ? p.spentCredits : p.spentUsd;
   const cap = inCredits ? p.capCredits : p.capUsd;
+  if (phone) return (
+    <section className="flex flex-col gap-[12px] rounded-mobile border border-border bg-card py-[14px]">
+      <div className="flex items-center gap-[10px] px-[14px]">
+        <span className="flex min-w-0 flex-col gap-[4px]">
+          <span className="text-[16px] font-semibold leading-[1.1] text-ink">{p.name}</span>
+          <span className="truncate text-[12.5px] leading-[1.2] text-ink-body">{p.client || (p.status === "delivered" ? "delivered" : "in production")}</span>
+        </span>
+        {p.needYou > 0 && <Chip variant="need" className="ml-auto flex-none max-md:text-[12px]">{p.needYou} need you</Chip>}
+      </div>
+      <div className="flex flex-col gap-[5px] px-[14px]">
+        <span className="flex justify-between">
+          <Mono cost tone="ink">{cap !== null && cap !== undefined ? `${fmt(spent)} of ${fmt(cap)}` : `${fmt(spent)} spent`}</Mono>
+          <Mono cost>{p.projects.length} {p.projects.length === 1 ? "project" : "projects"}</Mono>
+        </span>
+        <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[rgba(245,246,248,.1)]"><span className="block h-full bg-ink" style={{ width: `${cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0}%` }} /></span>
+      </div>
+      <div className="flex gap-[8px] overflow-x-auto px-[14px]" style={{ scrollSnapType: "x mandatory" }} data-strip="">
+        {p.projects.map((j) => <ProjectTile key={j.id} production={p} project={j} fmt={fmt} inCredits={inCredits} phone />)}
+        <button type="button" onClick={onNewProject} className="flex w-[96px] flex-none items-center justify-center rounded-tile border border-dashed border-[rgba(245,246,248,.18)] text-[13px] font-medium leading-none text-ink-body">+ Project</button>
+      </div>
+    </section>
+  );
   return (
     <section className="flex flex-col gap-[12px] rounded-card border border-border bg-card px-[16px] pb-[16px] pt-[14px]">
-      <div className="flex items-center gap-[14px] max-md:flex-wrap">
+      <div className="flex items-center gap-[14px]">
         <span className="flex min-w-0 flex-col gap-[4px]">
           <span className="text-[16px] font-semibold leading-[1.1] text-ink">{p.name}</span>
           <span className="text-[12.5px] leading-[1.2] text-ink-body">{p.client || (p.status === "delivered" ? "delivered" : "in production")}</span>
@@ -122,7 +171,7 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject }: { produ
         </span>
         <Chip variant="pill">Rig · assets</Chip>
       </div>
-      <div className="grid grid-cols-5 gap-[10px] max-md:grid-cols-2">
+      <div className="grid grid-cols-5 gap-[10px]">
         {p.projects.map((j) => <ProjectTile key={j.id} production={p} project={j} fmt={fmt} inCredits={inCredits} />)}
         <button type="button" onClick={onNewProject}
           className="flex min-h-[120px] items-center justify-center rounded-tile border border-dashed border-[rgba(245,246,248,.18)] text-[13px] font-medium leading-none text-ink-body">
@@ -133,10 +182,29 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject }: { produ
   );
 }
 
-function ProjectTile({ production, project: j, fmt, inCredits }: { production: ProductionRow; project: ProjectRow; fmt: (n: number) => string; inCredits: boolean }) {
+function ProjectTile({ production, project: j, fmt, inCredits, phone = false }: { production: ProductionRow; project: ProjectRow; fmt: (n: number) => string; inCredits: boolean; phone?: boolean }) {
   const spent = inCredits ? j.spentCredits : j.spentUsd;
   const cap = inCredits ? j.capCredits : j.capUsd;
   const line = [j.format || null, j.runtimeSecs ? clock(j.runtimeSecs) : null].filter(Boolean).join(" · ");
+  if (phone) return (
+    <Link href={`/productions/${production.id}/${j.id}/media`} style={{ scrollSnapAlign: "start" }}
+      className="flex w-[200px] flex-none flex-col overflow-hidden rounded-tile border border-border bg-ground">
+      <span className={`relative block aspect-[16/7] border-b ${j.mediaCount ? "border-hairline" : "border-dashed border-[rgba(245,246,248,.2)]"}`}>
+        {j.mediaCount ? <TileWell projectId={j.id} /> : null}
+        <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{j.mediaCount} media</span></span>
+        {j.needYou > 0 && (
+          <span className="ui-chip-scrim absolute right-[8px] top-[8px] flex items-center gap-[6px] rounded-badge px-[6px] py-[4px]">
+            <span aria-hidden="true" className="block h-[6px] w-[6px] rounded-full bg-ink" /><span className="ui-mono tracking-normal text-ink">{j.needYou}</span>
+          </span>
+        )}
+      </span>
+      <span className="flex flex-col gap-[7px] px-[12px] pb-[12px] pt-[10px]">
+        <span className="truncate text-[13.5px] font-semibold leading-[1.2] text-ink">{j.name}</span>
+        <Stepper current={j.step} compact dot={7} />
+        <Mono cost tone="ink">{cap !== null && cap !== undefined ? `${fmt(spent)} / ${fmt(cap)}` : fmt(spent)}</Mono>
+      </span>
+    </Link>
+  );
   return (
     <Link href={`/productions/${production.id}/${j.id}/media`}
       className="flex flex-col overflow-hidden rounded-tile border border-border bg-ground hover:border-border-hover">

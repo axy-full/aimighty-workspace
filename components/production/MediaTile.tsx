@@ -10,7 +10,9 @@ import LazyMedia from "@/components/LazyMedia";
  * on ground for audio, and `↓ 1080P` in the accent, bottom-right, on a
  * master; a body `9px 10px 10px`, 6 apart: the id at 500 12.5px beside the
  * state — a 7px dot and its word in mono at .1em in the state's colour —
- * then `model` and `cost · by` in mono at .08em, muted.
+ * then `model` and `cost · by` in mono at .08em, muted. On a phone (board
+ * M2, `phone`): the same tile two-up, the state at .08em, and `cost · by ·
+ * model` as one muted line.
  */
 export type MediaItem = {
   id: string; label: string; kind: "take" | "still" | "audio" | "master";
@@ -18,7 +20,7 @@ export type MediaItem = {
   model: string; cost: string; by: string; resolution?: string | null;
 };
 
-export default function MediaTile({ m, onOpen }: { m: MediaItem; onOpen?: () => void }) {
+export default function MediaTile({ m, onOpen, phone = false }: { m: MediaItem; onOpen?: () => void; phone?: boolean }) {
   return (
     <button type="button" onClick={onOpen} className="flex flex-col overflow-hidden rounded-tile border border-border bg-card text-left hover:border-border-hover">
       <span className="relative block aspect-video w-full border-b border-hairline">
@@ -33,13 +35,17 @@ export default function MediaTile({ m, onOpen }: { m: MediaItem; onOpen?: () => 
       <span className="flex flex-col gap-[6px] px-[10px] pb-[10px] pt-[9px]">
         <span className="flex items-center justify-between gap-[6px]">
           <span className="truncate text-[12.5px] font-medium leading-none text-ink">{m.label}</span>
-          <span className={`flex items-center gap-[5px] whitespace-nowrap ui-mono tracking-[.1em] ${STATE_TONE[m.state]}`}>
+          <span className={`flex items-center gap-[5px] whitespace-nowrap ui-mono ${phone ? "ui-mono-cost" : "tracking-[.1em]"} ${STATE_TONE[m.state]}`}>
             <StateDot state={m.state} size={7} />{m.stateWord}
           </span>
         </span>
-        <span className="flex justify-between whitespace-nowrap ui-mono ui-mono-cost text-ink-muted">
-          <span className="truncate">{m.model}</span><span>{m.cost} · {m.by}</span>
-        </span>
+        {phone ? (
+          <span className="truncate whitespace-nowrap ui-mono ui-mono-cost text-ink-muted">{m.cost} · {m.by} · {m.model}</span>
+        ) : (
+          <span className="flex justify-between whitespace-nowrap ui-mono ui-mono-cost text-ink-muted">
+            <span className="truncate">{m.model}</span><span>{m.cost} · {m.by}</span>
+          </span>
+        )}
       </span>
     </button>
   );
