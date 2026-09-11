@@ -14,7 +14,9 @@ import { uploadFile } from "@/lib/uploadClient";
 import type { RefItem, ImageRole } from "@/lib/refs";
 import type { CastMember } from "@/lib/cast";
 import { appPrompt } from "@/components/dialog";
-import { Button, Mono, Segmented } from "@/components/ui";
+import { Button, Mono, Segmented, PinnedBar } from "@/components/ui";
+import Sheet from "@/components/ui/Sheet";
+import { usePhone } from "@/lib/usePhone";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import { useAtomikRail } from "@/lib/atomikRail";
@@ -47,6 +49,17 @@ import type { ElementKind } from "@/lib/rig";
  * and settings (§1: never typed), and the button says it before the press.
  * Everything made here lands unfiled (§1) — no project, no shot — until
  * `File to shot` on the wall.
+ *
+ * Below 768 (design/particl-v2-mobile, boards M4 and M9) the same composer
+ * docks: a card above the pinned `Render` — `COMPOSER · SEEDANCE 2.5 ·
+ * 16:9 · 5S` in mono, the prompt's first line, `↑` — that opens the sheet
+ * (60px below the top; a 44px header, `Composer` 600 15 and `VIDEO ·
+ * UNFILED`): the prompt at 96px, the 3b card, `+ REF` at 56 with its
+ * note, the model card (600 14, one line, `19 CR / 5S ▾`), the pills at
+ * 40px (`0 13px`), `SETUP · NONE CARRIED · UNFILED` with `+ ROW`, `CAST`
+ * with 40px chips (a 26px face; `@Iver · new` dashed) and `+ Add`; the
+ * foot pins Render at 52px over its mono line. The prompt and every
+ * setting are the same state whether the sheet is open or closed.
  */
 export type ComposerKind = "video" | "image" | "audio";
 
@@ -73,6 +86,8 @@ const NAME_RE = /@([A-Za-z][\w'-]*(?: (?=[A-Z])[A-Z][\w'-]*)*)/g;
 
 export default function Composer({ kind, onMade, initialRef = null, className = "" }: { kind: ComposerKind; onMade?: () => void; initialRef?: string | null; className?: string }) {
   const router = useRouter();
+  const phone = usePhone();
+  const [sheetOpen, setSheetOpen] = useState(false);
   const { signedIn, rates } = useSession();
   const signIn = useSignInHref();
   const money = useMoney();
@@ -265,8 +280,10 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   });
 
   /* ── the parts ─────────────────────────────────────────────────────── */
-  const pill = "tap44 flex items-center gap-[7px] rounded-pill border border-[rgba(245,246,248,.1)] bg-card px-[11px] py-[9px] text-[12.5px] font-medium leading-none text-ink";
-  const caret = <span className="text-[9px] text-ink-muted max-md:text-[12px]">▼</span>;
+  const pill = phone
+    ? "tap44 flex h-[40px] items-center gap-[8px] rounded-pill border border-[rgba(245,246,248,.12)] px-[13px] text-[13px] font-medium leading-none text-ink"
+    : "tap44 flex items-center gap-[7px] rounded-pill border border-[rgba(245,246,248,.1)] bg-card px-[11px] py-[9px] text-[12.5px] font-medium leading-none text-ink";
+  const caret = phone ? null : <span className="text-[9px] text-ink-muted max-md:text-[12px]">▼</span>;
   const frame = refs.find((r) => r.role === "first_frame") ?? null;
   const menuItems = (): MenuItem[] => {
     if (!menu) return [];
@@ -280,31 +297,44 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   };
   const suffix = kind === "audio" ? ` · ${mmss(audioLen)}` : kind === "image" ? ` · ${resolution.toUpperCase()}` : ` · ${seconds}s · ${resolution.toUpperCase()}`;
   const cost = kind === "audio" ? audioUsd : price ?? 0;
+  /* M4's docked card: the engine and the settings in mono, the prompt's first line with its names marked. */
+  const eyebrow = kind === "audio" ? `Composer · ${TRACKS.find((t) => t.id === track)!.label} · ${mmss(audioLen)}` : kind === "image" ? `Composer · ${model.label} · ${ratio} · ${resolution}` : `Composer · ${model.label} · ${ratio} · ${seconds}s`;
+  const firstLine = prompt.split("\n").find((l) => l.trim()) ?? "";
+  const blocked = unknown.length > 0 || (signedIn && !ready);
+  const footLine = unknown.length ? `Create @${unknown[0]} first · lands on the wall unfiled` : "Lands on the wall unfiled · file to a shot any time";
+  const primary = (tall: boolean) => (
+    <button type="button" onClick={render} disabled={busy || (signedIn && (!ready || unknown.length > 0))} data-render=""
+      className={`flex ${tall ? "h-[52px]" : "h-[50px]"} w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${
+        blocked || rail.open || (!tall && sheetOpen) ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-ink text-ground"}`}>
+      <span>{busy ? "Rendering…" : signedIn ? "Render" : "Sign in to render"}</span>
+      <span className={`ui-mono ui-mono-cost !text-[12px] ${blocked || rail.open || (!tall && sheetOpen) ? "text-ink-muted" : "text-on-primary-cost"}`}>{money.price(cost)}{suffix}</span>
+    </button>
+  );
 
-  return (
-    <div className={`flex min-h-0 flex-col ${className}`} data-composer={kind}>
-      <div className="flex h-[52px] flex-none items-center justify-between border-b border-hairline px-[16px]">
-        <span className="text-[15px] font-semibold leading-none text-ink">Composer</span>
-        <Mono>Unfiled · file later</Mono>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto p-[16px]">
+  const body = (
+      <>
         {kind === "audio" && (
           <Segmented label="Track kind" placement="bar" value={track} onChange={(t) => setTrack(t)} options={TRACKS.map((t) => ({ value: t.id, label: t.label }))} />
         )}
-        <PromptField value={prompt} onChange={setPrompt} fieldRef={field} placeholder={kind === "audio" ? TRACKS.find((t) => t.id === track)!.placeholder : kind === "image" ? "A brass key on marble, dust in the light. @Noor's hand at the edge of frame." : "A hand turns a brass key in a door that is not there. Dust in the light. @Noor watches from the corridor."} names={kind !== "audio"} unknown={unknown} />
+        <PromptField phone={phone} value={prompt} onChange={setPrompt} fieldRef={field} placeholder={kind === "audio" ? TRACKS.find((t) => t.id === track)!.placeholder : kind === "image" ? "A brass key on marble, dust in the light. @Noor's hand at the edge of frame." : "A hand turns a brass key in a door that is not there. Dust in the light. @Noor watches from the corridor."} names={kind !== "audio"} unknown={unknown} />
         {unknown.length > 0 && (() => { const nm = unknown[0]; const thumbs = refs.filter((r) => r.kind === "image").slice(0, 3); return (
-          <div className="flex flex-col gap-[10px] rounded-card border border-[rgba(245,246,248,.2)] bg-ground px-[13px] py-[12px]" role="group" aria-label={`Not an asset yet: @${nm}`}>
-            <span className="flex items-center gap-[8px]"><Mono>Not an asset yet</Mono><span className="text-[15px] font-semibold leading-none text-ink">@{nm}</span></span>
-            <span className="text-[13.5px] leading-[1.45] text-ink-body" style={{ textWrap: "pretty" }}>{thumbs.length ? `Make one from the ${thumbs.length === 1 ? "reference" : `${thumbs.length} references`} already on this prompt, or pick someone who exists.` : "Make one — a name and one picture is enough — or pick someone who exists."}</span>
+          <div className={`flex flex-col gap-[10px] rounded-card border border-[rgba(245,246,248,.2)] px-[13px] py-[12px] ${phone ? "bg-card" : "bg-ground"}`} role="group" aria-label={`Not an asset yet: @${nm}`}>
+            {phone ? <Mono>Not an asset yet · @{nm}</Mono> : <span className="flex items-center gap-[8px]"><Mono>Not an asset yet</Mono><span className="text-[15px] font-semibold leading-none text-ink">@{nm}</span></span>}
+            <span className={`text-[13.5px] text-ink-body ${phone ? "leading-[1.4]" : "leading-[1.45]"}`} style={{ textWrap: "pretty" }}>{thumbs.length ? `Make one from the ${thumbs.length === 1 ? "reference" : `${thumbs.length} references`} already on this prompt, or pick someone who exists.` : phone ? "Give them three references and a kind and they exist everywhere. Render stays outlined until then." : "Make one — a name and one picture is enough — or pick someone who exists."}</span>
             <div className="flex items-center gap-[6px]">
               {thumbs.map((r) => <span key={r.id} className="relative h-[52px] w-[52px] flex-none overflow-hidden rounded-ctl border border-[rgba(245,246,248,.1)] ui-placeholder"><img src={r.url} alt="" className="absolute inset-0 h-full w-full object-cover" /></span>)}
-              <span className="ml-auto flex flex-col items-end gap-[5px]"><Mono>Kind</Mono><span className="flex gap-[4px]">{(["character", "prop"] as ElementKind[]).map((k) => <button key={k} type="button" aria-pressed={sheetKind === k} onClick={() => setSheetKind(k)} className={`tap44 rounded-pill border px-[9px] py-[6px] text-[12px] font-medium leading-none ${sheetKind === k ? "border-[rgba(245,246,248,.3)] bg-[rgba(245,246,248,.12)] text-ink" : "border-[rgba(245,246,248,.12)] text-ink-body"}`}>{k === "character" ? "Character" : "Prop"}</button>)}</span></span>
+              {phone && <button type="button" onClick={() => picker.current?.click()} aria-label="Add a reference" className="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-ctl border border-dashed border-[rgba(245,246,248,.22)] text-[16px] font-medium leading-none text-ink-body">+</button>}
+              {phone ? (
+                <button type="button" onClick={() => setSheetKind((k) => (k === "character" ? "prop" : "character"))} aria-label="Kind" className="tap44 ml-auto flex h-[40px] flex-none items-center gap-[6px] self-center rounded-pill border border-border-mid px-[11px] text-[12.5px] font-medium leading-none text-ink">{sheetKind === "character" ? "Character" : "Prop"} ▾</button>
+              ) : (
+                <span className="ml-auto flex flex-col items-end gap-[5px]"><Mono>Kind</Mono><span className="flex gap-[4px]">{(["character", "prop"] as ElementKind[]).map((k) => <button key={k} type="button" aria-pressed={sheetKind === k} onClick={() => setSheetKind(k)} className={`tap44 rounded-pill border px-[9px] py-[6px] text-[12px] font-medium leading-none ${sheetKind === k ? "border-[rgba(245,246,248,.3)] bg-[rgba(245,246,248,.12)] text-ink" : "border-[rgba(245,246,248,.12)] text-ink-body"}`}>{k === "character" ? "Character" : "Prop"}</button>)}</span></span>
+              )}
             </div>
-            <div className="flex gap-[6px]">
-              <button type="button" onClick={() => setSheetFor(nm)} className="flex h-[44px] flex-1 items-center justify-center gap-[10px] rounded-tile bg-ink text-[13.5px] font-semibold leading-none text-ground">Create @{nm}<span className="ui-mono ui-mono-cost text-on-primary-cost">{money.price(0)}</span></button>
-              <button type="button" onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPickFor({ name: nm, x: r.left, y: r.bottom + 6 }); }} className="flex h-[44px] flex-1 items-center justify-center rounded-tile border border-border-mid text-[13.5px] font-medium leading-none text-ink">Pick existing</button>
+            <div className={`flex ${phone ? "gap-[8px]" : "gap-[6px]"}`}>
+              <button type="button" onClick={() => setSheetFor(nm)} className={`flex h-[44px] flex-1 items-center rounded-tile bg-ink text-[13.5px] font-semibold leading-none text-ground ${phone ? "justify-between rounded-card px-[12px]" : "justify-center gap-[10px]"}`}>Create @{nm}<span className="ui-mono ui-mono-cost text-on-primary-cost">{money.price(0)}</span></button>
+              <button type="button" onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPickFor({ name: nm, x: r.left, y: r.bottom + 6 }); }} className={`flex h-[44px] flex-1 items-center justify-center border text-[13.5px] font-medium leading-none text-ink ${phone ? "rounded-card border-[rgba(245,246,248,.16)]" : "rounded-tile border-border-mid"}`}>Pick existing</button>
             </div>
-            <Mono cost className="!leading-[1.4]">Carries a still for now · train the face later in Rig{idTerms?.terms.trainCostUsd != null ? ` · ${money.price(idTerms.terms.trainCostUsd)}` : ""}</Mono>
+            {!phone && <Mono cost className="!leading-[1.4]">Carries a still for now · train the face later in Rig{idTerms?.terms.trainCostUsd != null ? ` · ${money.price(idTerms.terms.trainCostUsd)}` : ""}</Mono>}
           </div>
         ); })()}
 
@@ -312,10 +342,12 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
           <div className="flex items-center gap-[8px]" onDragOver={(e) => { e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
             <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
             <button type="button" onClick={() => picker.current?.click()} disabled={uploading} aria-label="Add a reference"
-              className="tap44 flex h-[52px] w-[52px] flex-none flex-col items-center justify-center gap-[2px] rounded-ctl border border-dashed border-[rgba(245,246,248,.22)] text-[11px] leading-[1.2] text-ink-muted">
+              className={`tap44 flex flex-none flex-col items-center justify-center gap-[2px] rounded-ctl border border-dashed border-[rgba(245,246,248,.22)] ${phone ? "ui-mono h-[56px] w-[56px] !text-[12px] tracking-normal text-ink-body" : "h-[52px] w-[52px] text-[11px] leading-[1.2] text-ink-muted"}`}>
               <span className="text-[16px] leading-none">+</span>Ref
             </button>
-            {kind === "video" ? (
+            {kind === "video" && phone && !frame ? (
+              <span className="text-[12.5px] leading-[1.35] text-ink-body">First frame optional. A reference steers the look, not the story.</span>
+            ) : kind === "video" ? (
               <span className="relative flex h-[52px] w-[52px] flex-none items-end justify-center overflow-hidden rounded-ctl border border-[rgba(245,246,248,.1)] pb-[4px] ui-placeholder">
                 {frame && <img src={frame.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                 <span className="ui-mono relative !text-[9px] tracking-normal text-ink-muted max-md:!text-[12px]">{frame ? "" : "Frame"}</span>
@@ -332,7 +364,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
               </span>
             )}
             {kind === "video" ? (
-              <span className="ml-auto text-right text-[12px] leading-[1.3] text-ink-body">first frame · optional</span>
+              !(phone && !frame) && <span className="ml-auto text-right text-[12px] leading-[1.3] text-ink-body">first frame · optional</span>
             ) : (
               <Segmented label="Reference use" placement="bar" className="ml-auto flex-none" value={useAs} onChange={setUseAs} options={[{ value: "loose", label: "Loose" }, { value: "first", label: "Exact" }]} />
             )}
@@ -342,10 +374,10 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
         {kind !== "audio" && (
           <div className="flex flex-col gap-[6px]">
             <button type="button" onClick={() => setListOpen((o) => !o)} aria-expanded={listOpen} aria-label="Engine"
-              className="tap44 flex items-center gap-[8px] rounded-tile border border-[rgba(245,246,248,.35)] bg-card px-[12px] py-[10px] text-left">
-              <span className="flex min-w-0 flex-col gap-[3px]"><span className="text-[13.5px] font-medium leading-[1.2] text-ink">{model.label}</span><span className="text-[12px] leading-[1.3] text-ink-body">{model.use}</span></span>
-              <Mono cost tone="ink" className="ml-auto whitespace-nowrap">{rateLine(modelId)}</Mono>
-              <span className="text-[10px] text-ink-muted max-md:text-[12px]">{listOpen ? "▲" : "▼"}</span>
+              className={`tap44 flex items-center bg-card text-left ${phone ? "gap-[10px] rounded-card border border-[rgba(245,246,248,.1)] px-[13px] py-[12px]" : "gap-[8px] rounded-tile border border-[rgba(245,246,248,.35)] px-[12px] py-[10px]"}`}>
+              <span className={`flex min-w-0 flex-col ${phone ? "gap-[4px]" : "gap-[3px]"}`}><span className={phone ? "text-[14px] font-semibold leading-[1.1] text-ink" : "text-[13.5px] font-medium leading-[1.2] text-ink"}>{model.label}</span><span className={`leading-[1.3] text-ink-body ${phone ? "text-[12.5px]" : "text-[12px]"}`}>{model.use}</span></span>
+              <Mono cost tone="ink" className="ml-auto flex-none whitespace-nowrap">{rateLine(modelId)}{phone ? (listOpen ? " ▴" : " ▾") : ""}</Mono>
+              {!phone && <span className="text-[10px] text-ink-muted max-md:text-[12px]">{listOpen ? "▲" : "▼"}</span>}
             </button>
             {listOpen && (
               <div className="flex flex-col gap-[2px] rounded-tile border border-border-mid bg-card p-[4px]" role="listbox" aria-label="Engines">
@@ -373,7 +405,9 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
             <button type="button" className={pill} onClick={(e) => setMenu({ which: "resolution", ...at(e) })}>{resolution.toUpperCase()}{kind === "image" ? caret : null}</button>
             {kind === "video" && model.supportsAudio && (
               <button type="button" className={pill} onClick={() => setAudio((a) => !a)} aria-pressed={audio}>Audio
-                <span className={`relative inline-block h-[12px] w-[22px] rounded-[6px] ${audio ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}><span className={`absolute top-[2px] h-[8px] w-[8px] rounded-full ${audio ? "right-[2px] bg-ground" : "left-[2px] bg-ink"}`} /></span>
+                {phone
+                  ? <span className={`relative inline-block h-[14px] w-[26px] rounded-[7px] ${audio ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}><span className={`absolute top-[2px] h-[10px] w-[10px] rounded-full ${audio ? "right-[2px] bg-ground" : "left-[2px] bg-ink"}`} /></span>
+                  : <span className={`relative inline-block h-[12px] w-[22px] rounded-[6px] ${audio ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}><span className={`absolute top-[2px] h-[8px] w-[8px] rounded-full ${audio ? "right-[2px] bg-ground" : "left-[2px] bg-ink"}`} /></span>}
               </button>
             )}
           </div>
@@ -414,7 +448,31 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
           </div>
         )}
 
-        {kind !== "audio" && (
+        {kind !== "audio" && phone && (
+          <div className="flex flex-col gap-[8px]">
+            <span className="flex justify-between"><Mono>Setup · None carried · unfiled</Mono><button type="button" onClick={(e) => setMenu({ which: "setup", ...at(e) })} className="tap44 ui-mono text-ink">+ Row</button></span>
+            {rows.length > 0 && (
+              <div className="flex flex-wrap gap-[6px]">
+                {rows.map(({ c, value }) => <button key={c.key} type="button" onClick={() => setRow(c.key, null)} title={`${c.label} · remove`} className={pill}>{c.options.find((o) => o.value === value)?.label ?? value}</button>)}
+              </div>
+            )}
+            <Mono>Cast</Mono>
+            <div className="flex flex-wrap gap-[6px]">
+              {cast.map((m) => (
+                <button key={m.id} type="button" onClick={() => insertAtCaret(`@${m.name}`)} className="tap44 flex h-[40px] items-center gap-[8px] rounded-pill border border-[rgba(245,246,248,.12)] pl-[6px] pr-[12px] text-[13px] font-medium leading-none text-ink">
+                  <span className="h-[26px] w-[26px] overflow-hidden rounded-full ui-placeholder">{m.uploadId && <img src={`/api/uploads/${encodeURIComponent(m.uploadId)}`} alt="" className="h-full w-full object-cover" />}</span>@{m.name}
+                </button>
+              ))}
+              {unknown.map((nm) => (
+                <button key={nm} type="button" onClick={() => setSheetFor(nm)} className="tap44 flex h-[40px] items-center gap-[8px] rounded-pill border border-dashed border-[rgba(245,246,248,.22)] pl-[6px] pr-[12px] text-[13px] font-medium leading-none text-ink-body">
+                  <span className="box-border h-[26px] w-[26px] rounded-full border border-dashed border-[rgba(245,246,248,.3)]" />@{nm} · new
+                </button>
+              ))}
+              <button type="button" onClick={addCast} className="tap44 flex h-[40px] items-center rounded-pill border border-dashed border-[rgba(245,246,248,.22)] px-[13px] text-[13px] font-medium leading-none text-ink-body">+ Add</button>
+            </div>
+          </div>
+        )}
+        {kind !== "audio" && !phone && (
           <>
             <div className="flex flex-col gap-[8px] border-t border-hairline pt-[14px]">
               <span className="flex items-baseline justify-between"><span className="text-[13px] font-semibold leading-none text-ink">Setup</span><Mono>None carried · unfiled</Mono></span>
@@ -436,13 +494,51 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
             </div>
           </>
         )}
-      </div>
-      <div className="flex flex-none flex-col gap-[8px] border-t border-border px-[16px] pb-[16px] pt-[12px]">
-        <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
-          {signedIn ? "Render" : "Sign in to render"}
-        </Button>
-        <Mono cost className="text-center !leading-[1.4]">Lands on the wall unfiled · file to a shot any time</Mono>
-      </div>
+      </>
+  );
+
+  return (
+    <div className={`flex min-h-0 flex-col ${className}`} data-composer={kind}>
+      {phone ? (
+        <>
+          {/* M4: the docked card over the pinned Render; the sheet opens from the card. */}
+          <div className="flex flex-none flex-col border-t border-border bg-ground" data-composer-dock="">
+            <button type="button" onClick={() => setSheetOpen(true)} aria-expanded={sheetOpen} aria-label="Open the composer"
+              className="mx-[16px] mt-[10px] flex flex-col gap-[6px] rounded-mobile border border-[rgba(245,246,248,.12)] bg-card px-[12px] py-[10px] text-left">
+              <span className="flex justify-between gap-[8px]"><Mono className="truncate">{eyebrow}</Mono><span className="ui-mono tracking-normal text-ink">↑</span></span>
+              <span className={`truncate text-[13.5px] leading-[1.3] ${firstLine ? "text-ink" : "text-ink-muted"}`}>
+                {firstLine ? firstLine.split(NAME_RE).map((part, i) => (i % 2 === 1 ? <mark key={i} className="rounded-badge bg-[rgba(245,246,248,.1)] px-[4px] font-medium text-ink">@{part}</mark> : <span key={i}>{part}</span>)) : "Describe the shot…"}
+              </span>
+            </button>
+            <PinnedBar className="!border-t-0 !pt-[8px]">{primary(false)}</PinnedBar>
+          </div>
+          <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} label="Composer" top={60} footerPad="8px 16px 26px"
+            header={
+              <div className="flex h-[44px] flex-none items-center gap-[8px] px-[16px]">
+                <span className="text-[15px] font-semibold leading-none text-ink">Composer</span>
+                <Mono>{kind === "image" ? "Images" : kind} · unfiled</Mono>
+                <button type="button" onClick={() => setSheetOpen(false)} aria-label="Close" className="tap44 ml-auto flex h-[34px] w-[34px] items-center justify-center rounded-ctl border border-border-mid text-[15px] leading-none text-ink">×</button>
+              </div>
+            }
+            footer={<span className="flex w-full flex-col gap-[6px]">{primary(true)}<Mono className="text-center">{footLine}</Mono></span>}>
+            {body}
+          </Sheet>
+        </>
+      ) : (
+        <>
+          <div className="flex h-[52px] flex-none items-center justify-between border-b border-hairline px-[16px]">
+            <span className="text-[15px] font-semibold leading-none text-ink">Composer</span>
+            <Mono>Unfiled · file later</Mono>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto p-[16px]">{body}</div>
+          <div className="flex flex-none flex-col gap-[8px] border-t border-border px-[16px] pb-[16px] pt-[12px]">
+            <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
+              {signedIn ? "Render" : "Sign in to render"}
+            </Button>
+            <Mono cost className="text-center !leading-[1.4]">Lands on the wall unfiled · file to a shot any time</Mono>
+          </div>
+        </>
+      )}
       {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "setup" ? "Setup · add a row" : menu.which === "ratio" ? "Aspect" : menu.which === "seconds" ? "Length" : menu.which === "count" ? "How many" : menu.which === "resolution" ? "Resolution" : menu.which === "length" ? "Length" : "Duration"} items={menuItems()} onClose={() => { setMenu(null); setOpenCat(null); }} />}
       {pickFor && <Menu x={pickFor.x} y={pickFor.y} title={`Instead of @${pickFor.name}`} items={cast.length ? cast.map((m): MenuItem => ({ kind: "item", label: `@${m.name}`, keys: m.kind.toUpperCase(), onSelect: () => replaceName(pickFor.name, m.name) })) : [{ kind: "note", text: "Nobody in the cast yet." }]} onClose={() => setPickFor(null)} />}
       <NewAssetSheet open={sheetFor != null} from="prompt" onClose={() => setSheetFor(null)}
@@ -457,7 +553,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
  * transparent over a mirror that draws the same words with the names marked.
  * Same font, same padding, same width — the caret sits on the words.
  */
-function PromptField({ value, onChange, fieldRef, placeholder, names, unknown = [] }: { value: string; onChange: (v: string) => void; fieldRef: React.RefObject<HTMLTextAreaElement | null>; placeholder: string; names: boolean; unknown?: string[] }) {
+function PromptField({ value, onChange, fieldRef, placeholder, names, unknown = [], phone = false }: { value: string; onChange: (v: string) => void; fieldRef: React.RefObject<HTMLTextAreaElement | null>; placeholder: string; names: boolean; unknown?: string[]; phone?: boolean }) {
   const parts: { text: string; name: boolean; unknown?: boolean }[] = [];
   const notYet = new Set(unknown.map((n) => n.toLowerCase()));
   if (names) {
@@ -471,7 +567,7 @@ function PromptField({ value, onChange, fieldRef, placeholder, names, unknown = 
   } else parts.push({ text: value, name: false });
   const font = "text-[14.5px] leading-[1.5] font-normal";
   return (
-    <div className="relative min-h-[104px] rounded-card border border-border-mid bg-card">
+    <div className={`relative rounded-card border border-border-mid bg-card ${phone ? "min-h-[96px]" : "min-h-[104px]"}`}>
       <div aria-hidden="true" className={`whitespace-pre-wrap break-words px-[13px] py-[12px] ${font} max-md:text-[16px] text-ink`}>
         {parts.map((p, i) => p.name ? (p.unknown ? <span key={i} className="border-b-[1.5px] border-dashed border-ink font-medium text-ink">{p.text}</span> : <mark key={i} className="rounded-badge bg-[rgba(245,246,248,.1)] px-[4px] font-medium text-ink">{p.text}</mark>) : <span key={i}>{p.text}</span>)}
         {value.endsWith("\n") || !value ? "​" : null}

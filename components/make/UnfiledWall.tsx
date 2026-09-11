@@ -29,11 +29,16 @@ import LazyMedia from "@/components/LazyMedia";
  * `File to shot` gives the take a shot and a version — the one thing an
  * unfiled take is missing (§1). `Again` renders it again, at the same
  * settings, and says what it costs on the toast before anything runs.
+ *
+ * Below 768 (design/particl-v2-mobile, board M4, `phone`): the day in mono,
+ * two columns 8 apart, the card at radius 10 with its chips at 7/7 (the
+ * cost top-right), the prompt at 400 12.5/1.35, `model · by · when` in
+ * mono, and the split footer — `File to shot` / `Again` at 40px.
  */
 type Kind = "video" | "image" | "audio" | "all";
 type Filing = { id: string; x: number; y: number; project: { id: string; name: string } | null };
 
-export default function UnfiledWall({ kind, search = "", onTotals, columns = "grid-cols-4" }: { kind: Kind; search?: string; onTotals?: (t: { takes: number; spent: string }) => void; columns?: string }) {
+export default function UnfiledWall({ kind, search = "", onTotals, columns = "grid-cols-4", phone = false }: { kind: Kind; search?: string; onTotals?: (t: { takes: number; spent: string }) => void; columns?: string; phone?: boolean }) {
   const { signedIn } = useSession();
   const money = useMoney();
   const toast = useToast();
@@ -101,11 +106,32 @@ export default function UnfiledWall({ kind, search = "", onTotals, columns = "gr
   return (
     <>
       {days.map((d) => (
-        <div key={d.day} className="flex flex-col gap-[10px]">
-          <div className="flex items-baseline gap-[10px]"><span className="text-[14px] font-semibold leading-none text-ink">{d.day}</span><span className="text-[12.5px] leading-none text-ink-body">{d.meta}</span><span className="h-px flex-1 self-center bg-[rgba(245,246,248,.07)]" /></div>
-          <div className={`grid gap-[12px] ${columns} max-md:grid-cols-2`} data-wall="">
+        <div key={d.day} className={`flex flex-col ${phone ? "gap-[8px]" : "gap-[10px]"}`}>
+          {phone ? <Mono>{d.day} · {d.meta}</Mono> : (
+            <div className="flex items-baseline gap-[10px]"><span className="text-[14px] font-semibold leading-none text-ink">{d.day}</span><span className="text-[12.5px] leading-none text-ink-body">{d.meta}</span><span className="h-px flex-1 self-center bg-[rgba(245,246,248,.07)]" /></div>
+          )}
+          <div className={phone ? "grid grid-cols-2 gap-[8px]" : `grid gap-[12px] ${columns}`} data-wall="">
             {d.items.map((g) => {
               const u = g.storedUrl ?? g.sourceUrl;
+              const open = (e: { currentTarget: EventTarget }) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setFiling({ id: g.id, x: r.left, y: r.bottom + 6, project: null }); };
+              if (phone) return (
+                <article key={g.id} className="flex flex-col overflow-hidden rounded-tile border border-border bg-card" aria-label={`${chip(g)} take`}>
+                  <span className="relative block aspect-video border-b border-hairline ui-placeholder">
+                    {g.kind === "audio" ? <Waveform className="absolute left-[10px] right-[10px] top-1/2 h-[20px] -translate-y-1/2" /> : u && !running(g) ? <LazyMedia url={u} kind={g.kind === "image" ? "image" : "video"} className="absolute inset-0 h-full w-full object-cover" /> : null}
+                    {running(g) && <span className="absolute inset-0 flex items-center justify-center"><Loader size={LOADER_SIZES.well} /></span>}
+                    <span className="ui-chip-scrim absolute left-[7px] top-[7px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{chip(g)}</span></span>
+                    <span className="ui-chip-scrim absolute right-[7px] top-[7px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono tracking-normal text-ink">{money.sum([g])}</span></span>
+                  </span>
+                  <span className="flex flex-1 flex-col gap-[6px] px-[10px] pb-[10px] pt-[9px]">
+                    <span className="line-clamp-2 text-[12.5px] leading-[1.35] text-ink">{(g.params as { rawPrompt?: string }).rawPrompt || g.title || g.prompt}</span>
+                    <Mono cost className="truncate">{shortLabel(g.model)} · {g.authorName ?? "—"} · {timeAgo(g.createdAt)}</Mono>
+                  </span>
+                  <span className="grid grid-cols-[1fr_1fr] border-t border-border">
+                    <button type="button" disabled={busy === g.id || running(g)} onClick={open} className="flex h-[40px] items-center justify-center border-r border-border text-[12.5px] font-medium leading-none text-ink disabled:opacity-60">File to shot</button>
+                    <button type="button" disabled={busy === g.id} onClick={() => again(g)} className="flex h-[40px] items-center justify-center text-[12.5px] font-medium leading-none text-ink-body disabled:opacity-60">Again</button>
+                  </span>
+                </article>
+              );
               return (
                 <article key={g.id} className="flex flex-col overflow-hidden rounded-card border border-border bg-card" aria-label={`${chip(g)} take`}>
                   <span className="relative block aspect-video border-b border-hairline ui-placeholder">
@@ -118,7 +144,7 @@ export default function UnfiledWall({ kind, search = "", onTotals, columns = "gr
                     <span className="line-clamp-2 min-h-[36px] text-[13.5px] leading-[1.35] text-ink">{(g.params as { rawPrompt?: string }).rawPrompt || g.title || g.prompt}</span>
                     <span className="flex items-center justify-between gap-[8px]"><Mono cost className="truncate">{shortLabel(g.model)} · {g.authorName ?? "—"} · {timeAgo(g.createdAt)}</Mono></span>
                     <span className="flex gap-[6px]">
-                      <button type="button" disabled={busy === g.id || running(g)} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setFiling({ id: g.id, x: r.left, y: r.bottom + 6, project: null }); }}
+                      <button type="button" disabled={busy === g.id || running(g)} onClick={open}
                         className="tap44 flex h-[34px] flex-1 items-center justify-center rounded-ctl border border-[rgba(245,246,248,.16)] text-[12.5px] font-medium leading-none text-ink disabled:opacity-60">File to shot</button>
                       <button type="button" disabled={busy === g.id} onClick={() => again(g)} className="tap44 flex h-[34px] items-center justify-center rounded-ctl border border-[rgba(245,246,248,.16)] px-[10px] text-[12.5px] font-medium leading-none text-ink-body disabled:opacity-60">Again</button>
                     </span>
