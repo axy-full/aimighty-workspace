@@ -446,3 +446,20 @@ test.describe("Library on a phone on its side", () => {
     expect(col.scrollWidth).toBe(col.clientWidth);
   });
 });
+
+/** Usage on a phone (board 12f, the mobile README's chrome): the M10 header, one column, the one primary pinned. */
+test.describe("Usage on a phone", () => {
+  test.skip(({ viewport }) => !viewport || viewport.width >= 768, "portrait phones only");
+  test("‹ Back · Usage in the header, the cards in one column, the statement pinned", async ({ page }) => {
+    await page.goto("/usage");
+    await settle(page);
+    await expect(page.getByRole("banner").getByText("Usage", { exact: true })).toBeVisible();
+    await expect(page.getByRole("banner").getByRole("button", { name: "‹ Back" })).toBeVisible();
+    const signedIn = await page.getByRole("button", { name: "Account" }).count();
+    test.skip(!signedIn, "the cards need a workspace");
+    for (const name of ["The shots taking the most takes", "By production", "By engine"]) await expect(page.getByRole("region", { name })).toBeAttached();
+    await expect(page.getByRole("button", { name: /^Download the statement/ })).toBeVisible();
+    const body = await page.locator("[data-phone-body]").evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+    expect(body.scrollWidth).toBe(body.clientWidth);
+  });
+});

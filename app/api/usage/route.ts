@@ -11,9 +11,26 @@ import { listChecks, spendSince, computedSpendUpTo } from "@/lib/reconcile";
 import { storageLedger } from "@/lib/storageCost";
 import { billedCreditsSum } from "@/lib/creditSql";
 import { billCredits, marginKeyOf } from "@/lib/creditTerms";
+import { currentTenant } from "@/lib/tenant";
+import { creditsApply, creditState } from "@/lib/credits";
+import { cycleBounds, cycleKey } from "@/lib/cycle";
+import { meterBreakdown } from "@/lib/meter";
+import { burnDown, type ShotSpend } from "@/lib/burndown";
+import { runway } from "@/lib/runway";
+import { shotUsage, engineRows, sumBy, type TakeRow } from "@/lib/usageView";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+/** A credit workspace's numbers are credits: every dollar figure — a vendor's cost, a margin's other half — goes. */
+function stripDollars(o: unknown): void {
+  if (Array.isArray(o)) { for (const v of o) stripDollars(v); return; }
+  if (!o || typeof o !== "object") return;
+  for (const k of Object.keys(o as Record<string, unknown>)) {
+    if (/usd$/i.test(k) || /^(spend|promptSpend|renderSpend|added|spent|remaining|computedSpent)$/.test(k)) delete (o as Record<string, unknown>)[k];
+    else stripDollars((o as Record<string, unknown>)[k]);
+  }
+}
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** The full ledger — eight aggregates over the table. Only the Usage page
@@ -275,7 +292,75 @@ export const GET = withTenant(async function GET() {
   const purchased = Number((topups.rows[0] as any).total);
   const okCount = Number(t.ok);
 
-  return NextResponse.json({
+  /* ── SOW v2 §7.12 (board 12f): the cycle's headline, the shots taking the most takes, by production · person ·
+     engine, and the cap burn-down — every credit from the platform's one ledger, so the page, the balance and the
+     statement agree. The workspace's rows supply the names and the take order; the platform's rows supply the money. ── */
+  const ws = currentTenant()?.workspace ?? null;
+  const inCredits = creditsApply(ws);
+  const nowMs = Date.now();
+  const { start: cycleStart, end: cycleEnd } = cycleBounds(1, nowMs);
+  const cycle = { key: cycleKey(cycleStart), from: cycleStart, to: cycleEnd };
+  let view: Record<string, unknown> = { cycle, spentThisCycle: 0, balance: null, runwayDays: null, mostTakes: [], byProduction: [], byPerson: [], byEngine: [], burn: [] };
+  if (ws) {
+    const [win, all, state, takeRows, projectRows, userRows, shotRows, stateRows] = await Promise.all([
+      meterBreakdown(ws.id, cycleStart, cycleEnd),
+      meterBreakdown(ws.id, 0),
+      creditState(),
+      db().execute({ sql: `SELECT g.shot_id, g.version, g.review_state, g.status, s.code, s.project_id, p.name AS project
+                           FROM generations g JOIN shots s ON s.id = g.shot_id JOIN projects p ON p.id = s.project_id
+                           WHERE g.deleted = 0 AND g.kind != 'audio' AND g.created_at >= ? AND g.created_at < ?
+                           ORDER BY g.shot_id, g.version, g.created_at`, args: [cycleStart, cycleEnd] }),
+      db().execute(`SELECT p.id, p.name, p.cap_credits, pr.name AS production FROM projects p LEFT JOIN productions pr ON pr.id = p.production_id`),
+      db().execute(`SELECT id, name FROM users`),
+      db().execute(`SELECT s.project_id, s.id AS shot_id, s.code, COUNT(g.id) AS takes
+                    FROM shots s LEFT JOIN generations g ON g.shot_id = s.id AND g.deleted = 0 AND g.kind != 'audio' GROUP BY s.id`),
+      /* A shot's state is its own, across every take it has — an approved shot stays Approved in the month after. */
+      db().execute(`SELECT shot_id, MAX(review_state = 'approved') AS approved, MAX(review_state = 'picked') AS picked
+                    FROM generations WHERE deleted = 0 AND shot_id IS NOT NULL AND status = 'succeeded' GROUP BY shot_id`),
+    ]);
+    const creditsByShot = new Map(win.byShot.filter((r) => r.shotId).map((r) => [r.shotId!, r.billedCredits]));
+    const takes: TakeRow[] = (takeRows.rows as any[]).map((r) => ({
+      shotId: String(r.shot_id), code: String(r.code), projectId: String(r.project_id), project: String(r.project),
+      version: Number(r.version ?? 0), reviewState: String(r.review_state ?? ""), status: String(r.status ?? ""),
+    }));
+    const projects = (projectRows.rows as any[]).map((r) => ({ id: String(r.id), name: String(r.name), cap: r.cap_credits == null ? null : Number(r.cap_credits), production: r.production ? String(r.production) : null }));
+    const productionOf = new Map(projects.map((p) => [p.id, p.production ?? p.name]));
+    const nameOf = new Map((userRows.rows as any[]).map((r) => [String(r.id), String(r.name)]));
+    const allByProject = new Map(all.byProject.filter((r) => r.projectId).map((r) => [r.projectId!, r.billedCredits]));
+    const allByShot = new Map(all.byShot.filter((r) => r.shotId).map((r) => [r.shotId!, r.billedCredits]));
+    const shotsByProject = new Map<string, ShotSpend[]>();
+    for (const r of shotRows.rows as any[]) {
+      const list = shotsByProject.get(String(r.project_id)) ?? [];
+      list.push({ id: String(r.shot_id), code: String(r.code), takes: Number(r.takes ?? 0), credits: allByShot.get(String(r.shot_id)) ?? 0 });
+      shotsByProject.set(String(r.project_id), list);
+    }
+    const stateOf = new Map<string, "Approved" | "Picked">();
+    for (const r of stateRows.rows as any[]) { if (Number(r.approved)) stateOf.set(String(r.shot_id), "Approved"); else if (Number(r.picked)) stateOf.set(String(r.shot_id), "Picked"); }
+    const balance = state?.balance ?? null;
+    const rw = runway(balance, all.byDay.map((d) => ({ day: d.day, credits: d.billedCredits })), nowMs);
+    view = {
+      cycle,
+      months: all.byMonth.map((m) => ({ month: m.month, credits: m.billedCredits })),
+      spentThisCycle: win.byModel.reduce((a, r) => a + r.billedCredits, 0),
+      balance,
+      runwayDays: rw.days,
+      mostTakes: shotUsage(takes, creditsByShot, 8, stateOf),
+      byProduction: sumBy(win.byProject, (r) => (r.projectId ? productionOf.get(r.projectId) ?? "Unfiled" : "Unfiled"), (r) => r.billedCredits),
+      /* Training carries no person (the identity row does); nothing else metered without one is called by a name. */
+      byPerson: sumBy(win.byPerson, (r) => (r.kind === "training" ? "Training" : r.userId ? nameOf.get(r.userId) ?? "Someone" : "Unattributed"), (r) => r.billedCredits),
+      byEngine: engineRows(win.byModel, label),
+      burn: projects.filter((p) => p.cap != null && p.cap > 0).map((p) => {
+        const byShot = shotsByProject.get(p.id) ?? [];
+        const b = burnDown({ spentCredits: allByProject.get(p.id) ?? 0, capCredits: p.cap, shotCount: byShot.length, byShot });
+        return { projectId: p.id, name: p.name, production: p.production, spent: b.spent, cap: b.cap, projected: b.projected, known: b.known, over: b.over };
+      }),
+    };
+  }
+
+  const payload: any = {
+    ...view,
+    /* The account menu and Settings read `months`; the page's own key is `byMonth` (the dollar workspaces' figure). */
+    months: byMonth.rows.map((r: any) => ({ month: r.month, credits: Number(r.credits ?? 0), usd: Number(r.spend ?? 0) })),
     purchasedUsd: purchased,
     spentUsd: spend,
     spentCredits: Number(t.credits ?? 0),
@@ -357,5 +442,15 @@ export const GET = withTenant(async function GET() {
       free: hasFreeTier(r.model),
       freeLeft: hasFreeTier(r.model) ? Math.max(0, 500000 - Number(r.in_tokens) - Number(r.out_tokens)) : 0,
     })),
-  });
+  };
+  /* A credit workspace never sees the vendors' dollars: the ledgers, the storage rent and a take's engine cost are the
+     platform's numbers (SOW §0.1); its own numbers are credits. */
+  if (inCredits) {
+    Object.assign(payload, view);   // the legacy keys (byPerson, byProject…) must not win over the ledger's
+    payload.vendors = [];
+    /* `months` is the ledger's for a credit workspace, so the menu, the headline and the statement agree. */
+    payload.months = (view.months as unknown[]) ?? payload.months;
+    stripDollars(payload);
+  }
+  return NextResponse.json(payload);
 });

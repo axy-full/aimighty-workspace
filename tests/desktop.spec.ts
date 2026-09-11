@@ -572,3 +572,24 @@ test("Library: labelled sections under a sticky index, one primary, + Location o
   await page.keyboard.press("Escape");
   await expect(sheet).toHaveCount(0);
 });
+
+/**
+ * Usage (docs/particl-sow-v2.md §7.12, design/particl-sow board 12f): from
+ * the account menu; the month and one line, the one filled primary, the
+ * shots taking the most takes, by production · person · engine, and the
+ * cap burn-down — every credit from the one ledger. Nothing here spends.
+ */
+test("Usage: the month, one line, one primary, and the five cards", async ({ page }) => {
+  await page.goto("/usage");
+  await settle(page);
+  const signedIn = await page.getByRole("button", { name: "Account" }).count();
+  test.skip(!signedIn, "Usage needs a workspace");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^(January|February|March|April|May|June|July|August|September|October|November|December)$/);
+  await expect(page.locator("[data-usage-line]")).toHaveText(/^\d[\d,]* cr spent/);
+  for (const name of ["The shots taking the most takes", "By production", "By person", "By engine", "Will each project finish under its cap?"]) await expect(page.getByRole("region", { name })).toBeVisible();
+  const filled = await page.locator(".shell-page button").evaluateAll((els) => els.filter((b) => getComputedStyle(b).backgroundColor === "rgb(245, 246, 248)").map((b) => b.textContent ?? ""));
+  expect(filled.length, "at most one filled primary — an admin's Download the statement").toBeLessThanOrEqual(1);
+  await expect(page.getByRole("button", { name: /^Download the statement/ })).toBeVisible();
+  /* No dollar figure anywhere on a credit workspace's Usage. */
+  expect(await page.locator(".shell-page").innerText()).not.toMatch(/\$\s?\d/);
+});
