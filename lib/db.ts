@@ -1031,6 +1031,12 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          does not degrade, it throws, so this has to land before anything
          writes a graph's edges. */
       await addColumn(c, "recipe_stages", `inputs TEXT NOT NULL DEFAULT '[]'`);
+      /* SOW surfaces 12d: whether Atomik asks before a stage, runs it alone, or runs it under a cap (SOW §8.2 —
+         every paid stage asks by default); the cap in credits; a recipe's one-line blurb and the board it was saved from. */
+      await addColumn(c, "recipe_stages", `mode TEXT NOT NULL DEFAULT 'asks'`);
+      await addColumn(c, "recipe_stages", `cap_credits INTEGER`);
+      await addColumn(c, "recipes", `blurb TEXT NOT NULL DEFAULT ''`);
+      await addColumn(c, "recipes", `board_id TEXT`);
       await addColumn(c, "ideas", `model TEXT`);
       await addColumn(c, "topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */

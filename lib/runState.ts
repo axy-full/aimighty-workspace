@@ -22,6 +22,38 @@ export type StageState = (typeof STAGE_STATES)[number];
 export const RUN_STATES = ["running", "paused", "done"] as const;
 export type RunState = (typeof RUN_STATES)[number];
 
+/* ── What Atomik does at a stage (SOW surfaces 12d; SOW §8.2, §14.3) ─────
+   `asks` stops for a person before the stage spends; `alone` runs it;
+   `under_cap` runs it while the stage's spend stays under its cap. The
+   platform floor is not a setting: anything over 200 cr always asks, and
+   so does training, publishing or deleting, whatever the recipe says. */
+export const STAGE_MODES = ["asks", "alone", "under_cap"] as const;
+export type StageMode = (typeof STAGE_MODES)[number];
+export const isStageMode = (v: unknown): v is StageMode => typeof v === "string" && (STAGE_MODES as readonly string[]).includes(v);
+export const MODE_WORD: Record<StageMode, string> = { asks: "Asks first", alone: "Runs alone", under_cap: "Runs under the cap" };
+export const PLATFORM_FLOOR_CREDITS = 200;
+const ALWAYS_ASKS = /\b(train|training|publish|publishing|delete|deleting)\b/i;
+
+export type ModedStage = { mode?: string | null; credits: number; /** The price in credits when `credits` is in another unit (a dollar workspace). */ floorCredits?: number; name: string };
+
+/** The mode a stage actually runs under: its own, unless the platform floor says it asks. The floor reads credits, whatever the workspace is billed in. */
+export function effectiveMode(s: ModedStage): StageMode {
+  if ((s.floorCredits ?? s.credits) > PLATFORM_FLOOR_CREDITS || ALWAYS_ASKS.test(s.name)) return "asks";
+  return isStageMode(s.mode) ? s.mode : "asks";
+}
+/** The whole run's price: every stage. */
+export const runTotal = (stages: readonly { credits: number }[]): number => stages.reduce((n, s) => n + s.credits, 0);
+/** How many places the run stops to ask. */
+export const asksCount = (stages: readonly ModedStage[]): number => stages.filter((s) => effectiveMode(s) === "asks").length;
+/** What `Run to first checkpoint` spends: every stage before the first that asks — the whole run when none does. */
+export function firstCheckpointCredits(stages: readonly ModedStage[]): number {
+  let n = 0;
+  for (const s of stages) { if (effectiveMode(s) === "asks") return n; n += s.credits; }
+  return n;
+}
+/** Planning credits are always their own item (SOW §8): the writing stages. */
+export const planningCredits = (stages: readonly { kind: string; credits: number }[]): number => stages.filter((s) => s.kind === "write").reduce((n, s) => n + s.credits, 0);
+
 export function isStageState(v: unknown): v is StageState {
   return typeof v === "string" && (STAGE_STATES as readonly string[]).includes(v);
 }
@@ -78,6 +110,8 @@ export type StageView = {
 export type RunView = {
   id: string;
   num: number;
+  /** The recipe this run executes — the project's own, or a platform one. */
+  recipeId: string;
   projectId: string | null;
   projectName: string;
   /** running | paused | done. Whether a stage needs somebody is its own fact. */

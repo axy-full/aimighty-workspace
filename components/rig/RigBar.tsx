@@ -75,7 +75,7 @@ export function RigStrip() {
 export function rigHrefs(projectId: string, boardId?: string | null, runId?: string | null): Record<RigTab, string> {
   return {
     canvas: boardId ? `/rig/canvas/${boardId}` : `/rig/canvas/new?project=${encodeURIComponent(projectId)}`,
-    recipes: `/rig/recipes/${encodeURIComponent(projectId)}`,
+    recipes: `/rig/recipes?project=${encodeURIComponent(projectId)}`,
     run: runId ? `/rig/run/${runId}` : `/rig/run/latest?project=${encodeURIComponent(projectId)}`,
   };
 }

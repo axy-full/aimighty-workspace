@@ -16,7 +16,7 @@ const ROUTES = [
   "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio/shot",
   "/usage", "/settings", "/connect", "/platform", "/statements/2026-09", "/admin",
   "/policy", "/terms", "/privacy", "/report",
-  "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/takes/demo", "/shots/demo", "/elements/demo",
+  "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/rig/recipes", "/takes/demo", "/shots/demo", "/elements/demo",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots", "/atomik/agent",
 ];
 async function settle(page: Page) {
@@ -461,5 +461,38 @@ test.describe("Usage on a phone", () => {
     await expect(page.getByRole("button", { name: /^Download the statement/ })).toBeVisible();
     const body = await page.locator("[data-phone-body]").evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
     expect(body.scrollWidth).toBe(body.clientWidth);
+  });
+});
+
+/** Rig · Recipes on a phone (SOW surfaces 12d, mobile README chrome): cards stacked, steps as rows, the primary pinned above the dock, nothing wider than the screen. */
+test.describe("Recipes on a phone", () => {
+  test.skip(({ viewport }) => !viewport || viewport.width >= 768, "portrait phones only");
+  test("cards, rows and the pinned primary", async ({ page }) => {
+    await page.goto("/rig/recipes");
+    await settle(page);
+    const signedIn = await page.getByRole("button", { name: "Account" }).count();
+    test.skip(!signedIn, "the Rig needs a workspace");
+    await expect(page.locator("[data-recipes]").getByRole("button", { name: /^Recipe / }).first()).toBeVisible();
+    await expect(page.locator("[data-steps]")).toBeVisible();
+    const primary = page.getByRole("button", { name: /^Run to first checkpoint/ });
+    await expect(primary).toBeVisible();
+    const box = (await primary.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(50);
+    const m = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+    expect(m.scrollWidth).toBe(m.clientWidth);
+    /* Every target is 44pt: the recipe cards by their own height; the step controls (only a workspace recipe has them)
+       through the tap44 band, which boundingBox never sees — the same measure the composer test makes. */
+    for (const c of await page.locator("[data-recipes] button").all()) expect((await c.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const own = page.locator("[data-recipes]").getByRole("button", { name: /^Recipe / }).filter({ hasText: "Your studio" });
+    if (await own.count()) {
+      await own.first().click();
+      await expect(page.locator("[data-steps] .tap44").first()).toBeVisible();
+      const short = await page.locator("[data-steps]").evaluate((root) => [...root.querySelectorAll<HTMLElement>("button, select")].filter((b) => {
+        const r = b.getBoundingClientRect(); if (r.height === 0) return false;
+        const band = parseFloat(getComputedStyle(b, "::after").height) || 0;
+        return r.height < 44 && band < 44;
+      }).map((b) => `${(b.getAttribute("aria-label") ?? b.textContent ?? "").trim().slice(0, 20)}:${Math.round(b.getBoundingClientRect().height)}`));
+      expect(short, "every step control on a phone is at least 44pt, or carries a 44pt touch band").toEqual([]);
+    }
   });
 });

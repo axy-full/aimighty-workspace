@@ -22,6 +22,8 @@ export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal" | "vercel"
 export type ProviderDef = {
   id: ProviderId;
   label: string;
+  /** The one word a steps table prints after the engine — `Seedance 2.5 · ByteDance`. */
+  short: string;
   /** What this vendor makes, in the words the studio uses for it. A ledger
    *  is looked for by the medium it paid for, not by the company's name. */
   serves: string;
@@ -53,6 +55,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "byteplus",
     label: "BytePlus ModelArk",
+    short: "ByteDance",
     serves: "Video",
     envKey: "ARK_API_KEY",
     baseUrlEnv: "ARK_BASE_URL",
@@ -75,6 +78,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "google",
     label: "Google Gemini",
+    short: "Google",
     serves: "Images",
     envKey: "GEMINI_API_KEY",
     baseUrlEnv: "GEMINI_BASE_URL",
@@ -100,6 +104,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "elevenlabs",
     label: "ElevenLabs",
+    short: "ElevenLabs",
     serves: "Sound",
     envKey: "ELEVENLABS_API_KEY",
     baseUrlEnv: "ELEVENLABS_BASE_URL",
@@ -124,6 +129,7 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "fal",
     label: "fal.ai",
+    short: "fal",
     serves: "Seedance 2.5 · Kling 3.0 · Veo 3.1 · Wan 2.6 · Nano Banana 2 Edit · Flux Kontext · sync-3 · Topaz Astra · Characters",
     envKey: "FAL_KEY",
     baseUrlEnv: "FAL_BASE_URL",
@@ -157,6 +163,7 @@ export const PROVIDERS: ProviderDef[] = [
      * which is why it needs no top-ups recorded by hand. */
     id: "vercel",
     label: "Vercel AI Gateway",
+    short: "Vercel",
     serves: "Thinking",
     envKey: "AI_GATEWAY_API_KEY",
     baseUrlEnv: "AI_GATEWAY_BASE_URL",

@@ -4,6 +4,7 @@ import { createProduction } from "./productions";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { starterShotsWithSetup } from "./platformLayer";
 import { createElement } from "./elements";
+import { ensurePlatformRecipes } from "./runs";
 import { elementKind } from "./rig";
 import { listPlatformAssets, getPlatformLayer } from "./platform";
 import { DEMO_TAKES, demoMediaUrl } from "./demoProduction";
@@ -53,6 +54,8 @@ export async function seedStarterProduction(createdBy: string): Promise<{ projec
   }
   invalidate(PROJECTS_KEY);
   await seedDemoTakes(pid, createdBy, ts);
+  /* The platform's two recipes (SOW surfaces 12d, 12i): every engine from the registry, every price from the rate table. */
+  try { await ensurePlatformRecipes(createdBy); } catch (e) { console.warn(`[starter] recipes not seeded: ${(e as Error).message}`); }
   return { projectId: pid };
 }
 
