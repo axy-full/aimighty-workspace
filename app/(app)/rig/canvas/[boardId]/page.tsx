@@ -496,10 +496,10 @@ function Canvas() {
       engine: engineOf(n), units: Number(n.settings.count ?? 1), credits: priceOf(n),
       inputs: b.wires.filter((w) => w.to.nodeId === n.id && numOf.has(w.from.nodeId)).map((w) => numOf.get(w.from.nodeId)!),
     }));
-    const r = await fetch(`/api/rig/recipe/${encodeURIComponent(projectId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: b.name, stages }) });
+    const r = await fetch(`/api/rig/recipe/${encodeURIComponent(projectId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: b.name, stages, boardId: b.id }) });
     const j = await r.json().catch(() => ({}));
-    toast(r.ok ? `Saved as a recipe · ${stages.length} stages` : (j.error ?? "This project already has a recipe."));
-    if (r.ok) router.push(`/rig/recipes/${encodeURIComponent(projectId)}`);
+    toast(r.ok ? `Saved as a recipe · ${stages.length} stages` : (j.error ?? "Not saved as a recipe."));
+    if (r.ok) router.push(`/rig/recipes?project=${encodeURIComponent(projectId)}${j.id ? `&recipe=${encodeURIComponent(String(j.id))}` : ""}`);
   };
 
   /* ⌘K adds a node; Backspace removes the selected one; Esc drops a wire or the menu. */

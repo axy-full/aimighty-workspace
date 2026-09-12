@@ -18,7 +18,7 @@ const stage = (over: Partial<StageView> = {}): StageView => ({
 });
 
 const run = (stages: StageView[], over: Partial<RunView> = {}): RunView => ({
-  id: "run1", num: 4, projectId: "p1", projectName: "A production",
+  id: "run1", num: 4, recipeId: "rec_1", projectId: "p1", projectName: "A production",
   state: "running", needsYou: stages.some((s) => s.state === "needs_you"), startedAt: 0, stages,
   spent: stages.reduce((n, s) => n + s.spent, 0),
   estimate: stages.reduce((n, s) => n + Math.max(s.credits, s.spent), 0),

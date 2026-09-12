@@ -118,6 +118,9 @@ attribute   { id, assetId, kind, versions[], currentVersionId, trained }
 version     { id, label, thumbUrl, createdAt, usedByShotIds[] }
 binding     { shotId, slot, assetId, attributeId, versionId, overridden }
 board       { id, projectId, nodes[], wires[] }          recipe = board saved with stages[]
+recipe      { id, projectId | null (null = the platform's, seeded into every workspace), name, blurb, boardId,
+              stages[{ num, name, kind: write|render|assemble, engine, mode: asks|alone|under_cap, capCredits,
+                       unit: panel|still|take|line|view|plan, perShot, units, credits, inputs[] }] }   // SOW surfaces 12d, 12 Sep 2026
 node        { id, kind, x, y, ports[], inputs[], output, settings, state, credits, staleSince }
 wire        { from:{nodeId,portId}, to:{nodeId,slotId}, kind: inherited|override|filed|created }
 run         { id, recipeId, projectId, steps[{n,name,engineId,credits,state,outputs[]}], spent,

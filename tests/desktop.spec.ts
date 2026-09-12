@@ -20,7 +20,7 @@ const ROUTES = [
   "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio/shot",
   "/usage", "/settings", "/policy", "/terms", "/privacy",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots",
-  "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/takes/demo", "/shots/demo", "/elements/demo",
+  "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/rig/recipes", "/takes/demo", "/shots/demo", "/elements/demo",
 ];
 
 async function settle(page: Page) {
@@ -592,4 +592,45 @@ test("Usage: the month, one line, one primary, and the five cards", async ({ pag
   await expect(page.getByRole("button", { name: /^Download the statement/ })).toBeVisible();
   /* No dollar figure anywhere on a credit workspace's Usage. */
   expect(await page.locator(".shell-page").innerText()).not.toMatch(/\$\s?\d/);
+});
+
+/**
+ * Rig · Recipes (SOW surfaces board 12d): the recipe cards on the left with
+ * the picked one on a 2px ink border, the steps table with its five mono
+ * headers, the whole-run card with one filled primary priced as the steps
+ * before the first checkpoint, and the floor line. The platform's two are
+ * there for every workspace. Nothing here starts a run.
+ */
+test("Rig · Recipes: the cards, the steps table, one primary priced to the first checkpoint, the floor line", async ({ page }) => {
+  await page.goto("/rig/recipes");
+  await settle(page);
+  const signedIn = await page.getByRole("button", { name: "Account" }).count();
+  test.skip(!signedIn, "the Rig needs a workspace");
+  const list = page.getByRole("complementary", { name: "Recipes" });
+  expect(await list.evaluate((el) => el.getBoundingClientRect().width)).toBe(420);
+  const cards = list.getByRole("button", { name: /^Recipe / });
+  expect(await cards.count(), "the platform's two at least").toBeGreaterThanOrEqual(2);
+  const picked = list.getByRole("button", { name: /^Recipe /, pressed: true });
+  await expect(picked).toHaveCount(1);
+  expect(await picked.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("2px");
+  expect(await picked.evaluate((el) => getComputedStyle(el).borderTopColor), "the picked card sits on the ink border").toBe("rgb(245, 246, 248)");
+  const unpicked = list.getByRole("button", { name: /^Recipe /, pressed: false }).first();
+  expect(await unpicked.evaluate((el) => getComputedStyle(el).borderTopWidth), "every card is 2px; only the colour changes").toBe("2px");
+  expect(await unpicked.evaluate((el) => getComputedStyle(el).borderTopColor)).toBe("rgba(245, 246, 248, 0.08)");
+  /* The platform's own recipe first: every step names its engine and its vendor. `exact`, because a copy is `… · copy`. */
+  await list.getByRole("button", { name: "Recipe 30-second spot", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("30-second spot");
+  await expect(page.getByRole("table", { name: "Steps" }).getByRole("columnheader")).toHaveText(["#", "Step", "Who does it", "Costs", "Atomik"]);
+  const rows = page.getByRole("table", { name: "Steps" }).getByRole("row");
+  expect(await rows.count()).toBe(7);
+  await expect(page.locator("[data-step='1']").getByRole("cell").nth(2), "the engine and its vendor, from the registry").toHaveText(/ · (ByteDance|Google|fal|ElevenLabs|Vercel)$/, { useInnerText: true });
+  await expect(page.locator("[data-step='3']").getByRole("cell").nth(4), "keyframes ask first").toHaveText(/^Asks first/, { useInnerText: true });
+  await expect(page.locator("[data-step='2']").getByRole("cell").nth(3), "a batch prints its rate per unit, the board's way").toHaveText(/ \/ PANEL$/, { useInnerText: true });
+  await expect(page.locator("[data-floor]")).toHaveText("Anything over 200 cr always asks. Training, publishing and deleting always ask.");
+  const filled = await page.locator(".shell-page button").evaluateAll((els) => els.filter((b) => getComputedStyle(b).backgroundColor === "rgb(245, 246, 248)").map((b) => b.textContent ?? ""));
+  expect(filled.length, "one filled primary").toBe(1);
+  expect(filled[0]).toMatch(/^Run to first checkpoint/);
+  /* Picking another card changes the recipe on the right. */
+  await list.getByRole("button", { name: "Recipe Product turntable", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Product turntable");
 });

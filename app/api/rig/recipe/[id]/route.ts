@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
-import { recipeOf, createRecipe, DEFAULT_STAGES, type NewStage } from "@/lib/runs";
+import { recipeOf, recipeById, createRecipe, projectExists, DEFAULT_STAGES, type NewStage } from "@/lib/runs";
+import { getBoard } from "@/lib/boards";
 
 /**
  * A production's recipe as a graph (brief 3, surface 1d).
@@ -26,20 +27,20 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
 });
 
 /**
- * Write this production's recipe, from the eight stages §9 names.
+ * Write a recipe under this production — a board's stages from the Canvas,
+ * or the eight stages §9 names with no body.
  *
- * Refuses when one already exists rather than making a second: `recipeOf`
- * takes the most recently updated, so a duplicate would quietly become the
- * production's recipe and orphan the first along with any run painted onto
- * it. Nothing here edits stages yet — this is the empty case only.
+ * A production holds as many recipes as it has boards (SOW surfaces 12d;
+ * v2 SOW §7.7: reusable, shareable, forkable): the list at /rig/recipes is
+ * the workspace's, a run names the recipe it executes, and `recipeOf`'s
+ * "most recently updated" pick is only the fallback for a run started
+ * without one. The answer is the recipe this call wrote, by its id.
  */
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await params;
-  if (await recipeOf(id)) {
-    return NextResponse.json({ error: "This project already has a recipe." }, { status: 409 });
-  }
+  if (!(await projectExists(id))) return NextResponse.json({ error: "No such project." }, { status: 404 });
   /* `Save as recipe` on the Canvas (design/particl-v2 §8) sends the board's
      generate nodes as stages — name, engine, units, credits, and which
      stages feed which; with no body the eight default stages are written. */
@@ -52,6 +53,9 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
     inputs: Array.isArray(s.inputs) ? s.inputs.map(Number).filter(Number.isFinite) : [],
   })).slice(0, 40) : [];
   const name = typeof b?.name === "string" && b.name.trim() ? b.name.trim() : "Production";
-  await createRecipe(id, name, sent.length ? sent : DEFAULT_STAGES, got.user.id);
-  return NextResponse.json({ recipe: await recipeOf(id) }, { status: 201 });
+  /* The board a recipe remembers is one of this project's. */
+  const boardId = typeof b?.boardId === "string" && (await getBoard(b.boardId))?.projectId === id ? b.boardId : null;
+  const rid = await createRecipe(id, name, sent.length ? sent : DEFAULT_STAGES, got.user.id, { blurb: typeof b?.blurb === "string" ? b.blurb : "", boardId });
+  if (!rid) return NextResponse.json({ error: "Not saved." }, { status: 500 });
+  return NextResponse.json({ id: rid, recipe: await recipeById(rid, { projectId: id }) }, { status: 201 });
 });

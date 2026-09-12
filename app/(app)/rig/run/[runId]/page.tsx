@@ -83,7 +83,7 @@ function Run() {
   const { data: prods } = useApi<{ productions: ProductionRow[] }>(signedIn ? "/api/productions" : null, 60_000);
   const run = data?.run ?? null;
   const projectId = run?.projectId ?? project ?? null;
-  const { data: recipeData } = useApi<{ recipe: RecipeGraph | null }>(projectId ? `/api/rig/recipe/${encodeURIComponent(projectId)}` : null, 0);
+  const { data: recipeData } = useApi<{ recipe: RecipeGraph | null }>(run?.recipeId ? `/api/rig/recipes/${encodeURIComponent(run.recipeId)}` : null, 0);
   const { data: latest } = useApi<{ generations: Generation[] }>(projectId ? `/api/jobs?projectId=${encodeURIComponent(projectId)}&limit=6&status=succeeded&sync=0` : null, 15_000);
   const production = prods?.productions.find((p) => p.projects.some((j) => j.id === projectId)) ?? null;
   const proj = production?.projects.find((j) => j.id === projectId) ?? null;
