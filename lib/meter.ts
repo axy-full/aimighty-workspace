@@ -3,6 +3,7 @@ import { currentTenant } from "./tenant";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import type { Span } from "./concurrency";
 import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
+import { billingTransaction, syncBillingLedger, setCreditDebitTx } from "./billingLedger";
 
 /**
  * The metering layer. Every engine call, whatever the vendor, is written
@@ -41,6 +42,23 @@ export type MeterEvent = {
   workspaceId?: string;
 };
 
+export class FundingSourceChangedError extends Error {
+  constructor() {
+    super("The workspace's engine credentials changed before this job started. No paid request was sent; prepare a new request using the current credentials.");
+    this.name = "FundingSourceChangedError";
+  }
+}
+
+/** Queued workers reload credentials. Do not submit with a different funding source from their reservation. */
+export async function assertMeterFunding(id: string, engine: string): Promise<void> {
+  const workspaceId = currentTenant()?.workspace?.id;
+  if (!workspaceId) return;
+  await platformReady();
+  const row = (await platformDb().execute({ sql: "SELECT workspace_id,paid_by_platform FROM meter_events WHERE id=?", args: [id] })).rows[0];
+  if (!row) return; // Historical queued work can predate the meter.
+  if (row.workspace_id !== workspaceId || Boolean(row.paid_by_platform) !== paidByPlatform(vendorKeyNameFor(engine))) throw new FundingSourceChangedError();
+}
+
 
 /**
  * Write or update one event. A `critical` write (the default for a job
@@ -54,13 +72,23 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
   if (!workspaceId) return;
   const paid = paidByPlatform(vendorKeyNameFor(e.engine));
   const cost = typeof e.engineCostUsd === "number" && Number.isFinite(e.engineCostUsd) ? Math.max(0, e.engineCostUsd) : null;
-  const billed = cost == null ? null : paid ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
   const ts = now();
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      await platformReady();
-      await platformDb().execute({
+      await billingTransaction(async (tx) => {
+        await syncBillingLedger(tx, workspaceId, ts);
+        const previous = await tx.execute({ sql: `SELECT workspace_id,status,billed_credits,paid_by_platform FROM meter_events WHERE id=?`, args: [e.id] });
+        const row = previous.rows[0];
+        if (row && row.workspace_id !== workspaceId) throw new Error("Meter event belongs to another workspace.");
+        // A late start notification cannot replace a completed bill with its old estimate.
+        if (row && row.status !== "running" && e.status === "running") return;
+        if (row?.status === "succeeded" && e.status === "failed") return;
+        // A key added or removed while the provider runs cannot change who funded this attempt.
+        const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
+        const billed = cost == null ? null : fundedByPlatform ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
+        await setCreditDebitTx(tx, workspaceId, e.id, billed ?? Number(row?.billed_credits ?? 0), ts, e.status !== "running");
+        await tx.execute({
         sql: `INSERT INTO meter_events
                 (id, workspace_id, project_id, shot_id, kind, engine, model, status,
                  engine_cost_usd, billed_credits, paid_by_platform, duration_ms, created_by, created_at, updated_at)
@@ -76,8 +104,9 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
                 created_by = COALESCE(excluded.created_by, meter_events.created_by),
                 updated_at = excluded.updated_at`,
         args: [e.id, workspaceId, e.projectId ?? null, e.shotId ?? null, e.kind, e.engine, e.model, e.status,
-               cost, billed, paid ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts],
-      });
+               cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts],
+        });
+      }, ts);
       return;
     } catch (err) {
       lastErr = err;

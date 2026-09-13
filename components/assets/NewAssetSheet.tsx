@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
+import {usePaidAction} from "@/lib/usePaidAction";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
 import { useProject } from "@/lib/projectContext";
@@ -105,18 +106,26 @@ type SheetProps = {
 
 /** Mounted only while open, so every opening starts from `initial` — no state to reset. */
 export default function NewAssetSheet(props: SheetProps) {
-  return props.open ? <SheetBody {...props} /> : null;
+  const {workspace,email}=useSession();
+  return props.open ? <SheetBody key={JSON.stringify([workspace?.id,email])} {...props} /> : null;
 }
 
 function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const router = useRouter();
-  const { signedIn } = useSession();
+  const { signedIn,workspace,email } = useSession();
+  const paid=usePaidAction("/api/identities/train:new-asset");
+  const recovery=paid.pending?.context;
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[]);
   const { current } = useProject();
   const money = useMoney();
   const toast = useToast();
-  const [name, setName] = useState(initial?.name ?? "");
-  const [kind, setKind] = useState<ElementKind>(initial?.kind ?? "character");
-  const [refs, setRefs] = useState<SheetRef[]>(initial?.references ?? []);
+  const [nameChoice,setName]=useState(initial?.name??"");
+  const name=typeof recovery?.name==="string"?recovery.name:nameChoice;
+  const [kindChoice,setKind]=useState<ElementKind>(initial?.kind??"character");
+  const kind:ElementKind=recovery?"character":kindChoice;
+  const [refsChoice,setRefs]=useState<SheetRef[]>(initial?.references??[]);
+  const refs=Array.isArray(recovery?.refs)?recovery.refs as SheetRef[]:refsChoice;
   const [trainOverride, setTrainOverride] = useState<boolean | null>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -131,7 +140,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const { data: ws } = useApi<{ settings: Record<string, string> }>(signedIn ? "/api/settings" : null, 0);
   const trainRule = ws?.settings.trainOnCreate === "always" ? "always" : ws?.settings.trainOnCreate === "never" ? "never" : "ask";
   /* The switch starts where the workspace's rule puts it; a touch overrides it for this sheet. */
-  const train = trainOverride ?? (trainRule === "always");
+  const train = !!paid.pending || (trainOverride ?? (trainRule === "always"));
   const { data: takes } = useApi<{ generations: Generation[] }>(takeMenu && signedIn ? "/api/jobs?kind=image&status=succeeded&limit=24&sync=0" : null, 0);
 
   useEffect(() => {
@@ -147,8 +156,8 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   const trainable = kind === "character";
   const trainCost = trainable && terms?.terms.trainCostUsd != null ? terms.terms.trainCostUsd : null;
   const enoughPhotos = stills.length >= (terms?.terms.minPhotos ?? 5);
-  const trainOn = trainable && train && enoughPhotos && consent && Boolean(terms?.terms.configured);
-  const cost = trainOn && trainCost != null ? trainCost : 0;
+  const trainOn = !!paid.pending || trainable && train && enoughPhotos && consent && Boolean(terms?.terms.configured);
+  const cost = typeof recovery?.cost==="number"?recovery.cost:trainOn&&trainCost!=null?trainCost:0;
   const trainLabel = kind === "character" ? "Train the face now" : kind === "prop" ? "Make a turntable later" : kind === "location" ? "Fill the missing hour later" : kind === "look" ? "Apply to existing keyframes later" : "Train the voice later";
   const trainNote = kind === "character"
     ? (!terms?.terms.configured ? "No trainer is connected to this workspace yet." : !enoughPhotos ? `Needs ${terms?.terms.minPhotos ?? 5} stills of the same person; ${stills.length} so far. Off, the character carries a still and trains later in Rig.` : "A likeness that holds across shots. Off, the character carries a still and trains later in Rig.")
@@ -158,6 +167,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
     : `Creates ${tag} with ${stills.length ? "a still" : "no picture yet"} · ${trainable ? "train the face later in Rig" : "attributes read from the references"} · 0 CR`;
 
   const addFiles = async (files: FileList | File[]) => {
+    if(paid.pending)return;
     const list = Array.from(files).slice(0, 12);
     if (!list.length) return;
     setUploading(true);
@@ -175,22 +185,25 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
   }));
 
   const create = async () => {
-    if (!signedIn || busy) return;
+    if (!signedIn || busy || paid.error) return;
     const clean = name.trim();
     if (!clean) { toast("Name it first — you'll type it as @Name."); nameField.current?.focus(); return; }
     setBusy(true);
     try {
       let castId: string | null = null;
-      let identityId: string | null = null;
+      let identityId: string | null = typeof recovery?.identityId==="string"?recovery.identityId:null;
+      let trainingKey=paid.pending?.key;
       if (trainOn) {
         /* A trained face is an identity: the trainer's own table, with consent on record. */
+        if(!identityId){
         const r = await fetch("/api/identities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: clean, description: initial?.description ?? "", photos: stills.map((s) => s.uploadId).filter(Boolean), projectId: null }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "The identity wasn't made.");
         identityId = j.identity?.id ?? null;
-        const t = await fetch(`/api/identities/${identityId}/train`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consent: true }) });
-        const tj = await t.json().catch(() => ({}));
-        if (!t.ok) throw new Error(tj.error ?? "Training didn't start.");
+        }
+        if(!identityId)throw new Error('The identity was not returned.');
+        const trained=await paid.run(`/api/identities/${identityId}/train`,{consent:true},{keepPending:true,context:{name:clean,kind,refs,description:initial?.description??'',identityId,cost}});
+        trainingKey=trained.request.key;
       } else if (CAST_KIND[kind]) {
         /* A name the prompt can cite, carrying its still. */
         const r = await fetch("/api/cast", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: clean, kind: CAST_KIND[kind], description: initial?.description ?? "", uploadId: stills[0]?.uploadId ?? null }) });
@@ -199,13 +212,16 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
         castId = j.member?.id ?? null;
       }
       const first = refs[0];
-      const r = await fetch("/api/rig/elements", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        name: clean, kind, description: initial?.description ?? "", castId, identityId,
+      if(!alive.current)throw new Error("The asset request is saved for recovery.");
+      const r = await fetch("/api/rig/elements", { method: "POST", headers: { "Content-Type": "application/json",...(trainingKey?{"Idempotency-Key":`asset-from-training:${trainingKey}`,"X-Workspace-Id":workspace!.id,"X-Actor-Email":email!}:{}) }, body: JSON.stringify({
+        name: clean, kind, description: typeof recovery?.description==="string"?recovery.description:initial?.description??"", castId, identityId,
         fromUploadId: first?.uploadId ?? null, fromGenId: first?.genId ?? null,
         references: refs.map((x) => ({ uploadId: x.uploadId ?? null, genId: x.genId ?? null })),
       }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? "The asset wasn't created.");
+      if(!alive.current)throw new Error("The asset request is saved for recovery.");
+      if(trainingKey)await paid.complete(trainingKey);
       toast(`${tag} created · ${trainOn ? `${money.price(cost)} · the face is training` : "0 CR"}`);
       onCreated?.({ id: j.element.id, name: j.element.name, kind });
       onClose();
@@ -234,23 +250,23 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
         }
         footer={
           <span className="flex w-full flex-col gap-[8px]">
-            <Mono cost className="text-center !leading-[1.4]">{note}</Mono>
-            <button type="button" onClick={create} disabled={busy || !signedIn} data-create=""
+            <Mono cost className="text-center !leading-[1.4]">{paid.error??(paid.pending?"Recover the saved training request to finish this asset.":note)}</Mono>
+            <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error} data-create=""
               className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-ink px-[16px] text-[15px] font-semibold leading-none text-ground disabled:opacity-60">
-              <span className="flex items-center gap-[10px]">{busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}Create {name.trim() || "asset"}</span>
+              <span className="flex items-center gap-[10px]">{busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}</span>
               <span className="ui-mono ui-mono-cost !text-[12px] text-on-primary-cost">{money.price(cost)}</span>
             </button>
           </span>
         }>
         <label className="flex flex-col gap-[6px]">
           <Mono>Name · you&rsquo;ll type it as {tag}</Mono>
-          <input ref={nameField} value={name} onChange={(e) => setName(e.target.value)} placeholder="Iver" aria-label="Name"
+          <input ref={nameField} disabled={!!paid.pending} value={name} onChange={(e) => setName(e.target.value)} placeholder="Iver" aria-label="Name"
             className="box-border flex h-[52px] items-center rounded-card border border-[rgba(245,246,248,.2)] bg-card px-[14px] text-[20px] font-semibold leading-none text-ink outline-0 placeholder:text-ink-muted" />
         </label>
         <div className="flex flex-col gap-[6px]">
           <Mono>Kind</Mono>
           <span className="flex flex-wrap gap-[6px]" role="group" aria-label="Kind">
-            {KIND_ORDER.map((k) => <button key={k} type="button" aria-pressed={k === kind} onClick={() => setKind(k)} className={`h-[44px] rounded-pill border px-[14px] text-[13.5px] font-medium leading-none ${k === kind ? "border-ink bg-ink text-ground" : "border-border-mid text-ink-body"}`}>{KIND_WORD[k]}</button>)}
+            {KIND_ORDER.map((k) => <button key={k} type="button" aria-pressed={k === kind} disabled={!!paid.pending} onClick={() => setKind(k)} className={`h-[44px] rounded-pill border px-[14px] text-[13.5px] font-medium leading-none ${k === kind ? "border-ink bg-ink text-ground" : "border-border-mid text-ink-body"}`}>{KIND_WORD[k]}</button>)}
           </span>
         </div>
         <div className="flex flex-col gap-[6px]">
@@ -285,10 +301,10 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
               <span className="text-[14px] font-medium leading-[1.2] text-ink">{trainLabel}{trainable && trainCost != null ? <Mono cost tone="ink" className="ml-[8px]">{money.price(trainCost)}</Mono> : null}</span>
               <span className="text-[12.5px] leading-[1.35] text-ink-body" style={{ textWrap: "pretty" }}>{trainNote}</span>
               {trainable && train && enoughPhotos && terms?.terms.configured && (
-                <label className="mt-[4px] flex items-start gap-[8px] text-[13px] leading-[1.4] text-ink"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} aria-label="Consent to train" className="mt-[3px]" />I have the right to train on this person&rsquo;s face.</label>
+                <label className="mt-[4px] flex items-start gap-[8px] text-[13px] leading-[1.4] text-ink"><input type="checkbox" checked={!!paid.pending||consent} disabled={!!paid.pending} onChange={(e) => setConsent(e.target.checked)} aria-label="Consent to train" className="mt-[3px]" />I have the right to train on this person&rsquo;s face.</label>
               )}
             </span>
-            <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!trainable || !terms?.terms.configured} onClick={() => setTrainOverride(!train)}
+            <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!!paid.pending||!trainable || !terms?.terms.configured} onClick={() => setTrainOverride(!train)}
               className={`relative ml-auto h-[32px] w-[52px] flex-none rounded-[16px] disabled:opacity-40 ${trainable && train ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}>
               <span className={`absolute top-[3px] h-[26px] w-[26px] rounded-full ${trainable && train ? "left-[23px] bg-ground" : "left-[3px] bg-ink"}`} />
             </button>
@@ -313,13 +329,13 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-[16px] px-[20px] pt-[18px] max-md:grid-cols-1">
             <label className="flex flex-col gap-[7px]">
               <Mono>Name · you&rsquo;ll type it as {tag}</Mono>
-              <input ref={nameField} value={name} onChange={(e) => setName(e.target.value)} placeholder="Iver" aria-label="Name"
+              <input ref={nameField} disabled={!!paid.pending} value={name} onChange={(e) => setName(e.target.value)} placeholder="Iver" aria-label="Name"
                 className="box-border h-[48px] rounded-tile border border-border-mid bg-ground px-[14px] text-[20px] font-semibold leading-none tracking-[-0.01em] text-ink outline-0 placeholder:text-ink-muted max-md:text-[16px]" />
             </label>
             <div className="flex flex-col gap-[7px]">
               <Mono>Kind</Mono>
               <span className="flex flex-wrap gap-[4px]" role="group" aria-label="Kind">
-                {KIND_ORDER.map((k) => <button key={k} type="button" aria-pressed={k === kind} onClick={() => setKind(k)} className={kindBtn(k)}>{KIND_WORD[k]}</button>)}
+                {KIND_ORDER.map((k) => <button key={k} type="button" aria-pressed={k === kind} disabled={!!paid.pending} onClick={() => setKind(k)} className={kindBtn(k)}>{KIND_WORD[k]}</button>)}
               </span>
             </div>
           </div>
@@ -367,7 +383,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
             </div>
           </div>
           {trainRule !== "never" && <div className="mx-[20px] mt-[16px] flex items-center gap-[14px] rounded-card border border-[rgba(245,246,248,.1)] bg-ground px-[14px] py-[12px] max-md:flex-wrap">
-            <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!trainable || !terms?.terms.configured} onClick={() => setTrainOverride(!train)}
+            <button type="button" role="switch" aria-checked={trainable && train} aria-label={trainLabel} disabled={!!paid.pending||!trainable || !terms?.terms.configured} onClick={() => setTrainOverride(!train)}
               className={`tap44 relative h-[20px] w-[36px] flex-none rounded-[10px] disabled:opacity-40 ${trainable && train ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}>
               <span className={`absolute top-[2px] h-[16px] w-[16px] rounded-full ${trainable && train ? "left-[18px] bg-ground" : "left-[2px] bg-ink"}`} />
             </button>
@@ -375,7 +391,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
               <span className="text-[14px] font-medium leading-[1.2] text-ink">{trainLabel}</span>
               <span className="text-[13px] leading-[1.4] text-ink-body" style={{ textWrap: "pretty" }}>{trainNote}</span>
               {trainable && train && enoughPhotos && terms?.terms.configured && (
-                <label className="mt-[4px] flex items-start gap-[8px] text-[13px] leading-[1.4] text-ink"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} aria-label="Consent to train" className="mt-[3px]" />I have the right to train on this person&rsquo;s face.</label>
+                <label className="mt-[4px] flex items-start gap-[8px] text-[13px] leading-[1.4] text-ink"><input type="checkbox" checked={!!paid.pending||consent} disabled={!!paid.pending} onChange={(e) => setConsent(e.target.checked)} aria-label="Consent to train" className="mt-[3px]" />I have the right to train on this person&rsquo;s face.</label>
               )}
             </span>
             <Mono cost tone="ink" className="ml-auto flex-none whitespace-nowrap">{trainable && trainCost != null ? money.price(trainCost) : "—"}</Mono>
@@ -385,8 +401,8 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           <Mono className="max-w-[380px] !leading-[1.5]">{note}</Mono>
           <span className="ml-auto flex gap-[8px]">
             <button type="button" onClick={onClose} className="h-[46px] rounded-card border border-border-mid px-[14px] text-[14px] font-medium leading-none text-ink">Cancel</button>
-            <button type="button" onClick={create} disabled={busy || !signedIn} className="flex h-[46px] items-center gap-[12px] rounded-card bg-ink px-[16px] text-[14px] font-semibold leading-none text-ground disabled:opacity-60" data-create="">
-              {busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}Create {name.trim() || "asset"}<span className="ui-mono ui-mono-cost text-on-primary-cost">{money.price(cost)}</span>
+            <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error} className="flex h-[46px] items-center gap-[12px] rounded-card bg-ink px-[16px] text-[14px] font-semibold leading-none text-ground disabled:opacity-60" data-create="">
+              {busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}<span className="ui-mono ui-mono-cost text-on-primary-cost">{money.price(cost)}</span>
             </button>
           </span>
         </div>

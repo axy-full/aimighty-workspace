@@ -9,8 +9,8 @@ import type { VendorKeyName } from "./vendorKeys";
  * A workspace on the platform's keys spends the platform's money for every
  * vendor it holds no key of its own for. This sums that spend from the
  * workspace's own tables — renders, prompt writing, identity training —
- * so the credit balance and the monthly allowance both read from one
- * source of truth rather than a second ledger that could drift.
+ * keyed by the paid attempt, so the monthly cap can merge historical
+ * product records with current meter reservations without counting twice.
  */
 const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
   ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], fal: ["fal"], elevenlabs: ["elevenlabs"],
@@ -23,39 +23,51 @@ export function paidByPlatform(name: VendorKeyName): boolean {
   return !ws.keys[name];
 }
 
-/** Platform-paid spend since a moment, in dollars of vendor cost. */
-export async function platformSpendSince(sinceMs: number): Promise<number> {
+/** Historical product costs, keyed by paid attempt rather than its parent chat/identity. */
+export async function platformSpendRecordsSince(sinceMs: number): Promise<Map<string, number>> {
+  const records = new Map<string, number>();
   const ws = currentTenant()?.workspace;
-  if (!ws) return 0;
+  if (!ws) return records;
   const vendors = (Object.keys(PROVIDERS_OF) as VendorKeyName[]).filter((n) => !ws.keys[n]);
   const providers = [...new Set(vendors.flatMap((n) => PROVIDERS_OF[n]))];
-  if (!providers.length) return 0;
+  if (!providers.length) return records;
   const marks = providers.map(() => "?").join(",");
   const rs = await db().execute({
-    sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
+    sql: `SELECT id, COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0) AS cost
           FROM generations
-          WHERE created_at >= ? AND (deleted = 0 OR deleted IS NULL)
+          WHERE created_at >= ?
             AND COALESCE(billed_to, provider) IN (${marks})`,
     args: [sinceMs, ...providers],
   });
-  let spend = Number((rs.rows[0] as Record<string, unknown>)?.spend ?? 0);
+  for (const row of rs.rows) records.set(String(row.id), Number(row.cost));
+  const tables = new Set((await db().execute("SELECT name FROM sqlite_master WHERE type='table'")).rows.map((row) => String(row.name)));
   if (!ws.keys.fal) {
-    const ids = await db().execute({
-      sql: `SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend FROM identities WHERE created_at >= ?`,
-      args: [sinceMs],
-    }).catch(() => null);
-    spend += Number((ids?.rows[0] as Record<string, unknown> | undefined)?.spend ?? 0);
+    if (tables.has("identities")) {
+      const identities = await db().execute({ sql: "SELECT * FROM identities WHERE created_at >= ?", args: [sinceMs] });
+      for (const row of identities.rows) if (!row.training_run_id) records.set(String(row.id), Number(row.cost_usd ?? 0));
+    }
+    if (tables.has("identity_training_runs")) {
+      const runs = await db().execute({ sql: "SELECT id,cost_usd FROM identity_training_runs WHERE created_at >= ?", args: [sinceMs] });
+      for (const row of runs.rows) records.set(String(row.id), Number(row.cost_usd ?? 0));
+    }
   }
   if (!ws.keys.gateway) {
-    // Atomik's thinking and the idea writer: text spend through the gateway.
-    const text = await db().execute({
-      sql: `SELECT (SELECT COALESCE(SUM(COALESCE(text_cost_usd,0)),0) FROM atomik_chats WHERE deleted = 0 AND created_at >= ?)
-                 + (SELECT COALESCE(SUM(cost_usd),0) FROM atomik_spend WHERE created_at >= ?) AS spend`,
-      args: [sinceMs, sinceMs],
-    }).catch(() => null);
-    spend += Number((text?.rows[0] as Record<string, unknown> | undefined)?.spend ?? 0);
+    if (tables.has("atomik_messages")) {
+      const messages = await db().execute({ sql: "SELECT id,cost_usd FROM atomik_messages WHERE role='assistant' AND created_at >= ?", args: [sinceMs] });
+      for (const row of messages.rows) records.set(String(row.id), Number(row.cost_usd ?? 0));
+    }
+    if (tables.has("atomik_spend")) {
+      const text = await db().execute({ sql: "SELECT id,cost_usd FROM atomik_spend WHERE created_at >= ?", args: [sinceMs] });
+      for (const row of text.rows) records.set(String(row.id), Math.max(records.get(String(row.id)) ?? 0, Number(row.cost_usd ?? 0)));
+    }
   }
-  return spend;
+  return records;
+}
+
+/** Recorded platform-paid spend since a moment, in dollars of vendor cost.
+ * The final atomic reservation additionally merges live meter estimates. */
+export async function platformSpendSince(sinceMs: number): Promise<number> {
+  return [...(await platformSpendRecordsSince(sinceMs)).values()].reduce((sum, cost) => sum + cost, 0);
 }
 
 /** The vendor key a provider's renders draw on. */

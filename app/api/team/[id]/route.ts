@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, withTenant, isPlatformOwner, clearFailures } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { platformDb, platformReady, mirrorUser, now } from "@/lib/platform";
+import { platformDb, platformReady, now, getPlatformLayer } from "@/lib/platform";
+import {accountTransaction,accountFailure} from "@/lib/accountDb";
+import {repairPendingMemberships,ensureMemberSeat} from "@/lib/teamInvitations";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -26,6 +28,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await platformReady();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  if(body.role!==undefined&&!['admin','member'].includes(String(body.role)))return Response.json({error:'Choose admin or member.'},{status:400});
+  if(body.disabled!==undefined&&typeof body.disabled!=='boolean')return Response.json({error:'Disabled must be true or false.'},{status:400});
   const target = await member(ws.id, id);
   if (!target) return NextResponse.json({ error: "No such member" }, { status: 404 });
   const owner = got.user.owner || (await isPlatformOwner(got.user));
@@ -41,19 +45,23 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     return NextResponse.json({ error: "You can't disable your own account." }, { status: 400 });
   }
 
-  const p = platformDb();
-  if ((body.role === "admin" || body.role === "member") && target.role !== "owner") {
-    await p.execute({ sql: `UPDATE memberships SET role = ? WHERE workspace_id = ? AND account_id = ?`, args: [body.role, ws.id, id] });
-    await mirrorUser(ws, { id: target.id, email: target.email, name: target.name }, body.role, Number(target.disabled) === 1);
-  }
-  if (body.unlock === true || body.disabled === false) await clearFailures(String(target.id));
-  if (body.disabled === true) {
-    await p.execute({ sql: `UPDATE memberships SET disabled = 1 WHERE workspace_id = ? AND account_id = ?`, args: [ws.id, id] });
-    await mirrorUser(ws, { id: target.id, email: target.email, name: target.name }, target.role, true);
-  } else if (body.disabled === false) {
-    await p.execute({ sql: `UPDATE memberships SET disabled = 0 WHERE workspace_id = ? AND account_id = ?`, args: [ws.id, id] });
-    await mirrorUser(ws, { id: target.id, email: target.email, name: target.name }, target.role, false);
-  }
+  const layer=await getPlatformLayer();
+  try{await accountTransaction(async tx=>{
+    const fresh=(await tx.execute({sql:'SELECT role,disabled FROM memberships WHERE workspace_id=? AND account_id=?',args:[ws.id,id]})).rows[0];
+    if(body.disabled===false&&fresh?.disabled)await ensureMemberSeat(tx,ws,layer);
+    if ((body.role === "admin" || body.role === "member") && target.role !== "owner")
+      await tx.execute({sql:"UPDATE memberships SET role=? WHERE workspace_id=? AND account_id=? AND role<>'owner'",args:[body.role,ws.id,id]});
+    if(typeof body.disabled==='boolean'){
+      await tx.execute({sql:"UPDATE memberships SET disabled=? WHERE workspace_id=? AND account_id=? AND role<>'owner'",args:[body.disabled?1:0,ws.id,id]});
+      if(body.disabled){
+        await tx.execute({sql:'DELETE FROM workspace_invites WHERE workspace_id=? AND email=? AND used_at IS NULL',args:[ws.id,String(target.email)]});
+        await tx.execute({sql:'DELETE FROM p_sessions WHERE workspace_id=? AND account_id=?',args:[ws.id,id]});
+      }
+    }
+    await tx.execute({sql:'INSERT INTO membership_mirrors(workspace_id,account_id,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id,account_id) DO UPDATE SET updated_at=excluded.updated_at',args:[ws.id,id,now()]});
+  });}catch(error){return accountFailure(error);}
+  if(body.unlock===true||body.disabled===false)await clearFailures(id);
+  await repairPendingMemberships(id).catch(()=>{});
   return NextResponse.json({ ok: true });
 });
 
@@ -71,12 +79,17 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const target = await member(ws.id, id);
   if (!target) return NextResponse.json({ error: "No such member" }, { status: 404 });
   if (target.role === "owner") return NextResponse.json(PROTECTED, { status: 400 });
-  const p = platformDb();
-  await p.execute({ sql: `DELETE FROM memberships WHERE workspace_id = ? AND account_id = ?`, args: [ws.id, id] });
-  await p.execute({ sql: `DELETE FROM p_sessions WHERE account_id = ? AND workspace_id = ?`, args: [id, ws.id] });
-  await mirrorUser(ws, { id: target.id, email: target.email, name: target.name }, "member", true);
-  const { db } = await import("@/lib/db");
-  await db().execute({ sql: `UPDATE users SET deleted_at = ? WHERE id = ?`, args: [now(), id] });
-  await db().execute({ sql: `UPDATE api_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`, args: [now(), id] });
+  await accountTransaction(async tx=>{
+    await tx.execute({sql:"DELETE FROM memberships WHERE workspace_id=? AND account_id=? AND role<>'owner'",args:[ws.id,id]});
+    await tx.execute({sql:'DELETE FROM p_sessions WHERE account_id=? AND workspace_id=?',args:[id,ws.id]});
+    await tx.execute({sql:'DELETE FROM workspace_invites WHERE workspace_id=? AND email=? AND used_at IS NULL',args:[ws.id,String(target.email)]});
+    await tx.execute({sql:'DELETE FROM membership_mirrors WHERE workspace_id=? AND account_id=?',args:[ws.id,id]});
+  });
+  // Platform membership removal already revokes access even if this mirror is offline.
+  const {db}=await import('@/lib/db');
+  await db().batch([
+    {sql:'UPDATE users SET disabled=1,deleted_at=? WHERE id=?',args:[now(),id]},
+    {sql:'UPDATE api_tokens SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',args:[now(),id]},
+  ],'write').catch(()=>{});
   return NextResponse.json({ ok: true, name: target.name });
 });

@@ -21,30 +21,40 @@
  */
 
 import { getSetting } from "./settings";
-import { gatewayReachable, gatewayAuth, explainGatewayFailure } from "./gateway";
+import {
+  gatewayReachable,
+  gatewayAuth,
+  explainGatewayFailure,
+} from "./gateway";
 import { vendorKey } from "./vendorKeys";
 import { gatewayPost } from "./gateway";
 import { engineMock } from "./mock";
 import { getModel } from "./models";
-import { TEXT_RATES, promptRichness, shouldRefine, type Richness } from "./refineGate";
+import {
+  TEXT_RATES,
+  promptRichness,
+  shouldRefine,
+  type Richness,
+} from "./refineGate";
 import { getPlatformLayer } from "./platform";
 import { prettyModel } from "./models";
 import { textModelFor } from "./platformLayer";
+import { currentTenant } from "./tenant";
 export { TEXT_RATES, promptRichness, shouldRefine };
 export type { Richness };
-export { gatewayReachable, gatewayAuth, gatewayCredits, GATEWAY_BASE, GATEWAY_URL } from "./gateway";
+export {
+  gatewayReachable,
+  gatewayAuth,
+  gatewayCredits,
+  GATEWAY_BASE,
+  GATEWAY_URL,
+} from "./gateway";
 
 const CHAT_URL = () =>
   (process.env.ARK_BASE_URL?.replace(/\/$/, "") ??
     "https://ark.ap-southeast.bytepluses.com") + "/api/v3/chat/completions";
 
-/**
- * Candidates in preference order: newest turbo first, pro as the fallback.
- * A refine costs ~$0.001 on any of them, but its output steers renders worth
- * a thousand times more — instruction-following fidelity is the feature.
- * A model that isn't activated or permissioned yet is skipped, so fixing
- * console permissions upgrades the default with no redeploy.
- */
+/** Configured BytePlus writer choices. Each request uses the first choice once. */
 export const TEXT_MODELS = (): string[] => {
   const chain = ["dola-seed-2-1-turbo-260628", "seed-2-0-pro-260328"];
   const env = process.env.ARK_TEXT_MODEL;
@@ -71,17 +81,25 @@ export type RefineProvider = "anthropic" | "gateway" | "byteplus";
 export function refineProvider(): RefineProvider {
   if (engineMock()) return "gateway";
   const forced = process.env.REFINE_PROVIDER;
-  if (forced === "anthropic" || forced === "gateway" || forced === "byteplus") return forced;
-  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "anthropic";
+  if (forced === "anthropic" || forced === "gateway" || forced === "byteplus")
+    return forced;
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
+    return "anthropic";
   if (gatewayReachable()) return "gateway";
   return "byteplus";
 }
 /** Opus 5 by default — this is the judgement step, and the studio asked for the best. */
-export const CLAUDE_MODEL = () => process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
-/** Through the gateway, in order: Opus 5, then Sonnet 5 if it cannot answer. */
+export const CLAUDE_MODEL = () =>
+  process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
+/** Gateway defaults when no platform routing choice exists; only the first is submitted. */
 export const GATEWAY_MODELS = (): string[] =>
-  (process.env.GATEWAY_PROMPT_MODELS ?? "anthropic/claude-opus-5,anthropic/claude-sonnet-5")
-    .split(",").map((s) => s.trim()).filter(Boolean);
+  (
+    process.env.GATEWAY_PROMPT_MODELS ??
+    "anthropic/claude-opus-5,anthropic/claude-sonnet-5"
+  )
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
 
 /** Each ByteDance text model's first 500k tokens are free on this account;
@@ -89,7 +107,8 @@ export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
  *  gateway — have no such allowance, and lib/generate prices them from
  *  token one. */
 export const TEXT_FREE_TOKENS = 500_000;
-export const hasFreeTier = (model: string) => !model.startsWith("claude-") && !model.includes("/");
+export const hasFreeTier = (model: string) =>
+  !model.startsWith("claude-") && !model.includes("/");
 
 /**
  * The workspace's choice of writer, resolved to something callable.
@@ -113,25 +132,49 @@ export type ActiveWriter = {
 export async function activeWriter(): Promise<ActiveWriter> {
   const chosen = (await getSetting("promptWriter")) as Writer;
   if (chosen === "none") {
-    return { writer: "none", provider: "none", model: "", label: "Pro", via: "your words, as written", configured: true };
+    return {
+      writer: "none",
+      provider: "none",
+      model: "",
+      label: "Pro",
+      via: "your words, as written",
+      configured: true,
+    };
   }
   if (chosen === "byteplus") {
     return {
-      writer: "byteplus", provider: "byteplus", model: TEXT_MODEL(),
-      label: "Seedream", via: `BytePlus ModelArk · ${prettyModel(TEXT_MODEL())}`,
+      writer: "byteplus",
+      provider: "byteplus",
+      model: TEXT_MODEL(),
+      label: "Seedream",
+      via: `BytePlus ModelArk · ${prettyModel(TEXT_MODEL())}`,
       configured: Boolean(vendorKey("ark")),
     };
   }
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
-    return { writer: "claude", provider: "anthropic", model: CLAUDE_MODEL(),
-             label: prettyModel(CLAUDE_MODEL()), via: "Anthropic", configured: true };
+    return {
+      writer: "claude",
+      provider: "anthropic",
+      model: CLAUDE_MODEL(),
+      label: prettyModel(CLAUDE_MODEL()),
+      via: "Anthropic",
+      configured: true,
+    };
   }
   // The platform routes enhancement to a fast, cheap model (brief 1.8); the deployment's own list is the fallback.
-  const routed = textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, "enhance");
+  const routed = textModelFor(
+    (await getPlatformLayer().catch(() => null))?.models ?? null,
+    "enhance",
+  );
   const m = TEXT_RATES[routed] ? routed : GATEWAY_MODELS()[0];
   return {
-    writer: "claude", provider: "gateway", model: m, label: prettyModel(m),
-    via: vendorKey("gateway") ? "Vercel AI Gateway (API key)" : "Vercel AI Gateway (OIDC)",
+    writer: "claude",
+    provider: "gateway",
+    model: m,
+    label: prettyModel(m),
+    via: vendorKey("gateway")
+      ? "Vercel AI Gateway (API key)"
+      : "Vercel AI Gateway (OIDC)",
     configured: gatewayReachable(),
   };
 }
@@ -213,17 +256,27 @@ Bind each asset explicitly by its upload number and give it a ROLE — what to t
 /** The engine family a model id belongs to; an unknown id writes for Seedance. */
 function familyOf(modelId: string | undefined): string {
   if (!modelId) return "seedance-2";
-  try { return getModel(modelId).family; } catch { return "seedance-2"; }
+  try {
+    return getModel(modelId).family;
+  } catch {
+    return "seedance-2";
+  }
 }
 /** The dialect's name, for the instruction. */
 function dialectName(modelId: string | undefined): string {
   const f = familyOf(modelId);
-  return f === "kling-3" ? "Kling" : f === "nano-banana" ? "Nano Banana" : "Seedance";
+  return f === "kling-3"
+    ? "Kling"
+    : f === "nano-banana"
+      ? "Nano Banana"
+      : "Seedance";
 }
 
 function targetBlock(
-  modelId: string | undefined, durationS: number | undefined, task: string | undefined,
-  words = 0
+  modelId: string | undefined,
+  durationS: number | undefined,
+  task: string | undefined,
+  words = 0,
 ): string {
   /* An edit or an extension is an INSTRUCTION, not a scene. Running it
    * through the scene-writing rules would bury the instruction in cinematic
@@ -250,13 +303,15 @@ This CONTINUES an existing video, cited as @Video1. Rewrite it as a continuation
   }
 
   const is25 = !modelId || /2-5|2\.5/.test(modelId);
-  const dur = durationS && Number.isFinite(durationS) ? Math.round(durationS) : null;
+  const dur =
+    durationS && Number.isFinite(durationS) ? Math.round(durationS) : null;
 
-  const segments = familyOf(modelId) === "kling-3"
-    ? `This is Kuaishou's Kling, not Seedance: it reads ONE plain paragraph. No timestamps, no "Shot 1" numbering, no headers or labels — subject, what it does, where, then the camera and the light, in that order.`
-    : is25
-    ? `Segment the plot with INTEGER-SECOND TIMESTAMPS in whole-second units, continuous and without gaps — "0-3s: …", "3-8s: …". Do not use timestamps to choreograph high-frequency action ("shakes their head three times a second"); a timestamp marks a beat, not a metronome. A single moment may be pinned instead ("at the 4-second mark, …") or expressed relatively ("after three seconds of stillness, …").`
-    : `This engine does NOT respond to timestamps. Segment the plot as "Shot 1: …", "Shot 2: …" instead, and never write times or seconds into the prompt.`;
+  const segments =
+    familyOf(modelId) === "kling-3"
+      ? `This is Kuaishou's Kling, not Seedance: it reads ONE plain paragraph. No timestamps, no "Shot 1" numbering, no headers or labels — subject, what it does, where, then the camera and the light, in that order.`
+      : is25
+        ? `Segment the plot with INTEGER-SECOND TIMESTAMPS in whole-second units, continuous and without gaps — "0-3s: …", "3-8s: …". Do not use timestamps to choreograph high-frequency action ("shakes their head three times a second"); a timestamp marks a beat, not a metronome. A single moment may be pinned instead ("at the 4-second mark, …") or expressed relatively ("after three seconds of stillness, …").`
+        : `This engine does NOT respond to timestamps. Segment the plot as "Shot 1: …", "Shot 2: …" instead, and never write times or seconds into the prompt.`;
 
   return `TARGET
 Engine: ${modelId ?? "Seedance 2.5"} (${dialectName(modelId)}).
@@ -305,36 +360,22 @@ export function stripScaffolding(text: string): string {
     .trim();
 }
 
-/**
- * The Claude path.
- *
- * Three things earn their place here:
- *  • the system prompt is CACHED. It is ~1,600 of the ~1,800 input tokens and
- *    never varies, so caching it cuts the input bill by roughly 90% on a hit
- *    and takes latency out of the submit path.
- *  • effort is LOW by default. This is a short, tightly specified rewriting
- *    task, not a reasoning problem; low effort is what it is for, and it is
- *    the difference between a two-second wait and a twenty-second one.
- *  • refusal fallbacks are on. A policy decline on a film prompt would
- *    otherwise stop the rewrite dead; instead the API re-runs it on a
- *    fallback model inside the same call. If the whole chain still declines
- *    we throw, and the caller renders the author's raw words — a refine has
- *    never been allowed to block a paid render.
- */
+/** Direct Claude refinement for legacy/BYOK workspaces, with bounded output and no retries. */
 async function refineWithClaude(
-  system: string, userMsg: string, style: string
+  system: string,
+  userMsg: string,
+  style: string,
 ): Promise<RefineResult & { cachedIn: number }> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic();
+  const client = new Anthropic({ maxRetries: 0, timeout: 120_000 });
   const model = CLAUDE_MODEL();
 
   const res = await client.beta.messages.create({
     model,
-    max_tokens: 8000,
-    betas: ["server-side-fallback-2026-07-01"],
-    // Route by refusal category rather than maintaining a model list.
-    fallbacks: "default",
-    output_config: { effort: (process.env.ANTHROPIC_PROMPT_EFFORT ?? "low") as "low" },
+    max_tokens: 1200,
+    output_config: {
+      effort: (process.env.ANTHROPIC_PROMPT_EFFORT ?? "low") as "low",
+    },
     /* Two cache blocks, stable-first. The frozen system prompt never changes,
      * so it stays cached indefinitely. The house-style examples change only
      * when somebody approves a shot, and sit in their own block so that when
@@ -346,17 +387,21 @@ async function refineWithClaude(
         : []),
     ],
     messages: [{ role: "user", content: userMsg }],
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   } as any);
 
   if (res.stop_reason === "refusal") {
-    throw new Error("The prompt writer declined this request; rendering the raw prompt.");
+    throw new Error(
+      "The prompt writer declined this request; rendering the raw prompt.",
+    );
   }
   const text = res.content
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
     .filter((b: any) => b.type === "text")
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    .map((b: any) => b.text).join("").trim();
+    .map((b: any) => b.text)
+    .join("")
+    .trim();
 
   return {
     text,
@@ -367,80 +412,58 @@ async function refineWithClaude(
   };
 }
 
-/**
- * The gateway path: Claude through Vercel AI Gateway's OpenAI-compatible
- * endpoint. The system message carries an explicit cache marker (the
- * gateway lists explicit caching for Claude), and the request is retried
- * once in the plainest shape if the gateway ever rejects it — a refine
- * must never fail on a formality. Models are tried in order; a
- * refusal or an empty answer throws so the caller renders the raw words.
- */
+/** One submission using the selected writer; no model or transport retry. */
 async function refineWithGateway(
-  system: string, userMsg: string, style: string
+  system: string,
+  userMsg: string,
+  style: string,
 ): Promise<RefineResult & { cachedIn: number }> {
   const auth = await gatewayAuth();
-  // No `reasoning` field: on this surface the docs say it is a silent no-op
-  // for Claude 5 (and a 400 in its max_tokens form). Effort is simply not a
-  // knob here — which is fine, Sonnet answers in a couple of seconds.
-  const shaped = (model: string, rich: boolean) => JSON.stringify({
-    model,
-    max_tokens: 1200,
-    messages: [
-      // The gateway's documented placement for Anthropic caching on this
-      // endpoint is on the MESSAGE, not on a content part. One system
-      // message carries the frozen rules and the house style together; the
-      // style changes only when a shot is approved, and a rewrite then is
-      // a cache write, not a broken cache.
-      rich
-        ? { role: "system", content: style ? `${system}\n\n${style}` : system,
-            cache_control: { type: "ephemeral" } }
-        : { role: "system", content: style ? `${system}\n\n${style}` : system },
-      { role: "user", content: userMsg },
-    ],
-  });
-
-  let lastErr = "";
-  for (const model of GATEWAY_MODELS()) {
-    const send = (rich: boolean) => gatewayPost(shaped(model, rich), { auth, timeoutMs: 120_000, mock: "prompt" });
-    let res = await send(true);
-    let text = res.text;
-    if (res.status === 400 && /cache_control|reasoning|unknown|unsupported|invalid/i.test(text)) {
-      console.warn(`refine(gateway): ${model} rejected the rich shape, retrying plain — ${text.slice(0, 140)}`);
-      res = await send(false);
-      text = res.text;
-    }
-    if (res.ok) {
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      const j = JSON.parse(text) as any;
-      const choice = j.choices?.[0];
-      const content = choice?.message?.content;
-      const out = typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-          ? content.map((p: any) => p?.text ?? "").join("")
-          : "";
-      if (choice?.finish_reason === "content_filter" || !out.trim()) {
-        throw new Error("The prompt writer declined this request; rendering the raw prompt.");
-      }
-      const u = j.usage ?? {};
-      const cost = typeof u.cost === "number" ? u.cost : null;
-      return {
-        text: out.trim(),
-        model,
-        inTokens: Number(u.prompt_tokens ?? 0),
-        outTokens: Number(u.completion_tokens ?? 0),
-        cachedIn: Number(u.prompt_tokens_details?.cached_tokens ?? u.cached_tokens ?? 0),
-        costUsd: cost,
-      };
-    }
-    const plain = explainGatewayFailure(res.status, text);
-    if (plain) throw new Error(plain);
-    // Not found, rate-limited, or the vendor is down: the next model in line.
-    lastErr = `${model}: ${res.status} ${text.slice(0, 160)}`;
-    console.warn(`refine(gateway): ${lastErr}`);
+  const selected = currentTenant()?.workspace ? await activeWriter() : null;
+  const model =
+    selected?.provider === "gateway" ? selected.model : GATEWAY_MODELS()[0];
+  const res = await gatewayPost(
+    JSON.stringify({
+      model,
+      max_tokens: 1200,
+      messages: [
+        { role: "system", content: style ? `${system}\n\n${style}` : system },
+        { role: "user", content: userMsg },
+      ],
+    }),
+    { auth, timeoutMs: 120_000, mock: "prompt" },
+  );
+  if (!res.ok) {
+    throw new Error(
+      explainGatewayFailure(res.status, res.text) ??
+        `The prompt writer could not complete this request (${res.status}).`,
+    );
   }
-  throw new Error(`No gateway model answered (${lastErr}).`);
+  const j = JSON.parse(res.text);
+  const choice = j.choices?.[0];
+  const content = choice?.message?.content;
+  const out =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.map((part: { text?: string }) => part?.text ?? "").join("")
+        : "";
+  if (choice?.finish_reason === "content_filter" || !out.trim()) {
+    throw new Error(
+      "The prompt writer declined this request; rendering the raw prompt.",
+    );
+  }
+  const usage = j.usage ?? {};
+  return {
+    text: out.trim(),
+    model,
+    inTokens: Number(usage.prompt_tokens ?? 0),
+    outTokens: Number(usage.completion_tokens ?? 0),
+    cachedIn: Number(
+      usage.prompt_tokens_details?.cached_tokens ?? usage.cached_tokens ?? 0,
+    ),
+    costUsd: typeof usage.cost === "number" ? usage.cost : null,
+  };
 }
 
 /** Take the CAMERA line off the end and hand back what the engine gets. */
@@ -449,9 +472,16 @@ function finishRefine(r: RefineResult & { cachedIn: number }): RefineResult {
   const pick = /(^|\n)\s*CAMERA\s*[:：]\s*([a-z]+)\s*$/i.exec(raw);
   const out = pick ? raw.slice(0, pick.index).trim() : raw;
   if (!out) throw new Error("The model returned nothing.");
-  if (r.cachedIn) console.log(`refine: ${r.cachedIn} input tokens served from cache`);
-  return { text: out, model: r.model, inTokens: r.inTokens, outTokens: r.outTokens,
-           move: pick ? pick[2].toLowerCase() : null, costUsd: r.costUsd ?? null };
+  if (r.cachedIn)
+    console.log(`refine: ${r.cachedIn} input tokens served from cache`);
+  return {
+    text: out,
+    model: r.model,
+    inTokens: r.inTokens,
+    outTokens: r.outTokens,
+    move: pick ? pick[2].toLowerCase() : null,
+    costUsd: r.costUsd ?? null,
+  };
 }
 
 export async function enhancePrompt(opts: {
@@ -472,32 +502,44 @@ export async function enhancePrompt(opts: {
     `${targetBlock(opts.model, opts.durationS, opts.task, opts.prompt.trim().split(/\s+/).filter(Boolean).length)}\n\n` +
     (opts.citations.length
       ? `Attached reference assets, in upload order: ${opts.citations.join(", ")}.\n\n`
-      : "") + `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a ${dialectName(opts.model)} prompt:\n\n${opts.prompt}`;
+      : "") +
+    `Rewrite this ${opts.task === "edit" ? "edit request" : opts.task === "extend" ? "continuation request" : "idea"} as a ${dialectName(opts.model)} prompt:\n\n${opts.prompt}`;
 
   const provider = opts.provider ?? refineProvider();
   if (provider === "anthropic") {
-    return finishRefine(await refineWithClaude(SYSTEM, userMsg, opts.style ?? ""));
+    return finishRefine(
+      await refineWithClaude(SYSTEM, userMsg, opts.style ?? ""),
+    );
   }
   if (provider === "gateway") {
-    return finishRefine(await refineWithGateway(SYSTEM, userMsg, opts.style ?? ""));
+    return finishRefine(
+      await refineWithGateway(SYSTEM, userMsg, opts.style ?? ""),
+    );
   }
 
   const key = vendorKey("ark");
-  if (!key) throw new Error("BytePlus ModelArk isn't connected for this workspace.");
-  let lastErr = "";
-  for (const model of TEXT_MODELS()) {
+  if (!key)
+    throw new Error("BytePlus ModelArk isn't connected for this workspace.");
+  {
+    const model = TEXT_MODEL();
     // A minute, not two: this is a $0.001 helper sitting in front of a paid
     // submit that wants 120s of its own, and both have to fit inside 300s.
     const res = await fetch(CHAT_URL(), {
       method: "POST",
       signal: AbortSignal.timeout(60_000),
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
       body: JSON.stringify({
         model,
         temperature: 0.6,
         max_tokens: 700,
         messages: [
-          { role: "system", content: opts.style ? `${SYSTEM}\n\n${opts.style}` : SYSTEM },
+          {
+            role: "system",
+            content: opts.style ? `${SYSTEM}\n\n${opts.style}` : SYSTEM,
+          },
           { role: "user", content: userMsg },
         ],
       }),
@@ -518,17 +560,8 @@ export async function enhancePrompt(opts: {
         outTokens: Number(j.usage?.completion_tokens ?? 0),
       };
     }
-    let code = "";
-    try { code = JSON.parse(text)?.error?.code ?? ""; } catch { /* raw */ }
-    // Not activated / not permissioned → try the next candidate.
-    if ((res.status === 404 || res.status === 403) && /ModelNotOpen|NotFound|AccessDenied/i.test(code)) {
-      lastErr = `${model}: ${code}`;
-      continue;
-    }
-    throw new Error(`Refine failed (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(
+      `The prompt writer could not complete this request (${res.status}).`,
+    );
   }
-  throw new Error(
-    `No text model is reachable (${lastErr}). Console → Model activation: activate ` +
-    `dola-seed-2-1-turbo-260628 or seed-2-0-pro-260328, and allow it on this API key.`
-  );
 }

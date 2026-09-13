@@ -8,6 +8,9 @@ import { falConfigured } from "@/lib/fal";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { meter } from "@/lib/meter";
 
+import { withGenerationRequest, bindGenerationRequest, reserveGenerationSpend, SpendReservationError } from "@/lib/generationRequests";
+import { currentTenant, runWithStore } from "@/lib/tenant";
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 type Ctx = { params: Promise<{ id: string }> };
@@ -20,6 +23,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const got = await requireRender();
   if (got.response) return got.response;
   await ready();
+  return withGenerationRequest(req, got.user.id, async (requestClaim) => {
   const { id } = await params;
   const identity = await getIdentity(id);
   if (!identity) return NextResponse.json({ error: "No such identity." }, { status: 404 });
@@ -33,7 +37,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const prompt = String(body.prompt ?? "").trim();
   if (!prompt) return NextResponse.json({ error: "Say what the shot is." }, { status: 400 });
   const ratio = (RENDER_RATIOS as readonly string[]).includes(String(body.ratio)) ? String(body.ratio) : "16:9";
-  const count = Math.max(1, Math.min(4, Number(body.count ?? 1) || 1));
+  const count = Math.max(1, Math.min(4, Math.floor(Number(body.count ?? 1)) || 1));
   const seed = body.seed === "" || body.seed == null ? null : Number(body.seed);
   const projectId = body.projectId ? String(body.projectId) : identity.projectId;
   const finalPrompt = promptWithTrigger(prompt, identity);
@@ -71,21 +75,26 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
              "running", got.user.id, ts, ts, got.token?.id ?? null, "fal", "generate", "fal"],
     });
   }
+  await bindGenerationRequest(requestClaim, ids[0]);
   invalidate(PROJECTS_KEY);
+  const reserved: string[] = [];
   try {
     for (const gid of ids) {
-      await meter({ id: gid, kind: "image", engine: "fal", model: RENDERER, status: "running",
-                    engineCostUsd: RENDER_USD_PER_MP, projectId, createdBy: got.user.id });
+      await reserveGenerationSpend({ id: gid, kind: "image", engine: "fal", model: RENDERER, status: "running",
+                    engineCostUsd: RENDER_USD_PER_MP, projectId, createdBy: got.user.id }, { token: got.token });
+      reserved.push(gid);
     }
   } catch (e) {
+    for (const gid of reserved) await meter({ id: gid, kind: "image", engine: "fal", model: RENDERER, status: "failed", engineCostUsd: 0 });
     for (const gid of ids) {
       await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), gid] }).catch(() => {});
     }
     invalidate(PROJECTS_KEY);
-    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+    return NextResponse.json({ error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 503 });
   }
 
-  after(async () => {
+  const store = currentTenant()!;
+  after(() => runWithStore(store, async () => {
     // Two at a time: fal queues the rest anyway, and the wall fills in as
     // each lands rather than all at once.
     const queue = [...ids];
@@ -102,7 +111,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
       }
     };
     await Promise.all([worker(), worker()]);
-  });
+  }));
 
   return NextResponse.json({ ids, status: "running" });
+  });
 });

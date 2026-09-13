@@ -4,7 +4,7 @@ import { falEndpointFor } from "./falVideo";
 import { classifyFailure, billedTo } from "./providers";
 import { getModel, type ModelDef } from "./models";
 import { getTask, type TaskDef } from "./tasks";
-import { meter } from "./meter";
+import { meter, assertMeterFunding, FundingSourceChangedError } from "./meter";
 import { engineFor } from "./engines";
 import { platformDb, platformReady } from "./platform";
 import { requireTenant } from "./tenant";
@@ -116,6 +116,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
   const started=now();
   let submitted:SubmittedVideo;
   try{
+    await assertMeterFunding(job.genId,billedTo(job.model.provider??'byteplus'));
     // Never wrap this paid call in withRetry, including transport and 5xx failures.
     const out=await engineFor(job.model.provider).render({kind:'video',genId:job.genId,model:job.model,task:job.task,prompt:job.prompt,params:job.params,references:job.references,source:job.source});
     if(!('handle' in out)||typeof out.handle.ref!=='string'||!out.handle.ref)throw new Error('The engine returned no usable task handle.');
@@ -123,7 +124,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
       ...(job.model.provider==='fal'?{endpoint:out.handle.endpoint||falEndpointFor(job.model,job.task.id,job.references.some(r=>r.kind==='image'))}:{})};
   }catch(error){
     const message=(error instanceof Error?error.message:String(error)).replace(/; it will be retried\./,'; no additional request was sent.');
-    const uncertain=!definitelyRejected(message);
+    const uncertain=!(error instanceof FundingSourceChangedError)&&!definitelyRejected(message);
     return submissionFailed(job,uncertain?`${message} The provider may already have accepted this task. It was not sent again; its estimated cost remains reserved until the provider outcome is reconciled.`:message,uncertain);
   }
   try{

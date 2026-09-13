@@ -18,6 +18,8 @@ See [Production workbench implementation](production-workbench.md) for integrati
 
 ## 1. The product
 
+**September 13 subscribed-workspace expansion.** The owner has authorized self-service subscribed workspaces for other production houses, retaining the existing plan and pack prices. The invitation-only acquisition flow below is superseded by verified-email registration plus the existing approved-invitation path. Direct registration and additional workspaces receive no automatic free grant; approved invitations retain the configured one-time welcome grant. Selecting a plan is never payment evidence. Invoice-funded monthly credit windows, source allocations and pause/resume pack expiry are implemented in the new ledger; Stripe provider connection and fulfillment remain a release dependency. See [Subscribed workspace implementation and launch gates](subscribed-workspaces.md). The remaining pack lifetime resumes after leaving a paid plan, matching the rule that only off-plan time counts.
+
 **particl** (particl.app) — an invite-only, multi-tenant production tool for anyone making film with generative engines: agencies, production houses, independent directors, brand teams. It makes shots, keeps them consistent across a production, and knows what every shot cost before and after it was rendered.
 
 **Atomik** — the companion app on the same database. Atomik owns everything before the render: idea → treatment → breakdown → shot list. particl owns the render and everything after: takes, picks, approvals, masters, cost. The shot list is the contract between them, and it moves both ways.

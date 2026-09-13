@@ -1,10 +1,10 @@
 import { db, ready, now, id as newId } from "./db";
-import { gatewayAuth, gatewayReachable, explainGatewayFailure } from "./gateway";
-import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd, textCostUsd } from "./catalog";
+import { gatewayReachable } from "./gateway";
+import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd } from "./catalog";
 import { MODELS } from "./models";
 import { getSetting } from "./settings";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
-import { gatewayPost } from "./gateway";
+import { runPaidText } from "./paidText";
 import { meter } from "./meter";
 import { getPlatformLayer } from "./platform";
 import { textModelFor } from "./platformLayer";
@@ -452,23 +452,6 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
   ].filter(Boolean).join("\n");
 
   const started = Date.now();
-  const auth = await gatewayAuth();
-  /* The planner's instruction is the same on every turn, so it is marked
-     cacheable (brief 1.8); a model that refuses the mark is asked plain. */
-  const shaped = (msgs: TurnMessage[], cacheable: boolean) => JSON.stringify({
-    model, max_tokens: 4000,
-    messages: msgs.map((m, i) => (cacheable && i === 0 && m.role === "system" ? { ...m, cache_control: { type: "ephemeral" } } : m)),
-  });
-  const send = async (msgs: TurnMessage[]) => {
-    const post = (cacheable: boolean) => gatewayPost(shaped(msgs, cacheable), { auth, timeoutMs: 180_000, mock: "turn" });
-    const r = await post(true);
-    if (r.status === 400 && /cache_control|unknown|unsupported|invalid/i.test(r.text)) {
-      console.warn(`atomik: ${model} rejected the cache mark, retrying plain — ${r.text.slice(0, 140)}`);
-      return post(false);
-    }
-    return r;
-  };
-
   /* The stills the person attached go with the words, as pictures: the
      agent is answering about the thing in front of it, not a description
      of it. A clip is named but never sent — no model here watches video. */
@@ -502,59 +485,17 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
       : []),
   ];
 
-  let res = await send(base);
-  let raw = res.text;
-  if (!res.ok) {
-    const plain = explainGatewayFailure(res.status, raw);
-    if (plain) throw new Error(plain);
-    let msg = raw.slice(0, 300);
-    try { msg = JSON.parse(raw)?.error?.message ?? msg; } catch { /* raw */ }
-    throw new Error(`${model} failed (${res.status}): ${msg}`);
-  }
-
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  let j: any;
-  try { j = JSON.parse(raw); }
-  catch { throw new Error(`${model} returned something that isn't JSON.`); }
-  let text: string = j.choices?.[0]?.message?.content ?? "";
-  let costUsd = Number(j.usage?.cost ?? NaN);
-
-  let turn = extractTurn(text);
-  if (!turn) {
-    /* One repair pass. Models that narrate before answering are common
-       enough across this menu that failing here would rule out half of it. */
-    res = await send([...base,
-      { role: "assistant", content: text.slice(0, 4000) },
-      { role: "user", content: "Return only the JSON object. No prose, no code fence." },
-    ]);
-    raw = res.text;
-    if (res.ok) {
-      try {
-        j = JSON.parse(raw);
-        text = j.choices?.[0]?.message?.content ?? "";
-        const more = Number(j.usage?.cost ?? NaN);
-        if (Number.isFinite(more)) costUsd = (Number.isFinite(costUsd) ? costUsd : 0) + more;
-        turn = extractTurn(text);
-      } catch { /* falls to the guard below */ }
-    }
-  }
-  if (!turn) {
-    /* Not an error worth throwing away the turn for: say so in the chat and
-       let the person switch planner, which is one click away. */
-    turn = {
-      say: `${model} didn't answer in a form I could use. Try another planner — some models narrate instead of answering, and this one did twice.`,
-      activity: [], propose: [], ask: null, title: null,
-    };
-  }
-
-  if (!Number.isFinite(costUsd)) {
-    const cm = await findModel(model);
-    costUsd = (cm ? textCostUsd(cm, preamble.length / 4 + 900, text.length / 4) : null) ?? 0;
-  }
+  const result = await runPaidText({ model, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 180_000,
+    projectId: chat.projectId, createdBy: chat.createdBy, recordSpend: false });
+  const costUsd = result.costUsd;
+  const turn = extractTurn(result.text) ?? {
+    say: `${model} completed but did not return a usable proposal. The response has been saved; choose another planner for a new request.`,
+    activity: [], propose: [], ask: null, title: null,
+  };
 
   /* ── persist ── */
   const ts = now();
-  const messageId = newId("amsg");
+  const messageId = result.id;
   await db().execute({
     sql: `INSERT INTO atomik_messages
             (id, chat_id, role, text, activity, ask, worked_ms, cost_usd, model, created_at)

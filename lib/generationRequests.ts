@@ -2,14 +2,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
-import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
-import { allowanceUsd, platformSpendThisMonth } from "./allowance";
+import { paidByPlatform, vendorKeyNameFor, platformSpendRecordsSince } from "./platformSpend";
+import { allowanceUsd } from "./allowance";
+import { cycleBounds } from "./cycle";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { getSetting } from "./settings";
 import { workspaceLimits } from "./limits";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
+import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
 
 export class SpendReservationError extends Error {
   constructor(message: string, public readonly status: number) { super(message); this.name = "SpendReservationError"; }
@@ -50,12 +52,16 @@ export async function bindGenerationRequest(claim: GenerationRequest, genId: str
 
 /** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
 export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>): Promise<Response> {
+  const expectedActor = req.headers.get("X-Actor-Email");
+  if (expectedActor && expectedActor.toLowerCase() !== currentTenant()?.user?.email.toLowerCase()) return Response.json({ error: "Sign in with the account that prepared this request before recovering it." }, { status: 409 });
+  const expectedWorkspace = req.headers.get("X-Workspace-Id");
+  if (expectedWorkspace && expectedWorkspace !== requireTenant().id) return Response.json({ error: "Return to the workspace where this request was prepared before recovering it." }, { status: 409 });
   const supplied = req.headers.get("Idempotency-Key");
   if (supplied != null && !/^[A-Za-z0-9._:-]{8,160}$/.test(supplied)) {
     return Response.json({ error: "Idempotency-Key must contain 8–160 letters, digits, dots, colons, dashes or underscores." }, { status: 400 });
   }
   const key = supplied ?? randomUUID();
-  const fingerprint = generationFingerprint(await req.clone().json().catch(() => ({})));
+  const fingerprint = generationFingerprint({ method: req.method, path: new URL(req.url).pathname, body: await req.clone().json().catch(() => ({})) });
   await generationRequestsReady();
   const inserted = await db().execute({
     sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?)`,
@@ -133,9 +139,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
   const ruleRaw = cap ? await getSetting("atCap") : null;
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
   const monthlyCap = paid ? allowanceUsd() : null;
-  const monthlyBaseline = monthlyCap == null ? 0 : await platformSpendThisMonth();
-  const month = new Date(); month.setDate(1); month.setHours(0, 0, 0, 0);
-  const since = month.getTime();
+  const since = cycleBounds(1, now()).start;
+  const monthlyRecords = monthlyCap == null ? new Map<string, number>() : await platformSpendRecordsSince(since);
   // Preserve historical charges predating the meter; merge ledger estimates by id.
   const rows = await db().execute(`SELECT id,project_id,shot_id,token_id,kind,model,created_at,status,deleted,
     COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0) AS cost FROM generations`);
@@ -144,31 +149,29 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
     tokenId: r.token_id == null ? null : String(r.token_id), cost: Number(r.cost),
     credits: billCredits(Number(r.cost), marginKeyOf(String(r.kind), String(r.model))), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
   }]));
-  const recorded = new Map<string, number>([...baseline].map(([id, b]) => [id, b.cost]));
-  if (monthlyCap != null) {
-    for (const query of ["SELECT id,cost_usd AS cost FROM atomik_spend", "SELECT id,cost_usd AS cost FROM identities"]) {
-      const extra = await db().execute(query);
-      for (const r of extra.rows) recorded.set(String(r.id), Number(r.cost ?? 0));
-    }
-  }
-  const tx = await platformDb().transaction("write");
-  try {
+  await billingTransaction(async (tx, ts) => {
+    const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at FROM workspaces WHERE id=?`, args: [ws.id] });
+    // Old internal/mock records may predate the workspace registry; a known deleted/suspended workspace never spends from a stale request scope.
+    if (standing.rows[0]?.deleted_at != null) throw new SpendReservationError("This workspace has been deleted.", 410);
+    if (standing.rows[0]?.suspended_at != null) throw new SpendReservationError("This workspace is suspended.", 403);
+    await syncBillingLedger(tx, ws.id, ts);
+    const own = await tx.execute({ sql: `SELECT workspace_id,status FROM meter_events WHERE id=?`, args: [event.id] });
+    if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409);
+    if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409);
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
-    if (paid) {
-      const grants = await tx.execute({ sql: `SELECT COALESCE(SUM(credits),0) AS n FROM credit_grants WHERE workspace_id=?`, args: [ws.id] });
-      const used = existing.rows.reduce((sum, r) => sum + (Number(r.paid_by_platform) ? Number(r.billed_credits ?? 0) : 0), 0);
-      const balance = Number(grants.rows[0].n) - used;
-      if (balance < billed || balance <= 0) throw new SpendReservationError(`This job needs ${billed} credits; ${Math.max(0, Math.floor(balance))} are available after reserved jobs.`, 402);
-    }
+    try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
+    catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
     const merged = new Map(baseline);
     merged.delete(event.id);
-    let pendingMonthly = 0;
+    const monthly = new Map(monthlyRecords);
+    monthly.delete(event.id);
     for (const r of existing.rows) {
       const prior = merged.get(String(r.id));
       merged.set(String(r.id), { id: String(r.id), projectId: r.project_id == null ? prior?.projectId ?? null : String(r.project_id), shotId: r.shot_id == null ? prior?.shotId ?? null : String(r.shot_id),
         tokenId: r.reservation_token == null ? prior?.tokenId ?? null : String(r.reservation_token),
         cost: Math.max(prior?.cost ?? 0, Number(r.engine_cost_usd ?? 0)), credits: Math.max(prior?.credits ?? 0, Number(r.billed_credits ?? 0)), createdAt: Number(r.created_at), status: String(r.status), deleted: prior?.deleted ?? false });
-      if (Number(r.paid_by_platform) && Number(r.created_at) >= since) pendingMonthly += Math.max(0, Number(r.engine_cost_usd ?? 0) - (recorded.get(String(r.id)) ?? 0));
+      if (!Number(r.paid_by_platform)) monthly.delete(String(r.id));
+      else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, Number(r.engine_cost_usd ?? 0)));
     }
     const running = [...merged.values()].filter((r) => !r.deleted && (r.status === "running" || r.status === "queued")).length;
     const recent = [...merged.values()].filter((r) => r.status !== "held" && r.createdAt >= now() - 3_600_000).length;
@@ -178,7 +181,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
       if (shotCredits + billCredits(cost, marginKeyOf(event.kind, event.model)) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403);
     }
-    if (monthlyCap != null && monthlyBaseline + pendingMonthly + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
+    if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + (cap.unit === "cr" ? r.credits : r.cost), 0);
       const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? billCredits(cost + (baseline.get(event.id)?.cost ?? 0), marginKeyOf(event.kind, event.model)) : cost + (baseline.get(event.id)?.cost ?? 0),
@@ -189,14 +192,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
       const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.cost, 0);
       if (spent + cost + (baseline.get(event.id)?.cost ?? 0) > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429);
     }
-    const ts = now();
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at`,
       args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts] });
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING`, args: [event.id, ws.id, options.token?.id ?? null] });
-    await tx.commit();
-  } catch (error) {
-    await tx.rollback().catch(() => {});
-    throw error;
-  } finally { tx.close(); }
+  });
 }

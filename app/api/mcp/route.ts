@@ -73,7 +73,8 @@ export const POST = withTenant(async function POST(req: Request) {
   }
 
   return fail(id, -32601, `Method not found: ${method}`);
-});
+// JSON-RPC reads use POST; tools forward the same bearer to individually guarded routes.
+}, { readOnlyPostTransport: true });
 
 /** A plain GET makes the endpoint self-describing when someone opens it. */
 export const GET = withTenant(async function GET() {

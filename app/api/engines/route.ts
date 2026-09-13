@@ -8,6 +8,8 @@ import { getSetting, invalidateSettings } from "@/lib/settings";
 import { ENGINES } from "@/lib/engines";
 import { estimateRefineUsd } from "@/lib/refineGate";
 import { cleanRule, cleanShotCap } from "@/lib/approvalRule";
+import { creditsApply } from "@/lib/credits";
+import { requireTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +25,8 @@ export const GET = withTenant(async function GET() {
   // changed the writer must see the change, so this route always re-reads.
   invalidateSettings();
   const writer = await activeWriter();
-  const credits = writer.provider === "gateway" ? await gatewayCredits() : null;
+  const creditWorkspace = creditsApply(requireTenant());
+  const credits = !creditWorkspace && writer.provider === "gateway" ? await gatewayCredits() : null;
   return NextResponse.json({
     /* What is left on the gateway, when the writer runs through it. */
     gatewayCredits: credits,
@@ -32,7 +35,8 @@ export const GET = withTenant(async function GET() {
     /* And what one of its calls costs at list price — a typical idea, the house style along — so the button can say it. */
     /* The cost approval rule, so the composer can say it before the press (brief 2.2). */
     approval: { rule: cleanRule(await getSetting("approvalRule")), shotCapCredits: cleanShotCap(await getSetting("shotCapCredits")) },
-    refiner: { ...writer, usdPerCall: writer.writer === "none" ? 0 : (estimateRefineUsd(writer.model, 60, 1500) ?? 0) },
+    refiner: { ...writer, automatic: !creditWorkspace,
+      pricePerCall: creditWorkspace ? null : writer.writer === "none" ? 0 : estimateRefineUsd(writer.model, 60, 1500) },
     engines: PROVIDERS.map((p) => ({
       id: p.id,
       label: p.label,

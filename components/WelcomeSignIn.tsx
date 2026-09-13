@@ -22,7 +22,6 @@
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RequestAccessButton } from "@/components/RequestAccess";
 import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
 
@@ -40,7 +39,7 @@ export default function WelcomeSignIn() {
               <span className="wl-studio">STUDIO</span>
             </div>
           </div>
-          <p className="wl-tag">The studio&rsquo;s own room for making shots — and for knowing what they cost.</p>
+          <p className="wl-tag">Your production house. One workspace for the brief, the crew and every take.</p>
         </div>
 
         <div className="wl-foot">
@@ -116,7 +115,7 @@ function SignInForm({ next }: { next: string }) {
     <form onSubmit={submit} className="wl-form">
       <div className="flex flex-col gap-2">
         <h1 className="page-h1">Sign in</h1>
-        <p className="page-sub !m-0">Particl is for the studio team.</p>
+        <p className="page-sub !m-0">Open your studio workspace.</p>
       </div>
       <label className="wl-field">EMAIL
         <input type="email" autoComplete="username" required placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -127,7 +126,7 @@ function SignInForm({ next }: { next: string }) {
       <button type="submit" disabled={busy} className="btn-primary !h-[46px] justify-center !text-[14px]">{busy ? "…" : "Sign in"}</button>
       {err && <p className="rail-help text-lift">{err}</p>}
       <div className="wl-form-foot">
-        <span>Invitation only. <RequestAccessButton className="text-lead hover:text-ink" /> · <Link href="/reset" className="text-lead hover:text-ink">Forgot password?</Link></span>
+        <span>New to Particl? <Link href="/pricing" className="text-lead hover:text-ink">View plans</Link> · <Link href="/signup" className="text-lead hover:text-ink">Create a workspace</Link><br/><Link href="/reset" className="text-lead hover:text-ink">Forgot password?</Link></span>
         <Link href="/" className="hdr-mono-link">LOOK AROUND →</Link>
       </div>
     </form>

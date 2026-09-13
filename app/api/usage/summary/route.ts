@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { creditState, type CreditState } from "@/lib/credits";
+import {creditUsageSummary} from "@/lib/creditUsage";
+import {requireTenant} from "@/lib/tenant";
+import { creditState, creditsApply, type CreditState } from "@/lib/credits";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { PROVIDERS } from "@/lib/providers";
@@ -38,6 +40,7 @@ const TTL_MS = 20_000;
 export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
+  if(creditsApply(requireTenant()))return NextResponse.json(await creditUsageSummary(),{headers:{"Cache-Control":"no-store"}});
   await ready();
 
   const hit = memoGet<Summary>("usage-summary", TTL_MS);

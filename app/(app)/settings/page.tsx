@@ -53,7 +53,7 @@ import { PageLoader } from "@/components/atomik/Loader";
 type Me = { name: string; email: string; role: string; owner?: boolean; workspace?: { name: string } | null };
 type Ws = { settings: Record<string, string>; defaults: Record<string, string>; models?: { video: string; image: string } | null };
 type Team = { users: { id: string; email: string; name: string; role?: string; standing?: string; permanent?: boolean; disabled: boolean }[]; invites: { code: string; email: string; name: string }[]; canSeeRoles?: boolean };
-type Engines = { engines: { id: string; label: string; configured: boolean; models: { id: string; label: string; kind: "video" | "image" }[] }[]; refiner?: { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean; usdPerCall?: number } };
+type Engines = { engines: { id: string; label: string; configured: boolean; models: { id: string; label: string; kind: "video" | "image" }[] }[]; refiner?: { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean; automatic?: boolean; pricePerCall?: number | null } };
 type Topups = { applies: boolean; canRequest: boolean; credits: { creditUsd: number; granted: number; used: number; balance: number } | null; packs: { id: string; label: string; credits: number; bonus: number; total: number; usd: number }[]; requests: { id: string; status: string }[] };
 type Usage = { months?: { month: string; credits: number; usd?: number }[]; spentUsd?: number; storage?: { bytes: number } | null };
 type Limits = { limits: { storageBytes: number }; standing: { usedBytes: number } };
@@ -319,11 +319,11 @@ function Settings() {
           <Card id="atomik" label={<span className="flex items-center gap-[8px]"><Ring mode="idle" size={18} className="flex-none" />Atomik</span>} className="gap-[10px]">
             <Row label="Checkpoint rule"><ChipMenu label="Checkpoint" fixed value="Every paid step" items={[]} /></Row>
             <Row label="May create assets"><ChipMenu label="May create assets" fixed value="Propose only" items={[]} /></Row>
-            <Row label="Planning model">
-              <span className="flex items-center gap-[8px]">
+            <Row label="Prompt writing">
+              {money.inCredits ? <span className="text-mute">Choose a model and review its price in Atomik.</span> : <span className="flex items-center gap-[8px]">
                 <ChipMenu label="Planning model" value={eng?.refiner?.writer === "none" ? "None" : eng?.refiner?.label ?? "—"} items={[["claude", "Claude"], ["byteplus", "BytePlus"], ["none", "None"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => { if (isAdmin) save("promptWriter", v, `Planning by ${l}`); else toast("An admin chooses the planning model."); } }))} />
-                {eng?.refiner && eng.refiner.writer !== "none" && <Mono cost tone="ink" className="whitespace-nowrap">{money.price(eng.refiner.usdPerCall ?? 0)} / plan</Mono>}
-              </span>
+                {eng?.refiner && eng.refiner.writer !== "none" && eng.refiner.pricePerCall != null && <Mono cost tone="ink" className="whitespace-nowrap">{money.price(eng.refiner.pricePerCall)} / plan</Mono>}
+              </span>}
             </Row>
             <Mono className="border-t border-[rgba(245,246,248,.07)] pt-[10px] !leading-[1.5]">Never without you · spend · unlock · delete · approve</Mono>
           </Card>
@@ -448,11 +448,11 @@ function Settings() {
           <Section id="atomik" title="Atomik" line="What it may do on its own, and where it must stop." className="gap-[2px]" head={<Ring mode="idle" size={18} className="order-first mr-[10px] flex-none self-start" />}>
             <Row label="Checkpoint"><ChipMenu label="Checkpoint" fixed value="Every paid step" items={[]} /></Row>
             <Row label="May create assets"><ChipMenu label="May create assets" fixed value="Propose only" items={[]} /></Row>
-            <Row label="Planning model">
-              <span className="flex items-center gap-[8px]">
+            <Row label="Prompt writing">
+              {money.inCredits ? <span className="text-mute">Choose a model and review its price in Atomik.</span> : <span className="flex items-center gap-[8px]">
                 <ChipMenu label="Planning model" value={eng?.refiner?.writer === "none" ? "None" : eng?.refiner?.label ?? "—"} items={[["claude", "Claude"], ["byteplus", "BytePlus"], ["none", "None"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => { if (isAdmin) save("promptWriter", v, `Planning by ${l}`); else toast("An admin chooses the planning model."); } }))} />
-                {eng?.refiner && eng.refiner.writer !== "none" && <Mono cost tone="ink" className="whitespace-nowrap">{money.price(eng.refiner.usdPerCall ?? 0)} / plan</Mono>}
-              </span>
+                {eng?.refiner && eng.refiner.writer !== "none" && eng.refiner.pricePerCall != null && <Mono cost tone="ink" className="whitespace-nowrap">{money.price(eng.refiner.pricePerCall)} / plan</Mono>}
+              </span>}
             </Row>
             <Row label="Never without you"><Mono cost>Spend · unlock · delete · approve</Mono></Row>
           </Section>

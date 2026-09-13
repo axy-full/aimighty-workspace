@@ -4,7 +4,7 @@ import { db, ready, now } from "./db";
 import {
   platformDb, platformReady, sessionLookup, createPlatformSession, destroyPlatformSession,
   findAccountByEmail, accountCount, createAccount, getWorkspace, legacyWorkspace,
-  membershipRole, workspacesFor, mirrorUser, newId,
+  workspacesFor, mirrorUser, newId,
   isSuperAdmin as platformIsSuperAdmin, SUPER_ADMIN_EMAIL as PLATFORM_SUPER_ADMIN_EMAIL,
 } from "./platform";
 import {
@@ -70,6 +70,7 @@ export async function createSession(accountId: string, workspaceId?: string | nu
     const mine = await workspacesFor(accountId);
     ws = mine[0]?.workspace.id ?? null;
   }
+  await import("./teamInvitations").then(m=>m.repairPendingMemberships(accountId)).catch(()=>{});
   return createPlatformSession(accountId, ws);
 }
 
@@ -151,26 +152,36 @@ async function workspaceForToken(raw: string): Promise<TenantWorkspace | null> {
 async function callerFromBearer(): Promise<TenantStore | null> {
   const header = (await headers()).get("authorization");
   const raw = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
-  if (!raw) return null;
+  return raw ? callerFromToken(raw) : null;
+}
+
+/** Authoritative account membership is checked even when a tenant mirror is stale. */
+export async function callerFromToken(raw: string): Promise<TenantStore | null> {
   const ws = await workspaceForToken(raw);
-  if (!ws) return null;
+  if (!ws || ws.deletedAt) return null;
   return runInTenant(ws, async () => {
     await ready();
     const rs = await db().execute({
       sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.last_used, u.*
             FROM api_tokens t JOIN users u ON u.id = t.user_id
-            WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled = 0
+            WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled = 0 AND u.deleted_at IS NULL
             LIMIT 1`,
       args: [hashToken(raw)],
     });
     const row = rs.rows[0] as Record<string, unknown> | undefined;
     if (!row) return null;
+    const membership = (await platformDb().execute({
+      sql: `SELECT m.role FROM memberships m JOIN accounts a ON a.id=m.account_id JOIN workspaces w ON w.id=m.workspace_id
+        WHERE m.workspace_id=? AND m.account_id=? AND m.disabled=0 AND a.disabled=0 AND a.deleted_at IS NULL AND w.deleted_at IS NULL`,
+      args:[ws.id,String(row.id)],
+    })).rows[0];
+    if(!membership)return null;
+    const role = String(membership.role) as WorkspaceRole;
     const last = Number(row.last_used ?? 0);
     if (now() - last > 300_000) {
       await db().execute({ sql: `UPDATE api_tokens SET last_used=? WHERE id=?`, args: [now(), String(row.tid)] });
     }
     // The membership decides standing; the mirror row is only a name.
-    const role = (await membershipRole(ws.id, String(row.id))) ?? "member";
     const user: TenantUser = {
       id: String(row.id), email: String(row.email), name: String(row.name),
       role: roleOf(role), owner: role === "owner", disabled: false,
@@ -202,13 +213,18 @@ async function resolveStore(): Promise<TenantStore> {
  * handler that reaches for data before checking who is asking still
  * cannot get any.
  */
-export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>) {
+export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean } = {}) {
   return async (req: Req, ctx: Ctx): Promise<Response> => {
     let store: TenantStore;
     try { store = await resolveStore(); }
     catch (e) {
       console.error("session resolution failed:", (e as Error).message);
       return Response.json({ error: "Sign-in isn't available right now." }, { status: 503 });
+    }
+    if(!['GET','HEAD','OPTIONS'].includes(req.method)){
+      if(store.token?.scope==='read'&&!(req.method==='POST'&&options.readOnlyPostTransport))return Response.json({error:'This token is read-only.'},{status:403});
+      const origin=req.headers.get('origin');
+      if(!store.token&&origin&&origin!==new URL(req.url).origin)return Response.json({error:'Invalid request origin.'},{status:403});
     }
     try {
       return await runWithStore(store, () => handler(req, ctx));
@@ -233,7 +249,7 @@ export async function requireUser(): Promise<
   { user: User; token?: TenantToken; response?: never } | { user?: never; token?: never; response: Response }
 > {
   const store = currentTenant();
-  if (store?.user && store.workspace) return { user: store.user, token: store.token };
+  if (store?.user && store.workspace && !store.workspace.deletedAt) return { user: store.user, token: store.token };
   if (store?.user && !store.workspace) {
     return { response: Response.json({ error: "Pick a workspace first." }, { status: 401 }) };
   }
@@ -258,7 +274,7 @@ export async function requireSession(): Promise<
   if (got.token) {
     return {
       response: Response.json(
-        { error: "Tokens are made and revoked while signed in. A token cannot mint or revoke another." },
+        { error: "This action requires a signed-in browser session. API tokens cannot manage accounts or workspace access." },
         { status: 403 },
       ),
     };
@@ -307,7 +323,7 @@ export async function tokenSpendThisMonth(tokenId: string): Promise<number> {
 export async function requireAdmin(): Promise<
   { user: User; response?: never } | { user?: never; response: Response }
 > {
-  const got = await requireUser();
+  const got = await requireSession();
   if (got.response) return got;
   if (got.user.role !== "admin") {
     return { response: Response.json({ error: "Admins only" }, { status: 403 }) };
@@ -319,7 +335,7 @@ export async function requireAdmin(): Promise<
 export async function requireOwner(): Promise<
   { user: User; response?: never } | { user?: never; response: Response }
 > {
-  const got = await requireUser();
+  const got = await requireSession();
   if (got.response) return got;
   if (!got.user.owner) {
     return { response: Response.json({ error: "The workspace owner only." }, { status: 403 }) };
@@ -343,6 +359,7 @@ export async function requireSuperAdmin(): Promise<
   { user: User; response?: never } | { user?: never; response: Response }
 > {
   const store = currentTenant();
+  if(store?.token)return {response:Response.json({error:"Platform administration requires a signed-in browser session."},{status:403})};
   const user = store?.user ?? (await currentContext())?.user ?? null;
   if (!user) return { response: Response.json({ error: "Not signed in" }, { status: 401 }) };
   if (!(await isPlatformOwner(user))) return { response: Response.json({ error: "The platform owner only." }, { status: 403 }) };

@@ -6,6 +6,7 @@ import { billCredits, marginKeyOf } from "./creditTerms";
 import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
+import { creditFundingFor } from "./billingLedger";
 
 /**
  * Statements: what a workspace was billed, itemised by production, shot
@@ -19,11 +20,13 @@ import { modelLabel } from "./models";
  * directly, reads the same statement in dollars.
  */
 export type StatementUnit = "cr" | "$";
+export type StatementFunding = { included: number; purchased: number; bonus: number; other: number; unattributed: number };
 export type StatementLine = {
   id: string; at: number; kind: "video" | "image" | "audio" | "text" | "training";
   /** SH010 v3 — the client-facing name of the take. */
   take: string; what: string; status: string; note: string;
   credits: number; usd: number;
+  funding?: StatementFunding;
 };
 export type StatementShot = { code: string; title: string; lines: StatementLine[]; credits: number; usd: number };
 export type StatementProject = {
@@ -37,6 +40,7 @@ export type Statement = {
   projects: StatementProject[];
   totals: { credits: number; usd: number; takes: number };
   packs: { count: number; credits: number; bonus: number; usd: number };
+  funding?: StatementFunding;
 };
 
 /**
@@ -76,7 +80,7 @@ export function groupLines(rows: RawLine[]): StatementProject[] {
       p = { id: r.projectId, name: r.projectId ? r.projectName : "Unfiled", shots: [], loose: [], credits: 0, usd: 0, takes: 0, shotMap: new Map() };
       byProject.set(key, p);
     }
-    const line: StatementLine = { id: r.id, at: r.at, kind: r.kind, take: r.take, what: r.what, status: r.status, note: r.note, credits: r.credits, usd: r.usd };
+    const line: StatementLine = { id: r.id, at: r.at, kind: r.kind, take: r.take, what: r.what, status: r.status, note: r.note, credits: r.credits, usd: r.usd, ...(r.funding ? { funding: r.funding } : {}) };
     if (r.shotId && r.shotCode) {
       let s = p.shotMap.get(r.shotId);
       if (!s) { s = { code: r.shotCode, title: r.shotTitle, lines: [], credits: 0, usd: 0 }; p.shotMap.set(r.shotId, s); }
@@ -112,6 +116,9 @@ export function statementCsv(s: Statement): string {
   if (s.unit === "cr") {
     const free = s.packs.bonus > 0 ? ` (${s.packs.credits} bought + ${s.packs.bonus} free)` : "";
     rows.push(["", "", "", "", `packs this month (${s.packs.count})`, "", `${s.packs.credits + s.packs.bonus} credits${free} · USD ${s.packs.usd.toFixed(2)}`]);
+    if (s.funding) {
+      for (const [label, credits] of Object.entries(s.funding)) rows.push(["", "", "", "", `${label} credits used`, "", credits]);
+    }
   }
   return rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
@@ -213,6 +220,21 @@ export async function statementFor(month: string, projectId: string | null): Pro
       });
     }
   }
+  let funding: StatementFunding | undefined;
+  if (inCredits) {
+    const sources = await creditFundingFor(ws.id, range.from, range.to);
+    funding = { included: 0, purchased: 0, bonus: 0, other: 0, unattributed: 0 };
+    for (const line of raw) {
+      const split: StatementFunding = { included: 0, purchased: 0, bonus: 0, other: 0, unattributed: 0 };
+      for (const source of sources.filter((s) => s.eventId === line.id)) {
+        const key = source.kind === "included" ? "included" : source.kind === "purchase" ? "purchased" : source.kind === "bonus" ? "bonus" : source.kind === "legacy" ? "unattributed" : "other";
+        split[key] += source.credits;
+      }
+      split.unattributed += Math.max(0, line.credits - Object.values(split).reduce((a, b) => a + b, 0));
+      line.funding = split;
+      for (const key of Object.keys(split) as (keyof StatementFunding)[]) funding[key] += split[key];
+    }
+  }
   const projects = groupLines(raw);
   let packs = { count: 0, credits: 0, bonus: 0, usd: 0 };
   if (inCredits) {
@@ -242,6 +264,6 @@ export async function statementFor(month: string, projectId: string | null): Pro
     projectFilter: projectId,
     projects,
     totals: { credits: projects.reduce((a, p) => a + p.credits, 0), usd: projects.reduce((a, p) => a + p.usd, 0), takes: projects.reduce((a, p) => a + p.takes, 0) },
-    packs,
+    packs, ...(funding ? { funding } : {}),
   };
 }

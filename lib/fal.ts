@@ -64,8 +64,16 @@ function explain(status: number, json: unknown): string {
   if (status === 401 || status === 403) return `fal.ai rejected the key (${status})${detail ? ` — ${detail}` : ""}.`;
   if (status === 402) return "fal.ai account is out of credit — top it up at fal.ai/dashboard/billing.";
   if (status === 422) return `fal.ai refused the request: ${detail || "invalid input"}.`;
-  if (status === 429) return "fal.ai rate limit — too many requests at once; it will be retried.";
+  if (status === 429) return "fal.ai rate limit — too many requests at once. Try a new request later.";
   return `fal.ai returned ${status}${detail ? `: ${detail}` : ""}.`;
+}
+
+export class FalHttpError extends Error {
+  constructor(public readonly status: number, message: string) { super(message); this.name = "FalHttpError"; }
+}
+
+export function falSubmissionRejected(error: unknown): boolean {
+  return error instanceof FalHttpError && [400, 401, 402, 403, 404, 422, 429].includes(error.status);
 }
 
 async function call<T>(url: string, init: RequestInit, timeoutMs = 60_000): Promise<T> {
@@ -90,7 +98,7 @@ async function call<T>(url: string, init: RequestInit, timeoutMs = 60_000): Prom
   const text = await res.text();
   let json: unknown = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = { message: text.slice(0, 300) }; }
-  if (!res.ok) throw new Error(explain(res.status, json));
+  if (!res.ok) throw new FalHttpError(res.status, explain(res.status, json));
   return json as T;
 }
 
@@ -98,11 +106,13 @@ async function call<T>(url: string, init: RequestInit, timeoutMs = 60_000): Prom
 export async function falSubmit(model: string, input: unknown, webhookUrl?: string): Promise<FalQueued> {
   if (engineMock()) return { request_id: mockJobId("fal") };
   const q = webhookUrl ? `?fal_webhook=${encodeURIComponent(webhookUrl)}` : "";
-  return call<FalQueued>(`${base()}/${model}${q}`, {
+  const queued = await call<FalQueued>(`${base()}/${model}${q}`, {
     method: "POST",
     headers: { Authorization: auth(), "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
+  if (!queued || typeof queued.request_id !== "string" || !queued.request_id) throw new Error("fal.ai returned no usable request handle. Submission may have been accepted.");
+  return queued;
 }
 
 export async function falStatus(model: string, requestId: string, withLogs = false): Promise<FalStatus> {

@@ -1,0 +1,164 @@
+import { db, ready, now } from "./db";
+import { requireTenant } from "./tenant";
+import { platformDb, platformReady } from "./platform";
+import { creditsApply } from "./credits";
+
+// An allowlist keeps new credential/session tables out of customer exports.
+const SHARED_TABLES = [
+  "projects",
+  "productions",
+  "boards",
+  "shots",
+  "topups",
+  "uploads",
+  "cast_members",
+  "identities",
+  "workspace_rules",
+  "treatment_versions",
+  "notes",
+  "review_notes",
+  "ideas",
+  "treatments",
+  "canvas_items",
+  "shot_presets",
+  "elements",
+  "element_attributes",
+  "attribute_versions",
+  "bindings",
+  "recipes",
+  "recipe_stages",
+  "runs",
+  "stage_runs",
+  "take_provenance",
+  "take_ports",
+  "workbench_bibles",
+] as const;
+type Row = Record<string, unknown>;
+function parsed(value: unknown) {
+  try {
+    return JSON.parse(String(value ?? "{}"));
+  } catch {
+    return {};
+  }
+}
+function generation(row: Row) {
+  const params = parsed(row.params);
+  if (params && typeof params === "object") {
+    delete params.paidClaim;
+    delete params.producedOutcome;
+  }
+  return { ...row, params };
+}
+
+/** Tenant data plus the requesting owner's private work; never collaborators' private drafts. */
+export async function workspaceExport(ownerId: string, ownerEmail: string) {
+  await ready();
+  await platformReady();
+  const workspace = requireTenant();
+  const creditWorkspace = creditsApply(workspace);
+  const contents: Record<string, Row[]> = {};
+  const tx = await db().transaction("read");
+  try {
+    const tables = new Set(
+      (
+        await tx.execute("SELECT name FROM sqlite_master WHERE type='table'")
+      ).rows.map((row) => String(row.name)),
+    );
+    for (const name of SHARED_TABLES) {
+      contents[name] = tables.has(name)
+        ? (await tx.execute(`SELECT * FROM ${name}`)).rows.map((row) => ({
+            ...row,
+          }))
+        : [];
+    }
+    contents.users = (
+      await tx.execute(
+        "SELECT id,email,name,role,disabled,created_at,last_seen FROM users ORDER BY created_at",
+      )
+    ).rows.map((row) => ({ ...row }));
+    contents.generations = (
+      await tx.execute("SELECT * FROM generations ORDER BY created_at")
+    ).rows.map(generation);
+    if (creditWorkspace) {
+      // Customer billing is in credits. Provider costs and rate cards belong
+      // in the platform's books, not in a customer data download.
+      contents.topups = [];
+      for (const rows of Object.values(contents)) {
+        for (const row of rows) {
+          for (const key of Object.keys(row)) {
+            if (key.endsWith("_usd") || key === "rate_usd_per_m")
+              delete row[key];
+          }
+        }
+      }
+    }
+    for (const name of [
+      "workbench_projects",
+      "workbench_shots",
+      "workbench_media",
+    ] as const) {
+      contents[name] = tables.has(name)
+        ? (
+            await tx.execute({
+              sql: `SELECT * FROM ${name} WHERE owner=?`,
+              args: [ownerId],
+            })
+          ).rows.map((row) => ({ ...row }))
+        : [];
+    }
+    contents.workbench_atomik_jobs = tables.has("workbench_atomik_jobs")
+      ? (
+          await tx.execute({
+            sql: `SELECT id,project_id,production_project_id,request_id,request_body,model,status,
+        estimate_credits,credits,result,error,created_at,updated_at FROM workbench_atomik_jobs WHERE owner=?`,
+            args: [ownerId],
+          })
+        ).rows.map((row) => ({ ...row }))
+      : [];
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  } finally {
+    tx.close();
+  }
+  for (const name of [
+    "credit_grants",
+    "meter_events",
+    "topup_requests",
+  ] as const) {
+    contents[name] = (
+      await platformDb().execute({
+        sql: `SELECT * FROM ${name} WHERE workspace_id=? ORDER BY created_at`,
+        args: [workspace.id],
+      })
+    ).rows.map((row) => {
+      const exported: Row = { ...row };
+      if (name === "meter_events" && creditWorkspace) {
+        delete exported.engine_cost_usd;
+        delete exported.paid_by_platform;
+      }
+      return exported;
+    });
+  }
+  if (creditWorkspace) {
+    const billed = new Map(
+      contents.meter_events.map((row) => [row.id, row.billed_credits]),
+    );
+    contents.generations = contents.generations.map((row) => ({
+      ...row,
+      billed_credits: billed.get(row.id) ?? null,
+    }));
+  }
+  return {
+    formatVersion: 2,
+    workspace: { id: workspace.id, slug: workspace.slug, name: workspace.name },
+    exportedAt: new Date(now()).toISOString(),
+    exportedBy: ownerEmail,
+    note: "Includes shared workspace records, published project bibles and your private drafts. Other collaborators' private drafts and credentials are excluded. Media bytes are downloaded separately from the master manifest; stored paths require authorized workspace access.",
+    counts: Object.fromEntries(
+      Object.entries(contents).map(([name, rows]) => [name, rows.length]),
+    ),
+    ...contents,
+  };
+}

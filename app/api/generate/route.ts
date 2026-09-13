@@ -27,7 +27,8 @@ import {
 } from "@/lib/studio";
 import { meter } from "@/lib/meter";
 import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/held";
-import { creditState } from "@/lib/credits";
+import { creditState, creditsApply } from "@/lib/credits";
+import { requireTenant } from "@/lib/tenant";
 import { submitVideoJob } from "@/lib/submitVideo";
 import { checkCap } from "@/lib/caps";
 import { rulesBlock, DEFAULT_LAYER } from "@/lib/platformLayer";
@@ -693,7 +694,9 @@ export const POST = withTenant(async function POST(req: Request) {
     // The clip is the brief: nothing here for a prompt writer to improve.
   } else if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
-  } else if (body.refine === false || writer.writer === "none") {
+  } else if (creditsApply(requireTenant()) || body.refine === false || writer.writer === "none") {
+    // Customer quotes cover this render. Paid prompt work is a separate,
+    // explicit Atomik action; never add an unquoted model call here.
     // Pro: the workspace has said its prompts are not to be rewritten.
     console.log("generate: skipping refine — writer is Pro");
   } else if (!refineCall.refine) {
