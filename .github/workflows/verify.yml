@@ -26,6 +26,8 @@ jobs:
       - run: npm run build
         env:
           ENGINE_MOCK: '1'
+      - name: Verify production bundle privacy
+        run: npm run test:unit -- tests/unit/bundle.spec.ts
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 25
