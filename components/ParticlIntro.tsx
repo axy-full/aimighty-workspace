@@ -30,7 +30,7 @@ const DELAYS = [0, 150, 270, 365, 435, 480, 505];
 
 export default function ParticlIntro() {
   return (
-    <div className="intro-veil pointer-events-none fixed inset-0 z-[100] grid place-items-center bg-desk">
+    <div className="intro-veil pointer-events-none fixed inset-0 z-[100] grid place-items-center bg-ground">
       <div className="flex flex-col items-center gap-7 text-ink">
         <svg width={168} height={72} viewBox="34 72 132 56" fill="currentColor" aria-hidden="true">
           {TRAIL.map(([cx, cy, r], i) => {

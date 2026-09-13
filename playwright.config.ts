@@ -42,7 +42,9 @@ export default defineConfig({
   use: { baseURL: base, trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [
     { name: "unit", testMatch: /tests\/unit\/.*\.spec\.ts$/ },
-    { name: "onboarding", testMatch: /tests\/onboarding\.spec\.ts$/ },
+    /* The timed run's UI half opens a page: the desktop mount at the board's
+       width (design/particl-v2, 1440), and the same channel as the rest. */
+    { name: "onboarding", testMatch: /tests\/onboarding\.spec\.ts$/, use: desk(1440, 900) },
     { name: "phone-360x640", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(360, 640) },
     { name: "phone-390x844", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(390, 844) },
     { name: "phone-844x390", testMatch: /tests\/(mobile|screens)\.spec\.ts$/, use: phone(844, 390) },

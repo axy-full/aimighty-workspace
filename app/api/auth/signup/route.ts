@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, createSession, passwordProblem, hashPassword } from "@/lib/auth";
-import { platformDb, platformReady, findAccountByEmail, createAccount, createWorkspace, now } from "@/lib/platform";
+import { platformDb, platformReady, findAccountByEmail, createAccount, createWorkspace, welcomeGrant, now } from "@/lib/platform";
 import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
 import { policyAccepted } from "@/lib/policyAccept";
@@ -64,7 +64,11 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, workspace: { id: ws.id, name: ws.name, slug: ws.slug } });
 }
 
-/** Is this invitation still good? The page asks before showing the form. */
+/**
+ * Is this invitation still good? The page asks before showing the form, and
+ * reads `grant` — the welcome credits a new workspace receives — so the
+ * STUDIO card's "and N credits" line never carries a literal number.
+ */
 export async function GET(req: Request) {
   await platformReady();
   const code = new URL(req.url).searchParams.get("code") ?? "";
@@ -73,5 +77,5 @@ export async function GET(req: Request) {
   if (!inv) return NextResponse.json({ error: "That invitation isn't valid." }, { status: 404 });
   if (inv.used_at) return NextResponse.json({ error: "That invitation has already been used." }, { status: 409 });
   if (Number(inv.expires_at) < now()) return NextResponse.json({ error: "That invitation has expired." }, { status: 410 });
-  return NextResponse.json({ ok: true, email: inv.email, name: inv.name, open: provisioningConfigured() && keyringConfigured() });
+  return NextResponse.json({ ok: true, email: inv.email, name: inv.name, open: provisioningConfigured() && keyringConfigured(), grant: await welcomeGrant() });
 }

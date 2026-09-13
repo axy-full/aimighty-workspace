@@ -63,6 +63,16 @@ export const STARTER_PRODUCTION: StarterProduction = {
   ],
 };
 
+/**
+ * The name the demo cast is cited by in copy — `@Mara` in a placeholder, the
+ * starter prompt on Make — read from the seeded production so the copy cannot
+ * drift from the seed (docs/sow-surfaces-plan.md decision 3: whichever name
+ * wins, it lives in STARTER_CAST and nowhere else).
+ */
+export function starterCastName(): string {
+  return STARTER_CAST.name;
+}
+
 /** Where a rule applies: a kind, or one engine family's dialect. */
 export type RuleScope = "all" | "video" | "image" | "seedance-2" | "kling-3" | "nano-banana" | "veo-3" | "wan-2";
 export const RULE_SCOPES: RuleScope[] = ["all", "video", "image", "seedance-2", "kling-3", "nano-banana", "veo-3", "wan-2"];

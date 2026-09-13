@@ -49,6 +49,8 @@ function Make() {
   const [q, setQ] = useState("");
   const [totals, setTotals] = useState<{ takes: number; spent: string } | null>(null);
   const [tick, setTick] = useState(0);
+  /* 12i: `/make/video?starter=1` is where signup lands — the composer opens with the demo cast already in the prompt. */
+  const starter = search.get("starter") === "1";
   const columns = rail.state === "expanded" ? "grid-cols-2" : rail.state === "compact" ? "grid-cols-3" : "grid-cols-4";
 
   if (phone) return (
@@ -60,7 +62,7 @@ function Make() {
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-auto px-[16px] pb-[10px] pt-[12px]">
         <UnfiledWall key={`${entry.kind}:${tick}`} kind={entry.kind} search={q} columns={columns} onTotals={setTotals} phone />
       </div>
-      <Composer kind={entry.kind} initialRef={search.get("ref")} onMade={() => setTick((t) => t + 1)} />
+      <Composer kind={entry.kind} initialRef={search.get("ref")} starter={starter} onMade={() => setTick((t) => t + 1)} />
     </div>
   );
   return (
@@ -79,7 +81,7 @@ function Make() {
         </div>
       </section>
       <aside className="ui-rail relative flex min-h-0 flex-col border-l border-border" aria-label="Composer">
-        <Composer kind={entry.kind} initialRef={search.get("ref")} onMade={() => setTick((t) => t + 1)} />
+        <Composer kind={entry.kind} initialRef={search.get("ref")} starter={starter} onMade={() => setTick((t) => t + 1)} />
       </aside>
     </div>
   );

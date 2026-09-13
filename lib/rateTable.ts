@@ -154,3 +154,14 @@ export function charged(table: RateTable, amount: number | null): number | null 
   if (!(amount > 0)) return 0;
   return Math.max(1, Math.ceil(amount - 1e-9));
 }
+
+/**
+ * What a workspace has left once this press is billed — the `· 31 LEFT AFTER`
+ * on the Render primary (design/particl-sow README, board 12i). Whole credits,
+ * never below zero: a press the balance cannot cover reads `0 LEFT AFTER`, and
+ * the server is what refuses it. `null` when the press has no price.
+ */
+export function leftAfter(balance: number, chargedAmount: number | null): number | null {
+  if (chargedAmount == null || !Number.isFinite(balance)) return null;
+  return Math.max(0, Math.floor(balance - chargedAmount + 1e-9));
+}

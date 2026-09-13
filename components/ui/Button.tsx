@@ -21,6 +21,9 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  *             `0 16px`.
  *   sheet     the mobile sheet (9c): primary 54px, radius 14, 600 16px,
  *             `0 18px`; secondaries 46px, radius 12, 500 14px.
+ *   auth      the auth card (12i): primary 46px, radius 10, 600 14px,
+ *             `0 16px`, full width; secondary the same height and radius,
+ *             500 14px, centred, full width.
  *
  * Every secondary's edge is `--border-mid`, because §3 names the token
  * ("transparent, 1px --border-mid"); the boards draw the rectangular ones
@@ -53,7 +56,7 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  */
 type Props = {
   variant?: "primary" | "secondary";
-  placement?: "header" | "card" | "rail" | "composer" | "sheet";
+  placement?: "header" | "card" | "rail" | "composer" | "sheet" | "auth";
   /** A primary while a rail is open: the fill goes, the border stays. */
   outlined?: boolean;
   /** A secondary in `--ink-body` — the board dims the lesser of a pair (`Stop`). */
@@ -89,6 +92,10 @@ const SHAPE = {
   sheet: {
     primary: "h-[54px] rounded-mobile px-[18px] text-[16px] font-semibold gap-[10px]",
     secondary: "h-[46px] rounded-card px-[14px] text-[14px] font-medium border border-border-mid justify-center gap-[10px]",
+  },
+  auth: {
+    primary: "h-[46px] rounded-tile px-[16px] text-[14px] font-semibold gap-[12px] w-full",
+    secondary: "h-[46px] rounded-tile px-[14px] text-[14px] font-medium border border-border-mid w-full justify-center gap-[10px]",
   },
 } as const;
 

@@ -7,6 +7,7 @@ import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { estimateVideo, estimateImage } from "@/lib/rateTable";
+import { starterCastName } from "@/lib/platformLayer";
 import { MODELS, estimateTokens, costUsd } from "@/lib/models";
 import type { Board, BoardNode, BoardWire, NodeKind } from "@/lib/boards";
 import { markStale } from "@/lib/boards";
@@ -768,7 +769,7 @@ function Node({ n, board, selected, running, price, fmt, onDown, onStartWire, on
     return (
       <article className={box} style={{ left: n.x, top: n.y, width: w }} onPointerDown={onDown} onContextMenu={onContext} aria-label={`${KIND_WORD[n.kind]} node`}>
         <div className="flex h-[32px] items-center gap-[6px] px-[10px]">{tag}<span className="text-[13px] font-semibold leading-none text-ink">{KIND_WORD[n.kind]}</span><Mono cost className="ml-auto">{n.kind === "prompt" ? "free" : ""}</Mono></div>
-        <textarea value={n.text ?? ""} onChange={(e) => onText(e.target.value)} onPointerDown={stop} placeholder={n.kind === "prompt" ? "@Noor's hands on @The bag…" : "A note"} aria-label={KIND_WORD[n.kind]}
+        <textarea value={n.text ?? ""} onChange={(e) => onText(e.target.value)} onPointerDown={stop} placeholder={n.kind === "prompt" ? `@${starterCastName()}'s hands on @The bag…` : "A note"} aria-label={KIND_WORD[n.kind]}
           className="mx-[10px] mb-[10px] box-border h-[96px] w-[calc(100%-20px)] resize-none rounded-ctl border border-[rgba(245,246,248,.1)] bg-ground px-[10px] py-[8px] text-[13px] leading-[1.45] text-ink outline-0 placeholder:text-ink-muted" />
         {n.kind === "prompt" && <Dot style={{ right: -5, top: 77 }} onDown={onStartWire(n.id, "out")} title="Prompt" />}
       </article>

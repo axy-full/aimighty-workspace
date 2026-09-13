@@ -6,7 +6,8 @@ import { useApi } from "@/lib/useApi";
 import { useSession, useSignInHref } from "@/lib/session";
 import { useMoney } from "@/lib/price";
 import { MODELS, DEFAULT_MODEL_ID, getModel, estimateTokens, costUsd } from "@/lib/models";
-import { estimateVideo, estimateImage } from "@/lib/rateTable";
+import { estimateVideo, estimateImage, charged, leftAfter } from "@/lib/rateTable";
+import { starterCastName } from "@/lib/platformLayer";
 import { COUNTS, newBatchId } from "@/lib/variations";
 import { CATEGORIES, composePrompt, detectSpec, type ShotSpec } from "@/lib/studio";
 import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
@@ -88,11 +89,17 @@ const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 /** `@Name` tokens in a prompt, the way the composer highlights and the engine reads them. */
 const NAME_RE = /@([A-Za-z][\w'-]*(?: (?=[A-Z])[A-Z][\w'-]*)*)/g;
 
-export default function Composer({ kind, onMade, initialRef = null, className = "" }: { kind: ComposerKind; onMade?: () => void; initialRef?: string | null; className?: string }) {
+/**
+ * `starter` (board 12i, SOW §9): the first landing after signup —
+ * `/make/video?starter=1` — arrives with the prompt already citing the demo
+ * cast, so the first render is a press, not a paragraph. Seeded once, and
+ * only into an empty prompt; a draft in progress is never overwritten.
+ */
+export default function Composer({ kind, onMade, initialRef = null, starter = false, className = "" }: { kind: ComposerKind; onMade?: () => void; initialRef?: string | null; starter?: boolean; className?: string }) {
   const router = useRouter();
   const phone = usePhone();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const { signedIn, rates } = useSession();
+  const { signedIn, rates, credits } = useSession();
   const signIn = useSignInHref();
   const money = useMoney();
   const toast = useToast();
@@ -100,8 +107,20 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   const surface = `make:${kind}`;
 
   /* ── the words ─────────────────────────────────────────────────────── */
-  const [prompt, setPromptState] = useState(() => loadDraft(surface, signedIn));
+  const [prompt, setPromptState] = useState("");
   const setPrompt = useCallback((v: string) => { setPromptState(v); saveDraft(surface, v); }, [surface]);
+  /* The draft is read after mount, never in the first render: localStorage is the browser's alone, so a prompt the
+     server never saw would make the server's paint and the client's disagree (hydration), and a seeded or half-typed
+     draft is exactly the kind that exists. Once per surface; a prompt already typed by then is kept. */
+  const draftRead = useRef<string | null>(null);
+  useEffect(() => {
+    if (draftRead.current === surface) return;
+    draftRead.current = surface;
+    const draft = loadDraft(surface, signedIn);
+    // One read of an external store after mount; the ref keeps it to once per surface.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (draft) setPromptState((cur) => cur || draft);
+  }, [surface, signedIn]);
   const field = useRef<HTMLTextAreaElement>(null);
   const insertAtCaret = (token: string) => {
     const el = field.current;
@@ -206,8 +225,27 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   const detected = useMemo(() => detectSpec(prompt), [prompt]);
   const rows = CATEGORIES.map((c) => ({ c, value: spec[c.key] ?? null })).filter((r) => r.value);
   const setRow = (key: string, value: string | null) => setSpec((s) => ({ ...s, [key]: value }));
-  const { data: castData, refresh: refreshCast } = useApi<{ cast: CastMember[] }>(signedIn && kind !== "audio" ? "/api/cast?projectId=all" : null, 0);
+  const { data: castData, error: castError, refresh: refreshCast } = useApi<{ cast: CastMember[] }>(signedIn && kind !== "audio" ? "/api/cast?projectId=all" : null, 0);
   const cast = useMemo(() => castData?.cast ?? [], [castData]);
+  /* The name the copy cites: the seeded cast's first character once the list
+     is in, the platform layer's seed until then — never a literal, so the
+     placeholder and the starter prompt read the same name the workspace
+     actually has (docs/sow-surfaces-plan.md decision 3). */
+  const castName = cast.find((m) => m.kind === "character")?.name ?? cast[0]?.name ?? starterCastName();
+  /* 12i: the starter prompt, once, into an empty box — after the cast list has
+     answered (or failed), so the name is the workspace's own. */
+  const starterSeeded = useRef(false);
+  useEffect(() => {
+    if (starterSeeded.current || !starter || !signedIn || kind === "audio") return;
+    if (castData == null && !castError) return;
+    starterSeeded.current = true;
+    if (prompt.trim()) return;
+    // One write, once, when the cast list (an external system) has answered —
+    // the ref above guarantees it never re-fires, so there is no cascade to
+    // guard against; the rule only sees a setState inside an effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPrompt(`A courier crosses a wet rooftop at dawn, static wide. @${castName} waits at the edge of frame.`);
+  }, [starter, signedIn, kind, castData, castError, castName, prompt, setPrompt]);
   const { data: elsData, refresh: refreshEls } = useApi<{ elements: { name: string }[] }>(signedIn && kind !== "audio" ? "/api/rig/elements" : null, 60_000);
   const { data: idTerms } = useApi<{ terms: { trainCostUsd: number } }>(signedIn && kind !== "audio" ? "/api/identities" : null, 0);
   /* 3b: a name the prompt cites that nobody has made yet. */
@@ -300,6 +338,9 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
       clearDraft(surface); setPromptState(""); setRefs([]);
       toast(`Rendering · ${money.price(kind === "audio" ? audioUsd : price ?? 0)} · lands on the wall unfiled`);
       onMade?.();
+      /* The landing's `LEFT AFTER` reads the session's balance, which the layout computes from the ledger: the press is
+         billed at submit, so a refresh brings the next quote's line up to date without touching the draft or the wall. */
+      if (starter && money.inCredits) router.refresh();
     } catch (e) { toast((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -327,6 +368,16 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   };
   const suffix = kind === "audio" ? ` · ${mmss(audioLen)}` : kind === "image" ? ` · ${resolution.toUpperCase()}` : ` · ${seconds}s · ${resolution.toUpperCase()}`;
   const cost = kind === "audio" ? audioUsd : price ?? 0;
+  /* Board 12i: `19 CR · 31 LEFT AFTER` — what the balance reads once this
+     press is billed, on the first-time landing (`?starter=1`; the v2 Make
+     boards draw the primary without it), on a workspace that pays in
+     credits (a dollar workspace has no balance to count down), and never
+     from the audio quote, which the browser holds in vendor dollars. The
+     phone dock keeps it to `· 31 LEFT`: the full line does not fit beside
+     the label at 390. */
+  const after = starter && kind !== "audio" && signedIn && credits && money.inCredits ? leftAfter(credits.balance, charged(rates, cost)) : null;
+  const afterDesk = after == null ? "" : ` · ${after} left after`;
+  const afterPhone = after == null ? "" : ` · ${after} left`;
   /* M4's docked card: the engine and the settings in mono, the prompt's first line with its names marked. */
   const eyebrow = kind === "audio" ? `Composer · ${TRACKS.find((t) => t.id === track)!.label} · ${mmss(audioLen)}` : kind === "image" ? `Composer · ${model.label} · ${ratio} · ${resolution}` : `Composer · ${model.label} · ${ratio} · ${seconds}s`;
   const firstLine = prompt.split("\n").find((l) => l.trim()) ?? "";
@@ -337,7 +388,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
       className={`flex ${tall ? "h-[52px]" : "h-[50px]"} w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${
         blocked || rail.open || (!tall && sheetOpen) ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-ink text-ground"}`}>
       <span>{busy ? "Rendering…" : signedIn ? "Render" : "Sign in to render"}</span>
-      <span className={`ui-mono ui-mono-cost !text-[12px] ${blocked || rail.open || (!tall && sheetOpen) ? "text-ink-muted" : "text-on-primary-cost"}`}>{money.price(cost)}{suffix}</span>
+      <span className={`ui-mono ui-mono-cost !text-[12px] ${blocked || rail.open || (!tall && sheetOpen) ? "text-ink-muted" : "text-on-primary-cost"}`}>{money.price(cost)}{suffix}{tall ? afterDesk : afterPhone}</span>
     </button>
   );
 
@@ -346,7 +397,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
         {kind === "audio" && (
           <Segmented label="Track kind" placement="bar" value={track} onChange={(t) => setTrack(t)} options={TRACKS.map((t) => ({ value: t.id, label: t.label }))} />
         )}
-        <PromptField phone={phone} value={prompt} onChange={setPrompt} fieldRef={field} placeholder={kind === "audio" ? TRACKS.find((t) => t.id === track)!.placeholder : kind === "image" ? "A brass key on marble, dust in the light. @Noor's hand at the edge of frame." : "A hand turns a brass key in a door that is not there. Dust in the light. @Noor watches from the corridor."} names={kind !== "audio"} unknown={unknown} />
+        <PromptField phone={phone} value={prompt} onChange={setPrompt} fieldRef={field} placeholder={kind === "audio" ? TRACKS.find((t) => t.id === track)!.placeholder : kind === "image" ? `A brass key on marble, dust in the light. @${castName}'s hand at the edge of frame.` : `A hand turns a brass key in a door that is not there. Dust in the light. @${castName} watches from the corridor.`} names={kind !== "audio"} unknown={unknown} />
         {unknown.length > 0 && (() => { const nm = unknown[0]; const thumbs = refs.filter((r) => r.kind === "image").slice(0, 3); return (
           <div className={`flex flex-col gap-[10px] rounded-card border border-[rgba(245,246,248,.2)] px-[13px] py-[12px] ${phone ? "bg-card" : "bg-ground"}`} role="group" aria-label={`Not an asset yet: @${nm}`}>
             {phone ? <Mono>Not an asset yet · @{nm}</Mono> : <span className="flex items-center gap-[8px]"><Mono>Not an asset yet</Mono><span className="text-[15px] font-semibold leading-none text-ink">@{nm}</span></span>}
@@ -563,7 +614,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto p-[16px]">{body}</div>
           <div className="flex flex-none flex-col gap-[8px] border-t border-border px-[16px] pb-[16px] pt-[12px]">
-            <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : needsStill ? " · attach a still first" : suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
+            <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : needsStill ? " · attach a still first" : `${suffix}${afterDesk}`} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
               {signedIn ? "Render" : "Sign in to render"}
             </Button>
             <Mono cost className="text-center !leading-[1.4]">Lands on the wall unfiled · file to a shot any time</Mono>
