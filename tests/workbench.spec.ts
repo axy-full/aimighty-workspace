@@ -175,7 +175,7 @@ test("switching drains final edits, failed saves retain work, and asset publishi
   const revisions = new Map([[first.id, 1], [second.id, 1]]);
   let release: () => void = () => {};
   const barrier = new Promise<void>(resolve => { release = resolve; });
-  let delayNext = true, held = false, failSaves = false;
+  let delayNext = false, held = false, failSaves = false;
   const published: string[] = [];
   const reads: string[] = [];
   await page.route("**/api/workbench/projects**", async route => {
@@ -199,6 +199,9 @@ test("switching drains final edits, failed saves retain work, and asset publishi
     return json({ project: documents.get(id), revision: revisions.get(id), projects: [...documents.values()].map(project => ({ id: project.id, name: project.name })), productions: [] });
   });
   await page.goto("/workbench");
+  await expect(page.locator(".project-switch")).toContainText("First production");
+  await expect(page.locator(".save-label")).toContainText("Saved");
+  delayNext = true;
   await goStage(page, "Brief & ideas");
   await page.getByLabel("Production title", { exact: true }).fill("First edit in flight");
   await expect.poll(() => held).toBeTruthy();
