@@ -1,12 +1,13 @@
-import { db, now } from "./db";
+import { db, ready, now } from "./db";
 import { type VideoParams, type Reference, type ImageRole } from "./ark";
 import { falEndpointFor } from "./falVideo";
-import { withRetry, classifyFailure, billedTo } from "./providers";
-import { getSetting } from "./settings";
+import { classifyFailure, billedTo } from "./providers";
 import { getModel, type ModelDef } from "./models";
 import { getTask, type TaskDef } from "./tasks";
 import { meter } from "./meter";
 import { engineFor } from "./engines";
+import { platformDb, platformReady } from "./platform";
+import { requireTenant } from "./tenant";
 
 /**
  * The one call that can fail for reasons that aren't ours, in one place:
@@ -29,76 +30,111 @@ export type VideoJob = {
   ts: number;
 };
 
-/* A timeout or a 429 is weather and gets tried again with backoff; a
- * rejected prompt is a decision and fails immediately with the vendor's
- * own words. Either way the row already exists, so nothing disappears. */
-export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
-  const { genId, model, task, prompt, params, references, source, ts } = job;
-  const maxRetries = Math.max(0, Math.min(5, Number(await getSetting("maxRetries")) || 0));
-  const submitStartedAt = now();
-  try {
-    const { value: taskId, attempts } = await withRetry(
-      async () => {
-        try {
-          const out = await engineFor(model.provider).render({ kind: "video", genId, model, task, prompt, params, references, source });
-          if (!("handle" in out)) throw new Error("The engine answered with bytes where a job was expected.");
-          return out.handle.ref;
-        } catch (e) {
-          /* Two very different failures wear the same coat here. "Could not
-             reach ModelArk" means the request never landed, and trying again
-             is free. But an error CARRYING a status — "Ark submit failed
-             (500)" — means they received it, and may well have accepted and
-             billed the task before failing to tell us. Retrying that buys a
-             second paid render nobody asked for. So it is re-thrown in words
-             classifyFailure reads as fatal. (lib/fal.ts carries the same
-             reasoning for the same reason.) */
-          const msg = (e as Error).message;
-          if (/^Ark submit failed \(/.test(msg)) {
-            throw new Error(`${msg} The task may already have been accepted, so it was not sent again.`);
-          }
-          throw e;
-        }
-      },
-      {
-        max: maxRetries,
-        onRetry: (n, cls, err) => console.warn(`generate ${genId}: attempt ${n} ${cls} — ${err.message}`),
-      }
-    );
-    if (model.provider === "fal") {
-      /* fal holds the job on its own queue; the request id is the handle the
-         wall's poll and the cron finish the render from (lib/falVideo.ts). */
-      await db().execute({
-        sql: `UPDATE generations
-              SET status='running', attempts=?, queue_ms=?, submit_ms=?,
-                  params=json_set(params, '$.falRequestId', ?, '$.falModel', ?), updated_at=?
-              WHERE id=?`,
-        args: [attempts, submitStartedAt - ts, now() - submitStartedAt, taskId,
-               falEndpointFor(model, task.id, references.some((r) => r.kind === "image")), now(), genId],
-      });
-    } else {
-      await db().execute({
-        sql: `UPDATE generations
-              SET ark_task_id=?, status='running', attempts=?,
-                  queue_ms=?, submit_ms=?, updated_at=?
-              WHERE id=?`,
-        args: [taskId, attempts, submitStartedAt - ts, now() - submitStartedAt, now(), genId],
-      });
-    }
-    return { ok: true, taskId, attempts };
-  } catch (e) {
-    const msg = (e as Error).message;
-    const cls = classifyFailure(e);
-    const shown = cls === "rate-limited"
-      ? `The provider is rate-limiting us — try again shortly. (${msg})`
-      : msg;
-    await db().execute({
-      sql: `UPDATE generations SET status='failed', error=?, attempts=?, updated_at=? WHERE id=?`,
-      args: [shown, maxRetries + 1, now(), genId],
+type SubmittedVideo = { kind: "video"; taskId: string; endpoint?: string; queueMs: number; submitMs: number };
+type SubmissionRow = { status: string; error: string | null; ark_task_id: string | null; attempts: number; params: string };
+
+async function submissionRow(genId: string): Promise<SubmissionRow | undefined> {
+  return (await db().execute({sql:`SELECT status,error,ark_task_id,attempts,params FROM generations WHERE id=? AND kind='video' AND deleted=0`,args:[genId]})).rows[0] as unknown as SubmissionRow | undefined;
+}
+function knownTask(row: SubmissionRow): string | null {
+  const p=JSON.parse(row.params||"{}");
+  const id=row.ark_task_id||p.falRequestId;
+  return typeof id==='string'&&id.length>0?id:null;
+}
+
+/** Only database writes may retry. A transport failure cannot prove that a
+ * paid POST did not arrive, even when the client calls it "could not reach". */
+async function writeSubmission(fn:()=>Promise<unknown>):Promise<void> {
+  for(let attempt=0;;attempt++){
+    try{await fn();return;}catch(error){if(attempt>=2)throw error;await new Promise(resolve=>setTimeout(resolve,50*(attempt+1)));}
+  }
+}
+async function rememberSubmission(job:VideoJob,out:SubmittedVideo):Promise<void> {
+  await writeSubmission(async()=>{
+    const result=await db().execute({
+      sql: job.model.provider==='fal'
+        ? `UPDATE generations SET status=CASE WHEN status IN ('succeeded','cancelled') THEN status ELSE 'running' END,
+          attempts=1,queue_ms=?,submit_ms=?,error=NULL,
+          params=json_set(params,'$.falRequestId',?,'$.falModel',?,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND deleted=0`
+        : `UPDATE generations SET ark_task_id=?,status=CASE WHEN status IN ('succeeded','cancelled') THEN status ELSE 'running' END,
+          attempts=1,queue_ms=?,submit_ms=?,error=NULL,
+          params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND deleted=0`,
+      args:job.model.provider==='fal'
+        ? [out.queueMs,out.submitMs,out.taskId,out.endpoint!,JSON.stringify(out),now(),job.genId]
+        : [out.taskId,out.queueMs,out.submitMs,JSON.stringify(out),now(),job.genId],
     });
-    // The vendor never took the job, so nothing is billed: the meter row closes at zero.
-    await meter({ id: genId, kind: "video", engine: billedTo(model.provider ?? "byteplus"), model: model.id,
-                  status: "failed", engineCostUsd: 0 }, { critical: false }).catch(() => {});
-    return { ok: false, error: shown, cls };
+    if(!result.rowsAffected)throw new Error('The submitted take is no longer available.');
+  });
+}
+
+/** These exact adapter errors represent a received rejection, not transport
+ * ambiguity. Unrecognized errors retain the estimate conservatively. */
+function definitelyRejected(message:string):boolean {
+  const status=message.match(/^Ark submit failed \((\d+)\)/)?.[1]??message.match(/^fal\.ai returned (\d+)\b/)?.[1];
+  return Boolean(status&&[400,401,402,403,404,405,413,415,422,429].includes(Number(status)))
+    || /^fal\.ai (rejected the key|account is out of credit|refused the request|rate limit —)/.test(message)
+    || /^That engine isn't connected for this workspace\./.test(message)
+    || /^Request body is [\d.]+ MB, over ModelArk's 64 MB limit\./.test(message);
+}
+async function submissionFailed(job:VideoJob,error:string,uncertain:boolean):Promise<SubmitOutcome> {
+  let retainedCost:number|null=uncertain?null:0;
+  if(uncertain){
+    try{
+      await platformReady();
+      const reserved=(await platformDb().execute({sql:'SELECT engine_cost_usd FROM meter_events WHERE id=? AND workspace_id=?',args:[job.genId,requireTenant().id]})).rows[0]?.engine_cost_usd;
+      if(reserved!=null)retainedCost=Number(reserved);
+    }catch{/* The existing meter reservation remains authoritative. */}
+  }
+  await writeSubmission(()=>db().execute({sql:`UPDATE generations SET status='failed',error=?,attempts=1,cost_usd=COALESCE(cost_usd,?),updated_at=? WHERE id=? AND deleted=0 AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL`,args:[error,retainedCost,now(),job.genId]})).catch(()=>{});
+  await meter({id:job.genId,kind:'video',engine:billedTo(job.model.provider??'byteplus'),model:job.model.id,status:'failed',engineCostUsd:uncertain?null:0},{critical:false}).catch(()=>{});
+  return {ok:false,error,cls:uncertain?'uncertain':classifyFailure(new Error(error))};
+}
+
+/** One durable owner per generation, including delayed held-job releases.
+ * Claims never expire: uncertainty must not purchase another provider task. */
+export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
+  await ready();
+  let row=await submissionRow(job.genId);
+  if(!row)return {ok:false,error:'No such take.',cls:'fatal'};
+  const existing=knownTask(row);
+  if(existing)return {ok:true,taskId:existing,attempts:Number(row.attempts)||1};
+  const prior=JSON.parse(row.params||'{}').producedOutcome as SubmittedVideo|undefined;
+  if(prior?.kind==='video'&&typeof prior.taskId==='string'&&prior.taskId){
+    try{await rememberSubmission(job,prior);return {ok:true,taskId:prior.taskId,attempts:1};}
+    catch{return {ok:false,cls:'uncertain',error:`The provider accepted task ${prior.taskId}, but tracking could not be restored. No additional request was sent; its estimated cost remains reserved.`};}
+  }
+  if(!['queued','running'].includes(row.status))return {ok:false,error:row.error||'This take is no longer awaiting submission.',cls:'fatal'};
+  const claimed=await db().execute({sql:`UPDATE generations SET params=json_set(params,'$.paidClaim',?),attempts=1,updated_at=?
+    WHERE id=? AND kind='video' AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.paidClaim') IS NULL
+      AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL`,args:[now(),now(),job.genId]});
+  if(!claimed.rowsAffected){
+    row=await submissionRow(job.genId);
+    const taskId=row&&knownTask(row);
+    return taskId?{ok:true,taskId,attempts:Number(row!.attempts)||1}:{ok:false,cls:'uncertain',error:row?.error||'Submission already started. No additional request was sent. Wait for confirmation; the estimated cost remains reserved.'};
+  }
+
+  const started=now();
+  let submitted:SubmittedVideo;
+  try{
+    // Never wrap this paid call in withRetry, including transport and 5xx failures.
+    const out=await engineFor(job.model.provider).render({kind:'video',genId:job.genId,model:job.model,task:job.task,prompt:job.prompt,params:job.params,references:job.references,source:job.source});
+    if(!('handle' in out)||typeof out.handle.ref!=='string'||!out.handle.ref)throw new Error('The engine returned no usable task handle.');
+    submitted={kind:'video',taskId:out.handle.ref,queueMs:started-job.ts,submitMs:now()-started,
+      ...(job.model.provider==='fal'?{endpoint:out.handle.endpoint||falEndpointFor(job.model,job.task.id,job.references.some(r=>r.kind==='image'))}:{})};
+  }catch(error){
+    const message=(error instanceof Error?error.message:String(error)).replace(/; it will be retried\./,'; no additional request was sent.');
+    const uncertain=!definitelyRejected(message);
+    return submissionFailed(job,uncertain?`${message} The provider may already have accepted this task. It was not sent again; its estimated cost remains reserved until the provider outcome is reconciled.`:message,uncertain);
+  }
+  try{
+    await rememberSubmission(job,submitted);
+    return {ok:true,taskId:submitted.taskId,attempts:1};
+  }catch{
+    // A database timeout may be a lost acknowledgment of a committed write.
+    // Recover the known handle; never go through engine.render a second time.
+    const recovered=await submissionRow(job.genId).catch(()=>undefined);
+    if(recovered&&knownTask(recovered)===submitted.taskId)return {ok:true,taskId:submitted.taskId,attempts:1};
+    return submissionFailed(job,`The provider accepted task ${submitted.taskId}, but its tracking could not be saved. No additional request was sent; its estimated cost remains reserved. Keep this task ID for support to recover the result.`,true);
   }
 }
 

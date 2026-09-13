@@ -33,7 +33,7 @@ export function db(): Client {
 
 const SCHEMA = [
   /* Workbench redesign: private drafts inside the resolved tenant database.
-     Shared selections are snapshots in a draft, not cross-user sharing yet. */
+     Shared bible versions and node/shot mappings are added by workbenchReady. */
   `CREATE TABLE IF NOT EXISTS workbench_projects (
      key TEXT PRIMARY KEY, owner TEXT NOT NULL, project_id TEXT NOT NULL,
      name TEXT NOT NULL, body TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
