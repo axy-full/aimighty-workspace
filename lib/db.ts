@@ -32,6 +32,18 @@ export function db(): Client {
 }
 
 const SCHEMA = [
+  /* Workbench redesign: private drafts inside the resolved tenant database.
+     Shared bible versions and node/shot mappings are added by workbenchReady. */
+  `CREATE TABLE IF NOT EXISTS workbench_projects (
+     key TEXT PRIMARY KEY, owner TEXT NOT NULL, project_id TEXT NOT NULL,
+     name TEXT NOT NULL, body TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
+     updated_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_workbench_owner ON workbench_projects(owner,updated_at)`,
+  `CREATE TABLE IF NOT EXISTS workbench_media (
+     id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL,
+     ext TEXT NOT NULL, size INTEGER NOT NULL, stored_url TEXT NOT NULL, sha256 TEXT NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS projects (
      id          TEXT PRIMARY KEY,
      name        TEXT NOT NULL,

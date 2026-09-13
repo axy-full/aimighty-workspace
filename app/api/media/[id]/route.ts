@@ -34,6 +34,7 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
   const { id } = await params;
 
   const gen = await getGeneration(id).catch(() => null);
+  if (!gen || gen.status !== "succeeded") return new Response("Not found", { status: 404 });
   const kind: "video" | "image" | "audio" =
     gen?.kind === "image" ? "image" : gen?.kind === "audio" ? "audio" : "video";
   const isImage = kind === "image";

@@ -86,6 +86,10 @@ export function rowToGeneration(r: any): Generation {
   /* Read once per row rather than per field: which unit this workspace pays
      in decides what the row is allowed to carry. */
   const inCredits = creditsApply(currentTenant()?.workspace);
+  const params = JSON.parse(r.params || "{}");
+  // Queue recovery state contains vendor cost and storage internals, never UI input.
+  delete params.producedOutcome;
+  delete params.paidClaim;
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -103,7 +107,7 @@ export function rowToGeneration(r: any): Generation {
     model: r.model,
     prompt: r.prompt,
     title: r.title ?? null,
-    params: JSON.parse(r.params || "{}"),
+    params,
     status: r.status,
     sourceUrl: r.source_url ?? null,
     storedUrl: r.stored_url ?? null,

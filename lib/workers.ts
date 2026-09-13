@@ -7,7 +7,7 @@ import { getWorkspace, legacyWorkspace } from "./platform";
 
 /** The workspace an event belongs to; the studio's original one for events that predate workspaces. */
 async function workspaceOf(data: { workspaceId?: string }) {
-  const ws = (data.workspaceId ? await getWorkspace(String(data.workspaceId)) : null) ?? (await legacyWorkspace());
+  const ws = data.workspaceId ? await getWorkspace(String(data.workspaceId)) : await legacyWorkspace();
   if (!ws) throw new Error("No workspace for this event.");
   return ws;
 }
@@ -95,7 +95,8 @@ export const render = inngest.createFunction(
       const job = await loadJob(genId);
       // Already finished, or gone. Nothing to do, and nothing to pay for.
       if (!job) return null;
-      return { job, out: await produce(job) };
+      const out = await produce(job);
+      return out ? { job, out } : null;
     }));
 
     if (!produced) return { genId, skipped: true };

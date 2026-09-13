@@ -196,8 +196,43 @@ export type Produced = { timings: Timings; bytes: number } & (
   | { kind: "audio"; storedUrl: string; credits: number; requestId: string | null }
 );
 
-export async function produce(job: Job): Promise<Produced> {
-  return job.kind === "audio" ? produceAudio(job) : produceStill(job);
+/** One durable owner for the paid step, shared by Inngest and its inline fallback.
+ * A timed-out event send may still reach the worker. Neither a duplicate event
+ * nor that late worker may race the inline path into a second vendor call. */
+export async function claimRender(genId: string): Promise<boolean> {
+  await ready();
+  const claimed = await db().execute({
+    sql: `UPDATE generations SET params=json_set(params, '$.paidClaim', ?), updated_at=?
+      WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params, '$.paidClaim') IS NULL`,
+    args: [now(), now(), genId],
+  });
+  return claimed.rowsAffected > 0;
+}
+
+export async function producedOutcome(genId: string): Promise<Produced | null> {
+  const row = (await db().execute({ sql: `SELECT json_extract(params,'$.producedOutcome') AS outcome FROM generations WHERE id=? AND deleted=0`, args: [genId] })).rows[0];
+  return row?.outcome ? JSON.parse(String(row.outcome)) as Produced : null;
+}
+
+export async function produce(job: Job): Promise<Produced | null> {
+  const previous = await producedOutcome(job.genId);
+  if (previous) return previous;
+  if (!(await claimRender(job.genId))) return producedOutcome(job.genId);
+  try {
+    const out = job.kind === "audio" ? await produceAudio(job) : await produceStill(job);
+    // Persist the small result independently of queue step memoization, so
+    // the record step can recover after an inline/worker handoff or restart.
+    await withRetry(() => db().execute({
+      sql: `UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=?`,
+      args: [JSON.stringify(out), now(), job.genId],
+    }), { max: 3 });
+    return out;
+  } catch (error) {
+    // A synchronous vendor may have charged before the connection failed.
+    // Leave the claim intact: automatic retries must never buy it again.
+    await failJob(job.genId, (error as Error).message);
+    throw error;
+  }
 }
 
 async function produceStill(job: StillJob): Promise<Produced> {
@@ -345,7 +380,7 @@ export async function runInline(genId: string): Promise<void> {
     const job = await loadJob(genId);
     if (!job) return;
     const produced = await produce(job);
-    await seal(job, produced);
+    if (produced) await seal(job, produced);
   } catch (e) {
     await failJob(genId, (e as Error).message);
   }
