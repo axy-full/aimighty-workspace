@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
-import { mailConfigured, mailFrom, sendMail, inviteEmail, inviteOrigin } from "@/lib/mail";
+import { mailConfigured, mailFrom, sendMail, inviteEmail, inviteOrigin, TEAM_INVITE_DAYS } from "@/lib/mail";
 import { db, ready, now } from "@/lib/db";
 import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
-const INVITE_DAYS = 7;
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
@@ -86,7 +85,7 @@ export const POST = withTenant(async function POST(req: Request) {
 
   const code = randomBytes(24).toString("base64url");
   const ts = now();
-  const expiresAt = ts + INVITE_DAYS * 86400_000;
+  const expiresAt = ts + TEAM_INVITE_DAYS * 86400_000;
   await platformDb().execute({
     sql: `INSERT INTO workspace_invites (code, workspace_id, email, name, role, created_by, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?)`,
     args: [code, ws.id, email, name.slice(0, 80), role, got.user.id, ts, expiresAt],
@@ -100,5 +99,5 @@ export const POST = withTenant(async function POST(req: Request) {
       sent = true;
     } catch (e) { mailError = (e as Error).message; }
   }
-  return NextResponse.json({ code, email, name, role, expiresInDays: INVITE_DAYS, sent, mailError });
+  return NextResponse.json({ code, email, name, role, expiresInDays: TEAM_INVITE_DAYS, sent, mailError });
 });

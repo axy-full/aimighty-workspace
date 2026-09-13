@@ -2,16 +2,14 @@
 
 /** The link from the email: choose a new password, and you're signed in. */
 import { use, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
+import { AuthFrame, AuthChecking, Eyebrow, Title, PasswordField, Note, Primary, ErrorLine } from "@/components/auth";
 
 export default function ResetPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const router = useRouter();
   const [state, setState] = useState<{ email: string } | { dead: string } | null>(null);
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -26,7 +24,6 @@ export default function ResetPage({ params }: { params: Promise<{ token: string 
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (password !== confirm) { setErr("Passwords don't match."); return; }
     setBusy(true); setErr(null);
     try {
       const res = await fetch(`/api/auth/reset/${encodeURIComponent(token)}`, {
@@ -43,28 +40,25 @@ export default function ResetPage({ params }: { params: Promise<{ token: string 
     }
   }
 
-  if (!state) return <AuthCard title="Checking the link…"><span /></AuthCard>;
+  if (!state) return <AuthChecking what="Checking the link" />;
   if ("dead" in state) {
     return (
-      <AuthCard title="This link won't work" sub={state.dead}>
-        <Link href="/reset" className="btn-primary !h-[46px] w-full justify-center !text-[14px]">Ask for a new link</Link>
-      </AuthCard>
+      <AuthFrame onSubmit={(e) => { e.preventDefault(); router.push("/reset"); }}>
+        <Eyebrow>Reset</Eyebrow>
+        <Title>This link won&rsquo;t work</Title>
+        <Note>{state.dead}</Note>
+        <Primary>Ask for a new link</Primary>
+      </AuthFrame>
     );
   }
   return (
-    <AuthCard title="Choose a new password" sub={`For ${state.email}. At least 10 characters. Every other session on the account is signed out when you save.`}>
-      <form onSubmit={submit}>
-        <Field label="New password">
-          <input className="ctl" type="password" autoComplete="new-password" required autoFocus
-            value={password} onChange={(e) => setPassword(e.target.value)} />
-        </Field>
-        <Field label="Confirm">
-          <input className="ctl" type="password" autoComplete="new-password" required
-            value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-        </Field>
-        <Submit busy={busy}>Save and sign in</Submit>
-        {err && <ErrorLine>{err}</ErrorLine>}
-      </form>
-    </AuthCard>
+    <AuthFrame onSubmit={submit}>
+      <Eyebrow>Reset</Eyebrow>
+      <Title>Choose a new password</Title>
+      <Note>For {state.email}. At least 10 characters. Every other session on the account is signed out when you save.</Note>
+      <PasswordField label="New password" name="password" required autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+      <Primary busy={busy}>Save and sign in</Primary>
+      {err && <ErrorLine>{err}</ErrorLine>}
+    </AuthFrame>
   );
 }

@@ -6,9 +6,8 @@
  * it — the invitation names the address, and only that address can take it.
  */
 import { use, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
+import { AuthFrame, AuthChecking, Eyebrow, Title, PasswordField, Note, Primary, ErrorLine, Links, AuthLink } from "@/components/auth";
 
 type Info = { workspace: string; email: string; name: string; role: string; hasAccount: boolean; signedInAsInvitee: boolean };
 
@@ -17,7 +16,6 @@ export default function InvitePage({ params }: { params: Promise<{ code: string 
   const router = useRouter();
   const [info, setInfo] = useState<Info | { dead: string } | null>(null);
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -30,7 +28,6 @@ export default function InvitePage({ params }: { params: Promise<{ code: string 
   }, [code]);
 
   async function accept(withPassword: boolean) {
-    if (withPassword && password !== confirm) { setErr("Passwords don't match."); return; }
     setBusy(true); setErr(null);
     try {
       const res = await fetch("/api/auth/accept", {
@@ -47,27 +44,42 @@ export default function InvitePage({ params }: { params: Promise<{ code: string 
     }
   }
 
-  if (!info) return <AuthCard title="Checking the invitation…"><span /></AuthCard>;
-  if ("dead" in info) return <AuthCard title="This invitation won't work" sub={info.dead}><Link href="/login" className="hdr-mono-link">← SIGN IN</Link></AuthCard>;
+  if (!info) return <AuthChecking what="Checking the invitation" />;
+  if ("dead" in info) {
+    return (
+      <AuthFrame>
+        <Eyebrow>Invite</Eyebrow>
+        <Title>This invitation won&rsquo;t work</Title>
+        <Note>{info.dead}</Note>
+        <Links><AuthLink href="/login">← Sign in</AuthLink></Links>
+      </AuthFrame>
+    );
+  }
 
+  const role = info.role === "admin" ? "an admin" : "a member";
   if (info.hasAccount) {
     return (
-      <AuthCard title={`Join ${info.workspace}`} sub={info.signedInAsInvitee ? `You've been invited as ${info.role === "admin" ? "an admin" : "a member"}.` : `This invitation is for ${info.email}, which already has an account. Sign in as it, then open this link again.`}>
+      <AuthFrame onSubmit={(e) => { e.preventDefault(); if (info.signedInAsInvitee) accept(false); else router.push(`/login?next=${encodeURIComponent(`/invite/${code}`)}`); }}>
+        <Eyebrow>Invite</Eyebrow>
+        <Title>Join {info.workspace}</Title>
+        <Note>{info.signedInAsInvitee
+          ? <>You&rsquo;ve been invited as {role}.</>
+          : <>This invitation is for {info.email}, which already has an account. Sign in as it, then open this link again.</>}</Note>
         {info.signedInAsInvitee
-          ? <button type="button" className="btn-primary !h-[46px] w-full justify-center !text-[14px]" onClick={() => accept(false)} disabled={busy}>{busy ? "…" : `Join ${info.workspace}`}</button>
-          : <Link href={`/login?next=${encodeURIComponent(`/invite/${code}`)}`} className="btn-primary !h-[46px] w-full justify-center !text-[14px]">Sign in as {info.email}</Link>}
+          ? <Primary busy={busy}>Join {info.workspace}</Primary>
+          : <Primary>Sign in as {info.email}</Primary>}
         {err && <ErrorLine>{err}</ErrorLine>}
-      </AuthCard>
+      </AuthFrame>
     );
   }
   return (
-    <AuthCard title={`Join ${info.workspace}`} sub={`You've been invited to ${info.workspace} as ${info.role === "admin" ? "an admin" : "a member"}. Choose a password for ${info.email} and you're in.`}>
-      <form onSubmit={(e) => { e.preventDefault(); accept(true); }}>
-        <Field label="Password"><input className="ctl" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} autoFocus /></Field>
-        <Field label="Confirm"><input className="ctl" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
-        <Submit busy={busy}>Join the workspace</Submit>
-        {err && <ErrorLine>{err}</ErrorLine>}
-      </form>
-    </AuthCard>
+    <AuthFrame onSubmit={(e) => { e.preventDefault(); accept(true); }}>
+      <Eyebrow>Invite</Eyebrow>
+      <Title>Join {info.workspace}</Title>
+      <Note>You&rsquo;ve been invited as {role}. Choose a password for {info.email} and you&rsquo;re in.</Note>
+      <PasswordField name="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+      <Primary busy={busy}>Join the workspace</Primary>
+      {err && <ErrorLine>{err}</ErrorLine>}
+    </AuthFrame>
   );
 }

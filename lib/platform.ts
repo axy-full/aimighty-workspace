@@ -491,6 +491,17 @@ export function platformKeysByDefault(): boolean {
 }
 
 /**
+ * The welcome grant a new workspace receives: the layer's number, or the
+ * deployment's (SIGNUP_CREDITS); nothing when new workspaces run on their
+ * own keys, since there would be nothing to spend it on. One helper so the
+ * signup page's "and N credits" line and createWorkspace read one number.
+ */
+export async function welcomeGrant(): Promise<number> {
+  if (!platformKeysByDefault()) return 0;
+  return (await getPlatformLayer().catch(() => null))?.caps.signupCredits ?? signupCredits();
+}
+
+/**
  * A new workspace: its own database, provisioned and bootstrapped, with
  * the creator as owner and mirrored into it so their renders carry a name.
  *
@@ -523,9 +534,9 @@ export async function createWorkspace(input: { name: string; owner: { id: string
     sql: `INSERT INTO memberships (workspace_id, account_id, role, created_at) VALUES (?,?,'owner',?)`,
     args: [id, input.owner.id, ts],
   });
-  /* Something to spend on day one: the layer's number, or the deployment's. */
-  const welcome = (await getPlatformLayer().catch(() => null))?.caps.signupCredits ?? signupCredits();
-  if (platformKeys && welcome > 0) {
+  /* Something to spend on day one: welcomeGrant() is 0 off the platform's keys. */
+  const welcome = await welcomeGrant();
+  if (welcome > 0) {
     await p.execute({
       sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
       args: [newId("cg"), id, welcome, "Welcome credits", "welcome" satisfies GrantKind, input.owner.id, ts],

@@ -2,8 +2,7 @@
 
 /** Forgot password: the registered email gets a single-use link. */
 import { useState } from "react";
-import Link from "next/link";
-import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
+import { AuthFrame, Eyebrow, Title, Field, Note, Primary, ErrorLine, Links, AuthLink, LINK } from "@/components/auth";
 import { RequestAccessButton } from "@/components/RequestAccess";
 
 export default function ResetRequestPage() {
@@ -28,28 +27,29 @@ export default function ResetRequestPage() {
     } finally { setBusy(false); }
   }
 
+  if (sent) {
+    return (
+      <AuthFrame>
+        <Eyebrow>Reset</Eyebrow>
+        <Title>Check your inbox</Title>
+        <Note tone="ink">{sent}</Note>
+        <Note>Nothing there after a few minutes? Check spam, then try again, or <RequestAccessButton className="text-ink underline underline-offset-[3px]" label="contact management" />.</Note>
+        <Links><AuthLink href="/login">← Back to sign in</AuthLink></Links>
+      </AuthFrame>
+    );
+  }
   return (
-    <AuthCard title="Reset your password" sub="Enter the email you signed up with. If it's registered, a link arrives there and works for an hour.">
-      {sent ? (
-        <div className="flex flex-col gap-4">
-          <p className="rail-help !text-[13.5px] text-ink">{sent}</p>
-          <p className="rail-help">Nothing in the inbox after a few minutes? Check spam, then try again, or <RequestAccessButton className="text-ink underline-offset-2 hover:underline" label="contact management" />.</p>
-          <Link href="/login" className="hdr-mono-link self-start">← BACK TO SIGN IN</Link>
-        </div>
-      ) : (
-        <form onSubmit={submit}>
-          <Field label="Email">
-            <input className="ctl" type="email" autoComplete="username" required autoFocus
-              value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <Submit busy={busy}>Email me a reset link</Submit>
-          {err && <ErrorLine>{err}</ErrorLine>}
-          <p className="mt-4 flex items-center justify-between text-[12.5px] text-dim">
-            <Link href="/login" className="hover:text-ink">← Back to sign in</Link>
-            <RequestAccessButton className="hover:text-ink" label="Request an invite" />
-          </p>
-        </form>
-      )}
-    </AuthCard>
+    <AuthFrame onSubmit={submit}>
+      <Eyebrow>Reset</Eyebrow>
+      <Title>Reset your password</Title>
+      <Note>If the address is registered, a link arrives there and works for an hour.</Note>
+      <Field label="Email" type="email" name="email" autoComplete="username" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
+      <Primary busy={busy}>Email me a reset link</Primary>
+      {err && <ErrorLine>{err}</ErrorLine>}
+      <Links>
+        <AuthLink href="/login">← Back to sign in</AuthLink>
+        <RequestAccessButton className={LINK} label="Request an invite" />
+      </Links>
+    </AuthFrame>
   );
 }

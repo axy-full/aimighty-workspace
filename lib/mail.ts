@@ -11,7 +11,14 @@
  * says so. A failed send never loses the invite — the link still exists.
  */
 
-import { db, now } from "./db";
+/**
+ * How long an invitation stays good. Two numbers for now — the admin's
+ * sign-up code and a workspace's team invite — until the owner decides
+ * (docs/sow-surfaces-plan.md decision 2: one number, seven proposed). The
+ * email copy and the routes read these; no other INVITE_DAYS exists.
+ */
+export const SIGNUP_INVITE_DAYS = 14;
+export const TEAM_INVITE_DAYS = 7;
 
 /** Overridable so a local stand-in can catch the request during rehearsal. */
 const RESEND_URL = () =>
@@ -61,6 +68,8 @@ export function inviteEmail(opts: {
 }): { subject: string; text: string; html: string } {
   const lockup = opts.origin ? `${opts.origin}/brand/particl-lockup-horizontal-on-light@4x.png` : null;
   const until = new Date(opts.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  /* The count is the link's own — a resend of an older invitation says the days it has left, not the nominal seven. */
+  const days = Math.max(1, Math.ceil((opts.expiresAt - Date.now()) / 86400_000));
   const roleLine = opts.role === "admin"
     ? "You're joining as an admin, so you can manage the team and the ledger as well as render."
     : "You're joining as a member: you can generate, edit and review shots.";
@@ -74,7 +83,7 @@ Accept the invitation here:
 ${opts.link}
 
 ${roleLine}
-The link is yours alone and works until ${until}.
+The link is yours alone and works for ${days} days, until ${until}.
 
 — particl studio`;
   const html =
@@ -86,7 +95,42 @@ The link is yours alone and works until ${until}.
   <p style="font-size:15px;color:#666A72;margin:0 0 20px"><strong style="color:#15171C">${esc(opts.inviter)}</strong> has invited you to particl studio, the studio's room for making shots.</p>
   <p style="margin:0 0 22px"><a href="${esc(opts.link)}" style="display:inline-block;background:#007aff;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:999px">Accept the invitation</a></p>
   <p style="font-size:13.5px;color:#666A72;margin:0 0 6px">${esc(roleLine)}</p>
-  <p style="font-size:13.5px;color:#666A72;margin:0 0 18px">The link is yours alone and works until ${esc(until)}.</p>
+  <p style="font-size:13.5px;color:#666A72;margin:0 0 18px">The link is yours alone and works for ${days} days, until ${esc(until)}.</p>
+  <p style="font-size:12px;color:#8A8E96;margin:0;word-break:break-all">If the button doesn't work: ${esc(opts.link)}</p>
+</div>`;
+  return { subject, text, html };
+}
+
+/**
+ * The sign-up invitation (board 12i, EMAIL card): the code, one line on how
+ * long it lasts, one button. Nothing to read.
+ */
+export function signupInviteEmail(opts: {
+  name: string; inviter: string; code: string; link: string; days: number;
+}): { subject: string; text: string; html: string } {
+  const subject = "Your invite to particl";
+  const days = `A code, good for ${opts.days} days. Nothing to read.`;
+  const text =
+`Hi ${opts.name || "there"},
+
+${opts.inviter} invited you to particl.
+
+Your code:
+${opts.code}
+
+${days}
+
+Open particl:
+${opts.link}
+
+— particl`;
+  const html =
+`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;color:#15171C;line-height:1.5;background:#FCFCFD">
+  <p style="font-size:17px;margin:0 0 12px">Hi ${esc(opts.name || "there")},</p>
+  <p style="font-size:15px;color:#666A72;margin:0 0 20px"><strong style="color:#15171C">${esc(opts.inviter)}</strong> invited you to particl.</p>
+  <p style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;letter-spacing:.04em;color:#15171C;background:#F0F1F4;border:1px solid #E1E3E8;border-radius:8px;padding:12px 14px;margin:0 0 14px;word-break:break-all">${esc(opts.code)}</p>
+  <p style="font-size:14px;color:#666A72;margin:0 0 22px">${esc(days)}</p>
+  <p style="margin:0 0 22px"><a href="${esc(opts.link)}" style="display:inline-block;background:#15171C;color:#F5F6F8;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">Open particl</a></p>
   <p style="font-size:12px;color:#8A8E96;margin:0;word-break:break-all">If the button doesn't work: ${esc(opts.link)}</p>
 </div>`;
   return { subject, text, html };
@@ -128,18 +172,4 @@ export function inviteOrigin(req: Request): string {
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? new URL(req.url).host;
   const proto = req.headers.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   return `${proto}://${host}`;
-}
-
-/** Send (or re-send) one invitation, and remember that it went. */
-export async function emailInvite(opts: {
-  code: string; email: string; name: string; role: string; expiresAt: number; inviter: string; req: Request;
-}): Promise<void> {
-  const origin = inviteOrigin(opts.req);
-  const link = `${origin}/invite/${opts.code}`;
-  const mail = inviteEmail({ name: opts.name, inviter: opts.inviter, link, role: opts.role, expiresAt: opts.expiresAt, origin });
-  await sendMail({ to: opts.email, ...mail });
-  await db().execute({
-    sql: `UPDATE invites SET sent_at=?, send_count=COALESCE(send_count,0)+1 WHERE code=?`,
-    args: [now(), opts.code],
-  });
 }

@@ -16,39 +16,43 @@
  * past. Whoever genuinely wants the tour has LOOK AROUND, which is the
  * app itself and cannot go stale the way a description of it does.
  *
+ * The door is the auth card (board 12i, components/auth): below 1024 the
+ * screen is one column — the lockup, the card, the Atomik line — and the
+ * card runs full width inside 16px gutters below 768.
+ *
  * `next` arrives from the URL, so it is attacker-controlled: it is kept
  * only if it resolves to this origin.
  */
-import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RequestAccessButton } from "@/components/RequestAccess";
 import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
+import { Card, Eyebrow, Title, Field, PasswordField, Primary, ErrorLine, Links, AuthLink, LINK } from "@/components/auth";
 
 export default function WelcomeSignIn() {
   return (
-    <div className="wl">
-      <section className="wl-left">
-        <div className="flex flex-col gap-9">
+    <div className="flex min-h-dvh flex-col bg-ground text-ink lg:grid lg:grid-cols-[minmax(0,1fr)_440px]">
+      <section className="flex min-w-0 flex-col justify-between gap-[56px] pt-[56px] pr-[72px] pb-[44px] pl-[64px] max-lg:contents">
+        <div className="flex flex-col gap-[36px] max-lg:order-1 max-lg:px-[22px] max-lg:pt-[28px] max-lg:pb-[26px] max-lg:gap-[18px] max-md:px-[16px]">
           <div className="flex items-center gap-[22px]">
-            <svg viewBox="30 68 140 64" width="112" height="51" fill="currentColor" aria-hidden="true">
+            <svg viewBox="30 68 140 64" width="112" height="51" fill="currentColor" aria-hidden="true" className="max-lg:h-[33px] max-lg:w-[72px]">
               {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
             </svg>
-            <div className="flex flex-col items-end gap-1.5">
-              <span className="wl-word">partıcl</span>
-              <span className="wl-studio">STUDIO</span>
+            <div className="flex flex-col items-end gap-[6px]">
+              <span className="text-[64px] font-semibold leading-none tracking-[-0.03em] text-ink max-lg:text-[44px]">partıcl</span>
+              <span className="mr-[2px] font-mono text-[13px] font-medium leading-none tracking-[.36em] text-ink-muted max-lg:text-[11px] max-md:text-[12px]">STUDIO</span>
             </div>
           </div>
-          <p className="wl-tag">The studio&rsquo;s own room for making shots — and for knowing what they cost.</p>
+          <p className="m-0 max-w-[640px] text-[28px] leading-[1.3] tracking-[-0.01em] text-ink [text-wrap:pretty] max-lg:text-[22px] max-lg:leading-[1.35]">The studio&rsquo;s own room for making shots — and for knowing what they cost.</p>
         </div>
 
-        <div className="wl-foot">
-          <Link href="/atomik/ideas" className="wl-atomik"><AtomikMark size={16} /> IDEA TO SHOT LIST · ATOMIK →</Link>
+        <div className="flex max-w-[820px] items-end justify-between gap-[40px] max-lg:order-3 max-lg:max-w-none max-lg:px-[22px] max-lg:pt-[22px] max-lg:pb-[32px] max-md:px-[16px]">
+          <AuthLink href="/atomik/ideas" className="gap-[9px]"><AtomikMark size={16} /> Idea to shot list · Atomik →</AuthLink>
         </div>
       </section>
 
-      <aside className="wl-right">
+      <aside className="flex flex-col justify-center border-l border-border px-[44px] py-[48px] max-lg:order-2 max-lg:border-l-0 max-lg:px-[22px] max-lg:py-[24px] max-md:px-[16px]">
         <Suspense fallback={<SignInForm next="/" />}>
           <SignIn />
         </Suspense>
@@ -113,24 +117,21 @@ function SignInForm({ next }: { next: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="wl-form">
-      <div className="flex flex-col gap-2">
-        <h1 className="page-h1">Sign in</h1>
-        <p className="page-sub !m-0">Particl is for the studio team.</p>
-      </div>
-      <label className="wl-field">EMAIL
-        <input type="email" autoComplete="username" required placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-      </label>
-      <label className="wl-field">PASSWORD
-        <input type="password" autoComplete="current-password" required placeholder="••••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
-      </label>
-      <button type="submit" disabled={busy} className="btn-primary !h-[46px] justify-center !text-[14px]">{busy ? "…" : "Sign in"}</button>
-      {err && <p className="rail-help text-lift">{err}</p>}
-      <div className="wl-form-foot">
-        <span>Invitation only. <RequestAccessButton className="text-lead hover:text-ink" /> · <Link href="/reset" className="text-lead hover:text-ink">Forgot password?</Link></span>
-        <Link href="/" className="hdr-mono-link">LOOK AROUND →</Link>
-      </div>
-    </form>
+    <Card onSubmit={submit} className="mx-auto max-w-[400px]">
+      <Eyebrow>Sign in</Eyebrow>
+      <Title>Particl is for the studio team</Title>
+      <Field label="Email" type="email" name="email" autoComplete="username" required placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <PasswordField name="password" autoComplete="current-password" required placeholder="••••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <Primary busy={busy}>Sign in</Primary>
+      {err && <ErrorLine>{err}</ErrorLine>}
+      <Links>
+        <RequestAccessButton className={LINK} label="Request an invite" />
+        <AuthLink href="/reset">Forgot password?</AuthLink>
+      </Links>
+      <Links>
+        <AuthLink href="/">Look around →</AuthLink>
+      </Links>
+    </Card>
   );
 }
 

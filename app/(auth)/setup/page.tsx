@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
+import { AuthFrame, Eyebrow, Title, Field, PasswordField, Note, Primary, ErrorLine } from "@/components/auth";
 
 /** First run only: creates the first admin. Refuses once any user exists. */
 export default function SetupPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -15,7 +15,6 @@ export default function SetupPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (form.password !== form.confirm) { setErr("Passwords don't match."); return; }
     setBusy(true); setErr(null);
     try {
       const res = await fetch("/api/auth/setup", {
@@ -33,27 +32,15 @@ export default function SetupPage() {
   }
 
   return (
-    <AuthCard title="Create the first account"
-      sub="Nobody has signed up yet. This one becomes the admin and can invite the rest of the team.">
-      <form onSubmit={submit}>
-        <Field label="Name">
-          <input className="ctl" required value={form.name} onChange={set("name")} />
-        </Field>
-        <Field label="Email">
-          <input className="ctl" type="email" autoComplete="username" required
-            value={form.email} onChange={set("email")} />
-        </Field>
-        <Field label="Password">
-          <input className="ctl" type="password" autoComplete="new-password" required
-            value={form.password} onChange={set("password")} />
-        </Field>
-        <Field label="Confirm">
-          <input className="ctl" type="password" autoComplete="new-password" required
-            value={form.confirm} onChange={set("confirm")} />
-        </Field>
-        <Submit busy={busy}>Create admin</Submit>
-        {err && <ErrorLine>{err}</ErrorLine>}
-      </form>
-    </AuthCard>
+    <AuthFrame onSubmit={submit}>
+      <Eyebrow>First run</Eyebrow>
+      <Title>Create the first account</Title>
+      <Note>Nobody has signed up yet. This one becomes the admin and can invite the rest of the team.</Note>
+      <Field label="Name" name="name" autoComplete="name" required value={form.name} onChange={set("name")} autoFocus />
+      <Field label="Email" type="email" name="email" autoComplete="username" required value={form.email} onChange={set("email")} />
+      <PasswordField name="password" required value={form.password} onChange={set("password")} />
+      <Primary busy={busy}>Create admin</Primary>
+      {err && <ErrorLine>{err}</ErrorLine>}
+    </AuthFrame>
   );
 }
