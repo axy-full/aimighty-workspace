@@ -6,6 +6,7 @@ import { seal, open } from "./keyring";
 import { runInTenant, type TenantWorkspace, type WorkspaceRole } from "./tenant";
 import { mergeLayer, LAYER_KEYS, type PlatformLayer, type LayerKey } from "./platformLayer";
 import { prepareLocalDatabaseDirectory } from "./localDatabase";
+import { createPlatformDatabaseClient } from "./localDatabaseClient";
 
 /**
  * The platform: what spans workspaces.
@@ -27,8 +28,7 @@ let _client: Client | null = null;
 export function platformDb(): Client {
   if (!_client) {
     const url = process.env.PLATFORM_DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db";
-    prepareLocalDatabaseDirectory(url);
-    _client = createClient({
+    _client = createPlatformDatabaseClient({
       url,
       authToken: process.env.PLATFORM_AUTH_TOKEN ?? process.env.TURSO_AUTH_TOKEN,
     });

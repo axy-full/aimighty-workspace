@@ -33,7 +33,7 @@ Deletion revokes access first. Cleanup waits ten minutes for running functions, 
 
 `GET /api/admin/readiness` is restricted to the platform administrator and reports names/booleans without secret values. `.env.example` lists the supported configuration. Production and preview must have separate databases, storage and provider credentials. Never reuse the production database for preview verification.
 
-Verified production configuration before this work had a working primary Turso database, Blob, Resend, Inngest and media-provider keys. It lacked Turso organization provisioning credentials, Stripe credentials and a canonical `APP_ORIGIN`. The canonical production `APP_ORIGIN=https://www.particl.app` is now set for the next deployment. The existing preview environment lacked a database URL and private Blob token.
+Verified production configuration before this work had a working primary Turso database, Blob, Resend, Inngest and media-provider keys. It lacked Turso organization provisioning credentials, Stripe credentials and a canonical `APP_ORIGIN`. The canonical production `APP_ORIGIN=https://www.particl.app` is now set for the next deployment. Preview still needs a separate database. Private Blob store `particl-staging-media` is now connected only to preview/development in Mumbai; a temporary text probe verified private write/read, anonymous-access denial and deletion. The new token applies to subsequent preview deployments. Local mock development keeps that token in a separate credential file rather than loading it into the mock server.
 
 Remaining external setup:
 
