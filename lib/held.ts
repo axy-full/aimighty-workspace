@@ -2,7 +2,7 @@ import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
-import { meter } from "./meter";
+import { reserveGenerationSpend } from "./generationRequests";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
@@ -61,12 +61,14 @@ type HeldRow = {
   id: string; kind: "video" | "image" | "audio"; model: string; engine: string;
   projectId: string | null; shotId: string | null; createdBy: string | null;
   estUsd: number; needs: number; why: HeldWhy;
+  token?: { id: string; capUsd: number | null };
 };
 
 async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
   const rs = await db().execute({
-    sql: `SELECT id, kind, model, billed_to, provider, project_id, shot_id, created_by, params
+    sql: `SELECT id, kind, model, billed_to, provider, project_id, shot_id, created_by, params, token_id,
+                 (SELECT cap_usd FROM api_tokens WHERE api_tokens.id=generations.token_id) AS token_cap
           FROM generations WHERE status = 'held' AND deleted = 0 ${only ? "AND id = ?" : ""}
           ORDER BY created_at ASC LIMIT 50`,
     args: only ? [only] : [],
@@ -95,6 +97,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
       estUsd,
       needs: (estUsd > 0 ? billCredits(estUsd, marginKeyOf(kind, model)) : 0) || Number(held.needs ?? 0),
       why: held.why === "slots" ? "slots" : "credits",
+      token: row.token_id ? { id: String(row.token_id), capUsd: row.token_cap == null ? null : Number(row.token_cap) } : undefined,
     };
   });
 }
@@ -120,8 +123,8 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
     if (r.why === "credits" && !plan.release.includes(r.id)) break;
     // The meter first: work the platform cannot bill does not start.
     try {
-      await meter({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
-                    engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy });
+      await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
+                    engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy }, { token: r.token });
     } catch (e) {
       console.error(`release ${r.id}: not metered —`, (e as Error).message);
       break;

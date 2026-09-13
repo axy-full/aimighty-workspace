@@ -4,6 +4,18 @@ Single source of truth for the build. Supersedes the earlier brief and folds in 
 
 ---
 
+## September 13 production studio amendment
+
+The authorized Particl production studio redesign supersedes older conflicting interface and workflow requirements below. `/workbench` is the main signed-in production surface, with the approved Particl logo and black, charcoal, white and grey palette. Desktop retains stages, canvas, inspector and Atomik; mobile supports creation and editing through bottom navigation and sheets.
+
+Private collaborator drafts and versions share explicit production/shot records and an append-only published project bible. Publishing context is voluntary; the workbench does not introduce a creative approval requirement before assembly. Existing authentication, tenant boundaries, credit rules and protections on previously approved production shots remain enforced.
+
+The workbench connects briefs/scripts, breakdown, boards, character and world references, editable node operations, priced generation jobs, takes and sequence assembly. Genie and seven individually selected crew roles produce persisted structured plans through the existing Gateway integration. Large uploads reuse the existing chunked upload client and streaming server assembly. Media jobs reuse `/api/generate` and the established adapters, worker and meter.
+
+**EDL is restored by explicit request.** The workbench exports deterministic CMX3600 straight cuts at 24/25/30 integer fps with source assets and a JSON/CSV manifest. The older selects route remains unchanged. Scratch audio is separate; rendered video masters, audio conform, fractional/drop-frame timecode and target-NLE conform validation are outside this implementation. Browser source packages are capped at 200 MB.
+
+See [Production workbench implementation](production-workbench.md) for integration details, verification commands and current limits. No tier pricing or provider credentials change with this release.
+
 ## 1. The product
 
 **particl** (particl.app) — an invite-only, multi-tenant production tool for anyone making film with generative engines: agencies, production houses, independent directors, brand teams. It makes shots, keeps them consistent across a production, and knows what every shot cost before and after it was rendered.
@@ -52,7 +64,7 @@ Format: `N cr` lowercase in body, `N CR` in mono eyebrows. Currency is derived (
 
 Full spec in `docs/handoff/nodegraph/DESKTOP-README.md` (shell, components, per-screen) and `README.md` (node-graph surfaces, light tokens). Both are **high-fidelity and final-intent** — colours, type, spacing, radii, copy and geometry. The graph geometry in the canvas surfaces is exact: node positions, port centres and wire endpoints were measured. Keep port-to-slot alignment when rebuilding; a wire that misses its port breaks the one idea the screen exists to show.
 
-**Open decision — theme.** The handoff describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light (`#FCFCFD`). The live site is light with an Auto appearance setting and per-scheme `theme-color`. Resolve this before building Rig: either particl is dark and the live light theme is the exception, or both themes are first-class and every new surface ships in both. Don't let it stay ambiguous — the node surfaces are token-heavy and reworking them later is expensive.
+**Historical theme discussion — resolved by the September 13 amendment.** The handoff describes particl as dark (`#0B0D11` ground, `#F5F6F8` ink) and Atomik as light (`#FCFCFD`). The live site is light with an Auto appearance setting and per-scheme `theme-color`. Resolve this before building Rig: either particl is dark and the live light theme is the exception, or both themes are first-class and every new surface ships in both. Don't let it stay ambiguous — the node surfaces are token-heavy and reworking them later is expensive.
 
 **Type.** Outfit for UI and body; Kode Mono 11px/0.12em tracking for eyebrows, costs, states and IDs. **Radius** 4–10 by component. **No motion, no shadows** in the sense that matters: nothing slides, nothing drops a soft shadow. Literally there are transitions and `box-shadow` in the stylesheet — the shadow tokens paint HAIRLINES (`0 0 0 1px`) rather than depth, and transitions are short and limited to colour and border alpha. Hover raises border alpha only.
 
@@ -375,7 +387,7 @@ Workspace rules are plain sentences a team writes ("our brand never shows logos 
 
 **Client review link**: read-only page of a project's approved takes in shot order with notes. No login; tokenised, expiring, revocable from the project; carries the workspace's name and logo, never particl's branding in front of their client. A comment box writing back to the take's notes.
 
-**Export selects**: zip of approved masters named `{project}_{shot}_{version}_{w}x{h}.{ext}` and a CSV shotlist (shot, take, version, engine, credits, prompt). ~~An EDL/XML in order~~ — dropped 10 September: an EDL is a conform artefact for a cutting room this product does not sit in, and it carried its own timecode implementation and frame-rate assumption to serve it.
+**Export selects**: zip of approved masters named `{project}_{shot}_{version}_{w}x{h}.{ext}` and a CSV shotlist (shot, take, version, engine, credits, prompt). The older selects route exports masters and CSV only. The September 13 workbench adds a separately validated CMX3600 EDL/source package at an explicitly selected frame rate.
 
 ### 2.7 Team on a phone
 The four things a producer does on a phone: see what rendered, compare and approve, see the burn-down, unlock a cap or top up. Each one tap from the make screen, tested at 360×640. Push notifications for take finished, cap at 80%, approval needed, balance low — per-user, per-workspace preferences. **The push service is server-side work and gates the iOS app**: device token registration per user per workspace, an APNs key, and triggers on those four events.
@@ -419,7 +431,7 @@ The node layer. Design handoff at `docs/handoff/nodegraph/`.
 **The seven rules the surfaces enforce — these are the acceptance criteria:**
 1. The price is on the action, quoted before the button enables.
 2. State vocabulary: `queued → running → done`, plus `needs you` when a stage stops and `skipped`. Five, not four — `lib/runState.ts` is the list. `locked` is NOT a stage state: it belongs to a pinned ELEMENT, which the stage layer draws in its own band.
-3. Take states stay `draft → picked → approved`; only approved reaches assembly.
+3. Existing production take states stay `draft → picked → approved`. The September 13 workbench allows private sequence assembly from any available source without a mandatory creative approval gate.
 4. A failure never restarts a run — it offers fixes in place, each priced.
 5. Nothing re-renders silently; any edit to a shared element opens the impact panel first.
 6. A wire lands on a slot, not a node. Ports are the unit of connection.
@@ -594,7 +606,7 @@ arrows walk it when it is on screen. Compare elects the longest take as the
 clock and corrects the others past 125ms, rather than commanding every clip to
 play and trusting them. **One frame rate: 24, decided 9 September.**
 
-That note used to end "no EDL export — not wanted" while an EDL export was in
+**Historical September 10 selects-route change (superseded for the workbench by the September 13 amendment).** That note used to end "no EDL export — not wanted" while an EDL export was in
 fact being served, which the drift audit caught. **It is now gone for real,
 10 September:** `edl()` and the `tc()` timecode helper are out of
 `lib/selects.ts`, `?format=edl` is off the selects route, the file is out of

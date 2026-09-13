@@ -85,7 +85,7 @@ export type AttributeRow = {
   versions: VersionRow[];
 };
 
-const useOf = (use: ElementUse, attributeId: string): AttributeUse | null =>
+const attributeUseOf = (use: ElementUse, attributeId: string): AttributeUse | null =>
   use.attributes.find((a) => a.attributeId === attributeId) ?? null;
 
 const versionUse = (a: AttributeUse | null, versionId: string): VersionUse =>
@@ -120,7 +120,7 @@ export function sourceOf(v: VersionIn | null, use: ElementUse): string {
  * here before they open it.
  */
 export function spreadOf(a: AttributeIn, use: ElementUse): string {
-  const u = useOf(use, a.id);
+  const u = attributeUseOf(use, a.id);
   if (!u) return "";
   const at = (id: string | null) => {
     const i = a.versions.findIndex((v) => v.id === id);
@@ -155,7 +155,7 @@ export function versionMeta(v: VersionIn, current: boolean, u: VersionUse): stri
 
 export function attributeRows(el: ElementIn, use: ElementUse): AttributeRow[] {
   return el.attributes.map((a) => {
-    const u = useOf(use, a.id);
+    const u = attributeUseOf(use, a.id);
     const currentIndex = a.versions.findIndex((v) => v.id === a.currentId);
     const current = currentIndex < 0 ? null : a.versions[currentIndex];
     return {

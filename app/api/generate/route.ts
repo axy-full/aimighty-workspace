@@ -1,3 +1,5 @@
+import { generatedReferenceSeconds, videoReferenceSeconds } from "@/lib/referenceDuration";
+import { billCredits } from "@/lib/creditTerms";
 import { NextResponse, after } from "next/server";
 import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
@@ -40,6 +42,7 @@ import { shotCapGate } from "@/lib/shotCap";
 import { approvedTakeOf } from "@/lib/shots";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
+import { withGenerationRequest, bindGenerationRequest, reserveGenerationSpend, SpendReservationError } from "@/lib/generationRequests";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -91,6 +94,7 @@ export const POST = withTenant(async function POST(req: Request) {
   // read-only one.
   const got = await requireRender();
   if (got.response) return got.response;
+  return withGenerationRequest(req, got.user.id, async (requestClaim) => {
   await ready();
 
   // A token may carry a monthly ceiling. Checked before submit, so an agent
@@ -106,11 +110,24 @@ export const POST = withTenant(async function POST(req: Request) {
   }
   const body = await req.json().catch(() => ({}));
 
+  if (body.projectId) {
+    const project = await db().execute({ sql: `SELECT id FROM projects WHERE id=?`, args: [String(body.projectId)] });
+    if (!project.rows.length) return NextResponse.json({ error: "No such project." }, { status: 404 });
+  }
+  if (body.shotId) {
+    const shot = await getShot(String(body.shotId));
+    if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 404 });
+    if (body.projectId && shot.projectId !== String(body.projectId)) return NextResponse.json({ error: "That shot belongs to another project." }, { status: 409 });
+    body.projectId = shot.projectId;
+  }
   const prompt = String(body.prompt ?? "").trim();
   if (!prompt && !getTask(String(body.task ?? "generate")).promptOptional && !stillToolFor(String(body.model ?? ""))) return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
   if (prompt.length > 10000)
     return NextResponse.json({ error: "Prompt is too long (10000 char max)" }, { status: 400 });
 
+  if (body.maxCredits != null && (typeof body.maxCredits !== "number" || !Number.isInteger(body.maxCredits) || body.maxCredits < 0)) {
+    return NextResponse.json({ error: "The quoted credit ceiling is invalid." }, { status: 400 });
+  }
   const modelId = String(body.model ?? DEFAULT_MODEL_ID);
   let model;
   try { model = getModel(modelId); }
@@ -287,14 +304,15 @@ export const POST = withTenant(async function POST(req: Request) {
         .filter((r: { genId: string }) => r.genId)
     : [];
   const ownRefs: Reference[] = [];
+  const referenceDurations: { role: ImageRole; kind: string; durationS: number | null }[] = [];
   if (wantedGens.length) {
     const rs = await db().execute({
-      sql: `SELECT id, kind, status, stored_url FROM generations
+      sql: `SELECT id, kind, status, stored_url, params FROM generations
             WHERE id IN (${wantedGens.map(() => "?").join(",")}) AND deleted = 0`,
       args: wantedGens.map((w) => w.genId),
     });
     const byId = new Map((rs.rows as unknown as {
-      id: string; kind: string; status: string; stored_url: string | null;
+      id: string; kind: string; status: string; stored_url: string | null; params: string;
     }[]).map((r) => [r.id, r]));
     for (const w of wantedGens) {
       const row = byId.get(w.genId);
@@ -307,6 +325,7 @@ export const POST = withTenant(async function POST(req: Request) {
         return NextResponse.json({ error: "A sound can't be a visual reference." }, { status: 400 });
       }
       const isVideo = row.kind !== "image";
+      referenceDurations.push({ role: isVideo ? 'reference_video' : w.role, kind: isVideo ? 'video' : 'image', durationS: isVideo ? generatedReferenceSeconds(row.params) : null });
       ownRefs.push({
         id: row.id,
         mime: isVideo ? "video/mp4" : "image/png",
@@ -373,14 +392,8 @@ export const POST = withTenant(async function POST(req: Request) {
           { error: `${model.label} accepts at most ${model.maxReferenceImages} reference images.` },
           { status: 400 });
       }
-    } else {
-      const refProblem = validateReferences(enriched, model);
-      if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 });
     }
-
-    inputSeconds = enriched
-      .filter((r) => r.kind === "video")
-      .reduce((a, r) => a + (r.durationS ?? 0), 0);
+    referenceDurations.push(...enriched);
 
     // Preserve the order the user arranged — @Image1 is the first image.
     references = enriched.map((w) => {
@@ -396,11 +409,21 @@ export const POST = withTenant(async function POST(req: Request) {
   // Our own renders join the list after the uploads, so a person's own
   // @Image1 stays their first attached file.
   references.push(...ownRefs);
+  const knownInputSeconds = videoReferenceSeconds(referenceDurations);
+  if (knownInputSeconds == null) return NextResponse.json({ error: "A reference video's duration is unavailable. Upload the clip again before generating." }, { status: 400 });
+  inputSeconds = knownInputSeconds;
+  if (model.kind === "video") {
+    const refProblem = validateReferences(referenceDurations, model);
+    if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 });
+  }
 
   /* The source goes first: with several videos attached the model decides
    * which one to work on from the prompt, and leading with it matches the
    * guide's own examples ("@video1" as the thing being edited). */
-  if (sourceRef) references.unshift(sourceRef);
+  if (sourceRef) {
+    references.unshift(sourceRef);
+    inputSeconds += sourceSeconds ?? 0;
+  }
 
   /* ── The cast ────────────────────────────────────────────────────────
    * @Maya means something specific in this workspace. Resolve those names
@@ -523,6 +546,9 @@ export const POST = withTenant(async function POST(req: Request) {
        with the identity's own model (brief 1.3), priced as that render. */
     const trained = !model.stillTask && castIds.length ? await identityForCast(castIds) : null;
     const estStillUsd = trained ? RENDER_USD_PER_MP : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0);
+    if (body.maxCredits != null && billCredits(estStillUsd, modelId) > body.maxCredits) {
+      return NextResponse.json({ error: "The generation estimate changed. Review the updated credit quote before generating." }, { status: 409 });
+    }
     /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
     if (stillShot && stillShotCode) {
       const stop = await shotCapGate({ shotId: stillShot, code: stillShotCode, takeUsd: estStillUsd, modelId, isAdmin: got.user.role === "admin" });
@@ -542,6 +568,15 @@ export const POST = withTenant(async function POST(req: Request) {
       if (holdStill) return NextResponse.json({ error: !wallStill.ok ? wallStill.error : "Every render slot is busy; try again in a moment." }, { status: !wallStill.ok ? 402 : 429 });
       const idRatio = (RENDER_RATIOS as readonly string[]).includes(ratio) ? ratio : "16:9";
       const started = await startIdentityStill({ identity: trained, prompt, ratio: idRatio, projectId: stillProject, shotId: stillShot, version: stillVersion, createdBy: got.user.id, tokenId: got.token?.id ?? null });
+      await bindGenerationRequest(requestClaim, started.genId);
+      try {
+        await reserveGenerationSpend({ id: started.genId, kind: "image", engine: "fal", model: "fal-ai/flux-lora", status: "running",
+          engineCostUsd: estStillUsd, projectId: stillProject, shotId: stillShot, createdBy: got.user.id }, { token: got.token });
+      } catch (e) {
+        await meter({ id: started.genId, kind: "image", engine: "fal", model: "fal-ai/flux-lora", status: "failed", engineCostUsd: 0 });
+        await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), started.genId] });
+        return NextResponse.json({ id: started.genId, status: "failed", error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 503 });
+      }
       after(() => runIdentityRender(started.genId, trained, { prompt: started.finalPrompt, ratio: idRatio, seed: null, startedAt: started.ts }));
       return NextResponse.json({ id: started.genId, status: "running", identity: trained.name });
     }
@@ -580,6 +615,7 @@ export const POST = withTenant(async function POST(req: Request) {
              got.token?.id ?? null, stillShot, stillVersion, model.provider, model.stillTask ?? "generate",
              billedTo(model.provider)],
     });
+    await bindGenerationRequest(requestClaim, genId);
     invalidate(PROJECTS_KEY);
     if (holdStill) {
       if (holdStill.why === "slots") {
@@ -590,12 +626,12 @@ export const POST = withTenant(async function POST(req: Request) {
       return NextResponse.json({ id: genId, status: "held", held: true, needs: holdStill.needs, notices: [heldMessage(holdStill.needs, left)] }, { status: 202 });
     }
     try {
-      await meter({ id: genId, kind: "image", engine: billedTo(model.provider), model: modelId, status: "running",
-                    engineCostUsd: estStillUsd, projectId: stillProject, shotId: stillShot, createdBy: got.user.id });
+      await reserveGenerationSpend({ id: genId, kind: "image", engine: billedTo(model.provider), model: modelId, status: "running",
+                    engineCostUsd: estStillUsd, projectId: stillProject, shotId: stillShot, createdBy: got.user.id }, { token: got.token });
     } catch (e) {
       await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] });
       invalidate(PROJECTS_KEY);
-      return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+      return NextResponse.json({ id: genId, status: "failed", error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 503 });
     }
 
     /* The render itself now belongs to the worker: the row is written, the
@@ -657,7 +693,7 @@ export const POST = withTenant(async function POST(req: Request) {
     // The clip is the brief: nothing here for a prompt writer to improve.
   } else if (/^raw:/i.test(castPrompt)) {
     finalPrompt = castPrompt.replace(/^raw:\s*/i, "");
-  } else if (writer.writer === "none") {
+  } else if (body.refine === false || writer.writer === "none") {
     // Pro: the workspace has said its prompts are not to be rewritten.
     console.log("generate: skipping refine — writer is Pro");
   } else if (!refineCall.refine) {
@@ -816,6 +852,9 @@ export const POST = withTenant(async function POST(req: Request) {
     modelId, params.resolution, params.ratio, params.duration, inputSeconds, references.some((r) => r.kind === "video"),
     { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
   )?.net ?? 0;
+  if (body.maxCredits != null && billCredits(estUsd, modelId) > body.maxCredits) {
+    return NextResponse.json({ error: "The generation estimate changed. Review the updated credit quote before generating." }, { status: 409 });
+  }
   /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
   if (shotId && shotCode) {
     const stop = await shotCapGate({ shotId: shotId, code: shotCode, takeUsd: estUsd, modelId, isAdmin: got.user.role === "admin" });
@@ -888,6 +927,8 @@ export const POST = withTenant(async function POST(req: Request) {
            billedTo(model.provider ?? "byteplus")],
   });
 
+  await bindGenerationRequest(requestClaim, genId);
+
   /* What made this take, written once and never afterwards (brief 3, 1c).
      Additive and best-effort: it happens after the row exists, it cannot
      fail the render, and it changes nothing about what is sent to the
@@ -933,12 +974,12 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json({ id: genId, status: "held", held: true, needs: hold.needs, notices: [heldMessage(hold.needs, left)] }, { status: 202 });
   }
   try {
-    await meter({ id: genId, kind: "video", engine: billedTo(model.provider ?? "byteplus"), model: modelId, status: "running",
-                  engineCostUsd: estUsd, projectId, shotId, createdBy: got.user.id });
+    await reserveGenerationSpend({ id: genId, kind: "video", engine: billedTo(model.provider ?? "byteplus"), model: modelId, status: "running",
+                  engineCostUsd: estUsd, projectId, shotId, createdBy: got.user.id }, { token: got.token });
   } catch (e) {
     await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] });
     invalidate(PROJECTS_KEY);
-    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+    return NextResponse.json({ id: genId, status: "failed", error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 503 });
   }
 
   const out = await submitVideoJob({ genId, model, task, prompt: finalPrompt, params, references, source: sourceRef, ts });
@@ -946,5 +987,6 @@ export const POST = withTenant(async function POST(req: Request) {
   return NextResponse.json({
     id: genId, arkTaskId: out.taskId, status: "running", attempts: out.attempts,
       notices: notices.length ? notices : undefined,
+  });
   });
 });
