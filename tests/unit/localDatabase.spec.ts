@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test as base, expect } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,11 +6,22 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { prepareLocalDatabaseDirectory } from "../../lib/localDatabase";
 
+// Platform clients are process singletons. A distinct worker fixture keeps this
+// fresh-start test isolated from databases opened by earlier unit-test files.
+const test = base.extend<
+  Record<never, never>,
+  { freshPlatformWorker: boolean }
+>({
+  freshPlatformWorker: [true, { scope: "worker", option: true }],
+});
 const directory = mkdtempSync(path.join(tmpdir(), "particl-fresh-database-"));
 const platformPath = path.join(directory, "platform", "nested", "platform.db");
 const legacyPath = path.join(directory, "legacy", "nested", "legacy.db");
-process.env.PLATFORM_DATABASE_URL = `file:${path.relative(process.cwd(), platformPath)}`;
-process.env.TURSO_DATABASE_URL = `file:${legacyPath}`;
+
+test.beforeAll(() => {
+  process.env.PLATFORM_DATABASE_URL = `file:${path.relative(process.cwd(), platformPath)}`;
+  process.env.TURSO_DATABASE_URL = `file:${legacyPath}`;
+});
 
 test.afterAll(async () => {
   const { platformDb } = await import("../../lib/platform");

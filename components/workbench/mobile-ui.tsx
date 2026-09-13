@@ -26,14 +26,15 @@ export function MobilePanel({mobile,open,onOpenChange,title,description,kind='',
 }
 
 const stageIcons=[NotebookPen,FileText,Palette,UserRound,Box,GitBranch,Clapperboard,Layers,Scissors,Download];
-export function MobileNavigation({home,stage,onHome,onStage,projectName}:{home:boolean;stage:Stage;onHome:()=>void;onStage:(s:Stage)=>void;projectName:string}){
+export function MobileNavigation({home,stage,onHome,onStage,projectName,disabled=false}:{home:boolean;stage:Stage;onHome:()=>void;onStage:(s:Stage)=>void;projectName:string;disabled?:boolean}){
  const [workflowOpen,setWorkflowOpen]=useState(false);const mobile=useMobileLayout();
  const workflowActive=!home&&!['canvas','assets','edit'].includes(stage);
- return <><nav className="mobile-app-nav" aria-label="Mobile studio navigation">
-  <button className={home?'active':''} aria-current={home?'page':undefined} onClick={onHome}><Home size={21}/><span>Home</span></button>
-  <button className={workflowActive?'active':''} aria-expanded={workflowOpen} onClick={()=>setWorkflowOpen(true)}><Workflow size={21}/><span>Workflow</span></button>
-  <button className={'mobile-canvas-tab '+(!home&&stage==='canvas'?'active':'')} aria-current={!home&&stage==='canvas'?'page':undefined} onClick={()=>onStage('canvas')}><span className="mobile-canvas-tab-icon"><GitBranch size={22}/></span><span>Canvas</span></button>
-  <button className={!home&&stage==='assets'?'active':''} aria-current={!home&&stage==='assets'?'page':undefined} onClick={()=>onStage('assets')}><Layers size={21}/><span>Takes</span></button>
-  <button className={!home&&stage==='edit'?'active':''} aria-current={!home&&stage==='edit'?'page':undefined} onClick={()=>onStage('edit')}><Scissors size={21}/><span>Edit</span></button>
+ const waiting=!mobile||disabled;
+ return <><nav className="mobile-app-nav" aria-label="Mobile studio navigation" aria-busy={waiting}>
+  <button disabled={waiting} className={home?'active':''} aria-current={home?'page':undefined} onClick={onHome}><Home size={21}/><span>Home</span></button>
+  <button disabled={waiting} className={workflowActive?'active':''} aria-expanded={workflowOpen} onClick={()=>setWorkflowOpen(true)}><Workflow size={21}/><span>Workflow</span></button>
+  <button disabled={waiting} className={'mobile-canvas-tab '+(!home&&stage==='canvas'?'active':'')} aria-current={!home&&stage==='canvas'?'page':undefined} onClick={()=>onStage('canvas')}><span className="mobile-canvas-tab-icon"><GitBranch size={22}/></span><span>Canvas</span></button>
+  <button disabled={waiting} className={!home&&stage==='assets'?'active':''} aria-current={!home&&stage==='assets'?'page':undefined} onClick={()=>onStage('assets')}><Layers size={21}/><span>Takes</span></button>
+  <button disabled={waiting} className={!home&&stage==='edit'?'active':''} aria-current={!home&&stage==='edit'?'page':undefined} onClick={()=>onStage('edit')}><Scissors size={21}/><span>Edit</span></button>
  </nav><MobilePanel mobile={mobile} open={mobile&&workflowOpen} onOpenChange={setWorkflowOpen} title="Production workflow" description={projectName} kind="workflow"><div className="mobile-workflow-list">{STAGES.map((s,i)=>{const Icon=stageIcons[i];return <React.Fragment key={s.id}>{[0,5,8].includes(i)&&<div className="mobile-workflow-section">{i===0?'Develop':i===5?'Create':'Finish'}</div>}<button className={!home&&stage===s.id?'current':''} onClick={()=>{onStage(s.id);setWorkflowOpen(false)}}><span className="mobile-workflow-number">{String(i+1).padStart(2,'0')}</span><span className="mobile-workflow-icon"><Icon size={20}/></span><span><strong>{s.label}</strong><small>{s.hint}</small></span>{!home&&stage===s.id?<Check size={17}/>:<ChevronRight size={17}/>}</button></React.Fragment>})}</div></MobilePanel></>;
 }

@@ -370,6 +370,7 @@ export default function Studio({
   const [saveState, setSaveState] = useState(signedIn?"Loading":"Sample project");
   const [saveError, setSaveError] = useState("");
   const [ready, setReady] = useState(false);
+  const [initializedScope, setInitializedScope] = useState<string|null>(null);
   const [transitioning,setTransitioning]=useState(false);
   const transitioningRef=useRef(false);
   const readyRef=useRef(false);
@@ -566,8 +567,10 @@ export default function Studio({
     // The shared async loader hydrates from the server after flushing any pending write.
     let last='dune-studies';
     try{last=localStorage.getItem(storageKey)||last;}catch{/* Hydrate the default draft when local storage is disabled. */}
+    let active=true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the private draft from the server on mount.
-    void loadProject(last);
+    void loadProject(last).finally(()=>{if(active)setInitializedScope(storageKey);});
+    return()=>{active=false;};
   }, [loadProject,signedIn,storageKey]);
   useEffect(() => {
     if (!ready||!signedIn||transitioning) return;
@@ -2865,6 +2868,7 @@ export default function Studio({
               </MobilePanel>
             </div>
             <MobileNavigation
+              disabled={(signedIn&&initializedScope!==storageKey)||transitioning}
               home={home}
               stage={stage}
               projectName={p.name}
