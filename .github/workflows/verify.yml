@@ -53,14 +53,13 @@ jobs:
           done
           cat dev-ci.log
           exit 1
-      - run: npx playwright test --config=playwright.workbench.config.ts
-      - run: npx playwright test --config=playwright.customer.config.ts
+      - run: npx playwright test --config=playwright.workbench.config.ts --output=ci-results/workbench
+      - run: npx playwright test --config=playwright.customer.config.ts --output=ci-results/customer
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: browser-failure-evidence
           path: |
-            ../workbench-test-results
-            ../customer-test-results
+            ci-results/
             dev-ci.log
           retention-days: 7

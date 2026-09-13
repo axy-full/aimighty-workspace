@@ -12,6 +12,7 @@ const eslintConfig = defineConfig([
     ".data/**",
     "test-results/**",
     "playwright-report/**",
+    "ci-results/**",
     "docs/handoff/**/design-references/**",
     "design/**", // Supplied standalone design reference runtimes, not application code.
     "out/**",

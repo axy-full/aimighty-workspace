@@ -51,3 +51,4 @@ vapid-keys-for-vercel.txt
 # Playwright
 test-results/
 playwright-report/
+ci-results/
