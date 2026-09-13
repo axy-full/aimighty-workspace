@@ -7,8 +7,9 @@ import {
 } from "@/lib/identities";
 import { falConfigured } from "@/lib/fal";
 import { creditsApply } from "@/lib/credits";
-import { billCredits } from "@/lib/creditTerms";
+import { billCreditsWith, multiplierFor, creditUsd } from "@/lib/creditTerms";
 import { currentTenant } from "@/lib/tenant";
+import { engineOff } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,10 @@ export const GET = withTenant(async function GET(req: Request) {
      training. It reads the rows as they stand — asking fal about each one on
      every poll would be a vendor call per wall, per person, per fifteen
      seconds. The Studio, which shows progress, still syncs. */
-  const inCredits = creditsApply(currentTenant()?.workspace);
+  const ws = currentTenant()?.workspace;
+  const inCredits = creditsApply(ws);
+  /* Training at the workspace's multiplier — cost when it is flagged internal (§7A guardrail 6) — the figure the meter bills. */
+  const trainingCredits = (usd: number) => billCreditsWith(usd, multiplierFor("identity-training", ws?.internal === true), creditUsd());
   if (url.searchParams.get("live") === "1") {
     return NextResponse.json({
       identities: identities.filter((i) => i.status === "training")
@@ -33,7 +37,7 @@ export const GET = withTenant(async function GET(req: Request) {
         .map((i) => ({
           id: i.id, name: i.name, status: i.status, steps: i.steps, createdAt: i.createdAt,
           costUsd: inCredits ? null : i.costUsd,
-          creditsBilled: inCredits && i.costUsd != null ? billCredits(i.costUsd, "identity-training") : null,
+          creditsBilled: inCredits && i.costUsd != null ? trainingCredits(i.costUsd) : null,
         })),
     });
   }
@@ -41,17 +45,23 @@ export const GET = withTenant(async function GET(req: Request) {
   // the grid never shows a face as training after the trainer has finished.
   const synced = await Promise.all(identities.map(async (i) =>
     i.status === "training" ? (await syncIdentity(i)).identity : i));
+  /* Board 12h: the trainer's switch, so the screen can say why Train is off.
+     Creating an identity costs nothing; the refusal is on ../[id]/train. */
+  const paused = await engineOff("fal").catch(() => ({ off: false, reason: null as string | null }));
   return NextResponse.json({
     identities: synced.map((i) => ({ ...i, loraUrl: undefined, configUrl: undefined, trained: Boolean(i.loraUrl) })),
     terms: {
       configured: falConfigured(),
+      /** fal paused from the platform's desk (board 12h): `paused: boolean; pausedReason: string | null`. */
+      paused: paused.off,
+      pausedReason: paused.off ? paused.reason : null,
       trainer: TRAINER,
       minPhotos: MIN_PHOTOS, maxPhotos: MAX_PHOTOS, recommended: RECOMMENDED_PHOTOS,
       steps: TRAIN_STEPS,
       /* The unit this workspace pays in. `trainCostUsd` is the vendor's price
          for a training run; a credit workspace is quoted the charge instead. */
       trainCostUsd: inCredits ? null : trainCostUsd(),
-      trainCredits: inCredits ? billCredits(trainCostUsd(), "identity-training") : null,
+      trainCredits: inCredits ? trainingCredits(trainCostUsd()) : null,
       renderUsdPerMp: inCredits ? null : RENDER_USD_PER_MP,
     },
   });

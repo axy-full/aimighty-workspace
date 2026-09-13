@@ -47,6 +47,13 @@ export type ProviderDef = {
   };
   /** What we know about their throttling, for the operator's benefit. */
   rateLimit: string;
+  /**
+   * A numeric ceiling on jobs in flight at once, when the vendor has told us
+   * one. Declared on NO provider today: every figure above is prose, and a
+   * number nobody was given is not typed in. The desk prints an em dash for
+   * "room" until a real ceiling is entered here.
+   */
+  concurrent?: number;
   /** Charged only for work delivered? Drives the "failed ≠ billed" promise. */
   billsFailures: boolean;
 };

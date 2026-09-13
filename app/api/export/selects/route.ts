@@ -4,7 +4,7 @@ import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { buildFilename } from "@/lib/naming";
 import { getModel } from "@/lib/models";
-import { billCredits } from "@/lib/creditTerms";
+import { billCreditsWith, multiplierFor, creditUsd } from "@/lib/creditTerms";
 import { creditsApply } from "@/lib/credits";
 import { currentTenant } from "@/lib/tenant";
 import { openMediaStream } from "@/lib/storage";
@@ -19,6 +19,8 @@ async function approvedSelects(projectId: string): Promise<{ rows: Select[]; pro
   const p = await db().execute({ sql: `SELECT name FROM projects WHERE id = ? LIMIT 1`, args: [projectId] });
   const production = p.rows.length ? String((p.rows[0] as any).name ?? "") : "";
   const template = await getSetting("namingTemplate");
+  /* Read once, above the rows: the workspace's multiplier — cost when it is flagged internal (§7A guardrail 6). */
+  const internal = currentTenant()?.workspace?.internal === true;
   const rs = await db().execute({
     sql: `SELECT g.id, g.kind, g.model, g.version, g.created_at, g.prompt, g.params, g.cost_usd, g.refine_cost_usd, g.status,
                  s.code AS shot_code, s.title AS shot_title, s.scene AS scene, s.position AS shot_pos,
@@ -40,7 +42,7 @@ async function approvedSelects(projectId: string): Promise<{ rows: Select[]; pro
     return {
       id: String(r.id), shot: String(r.shot_code ?? ""), shotTitle: String(r.shot_title ?? ""),
       version: Number(r.version ?? 1), kind: String(r.kind ?? "video"),
-      engine: short, credits: billCredits(usd, String(r.model ?? "")), usd,
+      engine: short, credits: billCreditsWith(usd, multiplierFor(String(r.model ?? ""), internal), creditUsd()), usd,
       seconds: Number((params.duration as number | undefined) ?? 0),
       prompt: String((params.rawPrompt as string | undefined) ?? r.prompt ?? "").split(/\n\s*\n/)[0],
       filename: buildFilename(template, {

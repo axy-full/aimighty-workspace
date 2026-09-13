@@ -3,10 +3,19 @@ import { requireRender, withTenant } from "@/lib/auth";
 import { startTraining, trainCostUsd } from "@/lib/identities";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
+import { engineOff } from "@/lib/platform";
+import { getProvider } from "@/lib/providers";
+import { enginePausedSentence, enginePausedFrom } from "@/lib/platformLayer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 type Ctx = { params: Promise<{ id: string }> };
+
+/* Board 12h, the kill switch: training runs on fal, and fal paused from the
+   platform's desk is a 503 before the zip, the submit, the row or the meter.
+     curl -b "$COOKIE" -X POST http://localhost:4550/api/identities/<id>/train -d '{"consent":true}'
+     503 { error: "fal.ai is paused by the platform, <reason>. Pick another engine or try again later." } */
+const pausedLine = enginePausedSentence;
 
 /**
  * Hand the photos to the trainer. Returns as soon as the job is queued.
@@ -35,6 +44,10 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   if (body.consent !== true) return NextResponse.json({ error: "Confirm you have the right to train on this person's face." }, { status: 400 });
+  {
+    const paused = await engineOff("fal");
+    if (paused.off) return NextResponse.json({ error: pausedLine(getProvider("fal").label, paused.reason) }, { status: 503 });
+  }
 
   /* The same three walls the render path uses, in the same order, priced at
      what this actually costs rather than at zero.
@@ -55,6 +68,10 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
     const identity = await startTraining(id, { by: got.user.id });
     return NextResponse.json({ identity: { ...identity, loraUrl: undefined, configUrl: undefined, trained: false } }, { status: 202 });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    /* The gate above reads the ten-second layer cache; startTraining reads
+       the switch again where the money starts. Its refusal is the same 503
+       with the sentence, never a 400 with the ENGINE_PAUSED: prefix. */
+    const paused = enginePausedFrom(e);
+    return NextResponse.json({ error: paused ?? (e as Error).message }, { status: paused ? 503 : 400 });
   }
 });

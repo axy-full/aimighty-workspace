@@ -26,7 +26,7 @@ const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEPT", 
 type UsageMonths = { months?: { month: string; credits: number }[] };
 
 export default function AccountMenu() {
-  const { signedIn, name, role, workspace, workspaces } = useSession();
+  const { signedIn, name, role, workspace, workspaces, superAdmin } = useSession();
   const signIn = useSignInHref();
   const path = usePathname();
   const router = useRouter();
@@ -108,6 +108,12 @@ export default function AccountMenu() {
               <Link href="/settings" role="menuitem" onClick={() => setOpen(false)} className={row(path.startsWith("/settings") || path.startsWith("/team"))}>
                 Settings<Mono cost>⌘,</Mono>
               </Link>
+              {/* The platform's desk (SOW surfaces board 12h): only its owner has one. */}
+              {superAdmin && (
+                <Link href="/admin" role="menuitem" onClick={() => setOpen(false)} className={row(path.startsWith("/admin"))}>
+                  Platform
+                </Link>
+              )}
               <button type="button" role="menuitem" onClick={() => setSwitching(true)} className={row(false)}>
                 Switch workspace<span className="ui-mono tracking-normal text-ink-muted">▸</span>
               </button>

@@ -28,6 +28,7 @@ import { engineMock } from "./mock";
 import { getModel } from "./models";
 import { TEXT_RATES, promptRichness, shouldRefine, type Richness } from "./refineGate";
 import { getPlatformLayer } from "./platform";
+import { refuseIfPaused } from "./meter";
 import { prettyModel } from "./models";
 import { textModelFor } from "./platformLayer";
 export { TEXT_RATES, promptRichness, shouldRefine };
@@ -404,7 +405,8 @@ async function refineWithGateway(
 
   let lastErr = "";
   for (const model of GATEWAY_MODELS()) {
-    const send = (rich: boolean) => gatewayPost(shaped(model, rich), { auth, timeoutMs: 120_000, mock: "prompt" });
+    /* The gateway's switch is read at this door — before the mock and the fetch — since the writer is metered only after it answers. */
+    const send = async (rich: boolean) => { await refuseIfPaused(null, "vercel"); return gatewayPost(shaped(model, rich), { auth, timeoutMs: 120_000, mock: "prompt" }); };
     let res = await send(true);
     let text = res.text;
     if (res.status === 400 && /cache_control|reasoning|unknown|unsupported|invalid/i.test(text)) {
@@ -491,6 +493,8 @@ export async function enhancePrompt(opts: {
   for (const model of TEXT_MODELS()) {
     // A minute, not two: this is a $0.001 helper sitting in front of a paid
     // submit that wants 120s of its own, and both have to fit inside 300s.
+    /* The switch is read before the request leaves: a paused ModelArk refuses here, not after the vendor is paid. */
+    await refuseIfPaused(null, "byteplus");
     const res = await fetch(CHAT_URL(), {
       method: "POST",
       signal: AbortSignal.timeout(60_000),

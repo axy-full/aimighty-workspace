@@ -7,6 +7,9 @@ import { getIdentity, runIdentityRender, promptWithTrigger, RENDERER, RENDER_RAT
 import { falConfigured } from "@/lib/fal";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { meter } from "@/lib/meter";
+import { engineOff } from "@/lib/platform";
+import { getProvider } from "@/lib/providers";
+import { enginePausedSentence, enginePausedFrom } from "@/lib/platformLayer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -37,6 +40,17 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const seed = body.seed === "" || body.seed == null ? null : Number(body.seed);
   const projectId = body.projectId ? String(body.projectId) : identity.projectId;
   const finalPrompt = promptWithTrigger(prompt, identity);
+
+  /* Board 12h, the kill switch: the stills render on fal, and fal paused from
+     the platform's desk is a 503 BEFORE any row is written or any meter
+     opened — the same sentence lib/meter.ts throws after the ENGINE_PAUSED:
+     prefix. The meter is the backstop; this is the door.
+       curl -b "$COOKIE" -X POST http://localhost:4550/api/identities/<id>/render -d '{"prompt":"…"}'
+       503 { error: "fal.ai is paused by the platform, <reason>. Pick another engine or try again later." } */
+  {
+    const paused = await engineOff("fal");
+    if (paused.off) return NextResponse.json({ error: enginePausedSentence(getProvider("fal").label, paused.reason) }, { status: 503 });
+  }
 
   /* Priced at what it will actually cost, and checked once the COUNT is
      known. The wall used to run before the body was read, so it asked
@@ -78,11 +92,13 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
                     engineCostUsd: RENDER_USD_PER_MP, projectId, createdBy: got.user.id });
     }
   } catch (e) {
+    /* The paused refusal answers with its sentence, never the ENGINE_PAUSED: prefix the meter throws it under. */
+    const msg = enginePausedFrom(e) ?? String((e as Error)?.message ?? e);
     for (const gid of ids) {
-      await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), gid] }).catch(() => {});
+      await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [msg, now(), gid] }).catch(() => {});
     }
     invalidate(PROJECTS_KEY);
-    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+    return NextResponse.json({ error: msg }, { status: 503 });
   }
 
   after(async () => {

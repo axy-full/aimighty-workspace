@@ -2,6 +2,7 @@ import type { EngineAdapter } from "./types";
 import { gatewayChat, gatewayReachable, gatewayPost } from "../gateway";
 import { enhancePrompt } from "../enhance";
 import { estimateRefineUsd } from "../refineGate";
+import { refuseIfPaused } from "../meter";
 
 /** Vercel's AI Gateway: the one thinking engine — Claude, GPT — for the prompt writer and Atomik. Priced by tokens, read off the reply. */
 export const vercel: EngineAdapter = {
@@ -10,8 +11,9 @@ export const vercel: EngineAdapter = {
   configured: () => gatewayReachable(),
   estimate: () => null,
   async render() { throw new Error("The gateway thinks; stills through it are rendered by the Google adapter."); },
-  run: (req) => gatewayPost(req.body, { auth: req.auth, timeoutMs: req.timeoutMs, mock: req.mock }),
-  chat: (req) => gatewayChat(req),
+  /* The switch is read at the adapter's door: a text job is metered only after the gateway answers, so the meter's gate never sees it. */
+  run: async (req) => { await refuseIfPaused(null, "vercel"); return gatewayPost(req.body, { auth: req.auth, timeoutMs: req.timeoutMs, mock: req.mock }); },
+  chat: async (req) => { await refuseIfPaused(null, "vercel"); return gatewayChat(req); },
   /** enhance(prompt, targetEngine, setup, cast, rules): the writer, told the target engine's dialect, with what the compiler knows as its style block. */
   async enhance(req) {
     const style = [

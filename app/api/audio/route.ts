@@ -12,11 +12,22 @@ import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/
 import { creditState } from "@/lib/credits";
 import { checkCap } from "@/lib/caps";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
+import { engineOff } from "@/lib/platform";
+import { getProvider } from "@/lib/providers";
+import { enginePausedSentence, enginePausedFrom } from "@/lib/platformLayer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const MAX_TEXT = 5000;
+
+/* Board 12h, the kill switch: ElevenLabs paused from the platform's desk is
+   a 503 before the row and the meter, with the sentence lib/meter.ts throws
+   after its ENGINE_PAUSED: prefix.
+     curl -b "$COOKIE" -X POST http://localhost:4550/api/audio -d '{"task":"speech","text":"…","voiceId":"…"}'
+     503 { error: "ElevenLabs is paused by the platform, <reason>. Pick another engine or try again later." } */
+const pausedLine = enginePausedSentence;
+const unprefixed = (e: unknown) => enginePausedFrom(e) ?? String((e as Error)?.message ?? e);
 
 /**
  * A voice line, a sound, or a piece of music. Each is a render like any
@@ -34,6 +45,10 @@ export const POST = withTenant(async function POST(req: Request) {
   }
   if (!elevenConfigured()) {
     return NextResponse.json({ error: "Sound isn't connected for this workspace. Ask the platform to connect it." }, { status: 400 });
+  }
+  {
+    const paused = await engineOff("elevenlabs");
+    if (paused.off) return NextResponse.json({ error: pausedLine(getProvider("elevenlabs").label, paused.reason) }, { status: 503 });
   }
   const body = await req.json().catch(() => ({}));
   const task = ["speech", "sound", "music"].includes(String(body.task)) ? String(body.task) as "speech" | "sound" | "music" : "speech";
@@ -120,9 +135,9 @@ export const POST = withTenant(async function POST(req: Request) {
     await meter({ id: genId, kind: "audio", engine: "elevenlabs", model: modelId, status: "running",
                   engineCostUsd: usdForCredits(estCredits, null), projectId, shotId, createdBy: got.user.id });
   } catch (e) {
-    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] });
+    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [unprefixed(e), now(), genId] });
     invalidate(PROJECTS_KEY);
-    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+    return NextResponse.json({ error: unprefixed(e) }, { status: 503 });
   }
 
   /* Handed to the worker so a reclaimed instance cannot lose a line the

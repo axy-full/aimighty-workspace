@@ -51,8 +51,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
          there is no workspace and no /api/me, and without a table the composer
          fell back to dollars — which is how the platform's vendor cost came to
          be printed on a public page. A visitor is quoted credits at the
-         platform's own margin, like the customer they might become. */
-      rates: buildRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd"),
+         platform's own margin, like the customer they might become.
+         The internal flag is passed by hand: this call runs outside any
+         tenant scope (only effectiveModels above is wrapped in runInTenant),
+         so buildRateTable's own currentTenant() read would be null here and
+         an internal studio's composer would quote the 1.5x table its ledger
+         never bills. */
+      rates: buildRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd", Boolean(ctx?.workspace?.internal)),
     }}>
     <ProjectProvider>
       {/* The v2 shell (design/particl-v2 §3–§5): one 56px header with the

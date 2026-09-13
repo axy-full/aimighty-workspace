@@ -1,4 +1,4 @@
-import { billCreditsWith, marginFor, creditUsd, margins } from "./creditTerms";
+import { billCreditsWith, marginFor, creditUsd, tableFor } from "./creditTerms";
 import { capVerdict, type CapRule, type CapUnit } from "./caps";
 import { shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
 import { heldMessage } from "./held";
@@ -100,8 +100,12 @@ export const EMPTY_QUOTE: Quote = { totalCredits: 0, unitCredits: null, units: 0
 
 export type Terms = { perCredit: number; table: Record<string, number> };
 
-/** The terms in force, read from the environment once. */
-export const liveTerms = (): Terms => ({ perCredit: creditUsd(), table: margins() });
+/**
+ * The terms in force, read from the environment once — or, for a workspace
+ * flagged internal (§7A guardrail 6), every engine at cost. The flag is an
+ * argument, not a lookup: this file stays pure so the browser prices with it.
+ */
+export const liveTerms = (internal = false): Terms => ({ perCredit: creditUsd(), table: tableFor(internal) });
 
 /**
  * Price a set of jobs.

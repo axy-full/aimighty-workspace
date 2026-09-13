@@ -2,6 +2,7 @@ import { CATEGORIES, type ShotSpec } from "./studio";
 import { MODELS, DEFAULT_MODEL_ID } from "./models";
 import { TEXT_RATES } from "./refineGate";
 import { DEFAULT_PLANS, cleanPlans, type PlanDef } from "./plans";
+import { PROVIDERS, type ProviderId } from "./providers";
 
 /**
  * The platform layer: what every new workspace inherits and may change.
@@ -21,7 +22,10 @@ import { DEFAULT_PLANS, cleanPlans, type PlanDef } from "./plans";
  *             includes. Here rather than in a table of its own because a
  *             plan is a platform default a workspace is put ON, not data a
  *             workspace owns (rule 3), and because the console already edits
- *             this record.
+ *             this record;
+ *   engines — one switch per provider (SOW v2 §9, the kill switch): off
+ *             means no job on that vendor starts anywhere, read where money
+ *             starts (lib/meter.ts), never only hidden in a list.
  * Pure: no database here, so the browser can validate what it edits.
  */
 export const DEFAULT_SETUP: ShotSpec = {
@@ -112,8 +116,13 @@ export type PlatformCaps = {
   rendersPerHour: number;
   /** What a workspace may keep, in gigabytes. */
   storageGb: number;
+  /**
+   * §7A guardrail 1: dollars of welcome grants the platform will commit in a
+   * cycle (a grant is `welcomeGrant() x creditUsd()`); null means no budget.
+   */
+  grantBudgetUsd: number | null;
 };
-export const DEFAULT_CAPS: PlatformCaps = { defaultCapCredits: null, signupCredits: null, warnPct: 80, concurrency: 4, rendersPerHour: 60, storageGb: 50 };
+export const DEFAULT_CAPS: PlatformCaps = { defaultCapCredits: null, signupCredits: null, warnPct: 80, concurrency: 4, rendersPerHour: 60, storageGb: 50, grantBudgetUsd: null };
 
 /** The text jobs Atomik and the writer run, each routed to a model (brief 1.8): enhancement is high-volume and runs fast and cheap; ideas and shots can afford a stronger one. */
 export type TextJob = "enhance" | "idea" | "shot";
@@ -166,10 +175,52 @@ export function resolveModels(settings: Record<string, string | undefined>, laye
   };
 }
 
-export type PlatformLayer = { setup: ShotSpec; starter: StarterProduction; rules: PlatformRule[]; caps: PlatformCaps; models: PlatformModels; plans: PlanDef[] };
+/* ── engines: one switch per provider ──────────────────────────────────── */
+
+/** One provider's switch: on, or off with who turned it and why. */
+export type EngineSwitch = { on: boolean; reason: string | null; by: string | null; at: number | null };
+export type PlatformEngines = Record<ProviderId, EngineSwitch>;
+export const PROVIDER_IDS: ProviderId[] = PROVIDERS.map((p) => p.id);
+const ENGINE_ON: EngineSwitch = { on: true, reason: null, by: null, at: null };
+/** Every provider on: the state a deployment starts in and returns to on reset. */
+export const DEFAULT_ENGINES: PlatformEngines = Object.fromEntries(PROVIDER_IDS.map((id) => [id, { ...ENGINE_ON }])) as PlatformEngines;
+
+/** Every registered provider, each on unless the stored value says off; a provider the registry no longer has is dropped. */
+export function cleanEngines(v: unknown): PlatformEngines {
+  const out = Object.fromEntries(PROVIDER_IDS.map((id) => [id, { ...ENGINE_ON }])) as PlatformEngines;
+  if (!isObj(v)) return out;
+  for (const id of PROVIDER_IDS) {
+    const e = (v as Record<string, unknown>)[id];
+    if (!isObj(e)) continue;
+    if (e.on !== false) continue;
+    const at = Number(e.at);
+    out[id] = { on: false, reason: str(e.reason, 300) || null, by: str(e.by, 120) || null, at: Number.isFinite(at) && at > 0 ? Math.round(at) : null };
+  }
+  return out;
+}
+
+/**
+ * The refusal, one sentence, the same wherever a paused engine is met (the
+ * meter, the generate and audio routes, identity training, a held release).
+ * Routes answer 503 with the part after the colon; a job in the queue says
+ * "engine refused" with it (SOW v2 §9).
+ */
+export const ENGINE_PAUSED = "ENGINE_PAUSED:";
+export function enginePausedSentence(label: string, reason: string | null | undefined): string {
+  const why = reason && reason.trim() ? `, ${reason.trim().replace(/[.\s]+$/, "")}` : "";
+  return `${label} is paused by the platform${why}. Pick another engine or try again later.`;
+}
+export const enginePausedMessage = (label: string, reason: string | null | undefined): string => `${ENGINE_PAUSED}${enginePausedSentence(label, reason)}`;
+/** The sentence after the colon when an error is the paused refusal, else null. */
+export function enginePausedFrom(err: unknown): string | null {
+  const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return msg.startsWith(ENGINE_PAUSED) ? msg.slice(ENGINE_PAUSED.length) : null;
+}
+
+export type PlatformLayer = { setup: ShotSpec; starter: StarterProduction; rules: PlatformRule[]; caps: PlatformCaps; models: PlatformModels; plans: PlanDef[]; engines: PlatformEngines };
 export type LayerKey = keyof PlatformLayer;
-export const LAYER_KEYS: LayerKey[] = ["setup", "starter", "rules", "caps", "models", "plans"];
-export const DEFAULT_LAYER: PlatformLayer = { setup: DEFAULT_SETUP, starter: STARTER_PRODUCTION, rules: DEFAULT_RULES, caps: DEFAULT_CAPS, models: DEFAULT_MODELS, plans: DEFAULT_PLANS };
+export const LAYER_KEYS: LayerKey[] = ["setup", "starter", "rules", "caps", "models", "plans", "engines"];
+export const DEFAULT_LAYER: PlatformLayer = { setup: DEFAULT_SETUP, starter: STARTER_PRODUCTION, rules: DEFAULT_RULES, caps: DEFAULT_CAPS, models: DEFAULT_MODELS, plans: DEFAULT_PLANS, engines: DEFAULT_ENGINES };
 
 const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 const str = (v: unknown, max: number): string => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -237,6 +288,7 @@ export function cleanCaps(v: unknown): PlatformCaps {
   const cc = Number(v.concurrency); c.concurrency = Number.isFinite(cc) && cc >= 1 && cc <= 100 ? Math.round(cc) : DEFAULT_CAPS.concurrency;
   const rh = Number(v.rendersPerHour); c.rendersPerHour = Number.isFinite(rh) && rh >= 1 && rh <= 10_000 ? Math.round(rh) : DEFAULT_CAPS.rendersPerHour;
   const sg = Number(v.storageGb); c.storageGb = Number.isFinite(sg) && sg >= 1 && sg <= 100_000 ? Math.round(sg * 10) / 10 : DEFAULT_CAPS.storageGb;
+  const gb = n(v.grantBudgetUsd); c.grantBudgetUsd = gb != null && Number.isFinite(gb) && gb >= 0 ? Math.round(gb * 100) / 100 : null;
   return c;
 }
 
@@ -251,7 +303,8 @@ export function mergeLayer(stored: Partial<Record<LayerKey, unknown>>): Platform
      a plan an edit removed still resolves to one: "on no plan" and "on a plan
      that went missing" are different states and only the first is real. */
   const plans = stored.plans !== undefined ? cleanPlans(stored.plans) : DEFAULT_PLANS;
-  return { setup: Object.keys(setup).length ? setup : DEFAULT_SETUP, starter, rules, caps, models, plans };
+  const engines = stored.engines !== undefined ? cleanEngines(stored.engines) : DEFAULT_ENGINES;
+  return { setup: Object.keys(setup).length ? setup : DEFAULT_SETUP, starter, rules, caps, models, plans, engines };
 }
 
 /** The starter's shots with the layer's default Setup underneath each shot's own. */

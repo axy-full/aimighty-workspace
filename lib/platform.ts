@@ -1,5 +1,5 @@
 import { createClient, type Client } from "@libsql/client";
-import { signupCredits, isPaidKind, type GrantKind } from "./creditTerms";
+import { signupCredits, isPaidKind, creditUsd, type GrantKind } from "./creditTerms";
 import { asPlanId, planById, DEFAULT_PLANS, type PlanId, type PlanDef } from "./plans";
 import { gatewayMintConfigured, mintGatewayKey } from "./vercelKeys";
 import { randomBytes, createHash } from "node:crypto";
@@ -7,7 +7,10 @@ import { seal, open } from "./keyring";
 import { provisionTenantDatabase } from "./provision";
 import { runInTenant, type TenantWorkspace, type WorkspaceRole } from "./tenant";
 import { seedStarterProduction } from "./starter";
-import { mergeLayer, LAYER_KEYS, type PlatformLayer, type LayerKey } from "./platformLayer";
+import { mergeLayer, LAYER_KEYS, type PlatformLayer, type LayerKey, type PlatformEngines, type EngineSwitch } from "./platformLayer";
+import { cycleBounds } from "./cycle";
+import { grantBudgetMath, type GrantBudgetState } from "./adminView";
+import type { ProviderId } from "./providers";
 
 /**
  * The platform: what spans workspaces.
@@ -133,6 +136,12 @@ const SCHEMA = [
      value       TEXT NOT NULL,
      updated_at  INTEGER NOT NULL,
      updated_by  TEXT
+   )`,
+  /* When the platform last alerted its admin about something, by key
+     (`floor:<provider>`), so the cron says a thing once a day, not once a run. */
+  `CREATE TABLE IF NOT EXISTS platform_alerts (
+     key      TEXT PRIMARY KEY,
+     last_at  INTEGER NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS meter_events (
      id               TEXT PRIMARY KEY,
@@ -265,6 +274,7 @@ export function rowToWorkspace(r: any): TenantWorkspace {
        already past it would lock people out of their own work. */
     planId: asPlanId(r.plan_id),
     internalTest: Number(r.internal_test ?? 0) === 1,
+    internal: Number(r.internal ?? 0) === 1,
     deletedAt: r.deleted_at == null ? null : Number(r.deleted_at),
   };
 }
@@ -338,7 +348,7 @@ export function platformReady(): Promise<void> {
       for (const stmt of SCHEMA) await p.execute(stmt);
       /* Columns added after the table first shipped reach an existing
          database only by ALTER; a duplicate is the one error to ignore. */
-      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`, `internal_test INTEGER`, `plan_id TEXT`]) {
+      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`, `internal_test INTEGER`, `plan_id TEXT`, `internal INTEGER NOT NULL DEFAULT 0`]) {
         try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
       }
@@ -845,6 +855,95 @@ export async function setWorkspacePlan(id: string, plan: PlanId | null): Promise
 export async function setWorkspaceInternalTest(id: string, on: boolean): Promise<void> {
   await platformReady();
   await platformDb().execute({ sql: `UPDATE workspaces SET internal_test = ?, updated_at = ? WHERE id = ?`, args: [on ? 1 : 0, now(), id] });
+}
+
+/**
+ * §7A guardrail 6: an internal workspace bills at cost — multiplier 1.0 on
+ * the same ledger — and is left out of margin reporting. Distinct from
+ * `internal_test`, which only says a real engine call may be made there for
+ * the platform's sake (previews). Set from the platform's desk and nowhere
+ * else.
+ */
+export async function setWorkspaceInternal(id: string, internal: boolean): Promise<void> {
+  await platformReady();
+  await platformDb().execute({ sql: `UPDATE workspaces SET internal = ?, updated_at = ? WHERE id = ?`, args: [internal ? 1 : 0, now(), id] });
+}
+
+/* ── the grant budget (§7A guardrail 1) ───────────────────────────────── */
+
+/** Credits granted with kind welcome since a moment. */
+export async function welcomeGrantsSince(sinceMs: number): Promise<number> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT COALESCE(SUM(credits), 0) AS n FROM credit_grants WHERE kind = 'welcome' AND created_at >= ?`,
+    args: [sinceMs],
+  });
+  return Number((rs.rows[0] as any)?.n ?? 0);
+}
+
+/** Sign-up codes issued since a moment that are still open: unused and not yet expired. Each will grant once accepted. */
+export async function openInviteCodesSince(sinceMs: number): Promise<number> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT COUNT(*) AS n FROM signup_invites WHERE created_at >= ? AND used_at IS NULL AND expires_at > ?`,
+    args: [sinceMs, now()],
+  });
+  return Number((rs.rows[0] as any)?.n ?? 0);
+}
+
+/**
+ * Where this cycle's grant budget stands: what welcome grants have cost so
+ * far, what the open codes will add when accepted, against the layer's
+ * budget (null: no budget). The grant is welcomeGrant() and the cycle is the
+ * calendar month — nothing here is typed by the desk.
+ */
+export async function grantBudgetState(at = now()): Promise<GrantBudgetState> {
+  const { start } = cycleBounds(1, at);
+  const [layer, grantCredits, welcomeCreditsThisCycle, openCodesThisCycle] = await Promise.all([
+    getPlatformLayer().catch(() => null), welcomeGrant(), welcomeGrantsSince(start), openInviteCodesSince(start),
+  ]);
+  return grantBudgetMath({
+    grantCredits, creditUsd: creditUsd(), welcomeCreditsThisCycle, openCodesThisCycle,
+    budgetUsd: layer?.caps.grantBudgetUsd ?? null,
+  });
+}
+
+/* ── the engine switches (SOW v2 §9) ──────────────────────────────────── */
+
+/** Every provider's switch, from the layer (cached 10 s like the rest of it). Tenant-agnostic: one switch stops one engine everywhere. */
+export async function engineSwitches(): Promise<PlatformEngines> {
+  return (await getPlatformLayer()).engines;
+}
+
+/** Flip one provider's switch; off carries who and why. Stored through the layer so the desk's per-key editor and this agree. */
+export async function setEngineSwitch(id: ProviderId, on: boolean, reason: string | null, by: string | null): Promise<PlatformEngines> {
+  const current = await engineSwitches();
+  const next: PlatformEngines = { ...current, [id]: on ? { on: true, reason: null, by: null, at: null } : { on: false, reason: reason?.trim() || null, by, at: now() } };
+  return (await setPlatformLayer("engines", next, by)).engines;
+}
+
+/** Is this provider switched off? Read where money starts (lib/meter.ts), before any row is written. */
+export async function engineOff(providerId: string): Promise<{ off: boolean; reason: string | null }> {
+  const sw: EngineSwitch | undefined = (await engineSwitches())[providerId as ProviderId];
+  return sw && !sw.on ? { off: true, reason: sw.reason } : { off: false, reason: null };
+}
+
+/* ── admin alerts, once a day ─────────────────────────────────────────── */
+
+/** Has the platform alerted about `key` within `withinMs`? */
+export async function alertedRecently(key: string, withinMs: number): Promise<boolean> {
+  await platformReady();
+  const rs = await platformDb().execute({ sql: `SELECT last_at FROM platform_alerts WHERE key = ?`, args: [key] });
+  const last = Number((rs.rows[0] as any)?.last_at ?? 0);
+  return last > 0 && now() - last < withinMs;
+}
+
+export async function markAlerted(key: string): Promise<void> {
+  await platformReady();
+  await platformDb().execute({
+    sql: `INSERT INTO platform_alerts (key, last_at) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET last_at = excluded.last_at`,
+    args: [key, now()],
+  });
 }
 
 export type PlatformAsset = { key: string; path: string; bytes: number; mime: string; sourceWorkspaceId: string | null; sourceGenId: string | null; model: string | null; costUsd: number | null; createdAt: number };

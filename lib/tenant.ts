@@ -44,6 +44,8 @@ export type TenantWorkspace = {
   /** §7A's plan, or null for a workspace on none. Credits do not move with it yet. */
   planId?: import("./plans").PlanId | null;
   internalTest?: boolean;
+  /** §7A guardrail 6: billed at cost (multiplier 1.0) and left out of margin reporting. Set only from the platform's desk. */
+  internal?: boolean;
   /** Set once the owner deleted it; the purge follows (lib/purge.ts). */
   deletedAt: number | null;
   /** The Vercel AI Gateway key minted for this workspace, by id, so it can be revoked. */

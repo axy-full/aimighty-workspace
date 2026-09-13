@@ -136,6 +136,39 @@ ${opts.link}
   return { subject, text, html };
 }
 
+/**
+ * The floor guard's alert to the platform admin (§7A): which engine, the
+ * margin the ledger shows over the window, on how many jobs — and, honestly,
+ * that the multiplier stands where the deployment set it, because multipliers
+ * are a deployment setting (CREDIT_MARGINS) and nothing at runtime can move
+ * one. Pure, so a test can read it without sending anything.
+ */
+export function adminAlertEmail(opts: {
+  provider: string; marginPct: number; jobs: number; days: number; multiplier: number; link?: string;
+}): { subject: string; text: string; html: string } {
+  const pct = `${Math.round(opts.marginPct * 100)}%`;
+  const subject = `Floor guard: ${opts.provider} margin ${pct} over ${opts.days} days`;
+  const line1 = `${opts.provider} is under the floor: the ledger shows a ${pct} margin over the last ${opts.days} days, on ${opts.jobs.toLocaleString("en-US")} jobs.`;
+  const line2 = `The multiplier stands at its setting, ${opts.multiplier}×. Nothing was changed: multipliers are a deployment setting, so raising one is yours to do.`;
+  const text =
+`${line1}
+
+${line2}
+${opts.link ? `
+Open the desk:
+${opts.link}
+` : ""}
+— particl`;
+  const html =
+`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;color:#15171C;line-height:1.5;background:#FCFCFD">
+  <p style="font-size:17px;margin:0 0 12px">${esc(subject)}</p>
+  <p style="font-size:15px;color:#666A72;margin:0 0 12px">${esc(line1)}</p>
+  <p style="font-size:15px;color:#666A72;margin:0 0 22px">${esc(line2)}</p>
+  ${opts.link ? `<p style="margin:0"><a href="${esc(opts.link)}" style="display:inline-block;background:#15171C;color:#F5F6F8;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">Open the desk</a></p>` : ""}
+</div>`;
+  return { subject, text, html };
+}
+
 /** The reset email: one link, one hour, and what to do if it wasn't you. */
 export function resetEmail(opts: { name: string; link: string; expiresAt: number; origin?: string }): { subject: string; text: string; html: string } {
   const lockup = opts.origin ? `${opts.origin}/brand/particl-lockup-horizontal-on-light@4x.png` : null;

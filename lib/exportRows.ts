@@ -2,7 +2,7 @@ import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCreditsWith, multiplierFor, marginKeyOf, creditUsd } from "./creditTerms";
 import { getSetting } from "./settings";
 import { getModel, modelLabel } from "./models";
 import { buildFilename } from "./naming";
@@ -35,6 +35,8 @@ export async function exportRows(): Promise<{ rows: ExportRow[]; unit: "cr" | "$
   await ready();
   const ws = requireTenant();
   const unit: "cr" | "$" = creditsApply(ws) ? "cr" : "$";
+  /* Read once, above the loop: the workspace's multiplier — cost when it is flagged internal (§7A guardrail 6). */
+  const internal = ws.internal === true;
   const template = await getSetting("namingTemplate");
   const rs = await db().execute(`
     SELECT g.id, g.created_at, g.kind, g.model, g.status, g.version, g.prompt, g.params, g.cost_usd, g.refine_cost_usd, g.bytes, g.stored_url,
@@ -73,7 +75,7 @@ export async function exportRows(): Promise<{ rows: ExportRow[]; unit: "cr" | "$
       take: kind === "image" ? `S${version ?? 1}` : kind === "audio" ? "A" : `v${version ?? 1}`,
       kind, engine: modelLabel(model), resolution: p.resolution ? String(p.resolution).toUpperCase() : "",
       duration: kind === "video" && p.duration ? `${p.duration}s` : "", status: String(r.status),
-      credits: unit === "cr" ? billCredits(usd, marginKeyOf(kind, model)) : 0, usd: unit === "$" ? usd : 0,
+      credits: unit === "cr" ? billCreditsWith(usd, multiplierFor(marginKeyOf(kind, model), internal), creditUsd()) : 0, usd: unit === "$" ? usd : 0,
       prompt: String(r.prompt ?? ""), filename, url, bytes: r.bytes == null ? null : Number(r.bytes),
     });
   }

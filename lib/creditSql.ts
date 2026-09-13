@@ -1,4 +1,5 @@
-import { margins, creditUsd } from "./creditTerms";
+import { creditUsd, tableFor } from "./creditTerms";
+import { currentTenant } from "./tenant";
 
 /**
  * The rounding rule as SQL, so a ledger over thousands of rows can be
@@ -6,9 +7,13 @@ import { margins, creditUsd } from "./creditTerms";
  * credits per job, rounded up, at least one, at the engine's margin.
  * `g` is the generations alias when the query has one.
  */
-export function billedCreditsExpr(g = ""): string {
+export function billedCreditsExpr(g = "", internal = currentTenant()?.workspace?.internal === true): string {
   const p = g ? `${g}.` : "";
-  const m = margins();
+  /* The table this workspace is billed on: at cost when it is flagged
+     internal (§7A guardrail 6). Defaulted from the tenant in scope, because
+     this text is inlined by nine callers and the ledger they sum is always
+     the tenant's own. */
+  const m = tableFor(internal);
   const classes = new Set(["*", "identity-training", "elevenlabs", "text"]);
   const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
   const cases = Object.entries(m).filter(([k]) => !classes.has(k)).map(([k, v]) => `WHEN ${q(k)} THEN ${v}`).join(" ");

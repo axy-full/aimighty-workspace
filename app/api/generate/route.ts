@@ -17,6 +17,7 @@ import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
 import { getProvider, providerConfigured, billedTo } from "@/lib/providers";
+import { engineOff } from "@/lib/platform";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice, sourceProblem } from "@/lib/tasks";
 import { clipDoubt, clipDoubtMessage } from "@/lib/clipTrust";
@@ -28,7 +29,7 @@ import { heldInfo, heldMessage, heldCount, notifyHeld, HELD_LIMIT } from "@/lib/
 import { creditState } from "@/lib/credits";
 import { submitVideoJob } from "@/lib/submitVideo";
 import { checkCap } from "@/lib/caps";
-import { rulesBlock, DEFAULT_LAYER } from "@/lib/platformLayer";
+import { rulesBlock, DEFAULT_LAYER, enginePausedSentence, enginePausedFrom } from "@/lib/platformLayer";
 import { getPlatformLayer } from "@/lib/platform";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 import { effectiveRules } from "@/lib/rules";
@@ -45,6 +46,15 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const ROLES: ImageRole[] = ["first_frame", "last_frame", "reference_image", "reference_video"];
+
+/* Board 12h, the kill switch: a provider the platform has paused is refused
+   here with a 503 BEFORE any row is written or any meter opened, the same
+   sentence lib/meter.ts throws after the ENGINE_PAUSED: prefix. The meter is
+   the backstop — this is the door.
+     curl -b "$COOKIE" -X POST http://localhost:4550/api/generate -d '{"model":"<paused>","prompt":"…"}'
+     503 { error: "<Provider> is paused by the platform, <reason>. Pick another engine or try again later." } */
+const pausedLine = enginePausedSentence;
+const unprefixed = (e: unknown) => enginePausedFrom(e) ?? String((e as Error)?.message ?? e);
 
 /**
  * ModelArk treats these as mutually exclusive scenarios:
@@ -121,6 +131,10 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json({
       error: `${model.label} isn't connected for this workspace. Ask the platform to connect it.`,
     }, { status: 400 });
+  }
+  {
+    const paused = await engineOff(vendor.id);
+    if (paused.off) return NextResponse.json({ error: pausedLine(vendor.label, paused.reason) }, { status: 503 });
   }
   // On the platform's keys, a workspace has a monthly allowance — the wall
   // the platform's money sits behind. Checked before anything is spent.
@@ -565,9 +579,21 @@ export const POST = withTenant(async function POST(req: Request) {
     const quotaStill = await checkQuota(0);
     if (!quotaStill.allow) return NextResponse.json({ error: quotaStill.error }, { status: 507 });
     if (trained) {
+      /* The likeness renders on fal whichever model was picked, so it is fal's switch that counts here. */
+      const falPaused = await engineOff("fal");
+      if (falPaused.off) return NextResponse.json({ error: pausedLine(getProvider("fal").label, falPaused.reason) }, { status: 503 });
       if (holdStill) return NextResponse.json({ error: !wallStill.ok ? wallStill.error : "Every render slot is busy; try again in a moment." }, { status: !wallStill.ok ? 402 : 429 });
       const idRatio = (RENDER_RATIOS as readonly string[]).includes(ratio) ? ratio : "16:9";
-      const started = await startIdentityStill({ identity: trained, prompt, ratio: idRatio, projectId: stillProject, shotId: stillShot, version: stillVersion, createdBy: got.user.id, tokenId: got.token?.id ?? null });
+      /* The meter inside startIdentityStill is the switch's backstop (the
+         gate above reads the ten-second layer cache): its refusal is the
+         same 503 with the sentence the two sibling branches answer, never a
+         500 with the prefix. */
+      let started;
+      try {
+        started = await startIdentityStill({ identity: trained, prompt, ratio: idRatio, projectId: stillProject, shotId: stillShot, version: stillVersion, createdBy: got.user.id, tokenId: got.token?.id ?? null });
+      } catch (e) {
+        return NextResponse.json({ error: unprefixed(e) }, { status: 503 });
+      }
       after(() => runIdentityRender(started.genId, trained, { prompt: started.finalPrompt, ratio: idRatio, seed: null, startedAt: started.ts }));
       return NextResponse.json({ id: started.genId, status: "running", identity: trained.name });
     }
@@ -619,9 +645,9 @@ export const POST = withTenant(async function POST(req: Request) {
       await meter({ id: genId, kind: "image", engine: billedTo(model.provider), model: modelId, status: "running",
                     engineCostUsd: estStillUsd, projectId: stillProject, shotId: stillShot, createdBy: got.user.id });
     } catch (e) {
-      await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] });
+      await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [unprefixed(e), now(), genId] });
       invalidate(PROJECTS_KEY);
-      return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+      return NextResponse.json({ error: unprefixed(e) }, { status: 503 });
     }
 
     /* The render itself now belongs to the worker: the row is written, the
@@ -746,7 +772,9 @@ export const POST = withTenant(async function POST(req: Request) {
         ? r.costUsd
         : frac * (refineIn * rate.input + refineOut * rate.output) / 1_000_000;
     } catch (e) {
-      console.error("auto-refine unavailable, rendering raw:", (e as Error).message);
+      /* A paused gateway (SOW v2 §9) lands here too: the render goes raw and
+         nothing was spent; the log carries the sentence, not the prefix. */
+      console.error("auto-refine unavailable, rendering raw:", unprefixed(e));
     }
   }
 
@@ -968,9 +996,9 @@ export const POST = withTenant(async function POST(req: Request) {
     await meter({ id: genId, kind: "video", engine: billedTo(model.provider ?? "byteplus"), model: modelId, status: "running",
                   engineCostUsd: estUsd, projectId, shotId, createdBy: got.user.id });
   } catch (e) {
-    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] });
+    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [unprefixed(e), now(), genId] });
     invalidate(PROJECTS_KEY);
-    return NextResponse.json({ error: (e as Error).message }, { status: 503 });
+    return NextResponse.json({ error: unprefixed(e) }, { status: 503 });
   }
 
   const out = await submitVideoJob({ genId, model, task, prompt: finalPrompt, params, references, source: sourceRef, ts });
