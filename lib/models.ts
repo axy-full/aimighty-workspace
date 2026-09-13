@@ -587,6 +587,18 @@ export function getModel(id: string): ModelDef {
   return m;
 }
 
+/**
+ * The provider a model belongs to, or null for an id the catalogue does not
+ * carry (an ElevenLabs voice, a gateway text model, the identity trainer).
+ * The engine kill switch is keyed by THIS — the model's own vendor — never by
+ * the ledger's `engine`, which records who was billed (lib/providers.ts
+ * billedTo) and for a Google still can read `vercel`.
+ */
+export function providerOf(modelId: string | null | undefined): string | null {
+  if (!modelId) return null;
+  return MODELS.find((m) => m.id === modelId)?.provider ?? null;
+}
+
 /** Engines that render sound rather than pictures live outside the video
  *  catalogue but still need names on the ledger. */
 export const AUDIO_LABELS: Record<string, { label: string; short: string }> = {

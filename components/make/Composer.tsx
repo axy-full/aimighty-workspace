@@ -186,6 +186,26 @@ export default function Composer({ kind, onMade, initialRef = null, starter = fa
   const choices = useMemo(() => MODELS.filter((m) => m.kind === (kind === "image" ? "image" : "video") && !m.hidden && (kind !== "video" || m.durations.length > 0)), [kind]);
   const [modelId, setModelId] = useState<string>(() => kind === "image" ? (MODELS.find((m) => m.kind === "image" && !m.hidden)?.id ?? DEFAULT_MODEL_ID) : DEFAULT_MODEL_ID);
   const model = getModel(modelId);
+  /* Board 12h: an engine the platform has switched off stays in the list
+     (SOW 7.12: the list equals the registry) but cannot be picked, and
+     Render never enables on it — the server refuses the job at the meter
+     regardless; this only says so before the press. Read once per mount,
+     for the sound composer too — its engine is the registry's audio
+     provider, which has no model chip to pick. The gate lives where money
+     starts, not here. */
+  const { data: engineList } = useApi<{ engines: { id: string; label: string; paused?: boolean; pausedReason?: string | null; kinds?: string[] }[] }>(signedIn ? "/api/engines" : null, 0);
+  const pausedFor = useCallback((mId: string): { paused: boolean; reason: string | null } => {
+    const e = engineList?.engines.find((x) => x.id === getModel(mId).provider);
+    return e?.paused ? { paused: true, reason: e.pausedReason ?? null } : { paused: false, reason: null };
+  }, [engineList]);
+  const soundEngine = kind === "audio" ? engineList?.engines.find((x) => (x.kinds ?? []).includes("audio") || x.id === "elevenlabs") ?? null : null;
+  const pausedNow = kind === "audio"
+    ? (soundEngine?.paused ? { paused: true, reason: soundEngine.pausedReason ?? null } : { paused: false, reason: null })
+    : pausedFor(modelId);
+  /** Whose pause the primary names: the picked engine's label, or the sound engine's as the route read it from the registry. */
+  const pausedName = kind === "audio" ? (soundEngine?.label ?? "") : model.label;
+  /** The one line under a paused engine's name, in place of what it is for. */
+  const pausedLine = (reason: string | null) => `Paused by the platform${reason ? ` · ${reason}` : ""}`;
   const [listOpen, setListOpen] = useState(false);
   const [ratio, setRatio] = useState<string>(() => (model.ratios.includes("16:9") ? "16:9" : model.ratios[0]));
   const [seconds, setSeconds] = useState<number>(() => (model.durations.includes(5) ? 5 : model.durations[0] ?? 5));
@@ -295,7 +315,7 @@ export default function Composer({ kind, onMade, initialRef = null, starter = fa
   const [busy, setBusy] = useState(false);
   /* CR1 §3: an engine that starts from a still (Wan 2.6, Flux Kontext, Nano Banana 2 Edit) waits for one. */
   const needsStill = Boolean(model.needsStartImage) && !refs.some((r) => r.kind === "image");
-  const ready = prompt.trim().length > 0 && !uploading && !needsStill && (kind !== "audio" || (track !== "speech" || Boolean(voice)));
+  const ready = prompt.trim().length > 0 && !uploading && !needsStill && !pausedNow.paused && (kind !== "audio" || (track !== "speech" || Boolean(voice)));
   const render = async () => {
     if (!signedIn) { router.push(signIn); return; }
     if (!ready || busy || unknown.length) return;
@@ -388,7 +408,7 @@ export default function Composer({ kind, onMade, initialRef = null, starter = fa
       className={`flex ${tall ? "h-[52px]" : "h-[50px]"} w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${
         blocked || rail.open || (!tall && sheetOpen) ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-ink text-ground"}`}>
       <span>{busy ? "Rendering…" : signedIn ? "Render" : "Sign in to render"}</span>
-      <span className={`ui-mono ui-mono-cost !text-[12px] ${blocked || rail.open || (!tall && sheetOpen) ? "text-ink-muted" : "text-on-primary-cost"}`}>{money.price(cost)}{suffix}{tall ? afterDesk : afterPhone}</span>
+      <span className={`ui-mono ui-mono-cost !text-[12px] ${blocked || rail.open || (!tall && sheetOpen) ? "text-ink-muted" : "text-on-primary-cost"}`}>{money.price(cost)}{pausedNow.paused ? ` · ${pausedName} is paused` : `${suffix}${tall ? afterDesk : afterPhone}`}</span>
     </button>
   );
 
@@ -457,7 +477,7 @@ export default function Composer({ kind, onMade, initialRef = null, starter = fa
           <div className="flex flex-col gap-[6px]">
             <button type="button" onClick={() => setListOpen((o) => !o)} aria-expanded={listOpen} aria-label="Engine"
               className={`tap44 flex items-center bg-card text-left ${phone ? "gap-[10px] rounded-card border border-[rgba(245,246,248,.1)] px-[13px] py-[12px]" : "gap-[8px] rounded-tile border border-[rgba(245,246,248,.35)] px-[12px] py-[10px]"}`}>
-              <span className={`flex min-w-0 flex-col ${phone ? "gap-[4px]" : "gap-[3px]"}`}><span className={phone ? "text-[14px] font-semibold leading-[1.1] text-ink" : "text-[13.5px] font-medium leading-[1.2] text-ink"}>{model.label}</span><span className={`leading-[1.3] text-ink-body ${phone ? "text-[12.5px]" : "text-[12px]"}`}>{model.use}</span></span>
+              <span className={`flex min-w-0 flex-col ${phone ? "gap-[4px]" : "gap-[3px]"}`}><span className={phone ? "text-[14px] font-semibold leading-[1.1] text-ink" : "text-[13.5px] font-medium leading-[1.2] text-ink"}>{model.label}</span><span className={`leading-[1.3] text-ink-body ${phone ? "text-[12.5px]" : "text-[12px]"}`}>{pausedNow.paused ? pausedLine(pausedNow.reason) : model.use}</span></span>
               <Mono cost tone="ink" className="ml-auto flex-none whitespace-nowrap">{rateLine(modelId)}{phone ? (listOpen ? " ▴" : " ▾") : ""}</Mono>
               {!phone && <span className="text-[10px] text-ink-muted max-md:text-[12px]">{listOpen ? "▲" : "▼"}</span>}
             </button>
@@ -465,11 +485,12 @@ export default function Composer({ kind, onMade, initialRef = null, starter = fa
               <div className="flex flex-col gap-[2px] rounded-tile border border-border-mid bg-card p-[4px]" role="listbox" aria-label="Engines">
                 {choices.map((m) => {
                   const on = m.id === modelId;
+                  const pz = pausedFor(m.id);
                   return (
-                    <button key={m.id} type="button" role="option" aria-selected={on} onClick={() => pickModel(m.id)}
+                    <button key={m.id} type="button" role="option" aria-selected={on} disabled={pz.paused} aria-disabled={pz.paused || undefined} data-paused={pz.paused ? "" : undefined} onClick={() => { if (!pz.paused) pickModel(m.id); }}
                       className={`tap44 flex items-center gap-[10px] rounded-ctl border px-[10px] py-[9px] text-left ${on ? "border-[rgba(245,246,248,.5)] bg-[rgba(245,246,248,.06)]" : "border-transparent"}`}>
-                      <span className={`box-border h-[14px] w-[14px] flex-none rounded-full border-[1.5px] ${on ? "border-ink bg-ink" : "border-[rgba(245,246,248,.3)]"}`} />
-                      <span className="flex min-w-0 flex-col gap-[3px]"><span className="text-[13px] font-medium leading-[1.2] text-ink">{m.label}</span><span className="text-[12px] leading-[1.3] text-ink-body">{m.use}</span></span>
+                      <span className={`box-border h-[14px] w-[14px] flex-none rounded-full border-[1.5px] ${on ? "border-ink bg-ink" : pz.paused ? "border-dashed border-ink-muted" : "border-[rgba(245,246,248,.3)]"}`} />
+                      <span className="flex min-w-0 flex-col gap-[3px]"><span className={`text-[13px] font-medium leading-[1.2] ${pz.paused ? "text-ink-muted" : "text-ink"}`}>{m.label}</span><span className="text-[12px] leading-[1.3] text-ink-body">{pz.paused ? pausedLine(pz.reason) : m.use}</span></span>
                       <Mono cost tone="ink" className="ml-auto whitespace-nowrap">{rateLine(m.id)}</Mono>
                     </button>
                   );
@@ -614,7 +635,7 @@ export default function Composer({ kind, onMade, initialRef = null, starter = fa
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto p-[16px]">{body}</div>
           <div className="flex flex-none flex-col gap-[8px] border-t border-border px-[16px] pb-[16px] pt-[12px]">
-            <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : needsStill ? " · attach a still first" : `${suffix}${afterDesk}`} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
+            <Button variant="primary" placement="composer" cost={cost} costSuffix={pausedNow.paused ? ` · ${pausedName} is paused` : unknown.length ? ` · after @${unknown[0]} exists` : needsStill ? " · attach a still first" : `${suffix}${afterDesk}`} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0 || pausedNow.paused} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
               {signedIn ? "Render" : "Sign in to render"}
             </Button>
             <Mono cost className="text-center !leading-[1.4]">Lands on the wall unfiled · file to a shot any time</Mono>

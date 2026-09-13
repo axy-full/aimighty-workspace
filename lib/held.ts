@@ -1,14 +1,14 @@
 import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
-import { meter } from "./meter";
+import { billCreditsWith, multiplierFor, marginKeyOf, creditUsd } from "./creditTerms";
+import { meter, switchProviderOf } from "./meter";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { sendMail, mailConfigured } from "./mail";
-import { workspaceAdmins } from "./platform";
+import { workspaceAdmins, engineSwitches } from "./platform";
 import { workspaceLimits, standing } from "./limits";
 import { notify } from "./push";
 
@@ -28,8 +28,12 @@ export type HeldWhy = "credits" | "slots";
 export type HeldInfo = { estUsd: number; needs: number; at: number; why: HeldWhy };
 type Defer = (fn: () => Promise<void>) => void;
 
-export function heldInfo(estUsd: number, kind: string, model: string, why: HeldWhy = "credits"): HeldInfo {
-  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)), at: now(), why };
+/** What a take is billed at in this workspace: whole credits at its multiplier — cost when it is flagged internal (§7A guardrail 6). */
+const needsFor = (estUsd: number, kind: string, model: string, internal: boolean): number =>
+  billCreditsWith(estUsd, multiplierFor(marginKeyOf(kind, model), internal), creditUsd());
+
+export function heldInfo(estUsd: number, kind: string, model: string, why: HeldWhy = "credits", internal = currentTenant()?.workspace?.internal === true): HeldInfo {
+  return { estUsd, needs: needsFor(estUsd, kind, model, internal), at: now(), why };
 }
 
 export function heldMessage(needs: number, left: number): string {
@@ -65,6 +69,7 @@ type HeldRow = {
 
 async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
+  const internal = currentTenant()?.workspace?.internal === true;
   const rs = await db().execute({
     sql: `SELECT id, kind, model, billed_to, provider, project_id, shot_id, created_by, params
           FROM generations WHERE status = 'held' AND deleted = 0 ${only ? "AND id = ?" : ""}
@@ -93,7 +98,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
          The snapshot is still the fallback, for a row old enough to have no
          `estUsd` in it, where deriving would give zero and release it free. */
       estUsd,
-      needs: (estUsd > 0 ? billCredits(estUsd, marginKeyOf(kind, model)) : 0) || Number(held.needs ?? 0),
+      needs: (estUsd > 0 ? needsFor(estUsd, kind, model, internal) : 0) || Number(held.needs ?? 0),
       why: held.why === "slots" ? "slots" : "credits",
     };
   });
@@ -107,6 +112,13 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
 export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {}): Promise<{ released: string[]; short: number }> {
   const rows = await heldRows(opts.only);
   if (!rows.length) return { released: [], short: 0 };
+  /* A suspended workspace releases nothing: the platform paused its
+     rendering (lib/auth.ts requireRender answers 423 to a press), and a
+     top-up or the cron must not start what a press cannot. */
+  if (currentTenant()?.workspace?.suspendedAt) return { released: [], short: rows.length };
+  /* The engine switches (SOW v2 §9), read once for the batch: a take on a
+     provider the platform switched off stays held and the line moves on. */
+  const switches = await engineSwitches().catch(() => null);
   const state = await creditState();
   /* Credits are checked for the takes held for credits; a slot is needed by
      every release, whatever it was held for. */
@@ -118,6 +130,7 @@ export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {
   for (const r of rows) {
     if (running >= limits.concurrency) break;
     if (r.why === "credits" && !plan.release.includes(r.id)) break;
+    if (switches && switches[switchProviderOf(r.model, r.engine) as keyof typeof switches]?.on === false) continue;
     // The meter first: work the platform cannot bill does not start.
     try {
       await meter({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",

@@ -10,7 +10,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { listChecks, spendSince, computedSpendUpTo } from "@/lib/reconcile";
 import { storageLedger } from "@/lib/storageCost";
 import { billedCreditsSum } from "@/lib/creditSql";
-import { billCredits, marginKeyOf } from "@/lib/creditTerms";
+import { billCreditsWith, multiplierFor, marginKeyOf, creditUsd } from "@/lib/creditTerms";
 import { currentTenant } from "@/lib/tenant";
 import { creditsApply, creditState } from "@/lib/credits";
 import { cycleBounds, cycleKey } from "@/lib/cycle";
@@ -297,6 +297,8 @@ export const GET = withTenant(async function GET() {
      statement agree. The workspace's rows supply the names and the take order; the platform's rows supply the money. ── */
   const ws = currentTenant()?.workspace ?? null;
   const inCredits = creditsApply(ws);
+  /* Read once, above the lists: the workspace's multiplier — cost when it is flagged internal (§7A guardrail 6). */
+  const internal = ws?.internal === true;
   const nowMs = Date.now();
   const { start: cycleStart, end: cycleEnd } = cycleBounds(1, nowMs);
   const cycle = { key: cycleKey(cycleStart), from: cycleStart, to: cycleEnd };
@@ -396,7 +398,7 @@ export const GET = withTenant(async function GET() {
       provider: r.provider ?? "byteplus", kind: r.kind ?? "video", title: r.title ?? null,
       prompt: r.prompt,
       costUsd: Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0),
-      credits: billCredits(Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0), marginKeyOf(r.kind ?? "video", r.model)),
+      credits: billCreditsWith(Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0), multiplierFor(marginKeyOf(r.kind ?? "video", r.model), internal), creditUsd()),
       renderCostUsd: Number(r.cost_usd),
       refineCostUsd: r.refine_cost_usd == null ? null : Number(r.refine_cost_usd),
       refineModel: r.refine_model ?? null,

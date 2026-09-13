@@ -3,7 +3,7 @@ import { storeVideo } from "./storage";
 import { costUsd } from "./models";
 import { effectiveRate } from "./vendorPricing";
 import { creditsApply } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCreditsWith, multiplierFor, marginKeyOf, creditUsd } from "./creditTerms";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
@@ -85,7 +85,10 @@ function rows(rs: { rows: unknown[] }): any[] { return rs.rows as any[]; }
 export function rowToGeneration(r: any): Generation {
   /* Read once per row rather than per field: which unit this workspace pays
      in decides what the row is allowed to carry. */
-  const inCredits = creditsApply(currentTenant()?.workspace);
+  const ws = currentTenant()?.workspace;
+  const inCredits = creditsApply(ws);
+  /* At the workspace's multiplier — cost when it is flagged internal (§7A guardrail 6) — so the card and the ledger agree. */
+  const internal = ws?.internal === true;
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -118,7 +121,7 @@ export function rowToGeneration(r: any): Generation {
     costUsd: inCredits ? null : (r.cost_usd ?? null),
     refineCostUsd: inCredits ? null : (r.refine_cost_usd ?? null),
     creditsBilled: inCredits
-      ? billCredits(Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0), marginKeyOf(r.kind, r.model))
+      ? billCreditsWith(Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0), multiplierFor(marginKeyOf(r.kind, r.model), internal), creditUsd())
       : null,
     refineModel: r.refine_model ?? null,
     refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),

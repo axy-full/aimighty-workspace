@@ -105,6 +105,12 @@ README §15 names are authoritative. Tenancy, ledger and provenance fields from 
 ```
 workspace   { id, name, tier, credits, rateUsd: 0.10, multiplier, internal, engines[], roles[],
               storageQuotaBytes, concurrencyLimit, grantUsed }
+            // SOW surfaces 12h, 13 Sep 2026: `internal` is its own column on the platform's workspaces table
+            // (distinct from `internal_test`, which allows real vendor calls for previews); an internal workspace
+            // bills at multiplier 1.0 at every site that prices or bills for it and is excluded from margin reporting.
+platform    { layer.engines: Record<providerId, { on, reason, by, at }>   // the kill switch, read where money starts
+              layer.caps.grantBudgetUsd: number | null                     // the month's cap on welcome grants
+              platform_alerts { key, lastAt } }                            // the floor guard's last alert per provider
 engine      { id, name, does, rate, unit, connected, atomikMayPropose, multiplier }
 production  { id, workspaceId, name, client, status, cap, spent }
 project     { id, productionId, name, format, runtimeSecs, step, cap, spent, needYou }

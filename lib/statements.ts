@@ -2,7 +2,7 @@ import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCreditsWith, multiplierFor, marginKeyOf, creditUsd } from "./creditTerms";
 import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
@@ -181,7 +181,9 @@ export async function statementFor(month: string, projectId: string | null): Pro
     const kind = (r.kind === "image" || r.kind === "audio" ? r.kind : "video") as RawLine["kind"];
     const usd = Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0);
     const m = meter.get(String(r.id));
-    const credits = inCredits ? (m && m.billed_credits != null ? Number(m.billed_credits) : billCredits(usd, marginKeyOf(kind, r.model))) : 0;
+    /* A take with no meter row is billed here at the same rounding, at the
+       workspace's own multiplier — cost for an internal one (§7A guardrail 6). */
+    const credits = inCredits ? (m && m.billed_credits != null ? Number(m.billed_credits) : billCreditsWith(usd, multiplierFor(marginKeyOf(kind, r.model), ws.internal === true), creditUsd())) : 0;
     if (!(credits > 0) && !(usd > 0) && r.status !== "succeeded") continue;
     let p: { resolution?: string; duration?: number } = {};
     try { p = JSON.parse(r.params ?? "{}"); } catch { p = {}; }

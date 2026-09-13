@@ -455,7 +455,8 @@ test.describe("Usage on a phone", () => {
     await settle(page);
     await expect(page.getByRole("banner").getByText("Usage", { exact: true })).toBeVisible();
     await expect(page.getByRole("banner").getByRole("button", { name: "‹ Back" })).toBeVisible();
-    const signedIn = await page.getByRole("button", { name: "Account" }).count();
+    /* The M10 header hides the account menu below 768, so the gate must count it hidden. */
+    const signedIn = await page.getByRole("button", { name: "Account", includeHidden: true }).count();
     test.skip(!signedIn, "the cards need a workspace");
     for (const name of ["The shots taking the most takes", "By production", "By engine"]) await expect(page.getByRole("region", { name })).toBeAttached();
     await expect(page.getByRole("button", { name: /^Download the statement/ })).toBeVisible();
@@ -494,5 +495,65 @@ test.describe("Recipes on a phone", () => {
       }).map((b) => `${(b.getAttribute("aria-label") ?? b.textContent ?? "").trim().slice(0, 20)}:${Math.round(b.getBoundingClientRect().height)}`));
       expect(short, "every step control on a phone is at least 44pt, or carries a 44pt touch band").toEqual([]);
     }
+  });
+});
+
+/**
+ * The admin desk on a phone (SOW surfaces board 12h, the mobile README's
+ * chrome): the M10 header reads `‹ Back · Admin`, the four blocks stack in
+ * one column at 16px gutters, every engine switch sits on a 44pt band, the
+ * one primary (`Send N codes`) is pinned above the dock, and nothing is
+ * wider than the screen. A visitor sees the header and the owner-only
+ * line; the blocks need the platform owner's session.
+ */
+test.describe("Admin on a phone", () => {
+  test.skip(({ viewport }) => !viewport || viewport.width >= 768, "portrait phones only");
+  test("‹ Back · Admin, one column, the pinned primary, every switch on a 44pt band, no overflow", async ({ page }) => {
+    await page.goto("/admin");
+    await settle(page);
+    const banner = page.getByRole("banner");
+    await expect(banner.getByRole("button", { name: "‹ Back" })).toBeVisible();
+    await expect(banner.getByText("Admin", { exact: true })).toBeVisible();
+    /* Signed in means the desk grid rendered: the Account button is display:none in this header, and getByRole
+       never counts a hidden control. */
+    const signedIn = await page.locator("[data-desk-grid]").count();
+    test.skip(!signedIn, "the desk needs the platform owner");
+    /* One column: each block starts at the same left edge and below the one before it. */
+    const boxes: { x: number; y: number; width: number }[] = [];
+    for (const name of ["Wants in", "Engines", "Studios", "What every new studio starts with"]) {
+      const region = page.getByRole("region", { name });
+      await expect(region).toBeAttached();
+      const b = (await region.boundingBox())!;
+      boxes.push({ x: b.x, y: b.y, width: b.width });
+    }
+    const width = page.viewportSize()!.width;
+    for (const b of boxes) { expect(b.x).toBe(boxes[0].x); expect(b.width).toBeLessThanOrEqual(width - 32); }
+    for (let i = 1; i < boxes.length; i++) expect(boxes[i].y, "the blocks stack; none sits beside another").toBeGreaterThanOrEqual(boxes[i - 1].y);
+    /* The primary pinned above the dock, at the pinned block's 50px: `Send N codes` (`Send a code` for one) and
+       filled when somebody is waiting; outlined and blocked — its text then is not `Send…` — when nobody is. */
+    const primary = page.locator("[data-pinned]").locator("[data-send-codes], button").first();
+    await expect(primary).toBeVisible();
+    expect((await primary.boundingBox())!.height).toBeGreaterThanOrEqual(50);
+    const label = (await primary.innerText()).trim();
+    const ink = "rgb(245, 246, 248)";
+    if (/^Send (a code|\d+ codes)/.test(label)) {
+      expect(await primary.evaluate((b) => getComputedStyle(b).backgroundColor), "the pinned primary is filled").toBe(ink);
+    } else {
+      expect(await primary.evaluate((b) => getComputedStyle(b).backgroundColor), "nobody to send to: the pinned primary is outlined").not.toBe(ink);
+      await expect(primary).toBeDisabled();
+    }
+    /* Every switch at 44pt, by its own height or through the tap44 band boundingBox never sees. */
+    const short = await page.getByRole("region", { name: "Engines" }).evaluate((root) => [...root.querySelectorAll<HTMLElement>("[role='switch']")].filter((b) => {
+      const r = b.getBoundingClientRect(); if (r.height === 0) return false;
+      const band = parseFloat(getComputedStyle(b, "::after").height) || 0;
+      return r.height < 44 && band < 44;
+    }).map((b) => `${(b.getAttribute("aria-label") ?? "").slice(0, 24)}:${Math.round(b.getBoundingClientRect().height)}`));
+    expect(short, "every engine switch on a phone is at least 44pt, or carries a 44pt touch band").toEqual([]);
+    /* Nothing wider than the screen — the document, and the desk's own scroll container: it is overflow-y:auto, which
+       clips sideways overflow, so the document alone would never widen whatever the cards did. */
+    const m = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+    expect(m.scrollWidth).toBe(m.clientWidth);
+    const body = await page.locator("[data-phone-body]").evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+    expect(body.scrollWidth, "the phone body pans sideways").toBe(body.clientWidth);
   });
 });

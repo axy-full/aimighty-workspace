@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin, withTenant } from "@/lib/auth";
 import { enhancePrompt, activeWriter } from "@/lib/enhance";
 import { invalidateSettings } from "@/lib/settings";
+import { enginePausedFrom } from "@/lib/platformLayer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -39,6 +40,10 @@ export const POST = withTenant(async function POST() {
       sample: r.text.slice(0, 240),
     });
   } catch (e) {
+    /* A writer the platform has paused (SOW v2 §9) is a 503 with the
+       sentence, not a failed test with the ENGINE_PAUSED: prefix in it. */
+    const paused = enginePausedFrom(e);
+    if (paused) return NextResponse.json({ ok: false, writer, ms: Date.now() - t0, error: paused }, { status: 503 });
     return NextResponse.json({ ok: false, writer, ms: Date.now() - t0, error: (e as Error).message });
   }
 });

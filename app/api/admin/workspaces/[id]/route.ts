@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { asPlanId } from "@/lib/plans";
 import { requireSuperAdmin } from "@/lib/auth";
-import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits, setWorkspacePlan } from "@/lib/platform";
+import { setWorkspaceInternalTest, setWorkspaceInternal, getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits, setWorkspacePlan } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 
@@ -11,6 +11,15 @@ export const dynamic = "force-dynamic";
  * One workspace, from the platform owner's desk: how much of the
  * platform's money it may spend a month, and whether it runs on the
  * platform's keys at all.
+ *
+ * Board 12h adds one key beside the others:
+ *   curl -b "$COOKIE" -X PATCH http://localhost:4550/api/admin/workspaces/<id> \
+ *        -H 'content-type: application/json' -d '{"internal":true}'
+ *   { ok: true, internal: true }
+ * `internal` (CLAUDE.md pricing guardrail 6) bills the workspace at cost —
+ * multiplier 1.0 — and leaves it out of margin reporting. It is distinct
+ * from `internalTest`, which only says real vendor calls may be made for
+ * the platform's previews.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const got = await requireSuperAdmin();
@@ -42,6 +51,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if ("internalTest" in body) {
     await setWorkspaceInternalTest(id, Boolean(body.internalTest));
     out.internalTest = Boolean(body.internalTest);
+  }
+  if ("internal" in body) {
+    await setWorkspaceInternal(id, Boolean(body.internal));
+    out.internal = Boolean(body.internal);
   }
   if ("flagged" in body) {
     const on = Boolean(body.flagged);

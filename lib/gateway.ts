@@ -93,6 +93,15 @@ export type GatewayReply = { ok: boolean; status: number; text: string };
 /**
  * One POST to the gateway's chat endpoint, the body already serialised.
  * Under ENGINE_MOCK the reply is canned and nothing leaves the process.
+ *
+ * The kill switch (SOW v2 §9, board 12h) is NOT read here: this module is
+ * in the browser bundle (lib/providers.ts imports it for gatewayReachable),
+ * so it can reach nothing of the platform record. The three server-only
+ * callers read it at their own door instead, before they call this — the
+ * writer (lib/enhance.ts), the planner turn (lib/atomik.ts) and the adapter
+ * (lib/engines/vercel.ts) — through lib/meter.ts refuseIfPaused(null,
+ * "vercel"), because a text job is metered only after the gateway has
+ * answered and the meter's own gate never sees it.
  */
 export async function gatewayPost(
   body: string,

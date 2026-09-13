@@ -1,8 +1,12 @@
-import { platformDb, platformReady, now } from "./platform";
+import { platformDb, platformReady, now, getWorkspace, engineOff } from "./platform";
 import { currentTenant } from "./tenant";
-import { billCredits, marginKeyOf } from "./creditTerms";
+import { billCreditsWith, multiplierFor, marginKeyOf, creditUsd } from "./creditTerms";
 import type { Span } from "./concurrency";
 import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
+import { providerOf } from "./models";
+import { PROVIDERS, type ProviderId } from "./providers";
+import { enginePausedMessage } from "./platformLayer";
+import { marginPctOf } from "./adminView";
 
 /**
  * The metering layer. Every engine call, whatever the vendor, is written
@@ -18,9 +22,17 @@ import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
  * engine health, margin. The workspace's own tables keep the product data.
  *
  * `engine_cost_usd` is what the vendor charged; `billed_credits` is what
- * the workspace pays — whole credits at the engine's margin — and only when
- * the platform's key paid the vendor. A workspace on its own key for that
+ * the workspace pays — whole credits at the engine's margin, or at cost for
+ * a workspace flagged internal (§7A guardrail 6) — and only when the
+ * platform's key paid the vendor. A workspace on its own key for that
  * vendor is metered at zero credits: the money was theirs.
+ *
+ * This is also where the engine kill switch is read (SOW v2 §9): a job that
+ * would START on a provider the platform has switched off is refused here,
+ * before its row exists, with one sentence every caller can show. The gate
+ * lives where money starts, because a switch that only hid an engine from a
+ * list while this still ran it would be a money bug. Completions are never
+ * gated: a job already running must be able to end.
  */
 export type MeterKind = "video" | "image" | "audio" | "training" | "text";
 export type MeterStatus = "running" | "succeeded" | "failed";
@@ -43,6 +55,30 @@ export type MeterEvent = {
 
 
 /**
+ * The provider a job's switch is keyed by: the MODEL's own vendor, and only
+ * where the catalogue does not know the model (a voice, a text model, the
+ * trainer) the ledger's engine, which for those is the same company.
+ */
+export function switchProviderOf(model: string | null | undefined, engine: string): string {
+  return providerOf(model) ?? engine;
+}
+
+const providerLabel = (id: string): string => PROVIDERS.find((p) => p.id === id)?.label ?? id;
+
+/**
+ * Refuse to start a job on a switched-off provider: throws the one refusal
+ * sentence (lib/platformLayer.ts enginePausedMessage), else returns. Read
+ * from the platform layer, tenant-agnostic, cached ten seconds with the
+ * rest of it. A layer that cannot be read does not refuse — the INSERT
+ * that follows fails on the same database and refuses for it.
+ */
+export async function refuseIfPaused(model: string | null | undefined, engine: string): Promise<void> {
+  const pid = switchProviderOf(model, engine);
+  const gate = await engineOff(pid).catch(() => ({ off: false, reason: null as string | null }));
+  if (gate.off) throw new Error(enginePausedMessage(providerLabel(pid), gate.reason));
+}
+
+/**
  * Write or update one event. A `critical` write (the default for a job
  * that is starting) throws when it cannot be recorded, because work the
  * platform cannot bill must not start; a completion is logged and left for
@@ -50,11 +86,23 @@ export type MeterEvent = {
  */
 export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): Promise<void> {
   const critical = opts.critical ?? e.status === "running";
-  const workspaceId = e.workspaceId ?? currentTenant()?.workspace?.id;
+  const tenantWs = currentTenant()?.workspace ?? null;
+  const workspaceId = e.workspaceId ?? tenantWs?.id;
   if (!workspaceId) return;
+  /* The switch, only where a job starts: a switched-off engine refuses new
+     work and lets running work finish. */
+  if (e.status === "running") await refuseIfPaused(e.model, e.engine);
   const paid = paidByPlatform(vendorKeyNameFor(e.engine));
   const cost = typeof e.engineCostUsd === "number" && Number.isFinite(e.engineCostUsd) ? Math.max(0, e.engineCostUsd) : null;
-  const billed = cost == null ? null : paid ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
+  /* Whose multiplier: the tenant's flag when the row is the tenant's, else the
+     workspace's own row — looked up only when there is something to bill. */
+  let internal = false;
+  if (cost != null && paid) {
+    internal = tenantWs && tenantWs.id === workspaceId
+      ? tenantWs.internal === true
+      : (await getWorkspace(workspaceId).catch(() => null))?.internal === true;
+  }
+  const billed = cost == null ? null : paid ? billCreditsWith(cost, multiplierFor(marginKeyOf(e.kind, e.model), internal), creditUsd()) : 0;
   const ts = now();
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -220,6 +268,82 @@ export async function engineHealth(sinceMs: number): Promise<EngineHealthRow[]> 
       engineCostUsd: Number(r.cost ?? 0),
     };
   });
+}
+
+/* ── the platform's own view (SOW v2 §7.13, board 12h) ──────────────────
+   Two reads across every workspace, platform-paid rows only, the pricing
+   view of margin (lib/adminView.ts marginPctOf — no funded fraction, since
+   the question is whether the multiplier holds over cost). Rows still
+   `running` are IN: their engine_cost_usd is the pre-flight estimate and
+   their billed_credits the estimate's bill, so month-to-date and the 7-day
+   figure are partly estimate until each job ends. Internal workspaces (§7A
+   guardrail 6) are listed but kept OUT of every total, so the platform's
+   numbers are never distorted by its own spend at cost. */
+
+export type PlatformWorkspaceMeter = { engineCostUsd: number; billedCredits: number; jobs: number; failed: number; internal: boolean };
+export type PlatformCycle = {
+  engineCostUsd: number; billedCredits: number; marginPct: number | null;
+  byWorkspace: Map<string, PlatformWorkspaceMeter>;
+};
+
+/** Since a moment (to another, default open): the platform's engine spend, what it billed, its margin, and each workspace's share — internal ones listed, excluded from the totals. */
+export async function platformCycle(sinceMs: number, untilMs = Number.MAX_SAFE_INTEGER): Promise<PlatformCycle> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT m.workspace_id, COALESCE(w.internal, 0) AS internal, COUNT(*) AS jobs, SUM(m.status = 'failed') AS failed,
+                 COALESCE(SUM(COALESCE(m.engine_cost_usd, 0)), 0) AS cost,
+                 COALESCE(SUM(COALESCE(m.billed_credits, 0)), 0) AS billed
+            FROM meter_events m LEFT JOIN workspaces w ON w.id = m.workspace_id
+           WHERE m.paid_by_platform = 1 AND m.created_at >= ? AND m.created_at < ?
+           GROUP BY m.workspace_id`,
+    args: [sinceMs, untilMs],
+  });
+  const byWorkspace = new Map<string, PlatformWorkspaceMeter>();
+  let engineCostUsd = 0; let billedCredits = 0;
+  for (const r of rs.rows as unknown as Record<string, unknown>[]) {
+    const row: PlatformWorkspaceMeter = {
+      engineCostUsd: Number(r.cost ?? 0), billedCredits: Number(r.billed ?? 0),
+      jobs: Number(r.jobs ?? 0), failed: Number(r.failed ?? 0), internal: Number(r.internal ?? 0) === 1,
+    };
+    byWorkspace.set(String(r.workspace_id), row);
+    if (row.internal) continue;
+    engineCostUsd += row.engineCostUsd; billedCredits += row.billedCredits;
+  }
+  return { engineCostUsd, billedCredits, marginPct: marginPctOf(billedCredits, engineCostUsd, creditUsd()), byWorkspace };
+}
+
+export type EngineMarginRow = { engineCostUsd: number; billedCredits: number; marginPct: number | null; jobs: number; failed: number };
+export type EngineMargin = Record<ProviderId, EngineMarginRow>;
+
+/**
+ * Since a moment, per PROVIDER — the model's own vendor, joined in code
+ * (lib/models.ts), never the ledger's `engine`, which is who was billed and
+ * for a Google still can read `vercel`. The floor guard's figure (§7A):
+ * platform-paid rows, internal workspaces out, running rows in as estimates
+ * (see above). Every registered provider is present, at zero when idle.
+ */
+export async function engineMargin(sinceMs: number, untilMs = Number.MAX_SAFE_INTEGER): Promise<EngineMargin> {
+  await platformReady();
+  const rs = await platformDb().execute({
+    sql: `SELECT m.model, m.engine, COUNT(*) AS jobs, SUM(m.status = 'failed') AS failed,
+                 COALESCE(SUM(COALESCE(m.engine_cost_usd, 0)), 0) AS cost,
+                 COALESCE(SUM(COALESCE(m.billed_credits, 0)), 0) AS billed
+            FROM meter_events m LEFT JOIN workspaces w ON w.id = m.workspace_id
+           WHERE m.paid_by_platform = 1 AND COALESCE(w.internal, 0) = 0 AND m.created_at >= ? AND m.created_at < ?
+           GROUP BY m.model, m.engine`,
+    args: [sinceMs, untilMs],
+  });
+  const out = Object.fromEntries(PROVIDERS.map((p) => [p.id, { engineCostUsd: 0, billedCredits: 0, marginPct: null, jobs: 0, failed: 0 }])) as EngineMargin;
+  for (const r of rs.rows as unknown as Record<string, unknown>[]) {
+    const pid = switchProviderOf(r.model == null ? null : String(r.model), String(r.engine ?? "")) as ProviderId;
+    const row = out[pid];
+    if (!row) continue; // a vendor this build has never heard of: not a switch, not a row
+    row.engineCostUsd += Number(r.cost ?? 0); row.billedCredits += Number(r.billed ?? 0);
+    row.jobs += Number(r.jobs ?? 0); row.failed += Number(r.failed ?? 0);
+  }
+  const per = creditUsd();
+  for (const row of Object.values(out)) row.marginPct = marginPctOf(row.billedCredits, row.engineCostUsd, per);
+  return out;
 }
 
 /**

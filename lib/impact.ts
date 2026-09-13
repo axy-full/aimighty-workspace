@@ -82,7 +82,8 @@ export async function impactOf(
     { projectId: opts.projectId, following: opts.following });
   const described = dependents.length ? await describe(dependents) : [];
 
-  const terms = liveTerms();
+  /* The workspace's own terms: at cost when it is flagged internal (§7A guardrail 6), so the panel quotes what the meter bills. */
+  const terms = liveTerms(currentTenant()?.workspace?.internal === true);
   /* Every production the change actually reaches, not the one that was asked
      about. Without a production named, a shared element spans the workspace
      and each production it lands in has a cap of its own. */
@@ -316,7 +317,7 @@ export async function quoteShots(
 ): Promise<{ quote: Quote; verdict: Verdict; shots: ImpactShot[]; pricedAt: number; stamp: string }> {
   await ready();
   const wanted = [...new Set(shotIds.filter(Boolean))];
-  const terms = liveTerms();
+  const terms = liveTerms(currentTenant()?.workspace?.internal === true);
 
   /* Priced as if nothing is pinned: the question is what this shot costs to
      render, which does not depend on how it came to be bound. */

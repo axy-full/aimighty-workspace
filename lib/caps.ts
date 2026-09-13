@@ -1,7 +1,7 @@
 import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCredits } from "./creditTerms";
+import { billCreditsWith, multiplierFor, creditUsd } from "./creditTerms";
 import { billedCreditsSum } from "./creditSql";
 import { getSetting } from "./settings";
 import { workspaceAdmins } from "./platform";
@@ -68,16 +68,22 @@ export async function projectCap(projectId: string): Promise<ProjectCap | null> 
   };
 }
 
+/** What a job counts against the cap, in the production's unit: whole credits at the workspace's multiplier — cost when it is flagged internal (§7A guardrail 6) — or the vendor's dollars. Pure. */
+export function capNeeds(needsUsd: number, unit: CapUnit, engine: string | null | undefined, internal: boolean): number {
+  return unit === "cr" ? billCreditsWith(needsUsd, multiplierFor(engine, internal), creditUsd()) : needsUsd;
+}
+
 /**
  * The cost check against the production's cap. `needsUsd` is the job's
  * estimate at the vendor; in a credits workspace it is billed as whole
- * credits at the engine's margin, like everything else.
+ * credits at the workspace's multiplier, like everything else. The flag is
+ * defaulted from the tenant in scope, so the routes that inline it need not know.
  */
-export async function checkCap(projectId: string | null, needsUsd: number, engine: string | null): Promise<CapVerdict> {
+export async function checkCap(projectId: string | null, needsUsd: number, engine: string | null, internal = currentTenant()?.workspace?.internal === true): Promise<CapVerdict> {
   if (!projectId) return { allow: true, pct: null, warned: false };
   const pc = await projectCap(projectId);
   if (!pc || pc.cap == null) return { allow: true, pct: null, warned: false };
-  const needs = pc.unit === "cr" ? billCredits(needsUsd, engine) : needsUsd;
+  const needs = capNeeds(needsUsd, pc.unit, engine, internal);
   const ruleRaw = await getSetting("atCap");
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
   const warnPct = Math.max(1, Math.min(100, Number(await getSetting("capWarnPct")) || 80));

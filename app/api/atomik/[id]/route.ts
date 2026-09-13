@@ -4,7 +4,7 @@ import {
   getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext,
   type AgentMode,
 } from "@/lib/atomik";
-import { writerRulesByScope } from "@/lib/platformLayer";
+import { writerRulesByScope, enginePausedFrom } from "@/lib/platformLayer";
 import { effectiveRules } from "@/lib/rules";
 import { cleanAttachments } from "@/lib/attachments";
 
@@ -77,9 +77,11 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     await runTurn(id, { context, rules: writerRulesByScope(await effectiveRules()) });
   } catch (e) {
     await patchChat(id, { status: "failed" });
+    /* A paused gateway is the platform's word, not a vendor failure: the sentence, and 503. */
+    const paused = enginePausedFrom(e);
     return NextResponse.json(
-      { error: (e as Error).message, chat: await getChat(id) },
-      { status: 502 },
+      { error: paused ?? (e as Error).message, chat: await getChat(id) },
+      { status: paused ? 503 : 502 },
     );
   }
   return NextResponse.json(await getChat(id));

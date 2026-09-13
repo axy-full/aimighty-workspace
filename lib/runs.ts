@@ -7,7 +7,7 @@ import { MODELS, AUDIO_LABELS, DEFAULT_MODEL_ID, prettyModel } from "./models";
 import { PROVIDERS } from "./providers";
 import { DEFAULT_TEXT_MODELS } from "./platformLayer";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
-import { billCredits } from "./creditTerms";
+import { billCreditsWith, multiplierFor, creditUsd } from "./creditTerms";
 import { speechCredits, usdForCredits } from "./elevenlabs";
 import { creditsApply } from "./credits";
 import { currentTenant } from "./tenant";
@@ -329,25 +329,26 @@ export function unitUsdFor(engine: string, kind: "write" | "render" | "assemble"
   return null;
 }
 
-/** A stage's price in the workspace's unit, rounded ONCE for the whole batch (SOW §2: batches multiply before rounding). */
-export function stagePrice(unitUsd: number, units: number, engine?: string | null): number {
+/** A stage's price in the workspace's unit, rounded ONCE for the whole batch (SOW §2: batches multiply before rounding).
+ *  Credits at the workspace's multiplier — cost when it is flagged internal (§7A guardrail 6) — defaulted from the tenant in scope. */
+export function stagePrice(unitUsd: number, units: number, engine?: string | null, internal?: boolean): number {
   const usd = unitUsd * Math.max(1, units);
   const ws = currentTenant()?.workspace;
   /* A dollar workspace (its own keys) sees vendor dollars; everyone else, and a test with no tenant, sees credits. */
-  return ws && !creditsApply(ws) ? round2(usd) : billCredits(usd, engine);
+  return ws && !creditsApply(ws) ? round2(usd) : billCreditsWith(usd, multiplierFor(engine, internal ?? (ws?.internal === true)), creditUsd());
 }
 
 /** A price as the platform floor reads it — in credits whatever the workspace is billed in: a dollar workspace's figure is
  *  vendor dollars, so it is billed the way a credit workspace would be before the 200-cr line is tested. */
-export function floorCreditsOf(price: number, engine?: string | null): number {
+export function floorCreditsOf(price: number, engine?: string | null, internal?: boolean): number {
   const ws = currentTenant()?.workspace;
-  return ws && !creditsApply(ws) ? billCredits(price, engine) : price;
+  return ws && !creditsApply(ws) ? billCreditsWith(price, multiplierFor(engine, internal ?? (ws?.internal === true)), creditUsd()) : price;
 }
 
 /** One unit's price in the workspace's unit — for a test or a card, never for a batch. */
-export function unitCreditsFor(engine: string, kind: "write" | "render" | "assemble", unit?: string | null): number | null {
+export function unitCreditsFor(engine: string, kind: "write" | "render" | "assemble", unit?: string | null, internal?: boolean): number | null {
   const usd = unitUsdFor(engine, kind, unit);
-  return usd == null ? null : stagePrice(usd, 1, engine);
+  return usd == null ? null : stagePrice(usd, 1, engine, internal);
 }
 
 async function graphOf(r: any, shots: number | null = null, projectId: string | null = null): Promise<RecipeGraph> {

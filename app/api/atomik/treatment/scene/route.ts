@@ -12,6 +12,7 @@ import { findModel, textCostUsd } from "@/lib/catalog";
 import { estimateRefineUsd } from "@/lib/refineGate";
 import { meter } from "@/lib/meter";
 import { specToPhrase } from "@/lib/studio";
+import { enginePausedFrom } from "@/lib/platformLayer";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,16 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!wall.ok) return NextResponse.json({ error: wall.error }, { status: wall.status });
   const lim = await checkLimits();
   if (!lim.allow) return NextResponse.json({ error: lim.error }, { status: lim.why === "rate" ? 429 : 409 });
-  const res = await engineFor("vercel").chat!({ model, system: SYSTEM, user, maxTokens: 900, auth, timeoutMs: 90_000, mock: "scene" });
+  /* The gateway door (lib/gateway.ts) refuses when the platform has paused
+     Vercel AI Gateway (SOW v2 §9): 503 with the sentence, never the prefix. */
+  let res;
+  try {
+    res = await engineFor("vercel").chat!({ model, system: SYSTEM, user, maxTokens: 900, auth, timeoutMs: 90_000, mock: "scene" });
+  } catch (e) {
+    const paused = enginePausedFrom(e);
+    if (paused) return NextResponse.json({ error: paused }, { status: 503 });
+    throw e;
+  }
   const raw = res.text;
   if (!res.ok) {
     const plain = explainGatewayFailure(res.status, raw);

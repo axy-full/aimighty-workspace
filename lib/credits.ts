@@ -1,7 +1,7 @@
 import { currentTenant, type TenantWorkspace } from "./tenant";
 import { creditsGranted } from "./platform";
 import { paidByPlatform } from "./platformSpend";
-import { creditUsd, billCredits, type CreditState } from "./creditTerms";
+import { creditUsd, billCreditsWith, multiplierFor, type CreditState } from "./creditTerms";
 import type { VendorKeyName } from "./vendorKeys";
 import { creditsUsed } from "./meter";
 
@@ -49,11 +49,16 @@ export function fmtCredits(n: number): string {
  */
 export type CreditVerdict = { ok: true } | { ok: false; status: number; error: string };
 
-export async function creditCheck(vendor: VendorKeyName, estUsd = 0, engine?: string | null): Promise<CreditVerdict> {
+/** What a job needs from the balance: whole credits at the workspace's multiplier — cost when it is flagged internal (§7A guardrail 6). Pure. */
+export function creditNeed(estUsd: number, engine: string | null | undefined, internal: boolean): number {
+  return billCreditsWith(estUsd, multiplierFor(engine, internal), creditUsd());
+}
+
+export async function creditCheck(vendor: VendorKeyName, estUsd = 0, engine?: string | null, internal = currentTenant()?.workspace?.internal === true): Promise<CreditVerdict> {
   if (!creditsApply(currentTenant()?.workspace) || !paidByPlatform(vendor)) return { ok: true };
   const state = await creditState();
   if (!state) return { ok: true };
-  const need = billCredits(estUsd, engine);
+  const need = creditNeed(estUsd, engine, internal);
   if (state.balance <= 0 || state.balance < need) {
     const left = Math.max(0, Math.floor(state.balance));
     return {

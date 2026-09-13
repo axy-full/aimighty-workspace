@@ -4,7 +4,8 @@ import { readUploadBytes, storeIdentityZip, storeImageBytes, presignedReadUrl, u
 import { nameProblem } from "./cast";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { withRetry, getProvider } from "./providers";
-import { meter } from "./meter";
+import { meter, refuseIfPaused } from "./meter";
+import { enginePausedFrom } from "./platformLayer";
 import { fetchBytes } from "./mockFs";
 
 /**
@@ -243,6 +244,11 @@ export async function startTraining(id: string, consent?: { by: string }): Promi
   if (!falConfigured()) {
     throw new Error("Identity training isn't connected for this workspace. Ask the platform to connect it.");
   }
+  /* The kill switch (SOW v2 §9), read before the zip: the cheap early door.
+     The one that binds is the running meter row below, written BEFORE fal
+     holds a request, so a pause landing during the zip and the upload
+     refuses before any money starts. */
+  await refuseIfPaused(TRAINER, "fal");
   if (identity.status === "training") throw new Error("It's already training.");
   // The person pressing Train confirms the right to train on this face; it is stored with the identity.
   if (!consent?.by && !identity.consentAt) throw new Error("Confirm you have the right to train on this person's face.");
@@ -256,21 +262,31 @@ export async function startTraining(id: string, consent?: { by: string }): Promi
   const pathname = await storeIdentityZip(identity.id, zip);
   const imagesUrl = await presignedReadUrl(pathname, 24);
   const trigger = identity.trigger ?? triggerFor(identity.name);
-  const queued = await falSubmit(TRAINER, {
-    images_data_url: imagesUrl,
-    trigger_phrase: trigger,
-    steps: TRAIN_STEPS,
-    multiresolution_training: true,
-    subject_crop: true,
-    create_masks: false,
-  });
+  /* The switch and the bill, where the money starts: the running row (and the
+     gate inside meter()) is written before fal holds a request; a submit that
+     fails is metered failed at cost 0 so the row never bills. */
+  await meter({ id: identity.id, kind: "training", engine: "fal", model: TRAINER, status: "running",
+                engineCostUsd: trainCostUsd(TRAIN_STEPS), projectId: identity.projectId });
+  let queued: Awaited<ReturnType<typeof falSubmit>>;
+  try {
+    queued = await falSubmit(TRAINER, {
+      images_data_url: imagesUrl,
+      trigger_phrase: trigger,
+      steps: TRAIN_STEPS,
+      multiresolution_training: true,
+      subject_crop: true,
+      create_masks: false,
+    });
+  } catch (e) {
+    await meter({ id: identity.id, kind: "training", engine: "fal", model: TRAINER, status: "failed",
+                  engineCostUsd: 0, projectId: identity.projectId }, { critical: false }).catch(() => {});
+    throw e;
+  }
   await db().execute({
     sql: `UPDATE identities SET status='training', trainer=?, request_id=?, trigger=?, steps=?, cost_usd=?, error=NULL,
                                 consent_by=COALESCE(?, consent_by), consent_at=COALESCE(consent_at, ?), updated_at=? WHERE id=?`,
     args: [TRAINER, queued.request_id, trigger, TRAIN_STEPS, trainCostUsd(TRAIN_STEPS), consent?.by ?? null, now(), now(), identity.id],
   });
-  await meter({ id: identity.id, kind: "training", engine: "fal", model: TRAINER, status: "running",
-                engineCostUsd: trainCostUsd(TRAIN_STEPS), projectId: identity.projectId });
   return (await getIdentity(identity.id))!;
 }
 
@@ -581,7 +597,8 @@ export async function startIdentityStill(opts: {
     await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "running",
                   engineCostUsd: RENDER_USD_PER_MP, projectId: opts.projectId, shotId: opts.shotId, createdBy: opts.createdBy });
   } catch (e) {
-    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), genId] }).catch(() => {});
+    /* The row keeps the sentence a person reads, never the ENGINE_PAUSED: prefix the meter throws. */
+    await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [enginePausedFrom(e) ?? (e as Error).message, now(), genId] }).catch(() => {});
     invalidate(PROJECTS_KEY);
     throw e;
   }

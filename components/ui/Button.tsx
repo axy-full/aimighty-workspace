@@ -24,6 +24,9 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  *   auth      the auth card (12i): primary 46px, radius 10, 600 14px,
  *             `0 16px`, full width; secondary the same height and radius,
  *             500 14px, centred, full width.
+ *   desk      the platform desk's card heads (12h): primary 38px, radius
+ *             10, 600 13.5px, `0 14px`; secondary the same height and
+ *             radius, 1px `--border-mid`, 500 13px.
  *
  * Every secondary's edge is `--border-mid`, because §3 names the token
  * ("transparent, 1px --border-mid"); the boards draw the rectangular ones
@@ -56,7 +59,7 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  */
 type Props = {
   variant?: "primary" | "secondary";
-  placement?: "header" | "card" | "rail" | "composer" | "sheet" | "auth";
+  placement?: "header" | "card" | "rail" | "composer" | "sheet" | "auth" | "desk";
   /** A primary while a rail is open: the fill goes, the border stays. */
   outlined?: boolean;
   /** A secondary in `--ink-body` — the board dims the lesser of a pair (`Stop`). */
@@ -96,6 +99,10 @@ const SHAPE = {
   auth: {
     primary: "h-[46px] rounded-tile px-[16px] text-[14px] font-semibold gap-[12px] w-full",
     secondary: "h-[46px] rounded-tile px-[14px] text-[14px] font-medium border border-border-mid w-full justify-center gap-[10px]",
+  },
+  desk: {
+    primary: "h-[38px] rounded-tile px-[14px] text-[13.5px] font-semibold gap-[10px]",
+    secondary: "h-[38px] rounded-tile px-[14px] text-[13px] font-medium border border-border-mid gap-[10px]",
   },
 } as const;
 

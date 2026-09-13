@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { PROVIDERS } from "../lib/providers";
 
 /**
  * Desktop acceptance (brief rule 7, revised 8 September 2026).
@@ -18,7 +19,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 const ROUTES = [
   "/make/video", "/make/images", "/make/audio", "/productions", "/library", "/studio/shot",
-  "/usage", "/settings", "/policy", "/terms", "/privacy",
+  "/usage", "/settings", "/admin", "/policy", "/terms", "/privacy",
   "/atomik/ideas", "/atomik/treatment", "/atomik/breakdown", "/atomik/shots",
   "/projects/demo/rig/elements", "/rig/canvas/demo", "/rig/run/demo", "/rig/recipes/demo", "/rig/recipes", "/takes/demo", "/shots/demo", "/elements/demo",
 ];
@@ -633,4 +634,59 @@ test("Rig · Recipes: the cards, the steps table, one primary priced to the firs
   /* Picking another card changes the recipe on the right. */
   await list.getByRole("button", { name: "Recipe Product turntable", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Product turntable");
+});
+
+/**
+ * The platform admin console (docs/particl-sow-v2.md §7.13, SOW surfaces
+ * board 12h): the owner's desk under the shell header — a `PLATFORM ·
+ * ADMIN` chip and the month's line, then four --card blocks. One filled
+ * primary (`Send N codes`, priced from welcomeGrant()), the Studios head
+ * row in mono, one switch per provider in the registry, and never the
+ * accent on a dot: healthy is ink, warning is muted. A visitor sees the
+ * owner-only line; the desk needs the platform owner's session, so this
+ * skips in a signed-out harness.
+ */
+test("Admin: the four blocks, one primary, the studios head row, the switches", async ({ page }) => {
+  await page.goto("/admin");
+  await settle(page);
+  /* Signed in means the desk grid rendered — the Account button is the fallback, not the gate: the header hides it
+     on some chromes and getByRole never counts a hidden control. */
+  const signedIn = (await page.locator("[data-desk-grid]").count()) || (await page.getByRole("button", { name: "Account" }).count());
+  test.skip(!signedIn, "the desk needs the platform owner");
+  const desk = page.locator(".shell-page");
+  await expect(desk).toHaveText(/PLATFORM · ADMIN/, { useInnerText: true });
+  for (const name of ["Wants in", "Engines", "Studios", "What every new studio starts with"]) await expect(page.getByRole("region", { name })).toBeVisible();
+  /* The primary is the `[data-send-codes]` button (the card's copy on a desktop; the phone's pinned copy is
+     display:none here). With somebody waiting it reads `Send N codes` (`Send a code` for one) and it is the one
+     filled button on the desk; with nobody to send to it is outlined and blocked, and then nothing on the desk is
+     filled — a filled button is `--ink`, and a switch that is on wears the ink track, so switches never count. */
+  const primary = page.locator("[data-send-codes]:visible").first();
+  await expect(primary).toBeVisible();
+  const label = (await primary.innerText()).trim();
+  const filled = await desk.locator("button").evaluateAll((els) => els.filter((b) => b.getAttribute("role") !== "switch" && (b as HTMLElement).offsetParent !== null && getComputedStyle(b).backgroundColor === "rgb(245, 246, 248)").map((b) => (b.textContent ?? "").trim()));
+  if (/^Send (a code|\d+ codes)/.test(label)) {
+    expect(filled.length, "one filled primary — Send N codes").toBe(1);
+    expect(filled[0]).toMatch(/^Send (a code|\d+ codes)/);
+  } else {
+    expect(filled, "nobody to send to: the primary is outlined and nothing on the desk is filled").toEqual([]);
+    await expect(primary).toBeDisabled();
+  }
+  /* The seven mono column heads, in the board's order. */
+  await expect(page.getByRole("region", { name: "Studios" })).toHaveText(/STUDIO[\s\S]*TIER[\s\S]*ENGINE \$[\s\S]*BILLED[\s\S]*MARGIN[\s\S]*NOTE[\s\S]*PRICE/, { useInnerText: true });
+  /* One switch per provider in the registry, each saying whether it is on. */
+  const switches = page.getByRole("region", { name: "Engines" }).getByRole("switch");
+  await expect(switches).toHaveCount(PROVIDERS.length);
+  for (const sw of await switches.all()) await expect(sw).toHaveAttribute("aria-checked", /^(true|false)$/);
+  /* No dot in the accent: a probe carrying `text-accent` says what the accent computes to on this page. */
+  const accented = await page.getByRole("region", { name: "Engines" }).evaluate((root) => {
+    const probe = document.createElement("span");
+    probe.className = "text-accent"; probe.style.cssText = "position:absolute;visibility:hidden";
+    document.body.appendChild(probe);
+    const accent = getComputedStyle(probe).color;
+    probe.remove();
+    return Array.from(root.querySelectorAll<HTMLElement>("span.rounded-full, [data-dot]"))
+      .map((d) => { const cs = getComputedStyle(d); return [cs.backgroundColor, cs.borderTopColor]; })
+      .filter(([bg, bd]) => bg === accent || bd === accent);
+  });
+  expect(accented, "healthy is ink, warning is muted — never the accent").toEqual([]);
 });

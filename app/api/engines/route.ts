@@ -8,6 +8,7 @@ import { getSetting, invalidateSettings } from "@/lib/settings";
 import { ENGINES } from "@/lib/engines";
 import { estimateRefineUsd } from "@/lib/refineGate";
 import { cleanRule, cleanShotCap } from "@/lib/approvalRule";
+import { engineSwitches } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,12 @@ export const dynamic = "force-dynamic";
  * Which vendors this deployment can actually talk to. Reports only whether
  * a key is present — never a value — so the composer can grey out an engine
  * whose key is missing and Settings can say which variable to set.
+ *
+ * Board 12h: each engine also says whether the platform has paused it.
+ *   curl -b "$COOKIE" http://localhost:4550/api/engines
+ *   { ..., engines: [{ ..., paused: boolean, pausedReason: string | null }] }
+ * The composer keeps a paused engine in the list, disabled with the reason;
+ * the refusal itself lives where money starts (lib/meter.ts, the spend routes).
  */
 export const GET = withTenant(async function GET() {
   const got = await requireUser();
@@ -24,6 +31,7 @@ export const GET = withTenant(async function GET() {
   invalidateSettings();
   const writer = await activeWriter();
   const credits = writer.provider === "gateway" ? await gatewayCredits() : null;
+  const switches = await engineSwitches().catch(() => null);
   return NextResponse.json({
     /* What is left on the gateway, when the writer runs through it. */
     gatewayCredits: credits,
@@ -39,6 +47,9 @@ export const GET = withTenant(async function GET() {
       envKey: p.envKey,
       docs: p.docs,
       configured: providerConfigured(p),
+      /** Switched off from the platform's desk (board 12h); the reason is shown beside it. */
+      paused: switches ? !switches[p.id]?.on : false,
+      pausedReason: switches && !switches[p.id]?.on ? (switches[p.id]?.reason ?? null) : null,
       kinds: ENGINES[p.id]?.kinds ?? [],
       /** "key" for the vendor's own key, "gateway" for Vercel AI Gateway. */
       via: providerVia(p),

@@ -5,9 +5,10 @@ import { MODELS, atomikMayPropose } from "./models";
 import { getSetting } from "./settings";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { gatewayPost } from "./gateway";
-import { meter } from "./meter";
-import { getPlatformLayer } from "./platform";
+import { meter, refuseIfPaused } from "./meter";
+import { getPlatformLayer, engineSwitches } from "./platform";
 import { textModelFor } from "./platformLayer";
+import type { ProviderId } from "./providers";
 import { cleanAttachments, attachmentLine, seenByModel, stepReferences, type Attachment } from "./attachments";
 import { readUploadBytes, readImageBytes } from "./storage";
 
@@ -343,7 +344,13 @@ export async function engines(): Promise<Engine[]> {
      `ATOMIK MAY PROPOSE`). */
   let off: string[] = [];
   try { const raw = JSON.parse(await getSetting("atomikEngines")); if (Array.isArray(raw)) off = raw.map(String); } catch { off = []; }
-  const own = MODELS.filter((m) => atomikMayPropose(m) && !off.includes(m.id));
+  /* Nor an engine the PLATFORM has switched off (SOW v2 §9, board 12h):
+     meter() would refuse the job at the moment money starts, so proposing
+     it would be proposing a button that fails. The switch is keyed by the
+     model's provider, never by the ledger's billed-to engine. */
+  const switches = await engineSwitches().catch(() => null);
+  const paused = (provider: string) => switches?.[provider as ProviderId]?.on === false;
+  const own = MODELS.filter((m) => atomikMayPropose(m) && !off.includes(m.id) && !paused(m.provider));
   const out: Engine[] = own.map((m) => ({
     id: m.id, label: m.label, kind: m.kind as StepKind, own: true,
     note: m.kind === "video"
@@ -353,7 +360,7 @@ export async function engines(): Promise<Engine[]> {
     durations: m.kind === "video" ? m.durations : [],
     supportsAudio: Boolean(m.supportsAudio),
   }));
-  out.push({
+  if (!paused("elevenlabs")) out.push({
     id: "elevenlabs", label: "ElevenLabs", kind: "audio", own: true,
     note: "voice, sound effects and music",
     ratios: [], resolutions: [], durations: [], supportsAudio: true,
@@ -460,7 +467,8 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
     messages: msgs.map((m, i) => (cacheable && i === 0 && m.role === "system" ? { ...m, cache_control: { type: "ephemeral" } } : m)),
   });
   const send = async (msgs: TurnMessage[]) => {
-    const post = (cacheable: boolean) => gatewayPost(shaped(msgs, cacheable), { auth, timeoutMs: 180_000, mock: "turn" });
+    /* The gateway's switch is read at this door — a turn is metered only after the gateway answers. */
+    const post = async (cacheable: boolean) => { await refuseIfPaused(null, "vercel"); return gatewayPost(shaped(msgs, cacheable), { auth, timeoutMs: 180_000, mock: "turn" }); };
     const r = await post(true);
     if (r.status === 400 && /cache_control|unknown|unsupported|invalid/i.test(r.text)) {
       console.warn(`atomik: ${model} rejected the cache mark, retrying plain — ${r.text.slice(0, 140)}`);
@@ -519,7 +527,9 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
   let text: string = j.choices?.[0]?.message?.content ?? "";
   let costUsd = Number(j.usage?.cost ?? NaN);
 
-  let turn = extractTurn(text);
+  /* The ids the planner was offered: anything else it names is snapped to one of these. */
+  const offered = new Set(list.map((e) => e.id));
+  let turn = extractTurn(text, offered);
   if (!turn) {
     /* One repair pass. Models that narrate before answering are common
        enough across this menu that failing here would rule out half of it. */
@@ -534,7 +544,7 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
         text = j.choices?.[0]?.message?.content ?? "";
         const more = Number(j.usage?.cost ?? NaN);
         if (Number.isFinite(more)) costUsd = (Number.isFinite(costUsd) ? costUsd : 0) + more;
-        turn = extractTurn(text);
+        turn = extractTurn(text, offered);
       } catch { /* falls to the guard below */ }
     }
   }
@@ -628,7 +638,7 @@ type ParsedTurn = {
 
 /** Pull the object out of whatever the model wrapped it in, and make every
  *  proposal executable or drop it. */
-function extractTurn(text: string): ParsedTurn | null {
+function extractTurn(text: string, offered?: Set<string>): ParsedTurn | null {
   if (!text) return null;
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const tryParse = (s: string): any | null => {
@@ -651,9 +661,14 @@ function extractTurn(text: string): ParsedTurn | null {
   const say = String(raw.say ?? "").trim();
   if (!say && !Array.isArray(raw.propose)) return null;
 
+  /* The fallback engine is one the planner was OFFERED (the workspace's
+     Atomik list less anything the platform has paused), so a paused engine
+     is never filed by way of the default either; audio has one engine and
+     the meter is its gate. */
   const defaultFor = (k: StepKind) =>
     k === "audio" ? "elevenlabs"
-      : (MODELS.find((m) => !m.hidden && m.kind === k)?.id ?? MODELS[0].id);
+      : ((offered ? MODELS.find((m) => !m.hidden && m.kind === k && offered.has(m.id)) : null)?.id
+        ?? MODELS.find((m) => !m.hidden && m.kind === k)?.id ?? MODELS[0].id);
 
   const propose: ParsedTurn["propose"] = [];
   for (const r of (Array.isArray(raw.propose) ? raw.propose : []).slice(0, 12)) {
@@ -671,7 +686,7 @@ function extractTurn(text: string): ParsedTurn | null {
        filed against a stills engine: it passed validation here and was
        priced as video, then rendered as whatever the engine actually is. */
     let model = String(s.model ?? "").trim();
-    const named = MODELS.find((m) => atomikMayPropose(m) && m.id === model);
+    const named = MODELS.find((m) => atomikMayPropose(m) && m.id === model && (!offered || offered.has(m.id)));
     if (kind === "audio") model = "elevenlabs";
     else if (!named || named.kind !== kind) model = defaultFor(kind);
 

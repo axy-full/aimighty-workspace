@@ -78,6 +78,23 @@ export function marginFor(engine: string | null | undefined, table: Record<strin
   return typeof m === "number" && m > 0 ? m : (table["*"] ?? 1);
 }
 
+/**
+ * The multiplier one workspace is charged at: 1 when the workspace is
+ * flagged `internal` (§7A guardrail 6 — billed at cost, on the same ledger),
+ * else the engine's margin. The one place the internal rule is spelt out, so
+ * the meter, the quote, the rate table, the held snapshot and the statement
+ * cannot each decide it differently.
+ */
+export const INTERNAL_MULTIPLIER = 1;
+export function multiplierFor(key: string | null | undefined, internal: boolean, table: Record<string, number> = margins()): number {
+  return internal ? INTERNAL_MULTIPLIER : marginFor(key, table);
+}
+
+/** The margin table an internal workspace prices against: every key at cost. */
+export const INTERNAL_MARGINS: Record<string, number> = { "*": INTERNAL_MULTIPLIER };
+/** The table for a workspace: the live one, or every engine at cost when it is internal. */
+export const tableFor = (internal: boolean, table: Record<string, number> = margins()): Record<string, number> => (internal ? INTERNAL_MARGINS : table);
+
 /** What a job is charged: whole credits, rounded up, at least one. Pure, for the browser too. */
 export function billCreditsWith(usd: number, margin: number, perCredit: number): number {
   if (!(usd > 0)) return 0;

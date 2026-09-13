@@ -12,7 +12,7 @@ import { estimateVideo, estimateImage } from "@/lib/rateTable";
 import { estimateTokens, costUsd } from "@/lib/models";
 import { NOTIFY_KINDS, NOTIFY_LABELS, type NotifyKind } from "@/lib/notifyPrefs";
 import { appAlert, appPrompt } from "@/components/dialog";
-import { Mono, Button } from "@/components/ui";
+import { Mono, Button, Switch } from "@/components/ui";
 import { usePhone } from "@/lib/usePhone";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { ToastHost, useToast } from "@/components/ui/Toast";
@@ -53,7 +53,7 @@ import { PageLoader } from "@/components/atomik/Loader";
 type Me = { name: string; email: string; role: string; owner?: boolean; workspace?: { name: string } | null };
 type Ws = { settings: Record<string, string>; defaults: Record<string, string>; models?: { video: string; image: string } | null };
 type Team = { users: { id: string; email: string; name: string; role?: string; standing?: string; permanent?: boolean; disabled: boolean }[]; invites: { code: string; email: string; name: string }[]; canSeeRoles?: boolean };
-type Engines = { engines: { id: string; label: string; configured: boolean; models: { id: string; label: string; kind: "video" | "image" }[] }[]; refiner?: { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean; usdPerCall?: number } };
+type Engines = { engines: { id: string; label: string; configured: boolean; paused?: boolean; pausedReason?: string | null; kinds?: string[]; models: { id: string; label: string; kind: "video" | "image" }[] }[]; refiner?: { writer: "none" | "byteplus" | "claude"; label: string; via: string; configured: boolean; usdPerCall?: number } };
 type Topups = { applies: boolean; canRequest: boolean; credits: { creditUsd: number; granted: number; used: number; balance: number } | null; packs: { id: string; label: string; credits: number; bonus: number; total: number; usd: number }[]; requests: { id: string; status: string }[] };
 type Usage = { months?: { month: string; credits: number; usd?: number }[]; spentUsd?: number; storage?: { bytes: number } | null };
 type Limits = { limits: { storageBytes: number }; standing: { usedBytes: number } };
@@ -110,14 +110,7 @@ function Card({ id, label, head, children, className = "gap-[2px]" }: { id: stri
     </section>
   );
 }
-function Switch({ on, onChange, label, disabled = false }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return (
-    <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}
-      className={`tap44 relative inline-block h-[20px] w-[34px] flex-none rounded-[10px] disabled:opacity-40 ${on ? "bg-ink" : "bg-[rgba(245,246,248,.2)]"}`}>
-      <span className={`absolute top-[2px] h-[16px] w-[16px] rounded-full ${on ? "left-[16px] bg-ground" : "left-[2px] bg-ink"}`} />
-    </button>
-  );
-}
+/* The switch is components/ui/Switch now, shared with the platform desk; here it keeps board 4a's 34×20 (`width={34}`). */
 function ChipMenu({ value, items, label, fixed = false }: { value: ReactNode; items: MenuItem[]; label: string; fixed?: boolean }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
   const phone = usePhone();
@@ -197,6 +190,14 @@ function Settings() {
   };
   const off = useMemo<string[]>(() => { try { const v = JSON.parse(s("atomikEngines") || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
   const configuredFor = (modelId: string) => Boolean(eng?.engines.find((e) => e.models.some((m) => m.id === modelId))?.configured);
+  /* Board 12h: a provider the platform has switched off. The row stays (SOW 7.12: the list equals the registry) and says PAUSED with the reason. */
+  const pausedFor = (modelId: string): { reason: string | null } | null => { const e = eng?.engines.find((x) => x.models.some((m) => m.id === modelId)); return e?.paused ? { reason: e.pausedReason ?? null } : null; };
+  const pausedLine = (reason: string | null) => `Paused by the platform${reason ? ` · ${reason}` : ""}`;
+  /* The sound engine has no MODELS entry, so no row above can say it: a row of its own, from the registry as the route
+     read it, whenever the registry has it — the switch only changes what its dot and state say. */
+  const soundEngine = eng?.engines.find((e) => (e.kinds ?? []).includes("audio") || e.id === "elevenlabs") ?? null;
+  const soundPz = soundEngine?.paused ? { reason: soundEngine.pausedReason ?? null } : null;
+  const soundOk = (soundEngine as { configured?: boolean } | null)?.configured !== false;
   const thisMonth = new Date().toISOString().slice(0, 7);
   const monthRow = usage?.months?.find((m) => m.month === thisMonth);
   const monthSpent = money.inCredits ? `${(monthRow?.credits ?? 0).toLocaleString()} cr` : money.price(monthRow?.usd ?? 0);
@@ -301,13 +302,18 @@ function Settings() {
           </Card>
           <Card id="engines" label="Engines & rates">
             {MODELS.filter((m) => !m.hidden).map((m) => {
-              const on = !off.includes(m.id); const ok = configuredFor(m.id);
+              const on = !off.includes(m.id); const ok = configuredFor(m.id); const pz = pausedFor(m.id);
               return (
-                <Row key={m.id} label={<span className="flex items-center gap-[8px]"><span className={`box-border block h-[7px] w-[7px] flex-none rounded-full ${ok ? "bg-ink" : "border border-dashed border-ink-muted"}`} />{m.label}</span>}>
-                  <span className="flex items-center gap-[10px]"><Mono cost tone="body" className="whitespace-nowrap">{rateOf(m.id)}</Mono>{atomikMayPropose(m) ? <Switch on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /> : <Mono cost>Never proposed</Mono>}</span>
+                <Row key={m.id} label={<span className="flex min-w-0 flex-col gap-[3px]"><span className="flex items-center gap-[8px]"><span className={`box-border block h-[7px] w-[7px] flex-none rounded-full ${pz ? "border border-dashed border-ink-muted" : ok ? "bg-ink" : "border border-dashed border-ink-muted"}`} />{m.label}{pz && <Mono>Paused</Mono>}</span>{pz && <span className="text-[12px] leading-[1.3] text-ink-body">{pausedLine(pz.reason)}</span>}</span>}>
+                  <span className="flex items-center gap-[10px]"><Mono cost tone="body" className="whitespace-nowrap">{rateOf(m.id)}</Mono>{atomikMayPropose(m) ? <Switch width={34} on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /> : <Mono cost>Never proposed</Mono>}</span>
                 </Row>
               );
             })}
+            {soundEngine && (
+              <Row label={<span className="flex min-w-0 flex-col gap-[3px]"><span className="flex items-center gap-[8px]"><span className={`box-border block h-[7px] w-[7px] flex-none rounded-full ${soundPz || !soundOk ? "border border-dashed border-ink-muted" : "bg-ink"}`} />{soundEngine.label}{soundPz && <Mono>Paused</Mono>}</span>{soundPz && <span className="text-[12px] leading-[1.3] text-ink-body">{pausedLine(soundPz.reason)}</span>}</span>}>
+                <Mono cost>Never proposed</Mono>
+              </Row>
+            )}
           </Card>
           <Card id="defaults" label="Production defaults">
             <Row label="Shot cap"><button type="button" className="tap44" onClick={async () => { const v = await appPrompt("Credits a shot may take before a member needs an admin", s("shotCapCredits"), "50"); if (v != null && /^\d+$/.test(v.trim())) save("shotCapCredits", v.trim(), `Shot cap · ${v.trim()} cr`); }}><Mono cost tone="body">{s("shotCapCredits")} cr ▾</Mono></button></Row>
@@ -328,18 +334,18 @@ function Settings() {
             <Mono className="border-t border-[rgba(245,246,248,.07)] pt-[10px] !leading-[1.5]">Never without you · spend · unlock · delete · approve</Mono>
           </Card>
           <Card id="rig" label="Rig & locks">
-            <Row label="Lock new identities, voices, looks"><Switch on={s("lockNewAssets") === "1"} label="Lock new assets" disabled={!isAdmin} onChange={(v) => save("lockNewAssets", v ? "1" : "0", v ? "New assets start locked" : "New assets start open")} /></Row>
+            <Row label="Lock new identities, voices, looks"><Switch width={34} on={s("lockNewAssets") === "1"} label="Lock new assets" disabled={!isAdmin} onChange={(v) => save("lockNewAssets", v ? "1" : "0", v ? "New assets start locked" : "New assets start open")} /></Row>
             <Row label="Who may unlock"><ChipMenu label="Who may unlock" fixed value="Admin" items={[]} /></Row>
             <Row label="Train on create"><ChipMenu label="Train on create" value={s("trainOnCreate") === "always" ? "Always" : s("trainOnCreate") === "never" ? "Never" : "Ask each time"} items={[["ask", "Ask each time"], ["always", "Always"], ["never", "Never"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => save("trainOnCreate", v, `Train on create · ${l.toLowerCase()}`) }))} /></Row>
           </Card>
           <Card id="storage" label="Storage & masters">
             <Row label="Bucket"><Mono cost tone="body">{gb(used)}{limits ? ` of ${gb(limits.limits.storageBytes)}` : ""}</Mono></Row>
             <Row label="File naming"><button type="button" className="tap44 min-w-0 text-right" onClick={async () => { const v = await appPrompt("File naming", s("namingTemplate"), "{project}_{scene}_{shot}_{model}_v{version}_{user}"); if (v?.trim()) save("namingTemplate", v.trim(), "Naming saved"); }}><Mono tone="body" className="!whitespace-normal break-all !tracking-[.04em] normal-case">{s("namingTemplate")}</Mono></button></Row>
-            <Row label="Keep every take"><Switch on={s("retentionDays") === "0"} label="Keep every take" disabled={!isAdmin} onChange={(v) => save("retentionDays", v ? "0" : "30", v ? "Every take is kept" : "Takes are kept for 30 days")} /></Row>
+            <Row label="Keep every take"><Switch width={34} on={s("retentionDays") === "0"} label="Keep every take" disabled={!isAdmin} onChange={(v) => save("retentionDays", v ? "0" : "30", v ? "Every take is kept" : "Takes are kept for 30 days")} /></Row>
           </Card>
           <Card id="notifications" label="Notifications">
             {NOTIFY_KINDS.filter((k) => !NOTIFY_LABELS[k].adminOnly || isAdmin).map((k) => (
-              <Row key={k} label={NOTIFY_LABELS[k].title}><Switch on={notify?.prefs[k] ?? true} label={NOTIFY_LABELS[k].title} onChange={(v) => setNotify(k, v)} /></Row>
+              <Row key={k} label={NOTIFY_LABELS[k].title}><Switch width={34} on={notify?.prefs[k] ?? true} label={NOTIFY_LABELS[k].title} onChange={(v) => setNotify(k, v)} /></Row>
             ))}
             <PushRow />
           </Card>
@@ -422,18 +428,27 @@ function Settings() {
         <Section id="engines" title="Engines & rates" line="Keys are set by an admin and never shown again in full. The rate is what every button quotes. The switch is whether Atomik may propose the engine." className="gap-[12px]">
           <div className="grid grid-cols-3 gap-[8px] max-md:grid-cols-1">
             {MODELS.filter((m) => !m.hidden).map((m) => {
-              const on = !off.includes(m.id); const ok = configuredFor(m.id);
+              const on = !off.includes(m.id); const ok = configuredFor(m.id); const pz = pausedFor(m.id);
               return (
-                <div key={m.id} className="flex flex-col gap-[9px] rounded-tile border border-border bg-ground p-[12px]">
-                  <span className="flex items-center gap-[8px]"><span className="text-[13.5px] font-semibold leading-[1.2] text-ink">{m.label}</span><span className="ml-auto flex items-center gap-[5px] ui-mono"><span className={`box-border block h-[7px] w-[7px] rounded-full ${ok ? "bg-ink" : "border border-dashed border-ink-muted"}`} />{ok ? "connected" : "no key"}</span></span>
-                  <span className="text-[12.5px] leading-[1.3] text-ink-body">{m.use}</span>
+                <div key={m.id} className="flex flex-col gap-[9px] rounded-tile border border-border bg-ground p-[12px]" data-paused={pz ? "" : undefined}>
+                  <span className="flex items-center gap-[8px]"><span className="text-[13.5px] font-semibold leading-[1.2] text-ink">{m.label}</span><span className="ml-auto flex items-center gap-[5px] ui-mono"><span className={`box-border block h-[7px] w-[7px] rounded-full ${pz ? "border border-dashed border-ink-muted" : ok ? "bg-ink" : "border border-dashed border-ink-muted"}`} />{pz ? "paused" : ok ? "connected" : "no key"}</span></span>
+                  <span className="text-[12.5px] leading-[1.3] text-ink-body">{pz ? pausedLine(pz.reason) : m.use}</span>
                   <span className="flex items-center justify-between border-t border-[rgba(245,246,248,.07)] pt-[9px]">
                     <Mono cost tone="ink">{rateOf(m.id)}</Mono>
-                    {atomikMayPropose(m) ? <span className="flex items-center gap-[8px] ui-mono">Atomik may propose<Switch on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /></span> : <Mono cost tone="muted">Never proposed · {(m.needsStartImage ? "needs a still" : (m.supportsTasks ?? ["generate"]).includes("generate") ? "an edit engine" : "a post tool")}</Mono>}
+                    {atomikMayPropose(m) ? <span className="flex items-center gap-[8px] ui-mono">Atomik may propose<Switch width={34} on={on} label={`Atomik may propose ${m.label}`} disabled={!isAdmin} onChange={(v) => { const next = v ? off.filter((x) => x !== m.id) : [...off, m.id]; save("atomikEngines", JSON.stringify(next), v ? `Atomik may propose ${m.label}` : `Atomik won't propose ${m.label}`); }} /></span> : <Mono cost tone="muted">Never proposed · {(m.needsStartImage ? "needs a still" : (m.supportsTasks ?? ["generate"]).includes("generate") ? "an edit engine" : "a post tool")}</Mono>}
                   </span>
                 </div>
               );
             })}
+            {soundEngine && (
+              <div className="flex flex-col gap-[9px] rounded-tile border border-border bg-ground p-[12px]" data-paused={soundPz ? "" : undefined} data-sound-engine="">
+                <span className="flex items-center gap-[8px]"><span className="text-[13.5px] font-semibold leading-[1.2] text-ink">{soundEngine.label}</span><span className="ml-auto flex items-center gap-[5px] ui-mono"><span className={`box-border block h-[7px] w-[7px] rounded-full ${soundPz || !soundOk ? "border border-dashed border-ink-muted" : "bg-ink"}`} />{soundPz ? "paused" : soundOk ? "connected" : "no key"}</span></span>
+                {soundPz && <span className="text-[12.5px] leading-[1.3] text-ink-body">{pausedLine(soundPz.reason)}</span>}
+                <span className="flex items-center justify-between border-t border-[rgba(245,246,248,.07)] pt-[9px]">
+                  <Mono cost tone="muted">Never proposed</Mono>
+                </span>
+              </div>
+            )}
           </div>
         </Section>
 
@@ -460,18 +475,18 @@ function Settings() {
 
         <div className="grid grid-cols-3 gap-[14px] max-md:grid-cols-1">
           <Section id="rig" title="Rig & locks" line="What stays fixed once a face, voice or look exists." className="gap-[2px]">
-            <Row label="Lock new identities, voices, looks"><Switch on={s("lockNewAssets") === "1"} label="Lock new assets" disabled={!isAdmin} onChange={(v) => save("lockNewAssets", v ? "1" : "0", v ? "New assets start locked" : "New assets start open")} /></Row>
+            <Row label="Lock new identities, voices, looks"><Switch width={34} on={s("lockNewAssets") === "1"} label="Lock new assets" disabled={!isAdmin} onChange={(v) => save("lockNewAssets", v ? "1" : "0", v ? "New assets start locked" : "New assets start open")} /></Row>
             <Row label="Who may unlock"><ChipMenu label="Who may unlock" fixed value="Admin" items={[]} /></Row>
             <Row label="Train on create"><ChipMenu label="Train on create" value={s("trainOnCreate") === "always" ? "Always" : s("trainOnCreate") === "never" ? "Never" : "Ask each time"} items={[["ask", "Ask each time"], ["always", "Always"], ["never", "Never"]].map(([v, l]): MenuItem => ({ kind: "item", label: l, onSelect: () => save("trainOnCreate", v, `Train on create · ${l.toLowerCase()}`) }))} /></Row>
           </Section>
           <Section id="storage" title="Storage & masters" line="Byte-for-byte, never re-encoded for an API." className="gap-[2px]">
             <Row label="Bucket"><Mono cost tone="ink">{gb(used)}{limits ? ` of ${gb(limits.limits.storageBytes)}` : ""}</Mono></Row>
             <Row label="File naming" gap><button type="button" className="tap44 text-right" onClick={async () => { const v = await appPrompt("File naming", s("namingTemplate"), "{project}_{scene}_{shot}_{model}_v{version}_{user}"); if (v?.trim()) save("namingTemplate", v.trim(), "Naming saved"); }}><Mono tone="ink" className="!whitespace-normal break-all !tracking-[.04em] normal-case">{s("namingTemplate")}</Mono></button></Row>
-            <Row label="Keep every take"><Switch on={s("retentionDays") === "0"} label="Keep every take" disabled={!isAdmin} onChange={(v) => save("retentionDays", v ? "0" : "30", v ? "Every take is kept" : "Takes are kept for 30 days")} /></Row>
+            <Row label="Keep every take"><Switch width={34} on={s("retentionDays") === "0"} label="Keep every take" disabled={!isAdmin} onChange={(v) => save("retentionDays", v ? "0" : "30", v ? "Every take is kept" : "Takes are kept for 30 days")} /></Row>
           </Section>
           <Section id="notifications" title="Notifications" line="Per person. In-app always; email is the switch." className="gap-[2px]">
             {NOTIFY_KINDS.filter((k) => !NOTIFY_LABELS[k].adminOnly || isAdmin).map((k) => (
-              <Row key={k} label={NOTIFY_LABELS[k].title} gap><Switch on={notify?.prefs[k] ?? true} label={NOTIFY_LABELS[k].title} onChange={(v) => setNotify(k, v)} /></Row>
+              <Row key={k} label={NOTIFY_LABELS[k].title} gap><Switch width={34} on={notify?.prefs[k] ?? true} label={NOTIFY_LABELS[k].title} onChange={(v) => setNotify(k, v)} /></Row>
             ))}
             <PushRow />
           </Section>
@@ -536,7 +551,7 @@ function PushRow() {
   const note = state === "denied" ? "blocked in the browser" : state === "install" ? "add to the Home Screen first" : state === "unconfigured" ? "not set up here" : null;
   return (
     <Row label={<span className="flex flex-col gap-[3px]">Push on this device{note && <Mono>{note}</Mono>}</span>} gap>
-      {note ? <Mono cost>—</Mono> : <Switch on={state === "on"} label="Push on this device" disabled={state === "busy"} onChange={(v) => (v ? enable() : disable())} />}
+      {note ? <Mono cost>—</Mono> : <Switch width={34} on={state === "on"} label="Push on this device" disabled={state === "busy"} onChange={(v) => (v ? enable() : disable())} />}
     </Row>
   );
 }

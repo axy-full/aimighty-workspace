@@ -38,7 +38,7 @@ export default function Header() {
   const router = useRouter();
   const { signedIn, credits, name, role } = useSession();
   /* The two account-menu routes wear the M10 header on a phone: `‹ Back` and the page's name. */
-  const menuRoute = path === "/settings" ? "Settings" : path === "/usage" ? "Usage" : null;
+  const menuRoute = path === "/settings" ? "Settings" : path === "/usage" ? "Usage" : path === "/admin" ? "Admin" : null;
   const { current } = useProject();
   const { inCredits } = useMoney();
   const { data: summary } = useApi<Summary>(signedIn ? "/api/usage/summary" : null, 30_000);

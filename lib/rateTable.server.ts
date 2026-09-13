@@ -1,6 +1,7 @@
 import { VENDOR_RATES } from "./vendorRates";
 import { TEXT_RATES } from "./refineGate";
-import { creditUsd, marginFor, margins } from "./creditTerms";
+import { creditUsd, marginFor, tableFor } from "./creditTerms";
+import { currentTenant } from "./tenant";
 import type { RateTable, ModelRates, Unit } from "./rateTable";
 
 /**
@@ -17,9 +18,13 @@ import type { RateTable, ModelRates, Unit } from "./rateTable";
  * person is about to be charged. Rounding each rate first would overcharge a
  * three-second clip and undercharge a thirty-second one.
  */
-export function buildRateTable(unit: Unit): RateTable {
+export function buildRateTable(unit: Unit, internal = currentTenant()?.workspace?.internal === true): RateTable {
   const per = creditUsd();
-  const table = margins();
+  /* The workspace's own table: at cost when it is flagged internal (§7A
+     guardrail 6), so the price on its buttons is the price its ledger
+     charges. Defaults to the tenant in scope; a caller building a table for
+     another workspace says so. */
+  const table = tableFor(internal);
   const models: Record<string, ModelRates> = {};
 
   for (const [id, r] of Object.entries(VENDOR_RATES)) {

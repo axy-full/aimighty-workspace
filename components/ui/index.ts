@@ -18,3 +18,4 @@ export { Mark, Wordmark, Lockup, TRAIL } from "./Mark";
 export { default as Menu, type MenuItem } from "./Menu";
 export { default as PinnedBar, PinnedPrimary, PinnedSquare } from "./PinnedBar";
 export { ToastHost, useToast } from "./Toast";
+export { default as Switch } from "./Switch";
