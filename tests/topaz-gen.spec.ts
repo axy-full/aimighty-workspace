@@ -5,7 +5,26 @@ import { signInLocally } from "./helpers/workbenchLocal";
 test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid request and reuses its saved output", async ({
   page,
 }, info) => {
-  await signInLocally(page.request);
+  // A compiled production server deliberately cannot provision local tenant
+  // databases. Reuse a previously provisioned, isolated fixture for that run.
+  const existingEmail = process.env.PW_TOPAZ_EXISTING_EMAIL;
+  if (existingEmail) {
+    expect(process.env.PW_BASE_URL).toMatch(
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/,
+    );
+    expect(existingEmail).toMatch(/^workbench-.+@example\.test$/);
+    const health = await page.request.get("/api/health");
+    expect((await health.json()).mock).toBe(true);
+    const login = await page.request.post("/api/auth/login", {
+      data: {
+        email: existingEmail,
+        password: "a local browser test passphrase 42",
+      },
+    });
+    expect(login.ok(), await login.text()).toBe(true);
+  } else {
+    await signInLocally(page.request);
+  }
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const source = await sharp({
