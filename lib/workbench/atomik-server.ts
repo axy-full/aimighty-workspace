@@ -1,3 +1,4 @@
+import { isAtomikModel } from "../atomikModelPolicy";
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, ready, now } from '../db';
@@ -119,7 +120,7 @@ function prices(model: CatalogModel) {
 }
 /** Only catalogued language models with both known token prices can incur spend. */
 export function atomikModels(models: CatalogModel[]) {
-  return models.filter(m => m.type === 'language' && prices(m))
+  return models.filter(m => isAtomikModel(m.id) && m.type === 'language' && prices(m))
     .sort((a, b) => (textCostUsd(a, 8000, 1800) ?? Infinity) - (textCostUsd(b, 8000, 1800) ?? Infinity))
     .map(m => ({ id: m.id, name: m.name, vision: m.inputModalities?.includes('image') ?? false, inputPerMillion: prices(m)!.input * 1e6, outputPerMillion: prices(m)!.output * 1e6 }));
 }
@@ -198,6 +199,7 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 });
 
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
+  if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new AtomikError('Save this production to link its budget before starting Atomik.', 409);
   const references = await loadAtomikReferences(project, input.refs, owner, input.videoFrames);

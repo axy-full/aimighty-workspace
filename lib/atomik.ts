@@ -1,8 +1,9 @@
+import { selectAtomikModel } from "./atomikModelPolicy";
 import { withMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
 import { gatewayReachable } from "./gateway";
-import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd } from "./catalog";
+import { catalog, findModel, videoCostUsd, imageCostUsd } from "./catalog";
 import { MODELS } from "./models";
 import { getSetting } from "./settings";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
@@ -26,18 +27,13 @@ import { readUploadBytes, readImageBytes } from "./storage";
  * shots, and it proposes each generation to you one at a time with the
  * price on the button. Nothing is spent until someone presses Approve.
  *
- * The planner is whichever model you choose from the Vercel AI Gateway, and
+ * The planner is a supported thinking model chosen from the connected catalogue, and
  * that is the point of the section — the reasoning that used to need a
  * Claude subscription now comes out of a menu, with Claude as one row in it
  * rather than a prerequisite.
  *
- * WHY A JSON PROTOCOL AND NOT TOOL CALLS. The obvious build is OpenAI-style
- * `tools` with `tool_calls` back. It is also the one that quietly defeats
- * the purpose: tool-calling support across the gateway's vendors is uneven,
- * and the models most worth offering to someone without a Claude plan — the
- * cheap, fast Chinese and open-weight ones — are exactly where it is
- * patchiest. So a turn is one JSON object instead. Every model that can
- * follow an instruction can produce it, which is the whole menu.
+ * Turns use a validated JSON protocol shared by the supported models.
+ * Proposals still need explicit approval before their generation is run.
  */
 
 /* ── Shapes ───────────────────────────────────────────────────────────── */
@@ -552,20 +548,10 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
 /** "auto" → the first featured planner the gateway is actually serving. */
 export async function resolveModel(want: string, job: "idea" | "shot" = "idea"): Promise<string> {
   const cat = await catalog();
-  /* A named model has to BE one. This used to return `want` verbatim, so the
-     string travelled from the request body to the gateway untouched: a caller
-     could name any model the gateway would answer for — including one far
-     dearer than anything this product offers — and spend the platform's
-     gateway credit on it. The catalogue is the list of models that exist
-     here; anything else falls through to the platform's own routing rather
-     than being honoured or refused, because a stale model id in somebody's
-     saved request should degrade to the sensible default, not to an error. */
-  if (want && want !== "auto" && cat.some((m) => m.id === want)) return want;
-  // "auto" is the platform's routing (brief 1.8): the layer names a model per job; the catalogue must know it.
-  const routed = textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, job);
-  if (cat.some((m) => m.id === routed)) return routed;
-  const first = FEATURED.planner.find((id) => cat.some((m) => m.id === id));
-  return first ?? "anthropic/claude-sonnet-5";
+  const routed = !want || want === "auto"
+    ? textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, job)
+    : undefined;
+  return selectAtomikModel(want, cat.filter(m => m.type === "language").map(m => m.id), routed);
 }
 
 type ParsedTurn = {
