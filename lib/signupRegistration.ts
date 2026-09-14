@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
+import { assertInvitationSession } from "./accountInvitationSession";
 import {
   accountDbReady,
   accountTransaction,
@@ -193,6 +194,7 @@ export async function deliverSignupVerification(
 export async function verifySignup(
   token: string,
   signedInAccountId?: string,
+  signedInSession?: string,
 ): Promise<{ owner: WorkspaceOwner; requestId: string } & SignupChoice> {
   if (!/^[A-Za-z0-9_-]{40,100}$/.test(token))
     throw new AccountError("This verification link is not valid.", 410);
@@ -214,6 +216,7 @@ export async function verifySignup(
           "This email has already been verified. Sign in to continue.",
           409,
         );
+      await assertInvitationSession(tx, r.account_id!, signedInSession);
       return {
         owner: { id: r.account_id!, email: r.email, name: r.name },
         requestId: r.request_id!,
@@ -255,6 +258,7 @@ export async function verifySignup(
 export async function acceptSignupInvitation(
   input: SignupInput & { code: string },
   signedInAccountId?: string,
+  signedInSession?: string,
 ) {
   const data = validated(input),
     welcomeCredits = await approvedWelcomeCredits();
@@ -286,6 +290,8 @@ export async function acceptSignupInvitation(
         "An account already exists for this email. Sign in to continue.",
         409,
       );
+    if (existing)
+      await assertInvitationSession(tx, String(existing.id), signedInSession);
     if (inv.used_at) {
       const prior = (
         await tx.execute({

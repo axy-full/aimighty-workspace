@@ -371,10 +371,11 @@ test("actual password reset rolls password, sibling reset links and every sessio
   });
   expect(after.resets.every((row) => row.used_at !== null)).toBe(true);
   expect(after.sessions.map((row) => row.token_hash)).toEqual([
-    tokenHash(result.session),
+    tokenHash(result.session!),
   ]);
-  expect(after.history.map((row) => row.action)).toEqual([
+  expect(after.history.map((row) => row.action).sort()).toEqual([
     "account.password_reset",
+    "session.created",
   ]);
   for (const privateValue of [
     ...resetTokens,

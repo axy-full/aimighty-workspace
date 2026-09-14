@@ -1,27 +1,59 @@
-import {recoveryRoute} from '@/lib/recovery';
+import { recoveryRoute } from "@/lib/recovery";
+import {
+  completePasswordLogin,
+  sessionDeviceLabel,
+} from "@/lib/accountSecurity";
+import { repairPendingMemberships } from "@/lib/teamInvitations";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
-  SESSION_COOKIE, LOCK_MESSAGE, DUMMY_HASH, createSession, findByEmail,
-  verifyPassword, noteFailure, clearFailures, noteSourceFailure, sourceLocked, sourceKey,
+  SESSION_COOKIE,
+  LOCK_MESSAGE,
+  DUMMY_HASH,
+  findByEmail,
+  verifyPassword,
+  noteFailure,
+  clearFailures,
+  noteSourceFailure,
+  sourceLocked,
+  sourceKey,
 } from "@/lib/auth";
-import { accountJson, accountFailure, sameOriginProblem } from "@/lib/accountDb";
+import {
+  accountJson,
+  accountFailure,
+  sameOriginProblem,
+} from "@/lib/accountDb";
 
 export const dynamic = "force-dynamic";
 
 export const POST = recoveryRoute(async function POST(req: Request) {
-  if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  if (sameOriginProblem(req))
+    return NextResponse.json(
+      { error: "Invalid request origin." },
+      { status: 403 },
+    );
   let body: Record<string, unknown>;
-  try { body = await accountJson(req); } catch (error) { return accountFailure(error); }
-  const email = String(body.email ?? "").trim().toLowerCase();
+  try {
+    body = await accountJson(req);
+  } catch (error) {
+    return accountFailure(error);
+  }
+  const email = String(body.email ?? "")
+    .trim()
+    .toLowerCase();
   const password = String(body.password ?? "");
-  if (!email || !password || password.length > 200 || email.length > 320) return NextResponse.json({ error: "Enter a valid email and password." }, { status: 400 });
+  if (!email || !password || password.length > 200 || email.length > 320)
+    return NextResponse.json(
+      { error: "Enter a valid email and password." },
+      { status: 400 },
+    );
 
   /* Throttling hangs on where the attempt came from, not on the account:
      locking the account would let anyone who knows an address lock its
      owner out for as long as they cared to keep typing. */
   const source = sourceKey(req);
-  if (await sourceLocked(source, email)) return NextResponse.json({ error: LOCK_MESSAGE }, { status: 429 });
+  if (await sourceLocked(source, email))
+    return NextResponse.json({ error: LOCK_MESSAGE }, { status: 429 });
 
   const row = await findByEmail(email);
   const generic = { error: "Wrong email or password" };
@@ -35,10 +67,33 @@ export const POST = recoveryRoute(async function POST(req: Request) {
     return NextResponse.json(generic, { status: 401 });
   }
 
-  await clearFailures(String(row.id), source, email);
-  const token = await createSession(String(row.id));
+  let result: Awaited<ReturnType<typeof completePasswordLogin>>;
+  try {
+    result = await completePasswordLogin({
+      accountId: String(row.id),
+      passwordHash: String(row.password_hash),
+      code: String(body.code ?? "").trim(),
+      deviceLabel: sessionDeviceLabel(req.headers.get("user-agent") ?? ""),
+    });
+  } catch (error) {
+    return accountFailure(error);
+  }
+  if (result.mfaRequired)
+    return NextResponse.json(
+      { mfaRequired: true },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  // Authentication has committed. Optional housekeeping must not suppress the
+  // cookie after consuming a one-use factor; tenant repair stays outside that tx.
+  await clearFailures(String(row.id), source, email).catch(() => {});
+  const token = result.session;
   (await cookies()).set(SESSION_COOKIE, token, {
-    httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 30 * 86400,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 30 * 86400,
   });
+  await repairPendingMemberships(String(row.id)).catch(() => {});
   return NextResponse.json({ ok: true, name: row.name });
 });
