@@ -1,351 +1,562 @@
 "use client";
-
-/**
- * The team, in the app's own idiom: a title, an invite card, and one
- * grouped list of members — the same list on a desk and a phone.
- */
 import { useState } from "react";
+import { Plus, Search, Link2, Mail, Users } from "lucide-react";
 import { useApi } from "@/lib/useApi";
-import { usd, timeAgo } from "@/lib/format";
-import { avatarHue, initialsOf } from "@/lib/avatar";
+import { useSession } from "@/lib/session";
+import { timeAgo } from "@/lib/format";
 import { usePageTitle } from "@/lib/usePageTitle";
-import { Empty } from "@/components/ParticlMark";
 import { appConfirm, appAlert } from "@/components/dialog";
+import ManagementPage, {
+  ManagementCard,
+  ManagementNotice,
+  ManagementStat,
+} from "@/components/management/ManagementPage";
 
 type Member = {
-  id: string; email: string; name: string;
-  /** Present only for the owner; nobody else is told who outranks whom. */
+  id: string;
+  name: string;
+  email: string;
   role?: string;
-  disabled: boolean; locked: boolean;
-  lastSeen: number | null; createdAt: number; clips: number; spend: number;
-  /** The workspace's permanent admin: cannot be demoted, disabled or removed. */
+  disabled: boolean;
+  locked: boolean;
   permanent?: boolean;
+  clips: number;
+  lastSeen: number | null;
 };
-type AccessRequest = {
-  id: string; name: string; email: string; note: string;
-  mailed: boolean; createdAt: number;
-};
-
 type Invite = {
-  code: string; email: string; name: string; role?: string;
-  createdAt: number; expiresAt: number;
-  sentAt?: number | null; sendCount?: number;
+  code: string;
+  name: string;
+  email: string;
+  role?: string;
+  expiresAt: number;
+  sentAt?: number | null;
 };
-type Mail = { configured: boolean; from: string | null };
-
+type Team = {
+  users: Member[];
+  invites: Invite[];
+  canSeeRoles?: boolean;
+  mail?: { configured: boolean; from?: string | null };
+  requests?: {
+    id: string;
+    name: string;
+    email: string;
+    note: string;
+    createdAt: number;
+  }[];
+};
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
 export default function TeamPage() {
-  usePageTitle("Team");
-  const { data, refresh } = useApi<{
-    users: Member[]; invites: Invite[]; mail?: Mail; canSeeRoles?: boolean;
-    requests?: AccessRequest[];
-  }>("/api/team", 30000);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [sending, setSending] = useState<string | null>(null);
-  const { data: me } = useApi<{ id?: string; email: string }>("/api/me");
+  const session = useSession();
+  return <TeamContent key={`${session.workspace?.id}:${session.email}`} />;
+}
+function TeamContent() {
+  usePageTitle("People");
+  const session = useSession();
+  const { data, error, refresh } = useApi<Team>("/api/team", 30000);
+  const [notice, setNotice] = useState(""),
+    [issue, setIssue] = useState(""),
+    [busy, setBusy] = useState("");
   const [form, setForm] = useState({ name: "", email: "", role: "member" });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
-
-  async function invite() {
-    if (!form.name.trim() || !form.email.trim() || busy) return;
-    setBusy(true); setErr(null);
-    try {
-      const res = await fetch("/api/team", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Couldn't create the invite");
-      setForm({ name: "", email: "", role: "member" });
-      setNotice(json.sent
-        ? `Invitation emailed to ${json.email}.`
-        : json.mailError
-          ? `Invitation created, but the email didn't go: ${json.mailError} Copy the link below instead.`
-          : null);
-      refresh();
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(false); }
-  }
-
-  async function patch(id: string, body: Record<string, unknown>) {
-    const res = await fetch(`/api/team/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+  const [inviteOpen, setInviteOpen] = useState(false),
+    [search, setSearch] = useState(""),
+    [tab, setTab] = useState("members"),
+    [copied, setCopied] = useState("");
+  const users = data?.users ?? [],
+    invites = data?.invites ?? [],
+    owner = Boolean(data?.canSeeRoles),
+    mail = Boolean(data?.mail?.configured);
+  const filtered = users.filter((user) =>
+    `${user.name} ${user.email}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  const active = users.filter((user) => !user.disabled).length;
+  async function mutate(path: string, method: string, body?: unknown) {
+    const response = await fetch(path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
     });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) setErr(json.error ?? "That didn't work"); else setErr(null);
-    refresh();
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok)
+      throw new Error(result.error || "The team could not be updated.");
+    return result;
   }
-
-  async function remove(u: Member) {
-    const ok = await appConfirm(
-      `Delete ${u.name}?`,
-      "They lose access immediately: sessions and API tokens are revoked and they leave the team. " +
-      "Their takes and spend stay on the ledger under their name. This can't be undone.",
-      { confirmLabel: "Delete", danger: true },
-    );
-    if (!ok) return;
-    const res = await fetch(`/api/team/${u.id}`, { method: "DELETE" });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) setErr(json.error ?? "That didn't work"); else setErr(null);
-    refresh();
-  }
-
-  async function resend(iv: Invite) {
-    setSending(iv.code); setErr(null); setNotice(null);
+  async function invite() {
+    if (busy) return;
+    setBusy("invite");
+    setIssue("");
+    setNotice("");
     try {
-      const res = await fetch(`/api/team/invites/${iv.code}/send`, { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Couldn't send it");
-      setNotice(`Invitation emailed again to ${iv.email}.`);
-      refresh();
-    } catch (e) { setErr((e as Error).message); }
-    finally { setSending(null); }
-  }
-
-  async function revoke(iv: Invite) {
-    const ok = await appConfirm(
-      `Revoke the invitation to ${iv.email}?`,
-      "Their link stops working straight away. If they still need access you'd have to invite them again.",
-      { confirmLabel: "Revoke", danger: true },
-    );
-    if (!ok) return;
-    await fetch(`/api/team/invites/${iv.code}`, { method: "DELETE" });
-    refresh();
-  }
-
-  async function copyLink(code: string) {
-    const link = `${window.location.origin}/invite/${code}`;
-    try {
-      // Safari refuses the write outside a user gesture, and http origins
-      // have no clipboard at all — both used to still say "Copied ✓".
-      await navigator.clipboard.writeText(link);
-      setCopied(code);
-      setTimeout(() => setCopied(null), 2000);
-    } catch {
-      await appAlert("The link wasn't copied", link);
+      const result = await mutate("/api/team", "POST", form);
+      setForm({ name: "", email: "", role: "member" });
+      setInviteOpen(false);
+      setTab("invites");
+      setNotice(
+        result.sent
+          ? `Invitation sent to ${result.email}.`
+          : result.mailError
+            ? "Invitation created. Email delivery failed; copy the invitation link."
+            : "Invitation created. Copy the link to share it.",
+      );
+      await refresh();
+    } catch (e) {
+      setIssue((e as Error).message);
+    } finally {
+      setBusy("");
     }
   }
-
-  const users = data?.users ?? [];
-  /** True only for the workspace owner. Everyone else is shown no standing. */
-  const canSeeRoles = Boolean(data?.canSeeRoles);
-  const invites = data?.invites ?? [];
-  const requests = data?.requests ?? [];
-  const active = users.filter((u) => !u.disabled).length;
-  const mail = data?.mail?.configured ?? false;
-
+  async function memberAction(user: Member, body: Record<string, unknown>) {
+    if (busy) return;
+    setBusy(user.id);
+    setIssue("");
+    try {
+      await mutate(`/api/team/${encodeURIComponent(user.id)}`, "PATCH", body);
+      await refresh();
+      setNotice(`${user.name} updated.`);
+    } catch (e) {
+      setIssue((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function remove(user: Member) {
+    if (
+      busy ||
+      !(await appConfirm(
+        `Remove ${user.name}?`,
+        "They lose access to this workspace. Their takes and recorded usage remain.",
+        { confirmLabel: "Remove member", danger: true },
+      ))
+    )
+      return;
+    setBusy(user.id);
+    setIssue("");
+    try {
+      await mutate(`/api/team/${encodeURIComponent(user.id)}`, "DELETE");
+      await refresh();
+      setNotice(`${user.name} removed from this workspace.`);
+    } catch (e) {
+      setIssue((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function invitationAction(invite: Invite, send: boolean) {
+    if (busy) return;
+    if (
+      !send &&
+      !(await appConfirm(
+        "Revoke this invitation?",
+        `${invite.name} will no longer be able to join using this link.`,
+        { confirmLabel: "Revoke invitation", danger: true },
+      ))
+    )
+      return;
+    setBusy(invite.code);
+    setIssue("");
+    try {
+      await mutate(
+        `/api/team/invites/${encodeURIComponent(invite.code)}${send ? "/send" : ""}`,
+        send ? "POST" : "DELETE",
+      );
+      await refresh();
+      setNotice(
+        send ? `Invitation emailed to ${invite.email}.` : "Invitation revoked.",
+      );
+    } catch (e) {
+      setIssue((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function copy(code: string) {
+    const url = `${window.location.origin}/invite/${code}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(code);
+    } catch {
+      await appAlert("Copy invitation link", url);
+    }
+  }
   return (
-    <div className="screen">
-      <div className="mx-auto w-full max-w-[760px] pb-10">
-        <div className="flex flex-wrap items-end gap-3 pt-6">
-          <span className="flex flex-col">
-            <h1 className="h1">Team</h1>
-            <span className="mt-1 text-[15px] text-dim">
-              {active} active member{active === 1 ? "" : "s"} · invitation only
-            </span>
-          </span>
-          <a href="/api/export" download
-            title="Every prompt, cost and account record, as JSON"
-            className="chip mb-2 ml-auto !text-dim">
-            Export data
-          </a>
-        </div>
-
-        {/* Strangers who have asked to be let in. The interface is public
-            now, so this is the queue that public-ness produces — and it is
-            read from the database rather than from an inbox, so a request
-            survives the email failing. */}
-        {requests.length > 0 && (
-          <>
-            <p className="grouplabel mt-10">
-              Asked for an invitation
-              <span className="ml-2 text-mute">{requests.length}</span>
-            </p>
-            <div className="rows">
-              {requests.map((r) => (
-                <div key={r.id} className="row !items-start">
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate font-medium">{r.name || r.email}</span>
-                    {r.name && <span className="truncate text-[12.5px] text-mute">{r.email}</span>}
-                    {r.note && (
-                      <span className="mt-0.5 max-w-[52ch] text-[12.5px] leading-relaxed text-dim">
-                        {r.note}
-                      </span>
-                    )}
-                    {!r.mailed && (
-                      <span className="mt-0.5 text-[11.5px] text-mute">
-                        Not emailed — mail isn&rsquo;t set up, so this page is the only copy.
-                      </span>
-                    )}
-                  </span>
-                  <span className="row-value flex shrink-0 items-center gap-2">
-                    <span className="text-[12px] text-mute">{timeAgo(r.createdAt)}</span>
-                    <button type="button" className="chip !py-1.5 !text-[13px]"
-                      onClick={() => setForm({ name: r.name, email: r.email, role: "member" })}
-                      title="Fill the invite form with these details">
-                      Invite
-                    </button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        <p className="grouplabel mt-10">Invite someone</p>
-        <div className="card p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <input className="ctl min-w-[160px] flex-1" placeholder="Name"
-              value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && invite()} />
-            <input className="ctl min-w-[200px] flex-1" placeholder="Email" type="email"
-              value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && invite()} />
-            {/* Only the owner chooses standing. For anyone else the invite
-                is a member invite, decided on the server rather than here. */}
-            {canSeeRoles && (
-              <select className="ctl w-auto shrink-0" value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-            )}
-            <button onClick={invite} disabled={busy || !form.name.trim() || !form.email.trim()}
-              className="btn-render h-[38px] shrink-0 px-4 text-[14px]">
-              {busy ? "Sending…" : mail ? "Send invite" : "Create invite"}
+    <ManagementPage
+      tab="team"
+      title="People, working together."
+      description="Invite your collaborators and manage access to this workspace."
+      workspace={session.workspace?.name}
+      actions={
+        data && (
+          <button
+            className="management-button primary"
+            onClick={() => setInviteOpen(!inviteOpen)}
+            aria-expanded={inviteOpen}
+          >
+            <Plus size={15} />
+            {inviteOpen ? "Close invitation" : "Invite someone"}
+          </button>
+        )
+      }
+    >
+      {(issue || error) && (
+        <ManagementNotice error>
+          {issue || error}
+          {!data && (
+            <button
+              className="management-button small"
+              onClick={() => void refresh()}
+            >
+              Retry
             </button>
+          )}
+        </ManagementNotice>
+      )}
+      {notice && <ManagementNotice>{notice}</ManagementNotice>}
+      {!data && !error && (
+        <ManagementNotice>
+          {session.signedIn
+            ? "Loading your team…"
+            : "Sign in to manage your workspace team."}
+        </ManagementNotice>
+      )}
+      {data && (
+        <>
+          <div className="management-grid three management-metrics">
+            <ManagementStat
+              label="Active people"
+              value={active}
+              note="Working in this workspace"
+            />
+            <ManagementStat
+              label="Pending invitations"
+              value={invites.length}
+              note="Links expire after seven days"
+            />
+            <ManagementStat
+              label="Workspace access"
+              value={<Users size={30} />}
+              note={
+                owner
+                  ? "You manage roles and access"
+                  : "Only the owner changes roles"
+              }
+            />
           </div>
-          <p className="mt-2.5 text-[12.5px] text-mute">
-            {mail
-              ? <>The invitation is emailed from {data?.mail?.from} with a link that expires on its own; you can also copy the link.</>
-              : <>No email is set up, so copy the link and share it yourself; it expires on its own. To email invitations, ask management to connect email for this deployment.</>}
-          </p>
-          {notice && (
-            <p className="mt-3 rounded-[10px] bg-blue/8 px-3 py-2 text-[13.5px] text-blue">{notice}</p>
-          )}
-          {err && (
-            <p className="mt-3 rounded-[10px] bg-lift/8 px-3 py-2 text-[13.5px] text-lift">{err}</p>
-          )}
-        </div>
-
-        {invites.length > 0 && (
-          <>
-            <p className="grouplabel mt-10">Pending invites</p>
-            <div className="rows">
-              {invites.map((iv) => (
-                <div key={iv.code} className="row">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-[1.5px] border-dashed border-mute/60 text-[12px] text-mute">
-                    {initialsOf(iv.name)}
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-[15px]">{iv.name}</span>
-                    <span className="truncate text-[12.5px] text-mute">
-                      {iv.email}{iv.role ? ` · ${iv.role}` : ""} · expires {new Date(iv.expiresAt).toLocaleDateString()}
-                      {iv.sentAt ? ` · emailed ${timeAgo(iv.sentAt)}${(iv.sendCount ?? 0) > 1 ? ` (${iv.sendCount}×)` : ""}` : mail ? " · not emailed yet" : ""}
-                    </span>
-                  </span>
-                  <span className="row-value !gap-1.5">
-                    {mail && (
-                      <button onClick={() => resend(iv)} disabled={sending === iv.code} className="chip !py-1.5 !text-[13px] !text-blue disabled:opacity-50">
-                        {sending === iv.code ? "Sending…" : iv.sentAt ? "Resend" : "Email it"}
-                      </button>
-                    )}
-                    <button onClick={() => copyLink(iv.code)} className="chip !py-1.5 !text-[13px]">
-                      {copied === iv.code ? "Copied ✓" : "Copy link"}
-                    </button>
-                    <button onClick={() => void revoke(iv)} className="chip !py-1.5 !text-[13px] !text-lift">
-                      Revoke
-                    </button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        <p className="grouplabel mt-10">Members</p>
-        <div className="rows">
-          {users.length === 0 && <div className="row"><Empty compact title="Nobody yet" /></div>}
-          {users.map((u) => (
-            <div key={u.id} className={`row !items-start !py-3 ${u.disabled ? "opacity-45" : ""}`}>
-              <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full text-[12px] font-semibold text-white"
-                style={{ background: avatarHue(u.name) }}>
-                {initialsOf(u.name)}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-[15px] font-medium">{u.name}</span>
-                  {canSeeRoles && (u.permanent ? (
-                    <span className="rounded-full bg-blue/10 px-2 py-px text-[11px] font-medium text-blue"
-                      title="The workspace's permanent admin — can't be demoted, disabled or removed">
-                      Owner
-                    </span>
-                  ) : u.role === "admin" && (
-                    <span className="rounded-full bg-blue/10 px-2 py-px text-[11px] font-medium text-blue">Admin</span>
-                  ))}
-                  {u.locked && (
-                    <span className="rounded-full bg-warn/15 px-2 py-px text-[11px] font-medium text-warn">Locked</span>
-                  )}
-                  {u.disabled && (
-                    <span className="rounded-full bg-chip px-2 py-px text-[11px] font-medium text-dim">Disabled</span>
-                  )}
-                </span>
-                <span className="truncate text-[12.5px] text-mute">{u.email}</span>
-                <span className="text-[12.5px] tabular-nums text-mute">
-                  {u.clips} take{u.clips === 1 ? "" : "s"} · {usd(u.spend, 2)} ·{" "}
-                  {u.lastSeen ? `seen ${timeAgo(u.lastSeen)}` : "never signed in"}
-                </span>
-                <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  {/* A control that will always be refused is worse than no
-                      control: it invites the click and then explains itself.
-                      Unlock stays, because it only ever helps this account. */}
-                  {!canSeeRoles ? null : u.permanent ? (
-                    <>
-                      <span className="text-[12.5px] text-mute">
-                        Permanent admin — can&rsquo;t be demoted, disabled or removed.
-                      </span>
-                      {u.locked && (
-                        <button onClick={() => patch(u.id, { unlock: true })} className="chip !py-1 !text-[12.5px] !text-warn">
-                          Unlock
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <select value={u.role} onChange={(e) => patch(u.id, { role: e.target.value })}
-                        className="h-[28px] rounded-full bg-chip px-2.5 text-[12.5px] font-medium text-dim">
+          {inviteOpen && (
+            <ManagementCard
+              title="Invite a collaborator"
+              description={
+                mail
+                  ? "Send an invitation to join this workspace."
+                  : "Create a private invitation link to share with your collaborator."
+              }
+            >
+              <form
+                className="management-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void invite();
+                }}
+              >
+                <div className="management-grid three">
+                  <label className="management-field">
+                    <span>Name</span>
+                    <input
+                      required
+                      autoComplete="name"
+                      maxLength={80}
+                      value={form.name}
+                      disabled={!!busy}
+                      onChange={(e) =>
+                        setForm({ ...form, name: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="management-field">
+                    <span>Email address</span>
+                    <input
+                      required
+                      autoComplete="email"
+                      type="email"
+                      value={form.email}
+                      disabled={!!busy}
+                      onChange={(e) =>
+                        setForm({ ...form, email: e.target.value })
+                      }
+                    />
+                  </label>
+                  {owner && (
+                    <label className="management-field">
+                      <span>Workspace role</span>
+                      <select
+                        value={form.role}
+                        disabled={!!busy}
+                        onChange={(e) =>
+                          setForm({ ...form, role: e.target.value })
+                        }
+                      >
                         <option value="member">Member</option>
                         <option value="admin">Admin</option>
                       </select>
-                      {u.locked && (
-                        <button onClick={() => patch(u.id, { unlock: true })} className="chip !py-1 !text-[12.5px] !text-warn">
+                    </label>
+                  )}
+                </div>
+                <div className="management-form-footer">
+                  <span>
+                    Members create and review. Admins also manage workspace
+                    settings.
+                  </span>
+                  <button
+                    className="management-button primary"
+                    disabled={!!busy || !form.name.trim() || !form.email.trim()}
+                  >
+                    <Mail size={14} />
+                    {busy === "invite"
+                      ? "Creating…"
+                      : mail
+                        ? "Send invite"
+                        : "Create invite"}
+                  </button>
+                </div>
+              </form>
+            </ManagementCard>
+          )}
+          {!!data.requests?.length && (
+            <ManagementCard title="Access requests">
+              {data.requests.map((request) => (
+                <div key={request.id} className="management-row">
+                  <div>
+                    <strong>{request.name || request.email}</strong>
+                    <p>{request.email}</p>
+                    {request.note && <p>{request.note}</p>}
+                  </div>
+                  <button
+                    className="management-button small"
+                    onClick={() => {
+                      setForm({
+                        name: request.name,
+                        email: request.email,
+                        role: "member",
+                      });
+                      setInviteOpen(true);
+                    }}
+                  >
+                    Prepare invitation
+                  </button>
+                </div>
+              ))}
+            </ManagementCard>
+          )}
+          <ManagementCard>
+            <div className="management-card-heading">
+              <div className="management-tabs" aria-label="People lists">
+                <button
+                  aria-pressed={tab === "members"}
+                  onClick={() => setTab("members")}
+                >
+                  Members · {users.length}
+                </button>
+                <button
+                  aria-pressed={tab === "invites"}
+                  onClick={() => setTab("invites")}
+                >
+                  Invitations · {invites.length}
+                </button>
+              </div>
+              {tab === "members" && (
+                <label className="management-field management-search">
+                  <span className="sr-only">Find a person</span>
+                  <input
+                    placeholder="Find a person…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </label>
+              )}
+            </div>
+            {tab === "members" ? (
+              <div className="management-list">
+                {filtered.map((user) => (
+                  <div className="management-member" key={user.id}>
+                    <div className="management-identity">
+                      <div className="management-avatar">
+                        {initials(user.name)}
+                      </div>
+                      <div>
+                        <strong>
+                          {user.name}
+                          {user.email === session.email ? " (you)" : ""}
+                        </strong>
+                        <small>{user.email}</small>
+                      </div>
+                    </div>
+                    <div className="management-member-meta">
+                      <span>
+                        {user.clips} take{user.clips === 1 ? "" : "s"} ·{" "}
+                        {user.lastSeen
+                          ? `Seen ${timeAgo(user.lastSeen)}`
+                          : "Not signed in yet"}
+                      </span>
+                      <span>
+                        <span
+                          className={`management-badge ${user.disabled ? "" : "active"}`}
+                        >
+                          {user.disabled
+                            ? "Disabled"
+                            : user.locked
+                              ? "Locked"
+                              : "Active"}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="management-member-actions">
+                      {owner &&
+                        (user.permanent ? (
+                          <span className="management-badge">Owner</span>
+                        ) : (
+                          <select
+                            aria-label={`Role for ${user.name}`}
+                            value={user.role ?? "member"}
+                            disabled={!!busy}
+                            onChange={(e) =>
+                              void memberAction(user, { role: e.target.value })
+                            }
+                          >
+                            <option value="member">Member</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        ))}
+                      {owner && user.locked && (
+                        <button
+                          className="management-button small"
+                          disabled={!!busy}
+                          onClick={() =>
+                            void memberAction(user, { unlock: true })
+                          }
+                        >
                           Unlock
                         </button>
                       )}
-                      <button onClick={() => patch(u.id, { disabled: !u.disabled })}
-                        className="chip !py-1 !text-[12.5px]">
-                        {u.disabled ? "Enable" : "Disable"}
+                      {owner && !user.permanent && (
+                        <>
+                          <button
+                            className="management-button small"
+                            disabled={!!busy}
+                            onClick={() =>
+                              void memberAction(user, {
+                                disabled: !user.disabled,
+                              })
+                            }
+                          >
+                            {user.disabled ? "Enable" : "Disable"}
+                          </button>
+                          {user.email !== session.email && (
+                            <button
+                              className="management-button small danger"
+                              disabled={!!busy}
+                              onClick={() => void remove(user)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {!filtered.length && (
+                  <div className="management-empty">
+                    {search ? (
+                      <>
+                        <Search size={24} style={{ margin: "0 auto 10px" }} />
+                        No matching people.
+                      </>
+                    ) : (
+                      "No members to display."
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="management-list">
+                {invites.map((invite) => (
+                  <div className="management-member" key={invite.code}>
+                    <div className="management-identity">
+                      <div className="management-avatar">
+                        <Mail size={17} />
+                      </div>
+                      <div>
+                        <strong>{invite.name}</strong>
+                        <small>{invite.email}</small>
+                      </div>
+                    </div>
+                    <div className="management-member-meta">
+                      <span>
+                        {invite.sentAt
+                          ? "Invitation emailed"
+                          : "Link ready to share"}
+                      </span>
+                      <span>
+                        Expires{" "}
+                        {new Date(invite.expiresAt).toLocaleDateString(
+                          undefined,
+                          { month: "short", day: "numeric" },
+                        )}
+                      </span>
+                    </div>
+                    <div className="management-member-actions">
+                      <button
+                        className="management-button small"
+                        onClick={() => void copy(invite.code)}
+                      >
+                        <Link2 size={12} />
+                        {copied === invite.code ? "Copied" : "Copy link"}
                       </button>
-                      {(me?.id ? me.id !== u.id : me?.email !== u.email) && (
-                        <button onClick={() => remove(u)} className="chip !py-1 !text-[12.5px] !text-lift"
-                          title="Revoke access and remove from the team; their work stays on the ledger">
-                          Delete
+                      {mail && (
+                        <button
+                          className="management-button small"
+                          disabled={!!busy}
+                          onClick={() => void invitationAction(invite, true)}
+                        >
+                          Resend
                         </button>
                       )}
-                    </>
-                  )}
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-        <p className="px-[18px] pt-2.5 text-[13px] leading-relaxed text-mute">
-          Admins manage the team, invites and the ledger. Members generate and edit.
-          Disable is reversible; Delete revokes access for good and keeps their renders and spend on the ledger under their name.
-        </p>
-      </div>
-    </div>
+                      <button
+                        className="management-button small danger"
+                        disabled={!!busy}
+                        onClick={() => void invitationAction(invite, false)}
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {!invites.length && (
+                  <div className="management-empty">
+                    <h2>No pending invitations</h2>
+                    <p>Your next collaborator is one invitation away.</p>
+                    <button
+                      className="management-button"
+                      onClick={() => setInviteOpen(true)}
+                    >
+                      Invite someone
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </ManagementCard>
+          <p className="management-muted">
+            Disabling access is reversible. Removing a person keeps their takes
+            and recorded usage in this workspace.
+          </p>
+        </>
+      )}
+    </ManagementPage>
   );
 }

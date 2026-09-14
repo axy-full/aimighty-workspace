@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useSession } from "@/lib/session";
 import { bindAtomikRail, setAtomikRail, toggleAtomikRail } from "@/lib/atomikRail";
 import { AtomikProvider } from "@/components/atomik/AtomikProvider";
@@ -10,19 +11,12 @@ import Header from "./Header";
 import Dock from "./Dock";
 import SuspendedBar from "./SuspendedBar";
 
-/**
- * One shell, one ground (design/particl-v2/README.md §2–§5).
- *
- * The 56px header; beneath it the screen with Atomik's rail on its right
- * when the rail is open (compact 300, expanded 420 — the screen reflows to
- * what is left); on a phone the dock. There is no light theme and no
- * second brand: Atomik is this rail, opened by its header button or ⌘J,
- * closed by Esc, its state kept per user across sessions. Atomik's own
- * state — the conversation, the plan, the checkpoint — lives here too, so
- * the header button shows it whether the rail is open or not.
- */
+/** Shared Studio / Gen / Workspace navigation. Gen and management own their
+ * entire content area; older production tools retain their contextual rail. */
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { email } = useSession();
+  const path = usePathname();
+  const focusedSection = /^\/(generate|make|settings|team|usage|statements)(\/|$)/.test(path);
   useEffect(() => { bindAtomikRail(email ?? "visitor"); }, [email]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -34,13 +28,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }, []);
   return (
     <AtomikProvider>
-      <div className="shell">
+      <div className="shell studio-application">
         <Header />
         <SuspendedBar />
         <div className="shell-body">
           <div className="shell-page">{children}</div>
-          <div className="max-md:hidden contents"><AtomikRail /></div>
-          <div className="md:hidden contents"><AtomikSheet /></div>
+          {!focusedSection && <><div className="max-md:hidden contents"><AtomikRail /></div>
+          <div className="md:hidden contents"><AtomikSheet /></div></>}
         </div>
         <Dock />
       </div>

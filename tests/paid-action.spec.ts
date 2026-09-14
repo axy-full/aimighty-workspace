@@ -356,12 +356,26 @@ test("ordinary drafts belong to each account even inside the same workspace", as
   await page.goto("/atomik/ideas");
   await page.getByRole("button", { name: "New idea", exact: true }).click();
   const logline = page.locator(".ak-idea.is-new textarea");
+  async function openGenWithinDocument() {
+    const sentinel = randomBytes(12).toString("hex");
+    await page.evaluate((value) => {
+      Reflect.set(window, "__privateDraftNavigation", value);
+    }, sentinel);
+    await page
+      .getByRole("navigation", { name: "Studio sections" })
+      .getByRole("link", { name: "Gen", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/generate$/);
+    expect(
+      await page.evaluate(() =>
+        Reflect.get(window, "__privateDraftNavigation"),
+      ),
+    ).toBe(sentinel);
+    await expect(logline).toHaveCount(0);
+  }
   await logline.fill("Owner private unsent brief.");
   // Client navigation unmounts before the debounce has to finish.
-  await page
-    .getByRole("link", { name: "Library", exact: true })
-    .first()
-    .click();
+  await openGenWithinDocument();
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -416,10 +430,7 @@ test("ordinary drafts belong to each account even inside the same workspace", as
   await page.getByRole("button", { name: "New idea", exact: true }).click();
   await expect(logline).toHaveValue("");
   await logline.fill("Member private unsent brief.");
-  await page
-    .getByRole("link", { name: "Library", exact: true })
-    .first()
-    .click();
+  await openGenWithinDocument();
   const login = await page.request.post("/api/auth/login", {
     data: {
       email: owner.email,

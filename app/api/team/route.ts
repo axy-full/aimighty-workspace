@@ -5,6 +5,7 @@ import { db, ready, now } from "@/lib/db";
 import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady } from "@/lib/platform";
+import { creditsApply } from "@/lib/credits";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 7;
@@ -20,6 +21,7 @@ export const GET = withTenant(async function GET() {
   const got = await requireAdmin();
   if (got.response) return got.response;
   const ws = requireTenant();
+  const inCredits = creditsApply(ws);
   await Promise.all([ready(), platformReady()]);
   const canSeeRoles = got.user.owner || (await isPlatformOwner(got.user));
 
@@ -36,8 +38,7 @@ export const GET = withTenant(async function GET() {
             WHERE workspace_id = ? AND used_at IS NULL AND expires_at > ? ORDER BY created_at DESC`,
       args: [ws.id, now()],
     }),
-    db().execute(`SELECT created_by AS id, COUNT(*) AS clips,
-                         COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend
+    db().execute(`SELECT created_by AS id, COUNT(*) AS clips${inCredits ? "" : ", COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend"}
                   FROM generations GROUP BY created_by`),
   ]);
   const made = new Map((stats.rows as any[]).map((r) => [String(r.id), { clips: Number(r.clips), spend: Number(r.spend) }]));
@@ -54,7 +55,8 @@ export const GET = withTenant(async function GET() {
       locked: r.locked_until != null && Number(r.locked_until) > now(),
       lastSeen: r.last_seen == null ? null : Number(r.last_seen),
       createdAt: Number(r.joined_at ?? r.created_at),
-      clips: made.get(String(r.id))?.clips ?? 0, spend: made.get(String(r.id))?.spend ?? 0,
+      clips: made.get(String(r.id))?.clips ?? 0,
+      ...(!inCredits ? { spend: made.get(String(r.id))?.spend ?? 0 } : {}),
     })),
     invites: (invites.rows as any[]).map((r) => ({
       code: r.code, email: r.email, name: r.name,
@@ -62,7 +64,7 @@ export const GET = withTenant(async function GET() {
       createdAt: Number(r.created_at), expiresAt: Number(r.expires_at),
       sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0),
     })),
-  });
+  }, { headers: { "Cache-Control": "no-store" } });
 });
 
 /** Invite someone onto this workspace. Standing is the owner's to choose. */

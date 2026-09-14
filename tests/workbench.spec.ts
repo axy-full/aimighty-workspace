@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { readFile } from "node:fs/promises";
 import { seedProject, STAGES, type Plan, type Project } from "../lib/workbench/studio";
+import { RING_DOTS } from "../lib/ring";
 
 
 async function goStage(page: Page, label: string) {
@@ -68,8 +69,28 @@ async function fixture(page: Page) {
   return { current: () => project, generationRequests };
 }
 
-test("mobile navigation waits for hydration and initial load, then accepts the first workflow tap", async ({page},testInfo)=>{
-  test.skip(testInfo.project.name!=="workbench-360x640","one deterministic startup regression; responsive flow covers both phone sizes");
+test("studio exposes Gen and workspace navigation with the original Atomik brand", async ({ page }, testInfo) => {
+  await signInLocally(page.request);
+  await fixture(page);
+  await page.goto("/workbench");
+  const sections = page.getByRole("navigation", { name: "Studio sections", exact: true });
+  await expect(sections.getByRole("link", { name: "Studio", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(sections.getByRole("link", { name: "Gen", exact: true })).toBeVisible();
+  await expect(sections.getByRole("link", { name: "Gen", exact: true })).toHaveAttribute("href", "/generate");
+  await expect(sections.getByRole("link", { name: "Workspace", exact: true })).toBeVisible();
+  const mark = page.getByRole("button", { name: "Toggle Atomik creative engine", exact: true }).locator("svg.atom-mark");
+  await expect(mark).toHaveAttribute("viewBox", "20 20 160 160");
+  expect(await mark.locator("circle").evaluateAll(dots => dots.map(dot => ["cx", "cy", "r"].map(key => Number(dot.getAttribute(key)))))).toEqual(RING_DOTS);
+  expect(await mark.evaluate(el => ({ fill: getComputedStyle(el).fill, stroke: getComputedStyle(el).stroke }))).toEqual({ fill: "rgb(230, 232, 236)", stroke: "none" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.getByRole("button", { name: "Workspace menu", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Credits & plan", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("studio-sections-and-account.png") });
+});
+
+test("navigation waits for hydration and initial load, then accepts the first workflow tap", async ({page},testInfo)=>{
+  test.skip(!["workbench-360x640", "workbench-1440x900"].includes(testInfo.project.name),"deterministic startup regressions on desktop and phone; responsive flow covers every size");
+  const mobile = page.viewportSize()!.width < 760;
   await signInLocally(page.request);
   await fixture(page);
   let releaseScripts=()=>{};
@@ -85,7 +106,7 @@ test("mobile navigation waits for hydration and initial load, then accepts the f
     await route.fallback();
   });
   await page.goto("/workbench",{waitUntil:"commit"});
-  const workflow=page.getByRole("navigation",{name:"Mobile studio navigation"}).getByRole("button",{name:"Workflow",exact:true});
+  const workflow=mobile ? page.getByRole("navigation",{name:"Mobile studio navigation"}).getByRole("button",{name:"Workflow",exact:true}) : page.locator(".workflow-stages").getByRole("tab").last();
   await expect(workflow).toBeVisible();
   await expect(workflow).toBeDisabled();
   releaseScripts();
@@ -94,6 +115,10 @@ test("mobile navigation waits for hydration and initial load, then accepts the f
   releaseProject();
   await expect(workflow).toBeEnabled();
   await workflow.click();
+  if (!mobile) {
+    await expect(page.getByRole("button", {name: "Open movie renderer", exact: true})).toBeVisible();
+    return;
+  }
   await expect(page.getByRole("dialog",{name:"Production workflow"})).toBeVisible();
 
   // A verified workspace with no draft still completes initialization and keeps recovery/navigation available.

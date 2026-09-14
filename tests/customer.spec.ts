@@ -43,6 +43,53 @@ async function customerFixture(page: Page) {
     holdSave: false,
     saveHeld: false,
     releaseSave: () => {},
+    settings: {
+      namingTemplate: "{project}_{shot}_v{version}",
+      defaultVideoModel: "",
+      defaultImageModel: "",
+      approvalRule: "cap",
+      shotCapCredits: "50",
+      capWarnPct: "80",
+      atCap: "producer",
+      atomikEngines: "[]",
+      deriveForApi: "1",
+      retentionDays: "0",
+      editOutputFormat: "mp4",
+      lockNewAssets: "0",
+      trainOnCreate: "ask",
+    } as Record<string, string>,
+    settingsWrites: [] as Record<string, unknown>[],
+    packRequests: [] as Record<string, unknown>[],
+    invites: [] as {
+      code: string;
+      name: string;
+      email: string;
+      expiresAt: number;
+    }[],
+    members: [
+      {
+        id: "owner-fixture",
+        name: "Production House Owner",
+        email: "owner@example.test",
+        role: "admin",
+        permanent: true,
+        disabled: false,
+        locked: false,
+        clips: 3,
+        lastSeen: Date.now(),
+      },
+      {
+        id: "member-fixture",
+        name: "Camera Operator",
+        email: "camera@example.test",
+        role: "member",
+        permanent: false,
+        disabled: false,
+        locked: false,
+        clips: 2,
+        lastSeen: Date.now(),
+      },
+    ],
   };
   let barrier: Promise<void> | null = null;
   await page.route("**/api/**", async (route) => {
@@ -96,7 +143,141 @@ async function customerFixture(page: Page) {
         next: "/billing?plan=agency&cadence=annual&onboarding=1",
       });
     }
-    if (path === "/api/me") return json(account);
+    if (path === "/api/atomik")
+      return json({
+        chats: [],
+        engines: [],
+        models: { featured: [], rest: [] },
+      });
+    if (path === "/api/projects") return json({ projects: [] });
+    if (path === "/api/me")
+      return json({
+        ...account,
+        id: "owner-fixture",
+        email: "owner@example.test",
+        role: state.owner ? "admin" : "member",
+        owner: state.owner,
+      });
+    if (path === "/api/settings") {
+      if (request.method() === "PATCH") {
+        state.settingsWrites.push(body);
+        Object.assign(state.settings, body);
+      }
+      return json({
+        settings: state.settings,
+        defaults: state.settings,
+        models: { video: "", image: "" },
+      });
+    }
+    if (path === "/api/team") {
+      if (request.method() === "POST") {
+        const invite = {
+          code: "new-invite-" + state.invites.length,
+          name: String(body.name),
+          email: String(body.email),
+          expiresAt: Date.now() + 86400000,
+        };
+        state.invites.push(invite);
+        return json({ ...invite, sent: false });
+      }
+      return json({
+        canSeeRoles: state.owner,
+        mail: { configured: false },
+        users: state.members,
+        invites: state.invites,
+        requests: [],
+      });
+    }
+    if (path === "/api/team/member-fixture") {
+      Object.assign(state.members[1], body);
+      return json({ ok: true });
+    }
+    if (path === "/api/engines")
+      return json({ engines: [], refiner: { writer: "none", label: "None" } });
+    if (path === "/api/limits")
+      return json({
+        limits: { storageBytes: 10000000000 },
+        standing: { usedBytes: 2000000000 },
+      });
+    if (path === "/api/me/notify") return json({ prefs: {} });
+    if (path === "/api/workspaces/topups") {
+      if (request.method() === "POST") {
+        state.packRequests.push(body);
+        return json({
+          request: { id: "pack-request" },
+          checkout: { kind: "queued" },
+        });
+      }
+      return json({
+        applies: true,
+        provider: "manual",
+        canRequest: state.owner,
+        credits: { balance: 120 },
+        packs: [
+          {
+            id: "starter",
+            label: "Starter",
+            credits: 500,
+            bonus: 0,
+            total: 500,
+            usd: 50,
+          },
+          {
+            id: "team",
+            label: "Team",
+            credits: 2000,
+            bonus: 200,
+            total: 2200,
+            usd: 200,
+          },
+          {
+            id: "studio",
+            label: "Studio",
+            credits: 5000,
+            bonus: 750,
+            total: 5750,
+            usd: 500,
+          },
+          {
+            id: "agency",
+            label: "Agency",
+            credits: 20000,
+            bonus: 4000,
+            total: 24000,
+            usd: 2000,
+          },
+        ],
+        requests: [],
+      });
+    }
+    if (path === "/api/usage")
+      return json({
+        spentCredits: 30,
+        spentUsd: 0,
+        totalGenerations: 5,
+        succeeded: 4,
+        failed: 1,
+        pending: 0,
+        storage: null,
+        vendors: [{ id: "fal", label: "fal" }],
+        byProject: [{ name: "Opening sequence", n: 4, spend: 0, credits: 25 }],
+        byPerson: [{ name: "Camera Operator", n: 5, spend: 0, credits: 30 }],
+        byMonth: [{ month: "2026-09", n: 5, spend: 0, credits: 30 }],
+        recent: [
+          {
+            id: "fixture-take",
+            kind: "video",
+            title: "Opening wide",
+            label: "Kling",
+            provider: "fal",
+            prompt: "A quiet opening scene",
+            costUsd: 0,
+            credits: 5,
+            params: { resolution: "1080p", ratio: "16:9" },
+            createdAt: Date.now(),
+          },
+        ],
+      });
     if (path === "/api/billing")
       return json({
         configured: state.configured,
@@ -128,6 +309,10 @@ async function customerFixture(page: Page) {
           pending: state.pending,
           canCreate: true,
         });
+      if (request.method() === "PATCH") {
+        account.workspace = { ...account.workspace, name: String(body.name) };
+        return json({ ok: true, workspace: account.workspace });
+      }
       state.provision.push(body);
       state.pending = [
         {
@@ -148,6 +333,10 @@ async function customerFixture(page: Page) {
         );
       account.workspace = { id: "other-workspace", name: "Second Studio" };
       return json({ ok: true, active: "other-workspace" });
+    }
+    if (path === "/api/auth/logout") {
+      state.events.push("logout");
+      return json({ ok: true });
     }
     if (path === "/api/workbench/projects") {
       if (request.method() === "PUT") {
@@ -305,7 +494,7 @@ test("customer can choose annual plan, verify email, review billing and start a 
     page.getByRole("menuitem", { name: "Team", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("menuitem", { name: "Billing", exact: true }),
+    page.getByRole("menuitem", { name: "Credits & plan", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("menuitem", { name: "Usage", exact: true }),
@@ -416,4 +605,332 @@ test("workspace switch drains saves and a refused switch retains editing", async
   await expect
     .poll(() => state.draft?.name)
     .toBe("Still editable after refusal");
+});
+
+test("workspace management saves settings, invites locally and requests the unchanged credit pack", async ({
+  page,
+}, testInfo) => {
+  const state = await customerFixture(page);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/settings");
+  await expect(
+    page.getByRole("heading", { name: "Your workspace", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Workspace name", { exact: true })
+    .fill("Updated Customer Pictures");
+  await page.getByRole("button", { name: "Save name", exact: true }).click();
+  await expect(
+    page.getByText("Workspace changes saved.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Production", exact: true }).click();
+  await page.getByLabel("Shot credit cap", { exact: true }).fill("75");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect.poll(() => state.settings.shotCapCredits).toBe("75");
+  expect(state.settingsWrites).toContainEqual({ shotCapCredits: "75" });
+  await noOverflow(page);
+  await page.locator(".shell-page").evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("management-workspace.png"),
+    fullPage: false,
+  });
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete workspace", exact: true }),
+  ).toBeVisible();
+  await page.goto("/team");
+  await expect(
+    page.getByText("Camera Operator", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Invite someone", exact: true })
+    .click();
+  await page.getByLabel("Name", { exact: true }).fill("Second Camera");
+  await page
+    .getByLabel("Email address", { exact: true })
+    .fill("second-camera@example.test");
+  await page
+    .getByRole("button", { name: "Create invite", exact: true })
+    .click();
+  await expect(
+    page.getByText("second-camera@example.test", { exact: true }),
+  ).toBeVisible();
+  expect(state.invites).toHaveLength(1);
+  await noOverflow(page);
+  await page.locator(".shell-page").evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("management-people.png"),
+    fullPage: false,
+  });
+  await page.goto("/billing");
+  await expect(
+    page.getByRole("heading", { name: "Plans & credits", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Continue to secure checkout",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Request pack", exact: true })
+    .first()
+    .click();
+  await expect.poll(() => state.packRequests).toEqual([{ packId: "starter" }]);
+  await expect(
+    page.getByText("Credit pack requested.", { exact: false }),
+  ).toBeVisible();
+  await noOverflow(page);
+  await page.locator(".shell-page").evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("management-credits.png"),
+    fullPage: false,
+  });
+  await page.goto("/usage");
+  await expect(
+    page.getByRole("heading", { name: "Activity ledger", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /Opening wide/ }).click();
+  await expect(
+    page.getByText("A quiet opening scene", { exact: true }),
+  ).toBeVisible();
+  await noOverflow(page);
+  await page.locator(".shell-page").evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("management-usage.png"),
+    fullPage: false,
+  });
+  expect(state.checkouts).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+test("dirty workspace settings survive cancelled navigation and discard only after approval", async ({
+  page,
+}) => {
+  const state = await customerFixture(page);
+  const nativeDialogs: string[] = [];
+  page.on("dialog", async (dialog) => {
+    nativeDialogs.push(dialog.type());
+    await dialog.accept();
+  });
+  await page.goto("/settings");
+  await page
+    .getByLabel("Workspace name", { exact: true })
+    .fill("Unsaved Customer Pictures");
+  await page.getByRole("button", { name: "Production", exact: true }).click();
+  const video = page.getByLabel("Default video model", { exact: true });
+  await expect(
+    video.getByRole("option", { name: "Topaz Astra", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    video.getByRole("option", { name: "Luma Ray 2", exact: true }),
+  ).toHaveCount(0);
+  expect(await video.locator("option").count()).toBeGreaterThan(1);
+  await page.getByLabel("Shot credit cap", { exact: true }).fill("75");
+  const management = page.getByRole("navigation", {
+    name: "Workspace management",
+  });
+  await management.getByRole("link", { name: "People", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/settings$/);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByLabel("Shot credit cap", { exact: true })).toHaveValue(
+    "75",
+  );
+  await page.getByRole("button", { name: "General", exact: true }).click();
+  await expect(page.getByLabel("Workspace name", { exact: true })).toHaveValue(
+    "Unsaved Customer Pictures",
+  );
+  expect(state.settingsWrites).toEqual([]);
+  await page.getByRole("link", { name: "Manage people", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "Discard and leave", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/team$/);
+  await expect(
+    page.getByText("Camera Operator", { exact: true }),
+  ).toBeVisible();
+  expect(nativeDialogs).toEqual([]);
+  expect(state.settingsWrites).toEqual([]);
+  await management
+    .getByRole("link", { name: "Workspace", exact: true })
+    .click();
+  await expect(page.getByLabel("Workspace name", { exact: true })).toHaveValue(
+    "Customer Pictures",
+  );
+  await page.getByRole("button", { name: "Production", exact: true }).click();
+  await expect(page.getByLabel("Shot credit cap", { exact: true })).toHaveValue(
+    "50",
+  );
+  await page.getByLabel("Shot credit cap", { exact: true }).fill("75");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(
+    page.getByText("Workspace changes saved.", { exact: true }),
+  ).toBeVisible();
+  await management.getByRole("link", { name: "People", exact: true }).click();
+  await expect(page).toHaveURL(/\/team$/);
+  await expect(dialog).toHaveCount(0);
+  expect(state.settingsWrites).toEqual([{ shotCapCredits: "75" }]);
+  await management
+    .getByRole("link", { name: "Workspace", exact: true })
+    .click();
+  await page
+    .getByLabel("Workspace name", { exact: true })
+    .fill("Discarded menu edit");
+  await page
+    .getByRole("button", { name: "Workspace credits and billing", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Discard and leave", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/billing$/);
+  await expect(
+    page.getByRole("heading", { name: "Plans & credits", exact: true }),
+  ).toBeVisible();
+  expect(nativeDialogs).toEqual([]);
+  expect(state.settingsWrites).toEqual([{ shotCapCredits: "75" }]);
+});
+
+test("dirty settings guard account mutations before POST and recover after a refused switch", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "customer-1440x900",
+    "one focused account mutation check",
+  );
+  const state = await customerFixture(page);
+  const nativeDialogs: string[] = [];
+  page.on("dialog", async (dialog) => {
+    nativeDialogs.push(dialog.type());
+    await dialog.accept();
+  });
+  await page.goto("/settings");
+  await page
+    .getByLabel("Workspace name", { exact: true })
+    .fill("Unsaved account change");
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+  await page
+    .getByRole("button", { name: "Workspace credits and billing", exact: true })
+    .click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await page
+    .getByRole("button", { name: "Workspace menu", exact: true })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Second Studio", exact: true })
+    .click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(state.events).toEqual([]);
+  state.failSwitch = true;
+  await page
+    .getByRole("button", { name: "Workspace menu", exact: true })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Second Studio", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Discard and leave", exact: true })
+    .click();
+  await expect(
+    page.getByText("Workspace switching is temporarily unavailable.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(state.events).toEqual(["switch:other-workspace"]);
+  await expect(page.getByLabel("Workspace name", { exact: true })).toHaveValue(
+    "Unsaved account change",
+  );
+  await page
+    .getByRole("navigation", { name: "Workspace management" })
+    .getByRole("link", { name: "People", exact: true })
+    .click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(state.events).toEqual(["switch:other-workspace"]);
+  await page
+    .getByRole("button", { name: "Workspace menu", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(state.events).toEqual(["switch:other-workspace"]);
+  await page.route("**/login", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<h1>Signed out fixture</h1>",
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Workspace menu", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "Discard and leave", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Signed out fixture" }),
+  ).toBeVisible();
+  expect(state.events).toEqual(["switch:other-workspace", "logout"]);
+  expect(nativeDialogs).toEqual([]);
+  expect(state.settingsWrites).toEqual([]);
+});
+
+test("opening Gen drains the latest studio edit before leaving", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "customer-1440x900",
+    "one focused save-drain check",
+  );
+  const state = await customerFixture(page);
+  await page.goto("/workbench");
+  await page
+    .getByRole("button", { name: "Start a production", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel("Production name", { exact: true })
+    .fill("Navigation production");
+  await dialog
+    .getByRole("button", { name: "Create production", exact: true })
+    .click();
+  await expect.poll(() => state.draft?.name).toBe("Navigation production");
+  state.holdSave = true;
+  await page
+    .getByLabel("Production title", { exact: true })
+    .fill("First pending edit");
+  await expect.poll(() => state.saveHeld).toBeTruthy();
+  await page
+    .getByLabel("Production title", { exact: true })
+    .fill("Latest edit before Gen");
+  await page
+    .getByRole("navigation", { name: "Studio sections" })
+    .getByRole("link", { name: "Gen", exact: true })
+    .click();
+  await expect(page).toHaveURL(/workbench/);
+  expect(state.draft?.name).toBe("Navigation production");
+  await page.route("**/generate", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<h1>Gen destination fixture</h1>",
+    }),
+  );
+  state.releaseSave();
+  await expect.poll(() => state.draft?.name).toBe("Latest edit before Gen");
+  await expect(page).toHaveURL(/generate/);
 });

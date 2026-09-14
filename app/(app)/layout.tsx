@@ -55,11 +55,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       rates: buildRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd"),
     }}>
     <ProjectProvider>
-      {/* The v2 shell (design/particl-v2 §3–§5): one 56px header with the
-          four items, the balance, the Atomik button and the account menu;
-          the dock on a phone. Nothing else floats over a screen — the team
-          chat FAB and the ⌘K palette are not in the handoff and are gone
-          with the old shell. */}
+      {/* The production studio's shared navigation and account controls. */}
       <Shell>{children}</Shell>
       <ContextMenu />
       <DialogHost />

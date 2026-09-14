@@ -1,10 +1,38 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { PlanDef } from "@/lib/plans";
-import CommercialLayout from "./CommercialLayout";
+import ManagementPage, {
+  ManagementCard,
+  ManagementNotice,
+} from "@/components/management/ManagementPage";
+import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
 import { formatUsd, type PlansResponse } from "./PricingClient";
+
+type Topups = {
+  applies: boolean;
+  canRequest: boolean;
+  provider: string;
+  credits: { balance: number } | null;
+  packs: {
+    id: string;
+    label: string;
+    credits: number;
+    bonus: number;
+    total: number;
+    usd: number;
+  }[];
+  requests: {
+    id: string;
+    label: string;
+    credits: number;
+    bonus: number;
+    usd: number;
+    status: string;
+    createdAt: number;
+  }[];
+};
 
 type Pending = {
   requestId: string;
@@ -59,6 +87,7 @@ async function loadAccount(signal?: AbortSignal) {
     fetch("/api/billing", { signal }),
     fetch("/api/workspaces", { signal }),
     fetch("/api/plans", { signal }),
+    fetch("/api/workspaces/topups", { signal }),
   ]);
   const bodies = await Promise.all(
     responses.map((response) => response.json()),
@@ -70,6 +99,9 @@ export default function BillingClient() {
     query = useSearchParams(),
     initialPlan = query.get("plan"),
     initialCadence = query.get("cadence");
+  const actionLock = useRef(false);
+  const [topups, setTopups] = useState<Topups | null>(null);
+  const [notice, setNotice] = useState("");
   const [data, setData] = useState<Billing | null>(null),
     [workspace, setWorkspace] = useState<Workspaces | null>(null),
     [plans, setPlans] = useState<PlansResponse | null>(null),
@@ -88,9 +120,13 @@ export default function BillingClient() {
   );
   const applyAccount = useCallback(
     ({ responses, bodies }: Awaited<ReturnType<typeof loadAccount>>) => {
-      const [billingResponse, workspaceResponse, plansResponse] = responses;
+      const [billingResponse, workspaceResponse, plansResponse, topupResponse] =
+        responses;
       setSignedOut(workspaceResponse.status === 401);
-      const [billingBody, workspaceBody, plansBody] = bodies;
+      const [billingBody, workspaceBody, plansBody, topupBody] = bodies;
+      setTopups(
+        topupResponse?.ok && Array.isArray(topupBody.packs) ? topupBody : null,
+      );
       if (workspaceResponse.status === 401) {
         setWorkspace(null);
         setData(null);
@@ -128,7 +164,8 @@ export default function BillingClient() {
     body: Record<string, unknown>,
     label: string,
   ) {
-    if (busy) return;
+    if (actionLock.current) return;
+    actionLock.current = true;
     setBusy(label);
     setError("");
     try {
@@ -158,6 +195,7 @@ export default function BillingClient() {
       );
     } finally {
       setBusy("");
+      actionLock.current = false;
     }
   }
   const availablePlans = (data?.plans || plans?.plans || []).filter(
@@ -178,22 +216,68 @@ export default function BillingClient() {
     current = availablePlans.find(
       (plan) => plan.id === data?.subscription?.planId,
     );
+  async function packAction(id: string, cancel = false) {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    setBusy(id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(
+        cancel
+          ? `/api/workspaces/topups?id=${encodeURIComponent(id)}`
+          : "/api/workspaces/topups",
+        {
+          method: cancel ? "DELETE" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: cancel ? undefined : JSON.stringify({ packId: id }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(
+          result.error || "The credit request could not be completed.",
+        );
+      if (result.checkout?.url) {
+        const url = new URL(result.checkout.url, window.location.origin);
+        if (url.protocol !== "https:")
+          throw new Error("Checkout returned an unsupported address.");
+        window.location.assign(url.href);
+        return;
+      }
+      setNotice(
+        cancel
+          ? "Credit request withdrawn."
+          : "Credit pack requested. Your balance updates after the platform confirms payment.",
+      );
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+      actionLock.current = false;
+    }
+  }
+  const creditBalance = topups?.credits?.balance ?? data?.credits?.balance;
+  const direct = topups?.applies === false;
   return (
-    <CommercialLayout account={!signedOut}>
-      <section className="commercial-intro">
-        <span className="commercial-eyebrow">WORKSPACE BILLING</span>
-        <h1>{data?.workspace.name || "Your studio account"}</h1>
-        <p>Your plan, shared credits and payment details in one place.</p>
-      </section>
-      {loading && (
-        <p role="status" className="commercial-notice">
-          Loading your account…
-        </p>
-      )}
+    <ManagementPage
+      tab="credits"
+      title="Plans & credits"
+      description="One balance for the whole team. Every generation priced before you start."
+      workspace={data?.workspace.name}
+      actions={
+        <Link href="/usage" className="management-button">
+          View usage <ArrowUpRight size={14} />
+        </Link>
+      }
+    >
+      {loading && <ManagementNotice>Loading your account…</ManagementNotice>}
       {error && (
-        <p role="alert" className="commercial-notice">
-          {error}{" "}
+        <ManagementNotice error>
+          {error}
           <button
+            className="management-button small"
             onClick={() =>
               void refresh().catch(() =>
                 setError("Could not reload your account. Try again."),
@@ -202,45 +286,49 @@ export default function BillingClient() {
           >
             Retry
           </button>
-        </p>
+        </ManagementNotice>
       )}
+      {notice && <ManagementNotice>{notice}</ManagementNotice>}
       {signedOut && (
-        <section className="billing-card billing-empty">
-          <h2>Sign in to manage your workspace</h2>
-          <p>Your selected plan will be waiting when you return.</p>
-          <Link
-            className="commercial-button primary"
-            href={
-              "/login?next=" +
-              encodeURIComponent(`/billing?plan=${planId}&cadence=${cadence}`)
-            }
-          >
-            Sign in
-          </Link>
-        </section>
+        <ManagementCard>
+          <div className="management-empty">
+            <h2>Sign in to manage your workspace</h2>
+            <p>Your selected plan will be waiting when you return.</p>
+            <Link
+              className="management-button primary"
+              href={
+                "/login?next=" +
+                encodeURIComponent(`/billing?plan=${planId}&cadence=${cadence}`)
+              }
+            >
+              Sign in
+            </Link>
+          </div>
+        </ManagementCard>
       )}
       {!loading &&
         !signedOut &&
         workspace &&
         (!workspace.active || query.get("workspace") === "new") && (
-          <section className="billing-card billing-empty">
-            <h2>
-              {workspace.pending?.length
+          <ManagementCard
+            title={
+              workspace.pending?.length
                 ? "Your workspace is being prepared"
-                : "Create your studio workspace"}
-            </h2>
-            <p>
-              Keep your account signed in while we prepare a private home for
-              your productions. Choosing a name does not start a subscription.
-            </p>
+                : "Create your studio workspace"
+            }
+            description="A private home for your productions. Creating a workspace does not start a subscription."
+          >
             {workspace.pending?.map((pending) => (
-              <div key={pending.requestId} className="commercial-notice">
-                <strong>{pending.name}</strong>
-                <p>
-                  {pending.state}
-                  {pending.error ? ` · ${pending.error}` : ""}
-                </p>
+              <div className="management-row" key={pending.requestId}>
+                <div>
+                  <strong>{pending.name}</strong>
+                  <p>
+                    {pending.state}
+                    {pending.error ? ` · ${pending.error}` : ""}
+                  </p>
+                </div>
                 <button
+                  className="management-button"
                   disabled={!!busy}
                   onClick={() =>
                     void action(
@@ -256,7 +344,7 @@ export default function BillingClient() {
             ))}
             {!workspace.pending?.length && (
               <form
-                className="billing-provision"
+                className="management-form"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void action(
@@ -266,39 +354,119 @@ export default function BillingClient() {
                   );
                 }}
               >
-                <input
-                  required
-                  aria-label="Workspace name"
-                  maxLength={100}
-                  placeholder="Your production house"
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                />
-                <button
-                  className="commercial-button primary"
-                  disabled={!!busy || !workspace.canCreate || !newName.trim()}
-                >
-                  {busy === "workspace" ? "Preparing…" : "Create workspace"}
-                </button>
+                <label className="management-field">
+                  <span>Workspace name</span>
+                  <input
+                    required
+                    maxLength={80}
+                    placeholder="Your production house"
+                    value={newName}
+                    onChange={(event) => setNewName(event.target.value)}
+                    disabled={!!busy}
+                  />
+                </label>
+                <div className="management-form-footer">
+                  <span>
+                    {workspace.reason ||
+                      "Your existing workspace stays separate."}
+                  </span>
+                  <button
+                    className="management-button primary"
+                    disabled={!!busy || !workspace.canCreate || !newName.trim()}
+                  >
+                    <Plus size={14} />
+                    {busy === "workspace" ? "Preparing…" : "Create workspace"}
+                  </button>
+                </div>
               </form>
             )}
-            {workspace.reason && (
-              <p className="auth-status">{workspace.reason}</p>
-            )}
-          </section>
+          </ManagementCard>
         )}
       {data && (
         <>
-          <div className="billing-grid">
-            <section className="billing-card">
-              <span className="commercial-eyebrow">SUBSCRIPTION</span>
-              <h2>{current?.label || "Choose a workspace plan"}</h2>
-              <p>
+          <div className="management-split">
+            <ManagementCard
+              title={direct ? "Your workspace billing" : "Available credits"}
+              description={
+                direct
+                  ? "Your workspace pays its connected providers directly."
+                  : "Shared by everyone in this workspace."
+              }
+              className="management-balance-card"
+            >
+              <div className="management-credit-total">
+                {direct ? (
+                  <small>Direct provider billing</small>
+                ) : (
+                  <>
+                    {creditBalance?.toLocaleString() ?? "—"} <small>cr</small>
+                  </>
+                )}
+              </div>
+              {!direct && (
+                <div className="management-grid three management-credit-breakdown">
+                  <div>
+                    <span className="management-muted">Included</span>
+                    <p className="management-amount">
+                      {data.credits?.includedBalance?.toLocaleString() ?? "0"}{" "}
+                      cr
+                    </p>
+                  </div>
+                  <div>
+                    <span className="management-muted">Purchased</span>
+                    <p className="management-amount">
+                      {data.credits?.purchasedBalance?.toLocaleString() ?? "0"}{" "}
+                      cr
+                    </p>
+                  </div>
+                  <div>
+                    <span className="management-muted">Bonus & other</span>
+                    <p className="management-amount">
+                      {(
+                        (data.credits?.bonusBalance ?? 0) +
+                        (data.credits?.otherBalance ?? 0)
+                      ).toLocaleString()}{" "}
+                      cr
+                    </p>
+                  </div>
+                </div>
+              )}
+              <div className="management-row" style={{ marginTop: 20 }}>
+                <div>
+                  <p>
+                    {direct
+                      ? "Provider balances and recorded payments are in Usage."
+                      : `Next credit expiry · ${date(data.credits?.nextExpiryAt)}`}
+                  </p>
+                </div>
+                <Link
+                  href={direct ? "/usage" : "#credit-packs"}
+                  className="management-button"
+                >
+                  {direct ? "Engine balances" : "Add credits"}
+                  <ArrowUpRight size={13} />
+                </Link>
+              </div>
+            </ManagementCard>
+            <ManagementCard
+              title="Current plan"
+              action={<CreditCard size={18} />}
+            >
+              <h3
+                style={{
+                  fontSize: 25,
+                  letterSpacing: "-.03em",
+                  margin: "0 0 6px",
+                }}
+              >
+                {current?.label || "No paid subscription"}
+              </h3>
+              <p className="management-muted">
                 {data.subscription
                   ? `${status}${data.subscription.cancelAtPeriodEnd ? " · Renewal canceled" : ""}`
-                  : "No paid subscription is active."}
+                  : "Your saved work remains available."}
               </p>
-              <dl>
+              <dl className="management-definition" style={{ marginTop: 20 }}>
                 <div>
                   <dt>Billing period</dt>
                   <dd>
@@ -317,168 +485,235 @@ export default function BillingClient() {
                   </dt>
                   <dd>{date(data.subscription?.currentPeriodEnd)}</dd>
                 </div>
-                <div>
-                  <dt>Workspace</dt>
-                  <dd>{data.workspace.name}</dd>
-                </div>
               </dl>
-              <div className="billing-actions">
-                <button
-                  className="commercial-button"
-                  disabled={
-                    !data.canManage ||
-                    !data.configured ||
-                    !data.subscription ||
-                    !!busy
-                  }
-                  onClick={() =>
-                    void action("/api/billing/portal", {}, "portal")
-                  }
-                >
-                  {busy === "portal"
-                    ? "Opening…"
-                    : "Manage payments and invoices"}
-                </button>
-              </div>
-              <p className="auth-status">
-                Update your payment method, view invoices or cancel renewal in
-                the billing portal.
-              </p>
-            </section>
-            <section className="billing-card">
-              <span className="commercial-eyebrow">
-                SHARED WORKSPACE CREDITS
-              </span>
-              <p className="billing-credit-total">
-                {data.credits ? data.credits.balance.toLocaleString() : "—"}{" "}
-                <small>cr</small>
-              </p>
-              <dl>
-                <div>
-                  <dt>Monthly allowance remaining</dt>
-                  <dd>
-                    {data.credits?.includedBalance?.toLocaleString() ?? "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Purchased credits remaining</dt>
-                  <dd>
-                    {data.credits?.purchasedBalance?.toLocaleString() ?? "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Bonus credits remaining</dt>
-                  <dd>{data.credits?.bonusBalance?.toLocaleString() ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt>Next credit expiry</dt>
-                  <dd>{date(data.credits?.nextExpiryAt)}</dd>
-                </div>
-              </dl>
-              <div className="billing-actions">
-                <Link className="commercial-button" href="/usage">
-                  View usage
-                </Link>
-                <Link className="commercial-button" href="/settings#credits">
-                  Credit packs
-                </Link>
-              </div>
-            </section>
+              <button
+                className="management-button"
+                style={{ marginTop: 18 }}
+                disabled={
+                  !data.canManage ||
+                  !data.configured ||
+                  !data.subscription ||
+                  !!busy
+                }
+                onClick={() => void action("/api/billing/portal", {}, "portal")}
+              >
+                {busy === "portal"
+                  ? "Opening…"
+                  : "Manage payments and invoices"}
+              </button>
+            </ManagementCard>
           </div>
+          {!data.configured && (
+            <ManagementNotice>
+              <strong>Checkout is not available yet.</strong>{" "}
+              {data.reason || "Online subscriptions are being connected."} No
+              payment will be taken.
+            </ManagementNotice>
+          )}
           {!data.canManage && (
-            <p role="status" className="commercial-notice">
+            <ManagementNotice>
               The workspace owner manages the subscription. Your team can view
               its balance and usage here.
-            </p>
+            </ManagementNotice>
           )}
-          {!data.configured && (
-            <p role="status" className="commercial-notice">
-              <strong>Checkout is not available yet.</strong>{" "}
-              {data.reason ||
-                "Payments are not connected for this deployment. Your account and saved work remain available."}{" "}
-              No payment will be taken.
-            </p>
-          )}
-          <section className="billing-card" style={{ marginTop: 24 }}>
-            <h2>
-              {data.subscription
-                ? "Review another plan"
-                : "Start a subscription"}
-            </h2>
-            <div className="billing-pick">
-              <label>
-                Workspace plan
+          <div className="management-toolbar">
+            <div>
+              <h2 className="management-section-title">
+                A plan for your next production.
+              </h2>
+              <p className="management-muted">
+                The same tools. More room to create. No seat fees on paid plans.
+              </p>
+            </div>
+            <div className="management-actions">
+              <label className="management-field">
+                <span>Workspace plan</span>
                 <select
                   aria-label="Workspace plan"
                   value={planId}
-                  onChange={(event) => setPlanId(event.target.value)}
+                  onChange={(e) => setPlanId(e.target.value)}
                 >
                   {availablePlans.map((plan) => (
                     <option key={plan.id} value={plan.id}>
-                      {plan.label} · {plan.includedCredits.toLocaleString()}{" "}
-                      credits / month
+                      {plan.label}
                     </option>
                   ))}
                 </select>
               </label>
-              <label>
-                Billing period
+              <label className="management-field">
+                <span>Billing period</span>
                 <select
                   aria-label="Billing period"
                   value={cadence}
-                  onChange={(event) =>
-                    setCadence(event.target.value as typeof cadence)
-                  }
+                  onChange={(e) => setCadence(e.target.value as typeof cadence)}
                 >
                   <option value="monthly">Monthly</option>
                   <option value="annual">Annual · save {discount}%</option>
                 </select>
               </label>
             </div>
-            {chosen && monthly != null && (
-              <p className="auth-status">
-                {cadence === "annual"
-                  ? `${formatUsd(annualTotal!)} paid annually (${formatUsd(monthly)} per month).`
-                  : `${formatUsd(monthly)} billed monthly.`}{" "}
-                {chosen.includedCredits.toLocaleString()} credits are granted
-                each month and expire at the end of that monthly credit period.
-              </p>
-            )}
-            <div className="billing-actions">
-              <button
-                className="commercial-button primary"
-                disabled={
-                  !data.configured || !data.canManage || !chosen || !!busy
-                }
-                onClick={() =>
-                  void action(
-                    "/api/billing/checkout",
-                    { planId, cadence },
-                    "checkout",
-                  )
-                }
-              >
-                {busy === "checkout"
-                  ? "Opening checkout…"
-                  : data.subscription
-                    ? "Review plan change"
-                    : "Continue to secure checkout"}
-              </button>
-              <Link
-                className="commercial-button"
-                href="/workbench?onboarding=1"
-              >
-                Open your studio
-              </Link>
+          </div>
+          <div className="management-grid three">
+            {availablePlans.map((plan) => {
+              const annual = plan.priceUsd * 12 * (1 - discount / 100);
+              const price = cadence === "annual" ? annual / 12 : plan.priceUsd;
+              return (
+                <ManagementCard
+                  key={plan.id}
+                  className={`management-plan ${planId === plan.id ? "is-selected" : ""}`}
+                >
+                  <div className="management-toolbar">
+                    <h3>{plan.label}</h3>
+                    {planId === plan.id && (
+                      <span className="management-badge">Selected</span>
+                    )}
+                  </div>
+                  <div className="management-plan-price">
+                    {formatUsd(price)} <small>/ month</small>
+                  </div>
+                  <strong className="management-amount">
+                    {plan.includedCredits.toLocaleString()} credits / month
+                  </strong>
+                  <p>
+                    {cadence === "annual"
+                      ? `${formatUsd(annual)} billed annually`
+                      : `${formatUsd(plan.priceUsd)} billed monthly`}
+                  </p>
+                  <p>Unlimited members · included credits renew monthly</p>
+                  <button
+                    aria-pressed={planId === plan.id}
+                    className={`management-button ${planId === plan.id ? "primary" : ""}`}
+                    onClick={() => setPlanId(plan.id)}
+                  >
+                    {planId === plan.id
+                      ? "Selected plan"
+                      : `Choose ${plan.label}`}
+                  </button>
+                </ManagementCard>
+              );
+            })}
+          </div>
+          <ManagementCard>
+            <div className="management-toolbar">
+              <div>
+                <strong>
+                  {chosen?.label || "Select a plan"}
+                  {monthly != null
+                    ? ` · ${cadence === "annual" ? formatUsd(annualTotal!) + " annually" : formatUsd(monthly) + " monthly"}`
+                    : ""}
+                </strong>
+                <p className="management-muted">
+                  Included credits expire at the end of each monthly credit
+                  period. Your plan changes after payment is confirmed.
+                </p>
+              </div>
+              <div className="management-actions">
+                <Link
+                  className="management-button"
+                  href="/workbench?onboarding=1"
+                >
+                  Open your studio
+                </Link>
+                <button
+                  className="management-button primary"
+                  disabled={
+                    !data.configured || !data.canManage || !chosen || !!busy
+                  }
+                  onClick={() =>
+                    void action(
+                      "/api/billing/checkout",
+                      { planId, cadence },
+                      "checkout",
+                    )
+                  }
+                >
+                  {busy === "checkout"
+                    ? "Opening checkout…"
+                    : data.subscription
+                      ? "Review plan change"
+                      : "Continue to secure checkout"}
+                </button>
+              </div>
             </div>
-            <p className="auth-status">
-              Review the final amount before confirming. Your plan changes after
-              payment is confirmed.{" "}
-              <Link href="/terms">Subscription terms</Link>
-            </p>
-          </section>
+          </ManagementCard>
+          {topups?.applies && (
+            <>
+              <div id="credit-packs">
+                <h2 className="management-section-title">
+                  More credits, when you need them.
+                </h2>
+                <p className="management-muted">
+                  1 credit = US$0.10. Packs add to your workspace balance after
+                  payment is confirmed.
+                </p>
+              </div>
+              <div className="management-grid four">
+                {topups.packs.map((pack) => (
+                  <ManagementCard key={pack.id} className="management-plan">
+                    <h3>{pack.label}</h3>
+                    <div className="management-plan-price">
+                      {formatUsd(pack.usd)}
+                    </div>
+                    <strong>{pack.total.toLocaleString()} cr</strong>
+                    <p>
+                      {pack.credits.toLocaleString()} purchased
+                      {pack.bonus
+                        ? ` + ${pack.bonus.toLocaleString()} bonus`
+                        : ""}
+                    </p>
+                    <button
+                      className="management-button"
+                      disabled={!!busy || !topups.canRequest}
+                      onClick={() => void packAction(pack.id)}
+                    >
+                      {busy === pack.id
+                        ? "Requesting…"
+                        : topups.provider === "manual"
+                          ? "Request pack"
+                          : "Buy credits"}
+                    </button>
+                  </ManagementCard>
+                ))}
+              </div>
+              <p className="management-muted">
+                Purchased credits last 12 months off a paid plan; their clock
+                pauses during confirmed paid periods. Existing grants keep their
+                original terms.
+              </p>
+              {!!topups.requests?.length && (
+                <ManagementCard title="Credit requests">
+                  {topups.requests.map((request) => (
+                    <div className="management-row" key={request.id}>
+                      <div>
+                        <strong>
+                          {request.label} ·{" "}
+                          {(request.credits + request.bonus).toLocaleString()}{" "}
+                          cr
+                        </strong>
+                        <p>
+                          {formatUsd(request.usd)} · {request.status}
+                        </p>
+                      </div>
+                      {request.status === "requested" && topups.canRequest && (
+                        <button
+                          className="management-button small"
+                          disabled={!!busy}
+                          onClick={() => void packAction(request.id, true)}
+                        >
+                          Withdraw request
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </ManagementCard>
+              )}
+            </>
+          )}
+          <Link className="management-link" href="/terms">
+            Subscription and credit terms <ArrowUpRight size={13} />
+          </Link>
         </>
       )}
-    </CommercialLayout>
+    </ManagementPage>
   );
 }

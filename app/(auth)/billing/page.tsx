@@ -1,15 +1,38 @@
 import { Suspense } from "react";
 import BillingClient from "@/components/commercial/BillingClient";
-import "../../commercial.css";
-export const metadata = { title: "Billing · Particl" };
-export default function BillingPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="commercial commercial-main">Loading billing…</div>
+import StudioNavigation, {
+  StudioDock,
+} from "@/components/studio/StudioNavigation";
+import { currentContext } from "@/lib/auth";
+import { creditStateFor } from "@/lib/credits";
+export const metadata = { title: "Plans & credits · Particl" };
+export default async function BillingPage() {
+  const context = await currentContext();
+  const account = context
+    ? {
+        name: context.user.name,
+        workspace: context.workspace
+          ? { id: context.workspace.id, name: context.workspace.name }
+          : null,
+        workspaces: context.workspaces,
+        credits: context.workspace
+          ? await creditStateFor(context.workspace).catch(() => null)
+          : null,
       }
-    >
-      <BillingClient />
-    </Suspense>
+    : null;
+  return (
+    <div className="shell studio-application">
+      <StudioNavigation initialAccount={account} active="workspace" />
+      <div className="shell-body">
+        <div className="shell-page">
+          <Suspense
+            fallback={<div className="management">Loading billing…</div>}
+          >
+            <BillingClient />
+          </Suspense>
+        </div>
+      </div>
+      <StudioDock />
+    </div>
   );
 }
