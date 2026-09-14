@@ -140,12 +140,97 @@ test("workspace export includes shared production records and owner drafts but e
     await platformDb().execute(
       `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES('export-take','export','video','test','test','succeeded',12.34,186,1,0,0)`,
     );
+    const { pipelineStore } = await import("../../lib/pipeline/store");
+    const { pipelineHash } = await import("../../lib/pipeline/compile");
+    const store = await pipelineStore();
+    const publishedProject = (
+      await db().execute("SELECT project_id FROM workbench_bibles LIMIT 1")
+    ).rows[0].project_id;
+    const specification = {
+      schemaVersion: 1,
+      name: "Owner pipeline",
+      context: { projectId: String(publishedProject), bibleVersion: 1 },
+      stages: [
+        {
+          id: "images",
+          label: "Images",
+          kind: "image",
+          model: "image-model",
+          prompt: { source: "brief" },
+          resolution: "1K",
+        },
+      ],
+    };
+    const ownerVersion = await store.saveVersion("owner", specification, 0);
+    const run = await store.createRun("owner", ownerVersion.id, 1);
+    const reference = await store.stageInputs("owner", run.id, "images");
+    const quote = await store.quoteStage(
+      "owner",
+      run.id,
+      run.revision,
+      "images",
+      reference.inputHash,
+      [
+        {
+          unit: 0,
+          prepared: {
+            version: 1,
+            kind: "image",
+            workspaceId: "export",
+            actorId: "owner",
+            request: {
+              projectId: String(publishedProject),
+              model: "image-model",
+            },
+            compiled: {
+              provider: "PRIVATE-PROVIDER-KEY",
+              storageUrl: "https://private.example.test/SECRET-STORAGE-PATH",
+            },
+            quote: {
+              fingerprint: pipelineHash("quoted"),
+              estimatedCredits: 7,
+              price: 7,
+              unit: "cr",
+            },
+          },
+        },
+      ],
+    );
+    await store.approveQuote(
+      "owner",
+      run.id,
+      quote.baseRevision,
+      quote.id,
+      quote.fingerprint,
+    );
+    await store.claimRun(run.id);
+    const otherVersion = await store.saveVersion(
+      "collaborator",
+      { ...specification, name: "PRIVATE-COLLABORATOR-PIPELINE" },
+      0,
+    );
+    await store.createRun("collaborator", otherVersion.id, 1);
     const exported = await workspaceExport("owner", "owner@example.test");
     const serialized = JSON.stringify(exported);
     expect(exported.workspace.name).toBe("Customer House");
     expect(exported.counts.workbench_projects).toBe(1);
     expect(exported.counts.workbench_bibles).toBe(1);
     expect(exported.counts.credit_grants).toBe(1);
+    expect(exported.counts.pipeline_versions).toBe(1);
+    expect(exported.counts.pipeline_runs).toBe(1);
+    expect(JSON.parse(serialized).pipeline_runs[0].attempts[0]).toMatchObject({
+      state: "queued",
+      kind: "image",
+      estimatedCredits: 7,
+    });
+    expect(serialized).toContain("Owner pipeline");
+    expect(serialized).not.toContain("PRIVATE-COLLABORATOR-PIPELINE");
+    expect(serialized).not.toContain("PRIVATE-PROVIDER-KEY");
+    expect(serialized).not.toContain("SECRET-STORAGE-PATH");
+    expect(serialized).not.toContain("lease_token");
+    expect(serialized).not.toContain('"prepared"');
+    expect(serialized).not.toContain('"compiled"');
+    expect(serialized).not.toContain("pipeline_wakeups");
     expect(serialized).toContain("owner draft");
     expect(serialized).toContain("published brief");
     expect(serialized).not.toContain("PRIVATE-COLLABORATOR-SECRET");

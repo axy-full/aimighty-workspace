@@ -718,3 +718,6 @@ floor guard, the `internal: true` multiplier, guardrails 1 and 3–6; invoicing;
 recurring billing of any kind (`startCheckout` throws for anything but
 `manual`, so a $49/mo plan today is an admin remembering every month); panel
 allowances and the §2.8 board pipeline they would count.
+# September 2026 amendment: durable published-context pipelines
+
+The additive pipeline executor introduces immutable versioned DAGs and private creator-owned runs from an explicit published production context. It never publishes a private draft. Each ready image/video/audio stage receives an exact batch quote and explicit approval; later stages require their own approval after inputs resolve. Permanent attempt keys, CAS revisions, fenced leases, and a persisted wakeup outbox prevent lost responses from creating replacement spend. Review selections become fixed once downstream attempts depend on them. Assembly produces an editorial timeline for the existing browser movie renderer, not a falsely completed movie. New tables and the full limits/recovery contract are documented in `docs/durable-production-pipelines.md`; historical recipes and runs remain compatible. This amendment does not introduce Stripe changes.

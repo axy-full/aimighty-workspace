@@ -1,4 +1,5 @@
 import type { Transaction } from "@libsql/client";
+import { requireTenant } from "./tenant";
 
 export class MediaSourceError extends Error {}
 
@@ -100,6 +101,8 @@ export async function mediaBindingProblem(
     )
       return "This media is used by a production draft or published shared context. Remove draft references first; published source media must be kept.";
   }
+  const pipelineProblem = await pipelineMediaBindingProblem(tx, kind, id);
+  if (pipelineProblem) return pipelineProblem;
   if (kind === "generation") {
     const mapped = (
       await tx.execute({
@@ -110,6 +113,48 @@ export async function mediaBindingProblem(
     ).rows.length;
     if (mapped)
       return "This take belongs to a production node. Keep its history while that production draft exists.";
+  }
+  return null;
+}
+
+/** Older tenant databases have no pipeline tables. Check on the caller's
+ * transaction so a source cannot be detached between this scan and deletion. */
+async function pipelineMediaBindingProblem(tx: Transaction, kind: "upload" | "generation", id: string): Promise<string | null> {
+  const names = new Set((await tx.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'pipeline_%'")).rows.map(row => String(row.name)));
+  const workspaceId = requireTenant().id;
+  if (kind === "generation" && names.has("pipeline_attempts") && (await tx.execute({
+    sql: "SELECT 1 FROM pipeline_attempts WHERE workspace_id=? AND generation_id=? LIMIT 1", args: [workspaceId, id],
+  })).rows.length) return "This media belongs to a production pipeline. Keep its inputs and take history.";
+  const sources = [
+    ["pipeline_versions", "body"], ["pipeline_quotes", "body"], ["pipeline_attempts", "prepared"],
+    ["pipeline_selections", "body"], ["pipeline_runs", "assemblies"],
+  ] as const;
+  for (const [table, column] of sources) {
+    if (!names.has(table)) continue;
+    const rows = (await tx.execute({ sql: `SELECT ${column} AS body FROM ${table} WHERE workspace_id=?`, args: [workspaceId] })).rows;
+    for (const row of rows) {
+      let body: unknown;
+      try { body = JSON.parse(String(row.body || "{}")); }
+      catch { return "A production pipeline could not be checked. Keep this media until its record is repaired."; }
+      const refs = referencedMedia(body);
+      // Compiled source objects distinguish a generated take from an upload
+      // through {source,id}; quoted admissions also carry explicit genId/uploadId.
+      const pending: unknown[] = [body];
+      while (pending.length) {
+        const value = pending.pop();
+        if (Array.isArray(value)) pending.push(...value);
+        else if (value && typeof value === "object") {
+          const item = value as Record<string, unknown>;
+          if (typeof item.id === "string") {
+            if (item.source === "upload") refs.uploads.add(item.id);
+            if (item.source === "generation") refs.generations.add(item.id);
+          }
+          pending.push(...Object.values(item));
+        }
+      }
+      if ((kind === "upload" ? refs.uploads : refs.generations).has(id))
+        return "This media belongs to a production pipeline. Keep its inputs and take history.";
+    }
   }
   return null;
 }

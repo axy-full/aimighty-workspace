@@ -1253,7 +1253,7 @@ export default function Studio({
                   ) : null}
                   {saveState}
                 </button>
-                <span className="sample-label">STUDIO</span>
+                <button className="sample-label" disabled={transitioning} onClick={()=>void leaveWorkspace(`/pipelines${p.productionProjectId?`?projectId=${encodeURIComponent(p.productionProjectId)}`:""}`)}>Pipelines</button>
                 <Button
                   variant="outline"
                   className="btn project-export"

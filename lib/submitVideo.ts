@@ -8,6 +8,7 @@ import { meter, assertMeterFunding, FundingSourceChangedError } from "./meter";
 import { engineFor } from "./engines";
 import { platformDb, platformReady } from "./platform";
 import { requireTenant } from "./tenant";
+import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 
 /**
  * The one call that can fail for reasons that aren't ours, in one place:
@@ -139,6 +140,8 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
   }
 }
 
+class VideoSourceError extends Error {}
+
 type StoredRef = { uploadId?: string; genId?: string; role: string; kind: string };
 
 /**
@@ -171,7 +174,7 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
   for (const r of refs) {
     if (r.genId) {
       const g = own.get(r.genId);
-      if (!g) continue; // deleted since: dropped rather than fatal, the prompt still describes the shot
+      if (!g || !["image", "video"].includes(g.kind) || (r.kind && r.kind !== g.kind)) throw new VideoSourceError("A quoted reference is no longer available in its original form.");
       const video = g.kind === "video";
       out.push({
         id: g.id, mime: video ? "video/mp4" : "image/png", ext: video ? "mp4" : "png", storedUrl: g.stored_url,
@@ -181,7 +184,7 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
       continue;
     }
     const u = r.uploadId ? byUpload.get(r.uploadId) : undefined;
-    if (!u) continue;
+    if (!u || !u.stored_url || !["image", "video"].includes(u.kind) || (r.kind && r.kind !== u.kind)) throw new VideoSourceError("A quoted reference is no longer available in its original form.");
     const video = u.kind === "video";
     out.push({
       id: u.id, mime: u.mime, ext: u.ext, storedUrl: u.stored_url,
@@ -192,10 +195,27 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
   return out;
 }
 
-/** Send a take that already exists as a row — a held one, released. */
+/** A queue failure can release an unsent job only. A paid claim or known handle
+ * belongs to provider reconciliation and must never be replaced or refunded. */
+export async function failVideoDispatch(genId: string, message: string): Promise<void> {
+  await ready();
+  const row = (await db().execute({ sql: "SELECT model,provider FROM generations WHERE id=? AND kind='video' AND deleted=0", args: [genId] })).rows[0];
+  if (!row) return;
+  await writeGenerationOutcome({
+    sql: `UPDATE generations SET status='failed',error=?,cost_usd=0,updated_at=?
+      WHERE id=? AND kind='video' AND deleted=0 AND status IN ('queued','running')
+      AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL
+      AND json_extract(params,'$.producedOutcome') IS NULL AND json_extract(params,'$.paidClaim') IS NULL`,
+    args: [message.slice(0, 600), now(), genId],
+  }, { id: genId, kind: "video", engine: billedTo(String(row.provider || "byteplus")), model: String(row.model), status: "failed", engineCostUsd: 0 });
+  await deliverGenerationSettlement(genId);
+}
+
+/** Submit from durable row state; no request closure or recompiled prompt is required. */
 export async function submitVideoRow(genId: string): Promise<SubmitOutcome> {
+  await ready();
   const rs = await db().execute({
-    sql: `SELECT id, model, prompt, params, task, source_gen_id, created_at FROM generations WHERE id = ? AND deleted = 0`,
+    sql: `SELECT id, model, prompt, params, task, source_gen_id, created_at FROM generations WHERE id = ? AND kind='video' AND deleted = 0`,
     args: [genId],
   });
   const row = rs.rows[0] as unknown as
@@ -203,10 +223,21 @@ export async function submitVideoRow(genId: string): Promise<SubmitOutcome> {
   if (!row) return { ok: false, error: "No such take.", cls: "fatal" };
   const model = getModel(String(row.model));
   const task = getTask(String(row.task ?? "generate"));
-  const params = JSON.parse(String(row.params ?? "{}")) as VideoParams & { references?: StoredRef[] };
-  const references = await hydrateRefs(params.references ?? []);
-  const source = row.source_gen_id
-    ? references.find((r) => r.fromGeneration && r.id === row.source_gen_id) ?? null
-    : null;
-  return submitVideoJob({ genId, model, task, prompt: String(row.prompt), params, references, source, ts: Number(row.created_at) });
+  const params = JSON.parse(String(row.params ?? "{}")) as VideoParams & { references?: StoredRef[]; sourceUploadId?: string; producedOutcome?: SubmittedVideo; paidClaim?: number };
+  const job: VideoJob = { genId, model, task, prompt: String(row.prompt), params, references: [], source: null, ts: Number(row.created_at) };
+  // A repeated delivery recovers a handle before touching reference files.
+  const prior = await submissionRow(genId);
+  if (prior && (knownTask(prior) || params.producedOutcome || params.paidClaim != null)) return submitVideoJob(job);
+  try {
+    job.references = await hydrateRefs(params.references ?? []);
+    job.source = row.source_gen_id
+      ? job.references.find((r) => r.fromGeneration && r.id === row.source_gen_id) ?? null
+      : params.sourceUploadId ? job.references.find((r) => !r.fromGeneration && r.id === params.sourceUploadId) ?? null : null;
+    if (task.locked && !job.source) throw new VideoSourceError("The source clip is no longer available. No provider request was sent.");
+  } catch (error) {
+    if (!(error instanceof VideoSourceError)) throw error; // A DB outage is retryable preparation, never a paid replay.
+    await failVideoDispatch(genId, error.message);
+    return { ok: false, error: error.message, cls: "fatal" };
+  }
+  return submitVideoJob(job);
 }
