@@ -749,30 +749,37 @@ export async function readWorkspaceSecurity(
   session: string,
   requestScope: string,
 ) {
-  return accountTransaction(async (tx) => {
-    const workspaceId = await assertLiveAccountSession(
-      tx,
-      accountId,
-      session,
-      undefined,
-      requestScope,
-    );
-    const row = await ownedSecurityWorkspace(tx, workspaceId, accountId);
-    const members = (
-      await tx.execute({
-        sql: `SELECT count(*) total,coalesce(sum(CASE WHEN asec.enabled_at IS NULL THEN 1 ELSE 0 END),0) unenrolled
-        FROM memberships m JOIN accounts a ON a.id=m.account_id LEFT JOIN account_security asec ON asec.account_id=a.id
-        WHERE m.workspace_id=? AND m.disabled=0 AND a.disabled=0 AND a.deleted_at IS NULL`,
-        args: [workspaceId],
-      })
-    ).rows[0];
-    return {
-      requiresMfa: Number(row.requires_mfa) === 1,
-      ownerEnrolled: enabled(await security(tx, accountId)),
-      members: Number(members.total),
-      unenrolled: Number(members.unenrolled),
-    };
-  });
+  await platformReady();
+  // One statement provides a coherent authorization/count snapshot without
+  // queuing a read behind the account/billing write transaction lock.
+  const hash = tokenHash(session);
+  const row = (await platformDb().execute({
+    sql: `SELECT chosen.id AS workspace_id,chosen.owner_id,chosen.role,chosen.requires_mfa,
+      asec.enabled_at AS owner_mfa,
+      (SELECT count(*) FROM memberships m JOIN accounts member ON member.id=m.account_id
+        WHERE m.workspace_id=chosen.id AND m.disabled=0 AND member.disabled=0 AND member.deleted_at IS NULL) AS members,
+      (SELECT count(*) FROM memberships m JOIN accounts member ON member.id=m.account_id
+        LEFT JOIN account_security factor ON factor.account_id=member.id
+        WHERE m.workspace_id=chosen.id AND m.disabled=0 AND member.disabled=0 AND member.deleted_at IS NULL AND factor.enabled_at IS NULL) AS unenrolled
+      FROM p_sessions s JOIN accounts a ON a.id=s.account_id
+      LEFT JOIN account_security asec ON asec.account_id=a.id
+      LEFT JOIN session_security ss ON ss.token_hash=s.token_hash
+      LEFT JOIN (
+        SELECT w.id,w.owner_id,w.requires_mfa,m.role FROM memberships m JOIN workspaces w ON w.id=m.workspace_id
+        WHERE m.account_id=? AND m.disabled=0 AND w.deleted_at IS NULL
+        ORDER BY CASE WHEN w.id=(SELECT workspace_id FROM p_sessions WHERE account_id=? AND token_hash=?) THEN 0 ELSE 1 END,w.created_at LIMIT 1
+      ) chosen ON 1=1
+      WHERE s.account_id=? AND s.token_hash=? AND s.expires_at>? AND a.disabled=0 AND a.deleted_at IS NULL
+        AND (asec.enabled_at IS NULL OR (ss.factor_at IS NOT NULL AND ss.epoch=asec.epoch))`,
+    args:[accountId,accountId,hash,accountId,hash,now()],
+  })).rows[0];
+  if(!row)throw new AccountError('Your session or password changed. Sign in again.',401);
+  const workspaceId=row.workspace_id==null?null:String(row.workspace_id);
+  if(requestScope!==(workspaceId?`particl-active-${workspaceId}-${accountId}`:`particl-account-${accountId}`))
+    throw new AccountError('Your account or workspace changed. Reload security settings.',409);
+  if(!workspaceId||row.owner_id!==accountId||row.role!=='owner')
+    throw new AccountError("Only this workspace's owner can manage its sign-in policy.",403);
+  return {requiresMfa:Number(row.requires_mfa)===1,ownerEnrolled:row.owner_mfa!=null,members:Number(row.members),unenrolled:Number(row.unenrolled)};
 }
 
 /** Password, fresh factor, ownership, policy and audit commit under the same

@@ -187,6 +187,84 @@ test("required memberships prevent factor disablement and preserve the recovery 
   ).toBe(false);
 });
 
+test("policy reads use one SELECT and retain live session, fallback workspace and factor standing", async () => {
+  const f = await fixture("read-snapshot");
+  const statements: string[] = [];
+  const native = f.db.execute.bind(f.db);
+  f.db.execute = ((
+    statement: Parameters<typeof native>[0],
+    args?: Parameters<typeof native>[1],
+  ) => {
+    statements.push(
+      typeof statement === "string"
+        ? statement
+        : String((statement as { sql: string }).sql),
+    );
+    return native(statement, args);
+  }) as typeof f.db.execute;
+  try {
+    expect(
+      await f.security.readWorkspaceSecurity(f.id, f.session, f.scope),
+    ).toEqual({
+      requiresMfa: false,
+      ownerEnrolled: false,
+      members: 1,
+      unenrolled: 1,
+    });
+    expect(statements).toHaveLength(1);
+    expect(statements[0].trim()).toMatch(/^SELECT /);
+  } finally {
+    f.db.execute = native;
+  }
+  await expect(
+    f.security.readWorkspaceSecurity(
+      f.id,
+      f.session,
+      "particl-active-stale-stale",
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  await f.db.execute({
+    sql: "UPDATE p_sessions SET workspace_id='missing' WHERE account_id=?",
+    args: [f.id],
+  });
+  expect(
+    (await f.security.readWorkspaceSecurity(f.id, f.session, f.scope)).members,
+  ).toBe(1);
+  await f.db.execute({
+    sql: "UPDATE memberships SET disabled=1 WHERE account_id=?",
+    args: [f.id],
+  });
+  await expect(
+    f.security.readWorkspaceSecurity(f.id, f.session, f.scope),
+  ).rejects.toMatchObject({ status: 409 });
+  await expect(
+    f.security.readWorkspaceSecurity(
+      f.id,
+      f.session,
+      `particl-account-${f.id}`,
+    ),
+  ).rejects.toMatchObject({ status: 403 });
+  await f.db.execute({
+    sql: "UPDATE memberships SET disabled=0 WHERE account_id=?",
+    args: [f.id],
+  });
+  const enrolled = await enrol(f);
+  await expect(
+    f.security.readWorkspaceSecurity(f.id, f.session, f.scope),
+  ).rejects.toMatchObject({ status: 401 });
+  expect(
+    (await f.security.readWorkspaceSecurity(f.id, enrolled.session, f.scope))
+      .ownerEnrolled,
+  ).toBe(true);
+  await f.db.execute({
+    sql: "UPDATE account_security SET epoch=epoch+1 WHERE account_id=?",
+    args: [f.id],
+  });
+  await expect(
+    f.security.readWorkspaceSecurity(f.id, enrolled.session, f.scope),
+  ).rejects.toMatchObject({ status: 401 });
+});
+
 test("a required second workspace also prevents disabling an account's factor", async () => {
   const f = await enrol(await fixture("second")),
     other = await fixture("other");
