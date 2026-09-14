@@ -784,6 +784,24 @@ test("dirty workspace settings survive cancelled navigation and discard only aft
   await expect(page).toHaveURL(/\/team$/);
   await expect(dialog).toHaveCount(0);
   expect(state.settingsWrites).toEqual([{ shotCapCredits: "75" }]);
+  await management
+    .getByRole("link", { name: "Workspace", exact: true })
+    .click();
+  await page
+    .getByLabel("Workspace name", { exact: true })
+    .fill("Discarded menu edit");
+  await page
+    .getByRole("button", { name: "Workspace credits and billing", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Discard and leave", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/billing$/);
+  await expect(
+    page.getByRole("heading", { name: "Plans & credits", exact: true }),
+  ).toBeVisible();
+  expect(nativeDialogs).toEqual([]);
+  expect(state.settingsWrites).toEqual([{ shotCapCredits: "75" }]);
 });
 
 test("dirty settings guard account mutations before POST and recover after a refused switch", async ({

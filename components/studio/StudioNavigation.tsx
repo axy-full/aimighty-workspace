@@ -2,7 +2,8 @@
 
 import { useState, type MouseEvent } from "react";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { Clapperboard, ScanLine, Building2 } from "lucide-react";
 import { Mark } from "@/components/ui/Mark";
 import WorkspaceMenu, { type WorkbenchAccount } from "@/components/workbench/WorkspaceMenu";
@@ -46,9 +47,10 @@ export default function StudioNavigation({ initialAccount, active, compact = fal
   onSignOut?: () => Promise<void>;
 }) {
   const path = usePathname();
+  const router = useRouter();
   const current = active ?? sectionFor(path);
   const [error, setError] = useState("");
-  const navigate = onNavigate ?? (async (href: string) => { await withPageLeaveGuard(() => { window.location.assign(href); }); });
+  const navigate = onNavigate ?? (async (href: string) => { await withPageLeaveGuard(() => { router.push(href); }); });
   function follow(event: MouseEvent<HTMLAnchorElement>, href: string) {
     if (!onNavigate || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -57,14 +59,14 @@ export default function StudioNavigation({ initialAccount, active, compact = fal
   }
   return (
     <div className={`studio-navigation${compact ? " studio-navigation-compact" : ""}`}>
-      {!compact && <a className="studio-navigation-brand" href="/workbench" aria-label="Particl home" onClick={e => follow(e, "/workbench")}>
+      {!compact && <Link className="studio-navigation-brand" href="/workbench" aria-label="Particl home" onClick={e => follow(e, "/workbench")}>
         <Mark width={30} height={22} />
         <Image src="/brand/particl-wordmark-on-dark@4x.png" alt="particl" width={103} height={31} priority />
-      </a>}
+      </Link>}
       <nav className="studio-sections" aria-label="Studio sections">
-        {SECTIONS.map(({ id, label, href, icon: Icon }) => <a key={id} href={href} aria-current={current === id ? "page" : undefined} onClick={e => follow(e, href)}>
+        {SECTIONS.map(({ id, label, href, icon: Icon }) => <Link key={id} href={href} aria-current={current === id ? "page" : undefined} onClick={e => follow(e, href)}>
           <Icon size={15} strokeWidth={1.6} /><span>{label}</span>
-        </a>)}
+        </Link>)}
       </nav>
       <WorkspaceMenu initial={initialAccount} onNavigate={navigate} onSwitch={onSwitch ?? (id => changeAccount("switch", id))} onSignOut={onSignOut ?? (() => changeAccount("logout"))} />
       {error && <p className="studio-navigation-error" role="alert">{error}</p>}
@@ -75,6 +77,6 @@ export default function StudioNavigation({ initialAccount, active, compact = fal
 export function StudioDock() {
   const current = sectionFor(usePathname());
   return <nav className="studio-section-dock" aria-label="Studio sections">
-    {SECTIONS.map(({ id, label, href, icon: Icon }) => <a key={id} href={href} aria-current={current === id ? "page" : undefined}><Icon size={21} strokeWidth={1.6} /><span>{label}</span></a>)}
+    {SECTIONS.map(({ id, label, href, icon: Icon }) => <Link key={id} href={href} aria-current={current === id ? "page" : undefined}><Icon size={21} strokeWidth={1.6} /><span>{label}</span></Link>)}
   </nav>;
 }
