@@ -7,12 +7,18 @@ import { advancePipelineRun } from "@/lib/pipeline/executor";
 import { requireTenant } from "@/lib/tenant";
 import { withPipelineActor } from "@/lib/pipeline/actor";
 import { PipelineError } from "@/lib/pipeline/schema";
+import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 const headers = { "Cache-Control": "private, no-store" };
 type Context = { params: Promise<{ id: string }> };
 function failure(error: unknown) {
+  if (error instanceof RequestBodyError)
+    return Response.json(
+      { error: error.status === 413 ? "This action is too large." : "Check the pipeline action." },
+      { status: error.status, headers },
+    );
   if (error instanceof PipelineError)
     return Response.json(
       { error: error.message, code: error.code },
@@ -49,11 +55,15 @@ export const POST = withTenant(
     const auth = await requireSession();
     if (auth.response) return auth.response;
     try {
-      const raw = await req.text();
-      if (raw.length > 4096)
-        throw new PipelineError("This action is too large.", 413);
-      const body = JSON.parse(raw),
-        store = await pipelineStore(),
+      let body;
+      try { body = JSON.parse(await readBoundedText(req, 4096)); }
+      catch (error) {
+        if (error instanceof SyntaxError) throw new PipelineError("Check the pipeline action.");
+        throw error;
+      }
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        throw new PipelineError("Check the pipeline action.");
+      const store = await pipelineStore(),
         id = (await ctx.params).id;
       let run = await store.getRun(auth.user.id, id);
       if (body.action === "quote") {

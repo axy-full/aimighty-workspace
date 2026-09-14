@@ -1,6 +1,7 @@
 import { now } from "./platform";
 import type { Transaction } from "@libsql/client";
 import { billingTransaction } from "./billingLedger";
+import { readBoundedText, RequestBodyError } from "./requestBody";
 
 export class AccountError extends Error {
   constructor(
@@ -78,16 +79,14 @@ export async function takeAccountLimit(
 export async function accountJson(
   req: Request,
 ): Promise<Record<string, unknown>> {
-  if (Number(req.headers.get("content-length") ?? 0) > 8192)
-    throw new AccountError("The account request is too large.", 413);
-  const text = await req.text();
-  if (new TextEncoder().encode(text).byteLength > 8192)
-    throw new AccountError("The account request is too large.", 413);
   try {
-    const value: unknown = JSON.parse(text);
+    const value: unknown = JSON.parse(await readBoundedText(req, 8192));
     if (value && typeof value === "object" && !Array.isArray(value))
       return value as Record<string, unknown>;
-  } catch {}
+  } catch (error) {
+    if (error instanceof RequestBodyError && error.status === 413)
+      throw new AccountError("The account request is too large.", 413);
+  }
   throw new AccountError("Send a valid account form.");
 }
 export function sameOriginProblem(req: Request): boolean {
