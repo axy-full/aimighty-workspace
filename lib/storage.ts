@@ -1,5 +1,6 @@
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { currentTenant } from "./tenant";
 import { isFixtureUrl } from "./mock";
 import { fetchBytes } from "./mockFs";
@@ -270,9 +271,11 @@ export async function readUploadBytes(uploadId: string, ext: string, storedUrl: 
 }
 
 /** Best-effort removal of a render's stored file — video or image. */
-export async function deleteVideo(genId: string): Promise<void> {
-  if (!/^[A-Za-z0-9_-]+$/.test(genId)) return;
-  for (const target of [videoPath(genId), imagePath(genId), audioPath(genId)]) {
+export async function deleteVideo(genId: string, strict = false, storedUrl?: string | null): Promise<void> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) { if (strict) throw new Error("Invalid generation media identity"); return; }
+  const targets = [videoPath(genId), imagePath(genId), audioPath(genId)];
+  if (usingBlob() && storedUrl && /^https?:\/\//.test(storedUrl)) targets.push(storedUrl);
+  for (const target of targets) {
     try {
       if (usingBlob()) {
         const { del } = await import("@vercel/blob");
@@ -281,12 +284,12 @@ export async function deleteVideo(genId: string): Promise<void> {
         const { rm } = await import("node:fs/promises");
         await rm(path.join(LOCAL_DIR, path.basename(target)), { force: true });
       }
-    } catch { /* orphan cleanup is best-effort */ }
+    } catch (error) { if (strict) throw error; }
   }
 }
 
 /** Best-effort removal of an upload's stored file (blob URL, pathname, or local). */
-export async function deleteUpload(uploadId: string, ext: string, storedUrl: string): Promise<void> {
+export async function deleteUpload(uploadId: string, ext: string, storedUrl: string, strict = false): Promise<void> {
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) return;
   try {
     if (usingBlob()) {
@@ -297,7 +300,7 @@ export async function deleteUpload(uploadId: string, ext: string, storedUrl: str
       const { rm } = await import("node:fs/promises");
       await rm(path.join(UPLOAD_DIR, `${uploadId}.${ext}`), { force: true });
     }
-  } catch { /* best-effort */ }
+  } catch (error) { if (strict) throw error; }
 }
 
 /* ── Chunked uploads ──────────────────────────────────────────────────────
@@ -319,8 +322,8 @@ export async function storeChunk(sess: string, i: number, buf: Buffer): Promise<
     });
     return;
   }
-  await mkdir(path.join(CHUNK_DIR, sess), { recursive: true });
-  await writeFile(path.join(CHUNK_DIR, sess, String(i)), buf);
+  await mkdir(path.join(CHUNK_DIR, prefix(), sess), { recursive: true });
+  await writeFile(path.join(CHUNK_DIR, prefix(), sess, String(i)), buf);
 }
 
 export async function assembleChunks(sess: string, count: number): Promise<Buffer> {
@@ -329,22 +332,22 @@ export async function assembleChunks(sess: string, count: number): Promise<Buffe
     parts.push(
       usingBlob()
         ? await readBlob(chunkPath(sess, i))
-        : await readFile(path.join(CHUNK_DIR, sess, String(i)))
+        : await readFile(path.join(CHUNK_DIR, prefix(), sess, String(i)))
     );
   }
   return Buffer.concat(parts);
 }
 
-export async function deleteChunks(sess: string, count: number): Promise<void> {
+export async function deleteChunks(sess: string, count: number, strict = false): Promise<void> {
   try {
     if (usingBlob()) {
       const { del } = await import("@vercel/blob");
       await del(Array.from({ length: count }, (_, i) => chunkPath(sess, i)));
     } else {
       const { rm } = await import("node:fs/promises");
-      await rm(path.join(CHUNK_DIR, sess), { recursive: true, force: true });
+      await rm(path.join(CHUNK_DIR, prefix(), sess), { recursive: true, force: true });
     }
-  } catch { /* best-effort */ }
+  } catch (error) { if (strict) throw error; }
 }
 
 /* ── Presigned reads ──────────────────────────────────────────────────────
@@ -371,7 +374,7 @@ export async function presignedReadUrl(pathname: string, hours = 24): Promise<st
  * -------------------------------------------------------------------- */
 
 export async function streamAssembleUpload(
-  sess: string, count: number, uploadId: string, ext: string, contentType: string
+  sess: string, count: number, uploadId: string, ext: string, contentType: string, maxBytes = 2 * 1024 * 1024 * 1024
 ): Promise<{ sha256: string; bytes: number; headChunk: Buffer }> {
   const { createHash } = await import("node:crypto");
   const hash = createHash("sha256");
@@ -384,17 +387,17 @@ export async function streamAssembleUpload(
     for (let i = 0; i < count; i++) {
       const buf = usingBlob()
         ? await readBlob(chunkPath(sess, i))
-        : await readFile(path.join(CHUNK_DIR, sess, String(i)));
+        : await readFile(path.join(CHUNK_DIR, prefix(), sess, String(i)));
       if (i === 0) headChunk = buf;
       hash.update(buf);
       total += buf.length;
+      if (total > maxBytes) throw new Error("Upload exceeds its reserved byte limit.");
       yield buf;
     }
   }
 
   if (usingBlob()) {
     const { put } = await import("@vercel/blob");
-    const { Readable } = await import("node:stream");
     await put(pathnameFor, Readable.from(chunks()), {
       access: "private",
       contentType,
@@ -407,7 +410,6 @@ export async function streamAssembleUpload(
     await mkdir(UPLOAD_DIR, { recursive: true });
     const { createWriteStream } = await import("node:fs");
     const { pipeline } = await import("node:stream/promises");
-    const { Readable } = await import("node:stream");
     await pipeline(
       Readable.from(chunks()),
       createWriteStream(path.join(UPLOAD_DIR, `${uploadId}.${ext}`))
@@ -433,7 +435,6 @@ export async function openUploadStream(
   const { stat } = await import("node:fs/promises");
   const file = path.join(UPLOAD_DIR, `${uploadId}.${ext}`);
   const st = await stat(file);
-  const { Readable } = await import("node:stream");
   return {
     stream: Readable.toWeb(createReadStream(file)) as ReadableStream,
     size: st.size,

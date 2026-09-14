@@ -5,7 +5,11 @@ import { storeImageBytes, storeAudioBytes } from "./storage";
 import { withRetry, billedTo } from "./providers";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import type { Reference, ImageRole } from "./ark";
-import { meter, assertMeterFunding, FundingSourceChangedError } from "./meter";
+import { assertMeterFunding, FundingSourceChangedError } from "./meter";
+import {
+  writeGenerationOutcome,
+  deliverGenerationSettlement,
+} from "./generationSettlement";
 import { engineFor } from "./engines";
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
 
@@ -285,7 +289,12 @@ export async function produce(job: Job): Promise<Produced | null> {
   if (previous) return previous;
   if (!(await claimRender(job.genId))) return producedOutcome(job.genId);
   try {
-    await assertMeterFunding(job.genId, job.kind === "audio" ? "elevenlabs" : billedTo(getModel(job.modelId).provider));
+    await assertMeterFunding(
+      job.genId,
+      job.kind === "audio"
+        ? "elevenlabs"
+        : billedTo(getModel(job.modelId).provider),
+    );
     const out =
       job.kind === "audio" ? await produceAudio(job) : await produceStill(job);
     // Persist the small result independently of queue step memoization, so
@@ -305,7 +314,8 @@ export async function produce(job: Job): Promise<Produced | null> {
     await failJob(
       job.genId,
       (error as Error).message,
-      error instanceof FundingSourceChangedError || error instanceof ElevenLabsError && error.rejectedBeforeGeneration,
+      error instanceof FundingSourceChangedError ||
+        (error instanceof ElevenLabsError && error.rejectedBeforeGeneration),
     );
     throw error;
   }
@@ -410,47 +420,56 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
     const ratePerM = produced.tokens
       ? (produced.cost / produced.tokens) * 1_000_000
       : null;
-    await db().execute({
-      /* billed_to is written from the door that ACTUALLY served this
+    await writeGenerationOutcome(
+      {
+        /* billed_to is written from the door that ACTUALLY served this
          render, not from the one the environment implies. A still can fall
          back between doors mid-render, and the ledger has to follow the
          money rather than the intent: through the gateway it is Vercel
          credit, on the Google key it is Google's account. Guessing at
          insert time was right until the day a fallback fired. */
-      sql: `UPDATE generations
+        sql: `UPDATE generations
             SET status='succeeded', stored_url=?, total_tokens=?,
                 cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?,
                 queue_ms=?, engine_ms=?, store_ms=?, bytes=?,
                 params=json_set(params, '$.via', ?), billed_to=?, updated_at=?
             WHERE id=?`,
-      args: [
-        produced.storedUrl,
-        produced.tokens,
-        produced.cost,
-        ratePerM,
-        ms,
-        t.queueMs,
-        t.engineMs,
-        t.storeMs,
-        produced.bytes,
-        produced.via,
-        produced.via === "google" ? "google" : "vercel",
-        now(),
-        job.genId,
-      ],
-    });
-    await meter(
+        args: [
+          produced.storedUrl,
+          produced.tokens,
+          produced.cost,
+          ratePerM,
+          ms,
+          t.queueMs,
+          t.engineMs,
+          t.storeMs,
+          produced.bytes,
+          produced.via,
+          produced.via === "fal"
+            ? "fal"
+            : produced.via === "google"
+              ? "google"
+              : "vercel",
+          now(),
+          job.genId,
+        ],
+      },
       {
         id: job.genId,
         kind: "image",
-        engine: produced.via === "google" ? "google" : "vercel",
+        engine:
+          produced.via === "fal"
+            ? "fal"
+            : produced.via === "google"
+              ? "google"
+              : "vercel",
         model: job.modelId,
         status: "succeeded",
         engineCostUsd: produced.cost,
         durationMs: ms,
       },
-      { critical: false },
     );
+    await deliverGenerationSettlement(job.genId);
   } else {
     // Price from the plan the account is on; the tier is read once per render.
     let tier: string | null = null;
@@ -461,30 +480,30 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
     }
     const credits = produced.credits;
     const cost = usdForCredits(credits, tier);
-    await db().execute({
-      sql: `UPDATE generations
+    await writeGenerationOutcome(
+      {
+        sql: `UPDATE generations
             SET status='succeeded', stored_url=?, total_tokens=?, cost_usd=?, rate_usd_per_m=?,
                 error=NULL, duration_ms=?, queue_ms=?, engine_ms=?, store_ms=?, bytes=?,
                 params=json_set(params, '$.credits', ?, '$.tier', ?, '$.requestId', ?), updated_at=?
             WHERE id=?`,
-      args: [
-        produced.storedUrl,
-        credits,
-        cost,
-        credits ? (cost / credits) * 1_000_000 : null,
-        ms,
-        t.queueMs,
-        t.engineMs,
-        t.storeMs,
-        produced.bytes,
-        credits,
-        tier,
-        produced.requestId,
-        now(),
-        job.genId,
-      ],
-    });
-    await meter(
+        args: [
+          produced.storedUrl,
+          credits,
+          cost,
+          credits ? (cost / credits) * 1_000_000 : null,
+          ms,
+          t.queueMs,
+          t.engineMs,
+          t.storeMs,
+          produced.bytes,
+          credits,
+          tier,
+          produced.requestId,
+          now(),
+          job.genId,
+        ],
+      },
       {
         id: job.genId,
         kind: "audio",
@@ -494,8 +513,8 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
         engineCostUsd: cost,
         durationMs: ms,
       },
-      { critical: false },
     );
+    await deliverGenerationSettlement(job.genId);
   }
   invalidate(PROJECTS_KEY);
 }
@@ -529,35 +548,33 @@ export async function failJob(
     : job?.kind === "audio"
       ? job.estCredits || null
       : null;
-  await db()
-    .execute({
-      sql: `UPDATE generations
-          SET status='failed', error=?,
-              duration_ms=COALESCE(duration_ms, ?),
-              cost_usd=COALESCE(cost_usd, ?),
-              total_tokens=COALESCE(total_tokens, ?),
-              updated_at=?
-          WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
-      args: [message.slice(0, 600), ms, spentUsd, spentCredits, now(), genId],
-    })
-    .catch(() => {});
-  if (job) {
-    await meter(
-      {
-        id: genId,
-        kind: job.kind,
-        engine: job.kind === "audio" ? "elevenlabs" : billedTo("google"),
-        model: job.modelId,
-        status: "failed",
-        engineCostUsd:
-          job.kind === "audio"
-            ? usdForCredits(spentCredits ?? 0, null)
-            : (spentUsd ?? 0),
-        durationMs: ms,
-      },
-      { critical: false },
-    ).catch(() => {});
+  if (!job) {
+    await deliverGenerationSettlement(genId);
+    return;
   }
+  await writeGenerationOutcome(
+    {
+      sql: `UPDATE generations
+      SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?),
+          cost_usd=COALESCE(cost_usd, ?), total_tokens=COALESCE(total_tokens, ?), updated_at=?
+      WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+      args: [message.slice(0, 600), ms, spentUsd, spentCredits, now(), genId],
+    },
+    {
+      id: genId,
+      kind: job.kind,
+      engine:
+        job.kind === "audio"
+          ? "elevenlabs"
+          : billedTo(getModel(job.modelId).provider),
+      model: job.modelId,
+      status: "failed",
+      // Retain the original reservation for an ambiguous provider/storage failure.
+      engineCostUsd: rejectedBeforeGeneration ? 0 : null,
+      durationMs: ms,
+    },
+  );
+  await deliverGenerationSettlement(genId);
   invalidate(PROJECTS_KEY);
 }
 

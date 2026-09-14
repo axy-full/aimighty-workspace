@@ -1,3 +1,4 @@
+import { withMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -15,6 +16,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
 
   const body = await req.json().catch(() => ({}));
   const sets: string[] = [];
+  let moveTo: string | null = null;
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const args: any[] = [];
   /* Move to another project (design/particl-v2 §1, §7): the shot goes, and
@@ -24,7 +26,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
     const target = await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [body.projectId] });
     if (!target.rows.length) return NextResponse.json({ error: "No such project." }, { status: 404 });
     sets.push("project_id = ?"); args.push(body.projectId);
-    await db().execute({ sql: `UPDATE generations SET project_id = ? WHERE shot_id = ?`, args: [body.projectId, shotId] });
+    moveTo = body.projectId;
   }
 
   if (typeof body.code === "string") {
@@ -55,7 +57,10 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   /* Any edit is a change the shot list has not sent across yet. */
   sets.push("dirty = 1");
   sets.push("updated_at = ?"); args.push(now(), shotId);
-  await db().execute({ sql: `UPDATE shots SET ${sets.join(", ")} WHERE id = ?`, args });
+  await withMediaSources(body.setup, async (tx) => {
+    if (moveTo) await tx.execute({ sql: `UPDATE generations SET project_id=? WHERE shot_id=?`, args: [moveTo, shotId] });
+    await tx.execute({ sql: `UPDATE shots SET ${sets.join(", ")} WHERE id = ?`, args });
+  });
   return NextResponse.json({ shot: await getShot(shotId) });
 });
 

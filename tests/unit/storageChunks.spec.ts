@@ -116,3 +116,29 @@ test("cloud chunk assembly preserves each workspace's bytes and cleans up only i
     else process.env.BLOB_READ_WRITE_TOKEN = previous;
   }
 });
+
+test("local staging separates the same account and session across tenants while retaining legacy paths", async () => {
+  const { mkdtempSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(path.join(tmpdir(), "particl-local-chunks-"));
+  const filename = path.resolve("lib/storage.ts"), require = createRequire(filename);
+  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const loaded = { exports: {} as typeof import("../../lib/storage") };
+  new Function("require", "module", "exports", "process", compiled)((name: string) => name === "./tenant" ? { currentTenant } : require(name), loaded, loaded.exports, { ...process, cwd: () => dir, env: { ...process.env, BLOB_READ_WRITE_TOKEN: "" } });
+  const storage = loaded.exports;
+  for (const ws of [{ id: "a", legacy: false }, { id: "b", legacy: false }, { id: "legacy", legacy: true }] as TenantWorkspace[]) {
+    await runInTenant(ws, async () => { await storage.storeChunk("owner/session", 0, Buffer.from(ws.id)); });
+  }
+  expect(existsSync(path.join(dir, ".data/chunks/ws/a/owner/session/0"))).toBe(true);
+  expect(existsSync(path.join(dir, ".data/chunks/ws/b/owner/session/0"))).toBe(true);
+  expect(existsSync(path.join(dir, ".data/chunks/owner/session/0"))).toBe(true);
+  await runInTenant({ id: "a", legacy: false } as TenantWorkspace, async () => {
+    expect(String(await storage.assembleChunks("owner/session", 1))).toBe("a");
+    await storage.deleteChunks("owner/session", 1, true);
+  });
+  await runInTenant({ id: "b", legacy: false } as TenantWorkspace, async () => {
+    expect(String(await storage.assembleChunks("owner/session", 1))).toBe("b");
+    await expect(storage.streamAssembleUpload("owner/session", 1, "limited", "bin", "application/octet-stream", 0)).rejects.toThrow(/reserved byte limit/);
+  });
+  expect(existsSync(path.join(dir, ".data/chunks/owner/session/0"))).toBe(true);
+});

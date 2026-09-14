@@ -7,7 +7,10 @@ export type ReadinessCheck = {
 };
 
 /** Configuration diagnostics contain variable names and booleans, never their values. */
-export function deploymentReadiness(env: Environment = process.env) {
+export function deploymentReadiness(
+  env: Environment = process.env,
+  options: { includeBilling?: boolean } = {},
+) {
   const checks: ReadinessCheck[] = [];
   const add = (id: string, ready: boolean, detail: string, required = true) =>
     checks.push({ id, ready, required, detail });
@@ -66,6 +69,7 @@ export function deploymentReadiness(env: Environment = process.env) {
         env.STRIPE_WEBHOOK_SECRET,
       ),
     "Stripe checkout key for this environment and webhook signing secret",
+    options.includeBilling !== false,
   );
   add(
     "cron",
@@ -85,6 +89,8 @@ export function deploymentReadiness(env: Environment = process.env) {
   );
   return {
     ready: checks.every((check) => !check.required || check.ready),
+    scope: options.includeBilling === false ? "platform_configuration" : "commercial_configuration",
+    verified: false,
     checks,
   };
 }

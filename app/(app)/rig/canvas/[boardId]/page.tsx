@@ -9,7 +9,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { estimateVideo, estimateImage } from "@/lib/rateTable";
 import { estimateTokens, costUsd } from "@/lib/models";
 import type { Board, BoardNode, BoardWire, NodeKind } from "@/lib/boards";
-import { markStale } from "@/lib/boards";
+import { markStale } from "@/lib/boardGraph";
 import type { ProductionRow } from "@/lib/productions";
 import type { Shot } from "@/lib/shots";
 import type { ElementFull } from "@/lib/elements";

@@ -9,6 +9,7 @@ import ManagementPage, {
 } from "@/components/management/ManagementPage";
 import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
 import { formatUsd, type PlansResponse } from "./PricingClient";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 
 type Topups = {
   applies: boolean;
@@ -94,7 +95,12 @@ async function loadAccount(signal?: AbortSignal) {
   );
   return { responses, bodies };
 }
-export default function BillingClient() {
+export default function BillingClient({
+  requestScope,
+}: {
+  requestScope: string | null;
+}) {
+  const scopedFetch = useScopedFetch(requestScope);
   const router = useRouter(),
     query = useSearchParams(),
     initialPlan = query.get("plan"),
@@ -169,7 +175,7 @@ export default function BillingClient() {
     setBusy(label);
     setError("");
     try {
-      const response = await fetch(path, {
+      const response = await scopedFetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -223,7 +229,7 @@ export default function BillingClient() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch(
+      const response = await scopedFetch(
         cancel
           ? `/api/workspaces/topups?id=${encodeURIComponent(id)}`
           : "/api/workspaces/topups",

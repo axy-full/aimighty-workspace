@@ -1,3 +1,4 @@
+import { withMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -18,7 +19,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     if (problem) return NextResponse.json({ error: problem }, { status: 400 });
   }
 
-  await db().execute({
+  await withMediaSources({ uploadId: body.uploadId == null ? null : String(body.uploadId) }, (tx) => tx.execute({
     sql: `UPDATE cast_members
           SET name = COALESCE(?, name),
               description = COALESCE(?, description),
@@ -34,7 +35,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
       body.uploadId == null ? null : String(body.uploadId),
       id,
     ],
-  });
+  }));
   const rs = await db().execute({ sql: `SELECT * FROM cast_members WHERE id = ?`, args: [id] });
   if (!rs.rows[0]) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ member: rowToCast(rs.rows[0]) });

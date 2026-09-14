@@ -10,25 +10,93 @@ import { test, expect } from "@playwright/test";
  * the credential /connect hands to third parties precisely because it
  * "cannot bill" — could mint a render-scoped one and start spending.
  *
- * Asserted on the source rather than over HTTP: the defect was a guard that
- * looked right, so what has to be true is that these routes no longer use
- * the guard that cannot tell a token from a session.
+ * Run the actual mutation handlers with the real session-only guard. A
+ * bearer caller must be refused before even initializing the tenant DB.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+import ts from "typescript";
+import type { TenantStore } from "../../lib/tenant";
 
 const read = (p: string) => readFileSync(path.join(process.cwd(), p), "utf8");
 
-test("neither token route is guarded by currentUser()", () => {
-  for (const f of ["app/api/tokens/route.ts", "app/api/tokens/[id]/route.ts"]) {
-    const src = read(f);
-    const mutating = src.match(/export const (POST|DELETE|PATCH|PUT) = [\s\S]*?\n\}\);/g) ?? [];
-    expect(mutating.length, `${f} has a state-changing handler`).toBeGreaterThan(0);
-    for (const handler of mutating) {
-      expect(handler, `${f}: a mutating handler still calls currentUser()`).not.toContain("currentUser()");
-      expect(handler, `${f}: a mutating handler must use requireSession()`).toContain("requireSession()");
+test("actual token POST and DELETE refuse read and render bearers before database work", async () => {
+  const auth = await import("../../lib/auth");
+  const tenant = await import("../../lib/tenant");
+  type Handler = (
+    request: Request,
+    context: { params: Promise<{ id: string }> },
+  ) => Promise<Response>;
+  let dbCalls = 0;
+  const forbiddenDb = () => {
+    dbCalls++;
+    throw new Error("A bearer must not reach token storage");
+  };
+  const dependencies: Record<string, unknown> = {
+    "next/server": createRequire(path.resolve("package.json"))("next/server"),
+    "@/lib/auth": { ...auth, withTenant: (handler: Handler) => handler },
+    "@/lib/tenant": tenant,
+    "@/lib/db": {
+      db: forbiddenDb,
+      ready: forbiddenDb,
+      now: forbiddenDb,
+      id: forbiddenDb,
+    },
+    "@/lib/securityAudit": { securityAuditStatement: forbiddenDb },
+  };
+  for (const [file, method] of [
+    ["app/api/tokens/route.ts", "POST"],
+    ["app/api/tokens/[id]/route.ts", "DELETE"],
+  ] as const) {
+    const compiled = ts.transpileModule(read(file), {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }).outputText;
+    const mod = { exports: {} as Record<string, Handler> };
+    new Function("require", "module", "exports", compiled)(
+      (name: string) => {
+        if (!(name in dependencies))
+          throw new Error("Unexpected token-route dependency " + name);
+        return dependencies[name];
+      },
+      mod,
+      mod.exports,
+    );
+    for (const scope of ["read", "render"] as const) {
+      const store = {
+        workspace: { id: "tenant-fixture" },
+        user: {
+          id: "caller",
+          name: "Caller",
+          email: "caller@example.test",
+          role: "admin",
+          owner: true,
+        },
+        token: { id: "bearer", name: "Fixture", scope, capUsd: null },
+      } as TenantStore;
+      await tenant.runWithStore(store, async () => {
+        const response = await mod.exports[method](
+          new Request("http://localhost/api/tokens/target", {
+            method,
+            headers: {
+              Authorization: "Bearer local-fixture",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ name: "Escalated", scope: "render" }),
+          }),
+          { params: Promise.resolve({ id: "target" }) },
+        );
+        expect(response.status, `${method} with ${scope} bearer`).toBe(403);
+        expect(await response.json()).toMatchObject({
+          error: expect.stringContaining("signed-in browser session"),
+        });
+      });
     }
   }
+  expect(dbCalls).toBe(0);
 });
 
 test("requireSession refuses a token caller and requireUser does not", async () => {

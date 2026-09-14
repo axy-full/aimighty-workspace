@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireOwner, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { setWorkspaceKeys, setWorkspaceMode, platformKeysByDefault } from "@/lib/platform";
+import { updateWorkspaceVendorKey, setWorkspaceMode, platformKeysByDefault } from "@/lib/platform";
 import { VENDOR_KEYS, type VendorKeyName } from "@/lib/vendorKeys";
 import { mask, keyringConfigured } from "@/lib/keyring";
 import { allowanceUsd, platformSpendThisMonth } from "@/lib/allowance";
@@ -56,9 +56,9 @@ export const PUT = withTenant(async function PUT(req: Request) {
   const value = String(body.value ?? "").trim();
   if (!NAMES.has(name)) return NextResponse.json({ error: "Unknown vendor." }, { status: 400 });
   if (value.length < 8 || value.length > 4096 || /\s/.test(value)) return NextResponse.json({ error: "That doesn't look like a key." }, { status: 400 });
-  await setWorkspaceKeys(ws.id, { ...ws.keys, [name]: value });
+  await updateWorkspaceVendorKey(ws.id, name, value, got.user.id);
   return NextResponse.json({ ok: true, name, masked: mask(value) });
-});
+}, { requireRequestScope: true });
 
 export const DELETE = withTenant(async function DELETE(req: Request) {
   const got = await requireOwner();
@@ -67,11 +67,9 @@ export const DELETE = withTenant(async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const name = String(body.name ?? "");
   if (!NAMES.has(name)) return NextResponse.json({ error: "Unknown vendor." }, { status: 400 });
-  const next = { ...ws.keys };
-  delete next[name];
-  await setWorkspaceKeys(ws.id, next);
+  await updateWorkspaceVendorKey(ws.id, name, null, got.user.id);
   return NextResponse.json({ ok: true, name });
-});
+}, { requireRequestScope: true });
 
 /** Whose keys the engines run on: the platform's (with its allowance) or the workspace's own. */
 export const PATCH = withTenant(async function PATCH(req: Request) {
@@ -85,6 +83,6 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
   if (mode === "platform" && !platformKeysByDefault()) {
     return NextResponse.json({ error: "The platform doesn't lend its keys on this deployment." }, { status: 400 });
   }
-  await setWorkspaceMode(ws.id, mode === "platform");
+  await setWorkspaceMode(ws.id, mode === "platform", got.user.id);
   return NextResponse.json({ ok: true, mode });
-});
+}, { requireRequestScope: true });

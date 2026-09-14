@@ -2,6 +2,18 @@ import { test, expect } from "@playwright/test";
 import { deploymentReadiness } from "../../lib/deploymentReadiness";
 import { subscriptionPriceCents, billingOrigin } from "../../lib/billingConfig";
 
+test("platform configuration can defer Stripe without claiming operational verification", () => {
+  const env = { PLATFORM_DATABASE_URL: "libsql://fixture.example", PLATFORM_AUTH_TOKEN: "fixture",
+    TURSO_API_TOKEN: "fixture", TURSO_ORG: "fixture", KEYRING_SECRET: "x".repeat(32),
+    BLOB_READ_WRITE_TOKEN: "fixture", RESEND_API_KEY: "fixture", MAIL_FROM: "ops@example.test",
+    APP_ORIGIN: "https://example.test", CRON_SECRET: "fixture", INNGEST_EVENT_KEY: "fixture", INNGEST_SIGNING_KEY: "fixture" };
+  const core = deploymentReadiness(env, { includeBilling: false });
+  expect(core.ready).toBe(true);
+  expect(core.verified).toBe(false);
+  expect(core.checks.find((check) => check.id === "billing")).toMatchObject({ required: false, ready: false });
+  expect(deploymentReadiness(env).ready).toBe(false);
+});
+
 test("production readiness rejects sandbox billing, local storage/database, mocks and missing provisioning", () => {
   const result = deploymentReadiness({
     VERCEL_ENV: "production",

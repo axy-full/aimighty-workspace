@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useApi } from "@/lib/useApi";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { usd, timeAgo } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 
@@ -16,11 +17,13 @@ export type Token = {
  * The secret is shown exactly once — after that only its hash exists.
  */
 export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => void }) {
+  const scopedFetch = useScopedFetch();
   const { data, refresh } = useApi<{ tokens: Token[] }>("/api/tokens");
   const [fresh, setFresh] = useState<{ name: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function create(scope: "read" | "render") {
+    try {
     const name = await appPrompt(
       scope === "render" ? "New token — can generate" : "New read-only token",
       "", "What is it for? e.g. Claude"
@@ -29,7 +32,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
     const cap = scope === "render"
       ? await appPrompt("Monthly ceiling", "20", "USD — blank for no limit")
       : null;
-    const res = await fetch("/api/tokens", {
+    const res = await scopedFetch("/api/tokens", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, scope, capUsd: cap ? Number(cap) : null }),
     });
@@ -39,13 +42,21 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
     setCopied(false);
     onNewToken?.(json.token);
     refresh();
+    } catch (error) {
+      await appAlert("Couldn't create the token", (error as Error).message);
+    }
   }
 
   async function revoke(t: Token) {
+    try {
     if (!(await appConfirm(`Revoke "${t.name}"?`,
       "Anything using it stops working immediately.", { confirmLabel: "Revoke", danger: true }))) return;
-    await fetch(`/api/tokens/${t.id}`, { method: "DELETE" });
+    const response = await scopedFetch(`/api/tokens/${t.id}`, { method: "DELETE" });
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "The token could not be revoked.");
     refresh();
+    } catch (error) {
+      await appAlert("Couldn't revoke the token", (error as Error).message);
+    }
   }
 
   const tokens = data?.tokens ?? [];

@@ -6,14 +6,16 @@ import { creditsApply } from '@/lib/credits';
 import { ceilingFor, ceilingMessage } from '@/lib/planLimits';
 import { invalidate, PROJECTS_KEY } from '@/lib/cache';
 import type { Project } from './studio';
-import type { Transaction } from '@libsql/client';
+import type { Client, Transaction } from '@libsql/client';
+import {publishedContext} from './published-context';
+import {referencedMedia} from '@/lib/mediaBindings';
 
-const initialized = new Map<string, Promise<void>>();
+const initialized = new WeakMap<Client, Promise<void>>();
 export async function workbenchReady() {
-  const tenant=requireTenant().id;
-  if(!initialized.has(tenant))initialized.set(tenant,(async()=>{
-    await ready();
-    await db().batch([
+  await ready();
+  const client=db();
+  if(!initialized.has(client))initialized.set(client,(async()=>{
+    await client.batch([
       `CREATE TABLE IF NOT EXISTS workbench_bibles (
         project_id TEXT NOT NULL, version INTEGER NOT NULL, owner TEXT NOT NULL,
         body TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(project_id,version))`,
@@ -22,8 +24,8 @@ export async function workbenchReady() {
         project_id TEXT NOT NULL, shot_id TEXT NOT NULL,
         PRIMARY KEY(owner,draft_id,node_id))`,
     ], 'write');
-  })().catch(error=>{initialized.delete(tenant);throw error;}));
-  await initialized.get(tenant);
+  })().catch(error=>{initialized.delete(client);throw error;}));
+  await initialized.get(client);
 }
 
 export function mappedId(prefix: string, ...parts: string[]) {
@@ -53,6 +55,23 @@ export async function workbenchTransaction<T>(fn:(tx:Transaction)=>Promise<T>):P
   });
   writes.set(tenant,result);
   try{return await result;}finally{if(writes.get(tenant)===result)writes.delete(tenant);}
+}
+
+/** Validate under the same write lock as saving; a concurrent deletion cannot
+ * leave a newly saved snapshot pointing at a source it just removed. */
+async function validateStoredMedia(tx:Transaction,value:unknown) {
+  const refs=referencedMedia(value);
+  for(const [kind,ids] of [['upload',refs.uploads],['generation',refs.generations]] as const){
+    const all=[...ids];
+    for(let start=0;start<all.length;start+=100){
+      const batch=all.slice(start,start+100);
+      const table=kind==='upload'?'uploads':'generations';
+      const rows=(await tx.execute({sql:`SELECT id FROM ${table} WHERE id IN (${batch.map(()=>'?').join(',')})${kind==='generation'?' AND deleted=0':''}`,args:batch})).rows;
+      const found=new Set(rows.map(row=>String(row.id)));
+      const missing=batch.find(id=>!found.has(id));
+      if(missing)throw new Error(`A referenced ${kind} is no longer available (${missing}). Remove or replace it before saving or publishing. Your saved work has not changed.`);
+    }
+  }
 }
 
 /** Create the real production records once, under the same plan ceiling/default cap as /api/projects. */
@@ -106,23 +125,35 @@ export async function saveDraft(owner:string, project:Project, revision:number) 
   if(current?.project.productionProjectId && project.productionProjectId && current.project.productionProjectId!==project.productionProjectId)
     throw new Error('A draft cannot change its production. Open a separate space.');
   const pid=await linkProduction(owner,{...project,productionProjectId:current?.project.productionProjectId||project.productionProjectId});
-  const mappings=Object.fromEntries((await db().execute({sql:'SELECT node_id,shot_id FROM workbench_shots WHERE owner=? AND draft_id=?',args:[owner,project.id]})).rows.map(r=>[String(r.node_id),String(r.shot_id)]));
-  const body={...project,productionProjectId:pid,shotMappings:mappings};
-  const result=await db().execute({sql:`INSERT INTO workbench_projects (key,owner,project_id,name,body,revision,updated_at) VALUES (?,?,?,?,?,1,?)
-    ON CONFLICT(key) DO UPDATE SET name=excluded.name,body=excluded.body,revision=workbench_projects.revision+1,updated_at=excluded.updated_at WHERE workbench_projects.revision=?`,
-    args:[owner+':'+project.id,owner,project.id,project.name,JSON.stringify(body),now(),revision]});
-  if(!result.rowsAffected)throw new Error('A newer version exists. Your changes have not overwritten it.');
-  return {revision:revision+1,productionProjectId:pid,shotMappings:mappings};
+  return workbenchTransaction(async(tx)=>{
+    await validateStoredMedia(tx,project);
+    const mappings=Object.fromEntries((await tx.execute({sql:'SELECT node_id,shot_id FROM workbench_shots WHERE owner=? AND draft_id=?',args:[owner,project.id]})).rows.map(r=>[String(r.node_id),String(r.shot_id)]));
+    const body={...project,productionProjectId:pid,shotMappings:mappings};
+    const result=await tx.execute({sql:`INSERT INTO workbench_projects (key,owner,project_id,name,body,revision,updated_at) VALUES (?,?,?,?,?,1,?)
+      ON CONFLICT(key) DO UPDATE SET name=excluded.name,body=excluded.body,revision=workbench_projects.revision+1,updated_at=excluded.updated_at WHERE workbench_projects.revision=?`,
+      args:[owner+':'+project.id,owner,project.id,project.name,JSON.stringify(body),now(),revision]});
+    if(!result.rowsAffected)throw new Error('A newer version exists. Your changes have not overwritten it.');
+    return {revision:revision+1,productionProjectId:pid,shotMappings:mappings};
+  });
 }
 
-/** Shared bibles are append-only snapshots; edits in a private draft cannot mutate them. */
-export async function publishBible(owner:string, name:string, draftId:string) {
+export class BibleConflictError extends Error {
+  readonly code='bible_conflict';
+  constructor(public readonly currentVersion:number){super('Another collaborator published newer shared context. Save your private work and load the latest context before publishing again.');this.name='BibleConflictError';}
+}
+
+/** Immutable shared versions require the author's explicit current base. */
+export async function publishBible(owner:string, name:string, draftId:string, expectedVersion:number) {
   const draft=await readDraft(owner,draftId);
   if(!draft?.project.productionProjectId)throw new Error('Save your production first.');
   const p=draft.project;
-  const snapshot={brief:p.brief,script:p.script||'',direction:p.direction,assets:p.sharedAssets||[],nodes:p.sharedNodes||[],publishedBy:name};
+  if(!Number.isInteger(expectedVersion)||expectedVersion<0)throw new Error('Load the current shared context before publishing.');
+  const snapshot={...publishedContext(p),publishedBy:name};
   return workbenchTransaction(async(tx)=>{
-    const version=Number((await tx.execute({sql:'SELECT COALESCE(MAX(version),0)+1 AS n FROM workbench_bibles WHERE project_id=?',args:[p.productionProjectId!]})).rows[0].n);
+    const latest=Number((await tx.execute({sql:'SELECT COALESCE(MAX(version),0) AS n FROM workbench_bibles WHERE project_id=?',args:[p.productionProjectId!]})).rows[0].n);
+    if(latest!==expectedVersion)throw new BibleConflictError(latest);
+    await validateStoredMedia(tx,snapshot);
+    const version=latest+1;
     await tx.execute({sql:'INSERT INTO workbench_bibles(project_id,version,owner,body,created_at) VALUES (?,?,?,?,?)',args:[p.productionProjectId!,version,owner,JSON.stringify(snapshot),now()]});
     return {version,shared:{...snapshot,version}};
   });

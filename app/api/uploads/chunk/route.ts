@@ -1,41 +1,44 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { requireUser, withTenant } from "@/lib/auth";
+import { requireTenant } from "@/lib/tenant";
+import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { storeChunk } from "@/lib/storage";
-import { checkQuota } from "@/lib/limits";
+import { abortUploadSession, markUploadChunkStored, reserveUploadChunk, UploadError, uploadFailure } from "@/lib/uploadReservations";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const SESSION = /^[a-f0-9-]{16,64}$/;
-
-/** One slice of a large upload. Chunks stay under Vercel's 4.5MB body cap. */
+/** Admission is durable and atomic before any chunk bytes reach storage. */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
+  if (problem) return NextResponse.json({ error: problem }, { status: 409 });
+  try {
+    const form = await req.formData().catch(() => null);
+    const file = form?.get("chunk");
+    if (!(file instanceof File) || file.size < 1 || file.size > 4 * 1024 * 1024) throw new UploadError("Chunk size out of range.");
+    const index = Number(form?.get("index"));
+    const buf = Buffer.from(await file.arrayBuffer());
+    const claim = await reserveUploadChunk({ owner: got.user.id, session: String(form?.get("session") ?? ""), index, bytes: buf.length, sha256: createHash("sha256").update(buf).digest("hex") });
+    if (!claim.stored) {
+      await storeChunk(claim.key, index, buf);
+      await markUploadChunkStored(claim.key, index, claim.lease);
+    }
+    return NextResponse.json({ ok: true, index });
+  } catch (error) { return uploadFailure(error); }
+});
 
-  const form = await req.formData().catch(() => null);
-  const file = form?.get("chunk");
-  const session = String(form?.get("session") ?? "");
-  const index = Number(form?.get("index"));
-
-  if (!(file instanceof File) || !SESSION.test(session) || !Number.isInteger(index) || index < 0 || index > 600) {
-    return NextResponse.json({ error: "Bad chunk" }, { status: 400 });
-  }
-  const buf = Buffer.from(await file.arrayBuffer());
-  if (buf.length === 0 || buf.length > 4 * 1024 * 1024) {
-    return NextResponse.json({ error: "Chunk size out of range" }, { status: 400 });
-  }
-  /* The workspace's storage quota, charged per chunk on the way in.
-     `/finish` checks a 2 GB ceiling AFTER assembling, which is far too late
-     to be a limit — by then every chunk is already stored, and the quota was
-     not consulted at all on this path. Nothing stopped a member filling the
-     workspace's storage, or the deployment's, four megabytes at a time.
-     Checked here rather than only at finish because a chunk that is never
-     finished is still bytes on disk that nobody counts. */
-  const quota = await checkQuota(buf.length);
-  if (!quota.allow) return NextResponse.json({ error: quota.error }, { status: 507 });
-  // Scope the staging area to the uploader, so sessions can't collide or be
-  // hijacked across users.
-  await storeChunk(`${got.user.id}/${session}`, index, buf);
-  return NextResponse.json({ ok: true, index });
+/** Cancelling does not race an in-flight write; cleanup waits for its durable lease. */
+export const DELETE = withTenant(async function DELETE(req: Request) {
+  const got = await requireUser();
+  if (got.response) return got.response;
+  const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
+  if (problem) return NextResponse.json({ error: problem }, { status: 409 });
+  try {
+    const body = await req.json().catch(() => ({}));
+    await abortUploadSession(got.user.id, String(body.session ?? ""));
+    return NextResponse.json({ ok: true });
+  } catch (error) { return uploadFailure(error); }
 });

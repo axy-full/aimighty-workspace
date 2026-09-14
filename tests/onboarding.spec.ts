@@ -31,15 +31,17 @@ test("a stranger with an invite reaches a first render inside five minutes", asy
     data: { code, name: "Test Person", email, workspace: `Onboarding ${Date.now()}`, password: "a long passphrase for a test account 42", accept: true },
   });
   expect(signup.ok(), await signup.text()).toBeTruthy();
+  const me = await api.get("/api/me").then(response => response.json());
+  const scopeHeaders = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
 
   const projects = await api.get("/api/projects").then((r) => r.json());
   expect(projects.projects, "the sample must not consume the first production slot").toHaveLength(0);
   const draft = newProject("My first production");
   draft.nodes.push({id:"first-shot",title:"First shot",type:"generate",mode:"Video",text:"A courier crosses a wet rooftop at dawn, static wide.",x:100,y:100,width:344,linked:[]});
-  const saved = await api.put("/api/workbench/projects", {data:{project:draft,revision:0}});
+  const saved = await api.put("/api/workbench/projects", {headers:scopeHeaders,data:{project:draft,revision:0}});
   expect(saved.ok(), await saved.text()).toBeTruthy();
   const identity = await saved.json();
-  const mapped = await api.post("/api/workbench/projects", {data:{action:"map-shot",projectId:draft.id,nodeId:"first-shot"}});
+  const mapped = await api.post("/api/workbench/projects", {headers:scopeHeaders,data:{action:"map-shot",projectId:draft.id,nodeId:"first-shot"}});
   expect(mapped.ok(), await mapped.text()).toBeTruthy();
   const shot = await mapped.json();
 

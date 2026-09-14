@@ -1,3 +1,5 @@
+import { MediaSourceError } from "./mediaBindings";
+import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { db, ready, now } from "./db";
@@ -213,12 +215,12 @@ async function resolveStore(): Promise<TenantStore> {
  * handler that reaches for data before checking who is asking still
  * cannot get any.
  */
-export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean } = {}) {
+export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean } = {}) {
   return async (req: Req, ctx: Ctx): Promise<Response> => {
     let store: TenantStore;
     try { store = await resolveStore(); }
-    catch (e) {
-      console.error("session resolution failed:", (e as Error).message);
+    catch {
+      console.error(JSON.stringify({ event: "session_resolution_failed" }));
       return Response.json({ error: "Sign-in isn't available right now." }, { status: 503 });
     }
     if(!['GET','HEAD','OPTIONS'].includes(req.method)){
@@ -226,9 +228,16 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
       const origin=req.headers.get('origin');
       if(!store.token&&origin&&origin!==new URL(req.url).origin)return Response.json({error:'Invalid request origin.'},{status:403});
     }
+    const capturedScope = req.headers.get("X-Workbench-Scope");
+    const needsScope = options.requireRequestScope && store.user && !store.token && !["GET", "HEAD", "OPTIONS"].includes(req.method);
+    if ((capturedScope !== null || needsScope) &&
+        (!store.workspace || !store.user || capturedScope !== workbenchScopeFor(store.workspace.id, store.user.id))) {
+      return Response.json({ error: "Your account or workspace changed. Reload this page before continuing." }, { status: 409 });
+    }
     try {
       return await runWithStore(store, () => handler(req, ctx));
     } catch (e) {
+      if (e instanceof MediaSourceError) return Response.json({ error: e.message }, { status: 409 });
       if (e instanceof NoTenantError) {
         return Response.json({ error: store.user ? "Pick a workspace first." : "Not signed in" }, { status: 401 });
       }

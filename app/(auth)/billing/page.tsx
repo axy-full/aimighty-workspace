@@ -5,9 +5,18 @@ import StudioNavigation, {
 } from "@/components/studio/StudioNavigation";
 import { currentContext } from "@/lib/auth";
 import { creditStateFor } from "@/lib/credits";
+import {
+  accountScopeFor,
+  workbenchScopeFor,
+} from "@/lib/workbench/request-scope";
 export const metadata = { title: "Plans & credits · Particl" };
 export default async function BillingPage() {
   const context = await currentContext();
+  const requestScope = context
+    ? context.workspace
+      ? workbenchScopeFor(context.workspace.id, context.user.id)
+      : accountScopeFor(context.user.id)
+    : null;
   const account = context
     ? {
         name: context.user.name,
@@ -22,13 +31,20 @@ export default async function BillingPage() {
     : null;
   return (
     <div className="shell studio-application">
-      <StudioNavigation initialAccount={account} active="workspace" />
+      <StudioNavigation
+        initialAccount={account}
+        active="workspace"
+        requestScope={requestScope}
+      />
       <div className="shell-body">
         <div className="shell-page">
           <Suspense
             fallback={<div className="management">Loading billing…</div>}
           >
-            <BillingClient />
+            <BillingClient
+              key={requestScope ?? "visitor"}
+              requestScope={requestScope}
+            />
           </Suspense>
         </div>
       </div>

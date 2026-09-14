@@ -1,3 +1,5 @@
+import { withMediaSources } from "./mediaMutation";
+import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
 import { gatewayReachable } from "./gateway";
 import { catalog, findModel, FEATURED, videoCostUsd, imageCostUsd } from "./catalog";
@@ -245,8 +247,11 @@ export async function patchStep(stepId: string, patch: {
   status?: StepStatus; genId?: string | null; error?: string | null;
 }): Promise<Step | null> {
   await ready();
-  const cur = await getStep(stepId);
-  if (!cur) return null;
+  const snapshot = (await db().execute({ sql: "SELECT * FROM atomik_steps WHERE id=?", args: [stepId] })).rows[0];
+  if (!snapshot) return null;
+  const cur = toStep(snapshot);
+  if ((patch.prompt !== undefined || patch.model !== undefined || patch.params !== undefined) && cur.status !== "proposed")
+    throw new MediaSourceError("That step has already run. Ask for a new version instead.");
 
   const model = patch.model ?? cur.model;
   const params = patch.params ? { ...cur.params, ...patch.params } : cur.params;
@@ -254,18 +259,20 @@ export async function patchStep(stepId: string, patch: {
     ? await estimateStepUsd(cur.kind, model, params)
     : cur.estCostUsd;
 
-  await db().execute({
+  const updated = await withMediaSources({ params, genId: patch.genId ?? cur.genId }, (tx) => tx.execute({
     sql: `UPDATE atomik_steps
             SET prompt=?, model=?, params=?, status=?, gen_id=?, error=?, est_cost_usd=?, updated_at=?
-          WHERE id=?`,
+          WHERE id=? AND updated_at=? AND status=?`,
     args: [
       patch.prompt ?? cur.prompt, model, JSON.stringify(params),
       patch.status ?? cur.status,
       patch.genId !== undefined ? patch.genId : cur.genId,
       patch.error !== undefined ? patch.error : cur.error,
-      repriced, now(), stepId,
+      repriced, now(), stepId, snapshot.updated_at, cur.status,
     ],
-  });
+  }));
+  if (!updated.rowsAffected) throw new MediaSourceError("This step changed while it was being edited. Reload it before saving.");
+
   return getStep(stepId);
 }
 
@@ -512,14 +519,16 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
   for (const p of turn.propose) {
     const stepId = newId("astp");
     const est = await estimateStepUsd(p.kind, p.model, p.params);
-    await db().execute({
+    const refs = stepReferences(attached, p.attachments);
+    await withMediaSources({ params: p.params, refs }, (tx) => tx.execute({
       sql: `INSERT INTO atomik_steps
               (id, chat_id, message_id, position, kind, title, prompt, model, params, refs,
                status, est_cost_usd, created_at, updated_at)
             VALUES (?,?,?,?,?,?,?,?,?,?, 'proposed', ?,?,?)`,
       args: [stepId, chatId, messageId, pos++, p.kind, p.title, p.prompt, p.model,
-        JSON.stringify(p.params), JSON.stringify(stepReferences(attached, p.attachments)), est, ts, ts],
-    });
+        JSON.stringify(p.params), JSON.stringify(refs), est, ts, ts],
+    }));
+
     const s = await getStep(stepId);
     if (s) saved.push(s);
   }
@@ -670,18 +679,30 @@ function extractTurn(text: string): ParsedTurn | null {
 }
 
 /** Record a person's message. Returns its id. */
-export async function addUserMessage(chatId: string, text: string, attachments: Attachment[] = []): Promise<string> {
+export async function addUserMessage(
+  chatId: string,
+  text: string,
+  attachments: Attachment[] = [],
+): Promise<string> {
   await ready();
   const messageId = newId("amsg");
   const ts = now();
-  await db().execute({
-    sql: `INSERT INTO atomik_messages (id, chat_id, role, text, activity, attachments, created_at)
-          VALUES (?,?, 'user', ?, '[]', ?, ?)`,
-    args: [messageId, chatId, text.slice(0, 8000), attachments.length ? JSON.stringify(attachments) : null, ts],
-  });
-  await db().execute({
-    sql: `UPDATE atomik_chats SET updated_at = ?, status = 'running' WHERE id = ?`,
-    args: [ts, chatId],
+  await withMediaSources(attachments, async (tx) => {
+    await tx.execute({
+      sql: `INSERT INTO atomik_messages (id, chat_id, role, text, activity, attachments, created_at)
+            VALUES (?,?, 'user', ?, '[]', ?, ?)`,
+      args: [
+        messageId,
+        chatId,
+        text.slice(0, 8000),
+        attachments.length ? JSON.stringify(attachments) : null,
+        ts,
+      ],
+    });
+    await tx.execute({
+      sql: `UPDATE atomik_chats SET updated_at = ?, status = 'running' WHERE id = ?`,
+      args: [ts, chatId],
+    });
   });
   return messageId;
 }

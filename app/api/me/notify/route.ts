@@ -29,4 +29,4 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
   prefs[kind] = Boolean(body.on);
   await db().execute({ sql: `UPDATE users SET notify = ? WHERE id = ?`, args: [JSON.stringify(prefs), got.user.id] });
   return NextResponse.json({ prefs });
-});
+}, { requireRequestScope: true });

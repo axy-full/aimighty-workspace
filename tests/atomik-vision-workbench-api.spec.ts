@@ -12,6 +12,7 @@ test("Atomik sampled-still upload uses real storage and rejects stale scope, for
   const me = await request.get("/api/me").then((response) => response.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
   const clip = await request.post("/api/uploads", {
+    headers: { "X-Workbench-Scope": scope },
     multipart: {
       file: {
         name: "review.mp4",
@@ -39,6 +40,7 @@ test("Atomik sampled-still upload uses real storage and rejects stale scope, for
     refs: [],
   });
   const saved = await request.put("/api/workbench/projects", {
+    headers: { "X-Workbench-Scope": scope },
     data: { project, revision: 0 },
   });
   expect(saved.ok(), await saved.text()).toBe(true);

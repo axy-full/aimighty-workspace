@@ -12,6 +12,7 @@ import { workspaceLimits } from "./limits";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
+import { workbenchScopeProblem } from "./workbench/request-scope";
 
 export class SpendReservationError extends Error {
   constructor(message: string, public readonly status: number) { super(message); this.name = "SpendReservationError"; }
@@ -52,6 +53,8 @@ export async function bindGenerationRequest(claim: GenerationRequest, genId: str
 
 /** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
 export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>): Promise<Response> {
+  const scopeError = workbenchScopeProblem(req, requireTenant().id, userId);
+  if (scopeError) return Response.json({ error: scopeError }, { status: 409 });
   const expectedActor = req.headers.get("X-Actor-Email");
   if (expectedActor && expectedActor.toLowerCase() !== currentTenant()?.user?.email.toLowerCase()) return Response.json({ error: "Sign in with the account that prepared this request before recovering it." }, { status: 409 });
   const expectedWorkspace = req.headers.get("X-Workspace-Id");

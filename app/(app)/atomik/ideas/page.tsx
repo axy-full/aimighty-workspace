@@ -27,7 +27,7 @@ import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { writerCall } from "@/lib/rateTable";
 import { useProject } from "@/lib/projectContext";
-import { uploadFile } from "@/lib/uploadClient";
+import { useUploadFile } from "@/lib/useUploadFile";
 import { useDraft } from "@/lib/useDraft";
 import { usd } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
@@ -197,6 +197,7 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
   onDone: () => void; onCancel: () => void; onWriting:()=>void;
 }) {
   const { models: sessionModels, rates } = useSession();
+  const uploadFile = useUploadFile();
   const pendingBody=paid.pending?JSON.parse(paid.pending.body):null;
   const d:IdeaDraft=pendingBody?{...currentDraft,logline:pendingBody.brief,tone:pendingBody.tone,model:pendingBody.model}:currentDraft;
   const [busy, setBusy] = useState<"" | "refs" | "write" | "save">("");

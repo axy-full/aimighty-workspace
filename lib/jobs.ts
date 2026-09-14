@@ -7,7 +7,17 @@ import { billCredits, marginKeyOf } from "./creditTerms";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
-import { meter } from "./meter";
+import { meter, type MeterEvent } from "./meter";
+import {
+  writeGenerationOutcome,
+  deliverGenerationSettlement,
+  flushGenerationSettlements,
+  repairLegacyGenerationSettlements,
+  generationCosts,
+  type ReconcileResult,
+} from "./generationSettlement";
+import { loadJob, producedOutcome, seal } from "./renderWork";
+import { retryRenderDispatches } from "./inngest";
 import { billedTo, getProvider } from "./providers";
 import { releaseHeldJobs } from "./held";
 import { engineFor } from "./engines";
@@ -243,30 +253,42 @@ const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
  * On first sight of success: copy the MP4 into our own storage and
  * snapshot the cost using the rate in effect right now.
  */
-export async function syncGeneration(gen: Generation): Promise<Generation> {
+export async function syncGeneration(
+  gen: Generation,
+  options: { strict?: boolean } = {},
+): Promise<Generation> {
+  await deliverGenerationSettlement(gen.id);
+  const savedCosts = await generationCosts(gen.id);
   // A succeeded row isn't final until the video is in our storage AND the
   // cost is recorded — Ark can report success a beat before usage appears,
   // and sealing early would make the clip permanently free in the ledger.
   if (
     TERMINAL.has(gen.status) &&
-    (gen.status !== "succeeded" || (gen.storedUrl && gen.costUsd != null))
+    (gen.status !== "succeeded" || (gen.storedUrl && savedCosts.cost != null))
   ) {
     return gen;
   }
   // fal video rows carry a request id, not an Ark task: their own sync.
-  if (gen.provider === "fal" && gen.kind === "video") return syncFalVideo(gen);
+  if (gen.provider === "fal" && gen.kind === "video")
+    return syncFalVideo(gen, options);
   if (!gen.arkTaskId) return gen;
 
   let task;
   try {
-    task = await engineFor(gen.provider ?? "byteplus").poll!({ provider: "byteplus", ref: gen.arkTaskId, model: gen.model });
+    task = await engineFor(gen.provider ?? "byteplus").poll!({
+      provider: "byteplus",
+      ref: gen.arkTaskId,
+      model: gen.model,
+    });
   } catch (e) {
     // Transient poll failure: leave the row alone, report it upward.
+    if (options.strict) throw e;
     return { ...gen, error: (e as Error).message };
   }
 
   let storedUrl = gen.storedUrl;
-  let cost = gen.costUsd;
+  let cost = savedCosts.cost;
+  let storageFailed = false;
   let rate: number | null = null;
   /* Where the tail of a video render actually goes. The vendor's own clock,
      when it gives one, is the only way to tell its working time apart from
@@ -279,7 +301,11 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   let storeMs: number | null = null;
   /** How much of the store this render occupies — rent, not a one-off charge. */
   let storedBytes: number | null = null;
-  if (task.vendorStartedAt && task.vendorEndedAt && task.vendorEndedAt >= task.vendorStartedAt) {
+  if (
+    task.vendorStartedAt &&
+    task.vendorEndedAt &&
+    task.vendorEndedAt >= task.vendorStartedAt
+  ) {
     engineMs = task.vendorEndedAt - task.vendorStartedAt;
     noticeMs = Math.max(0, now() - task.vendorEndedAt);
   }
@@ -297,13 +323,18 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
         // Loud in the logs: a silent failure here cost us two near-lost videos.
         console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
         storedUrl = null;
+        storageFailed = true;
       }
     }
     // Snapshot the cost exactly ONCE — a storeVideo retry must not recompute
     // it at whatever the rate happens to be later; history stays truthful.
     if (cost == null && task.totalTokens != null) {
       const p = gen.params as { resolution?: string; hasVideoInput?: boolean };
-      rate = effectiveRate(gen.model, String(p.resolution ?? "720p"), Boolean(p.hasVideoInput));
+      rate = effectiveRate(
+        gen.model,
+        String(p.resolution ?? "720p"),
+        Boolean(p.hasVideoInput),
+      );
       cost = rate == null ? null : costUsd(task.totalTokens, rate);
     }
   }
@@ -312,8 +343,10 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
   // How long the render actually took, recorded once when it reaches a
   // terminal state. Analytics reads this to answer "where do shots get
   // stuck" without having to guess from timestamps that keep moving.
-  const durationMs = TERMINAL.has(task.status) ? Math.max(0, ts - gen.createdAt) : null;
-  await db().execute({
+  const durationMs = TERMINAL.has(task.status)
+    ? Math.max(0, ts - gen.createdAt)
+    : null;
+  const outcomeWrite = {
     sql: `UPDATE generations
           SET status=?, source_url=?, stored_url=?, total_tokens=?,
               cost_usd=COALESCE(?, cost_usd),
@@ -324,7 +357,7 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
               store_ms=COALESCE(?, store_ms),
               bytes=COALESCE(?, bytes),
               error=?, updated_at=?
-          WHERE id=?`,
+          WHERE id=? AND (status IN ('queued','running') OR (?='succeeded' AND status!='cancelled'))`,
     args: [
       task.status,
       task.videoUrl,
@@ -340,8 +373,39 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
       task.error,
       ts,
       gen.id,
+      task.status,
     ],
-  });
+  };
+  const event: MeterEvent = {
+    id: gen.id,
+    kind: "video",
+    engine: billedTo(gen.provider),
+    model: gen.model,
+    status:
+      task.status === "succeeded"
+        ? "succeeded"
+        : TERMINAL.has(task.status)
+          ? "failed"
+          : "running",
+    engineCostUsd:
+      cost != null
+        ? cost + savedCosts.refinement
+        : TERMINAL.has(task.status) && !getProvider(gen.provider).billsFailures
+          ? 0
+          : null,
+    durationMs,
+    projectId: gen.projectId,
+    shotId: gen.shotId,
+  };
+  if (TERMINAL.has(task.status)) {
+    const changed = await writeGenerationOutcome(outcomeWrite, event);
+    await deliverGenerationSettlement(gen.id);
+    if (!changed) return (await getGeneration(gen.id)) ?? gen;
+  } else {
+    const changed = await db().execute(outcomeWrite);
+    if (!changed.rowsAffected) return (await getGeneration(gen.id)) ?? gen;
+    if (cost != null) await meter(event);
+  }
 
   if (TERMINAL.has(task.status)) {
     // A slot just freed: whatever waited for one may start.
@@ -350,29 +414,43 @@ export async function syncGeneration(gen: Generation): Promise<Generation> {
        they asked to be told (brief 2.7). Their own takes only — the wall is
        for watching everyone else's. */
     if (gen.createdBy && gen.status !== task.status) {
-      const where = gen.shotCode ? `${gen.shotCode} v${gen.version ?? 1}` : "Your take";
-      void notify("takeDone", [gen.createdBy], task.status === "succeeded"
-        ? { title: `${where} is ready`, body: gen.prompt.slice(0, 120), url: "/" }
-        : { title: `${where} didn't render`, body: (task.error ?? "The engine refused it.").slice(0, 120), url: "/" },
-      ).catch(() => { /* a take stands whether or not the nudge lands */ });
+      const where = gen.shotCode
+        ? `${gen.shotCode} v${gen.version ?? 1}`
+        : "Your take";
+      void notify(
+        "takeDone",
+        [gen.createdBy],
+        task.status === "succeeded"
+          ? {
+              title: `${where} is ready`,
+              body: gen.prompt.slice(0, 120),
+              url: "/",
+            }
+          : {
+              title: `${where} didn't render`,
+              body: (task.error ?? "The engine refused it.").slice(0, 120),
+              url: "/",
+            },
+      ).catch(() => {
+        /* a take stands whether or not the nudge lands */
+      });
     }
   }
-  if (TERMINAL.has(task.status) || cost != null) {
-    await meter({
-      id: gen.id, kind: "video", engine: billedTo(gen.provider), model: gen.model,
-      status: task.status === "succeeded" ? "succeeded" : TERMINAL.has(task.status) ? "failed" : "running",
-      engineCostUsd: cost != null ? cost + (gen.refineCostUsd ?? 0)
-        : TERMINAL.has(task.status) && !getProvider(gen.provider).billsFailures ? 0 : null,
-      durationMs, projectId: gen.projectId, shotId: gen.shotId,
-    }, { critical: false });
-  }
+  if (storageFailed && options.strict)
+    throw new Error("The completed master could not be stored.");
   return {
     ...gen,
     status: task.status,
     sourceUrl: task.videoUrl,
     storedUrl,
     totalTokens: task.totalTokens,
-    costUsd: cost,
+    costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
+    creditsBilled: creditsApply(currentTenant()?.workspace)
+      ? billCredits(
+          (cost ?? 0) + savedCosts.refinement,
+          marginKeyOf(gen.kind, gen.model),
+        )
+      : null,
     error: task.error,
     updatedAt: ts,
   };
@@ -403,121 +481,117 @@ export async function syncActive(limit = 12): Promise<void> {
  * anything that finished but never landed in our storage or never recorded a
  * cost, plus the stuck-image janitor.
  */
-export async function syncPending(limit = 30): Promise<void> {
+export async function syncPending(
+  limit = 30,
+  options: { deadlineAt?: number } = {},
+): Promise<ReconcileResult & { deferred: number }> {
   await ready();
-
-  /* ── First, rescue what CAN be rescued ──────────────────────────────
-   * fal keeps its jobs on a durable queue, and every render writes its
-   * request id to the row before it starts waiting. So a render whose
-   * function died is not lost: ask fal how it went and seal the row.
-   * This has to run BEFORE the repair sweep below, or the sweep would
-   * fail rows whose work is sitting finished at the vendor.
-   * ---------------------------------------------------------------- */
-  try {
-    const falRows = await db().execute({
-      sql: `SELECT id, kind, params, created_at FROM generations
-            WHERE provider='fal' AND status IN ('queued','running') AND deleted=0
-              AND json_extract(params, '$.falRequestId') IS NOT NULL
-            ORDER BY created_at DESC LIMIT ?`,
-      args: [limit],
-    });
-    await inChunks(rows(falRows), 4, (r) => {
-      let p: { falRequestId?: string; seed?: number } = {};
-      try { p = JSON.parse(r.params || "{}"); } catch { /* unreadable params, no handle */ }
-      if (!p.falRequestId) return Promise.resolve();
-      // A Kling or Topaz render finishes through the video sync; a
-      // portrait still through the identity path below.
-      if (String(r.kind ?? "video") !== "image") {
-        return getGeneration(r.id).then((g) => (g ? syncFalVideo(g).then(() => undefined) : undefined));
-      }
-      return reconcileFalRender({
-        id: r.id, requestId: p.falRequestId,
-        createdAt: Number(r.created_at),
-        seed: typeof p.seed === "number" ? p.seed : null,
-      });
-    });
-  } catch (e) {
-    console.error("fal reconcile failed:", (e as Error).message);
-  }
-
-  /* ── Then fail what cannot ──────────────────────────────────────────
-   * Stills on Google and audio on ElevenLabs are synchronous: the bytes
-   * come back inside our own after() callback, with no task and no queue
-   * behind them. If such a row is still running long past the route's own
-   * five-minute ceiling, the function died mid-call and nothing will ever
-   * finish it. Fifteen minutes is the horizon — comfortably beyond any
-   * live work, so this can never kill a render that is still going.
-   * A fal row that never got as far as a request id belongs here too.
-   * ---------------------------------------------------------------- */
-  await db().execute({
-    sql: `UPDATE generations
-          SET status='failed',
-              error='The call was interrupted before it finished — render again.',
-              updated_at=?
-          WHERE status IN ('queued','running')
-            AND deleted = 0
-            AND ark_task_id IS NULL
-            AND json_extract(params, '$.falRequestId') IS NULL
-            AND json_extract(params, '$.worker') IS NULL
-            AND created_at < ?`,
-    args: [now(), now() - 15 * 60_000],
+  const bounded = Math.max(1, Math.min(50, limit));
+  const results = {
+    ...(await flushGenerationSettlements(bounded)),
+    deferred: 0,
+  };
+  const legacy = await repairLegacyGenerationSettlements(bounded);
+  results.attempted += legacy.attempted;
+  results.failed += legacy.failed;
+  const dispatch = await retryRenderDispatches({
+    limit: 4,
+    deadlineAt: options.deadlineAt,
   });
-
-  /* ── The backstop for rows the worker owns ──────────────────────────
-   * A render handed to Inngest is exempt from the sweep above, and rightly:
-   * Inngest retries with its own backoff, which can run well past fifteen
-   * minutes, and killing a row mid-retry would abandon work it is about to
-   * finish. Inngest is also what ENDS such a row — its onFailure writes the
-   * failure once the retries are spent.
-   *
-   * This exists only for the case where Inngest never comes back at all: the
-   * app unregistered, the account gone, the event lost before delivery. Two
-   * hours is far beyond any real retry schedule, so it can only catch a row
-   * nobody is coming for.
-   * ------------------------------------------------------------------ */
-  await db().execute({
-    sql: `UPDATE generations
-          SET status='failed',
-              error='The worker never picked this up. Nothing was delivered — render again.',
-              updated_at=?
-          WHERE status IN ('queued','running')
-            AND deleted = 0
-            AND ark_task_id IS NULL
-            AND json_extract(params, '$.falRequestId') IS NULL
-            AND json_extract(params, '$.worker') IS NOT NULL
-            AND created_at < ?`,
-    args: [now(), now() - 2 * 60 * 60_000],
-  });
-
-  // Repair clauses only look back 3 days: past that, Ark's task and URL are
-  // long gone (48h expiry) and re-polling a dead task forever is just noise.
+  results.attempted += dispatch.attempted;
+  results.failed += dispatch.failed;
+  results.deferred += dispatch.deferred;
   const horizon = now() - 3 * 86400_000;
-
-  /* ── And the video rows whose task ModelArk has since forgotten ──────
-   * The horizon above bounds only the second clause of the sweep below;
-   * the first one — anything not yet terminal — had no age bound at all,
-   * so a row whose task record expired was re-polled for ever and never
-   * reached a terminal state. Three days is deliberately generous: the
-   * poll itself has a 30s deadline and a single ModelArk 502 must never
-   * be mistaken for an expired task and kill a live, already-paid render.
-   * ------------------------------------------------------------------ */
-  await db().execute({
-    sql: `UPDATE generations
-          SET status='failed',
-              error='ModelArk no longer has this task — its record expired before the result could be read. Render again.',
-              updated_at=?
-          WHERE status IN ('queued','running')
-            AND deleted = 0
-            AND ark_task_id IS NOT NULL
-            AND created_at < ?`,
-    args: [now(), horizon],
-  });
   const rs = await db().execute({
-    sql: `${SELECT} WHERE (g.status NOT IN ('succeeded','failed','cancelled') AND g.deleted=0)
-             OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
-                 AND (g.stored_url IS NULL OR g.cost_usd IS NULL))
-          ORDER BY g.created_at DESC LIMIT ?`,
-    args: [horizon, limit],
+    sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
+      OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
+        AND (g.stored_url IS NULL OR g.cost_usd IS NULL))
+      ORDER BY g.updated_at,g.created_at,g.id LIMIT ?`,
+    args: [horizon, bounded],
   });
-  await inChunks(rows(rs), 4, (r) => syncGeneration(rowToGeneration(r)));
+  // Oldest checked first, with a persisted check time: failures cannot starve later jobs.
+  for (let i = 0; i < rs.rows.length; i += 4) {
+    if (options.deadlineAt != null && now() >= options.deadlineAt) {
+      results.deferred += rs.rows.length - i;
+      break;
+    }
+    const batch = await Promise.allSettled(
+      rows(rs)
+        .slice(i, i + 4)
+        .map(async (row) => {
+          await db().execute({
+            sql: "UPDATE generations SET updated_at=? WHERE id=?",
+            args: [now(), row.id],
+          });
+          const gen = rowToGeneration(row);
+          const params = JSON.parse(String(row.params || "{}"));
+          if (
+            (gen.kind === "image" || gen.kind === "audio") &&
+            params.producedOutcome
+          ) {
+            const job = await loadJob(gen.id),
+              out = await producedOutcome(gen.id);
+            if (job && out) {
+              await seal(job, out);
+              return;
+            }
+          }
+          if (
+            gen.provider === "fal" &&
+            gen.kind === "image" &&
+            params.falRequestId
+          ) {
+            await reconcileFalRender(
+              {
+                id: gen.id,
+                requestId: params.falRequestId,
+                createdAt: gen.createdAt,
+                seed: typeof params.seed === "number" ? params.seed : null,
+              },
+              { strict: true },
+            );
+            return;
+          }
+          const orphan =
+            !gen.arkTaskId &&
+            !params.falRequestId &&
+            (params.worker
+              ? Math.max(gen.createdAt, Number(params.workerDispatchedAt) || 0)
+              : gen.createdAt) <
+              now() - (params.worker ? 2 * 60 * 60_000 : 15 * 60_000);
+          const expired = Boolean(gen.arkTaskId && gen.createdAt < horizon);
+          if ((orphan || expired) && !TERMINAL.has(gen.status)) {
+            // An expired function/handle does not prove the vendor refunded anything.
+            // Keep its reservation, end the execution slot, and retain the permanent paid claim.
+            await writeGenerationOutcome(
+              {
+                sql: `UPDATE generations SET status='failed',error=?,params=json_set(params,'$.outcomeUncertain',1),updated_at=?
+            WHERE id=? AND status IN ('queued','running') AND deleted=0`,
+                args: [
+                  "This attempt was interrupted and its provider outcome is unconfirmed. Its reserved credits remain pending reconciliation; it will not be submitted again automatically.",
+                  now(),
+                  gen.id,
+                ],
+              },
+              {
+                id: gen.id,
+                kind: gen.kind,
+                engine: billedTo(gen.provider),
+                model: gen.model,
+                status: "failed",
+                engineCostUsd: null,
+                projectId: gen.projectId,
+                shotId: gen.shotId,
+              },
+            );
+            await deliverGenerationSettlement(gen.id);
+            return;
+          }
+          await syncGeneration(gen, { strict: true });
+        }),
+    );
+    results.attempted += batch.length;
+    results.failed += batch.filter((item) => item.status === "rejected").length;
+  }
+  return results;
 }

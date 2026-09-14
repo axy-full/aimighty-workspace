@@ -1,7 +1,12 @@
+import { requireTenant } from "@/lib/tenant";
+import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
+import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
+import { mediaBindingProblem } from "@/lib/mediaBindings";
+import { uploadReservationsReady, queueUploadDeletion, cleanupExpiredUploads, UploadError, uploadFailure } from "@/lib/uploadReservations";
 import { db, ready } from "@/lib/db";
 import { servingFor } from "@/lib/serveType";
 import { requireUser, withTenant } from "@/lib/auth";
-import { readUploadBytes, deleteUpload, openUploadStream } from "@/lib/storage";
+import { readUploadBytes, openUploadStream } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -41,7 +46,7 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   const serve = servingFor(row.mime);
   const headers: Record<string, string> = {
     "Content-Type": serve.contentType,
-    "Cache-Control": "private, max-age=31536000, immutable",
+    "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
   };
   if (!serve.inline) {
@@ -63,17 +68,23 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   }
 });
 
-export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
+  const scopeProblem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
+  if (scopeProblem) return Response.json({ error: scopeProblem }, { status: 409 });
   await ready();
   const { id } = await params;
-  // Remove the stored object BEFORE the row: a direct-upload blob's random
-  // suffix lives only in stored_url, so dropping the row first orphans the
-  // file beyond recovery.
-  const rs = await db().execute({ sql: `SELECT ext, stored_url FROM uploads WHERE id=? LIMIT 1`, args: [id] });
-  const row = rs.rows[0] as unknown as { ext: string; stored_url: string } | undefined;
-  if (row) await deleteUpload(id, row.ext, row.stored_url);
-  await db().execute({ sql: `DELETE FROM uploads WHERE id = ?`, args: [id] });
-  return Response.json({ ok: true });
+  try {
+    await workbenchReady();
+    await uploadReservationsReady();
+    const key = await workbenchTransaction(async tx => {
+      const problem = await mediaBindingProblem(tx, "upload", id);
+      if (problem) throw new UploadError(problem, 409);
+      return queueUploadDeletion(tx, got.user.id, id);
+    });
+    // If storage is unavailable, the durable cleanup row retains quota and retries in cron.
+    const result = key ? await cleanupExpiredUploads(1, Date.now(), key) : null;
+    return Response.json({ ok: true, cleanupPending: Boolean(result && result.cleaned !== 1) });
+  } catch (error) { return uploadFailure(error); }
 });

@@ -1,3 +1,5 @@
+import { MediaSourceError } from "@/lib/mediaBindings";
+import { withMediaSources } from "@/lib/mediaMutation";
 import { generatedReferenceSeconds, videoReferenceSeconds } from "@/lib/referenceDuration";
 import { billCredits } from "@/lib/creditTerms";
 import { NextResponse, after } from "next/server";
@@ -96,6 +98,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
   if (got.response) return got.response;
   return withGenerationRequest(req, got.user.id, async (requestClaim) => {
+  try {
   await ready();
 
   // A token may carry a monthly ceiling. Checked before submit, so an agent
@@ -606,7 +609,7 @@ export const POST = withTenant(async function POST(req: Request) {
       variation: isBatchId(body.batchId) && Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8 ? body.variation : undefined,
     };
 
-    await db().execute({
+    await withMediaSources(stillParams, (tx) => tx.execute({
       sql: `INSERT INTO generations
             (id, project_id, ark_task_id, kind, model, prompt, params, status, created_by,
              created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
@@ -615,7 +618,7 @@ export const POST = withTenant(async function POST(req: Request) {
              JSON.stringify(holdStill ? { ...stillParams, held: holdStill } : stillParams), holdStill ? "held" : "running", got.user.id, ts, ts,
              got.token?.id ?? null, stillShot, stillVersion, model.provider, model.stillTask ?? "generate",
              billedTo(model.provider)],
-    });
+    }));
     await bindGenerationRequest(requestClaim, genId);
     invalidate(PROJECTS_KEY);
     if (holdStill) {
@@ -916,7 +919,7 @@ export const POST = withTenant(async function POST(req: Request) {
   };
 
   // Row first, so a failed submit is still visible rather than silently lost.
-  await db().execute({
+  await withMediaSources(storedParams, (tx) => tx.execute({
     sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
@@ -928,7 +931,7 @@ export const POST = withTenant(async function POST(req: Request) {
            got.token?.id ?? null,
            shotId, version, model.provider ?? "byteplus", task.id, sourceGenId, refineMs,
            billedTo(model.provider ?? "byteplus")],
-  });
+  }));
 
   await bindGenerationRequest(requestClaim, genId);
 
@@ -991,5 +994,9 @@ export const POST = withTenant(async function POST(req: Request) {
     id: genId, arkTaskId: out.taskId, status: "running", attempts: out.attempts,
       notices: notices.length ? notices : undefined,
   });
+  } catch (error) {
+    if (error instanceof MediaSourceError) return NextResponse.json({ error: error.message }, { status: 409 });
+    throw error;
+  }
   });
 });

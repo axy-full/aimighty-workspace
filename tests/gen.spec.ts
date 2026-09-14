@@ -1,6 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { createClient } from "@libsql/client";
+import { randomBytes } from "node:crypto";
+import sharp from "sharp";
+import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 
 test("Gen makes video, images and each audio kind with quoted requests, then reviews and reuses takes", async ({
   page,
@@ -52,7 +55,11 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
         body: JSON.stringify(value),
       });
     if (path === "/api/me") return json(me);
-    if (path === "/api/uploads" && request.method() === "POST") {
+    if (path === "/api/uploads/chunk") return json({ ok: true });
+    if (path === "/api/uploads/finish" && request.method() === "POST") {
+      expect(request.headers()["x-workbench-scope"]).toBe(
+        `particl-active-${me.workspace.id}-${me.id}`,
+      );
       uploaded++;
       const video = uploaded > 2;
       return json({
@@ -352,4 +359,98 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   }
   expect(new Set(submissions.map((item) => item.key)).size).toBe(5);
   expect(errors).toEqual([]);
+});
+
+test("a stale Gen tab cannot upload into another workspace or another account in the same workspace", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "customer-1440x900",
+    "one real local captured-upload regression",
+  );
+  const first = await signInLocally(page.request);
+  const owner = await page.request
+    .get("/api/me")
+    .then((response) => response.json());
+  const captured = `particl-active-${owner.workspace.id}-${owner.id}`;
+  await page.goto("/generate?mode=video");
+  const picker = page.locator('input[type="file"][accept="image/*,video/*"]');
+  const bytes = await sharp({
+    create: { width: 512, height: 512, channels: 3, background: "#5b7280" },
+  })
+    .png()
+    .toBuffer();
+  async function select(name: string, stale = false) {
+    await expect(picker).toBeEnabled();
+    const response = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(stale ? "/api/uploads/chunk" : "/api/uploads/finish") &&
+        response.request().method() === "POST",
+    );
+    await picker.setInputFiles({ name, mimeType: "image/png", buffer: bytes });
+    const upload = await response;
+    expect(upload.request().headers()["x-workbench-scope"]).toBe(captured);
+    return upload;
+  }
+  const initial = await select("original-reference.png");
+  expect(initial.ok(), await initial.text()).toBe(true);
+  await signInLocally(page.request); // Cookie changes, while the original document stays mounted.
+  const member = await page.request
+    .get("/api/me")
+    .then((response) => response.json());
+  expect(member.workspace.id).not.toBe(first.workspace.id);
+  const foreign = await select("private-to-original-workspace.png", true);
+  expect(foreign.status()).toBe(409);
+  expect((await foreign.json()).error).toMatch(/account or workspace changed/i);
+  expect(
+    (await page.request.get("/api/uploads").then((response) => response.json()))
+      .uploads,
+  ).toEqual([]);
+
+  const code = randomBytes(18).toString("base64url");
+  const platform = createClient({ url: localPlatformDbUrl() });
+  try {
+    await platform.execute({
+      sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
+      args: [
+        code,
+        first.workspace.id,
+        member.email,
+        "Another crew member",
+        "member",
+        owner.id,
+        Date.now(),
+        Date.now() + 3_600_000,
+      ],
+    });
+  } finally {
+    platform.close();
+  }
+  const accepted = await page.request.post("/api/auth/accept", {
+    data: { code },
+  });
+  expect(accepted.ok(), await accepted.text()).toBe(true);
+  const current = await page.request
+    .get("/api/me")
+    .then((response) => response.json());
+  expect(current.workspace.id).toBe(first.workspace.id);
+  expect(current.id).not.toBe(owner.id);
+  expect((await select("private-to-original-account.png", true)).status()).toBe(
+    409,
+  );
+  expect(
+    (await page.request.get("/api/uploads").then((response) => response.json()))
+      .uploads,
+  ).toHaveLength(1);
+  const followup = await page.request.post("/api/cast", {
+    headers: { "X-Workbench-Scope": captured },
+    data: { name: "Old private character", kind: "character" },
+  });
+  expect(followup.status()).toBe(409);
+  expect(
+    (await page.request.get("/api/cast").then((response) => response.json()))
+      .cast,
+  ).toEqual([]);
 });

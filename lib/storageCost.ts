@@ -1,5 +1,5 @@
 import { db, ready, now } from "./db";
-import { usingBlob } from "./storage";
+import { usingBlob, videoPath, imagePath, audioPath } from "./storage";
 
 /**
  * What it costs to KEEP what we have made.
@@ -38,6 +38,8 @@ export type StorageLedger = {
   bytes: number;
   counted: number;
   unmeasured: number;
+  /** Removed from the library but still occupying storage until confirmed deletion. */
+  pendingDeletionBytes: number;
   monthlyUsd: number;
   yearlyUsd: number;
   byKind: { kind: string; n: number; bytes: number; monthlyUsd: number }[];
@@ -54,11 +56,12 @@ export async function storageLedger(): Promise<StorageLedger> {
     db().execute(`
       SELECT COALESCE(SUM(bytes),0) AS bytes,
              SUM(bytes IS NOT NULL) AS counted,
-             SUM(bytes IS NULL AND stored_url IS NOT NULL) AS unmeasured
-      FROM generations WHERE deleted = 0`),
+             SUM(bytes IS NULL AND stored_url IS NOT NULL) AS unmeasured,
+             COALESCE(SUM(CASE WHEN deleted=1 THEN bytes ELSE 0 END),0) AS pending_deletion_bytes
+      FROM generations WHERE deleted = 0 OR bytes>0 OR stored_url IS NOT NULL`),
     db().execute(`
       SELECT COALESCE(kind,'video') AS kind, COUNT(*) AS n, COALESCE(SUM(bytes),0) AS bytes
-      FROM generations WHERE deleted = 0 AND bytes IS NOT NULL
+      FROM generations WHERE bytes IS NOT NULL
       GROUP BY kind ORDER BY bytes DESC`),
     db().execute(`
       SELECT id, title, COALESCE(kind,'video') AS kind, bytes
@@ -71,6 +74,7 @@ export async function storageLedger(): Promise<StorageLedger> {
     bytes,
     counted: Number(t?.counted ?? 0),
     unmeasured: Number(t?.unmeasured ?? 0),
+    pendingDeletionBytes: Number(t?.pending_deletion_bytes ?? 0),
     monthlyUsd: monthlyUsd(bytes),
     yearlyUsd: monthlyUsd(bytes) * 12,
     byKind: kinds.rows.map((r: any) => ({
@@ -88,35 +92,33 @@ export async function storageLedger(): Promise<StorageLedger> {
 /**
  * Fill in the size of renders made before anyone was recording it.
  *
- * One `list()` per thousand blobs, each of which is a single advanced
- * operation costing five millionths of a dollar — so the whole backfill is
- * far cheaper than the storage it is measuring. Runs from the cron and stops
- * as soon as there is nothing left to learn.
+ * Look up only the tenant's missing objects. A bucket-wide listing could
+ * scan every customer's files and never find a non-legacy tenant's prefix.
  */
-export async function backfillSizes(limit = 2000): Promise<number> {
+export async function backfillSizes(limit = 20): Promise<number> {
   await ready();
   const missing = await db().execute({
     sql: `SELECT id, COALESCE(kind,'video') AS kind FROM generations
           WHERE deleted = 0 AND bytes IS NULL AND stored_url IS NOT NULL LIMIT ?`,
-    args: [limit],
+    args: [Math.max(1, Math.min(100, limit))],
   });
   if (!missing.rows.length) return 0;
 
   const want = new Map((missing.rows as any[]).map((r) => [r.id as string, r.kind as string]));
   const sizes = new Map<string, number>();
+  let failures = 0;
 
   if (usingBlob()) {
-    const { list } = await import("@vercel/blob");
-    let cursor: string | undefined;
-    do {
-      const page = await list({ prefix: "generations/", limit: 1000, cursor });
-      for (const b of page.blobs) {
-        // "generations/gen_abc.mp4" → "gen_abc"
-        const id = b.pathname.replace(/^generations\//, "").replace(/\.[a-z0-9]+$/i, "");
-        if (want.has(id)) sizes.set(id, b.size);
-      }
-      cursor = page.hasMore ? page.cursor : undefined;
-    } while (cursor);
+    const { head } = await import("@vercel/blob");
+    const entries = [...want];
+    for (let offset = 0; offset < entries.length; offset += 4) {
+      const results = await Promise.allSettled(entries.slice(offset, offset + 4).map(async ([id, kind]) => {
+        const pathname = kind === "image" ? imagePath(id) : kind === "audio" ? audioPath(id) : videoPath(id);
+        const metadata = await head(pathname, { abortSignal: AbortSignal.timeout(15_000) });
+        sizes.set(id, metadata.size);
+      }));
+      failures += results.filter((result) => result.status === "rejected").length;
+    }
   } else {
     // Local development keeps them on disk.
     const { stat } = await import("node:fs/promises");
@@ -137,5 +139,6 @@ export async function backfillSizes(limit = 2000): Promise<number> {
     });
     done++;
   }
+  if (failures) throw new Error("STORAGE_SIZE_LOOKUP_FAILED");
   return done;
 }

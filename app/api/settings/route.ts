@@ -33,4 +33,4 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
   }
   if (!changed.length) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
   return NextResponse.json({ settings: await allSettings(), changed });
-});
+}, { requireRequestScope: true });

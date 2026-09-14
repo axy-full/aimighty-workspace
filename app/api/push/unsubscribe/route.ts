@@ -10,4 +10,4 @@ export const POST = withTenant(async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   if (body.endpoint) await removeSubscription(String(body.endpoint));
   return NextResponse.json({ ok: true });
-});
+}, { requireRequestScope: true });

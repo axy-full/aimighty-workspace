@@ -1,4 +1,5 @@
 "use client";
+import UploadRecovery from "@/components/UploadRecovery";
 
 import Link from "next/link";
 import {type WorkbenchAccount} from "./WorkspaceMenu";
@@ -139,7 +140,7 @@ import {
   EditSettings,
   defaultEdits,
 } from "@/lib/workbench/studio-export";
-import {GenerationDialog,studioRequest,type GenerationTarget} from './GenerationDialog';
+import {GenerationDialog,studioRequest,StudioRequestError,type GenerationTarget} from './GenerationDialog';
 import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {useProductionJobs} from './use-production-jobs';
 import {uploadWorkbench} from '@/lib/workbench/upload';
@@ -370,6 +371,7 @@ export default function Studio({
   const [assetFilter, setAssetFilter] = useState("All assets");
   const [saveState, setSaveState] = useState(signedIn?"Loading":"Sample project");
   const [saveError, setSaveError] = useState("");
+  const [bibleConflict,setBibleConflict]=useState<{draftId:string;version:number;message:string}|null>(null);
   const [ready, setReady] = useState(false);
   const [initializedScope, setInitializedScope] = useState<string|null>(null);
   const hydrated = useSyncExternalStore(subscribeHydration, clientHydrated, serverHydrated);
@@ -469,7 +471,7 @@ export default function Studio({
       const snapshot=JSON.stringify(captured);
       if(savedSnapshots.current.get(captured.id)===snapshot)return;
       try{
-        const res=await fetch(apiBase+"/projects",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({project:captured,revision:revisions.current.get(captured.id)??0})});
+        const res=await fetch(apiBase+"/projects",{method:"PUT",headers:{"Content-Type":"application/json","X-Workbench-Scope":storageKey},body:JSON.stringify({project:captured,revision:revisions.current.get(captured.id)??0})});
         const data=await res.json() as {error?:string;revision:number;productionProjectId?:string;shotMappings?:Record<string,string>};
         if(!res.ok)throw new Error(data.error||"Save failed");
         revisions.current.set(captured.id,data.revision);
@@ -491,7 +493,7 @@ export default function Studio({
       }
     }).finally(()=>{savingWrites.current--;});
     return saveChain.current;
-  },[apiBase]);
+  },[apiBase,storageKey]);
   const drainSaves=useCallback(async(expectedId:string)=>{
     while(pRef.current.id===expectedId&&!failedSave.current){
       const latest=pRef.current;
@@ -530,6 +532,7 @@ export default function Studio({
     revisions.current.set(next.id,version);
     if(saved)savedSnapshots.current.set(next.id,JSON.stringify(persisted));else savedSnapshots.current.delete(next.id);
     pendingSave.current=null;failedSave.current=false;
+    setBibleConflict(null);
     history.current=[];future.current=[];
     pRef.current=next;setP(next);readyRef.current=true;setReady(true);
     setContextIds(next.assets.filter(asset=>asset.locked||asset.category==='Character').map(asset=>asset.id));
@@ -543,7 +546,7 @@ export default function Studio({
   const loadProject = useCallback(async(id:string)=>{
     const transition=await beginTransition();if(!transition)return;
     try{
-      const res=await fetch(apiBase+"/projects?id="+encodeURIComponent(id));
+      const res=await fetch(apiBase+"/projects?id="+encodeURIComponent(id),{headers:{"X-Workbench-Scope":storageKey}});
       const data=await res.json() as {error?:string;revision:number;project?:Project;projects?:{id:string;name:string}[];productions?:{id:string;name:string}[];shared?:{assets:Asset[];nodes:CanvasNode[];version:number}};
       if(!res.ok)throw new Error(data.error||'Unable to load your work.');
       if(transition.token!==loadToken.current)return;
@@ -563,7 +566,7 @@ export default function Studio({
       if(transition.token!==loadToken.current)return;
       readyRef.current=transition.wasReady;setReady(transition.wasReady);setSaveState('Not saved');setSaveError(error instanceof Error?error.message:'Unable to load your work.');
     }finally{endTransition(transition.token);}
-  },[apiBase,beginTransition,drainSaves,adoptProject,endTransition,signedIn]);
+  },[apiBase,beginTransition,drainSaves,adoptProject,endTransition,signedIn,storageKey]);
   useEffect(() => {
     if(!signedIn)return;
     // The shared async loader hydrates from the server after flushing any pending write.
@@ -797,7 +800,7 @@ export default function Studio({
       try {
         if(!signedIn)throw new Error('Sign in to upload production media.');
         if(!readyRef.current)throw new Error('Create a production before uploading media.');
-        const data=await uploadWorkbench(file);
+        const data=await uploadWorkbench(file,undefined,storageKey);
         received.push({
           id: data.id,
           uploadId: data.id,
@@ -918,7 +921,7 @@ export default function Studio({
   async function openProduction(id:string){
     const transition=await beginTransition();if(!transition)return;
     try{
-      const data=await studioRequest<{project:Project}>('/api/workbench/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'open',projectId:id})});
+      const data=await studioRequest<{project:Project}>('/api/workbench/projects',{method:'POST',headers:{'Content-Type':'application/json','X-Workbench-Scope':storageKey},body:JSON.stringify({action:'open',projectId:id})});
       if(transition.token!==loadToken.current)return;
       if(transition.wasReady&&signedIn&&!(await drainSaves(transition.from)))throw new Error('Your latest changes could not be saved.');
       if(transition.token!==loadToken.current)return;
@@ -931,10 +934,10 @@ export default function Studio({
     publishingRef.current=true;
     try{
       if(!(await ensureSaved(expectedId)))return false;
-      const data=await studioRequest<{version:number}>('/api/workbench/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'publish',projectId:expectedId})});
-      if(pRef.current.id===expectedId){const next={...pRef.current,bibleVersion:data.version};pRef.current=next;setP(next);toast.success('Shared project bible v'+data.version+' published.');}
+      const data=await studioRequest<{version:number;shared:{assets:Asset[];nodes:CanvasNode[]}}>('/api/workbench/projects',{method:'POST',headers:{'Content-Type':'application/json','X-Workbench-Scope':storageKey},body:JSON.stringify({action:'publish',projectId:expectedId,expectedBibleVersion:pRef.current.bibleVersion??0})});
+      if(pRef.current.id===expectedId){const next={...pRef.current,bibleVersion:data.version,...(data.shared?{sharedAssets:data.shared.assets,sharedNodes:data.shared.nodes,sharedAssetIds:data.shared.assets.map(a=>a.id),sharedNodeIds:data.shared.nodes.map(n=>n.id)}:{})};pRef.current=next;setP(next);setBibleConflict(null);toast.success('Shared project bible v'+data.version+' published.');}
       return true;
-    }catch(error){toast.error(error instanceof Error?error.message:'Could not publish.');return false;}
+    }catch(error){if(error instanceof StudioRequestError&&error.data.code==='bible_conflict'&&pRef.current.id===expectedId)setBibleConflict({draftId:expectedId,version:Number(error.data.currentVersion)||0,message:error.message});toast.error(error instanceof Error?error.message:'Could not publish.');return false;}
     finally{publishingRef.current=false;}
   }
   async function publishAsset(assetId:string){
@@ -1025,7 +1028,7 @@ export default function Studio({
   async function leaveWorkspace(path:string,action?:{kind:'switch';id:string}|{kind:'logout'}){
     const transition=await beginTransition();if(!transition)return;
     try{
-      if(action){const response=await fetch(action.kind==='switch'?'/api/workspaces/switch':'/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action.kind==='switch'?{id:action.id}:{})});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'Your account could not be changed.');}clearPrivateLocal();}
+      if(action){const response=await fetch(action.kind==='switch'?'/api/workspaces/switch':'/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json','X-Workbench-Scope':storageKey},body:JSON.stringify(action.kind==='switch'?{id:action.id}:{})});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'Your account could not be changed.');}clearPrivateLocal();}
       window.location.assign(path);
     }catch(error){readyRef.current=transition.wasReady;setReady(transition.wasReady);setSaveState(transition.wasReady?'Saved':'Choose a production');toast.error(error instanceof Error?error.message:'Your current work has been kept. Try again.');endTransition(transition.token);}
   }
@@ -1047,6 +1050,7 @@ export default function Studio({
   const latestPlan = p.plans.at(-1);
   return (
     <TooltipProvider delayDuration={250}>
+      <UploadRecovery scope={signedIn ? storageKey : null} />
       <div className="ps">
         <div
           className={
@@ -1289,6 +1293,11 @@ export default function Studio({
                 </button>
               </div>
             )}
+            {bibleConflict?.draftId===p.id&&<div className="save-banner" role="alert">
+              <TriangleAlert size={14}/><span>Shared context v{bibleConflict.version} is newer. Your private work is kept. Save it before loading the latest shared context, then choose what to publish again.</span>
+              <button disabled={transitioning} onClick={()=>void loadProject(p.id)}>Save &amp; load latest shared context</button>
+              <button onClick={()=>downloadFile(new Blob([JSON.stringify(p,null,2)],{type:'application/json'}),'particl-unpublished-context.json')}>Download current work</button>
+            </div>}
             <div
               className={"workspace-body " + (atomOpen ? "with-atomik" : "")}
             >
@@ -1446,6 +1455,7 @@ export default function Studio({
                           onDeliver={() => setStage("export")}
                           onPublish={publishSelection}
                           scope={scope}
+                          requestScope={storageKey}
                           onScope={setScope}
                           apiBase={apiBase}
                         />
@@ -3151,6 +3161,7 @@ export default function Studio({
             key={selected.id}
             asset={selected}
             project={p}
+            requestScope={storageKey}
             apiBase={apiBase}
             onClose={() => setSelectedAsset(null)}
             onUpdate={(fields) => {if(pRef.current.id===p.id)updateAsset(selected.id, fields);}}
@@ -3193,6 +3204,7 @@ export default function Studio({
 function AssetEditor({
   asset: a,
   project: p,
+  requestScope,
   apiBase,
   onClose,
   onUpdate,
@@ -3202,6 +3214,7 @@ function AssetEditor({
 }: {
   asset: Asset;
   project: Project;
+  requestScope: string;
   apiBase: string;
   onClose: () => void;
   onUpdate: (p: Partial<Asset>) => void;
@@ -3218,7 +3231,7 @@ function AssetEditor({
     setSaving(true);
     try {
       const blob = await renderImage(a.url, edits);
-      const data=await uploadWorkbench(new File([blob],safeName(a.name)+'-edit.png',{type:'image/png'}));
+      const data=await uploadWorkbench(new File([blob],safeName(a.name)+'-edit.png',{type:'image/png'}),undefined,requestScope);
       onNewAsset({
         ...a,
         id: data.id,

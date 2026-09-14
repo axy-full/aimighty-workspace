@@ -1,3 +1,4 @@
+import { withMediaSources } from "./mediaMutation";
 /**
  * Shots — the production unit.
  *
@@ -125,7 +126,7 @@ export async function createShot(input: {
   const sid = id("shot");
   const ts = now();
   const position = siblings.length ? Math.max(...siblings.map((s) => s.position)) + 1 : 0;
-  await db().execute({
+  await withMediaSources(input.setup, (tx) => tx.execute({
     sql: `INSERT INTO shots (id, project_id, scene, code, title, description, status, position,
                              created_by, created_at, updated_at, planned, setup, cast, kind, dirty, engine)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
@@ -135,7 +136,7 @@ export async function createShot(input: {
            input.planned == null ? null : Math.max(1, Math.min(60, Math.round(input.planned))),
            JSON.stringify(input.setup ?? {}), JSON.stringify((input.cast ?? []).slice(0, 20)),
            input.kind === "type" ? "type" : "render", input.engine ?? null],
-  });
+  }));
   return (await getShot(sid))!;
 }
 

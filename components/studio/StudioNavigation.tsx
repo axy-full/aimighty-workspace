@@ -8,6 +8,7 @@ import { Clapperboard, ScanLine, Building2 } from "lucide-react";
 import { Mark } from "@/components/ui/Mark";
 import WorkspaceMenu, { type WorkbenchAccount } from "@/components/workbench/WorkspaceMenu";
 import { clearPrivateLocal } from "@/lib/session";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { withPageLeaveGuard } from "@/lib/usePageLeaveGuard";
 import "./studio-navigation.css";
 
@@ -23,9 +24,9 @@ function sectionFor(path: string): Section {
   return /^\/(settings|team|billing|usage|statements)(\/|$)/.test(path) ? "workspace" : "studio";
 }
 
-async function changeAccount(action: "switch" | "logout", id?: string) {
+async function changeAccount(scopedFetch: ReturnType<typeof useScopedFetch>, action: "switch" | "logout", id?: string) {
   await withPageLeaveGuard(async () => {
-  const response = await fetch(action === "switch" ? "/api/workspaces/switch" : "/api/auth/logout", {
+  const response = await scopedFetch(action === "switch" ? "/api/workspaces/switch" : "/api/auth/logout", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(action === "switch" ? { id } : {}),
   });
@@ -38,14 +39,16 @@ async function changeAccount(action: "switch" | "logout", id?: string) {
   });
 }
 
-export default function StudioNavigation({ initialAccount, active, compact = false, onNavigate, onSwitch, onSignOut }: {
+export default function StudioNavigation({ initialAccount, active, compact = false, onNavigate, onSwitch, onSignOut, requestScope }: {
   initialAccount: WorkbenchAccount | null;
   active?: Section;
   compact?: boolean;
   onNavigate?: (path: string) => Promise<void>;
   onSwitch?: (id: string) => Promise<void>;
   onSignOut?: () => Promise<void>;
+  requestScope?: string | null;
 }) {
+  const scopedFetch = useScopedFetch(requestScope);
   const path = usePathname();
   const router = useRouter();
   const current = active ?? sectionFor(path);
@@ -68,7 +71,7 @@ export default function StudioNavigation({ initialAccount, active, compact = fal
           <Icon size={15} strokeWidth={1.6} /><span>{label}</span>
         </Link>)}
       </nav>
-      <WorkspaceMenu initial={initialAccount} onNavigate={navigate} onSwitch={onSwitch ?? (id => changeAccount("switch", id))} onSignOut={onSignOut ?? (() => changeAccount("logout"))} />
+      <WorkspaceMenu initial={initialAccount} onNavigate={navigate} onSwitch={onSwitch ?? (id => changeAccount(scopedFetch, "switch", id))} onSignOut={onSignOut ?? (() => changeAccount(scopedFetch, "logout"))} />
       {error && <p className="studio-navigation-error" role="alert">{error}</p>}
     </div>
   );

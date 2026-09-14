@@ -12,6 +12,8 @@ import { runInTenant } from "@/lib/tenant";
 import { getPlatformLayer } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
 import { creditsApply } from "@/lib/credits";
+import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scope";
+import UploadRecovery from "@/components/UploadRecovery";
 
 /**
  * The shell, for everyone.
@@ -32,10 +34,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = ctx?.user ?? null;
   // No accounts at all yet → the first person here becomes the platform's owner.
   if (!user && (await userCount()) === 0) redirect("/setup");
+  const requestScope = user ? ctx?.workspace ? workbenchScopeFor(ctx.workspace.id, user.id) : accountScopeFor(user.id) : null;
 
   return (
-    <SessionProvider value={{
+    <SessionProvider key={requestScope ?? "visitor"} value={{
       signedIn: Boolean(user),
+      requestScope,
       name: user?.name ?? null,
       email: user?.email ?? null,
       workspace: ctx?.workspace ? { id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest) } : null,
@@ -60,6 +64,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <ContextMenu />
       <DialogHost />
       <ViewportGuard />
+      <UploadRecovery scope={requestScope} />
     </ProjectProvider>
     </SessionProvider>
   );

@@ -27,4 +27,4 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
-});
+}, { requireRequestScope: true });

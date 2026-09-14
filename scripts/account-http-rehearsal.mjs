@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createClient } from "@libsql/client";
 import { request } from "@playwright/test";
+import { verifyUploadHttp } from "./upload-http-checks.mjs";
 
 if (process.env.VERCEL || process.env.NODE_ENV === "production")
   throw new Error("Local rehearsal only");
@@ -97,6 +98,8 @@ const server = createServer((req, res) => handle(req, res));
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 process.env.APP_ORIGIN = base;
+// Local storage paths must remain inside the disposable application too.
+process.chdir(projectDir);
 const { default: next } = await import("next");
 const app = next({
   dev: true,
@@ -183,6 +186,16 @@ try {
   const first = verified.workspace;
   const mine = await json(await api.get("/api/workspaces"), 200);
   assert.equal(mine.active, first.id);
+  const ownerId = String(
+    (
+      await p.execute(
+        "SELECT id FROM accounts WHERE email='customer@example.test'",
+      )
+    ).rows[0].id,
+  );
+  const ownerHeaders = {
+    "X-Workbench-Scope": `particl-active-${first.id}-${ownerId}`,
+  };
   assert.equal(mine.workspaces.length, 1);
   assert.equal(
     (
@@ -203,7 +216,10 @@ try {
     "invite",
   );
   await json(
-    await api.patch("/api/workspaces", { data: { name: "Customer renamed" } }),
+    await api.patch("/api/workspaces", {
+      headers: ownerHeaders,
+      data: { name: "Customer renamed" },
+    }),
     200,
   );
   await json(
@@ -215,6 +231,7 @@ try {
   );
   const token = await json(
     await api.post("/api/tokens", {
+      headers: ownerHeaders,
       data: { name: "Read only", scope: "read" },
     }),
     200,
@@ -276,6 +293,36 @@ try {
     ).result.isError,
     true,
   );
+  for (const endpoint of [
+    "login",
+    "logout",
+    "setup",
+    "reset",
+    "reset/invalid-token",
+  ]) {
+    await json(
+      await api.post("/api/auth/" + endpoint, {
+        headers: {
+          Origin: "https://attacker.example",
+          "Content-Type": "text/plain",
+        },
+        data: JSON.stringify({ email: "attacker@example.test", password }),
+      }),
+      403,
+    );
+  }
+  assert.equal(
+    (await json(await api.get("/api/workspaces"), 200)).active,
+    first.id,
+  );
+  await verifyUploadHttp({
+    api,
+    context,
+    platform: p,
+    json,
+    workspaceId: first.id,
+    email: body.email,
+  });
   // Zero-grant customers cannot render before funding. A local ledger fixture,
   // not a checkout or provider payment, then exercises the real mock render path.
   const project = await json(
@@ -532,6 +579,7 @@ try {
   assert.ok(!mcpUsage.result.content[0].text.includes("$"));
   const team = await json(
     await api.post("/api/team", {
+      headers: ownerHeaders,
       data: { email: "teammate@example.test", name: "Teammate", send: true },
     }),
     200,
@@ -556,8 +604,18 @@ try {
     (await json(await member.get("/api/workspaces"), 200)).active,
     first.id,
   );
+  const memberScopeId = String(
+    (
+      await p.execute(
+        "SELECT id FROM accounts WHERE email='teammate@example.test'",
+      )
+    ).rows[0].id,
+  );
   const memberToken = await json(
     await member.post("/api/tokens", {
+      headers: {
+        "X-Workbench-Scope": `particl-active-${first.id}-${memberScopeId}`,
+      },
       data: { name: "Team read", scope: "read" },
     }),
     200,
@@ -574,7 +632,10 @@ try {
     ).rows[0].id,
   );
   await json(
-    await api.patch("/api/team/" + memberId, { data: { disabled: true } }),
+    await api.patch("/api/team/" + memberId, {
+      headers: ownerHeaders,
+      data: { disabled: true },
+    }),
     200,
   );
   await json(await memberRead.get("/api/projects"), 401);
@@ -583,7 +644,10 @@ try {
     "Not signed in",
   );
   await json(
-    await api.patch("/api/team/" + memberId, { data: { disabled: false } }),
+    await api.patch("/api/team/" + memberId, {
+      headers: ownerHeaders,
+      data: { disabled: false },
+    }),
     200,
   );
   await json(
@@ -601,6 +665,7 @@ try {
     ["a", "b"].map(async (suffix) =>
       json(
         await api.post("/api/team", {
+          headers: ownerHeaders,
           data: {
             email: `concurrent-${suffix}@example.test`,
             name: "Concurrent " + suffix,
@@ -624,15 +689,21 @@ try {
   const second = (
     await json(
       await api.post("/api/workspaces", {
+        headers: ownerHeaders,
         data: { name: "Second customer house" },
       }),
       201,
     )
   ).workspace;
   assert.notEqual(second.id, first.id);
+  // Creation selected the new room; subsequent requests capture that context.
+  const secondHeaders = {
+    "X-Workbench-Scope": `particl-active-${second.id}-${ownerId}`,
+  };
   const replay = (
     await json(
       await api.post("/api/workspaces", {
+        headers: secondHeaders,
         data: { name: "Second customer house" },
       }),
       201,
@@ -653,12 +724,56 @@ try {
     0,
   );
   await json(
-    await api.post("/api/workspaces/switch", { data: { id: first.id } }),
+    await api.post("/api/workspaces/switch", {
+      headers: secondHeaders,
+      data: { id: first.id },
+    }),
     200,
   );
   assert.equal(
     (await json(await api.get("/api/workspaces"), 200)).active,
     first.id,
+  );
+  // Reset is a real routed cookie transition, with mail delivered only to this sink.
+  await json(
+    await api.post("/api/auth/reset", { data: { email: body.email } }),
+    200,
+  );
+  let resetToken;
+  for (let attempt = 0; attempt < 100 && !resetToken; attempt++) {
+    resetToken = mail
+      .flatMap((message) =>
+        [
+          ...String(message.text).matchAll(
+            /http:\/\/[^\s]+\/reset\/([A-Za-z0-9_-]+)/g,
+          ),
+        ].map((match) => match[1]),
+      )
+      .at(-1);
+    if (!resetToken) await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(resetToken, "Password reset stayed in the local mail sink");
+  const resetBrowser = await context();
+  const nextPassword = "Reset local HTTP passphrase 44";
+  await json(
+    await resetBrowser.post("/api/auth/reset/" + resetToken, {
+      data: { password: nextPassword },
+    }),
+    200,
+  );
+  await json(await api.get("/api/workspaces"), 401);
+  assert.equal(
+    (await json(await resetBrowser.get("/api/workspaces"), 200)).active,
+    first.id,
+  );
+  await json(
+    await resetBrowser.post("/api/auth/reset/" + resetToken, {
+      data: { password: nextPassword },
+    }),
+    410,
+  );
+  console.log(
+    "PASS: HTTP password reset spends its link, revokes prior session cookies and creates a working new session.",
   );
   // Next dev checks its latest npm version. That framework request is also
   // blocked; any attempted provider request still fails this rehearsal.

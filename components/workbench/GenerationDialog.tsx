@@ -170,7 +170,7 @@ export function GenerationDialog({
           productionProjectId: string;
         }>("/api/workbench/projects", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
           body: JSON.stringify({
             action: "map-shot",
             projectId: project.id,
@@ -194,6 +194,8 @@ export function GenerationDialog({
               new File([blob], a.name, {
                 type: a.mime || blob.type || "image/webp",
               }),
+              undefined,
+              scope,
             );
             onAsset(a.id, { uploadId: uploaded.id });
             references.push({ uploadId: uploaded.id, role });
@@ -228,6 +230,7 @@ export function GenerationDialog({
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": attempt.key,
+          "X-Workbench-Scope": scope,
         },
         body: attempt.body,
       });

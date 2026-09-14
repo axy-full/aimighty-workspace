@@ -1,3 +1,4 @@
+import { SECURITY_AUDIT_SCHEMA, securityAuditStatement } from "./securityAudit";
 import { createClient, type Client } from "@libsql/client";
 import { isPaidKind, type GrantKind } from "./creditTerms";
 import { asPlanId, planById, DEFAULT_PLANS, type PlanId, type PlanDef } from "./plans";
@@ -41,6 +42,7 @@ export const isSuperAdmin = (email: string | null | undefined) =>
   Boolean(email) && String(email).trim().toLowerCase() === SUPER_ADMIN_EMAIL;
 
 const SCHEMA = [
+  ...SECURITY_AUDIT_SCHEMA,
   `CREATE TABLE IF NOT EXISTS accounts (
      id            TEXT PRIMARY KEY,
      email         TEXT NOT NULL UNIQUE,
@@ -502,11 +504,12 @@ export async function createWorkspace(input: { name: string; owner: { id: string
 }
 
 /** Whose keys a workspace's engines run on. */
-export async function setWorkspaceMode(id: string, usesPlatformKeys: boolean): Promise<void> {
-  await platformDb().execute({
+export async function setWorkspaceMode(id: string, usesPlatformKeys: boolean, actorId: string | null = null): Promise<void> {
+  await platformReady();
+  await platformDb().batch([{
     sql: `UPDATE workspaces SET uses_platform_keys = ?, updated_at = ? WHERE id = ? AND legacy = 0`,
     args: [usesPlatformKeys ? 1 : 0, now(), id],
-  });
+  }, securityAuditStatement({ workspaceId:id, actorId, action:"workspace.mode_changed", targetType:"workspace", targetId:id, details:{mode:usesPlatformKeys?"platform":"own"}}, true)], "write");
 }
 
 /** Dollars a month on the platform's keys; null returns it to the deployment's default. */
@@ -631,6 +634,19 @@ export async function setWorkspaceKeys(id: string, keys: Record<string, string>)
   });
 }
 
+/** Read the current sealed set inside the transaction so two vendor edits cannot lose each other. */
+export async function updateWorkspaceVendorKey(id: string, name: string, value: string | null, actorId: string): Promise<void> {
+  const { accountTransaction, AccountError } = await import("./accountDb");
+  await accountTransaction(async (tx) => {
+    const row = (await tx.execute({sql:"SELECT keys_enc FROM workspaces WHERE id=? AND legacy=0 AND deleted_at IS NULL",args:[id]})).rows[0];
+    if (!row) throw new AccountError("Workspace keys are unavailable.", 404);
+    const keys: Record<string,string> = row.keys_enc ? JSON.parse(open(String(row.keys_enc))) : {};
+    if (value === null) delete keys[name]; else keys[name] = value;
+    await tx.execute({sql:"UPDATE workspaces SET keys_enc=?,updated_at=? WHERE id=?",args:[Object.keys(keys).length ? seal(JSON.stringify(keys)) : null, now(), id]});
+    await tx.execute(securityAuditStatement({workspaceId:id,actorId,action:value===null?"vendor_key.removed":"vendor_key.updated",targetType:"vendor",targetId:name}));
+  });
+}
+
 /* ── sessions ─────────────────────────────────────────────────────────── */
 
 const SESSION_DAYS = 30;
@@ -638,15 +654,20 @@ export async function createPlatformSession(accountId: string, workspaceId: stri
   await platformReady();
   const token = randomBytes(32).toString("base64url");
   const ts = now();
-  await platformDb().execute({
+  await platformDb().batch([{
     sql: `INSERT INTO p_sessions (token_hash, account_id, workspace_id, created_at, expires_at) VALUES (?,?,?,?,?)`,
     args: [hashToken(token), accountId, workspaceId, ts, ts + SESSION_DAYS * 86400_000],
-  });
+  }, securityAuditStatement({workspaceId,actorId:accountId,action:"session.created",targetType:"account",targetId:accountId})], "write");
   return token;
 }
 export async function destroyPlatformSession(token: string): Promise<void> {
-  await platformReady();
-  await platformDb().execute({ sql: `DELETE FROM p_sessions WHERE token_hash = ?`, args: [hashToken(token)] });
+  const { accountTransaction } = await import("./accountDb");
+  await accountTransaction(async (tx) => {
+    const row=(await tx.execute({sql:"SELECT account_id,workspace_id FROM p_sessions WHERE token_hash=?",args:[hashToken(token)]})).rows[0];
+    if (!row) return;
+    await tx.execute({sql:"DELETE FROM p_sessions WHERE token_hash=?",args:[hashToken(token)]});
+    await tx.execute(securityAuditStatement({workspaceId:row.workspace_id==null?null:String(row.workspace_id),actorId:String(row.account_id),action:"session.revoked",targetType:"account",targetId:String(row.account_id)},true));
+  });
 }
 export async function destroyAccountSessions(accountId: string): Promise<void> {
   await platformReady();
@@ -654,7 +675,12 @@ export async function destroyAccountSessions(accountId: string): Promise<void> {
 }
 export async function switchSessionWorkspace(token: string, workspaceId: string): Promise<void> {
   await platformReady();
-  await platformDb().execute({ sql: `UPDATE p_sessions SET workspace_id = ? WHERE token_hash = ?`, args: [workspaceId, hashToken(token)] });
+  const row=(await platformDb().execute({sql:"SELECT account_id FROM p_sessions WHERE token_hash=?",args:[hashToken(token)]})).rows[0];
+  if(!row) return;
+  await platformDb().batch([
+    {sql:"UPDATE p_sessions SET workspace_id=? WHERE token_hash=?",args:[workspaceId,hashToken(token)]},
+    securityAuditStatement({workspaceId,actorId:String(row.account_id),action:"session.workspace_changed",targetType:"workspace",targetId:workspaceId},true),
+  ], "write");
 }
 /** The account behind a session token and the workspace it is in, or null. */
 export async function sessionLookup(token: string): Promise<{ account: any; workspaceId: string | null } | null> {

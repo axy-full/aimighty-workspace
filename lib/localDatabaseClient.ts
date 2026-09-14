@@ -36,11 +36,16 @@ export function createPlatformDatabaseClient(config: Config): Client {
     ? fileURLToPath(config.url)
     : decodeURIComponent(value.split(/[?#]/, 1)[0]);
   const canonical = file === ":memory:" ? config.url : resolve(file);
-  const key = JSON.stringify({ ...config, url: canonical });
+  // Native SQLite waits on another process's short lock. This driver option
+  // applies to transaction replacement connections and reconnects too; a PRAGMA
+  // on only the first connection would silently stop protecting later work.
+  // Explicit timeout: 0 remains available for callers that require fail-fast.
+  const localConfig = { ...config, timeout: config.timeout ?? 2_000 };
+  const key = JSON.stringify({ ...localConfig, url: canonical });
   const clients = (cache.particlLocalPlatformClients ??= new Map());
   const existing = clients.get(key);
   if (existing && !existing.closed) return existing;
-  const client = new LocalPlatformClient(createClient(config));
+  const client = new LocalPlatformClient(createClient(localConfig));
   clients.set(key, client);
   return client;
 }

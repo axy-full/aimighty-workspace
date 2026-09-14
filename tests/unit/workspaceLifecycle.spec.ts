@@ -125,7 +125,7 @@ test("workspace export includes shared production records and owner drafts but e
     );
     const other = newProject("Collaborator work");
     await saveDraft("collaborator", { ...other, brief: "published brief" }, 0);
-    await publishBible("collaborator", "Collaborator", other.id);
+    await publishBible("collaborator", "Collaborator", other.id, 0);
     await saveDraft(
       "collaborator",
       { ...other, brief: "PRIVATE-COLLABORATOR-SECRET" },

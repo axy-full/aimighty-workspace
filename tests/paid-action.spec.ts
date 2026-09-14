@@ -179,7 +179,8 @@ test("asset training retains its identity through close and retries one asset cr
             true,
           );
     }
-    if (path === "/api/uploads" && r.method() === "POST")
+    if (path === "/api/uploads/chunk") return json({ ok: true });
+    if (path === "/api/uploads/finish" && r.method() === "POST")
       return json(
         {
           id: "upload-face",

@@ -1,3 +1,6 @@
+import type { Transaction } from "@libsql/client";
+import { mediaMutation, validateMediaSources } from "./mediaMutation";
+import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
 import { falConfigured, falSubmit, falStatus, falResult, falAwait, progressFromLogs, falSubmissionRejected } from "./fal";
 import { readUploadBytes, storeIdentityZip, storeImageBytes, presignedReadUrl, usingBlob } from "./storage";
@@ -9,6 +12,10 @@ import { fetchBytes } from "./mockFs";
 import { currentTenant, requireTenant } from "./tenant";
 import { reserveGenerationSpend } from "./generationRequests";
 import { claimRender } from "./renderWork";
+import {
+  writeGenerationOutcome,
+  deliverGenerationSettlement,
+} from "./generationSettlement";
 
 /**
  * Identities — a real face, learned.
@@ -146,70 +153,145 @@ export function triggerFor(name: string): string {
 }
 
 export async function createIdentity(input: {
-  name: string; description: string; photos: string[]; projectId: string | null; userId: string;
+  name: string;
+  description: string;
+  photos: string[];
+  projectId: string | null;
+  userId: string;
 }): Promise<Identity> {
   await ready();
   const problem = nameProblem(input.name);
   if (problem) throw new Error(problem);
-  const clash = await db().execute({
-    sql: `SELECT id FROM identities WHERE LOWER(name) = LOWER(?) AND (project_id IS ? OR project_id IS NULL OR ? IS NULL) LIMIT 1`,
-    args: [input.name.trim(), input.projectId, input.projectId],
-  });
-  if (clash.rows.length) throw new Error(`There is already an identity called ${input.name.trim()}.`);
-  const cast = await db().execute({
-    sql: `SELECT id FROM cast_members WHERE LOWER(name) = LOWER(?) LIMIT 1`, args: [input.name.trim()],
-  });
-  if (cast.rows.length) throw new Error(`@${input.name.trim()} is already in the cast — pick another name, or remove them first.`);
-  const photos = await verifiedPhotos(input.photos);
   const id = newId("idn");
-  const ts = now();
-  await db().execute({
-    sql: `INSERT INTO identities (id, project_id, name, description, photos, status, provider, cover_upload_id, created_by, created_at, updated_at)
+  await mediaMutation(async (tx) => {
+    const clash = await tx.execute({
+      sql: `SELECT id FROM identities WHERE LOWER(name) = LOWER(?) AND (project_id IS ? OR project_id IS NULL OR ? IS NULL) LIMIT 1`,
+      args: [input.name.trim(), input.projectId, input.projectId],
+    });
+    if (clash.rows.length)
+      throw new Error(
+        `There is already an identity called ${input.name.trim()}.`,
+      );
+    const cast = await tx.execute({
+      sql: `SELECT id FROM cast_members WHERE LOWER(name) = LOWER(?) LIMIT 1`,
+      args: [input.name.trim()],
+    });
+    if (cast.rows.length)
+      throw new Error(
+        `@${input.name.trim()} is already in the cast — pick another name, or remove them first.`,
+      );
+    const photos = await verifiedPhotos(tx, input.photos);
+    const ts = now();
+    await tx.execute({
+      sql: `INSERT INTO identities (id, project_id, name, description, photos, status, provider, cover_upload_id, created_by, created_at, updated_at)
           VALUES (?,?,?,?,?,'draft','fal',?,?,?,?)`,
-    args: [id, input.projectId, input.name.trim(), input.description.trim().slice(0, 400), JSON.stringify(photos), photos[0] ?? null, input.userId, ts, ts],
+      args: [
+        id,
+        input.projectId,
+        input.name.trim(),
+        input.description.trim().slice(0, 400),
+        JSON.stringify(photos),
+        photos[0] ?? null,
+        input.userId,
+        ts,
+        ts,
+      ],
+    });
   });
   return (await getIdentity(id))!;
 }
 
 /** Only image uploads that exist, in the order given, capped. */
-async function verifiedPhotos(ids: string[]): Promise<string[]> {
-  const wanted = [...new Set(ids.filter((x) => typeof x === "string" && /^[A-Za-z0-9_-]+$/.test(x)))].slice(0, MAX_PHOTOS);
+async function verifiedPhotos(
+  tx: Transaction,
+  ids: string[],
+): Promise<string[]> {
+  const wanted = [
+    ...new Set(
+      ids.filter((x) => typeof x === "string" && /^[A-Za-z0-9_-]+$/.test(x)),
+    ),
+  ].slice(0, MAX_PHOTOS);
   if (!wanted.length) return [];
-  const rs = await db().execute({
+  const rs = await tx.execute({
     sql: `SELECT id FROM uploads WHERE id IN (${wanted.map(() => "?").join(",")}) AND kind='image'`,
     args: wanted,
   });
   const ok = new Set(rs.rows.map((r: any) => r.id as string));
-  return wanted.filter((x) => ok.has(x));
+  if (wanted.some((x) => !ok.has(x)))
+    throw new MediaSourceError(
+      "A referenced upload is no longer available as an image. Remove or replace it before saving.",
+    );
+  return wanted;
 }
 
-export async function updateIdentity(id: string, patch: {
-  name?: string; description?: string; photos?: string[]; coverUploadId?: string | null;
-}): Promise<Identity> {
-  const cur = await getIdentity(id);
-  if (!cur) throw new Error("No such identity.");
-  if (cur.status === "training") throw new Error("It's training — wait for it to finish before changing it.");
-  const sets: string[] = []; const args: any[] = [];
-  if (patch.name !== undefined) {
-    const problem = nameProblem(patch.name); if (problem) throw new Error(problem);
-    sets.push("name=?"); args.push(patch.name.trim());
-  }
-  if (patch.description !== undefined) { sets.push("description=?"); args.push(patch.description.trim().slice(0, 400)); }
-  if (patch.photos !== undefined) {
-    const photos = await verifiedPhotos(patch.photos);
-    sets.push("photos=?"); args.push(JSON.stringify(photos));
-    // Photos changed under a trained model: the model is now of a different set.
-    if (cur.status === "ready" && JSON.stringify(photos) !== JSON.stringify(cur.photos)) {
-      sets.push("status='draft'", "lora_url=NULL", "config_url=NULL", "trained_at=NULL");
+export async function updateIdentity(
+  id: string,
+  patch: {
+    name?: string;
+    description?: string;
+    photos?: string[];
+    coverUploadId?: string | null;
+  },
+): Promise<Identity> {
+  await mediaMutation(async (tx) => {
+    const row = (
+      await tx.execute({ sql: `${SELECT} WHERE i.id=?`, args: [id] })
+    ).rows[0];
+    const cur = row ? rowToIdentity(row) : null;
+    if (!cur) throw new Error("No such identity.");
+    if (cur.status === "training")
+      throw new Error(
+        "It's training — wait for it to finish before changing it.",
+      );
+    const sets: string[] = [];
+    const args: any[] = [];
+    if (patch.name !== undefined) {
+      const problem = nameProblem(patch.name);
+      if (problem) throw new Error(problem);
+      sets.push("name=?");
+      args.push(patch.name.trim());
     }
-    if (patch.coverUploadId === undefined && (!cur.coverUploadId || !photos.includes(cur.coverUploadId))) {
-      sets.push("cover_upload_id=?"); args.push(photos[0] ?? null);
+    if (patch.description !== undefined) {
+      sets.push("description=?");
+      args.push(patch.description.trim().slice(0, 400));
     }
-  }
-  if (patch.coverUploadId !== undefined) { sets.push("cover_upload_id=?"); args.push(patch.coverUploadId); }
-  if (!sets.length) return cur;
-  sets.push("updated_at=?"); args.push(now(), id);
-  await db().execute({ sql: `UPDATE identities SET ${sets.join(", ")} WHERE id=?`, args });
+    if (patch.photos !== undefined) {
+      const photos = await verifiedPhotos(tx, patch.photos);
+      sets.push("photos=?");
+      args.push(JSON.stringify(photos));
+      // Photos changed under a trained model: the model is now of a different set.
+      if (
+        cur.status === "ready" &&
+        JSON.stringify(photos) !== JSON.stringify(cur.photos)
+      ) {
+        sets.push(
+          "status='draft'",
+          "lora_url=NULL",
+          "config_url=NULL",
+          "trained_at=NULL",
+        );
+      }
+      if (
+        patch.coverUploadId === undefined &&
+        (!cur.coverUploadId || !photos.includes(cur.coverUploadId))
+      ) {
+        sets.push("cover_upload_id=?");
+        args.push(photos[0] ?? null);
+      }
+    }
+    if (patch.coverUploadId !== undefined) {
+      await validateMediaSources(tx, { uploadId: patch.coverUploadId });
+      sets.push("cover_upload_id=?");
+      args.push(patch.coverUploadId);
+    }
+    if (!sets.length) return cur;
+    sets.push("updated_at=?");
+    args.push(now(), id);
+    await tx.execute({
+      sql: `UPDATE identities SET ${sets.join(", ")} WHERE id=?`,
+      args,
+    });
+  });
   return (await getIdentity(id))!;
 }
 
@@ -384,28 +466,57 @@ async function markFailed(id: string, error: string): Promise<void> {
 
 /** A trained identity is also a cast character, so @Name works everywhere. */
 async function joinCast(identity: Identity): Promise<string | null> {
-  if (identity.castId) {
-    const have = await db().execute({ sql: `SELECT id FROM cast_members WHERE id=?`, args: [identity.castId] });
-    if (have.rows.length) return identity.castId;
-  }
-  const clash = await db().execute({ sql: `SELECT id FROM cast_members WHERE LOWER(name)=LOWER(?) LIMIT 1`, args: [identity.name] });
-  if (clash.rows.length) return clash.rows[0].id as string;
-  const cid = newId("cast");
-  await db().execute({
-    sql: `INSERT INTO cast_members (id, project_id, name, kind, description, upload_id, created_by, created_at)
-          VALUES (?,?,?,?,?,?,?,?)`,
-    args: [cid, identity.projectId, identity.name, "character", identity.description, identity.coverUploadId ?? identity.photos[0] ?? null, identity.createdBy, now()],
+  return mediaMutation(async (tx) => {
+    if (identity.castId) {
+      const have = await tx.execute({
+        sql: `SELECT id FROM cast_members WHERE id=?`,
+        args: [identity.castId],
+      });
+      if (have.rows.length) return identity.castId;
+    }
+    const clash = await tx.execute({
+      sql: `SELECT id FROM cast_members WHERE LOWER(name)=LOWER(?) LIMIT 1`,
+      args: [identity.name],
+    });
+    if (clash.rows.length) return clash.rows[0].id as string;
+    const cid = newId("cast");
+    await validateMediaSources(tx, {
+      uploadId: identity.coverUploadId ?? identity.photos[0] ?? null,
+    });
+    await tx.execute({
+      sql: `INSERT INTO cast_members (id, project_id, name, kind, description, upload_id, created_by, created_at)
+            VALUES (?,?,?,?,?,?,?,?)`,
+      args: [
+        cid,
+        identity.projectId,
+        identity.name,
+        "character",
+        identity.description,
+        identity.coverUploadId ?? identity.photos[0] ?? null,
+        identity.createdBy,
+        now(),
+      ],
+    });
+    return cid;
   });
-  return cid;
 }
 
 /** For the cron: every identity still training gets a look. */
-export async function syncTrainingIdentities(limit = 10): Promise<void> {
+export async function syncTrainingIdentities(
+  limit = 10,
+): Promise<{ attempted: number; failed: number }> {
   await ready();
   const rs = await db().execute({
-    sql: `${SELECT} WHERE i.status='training' ORDER BY i.updated_at ASC LIMIT ?`, args: [limit],
+    sql: `${SELECT} WHERE i.status='training' ORDER BY i.updated_at ASC LIMIT ?`,
+    args: [limit],
   });
-  await Promise.allSettled(rs.rows.map((r) => syncIdentity(rowToIdentity(r))));
+  const results = await Promise.allSettled(
+    rs.rows.map((r) => syncIdentity(rowToIdentity(r))),
+  );
+  return {
+    attempted: results.length,
+    failed: results.filter((result) => result.status === "rejected").length,
+  };
 }
 
 /* ── Rendering ─────────────────────────────────────────────────────── */
@@ -457,13 +568,33 @@ function renderInput(identity: Identity, opts: { prompt: string; ratio: string; 
  */
 class RenderRefused extends Error {}
 
-async function failRender(genId: string, message: string, startedAt: number, rejected = false): Promise<void> {
-  await db().execute({
-    sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=?`,
-    args: [message.slice(0, 600), Math.max(0, now() - startedAt), now(), genId],
-  }).catch(() => {});
-  await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "failed",
-                engineCostUsd: rejected ? 0 : null, durationMs: Math.max(0, now() - startedAt) }, { critical: false }).catch(() => {});
+async function failRender(
+  genId: string,
+  message: string,
+  startedAt: number,
+  rejected = false,
+): Promise<void> {
+  await writeGenerationOutcome(
+    {
+      sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+      args: [
+        message.slice(0, 600),
+        Math.max(0, now() - startedAt),
+        now(),
+        genId,
+      ],
+    },
+    {
+      id: genId,
+      kind: "image",
+      engine: "fal",
+      model: RENDERER,
+      status: "failed",
+      engineCostUsd: rejected ? 0 : null,
+      durationMs: Math.max(0, now() - startedAt),
+    },
+  );
+  await deliverGenerationSettlement(genId);
   invalidate(PROJECTS_KEY);
 }
 
@@ -472,10 +603,18 @@ async function failRender(genId: string, message: string, startedAt: number, rej
  * price it. Shared by the live path and by the cron's recovery, so a render
  * rescued an hour later is recorded exactly like one that never stumbled.
  */
-async function finishRender(genId: string, out: RenderResult, startedAt: number, seed: number | null): Promise<void> {
+async function finishRender(
+  genId: string,
+  out: RenderResult,
+  startedAt: number,
+  seed: number | null,
+): Promise<void> {
   const img = out.images?.[0];
   if (!img?.url) throw new RenderRefused("fal.ai returned no image.");
-  if (out.has_nsfw_concepts?.[0]) throw new RenderRefused("The safety checker flagged this render. Reword the prompt.");
+  if (out.has_nsfw_concepts?.[0])
+    throw new RenderRefused(
+      "The safety checker flagged this render. Reword the prompt.",
+    );
   let bytes = await fetchBytes(img.url);
   const sharp = (await import("sharp")).default;
   const meta = await sharp(bytes).metadata();
@@ -483,18 +622,45 @@ async function finishRender(genId: string, out: RenderResult, startedAt: number,
   if (meta.format !== "png") bytes = await sharp(bytes).png().toBuffer();
   // fal has already rendered and billed this. A Blob blip must not be the
   // thing that loses it; the put is idempotent, so trying again is free.
-  const { value: stored } = await withRetry(() => storeImageBytes(genId, bytes), { max: 3 });
-  const mp = ((img.width ?? meta.width ?? 1024) * (img.height ?? meta.height ?? 1024)) / 1_000_000;
-  const cost = Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) / 10_000;
-  await db().execute({
-    sql: `UPDATE generations
+  const { value: stored } = await withRetry(
+    () => storeImageBytes(genId, bytes),
+    { max: 3 },
+  );
+  const mp =
+    ((img.width ?? meta.width ?? 1024) * (img.height ?? meta.height ?? 1024)) /
+    1_000_000;
+  const cost =
+    Math.round(Math.max(1, Math.ceil(mp)) * RENDER_USD_PER_MP * 10_000) /
+    10_000;
+  await writeGenerationOutcome(
+    {
+      sql: `UPDATE generations
           SET status='succeeded', stored_url=?, cost_usd=?, error=NULL, duration_ms=?, bytes=?,
               params=json_set(params, '$.seed', ?, '$.width', ?, '$.height', ?), updated_at=?
           WHERE id=?`,
-    args: [stored.url, cost, Math.max(0, now() - startedAt), stored.bytes, out.seed ?? seed ?? null,
-           img.width ?? meta.width ?? null, img.height ?? meta.height ?? null, now(), genId],
-  });
-  await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "succeeded", engineCostUsd: cost, durationMs: Math.max(0, now() - startedAt) }, { critical: false });
+      args: [
+        stored.url,
+        cost,
+        Math.max(0, now() - startedAt),
+        stored.bytes,
+        out.seed ?? seed ?? null,
+        img.width ?? meta.width ?? null,
+        img.height ?? meta.height ?? null,
+        now(),
+        genId,
+      ],
+    },
+    {
+      id: genId,
+      kind: "image",
+      engine: "fal",
+      model: RENDERER,
+      status: "succeeded",
+      engineCostUsd: cost,
+      durationMs: Math.max(0, now() - startedAt),
+    },
+  );
+  await deliverGenerationSettlement(genId);
   invalidate(PROJECTS_KEY);
 }
 
@@ -554,9 +720,15 @@ export async function runIdentityRender(genId: string, identity: Identity, opts:
  * Anything genuinely still working is left alone; it only gives up once the
  * job has had far longer than a real render could need.
  */
-export async function reconcileFalRender(row: {
-  id: string; requestId: string; createdAt: number; seed: number | null;
-}): Promise<void> {
+export async function reconcileFalRender(
+  row: {
+    id: string;
+    requestId: string;
+    createdAt: number;
+    seed: number | null;
+  },
+  options: { strict?: boolean } = {},
+): Promise<void> {
   let st;
   try {
     st = await falStatus(RENDERER, row.requestId);
@@ -564,22 +736,34 @@ export async function reconcileFalRender(row: {
     const msg = (e as Error).message;
     // A job fal no longer knows about is never coming back.
     if (/\b404\b|not found/i.test(msg)) {
-      await failRender(row.id, "fal.ai no longer has this job. Render again.", row.createdAt);
+      await failRender(
+        row.id,
+        "fal.ai no longer has this job. Render again.",
+        row.createdAt,
+      );
       return;
     }
     // Anything else is weather, and the next run of the cron asks again —
     // but not for ever. A row nobody can ever get an answer about would
     // otherwise spin on the wall until someone deleted it by hand.
     if (now() - row.createdAt > RENDER_UNREACHABLE_CEILING_MS) {
-      await failRender(row.id,
+      await failRender(
+        row.id,
         `Could not reach fal.ai to find out how this render went: ${msg} ` +
-        "If it did complete, fal will still have charged for it.", row.createdAt);
+          "If it did complete, fal will still have charged for it.",
+        row.createdAt,
+      );
     }
+    if (options.strict) throw e;
     return;
   }
   if (st.status !== "COMPLETED") {
     if (now() - row.createdAt > RENDER_CEILING_MS) {
-      await failRender(row.id, "The render never came back from fal.ai. Render again.", row.createdAt);
+      await failRender(
+        row.id,
+        "The render never came back from fal.ai. Render again.",
+        row.createdAt,
+      );
     }
     return;
   }
@@ -590,9 +774,12 @@ export async function reconcileFalRender(row: {
     const err = e as Error;
     // A refusal is final. Anything else gets another go on the next run,
     // until the unreachable ceiling above calls it.
-    if (err instanceof RenderRefused || now() - row.createdAt > RENDER_UNREACHABLE_CEILING_MS) {
+    if (
+      err instanceof RenderRefused ||
+      now() - row.createdAt > RENDER_UNREACHABLE_CEILING_MS
+    ) {
       await failRender(row.id, err.message, row.createdAt);
-    }
+    } else if (options.strict) throw e;
   }
 }
 

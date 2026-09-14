@@ -18,6 +18,24 @@ function workspace(name: string, paid = true): TenantWorkspace {
 }
 const request = (key: string, body: unknown = { prompt: "A studio test" }) => new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(body) });
 
+test("a workbench request from an old account or workspace cannot acquire a paid claim", async () => {
+  const { withGenerationRequest, generationRequestsReady } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { workbenchScopeFor } = await import("../../lib/workbench/request-scope");
+  const ws = workspace("workbench-stale");
+  await runInTenant(ws, async () => {
+    await generationRequestsReady();
+    for (const scope of [workbenchScopeFor(ws.id, "old-account"), workbenchScopeFor("other-workspace", "u_test")]) {
+      const req = request("never-claimed");
+      req.headers.set("X-Workbench-Scope", scope);
+      const response = await withGenerationRequest(req, "u_test", async () => { throw new Error("Must not execute paid work"); });
+      expect(response.status).toBe(409);
+    }
+    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generation_requests")).rows[0].n)).toBe(0);
+  });
+});
+
 test("concurrent retries admit one paid operation and replay its response", async () => {
   const { withGenerationRequest, generationRequestsReady } = await import("../../lib/generationRequests");
   const { runInTenant } = await import("../../lib/tenant");

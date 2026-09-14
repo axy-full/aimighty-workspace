@@ -1,3 +1,4 @@
+import { securityAuditStatement } from "./securityAudit";
 import { platformDb, platformReady, getWorkspace } from "./platform";
 import type { TenantWorkspace } from "./tenant";
 import { mintTokenSecret, tokenHash } from "./auth";
@@ -27,15 +28,15 @@ const rowToShare = (r: any): Share => ({
 
 export const shareLive = (s: Share, at = Date.now()): boolean => !s.revokedAt && s.expiresAt > at;
 
-export async function mintShare(input: { workspaceId: string; projectId: string; label?: string; days?: number; by: string }): Promise<{ share: Share; token: string }> {
+export async function mintShare(input: { workspaceId: string; projectId: string; label?: string; days?: number; by: string; actorId?: string }): Promise<{ share: Share; token: string }> {
   await platformReady();
   const token = mintTokenSecret();
   const days = Math.max(1, Math.min(MAX_SHARE_DAYS, Math.round(input.days ?? SHARE_DAYS)));
   const sid = newId("shr"); const ts = now();
-  await platformDb().execute({
+  await platformDb().batch([{
     sql: `INSERT INTO p_shares (id, token_hash, workspace_id, project_id, label, created_by, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?)`,
     args: [sid, tokenHash(token), input.workspaceId, input.projectId, (input.label ?? "").slice(0, 80), input.by, ts, ts + days * 86_400_000],
-  });
+  }, securityAuditStatement({workspaceId:input.workspaceId,actorId:input.actorId??null,action:"review_link.created",targetType:"review_link",targetId:sid,details:{expiresAt:ts+days*86_400_000}})], "write");
   const rs = await platformDb().execute({ sql: `SELECT * FROM p_shares WHERE id = ?`, args: [sid] });
   return { share: rowToShare(rs.rows[0]), token };
 }
@@ -46,9 +47,9 @@ export async function listShares(workspaceId: string, projectId: string): Promis
   return rs.rows.map(rowToShare);
 }
 
-export async function revokeShare(workspaceId: string, shareId: string): Promise<boolean> {
+export async function revokeShare(workspaceId: string, shareId: string, actorId: string | null = null): Promise<boolean> {
   await platformReady();
-  const rs = await platformDb().execute({ sql: `UPDATE p_shares SET revoked_at = ? WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`, args: [now(), shareId, workspaceId] });
+  const [rs] = await platformDb().batch([{ sql: `UPDATE p_shares SET revoked_at = ? WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`, args: [now(), shareId, workspaceId] }, securityAuditStatement({workspaceId,actorId,action:"review_link.revoked",targetType:"review_link",targetId:shareId},true)], "write");
   return (rs.rowsAffected ?? 0) > 0;
 }
 

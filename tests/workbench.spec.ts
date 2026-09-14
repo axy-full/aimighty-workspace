@@ -37,6 +37,7 @@ async function fixture(page: Page) {
     const json = (value: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
     if (path === "/api/me") return json(me);
     if (path === "/api/workbench/projects") {
+      expect(request.headers()["x-workbench-scope"]).toBe(`particl-active-${me.workspace.id}-${me.id}`);
       if (request.method() === "PUT") {
         project = { ...body.project, productionProjectId: "prod-browser", shotMappings: { "generate-browser": "shot-browser" } };
         return json({ revision: ++revision, productionProjectId: project.productionProjectId, shotMappings: project.shotMappings });
@@ -46,6 +47,7 @@ async function fixture(page: Page) {
     }
     if (path === "/api/workbench/engines") return json({ models: [{ id: "mock-image", label: "Mock image engine", kind: "image", resolutions: ["1k"], ratios: ["16:9", "9:16", "1:1"], durations: [], maxReferenceImages: 8, maxReferenceVideos: 0 }], credits: 3 });
     if (path === "/api/generate") {
+      expect(request.headers()["x-workbench-scope"]).toBe(`particl-active-${me.workspace.id}-${me.id}`);
       generationRequests.push({ key: request.headers()["idempotency-key"], body });
       if (budgetFailure) { budgetFailure = false; return json({ error: "The workspace generation budget is exhausted." }, 409); }
       generated = true;
@@ -295,4 +297,63 @@ test("switching drains final edits, failed saves retain work, and asset publishi
   expect(reads).toHaveLength(readsBeforeFailedSwitch);
   await goStage(page, "Brief & ideas");
   await expect(page.getByLabel("Production title", { exact: true })).toHaveValue("Keep this unsaved work");
+});
+
+test("a shared publication conflict preserves private edits and requires saving before loading the newer context", async ({ page }, testInfo) => {
+  test.skip(!["workbench-1440x900", "workbench-390x844"].includes(testInfo.project.name), "focused desktop and phone collaboration recovery regression");
+  await signInLocally(page.request);
+  await fixture(page);
+  let draft = { ...seedProject(), productionProjectId: "shared-production", bibleVersion: 1 };
+  let revision = 1, latest = 1, failSaves = false, reads = 0;
+  const attempts: number[] = [];
+  await page.route("**/api/workbench/projects**", async route => {
+    const req = route.request(), body = req.method() === "GET" ? {} : req.postDataJSON();
+    const json = (value: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    const shared = { assets: draft.sharedAssets, nodes: draft.sharedNodes, version: latest };
+    if (req.method() === "PUT") {
+      if (failSaves) return json({ error: "Keep the private edit on screen" }, 503);
+      draft = body.project; revision++;
+      return json({ revision, productionProjectId: draft.productionProjectId, shotMappings: {} });
+    }
+    if (req.method() === "POST" && body.action === "publish") {
+      attempts.push(body.expectedBibleVersion);
+      if (body.expectedBibleVersion !== latest) return json({ error: "Another collaborator published newer context.", code: "bible_conflict", currentVersion: latest }, 409);
+      latest++;
+      return json({ version: latest, shared });
+    }
+    reads++;
+    return json({ project: draft, revision, shared, projects: [{ id: draft.id, name: draft.name }], productions: [] });
+  });
+  await page.goto("/workbench");
+  await expect(page.locator(".save-label")).toHaveText("Saved");
+  latest = 2; // A second collaborator publishes while this tab is editing v1.
+  await goStage(page, "Assets & takes");
+  await page.getByRole("button", { name: `Edit ${draft.assets[0].name}`, exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Publish this version", exact: true }).click();
+  await expect.poll(() => attempts).toEqual([1]);
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  const reload = page.getByRole("button", { name: "Save & load latest shared context", exact: true });
+  await expect(reload).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+  await page.screenshot({path:testInfo.outputPath('publication-conflict.png')});
+  await goStage(page, "Brief & ideas");
+  failSaves = true;
+  await page.getByLabel("Production title", { exact: true }).fill("My private changes survive");
+  await expect(page.locator(".save-banner").filter({ hasText: "Keep the private edit on screen" })).toBeVisible();
+  const before = reads;
+  await reload.click();
+  await expect(page.getByLabel("Production title", { exact: true })).toHaveValue("My private changes survive");
+  expect(reads).toBe(before);
+  failSaves = false;
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".save-label")).toHaveText("Saved");
+  await reload.click();
+  await expect(reload).not.toBeVisible();
+  await expect(page.getByLabel("Production title", { exact: true })).toHaveValue("My private changes survive");
+  expect(draft.name).toBe("My private changes survive");
+  expect(attempts).toEqual([1]); // Refresh never automatically republishes.
+  await goStage(page, "Assets & takes");
+  await page.getByRole("button", { name: `Edit ${draft.assets[0].name}`, exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Publish this version", exact: true }).click();
+  await expect.poll(() => attempts).toEqual([1, 2]);
 });
