@@ -29,6 +29,21 @@ test("complete PDF screenplay retains pages, beats, original asset and all 120 s
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json()),
     scope = `particl-active-${me.workspace.id}-${me.id}`;
+  const quotes: Record<string, unknown>[] = [];
+  await page.route("**/api/workbench/atomik**", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const body = route.request().postDataJSON();
+    expect(body.quoteOnly).toBe(true);
+    quotes.push(body);
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        quoteOnly: true,
+        estimateCredits: 2,
+        model: "anthropic/claude-sonnet-4.6",
+      }),
+    });
+  });
   const project = newProject("Feature screenplay");
   const save = await page.request.put("/api/workbench/projects", {
     headers: { "X-Workbench-Scope": scope },
@@ -118,6 +133,21 @@ test("complete PDF screenplay retains pages, beats, original asset and all 120 s
       async () => (await read()).project.scriptReviews?.["scene-01"]?.beats[0],
     )
     .toBe("She chooses to open the window.");
+  await first
+    .getByRole("button", { name: "Plan shot coverage", exact: true })
+    .click();
+  const planning = page.getByRole("dialog", { name: "Run DOP", exact: true });
+  await expect(
+    planning.getByLabel("Atomik request", { exact: true }),
+  ).toHaveValue(/Final source marker 1\./);
+  await expect(
+    planning.getByRole("button", { name: "Run · 2 cr estimated", exact: true }),
+  ).toBeEnabled();
+  expect(String(quotes.at(-1)?.request)).toContain(
+    "She chooses to open the window.",
+  );
+  await page.keyboard.press("Escape");
+  await expect(planning).not.toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("screenplay-breakdown.png"),
     fullPage: false,
