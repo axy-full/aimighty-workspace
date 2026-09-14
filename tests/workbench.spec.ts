@@ -71,6 +71,62 @@ async function fixture(page: Page) {
   return { current: () => project, generationRequests };
 }
 
+test("studio context actions edit the right node, respect locks, support keyboard and reuse assets", async ({ page }, testInfo) => {
+  await signInLocally(page.request);
+  const state = await fixture(page);
+  await page.goto("/workbench");
+  await goStage(page, "Production canvas");
+  const mobile = page.viewportSize()!.width < 760;
+  if (mobile) await page.locator(".mobile-node-viewbar").getByRole("tab", {name:"List",exact:true}).click();
+  const nodeTarget = () => mobile
+    ? page.locator(".mobile-node-list button").filter({hasText:"Browser test shot"}).first()
+    : page.getByRole("article", {name:"Generate node: Browser test shot",exact:true});
+  await nodeTarget().click({button:"right",position:{x:12,y:12},timeout:8000});
+  const menu = page.getByRole("menu", {name:"Browser test shot actions",exact:true});
+  await expect(menu).toBeVisible();
+  const box = await menu.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+  await menu.getByRole("menuitem", {name:"Lock node",exact:true}).click();
+  await expect.poll(() => state.current().nodes.find(n=>n.id==='generate-browser')?.locked).toBe(true);
+  await nodeTarget().focus();
+  await nodeTarget().press("Shift+F10");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem",{name:"Remove node",exact:true})).toBeDisabled();
+  await menu.getByRole("menuitem",{name:"Unlock node",exact:true}).click();
+  await nodeTarget().click({button:"right",position:{x:12,y:12},timeout:8000});
+  await menu.getByRole("menuitem",{name:"Duplicate node",exact:true}).click();
+  await expect.poll(() => state.current().nodes.filter(n=>n.title==='Browser test shot / copy').length).toBe(1);
+  await nodeTarget().click({button:"right",position:{x:12,y:12},timeout:8000});
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await goStage(page, "Assets & takes");
+  const asset=state.current().assets[0];
+  const target=page.getByRole('article',{name:'Asset: '+asset.name,exact:true,includeHidden:true});
+  const assetMenu=page.getByRole('menu',{name:asset.name+' actions',exact:true});
+  if (mobile) {
+    await target.scrollIntoViewIfNeeded();
+    const point=await target.boundingBox();
+    const pointer={pointerId:8,pointerType:'touch',button:0,clientX:point!.x+20,clientY:point!.y+20};
+    await target.dispatchEvent('pointerdown',pointer);
+    await expect(assetMenu).toBeVisible();
+    await target.dispatchEvent('pointerup',pointer,{timeout:5000});
+    await target.locator('.asset-image').dispatchEvent('click',{}, {timeout:5000});
+    await expect(assetMenu).toBeVisible();
+    await page.keyboard.press('Escape');
+  }
+  await target.click({button:'right'});
+  await expect(assetMenu).toBeVisible();
+  await page.screenshot({path:testInfo.outputPath('studio-context-menu.png')});
+  const before=state.current().nodes.length;
+  await assetMenu.getByRole('menuitem',{name:'Add to canvas',exact:true}).click();
+  await expect.poll(()=>state.current().nodes.length).toBe(before+1);
+  expect(state.current().nodes.at(-1)?.assetId).toBe(asset.id);
+  await page.reload();
+  await expect.poll(()=>state.current().nodes.length).toBe(before+1);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+});
+
 test("studio exposes Gen and workspace navigation with the original Atomik brand", async ({ page }, testInfo) => {
   await signInLocally(page.request);
   await fixture(page);

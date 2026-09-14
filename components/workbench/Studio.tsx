@@ -2,6 +2,7 @@
 import UploadRecovery from "@/components/UploadRecovery";
 
 import Link from "next/link";
+import {ActionMenu,ActionDropdown,type StudioAction} from "./ActionMenu";
 import {type WorkbenchAccount} from "./WorkspaceMenu";
 import StudioNavigation from "@/components/studio/StudioNavigation";
 import {AtomikMark} from "@/components/AtomikMark";
@@ -721,6 +722,14 @@ export default function Studio({
   }
   function setField(field: keyof Project, value: unknown) {
     change((old) => ({ ...old, [field]: value }));
+  }
+  function assetActions(a: Asset): StudioAction[] {
+    return [
+      {label: 'Open asset', run: () => setSelectedAsset(a.id)},
+      {label: 'Add to canvas', run: () => addNode(a.category === 'Character' ? 'character' : a.category === 'Environment' || a.category === 'Element' ? 'element' : 'media', a.id)},
+      {label: 'Add to sequence', disabled: !['image','video'].includes(a.kind), run: () => addToSequence(a)},
+      {label: 'Copy prompt', disabled: !a.prompt, run: () => { void navigator.clipboard.writeText(a.prompt || '').then(() => toast.success('Prompt copied')).catch(() => toast.error('Clipboard access is unavailable. Open the asset to copy its prompt.')); }},
+    ];
   }
   function updateAsset(id: string, fields: Partial<Asset>) {
     change((old) => ({
@@ -1820,7 +1829,7 @@ export default function Studio({
                               );
                             })
                             .map((a) => (
-                              <article
+                              <ActionMenu key={a.id} label={a.name + ' actions'} actions={assetActions(a)}><article tabIndex={0} aria-label={'Asset: ' + a.name}
                                 className={
                                   "asset-card " +
                                   (stage === "characters"
@@ -1855,6 +1864,7 @@ export default function Studio({
                                   </div>
                                   <p>{a.description}</p>
                                   <div className="asset-actions">
+                                    <ActionDropdown label={'Actions for ' + a.name} actions={assetActions(a)}/>
                                     <button
                                       onClick={() =>
                                         addNode(
@@ -1885,7 +1895,7 @@ export default function Studio({
                                     </IconButton>
                                   </div>
                                 </div>
-                              </article>
+                              </article></ActionMenu>
                             ))}
                           <button
                             className="upload-tile"

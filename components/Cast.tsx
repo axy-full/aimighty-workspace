@@ -7,6 +7,7 @@ import { useSession } from "@/lib/session";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 import type { CastMember } from "@/lib/cast";
 import { IconPlus, IconClose } from "./Icons";
+import { ActionMenu } from "./workbench/ActionMenu";
 
 const KINDS = [
   { id: "character", label: "Character" },
@@ -99,9 +100,11 @@ export default function Cast({ projectId, onCite, chips = false }: {
     return (
       <div className="flex flex-wrap gap-1.5">
         {cast.map((m) => (
-          <button key={m.id} type="button" className="cast-chip" title={m.description || `Cite @${m.name}`}
-            onClick={() => onCite(`@${m.name}`)}
-            onContextMenu={(e) => { e.preventDefault(); void remove(m); }}>
+          <ActionMenu key={m.id} label={m.name + ' actions'} actions={[
+            { label: 'Use as reference', run: () => onCite(`@${m.name}`) },
+            { label: 'Remove from cast…', danger: true, disabled: busy, run: () => { void remove(m); } },
+          ]}><button type="button" className="cast-chip" title={m.description || `Cite @${m.name}`}
+            onClick={() => onCite(`@${m.name}`)}>
             <span className="cast-chip-thumb">
               {m.uploadId && (
                 /* eslint-disable-next-line @next/next/no-img-element */
@@ -109,7 +112,7 @@ export default function Cast({ projectId, onCite, chips = false }: {
               )}
             </span>
             @{m.name} <span className="cast-chip-kind">{kindTag(m.kind)}</span>
-          </button>
+          </button></ActionMenu>
         ))}
         <span className="relative">
           <button type="button" className="btn-dashed !px-2.5 !py-[5px]" disabled={busy}
