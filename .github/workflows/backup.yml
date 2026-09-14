@@ -1,0 +1,91 @@
+name: Encrypted Particl backups
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Dry run or explicitly enabled capture
+        type: choice
+        options: [dry-run, capture]
+        default: dry-run
+  schedule:
+    - cron: "17 2 * * *"
+    - cron: "47 * * * *"
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: particl-encrypted-backups
+  cancel-in-progress: false
+jobs:
+  disabled:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'capture' && (vars.PARTICL_BACKUP_ENABLED != 'true' || github.ref != 'refs/heads/main')
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error::Capture is disabled until protected credentials, inventory, key escrow and enforced quiescence are configured; capture runs only from main."
+          exit 1
+  dry-run:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'dry-run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/ops/backup-automation.mjs plan
+      - run: node --test tests/ops/*.test.mjs
+  capture:
+    if: vars.PARTICL_BACKUP_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event.schedule == '17 2 * * *' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'capture'))
+    environment: particl-backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Capture only quiesced sources and rehearse the entire restore
+        id: backup
+        run: node scripts/ops/backup-automation.mjs capture
+        env:
+          PARTICL_BACKUP_ENABLED: ${{ vars.PARTICL_BACKUP_ENABLED }}
+          PARTICL_BACKUP_SOURCE_JSON: ${{ secrets.PARTICL_BACKUP_SOURCE_JSON }}
+          PARTICL_BACKUP_ENV_JSON: ${{ secrets.PARTICL_BACKUP_ENV_JSON }}
+          PARTICL_BACKUP_KEY: ${{ secrets.PARTICL_BACKUP_KEY }}
+          PARTICL_BACKUP_QUIESCENCE_JSON: ${{ secrets.PARTICL_BACKUP_QUIESCENCE_JSON }}
+      - name: Retain only verified ciphertext
+        uses: actions/upload-artifact@v4
+        with:
+          name: particl-backup-verified-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.backup.outputs.bundle_path }}/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: ${{ steps.backup.outputs.retention_days }}
+          overwrite: false
+      - name: Remove decrypted verification and encrypted runner copies
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/particl-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+  freshness:
+    if: always() && vars.PARTICL_BACKUP_ENABLED == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.operation == 'dry-run')
+    needs: [capture]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/ops/backup-automation.mjs freshness
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

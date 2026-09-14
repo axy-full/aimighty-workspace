@@ -22,6 +22,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run test:unit
+      - name: Rehearse encrypted backup and restore
+        run: node --test tests/ops/*.test.mjs
       - run: node scripts/account-http-rehearsal.mjs
       - run: npm run build
         env:
