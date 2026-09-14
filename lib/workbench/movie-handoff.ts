@@ -1,7 +1,7 @@
 import { projectSchema } from "./studio-schema";
 import type { Project } from "./studio";
 
-const limit = 2_000_000;
+const limit = 3_500_000;
 const lifetime = 10 * 60 * 1000;
 const visitor = "particl-active-visitor-visitor";
 export function movieHandoffKey(token: string, scope: string) {
@@ -13,7 +13,7 @@ export function createMovieHandoff(project: Project, scope: string) {
   const token = crypto.randomUUID();
   const raw = JSON.stringify({ project, scope, createdAt: Date.now() });
   if (raw.length > limit)
-    throw new Error("The production exceeds the 2 MB export snapshot limit.");
+    throw new Error("The production exceeds the 3.5 MB export snapshot limit.");
   for (let i = sessionStorage.length - 1; i >= 0; i--) {
     const key = sessionStorage.key(i);
     if (key?.startsWith("particl-movie-")) sessionStorage.removeItem(key);

@@ -148,7 +148,10 @@ import {uploadWorkbench} from '@/lib/workbench/upload';
 import {AssetPreview} from './AssetPreview';
 import {createMovieHandoff} from '@/lib/workbench/movie-handoff';
 import DesignReview from "./design-review";
-import { CrewPanel, ScriptPanel, StoryboardPanel } from "./production-crew";
+import { CrewPanel, StoryboardPanel } from "./production-crew";
+import { ScriptPanel } from './ScriptPanel';
+import { buildScreenplayNodes, sceneCoverageRequest } from '@/lib/workbench/screenplay-nodes';
+import type {ScreenplayImport} from '@/lib/workbench/screenplay';
 import { CREW, ScriptScene } from "@/lib/workbench/crew";
 import ProductionGraph from "./production-graph";
 import {
@@ -955,34 +958,27 @@ export default function Studio({
     change(old=>({...old,sharedAssetIds:[...new Set([...old.sharedAssetIds,assetId])],sharedAssets:[...(old.sharedAssets??old.assets.filter(a=>old.sharedAssetIds.includes(a.id))).filter(a=>a.id!==assetId),structuredClone(asset)]}));
     await publishBible(current.id);
   }
+  async function importScreenplay(file:File,result:ScreenplayImport) {
+    if(transitioningRef.current || !signedIn || !readyRef.current)throw new Error('Create and save a production before importing.');
+    const draftId=pRef.current.id;
+    if(pRef.current.scriptSource?.sha256===result.sha256 && pRef.current.script===result.text){if(!(await ensureSaved(draftId)))throw new Error('The import is still unsaved. Retry when the connection returns.');return;}
+    if(pRef.current.assets.length>=500)throw new Error('The asset library is full. Make space for the original screenplay first.');
+    uploadingRef.current++;setUploading(true);
+    try {
+      const uploaded=await uploadWorkbench(file,undefined,storageKey);
+      if(pRef.current.id!==draftId)throw new Error('The production changed. The uploaded original remains in your workspace.');
+      const asset:Asset={id:uploaded.id,uploadId:uploaded.id,name:file.name.slice(0,200),kind:'document',category:'Screenplay',url:uploaded.url,mime:uploaded.mime||file.type,description:'Original screenplay source',prompt:'',status:'Draft',version:1,locked:false,refs:[]};
+      change(old=>({...old,script:result.text,scriptReviews:{},scriptSource:{assetId:asset.id,filename:asset.name,sha256:result.sha256,pages:result.pages,importedAt:new Date().toISOString(),edited:false,acknowledgedEmptyPages:result.emptyPages},assets:[...old.assets,asset]}));
+      if(!(await ensureSaved(draftId)))throw new Error('The source uploaded, but the production is not saved yet. Retry this import to save it without uploading again.');
+    } finally {uploadingRef.current--;setUploading(uploadingRef.current>0);}
+  }
   function buildScriptCanvas(scenes: ScriptScene[]) {
-    const nodes: CanvasNode[] = scenes
-      .slice(0, 60)
-      .map((s, i) => ({
-        id: uid("node"),
-        title: s.slug,
-        type: "scene",
-        text: s.body,
-        assetId: p.assets.find(
-          (a) =>
-            a.category === "Environment" &&
-            s.location.toLowerCase().includes(a.name.toLowerCase()),
-        )?.id,
-        x: 50 + (i % 3) * 350,
-        y: 1030 + Math.floor(i / 3) * 350,
-        width: 300,
-        linked: [],
-      }));
-    for (let i = 1; i < nodes.length; i++) nodes[i].linked = [nodes[i - 1].id];
-    change((old) => ({ ...old, nodes: [...old.nodes, ...nodes] }));
-    setStage("canvas");
-    setPan({ x: 10, y: -770 });
-    setZoom(0.76);
-    setScope("My space");
-    toast.success(
-      nodes.length +
-        " editable scene nodes added. Attach source takes to develop them.",
-    );
+    try {
+      const nodes=buildScreenplayNodes(pRef.current,scenes);
+      change(old=>({...old,nodes:[...old.nodes,...nodes]}));
+      setStage('canvas');setPan({x:10,y:-770});setZoom(.76);setScope('My space');
+      toast.success(nodes.length+' complete scene nodes added with source and beat notes.');
+    } catch(error){toast.error(error instanceof Error?error.message:'Could not build these scenes.');}
   }
   function editNode(n: CanvasNode) {
     setEditingNode(n.id);
@@ -1525,9 +1521,13 @@ export default function Studio({
                     )}
                     {stage === "script" && (
                       <ScriptPanel
+                        key={p.id}
                         project={p}
-                        onScript={(v) => setField("script", v)}
+                        onScript={(v) => change(old=>({...old,script:v,scriptSource:old.scriptSource?{...old.scriptSource,edited:true}:undefined}))}
+                        onImport={importScreenplay}
+                        onReview={(id,review)=>change(old=>({...old,scriptReviews:{...old.scriptReviews,[id]:review}}))}
                         onBuild={buildScriptCanvas}
+                        onDevelop={(scene)=>{try{void runGenie(sceneCoverageRequest(pRef.current,scene),"dop");}catch(error){toast.error(error instanceof Error?error.message:"Could not plan this scene.");}}}
                         onCrew={() => {
                           setAtomOpen(true);
                           setAtomTab("crew");

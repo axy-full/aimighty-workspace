@@ -51,12 +51,14 @@ export function publishedContext(project: Project) {
     includedNodes.add(id);
     for (const linked of node.linked) includeNode(linked);
     if (node.assetId) includeAsset(node.assetId);
+    if (node.scriptScene?.sourceAssetId) includeAsset(node.scriptScene.sourceAssetId);
     for (const version of node.versions ?? [])
       if (version.assetId) includeAsset(version.assetId);
     nodes.push(structuredClone(node));
   }
   selectedAssets.forEach((asset) => includeAsset(asset.id));
   selectedNodes.forEach((node) => includeNode(node.id));
+  if (project.scriptSource) includeAsset(project.scriptSource.assetId);
   if (assets.length > 500 || nodes.length > 250)
     throw new Error(
       "The shared context exceeds the production asset or node limit.",
@@ -64,6 +66,8 @@ export function publishedContext(project: Project) {
   return {
     brief: project.brief,
     script: project.script || "",
+    scriptSource: project.scriptSource,
+    scriptReviews: project.scriptReviews,
     direction: project.direction,
     assets,
     nodes,

@@ -10,7 +10,8 @@
     "test:mobile": "playwright test tests/mobile.spec.ts",
     "test:onboarding": "PW_BASE_URL=${PW_BASE_URL:-http://localhost:4550} playwright test --project=onboarding",
     "test:unit": "PW_BASE_URL=${PW_BASE_URL:-http://localhost:4550} playwright test --project=unit",
-    "test:screens": "playwright test tests/screens.spec.ts"
+    "test:screens": "playwright test tests/screens.spec.ts",
+    "postinstall": "node scripts/copy-pdf-worker.mjs"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.74",
@@ -28,6 +29,7 @@
     "mediabunny": "1.56.2",
     "next": "16.3.5",
     "next-themes": "^0.4.6",
+    "pdfjs-dist": "6.3.289",
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",

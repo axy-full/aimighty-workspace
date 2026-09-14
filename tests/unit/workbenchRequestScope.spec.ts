@@ -4,6 +4,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { newProject } from "../../lib/workbench/studio";
 import { saveSchema } from "../../lib/workbench/studio-schema";
+import * as requestBody from "../../lib/workbench/request-body";
 import * as requestScope from "../../lib/workbench/request-scope";
 
 /** Execute the real route with storage spies: a rejected tab must not reach data. */
@@ -15,6 +16,7 @@ function route() {
   };
   const draft = newProject("Private production");
   const mocks: Record<string, unknown> = {
+    "@/lib/workbench/request-body": requestBody,
     "@/lib/auth": {
       withTenant: (handler: unknown) => handler,
       requireSession: async () => ({
