@@ -1,3 +1,4 @@
+import { withRecoveryJob } from './recovery';
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now } from "./db";
 import { meter, type MeterEvent } from "./meter";
@@ -65,6 +66,8 @@ export async function writeGenerationOutcome(
 }
 
 export async function deliverGenerationSettlement(id: string): Promise<void> {
+return await withRecoveryJob(requireTenant().id, id, async () => {
+
   await generationSettlementReady();
   const row = (
     await db().execute({
@@ -86,6 +89,8 @@ export async function deliverGenerationSettlement(id: string): Promise<void> {
     sql: "UPDATE generation_settlements SET settled_at=? WHERE id=? AND event=?",
     args: [now(), id, serialized],
   });
+
+});
 }
 
 export type ReconcileResult = { attempted: number; failed: number };

@@ -1,3 +1,5 @@
+import {reserveRecoveryContinuation} from "@/lib/recovery";
+import {recoveryRoute} from '@/lib/recovery';
 import { accountRequestScopeMatches } from "@/lib/accountRequestScope";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { NextResponse, after } from "next/server";
@@ -14,15 +16,15 @@ export const dynamic = "force-dynamic";
 export const maxDuration=300;
 
 /** The workspaces this account belongs to, and which one the session is in. */
-export async function GET(req: Request) {
+export const GET = recoveryRoute(async function GET(req: Request) {
   const ctx = await currentContext();
   if (!ctx) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   if(req.headers.has("X-Workbench-Scope")&&!accountRequestScopeMatches(req,ctx))return Response.json({error:"Your account or workspace changed. Reload before viewing workspaces."},{status:409});
   return NextResponse.json({ active: ctx.workspace?.id ?? null, workspaces: ctx.workspaces, pending:await pendingWorkspaces(ctx.user.id),...workspaceCreationReadiness() }, {headers:{"Cache-Control":"private, no-store"}});
-}
+});
 
 /** Another workspace of one's own — a second studio, a client, a side project. */
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if(sameOriginProblem(req))return Response.json({error:'Invalid request origin.'},{status:403});
   const ctx=await currentContext();if(!ctx)return Response.json({error:'Not signed in'},{status:401});
   if(req.headers.has("X-Workbench-Scope")&&!accountRequestScopeMatches(req,ctx))return Response.json({error:"Your account or workspace changed. Reload before creating a workspace."},{status:409});
@@ -40,7 +42,7 @@ export async function POST(req: Request) {
     }
     return Response.json({ok:true,provisioning:result.provisioning,next:'/billing?onboarding=1'},{status:202});
   }catch(error){return accountFailure(error);}
-}
+});
 
 /** Workspace identity is editable only by its signed-in owner. */
 export const PATCH=withTenant(async(req:Request)=>{
@@ -58,7 +60,7 @@ export const PATCH=withTenant(async(req:Request)=>{
  * runs after the response. Everything already billed stays on the
  * platform's books.
  */
-export async function DELETE(req: Request) {
+export const DELETE = recoveryRoute(async function DELETE(req: Request) {
   if(sameOriginProblem(req))return Response.json({error:"Invalid request origin."},{status:403});
   const ctx = await currentContext();
   if (!ctx) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -69,7 +71,7 @@ export async function DELETE(req: Request) {
   const verdict = deletionAllowed({ name: ws.name, legacy: ws.legacy, role: ctx.role }, String(body.name ?? ""));
   if (!verdict.ok) return NextResponse.json({ error: verdict.error }, { status: 400 });
   await markWorkspaceDeleted(ws.id);
-  after(async () => { await purgeWorkspace(ws); });
+  after(await reserveRecoveryContinuation('after-response', async () => { await purgeWorkspace(ws); }));
   const left = ctx.workspaces.filter((w) => w.id !== ws.id);
   return NextResponse.json({ ok: true, deleted: ws.id, next: left[0]?.id ?? null });
-}
+});

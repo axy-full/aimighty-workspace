@@ -1,3 +1,4 @@
+import { withRecoveryActivity } from './recovery';
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
@@ -22,6 +23,8 @@ async function purgeReady() {
 
 /** Access ends atomically. Cleanup is a separate, durable, retryable operation. */
 export async function markWorkspaceDeleted(id: string): Promise<void> {
+return await withRecoveryActivity('purge', async () => {
+
   await purgeReady();
   const p = platformDb(),
     ts = now();
@@ -52,6 +55,8 @@ export async function markWorkspaceDeleted(id: string): Promise<void> {
     ],
     "write",
   );
+
+});
 }
 export type PurgeReport = {
   files: number;
@@ -73,7 +78,8 @@ async function removeFiles(ws: TenantWorkspace) {
   let files = 0,
     uploads = 0;
   if (usingBlob()) {
-    const { list, del } = await import("@vercel/blob");
+    const { list, del: rawDel } = await import("@vercel/blob");
+    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true });
     // Deleted objects leave the prefix. Bound each pass so large cleanups resume on cron.
     for (let page = 0; page < 20; page++) {
       const found = await list({ prefix: `ws/${ws.id}/`, limit: 500 });
@@ -135,6 +141,8 @@ export async function purgeWorkspace(
     database: removeDatabase,
   },
 ): Promise<PurgeReport> {
+return await withRecoveryActivity('purge', async () => {
+
   const report: PurgeReport = {
     files: 0,
     uploads: 0,
@@ -244,10 +252,14 @@ export async function purgeWorkspace(
     });
   }
   return report;
+
+});
 }
 
 /** Retry interrupted cleanup, including deletions made by older releases. */
 export async function retryWorkspacePurges(limit = 5) {
+return await withRecoveryActivity('purge', async () => {
+
   await purgeReady();
   const rows = await platformDb().execute({
     sql: `SELECT w.* FROM workspaces w LEFT JOIN workspace_purges p ON p.workspace_id=w.id
@@ -267,4 +279,6 @@ export async function retryWorkspacePurges(limit = 5) {
     }
   }
   return { attempted: rows.rows.length, completed, failed };
+
+});
 }

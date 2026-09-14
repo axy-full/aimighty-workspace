@@ -1,3 +1,5 @@
+import {requireTenant} from './tenant';
+import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
 import { getModel, imageTokens } from "./models";
 import { estimateImageCostUsd } from "./vendorPricing";
@@ -285,6 +287,8 @@ export async function producedOutcome(genId: string): Promise<Produced | null> {
 }
 
 export async function produce(job: Job): Promise<Produced | null> {
+return await withRecoveryJob(requireTenant().id, job.genId, async () => {
+
   const previous = await producedOutcome(job.genId);
   if (previous) return previous;
   if (!(await claimRender(job.genId))) return producedOutcome(job.genId);
@@ -319,6 +323,8 @@ export async function produce(job: Job): Promise<Produced | null> {
     );
     throw error;
   }
+
+});
 }
 
 async function produceStill(job: StillJob): Promise<Produced> {
@@ -414,6 +420,8 @@ async function produceAudio(job: AudioJob): Promise<Produced> {
 /* ── Sealing: writing the outcome down ─────────────────────────────── */
 
 export async function seal(job: Job, produced: Produced): Promise<void> {
+return await withRecoveryJob(requireTenant().id, job.genId, async () => {
+
   const ms = Math.max(0, now() - job.startedAt);
   const t = produced.timings;
   if (produced.kind === "image") {
@@ -517,6 +525,8 @@ export async function seal(job: Job, produced: Produced): Promise<void> {
     await deliverGenerationSettlement(job.genId);
   }
   invalidate(PROJECTS_KEY);
+
+});
 }
 
 /**
@@ -532,6 +542,8 @@ export async function failJob(
   message: string,
   rejectedBeforeGeneration = false,
 ): Promise<void> {
+return await withRecoveryJob(requireTenant().id, genId, async () => {
+
   await ready();
   const job = await loadJob(genId).catch(() => null);
   const ms = job ? Math.max(0, now() - job.startedAt) : null;
@@ -576,6 +588,8 @@ export async function failJob(
   );
   await deliverGenerationSettlement(genId);
   invalidate(PROJECTS_KEY);
+
+});
 }
 
 /**
@@ -584,6 +598,8 @@ export async function failJob(
  * now sharing its body with the worker.
  */
 export async function runInline(genId: string): Promise<void> {
+return await withRecoveryJob(requireTenant().id, genId, async () => {
+
   try {
     const job = await loadJob(genId);
     if (!job) return;
@@ -592,4 +608,6 @@ export async function runInline(genId: string): Promise<void> {
   } catch (e) {
     await failJob(genId, (e as Error).message);
   }
+
+});
 }

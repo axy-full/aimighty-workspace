@@ -1,3 +1,4 @@
+import { recoveryFetch as fetch } from "./recovery";
 /**
  * Outbound mail — invitations and password resets — through Resend's HTTP API.
  *

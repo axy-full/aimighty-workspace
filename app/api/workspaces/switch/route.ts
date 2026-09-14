@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { accountRequestScopeMatches } from "@/lib/accountRequestScope";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -8,7 +9,7 @@ import {sameOriginProblem} from "@/lib/accountDb";
 export const dynamic = "force-dynamic";
 
 /** Move this session into another workspace the account belongs to. */
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if(sameOriginProblem(req))return Response.json({error:"Invalid request origin."},{status:403});
   const ctx = await currentContext();
   if (!ctx) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -20,4 +21,4 @@ export async function POST(req: Request) {
   if (!token) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   await switchSessionWorkspace(token, id);
   return NextResponse.json({ ok: true, active: id });
-}
+});

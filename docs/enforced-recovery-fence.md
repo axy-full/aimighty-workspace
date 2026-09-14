@@ -1,0 +1,46 @@
+# Enforced recovery checkpoints
+
+This increment implements an application maintenance gate. It does not activate production backups, stop old deployments, revoke manual database credentials, or prove that external writers have been disabled. Do not start a checkpoint until every app and worker deployment with write credentials runs `particl-recovery-fence-v1`, old aliases/workers are stopped, and manual/database/storage writers are excluded. Record that deployment inventory and concrete closure evidence in the coordinator input.
+
+The platform database stores the gate, operation admissions, and accepted job identities. Closing changes `open` to `draining` under the same write lock used to admit work. New requests, database mutations, provisioning, purge, uploads and paid job reservations then fail closed. An already admitted operation can finish and admit tracked children. A deferred callback must reserve its child before returning its response, or resume an exact workspace/job intent accepted before the fence. Completed parents never erase unfinished children.
+
+Acknowledged completed activities are removed so normal traffic does not create a permanent row for every request and database read. Outstanding children and uncertain outcomes remain independent blockers, and a late completion cannot erase an uncertainty. Business audit records, paid claims and resolved intent identities retain their existing durable history.
+
+Native and remote application clients use a plain `Client` decorator; SQL is not rewritten or retried. Its control client is undecorated: admission commits before an application transaction opens, and release occurs only after an acknowledged commit/rollback or a completed local close. A remote close without acknowledgment remains uncertain. All transactions, batches, migrations, PRAGMAs, CTEs and unknown statements are guarded. Simple SELECTs can read diagnostics. Whole request scopes include authentication, because looking up a session updates activity. Private requests and normal health routes return maintenance 503 while the gate is closed.
+
+A paid intent is accepted in the same platform transaction as its credit reservation. While draining, the cron only resumes exact accepted workspace/job pairs. It cannot release held jobs, create a fresh job, provision or purge. Existing video handle recovery, permanent provider claims, dispatch and settlement behavior remain authoritative. Synchronous jobs with an unknown result are not purchased again. Terminal success or a conclusively rejected zero-cost bill resolves the intent in its ledger transaction; the executing child still blocks closure until remaining tenant writes finish. Legacy jobs lacking an intent, uncertain charged failures, missing storage masters and pending settlement require reconciliation before backup.
+
+An activity has no automatic expiry. A coordinator timeout keeps admission closed and invalidates its receipt. Lost database acknowledgments, ambiguous external mutations, crashed functions, and callbacks that never run remain visible blockers. Do not clear them merely because a timer elapsed. Establish that the original process/worker can no longer write and reconcile its exact provider/storage/database outcome first. There is deliberately no force-quiet or TTL-based resolution command. If that evidence is unavailable, abort this checkpoint by explicitly reopening with its exact coordinator identity; preserve the blocker and incident record for later reconciliation.
+
+## Coordinator procedure
+
+Use an operator shell with scoped platform read/write credentials, the original `KEYRING_SECRET`, the private Blob token (or the explicit local media root), and a separate `PARTICL_BACKUP_KEY`. Never paste those values into terminal commands, logs or source files. Keep the coordinator directory and archive-key escrow outside the repository, on access-controlled storage. No HTTP endpoint exposes the coordinator owner key.
+
+Prepare a private JSON input with `preconditions` containing `deployments: [{id, protocol: "particl-recovery-fence-v1"}]`, `oldDeploymentsStopped: true`, `externalWritersExcluded: true`, and an `evidence` string naming the actual deployment/credential closure evidence. These are explicit operational preconditions, not claims the application can independently establish. Its `media` is `{kind: "blob", tokenEnv: "BLOB_READ_WRITE_TOKEN"}` for the complete private store, or `{kind: "local", root: "/absolute/application/.data"}`. Local inventory always includes generations, uploads, platform assets, identities, and staged chunks.
+
+```sh
+node scripts/ops/recovery-fence.mjs begin /private/checkpoint /private/checkpoint-input.json
+node scripts/ops/recovery-fence.mjs status /private/checkpoint
+node scripts/ops/recovery-fence.mjs renew /private/checkpoint
+node scripts/ops/recovery-fence.mjs seal /private/checkpoint
+```
+
+`begin` writes the owner key to a new mode-0700 directory before closing admission. If the response is lost, the owner file can recover the epoch from the live gate. `status` reports operation IDs, fixed operation kinds, deployment/protocol and exact accepted job IDs; it does not print credentials or request content. The existing authenticated cron performs bounded accepted-job draining. Its deadline starts at request entry; it selects one intent only when at least 270 seconds remain before a 290-second work deadline inside the 300-second runtime. This leaves room for one slow image/provider operation and prevents accumulating multiple slow masters in one invocation. It is an admission budget, not cancellation proof: a provider/storage operation exceeding its bound remains a blocker. Timed-out queue dispatch acknowledgments keep the underlying send independently admitted until its actual outcome arrives; an ambiguous rejection remains uncertain. Unknown legacy/uncertain work remains blocked. `renew` only extends the coordinator deadline; it does not reopen admission or erase work.
+
+`seal` requires no outstanding activities or accepted intents, discovers the complete authoritative database inventory, and runs the existing live/uncertain-work preflight before closing fully. The inventory includes active and deleted-but-not-purged workspaces, the configured primary even before legacy import publishes a workspace row, and provisioned databases not yet published as a workspace. Canonical source identities are deduplicated. A pending deterministic database name without a recorded URL blocks capture because a lost create response may conceal a real database. All sealed credentials are checked with the original keyring; the restore retains that keyring inside the encrypted archive escrow.
+
+The command writes mode-0600 `sources.json`, `source-env.json` and `receipt.json` without overwriting previous files. The receipt binds the live epoch/nonce, expiry, deployment/protocol preconditions, authoritative source inventory digest and source configuration. The verified capture pipeline now checks the live closed gate before capture, after capture and after restoration. A legacy JSON containing only `mutationsPaused` and similar assertions cannot authorize a verified capture. A reopened gate, substituted source registry, expired or forged receipt rejects publication.
+
+Pass those private files to the existing capture pipeline (`PARTICL_BACKUP_SOURCE_JSON`, `PARTICL_BACKUP_ENV_JSON`, and `PARTICL_BACKUP_QUIESCENCE_JSON`) only on the isolated backup runner. Preserve the existing encrypted archive and restore-verification workflow; do not activate its production schedule in this increment. After archive verification, explicitly resume:
+
+```sh
+node scripts/ops/recovery-fence.mjs resume /private/checkpoint
+```
+
+Resume invalidates every previous receipt. Failure and interruption never automatically reopen. Restored snapshots retain the closed gate as well as paid claims, sessions and original source bindings. Complete target remapping and the existing restore checks before deliberately reopening the restored environment; never start a restored copy against original sources.
+
+## Validation and rollout limits
+
+Scoped tests exercise transaction/close races, child drain, coordinator expiry, uncertain transport with zero replay, exact-identity job resumption, forbidden new reservations, stale deferred contexts, reserved callbacks, route rejection before authentication work, native error cleanup, and direct provisioning/purge refusal. A disposable local checkpoint captures and independently restores four databases plus private media, verifies the original keyring, includes pending/deleted sources, rejects an incomplete provisioning inventory, and invalidates forged/reopened/changed-registry receipts.
+
+This is not production throughput or remote outage evidence. Durable admissions add platform database writes and round trips; measure remote latency and storage growth before activation. Retain unresolved admissions across crashes and operator investigation. Full deployment/worker protocol rollout and explicit exclusion of unmanaged writers remain required. Production capture, scheduled activation, cloud credentials and paid provider rehearsals are outside this change.

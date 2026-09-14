@@ -1,3 +1,4 @@
+import { recoveryFetch as fetch } from "./recovery";
 /**
  * Fresh keys for a fresh workspace — the one vendor that mints them.
  *

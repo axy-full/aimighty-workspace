@@ -1,3 +1,4 @@
+import { fenceDatabase } from "./recoveryDatabaseClient";
 import { SECURITY_AUDIT_SCHEMA } from "./securityAudit";
 import type { Client } from "@libsql/client";
 import { createHash } from "node:crypto";
@@ -24,7 +25,7 @@ export function tenantClient(ws: TenantWorkspace): Client {
   const key = clientKey(ws);
   let c = clients.get(key);
   if (!c || c.closed) {
-    c = createDatabaseClient({ url: ws.dbUrl, authToken: ws.dbToken ?? undefined });
+    c = fenceDatabase(createDatabaseClient({ url: ws.dbUrl, authToken: ws.dbToken ?? undefined }));
     clients.set(key, c);
     // Bound cache retention without closing a client another in-flight request owns.
     if (clients.size > 256) {

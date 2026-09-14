@@ -1,3 +1,4 @@
+import { withRecoveryJob } from '../recovery';
 import { isAtomikModel } from "../atomikModelPolicy";
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -313,6 +314,8 @@ export async function prepareAtomikJob(input: AtomikRequest, owner: string, toke
 
 /** One provider submission. A killed or timed-out call is never automatically repeated. */
 export async function runAtomikJob(id: string, owner: string, overrides?: Partial<AtomikDependencies>) {
+return await withRecoveryJob(requireTenant().id, id, async () => {
+
   const deps = withDependencies(overrides);
   await atomikReady();
   const claimed = await db().execute({ sql: "UPDATE workbench_atomik_jobs SET status='running',updated_at=? WHERE id=? AND owner=? AND status='queued'", args: [now(), id, owner] });
@@ -367,6 +370,8 @@ export async function runAtomikJob(id: string, owner: string, overrides?: Partia
     ], 'write');
     await deps.meter(eventFor(job, owner, 'failed', cost), { critical: false });
   }
+
+});
 }
 
 export async function listAtomikJobs(owner: string, projectId: string, overrides?: Pick<AtomikDependencies, 'meter'>, requestId?: string) {

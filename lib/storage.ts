@@ -1,3 +1,4 @@
+import { withRecoveryActivity } from './recovery';
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -36,9 +37,12 @@ const PLATFORM_DIR = path.join(process.cwd(), ".data", "platform");
 export const platformPath = (file: string) => `platform/${file}`;
 
 export async function storePlatformBytes(file: string, buf: Buffer, contentType: string): Promise<string> {
+return await withRecoveryActivity('storage', async () => {
+
   if (!/^[A-Za-z0-9_\-:./]+$/.test(file) || file.includes("..")) throw new Error("bad platform path");
   if (usingBlob()) {
-    const { put } = await import("@vercel/blob");
+    const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
     await put(platformPath(file), buf, { access: "private", contentType, addRandomSuffix: false, allowOverwrite: true });
     return platformPath(file);
   }
@@ -46,6 +50,8 @@ export async function storePlatformBytes(file: string, buf: Buffer, contentType:
   await mkdir(path.dirname(full), { recursive: true });
   await writeFile(full, buf);
   return platformPath(file);
+
+});
 }
 
 export async function readPlatformBytes(file: string): Promise<Buffer> {
@@ -74,6 +80,8 @@ async function download(sourceUrl: string): Promise<Buffer> {
 }
 
 export async function storeVideo(genId: string, sourceUrl: string): Promise<{ url: string; bytes: number }> {
+return await withRecoveryActivity('storage', async () => {
+
   /* Two minutes, and no less: a 200 MB master over a slow link legitimately
      needs it, and abandoning one early would strand the very render the cron
      exists to rescue. But not unbounded either — this runs 30-wide inside a
@@ -81,7 +89,8 @@ export async function storeVideo(genId: string, sourceUrl: string): Promise<{ ur
   const buf = isFixtureUrl(sourceUrl) ? await fetchBytes(sourceUrl) : await download(sourceUrl);
 
   if (usingBlob()) {
-    const { put } = await import("@vercel/blob");
+    const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
     await put(videoPath(genId), buf, {
       access: "private",
       contentType: "video/mp4",
@@ -98,6 +107,8 @@ export async function storeVideo(genId: string, sourceUrl: string): Promise<{ ur
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.mp4`), buf);
   return { url: `/api/media/${genId}`, bytes: buf.length };
+
+});
 }
 
 /** Reads a private blob back as bytes. */
@@ -121,8 +132,11 @@ export async function readVideoBytes(genId: string): Promise<Buffer> {
  * a downloadable URL, so they're stored directly. Same privacy rules. ── */
 
 export async function storeImageBytes(genId: string, buf: Buffer): Promise<{ url: string; bytes: number }> {
+return await withRecoveryActivity('storage', async () => {
+
   if (usingBlob()) {
-    const { put } = await import("@vercel/blob");
+    const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
     await put(imagePath(genId), buf, {
       access: "private",
       contentType: "image/png",
@@ -134,6 +148,8 @@ export async function storeImageBytes(genId: string, buf: Buffer): Promise<{ url
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.png`), buf);
   return { url: `/api/media/${genId}`, bytes: buf.length };
+
+});
 }
 
 export async function readImageBytes(genId: string): Promise<Buffer> {
@@ -145,8 +161,11 @@ export async function readImageBytes(genId: string): Promise<Buffer> {
 /* ── Audio renders (ElevenLabs) — MP3 bytes arrive in the response body. ── */
 
 export async function storeAudioBytes(genId: string, buf: Buffer): Promise<{ url: string; bytes: number }> {
+return await withRecoveryActivity('storage', async () => {
+
   if (usingBlob()) {
-    const { put } = await import("@vercel/blob");
+    const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
     await put(audioPath(genId), buf, {
       access: "private",
       contentType: "audio/mpeg",
@@ -158,6 +177,8 @@ export async function storeAudioBytes(genId: string, buf: Buffer): Promise<{ url
   await mkdir(LOCAL_DIR, { recursive: true });
   await writeFile(path.join(LOCAL_DIR, `${genId}.mp3`), buf);
   return { url: `/api/media/${genId}`, bytes: buf.length };
+
+});
 }
 
 export async function readAudioBytes(genId: string): Promise<Buffer> {
@@ -172,9 +193,12 @@ export async function readAudioBytes(genId: string): Promise<Buffer> {
  * store pathname (or the local file path in development).
  */
 export async function storeIdentityZip(identityId: string, buf: Buffer): Promise<string> {
+return await withRecoveryActivity('storage', async () => {
+
   if (!/^[A-Za-z0-9_-]+$/.test(identityId)) throw new Error("bad id");
   if (usingBlob()) {
-    const { put } = await import("@vercel/blob");
+    const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
     await put(identityZipPath(identityId), buf, {
       access: "private",
       contentType: "application/zip",
@@ -187,6 +211,8 @@ export async function storeIdentityZip(identityId: string, buf: Buffer): Promise
   const local = path.join(LOCAL_DIR, `${identityId}.zip`);
   await writeFile(local, buf);
   return local;
+
+});
 }
 
 /**
@@ -231,10 +257,13 @@ const UPLOAD_DIR = path.join(process.cwd(), ".data", "uploads");
 export async function storeUpload(
   uploadId: string, ext: string, buf: Buffer, contentType: string
 ): Promise<{ url: string; sha256: string }> {
+return await withRecoveryActivity('storage', async () => {
+
   const { createHash } = await import("node:crypto");
 
   if (usingBlob()) {
-    const { put } = await import("@vercel/blob");
+    const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
     await put(uploadPath(uploadId, ext), buf, {
       access: "private", contentType, addRandomSuffix: false, allowOverwrite: true,
     });
@@ -251,6 +280,8 @@ export async function storeUpload(
   // Hash what actually landed on disk, not what we held in memory.
   const written = await readFile(file);
   return { url: `/api/uploads/${uploadId}`, sha256: createHash("sha256").update(written).digest("hex") };
+
+});
 }
 
 export async function readUploadBytes(uploadId: string, ext: string, storedUrl: string): Promise<Buffer> {
@@ -273,13 +304,16 @@ export async function readUploadBytes(uploadId: string, ext: string, storedUrl: 
 
 /** Best-effort removal of a render's stored file — video or image. */
 export async function deleteVideo(genId: string, strict = false, storedUrl?: string | null): Promise<void> {
+return await withRecoveryActivity('storage', async () => {
+
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) { if (strict) throw new Error("Invalid generation media identity"); return; }
   const targets = [videoPath(genId), imagePath(genId), audioPath(genId)];
   if (usingBlob() && storedUrl && /^https?:\/\//.test(storedUrl)) targets.push(storedUrl);
   for (const target of targets) {
     try {
       if (usingBlob()) {
-        const { del } = await import("@vercel/blob");
+        const { del: rawDel } = await import("@vercel/blob");
+    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true });
         await del(target);
       } else {
         const { rm } = await import("node:fs/promises");
@@ -287,14 +321,19 @@ export async function deleteVideo(genId: string, strict = false, storedUrl?: str
       }
     } catch (error) { if (strict) throw error; }
   }
+
+});
 }
 
 /** Best-effort removal of an upload's stored file (blob URL, pathname, or local). */
 export async function deleteUpload(uploadId: string, ext: string, storedUrl: string, strict = false): Promise<void> {
+return await withRecoveryActivity('storage', async () => {
+
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) return;
   try {
     if (usingBlob()) {
-      const { del } = await import("@vercel/blob");
+      const { del: rawDel } = await import("@vercel/blob");
+    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true });
       // Browser-direct uploads carry a random suffix known only via stored_url.
       await del(/^https?:\/\//.test(storedUrl) ? storedUrl : uploadPath(uploadId, ext));
     } else {
@@ -302,6 +341,8 @@ export async function deleteUpload(uploadId: string, ext: string, storedUrl: str
       await rm(path.join(UPLOAD_DIR, `${uploadId}.${ext}`), { force: true });
     }
   } catch (error) { if (strict) throw error; }
+
+});
 }
 
 /* ── Chunked uploads ──────────────────────────────────────────────────────
@@ -315,8 +356,11 @@ const CHUNK_DIR = path.join(process.cwd(), ".data", "chunks");
 const chunkPath = (sess: string, i: number) => `${prefix()}chunks/${sess}/${i}`;
 
 export async function storeChunk(sess: string, i: number, buf: Buffer): Promise<void> {
+return await withRecoveryActivity('storage', async () => {
+
   if (usingBlob()) {
-    const { put } = await import("@vercel/blob");
+    const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
     await put(chunkPath(sess, i), buf, {
       access: "private", contentType: "application/octet-stream",
       addRandomSuffix: false, allowOverwrite: true,
@@ -325,6 +369,8 @@ export async function storeChunk(sess: string, i: number, buf: Buffer): Promise<
   }
   await mkdir(path.join(CHUNK_DIR, prefix(), sess), { recursive: true });
   await writeFile(path.join(CHUNK_DIR, prefix(), sess, String(i)), buf);
+
+});
 }
 
 export async function assembleChunks(sess: string, count: number): Promise<Buffer> {
@@ -340,15 +386,20 @@ export async function assembleChunks(sess: string, count: number): Promise<Buffe
 }
 
 export async function deleteChunks(sess: string, count: number, strict = false): Promise<void> {
+return await withRecoveryActivity('storage', async () => {
+
   try {
     if (usingBlob()) {
-      const { del } = await import("@vercel/blob");
+      const { del: rawDel } = await import("@vercel/blob");
+    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true });
       await del(Array.from({ length: count }, (_, i) => chunkPath(sess, i)));
     } else {
       const { rm } = await import("node:fs/promises");
       await rm(path.join(CHUNK_DIR, prefix(), sess), { recursive: true, force: true });
     }
   } catch (error) { if (strict) throw error; }
+
+});
 }
 
 /* ── Presigned reads ──────────────────────────────────────────────────────
@@ -377,6 +428,8 @@ export async function presignedReadUrl(pathname: string, hours = 24): Promise<st
 export async function streamAssembleUpload(
   sess: string, count: number, uploadId: string, ext: string, contentType: string, maxBytes = 2 * 1024 * 1024 * 1024
 ): Promise<{ sha256: string; bytes: number; headChunk: Buffer }> {
+return await withRecoveryActivity('storage', async () => {
+
   const { createHash } = await import("node:crypto");
   const hash = createHash("sha256");
   let total = 0;
@@ -398,7 +451,8 @@ export async function streamAssembleUpload(
   }
 
   if (usingBlob()) {
-    const { put } = await import("@vercel/blob");
+    const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
     await put(pathnameFor, Readable.from(chunks()), {
       access: "private",
       contentType,
@@ -418,6 +472,8 @@ export async function streamAssembleUpload(
   }
 
   return { sha256: hash.digest("hex"), bytes: total, headChunk: headChunk ?? Buffer.alloc(0) };
+
+});
 }
 
 /** Streams a stored upload out without buffering — a 2GB download must flow

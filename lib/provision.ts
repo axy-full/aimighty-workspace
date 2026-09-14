@@ -1,3 +1,5 @@
+import { recoveryFetch as fetch } from "./recovery";
+import { withRecoveryActivity } from './recovery';
 /**
  * A database of its own for every workspace.
  *
@@ -19,6 +21,8 @@ export function provisioningConfigured(): boolean {
 }
 
 export async function provisionTenantDatabase(slug: string, stableName?:string): Promise<{ url: string; token: string | null; name: string }> {
+return await withRecoveryActivity('database-provisioning', async () => {
+
   const apiToken=process.env.TURSO_API_TOKEN,org=process.env.TURSO_ORG;
   const name=stableName??`particl-${slug}-${Math.random().toString(36).slice(2,6)}`.slice(0,60);
   if(!/^[a-z0-9-]{1,64}$/.test(name))throw new Error('Invalid workspace database name.');
@@ -47,10 +51,14 @@ export async function provisionTenantDatabase(slug: string, stableName?:string):
   const jwt=(await minted.json() as {jwt?:string}).jwt;
   if(!jwt)throw new Error('Workspace database access was not returned. Retry this workspace request.');
   return {url:`libsql://${hostname}`,token:jwt,name};
+
+});
 }
 
 /** Drop a workspace's database at Turso, by the name it was created under. Locally there is no API; the caller removes the file. */
 export async function deleteTenantDatabase(ws: { dbUrl: string; slug: string }): Promise<void> {
+return await withRecoveryActivity('database-provisioning', async () => {
+
   const apiToken = process.env.TURSO_API_TOKEN;
   const org = process.env.TURSO_ORG;
   if (!apiToken || !org) throw new Error("no Turso API on this deployment");
@@ -61,4 +69,6 @@ export async function deleteTenantDatabase(ws: { dbUrl: string; slug: string }):
     method: "DELETE", headers: { Authorization: `Bearer ${apiToken}` }, signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok && res.status !== 404) throw new Error(`Turso would not delete the database (${res.status}): ${(await res.text()).slice(0, 200)}`);
+
+});
 }

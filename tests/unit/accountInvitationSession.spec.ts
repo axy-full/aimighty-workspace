@@ -76,6 +76,7 @@ async function route(
     },
   };
   const dependencies: Record<string, unknown> = {
+    "@/lib/recovery": await import("../../lib/recovery"),
     "next/server": createRequire(resolve("package.json"))("next/server"),
     "next/headers": { cookies: async () => jar },
     "@/lib/auth": {

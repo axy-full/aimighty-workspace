@@ -80,6 +80,7 @@ Module._extensions[".ts"] = function (module, filename) {
   )
     throw new Error("UNEXPECTED_TYPESCRIPT_SOURCE");
   const output = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
+    fileName: filename,
     compilerOptions: {
       target: ts.ScriptTarget.ES2022,
       module: ts.ModuleKind.CommonJS,

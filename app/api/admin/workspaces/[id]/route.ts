@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse, after } from "next/server";
 import { asPlanId } from "@/lib/plans";
 import { requireSuperAdmin } from "@/lib/auth";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  * platform's money it may spend a month, and whether it runs on the
  * platform's keys at all.
  */
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const got = await requireSuperAdmin();
   if (got.response) return got.response;
   const { id } = await params;
@@ -97,4 +98,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     out.mode = mode;
   }
   return NextResponse.json(out);
-}
+});

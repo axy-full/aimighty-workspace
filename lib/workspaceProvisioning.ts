@@ -1,3 +1,4 @@
+import { withRecoveryActivity } from './recovery';
 import { randomUUID } from "node:crypto";
 import type { Transaction } from "@libsql/client";
 import { accountDbReady, accountTransaction, AccountError } from "./accountDb";
@@ -153,7 +154,11 @@ export async function requestWorkspace(input: {
   name: string;
   requestKey?: string;
 }): Promise<string> {
+return await withRecoveryActivity('provisioning', async () => {
+
   return accountTransaction((tx) => prepareWorkspace(tx, input));
+
+});
 }
 export async function pendingWorkspaces(
   ownerId: string,
@@ -175,6 +180,8 @@ export async function resumeWorkspace(
   requestId: string,
   ownerId: string,
 ): Promise<ProvisioningResult> {
+return await withRecoveryActivity('provisioning', async () => {
+
   await accountDbReady();
   const lease = randomUUID();
   const claimed = await accountTransaction(async (tx) => {
@@ -344,6 +351,8 @@ export async function resumeWorkspace(
     }
     return { provisioning: info(current) };
   }
+
+});
 }
 export async function approvedWelcomeCredits(): Promise<number> {
   return (await getPlatformLayer()).caps.signupCredits ?? signupCredits();

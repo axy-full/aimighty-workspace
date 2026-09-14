@@ -15,12 +15,12 @@ type Admit = (
   actor: AdmissionActor,
   options: {
     requestKey: string;
-    defer: (work: () => Promise<unknown>) => void;
+    defer: (work: () => Promise<unknown>) => void | Promise<void>;
   },
 ) => Promise<AdmissionReply>;
 type Dependencies = {
   actor: AdmissionActor;
-  defer: (work: () => Promise<unknown>) => void;
+  defer: (work: () => Promise<unknown>) => void | Promise<void>;
   image?: Admit;
   audio?: Admit;
   deadlineAt?: number;
