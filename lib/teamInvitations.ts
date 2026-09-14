@@ -1,4 +1,5 @@
 import { accountDbReady, accountTransaction, AccountError } from "./accountDb";
+import { assertInvitationSession } from "./accountInvitationSession";
 import {
   platformDb,
   now,
@@ -74,6 +75,7 @@ export async function acceptWorkspaceInvitation(input: {
   password?: string;
   name?: string;
   signedInAccountId?: string;
+  signedInSession?: string;
 }) {
   const layer = await getPlatformLayer();
   const joined = await accountTransaction(async (tx) => {
@@ -105,6 +107,12 @@ export async function acceptWorkspaceInvitation(input: {
       throw new AccountError(
         "This email already has an account. Sign in as that account to accept the invitation.",
         409,
+      );
+    if (existing)
+      await assertInvitationSession(
+        tx,
+        String(existing.id),
+        input.signedInSession,
       );
     const membership = existing
       ? (

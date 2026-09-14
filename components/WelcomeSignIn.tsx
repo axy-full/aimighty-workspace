@@ -31,19 +31,32 @@ export default function WelcomeSignIn() {
       <section className="wl-left">
         <div className="flex flex-col gap-9">
           <div className="flex items-center gap-[22px]">
-            <svg viewBox="30 68 140 64" width="112" height="51" fill="currentColor" aria-hidden="true">
-              {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
+            <svg
+              viewBox="30 68 140 64"
+              width="112"
+              height="51"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              {TRAIL.map(([cx, cy, r], i) => (
+                <circle key={i} cx={cx} cy={cy} r={r} />
+              ))}
             </svg>
             <div className="flex flex-col items-end gap-1.5">
               <span className="wl-word">partıcl</span>
               <span className="wl-studio">STUDIO</span>
             </div>
           </div>
-          <p className="wl-tag">Your production house. One workspace for the brief, the crew and every take.</p>
+          <p className="wl-tag">
+            Your production house. One workspace for the brief, the crew and
+            every take.
+          </p>
         </div>
 
         <div className="wl-foot">
-          <Link href="/atomik/ideas" className="wl-atomik"><AtomikMark size={16} /> IDEA TO SHOT LIST · ATOMIK →</Link>
+          <Link href="/atomik/ideas" className="wl-atomik">
+            <AtomikMark size={16} /> IDEA TO SHOT LIST · ATOMIK →
+          </Link>
         </div>
       </section>
 
@@ -65,6 +78,8 @@ function SignInForm({ next }: { next: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -79,34 +94,56 @@ function SignInForm({ next }: { next: string }) {
    */
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true); setErr(null);
+    setBusy(true);
+    setErr(null);
     let res: Response;
     try {
       res = await fetch("/api/auth/login", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password,
+          code: mfaRequired ? code : undefined,
+        }),
       });
     } catch {
       /* The request never arrived: no connection, or a page left open across
          a deploy holding on to something that has since been replaced. Both
          are fixed by trying again, and the second by reloading. */
-      setErr("Couldn't reach particl. Check your connection and try again — and reload the page if this tab has been open a while.");
+      setErr(
+        "Couldn't reach particl. Check your connection and try again — and reload the page if this tab has been open a while.",
+      );
       setBusy(false);
       return;
     }
 
-    let json: { error?: string } | null = null;
-    try { json = await res.json() as { error?: string }; } catch { json = null; }
+    let json: { error?: string; mfaRequired?: boolean } | null = null;
+    try {
+      json = (await res.json()) as { error?: string; mfaRequired?: boolean };
+    } catch {
+      json = null;
+    }
 
     if (!res.ok) {
       /* The server's own words when it has any. When it does not — a gateway
          error, an HTML page from somewhere in between — say which code came
          back rather than reporting a JSON parse error, which describes our
          own reading of the answer and not the answer. */
-      setErr(json?.error ?? `The server answered ${res.status}. Try again in a moment.`);
+      setErr(
+        json?.error ??
+          `The server answered ${res.status}. Try again in a moment.`,
+      );
       setBusy(false);
       return;
     }
+    if (json?.mfaRequired) {
+      setMfaRequired(true);
+      setBusy(false);
+      return;
+    }
+    setPassword("");
+    setCode("");
     router.push(next);
     router.refresh();
   }
@@ -117,17 +154,84 @@ function SignInForm({ next }: { next: string }) {
         <h1 className="page-h1">Sign in</h1>
         <p className="page-sub !m-0">Open your studio workspace.</p>
       </div>
-      <label className="wl-field">EMAIL
-        <input type="email" autoComplete="username" required placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <label className="wl-field">
+        EMAIL
+        <input
+          type="email"
+          autoComplete="username"
+          required
+          placeholder="you@studio.com"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            setMfaRequired(false);
+            setCode("");
+          }}
+        />
       </label>
-      <label className="wl-field">PASSWORD
-        <input type="password" autoComplete="current-password" required placeholder="••••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <label className="wl-field">
+        PASSWORD
+        <input
+          type="password"
+          autoComplete="current-password"
+          required
+          placeholder="••••••••••"
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            setMfaRequired(false);
+            setCode("");
+          }}
+        />
       </label>
-      <button type="submit" disabled={busy} className="btn-primary !h-[46px] justify-center !text-[14px]">{busy ? "…" : "Sign in"}</button>
-      {err && <p className="rail-help text-lift">{err}</p>}
+      {mfaRequired && (
+        <label className="wl-field">
+          AUTHENTICATOR OR RECOVERY CODE
+          <input
+            type="text"
+            autoComplete="one-time-code"
+            autoFocus
+            required
+            maxLength={24}
+            placeholder="Six-digit code or recovery code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+          <span className="rail-help">
+            Enter your authenticator code or one unused recovery code.
+          </span>
+        </label>
+      )}
+      <button
+        type="submit"
+        disabled={busy}
+        className="btn-primary !h-[46px] justify-center !text-[14px]"
+      >
+        {busy ? "…" : "Sign in"}
+      </button>
+      {err && (
+        <p role="alert" className="rail-help text-lift">
+          {err}
+        </p>
+      )}
       <div className="wl-form-foot">
-        <span>New to Particl? <Link href="/pricing" className="text-lead hover:text-ink">View plans</Link> · <Link href="/signup" className="text-lead hover:text-ink">Create a workspace</Link><br/><Link href="/reset" className="text-lead hover:text-ink">Forgot password?</Link></span>
-        <Link href="/" className="hdr-mono-link">LOOK AROUND →</Link>
+        <span>
+          New to Particl?{" "}
+          <Link href="/pricing" className="text-lead hover:text-ink">
+            View plans
+          </Link>{" "}
+          ·{" "}
+          <Link href="/signup" className="text-lead hover:text-ink">
+            Create a workspace
+          </Link>
+          <br />
+          <Link href="/reset" className="text-lead hover:text-ink">
+            Forgot password?
+          </Link>
+        </span>
+        <Link href="/" className="hdr-mono-link">
+          LOOK AROUND →
+        </Link>
       </div>
     </form>
   );
@@ -142,7 +246,8 @@ function SignInForm({ next }: { next: string }) {
 function safeNext(raw: string | null): string {
   if (!raw) return "/";
   if (/[\u0000-\u001F\u007F]/.test(raw)) return "/";
-  if (typeof window === "undefined") return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+  if (typeof window === "undefined")
+    return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
   try {
     const here = window.location.origin;
     const u = new URL(raw, here);

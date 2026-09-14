@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
-import { SESSION_COOKIE, createSession, currentContext } from "@/lib/auth";
+import { SESSION_COOKIE, currentContext } from "@/lib/auth";
+import { accountInvitationSession } from "@/lib/accountInvitationSession";
 import { switchSessionWorkspace } from "@/lib/platform";
 import { verifySignup, signupNext } from "@/lib/signupRegistration";
 import { resumeWorkspace } from "@/lib/workspaceProvisioning";
@@ -15,16 +16,27 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid request origin." }, { status: 403 });
   try {
     const body = await accountJson(req),
-      ctx = await currentContext();
-    const result = await verifySignup(String(body.token ?? ""), ctx?.user.id);
-    const token = await createSession(result.owner.id);
-    (await cookies()).set(SESSION_COOKIE, token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 30 * 86400,
-    });
+      ctx = await currentContext(),
+      jar = await cookies(),
+      signedInSession = jar.get(SESSION_COOKIE)?.value;
+    const result = await verifySignup(
+      String(body.token ?? ""),
+      ctx?.user.id,
+      signedInSession,
+    );
+    const { session: token, created } = await accountInvitationSession(
+      result.owner.id,
+      ctx?.user.id,
+      signedInSession,
+    );
+    if (created)
+      jar.set(SESSION_COOKIE, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 30 * 86400,
+      });
     const provisioned = await resumeWorkspace(
       result.requestId,
       result.owner.id,

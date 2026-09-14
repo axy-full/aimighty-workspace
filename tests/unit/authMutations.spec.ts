@@ -144,7 +144,7 @@ test("concurrent reset attempts consume a link once, revoke all prior sessions a
   ).rows;
   expect(rows).toHaveLength(1);
   if (successes[0].status === "fulfilled")
-    expect(rows[0].token_hash).toBe(tokenHash(successes[0].value.session));
+    expect(rows[0].token_hash).toBe(tokenHash(successes[0].value.session!));
   await expect(
     resetAccountPassword("concurrent-second", "other-password-2026"),
   ).rejects.toThrow(/already used/);
