@@ -12,7 +12,7 @@ import type { MeterEvent } from '../../lib/meter';
 import type { CatalogModel } from '../../lib/catalog';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-workbench-atomik-'));
-const model: CatalogModel = { id: 'test/economy', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
+const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
 const validReply = { intent: 'shots', summary: 'Mira enters the dunes after the sphere catches first light.', steps: ['Open on the mirrored dunes for 96 frames at 24 fps.', 'Hold the encounter for 144 frames; keep Mira’s ivory scarf consistent.'] };
 function workspace(): TenantWorkspace {
   const id = randomUUID();
@@ -50,8 +50,21 @@ test('the crew has seven requested departments and Genie is a general assistant'
 });
 
 test('catalog selection uses priced language models and chooses economy by cost', () => {
-  const expensive = { ...model, id: 'test/premium', pricing: { input: .00001, output: .00005 } };
-  expect(atomikModels([expensive, { ...model, id: 'test/unpriced', pricing: null }, { ...model, id: 'test/image', type: 'image' }, model]).map(m => m.id)).toEqual(['test/economy','test/premium']);
+  const expensive = { ...model, id: 'anthropic/claude-opus-4.7', pricing: { input: .00001, output: .00005 } };
+  expect(atomikModels([expensive, { ...model, id: 'anthropic/claude-opus-4.6', pricing: null }, { ...model, id: 'openai/gpt-5.5-pro', type: 'image' }, { ...model, id: 'test/unapproved', pricing: { input: 0, output: 0 } }, model]).map(m => m.id)).toEqual(['anthropic/claude-sonnet-4.6','anthropic/claude-opus-4.7']);
+});
+
+test('an unapproved catalog model cannot quote or reserve Atomik work', async () => {
+  await runInTenant(workspace(), async () => {
+    const {input}=await fixture();
+    const h=harness();
+    h.deps.models=async()=>[model,{...model,id:'test/unapproved'}];
+    await expect(quoteAtomikJob({...input,model:'test/unapproved'},'owner',h.deps)).rejects.toThrow('not offered in Atomik');
+    await expect(prepareAtomikJob({...input,model:'test/unapproved'},'owner',undefined,h.deps)).rejects.toThrow('not offered in Atomik');
+    expect(h.reservations()).toBe(0);
+    expect(h.calls()).toBe(0);
+    expect(await listAtomikJobs('owner',input.projectId)).toEqual([]);
+  });
 });
 
 test('context is tied to supplied references and never pretends to inspect pictures', async () => {
@@ -167,7 +180,7 @@ test('a quote reveals the reserved credit amount without starting or saving a pa
     const { input } = await fixture();
     const h = harness();
     const quote = await quoteAtomikJob(input, 'owner', h.deps);
-    expect(quote.model).toBe('test/economy');
+    expect(quote.model).toBe('anthropic/claude-sonnet-4.6');
     expect(quote.estimateCredits).toBeGreaterThan(0);
     expect(h.calls()).toBe(0);
     expect(h.reservations()).toBe(0);
