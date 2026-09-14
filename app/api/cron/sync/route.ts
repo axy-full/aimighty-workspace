@@ -10,6 +10,7 @@ import { releaseHeldJobs } from "@/lib/held";
 import { retryWorkspacePurges } from "@/lib/purge";
 import { reconcileWorkspaces } from "@/lib/reconciliation";
 import { cleanupExpiredUploads } from "@/lib/uploadReservations";
+import { drainPipelineWakeups } from "@/lib/pipeline/executor";
 import { cleanupDeletedGenerations } from "@/lib/mediaDeletion";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,10 @@ export async function GET(req: Request) {
             const report = await syncPending(8, { deadlineAt });
             if (report.failed) throw new Error("RECONCILIATION_FAILED");
             deferred ||= report.deferred > 0;
+          });
+          await stage("pipelines", async () => {
+            const report = await drainPipelineWakeups({ limit: 2, deadlineAt, defer: fn => afterResponse(fn) });
+            if (report.failed) throw new Error("PIPELINE_RECOVERY_FAILED");
           });
           await stage("training", async () => {
             const report = await syncTrainingIdentities(2);

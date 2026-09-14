@@ -35,13 +35,13 @@ export async function renderDispatchReady(): Promise<void> {
 export type RenderDispatchEvent = {
   id: string;
   name: "render/requested";
-  data: { genId: string; kind: "image" | "audio"; workspaceId: string };
+  data: { genId: string; kind: "image" | "audio" | "video"; workspaceId: string };
 };
 
 /** Lease only the cheap event delivery. The permanent paid claim is never reset. */
 export async function dispatchRender(
   genId: string,
-  kind: "image" | "audio",
+  kind: "image" | "audio" | "video",
   send: (event: RenderDispatchEvent) => Promise<unknown>,
   timeoutMs = 5_000,
 ): Promise<boolean> {
@@ -104,7 +104,7 @@ export async function dispatchRender(
   }
 }
 
-/** Reconstruct missing intents only for reserved synchronous jobs that never entered the paid step. */
+/** Reconstruct missing intents only for reserved jobs that never entered the paid step. */
 export async function recoverRenderDispatches(
   send: (event: RenderDispatchEvent) => Promise<unknown>,
   options: { limit?: number; deadlineAt?: number } = {},
@@ -113,8 +113,9 @@ export async function recoverRenderDispatches(
   await platformReady();
   const rs = await db().execute({
     sql: `SELECT g.id,g.kind FROM generations g LEFT JOIN render_dispatches d ON d.id=g.id
-    WHERE g.status IN ('queued','running') AND g.deleted=0 AND g.kind IN ('image','audio')
-      AND json_extract(g.params,'$.paidClaim') IS NULL AND json_extract(g.params,'$.falRequestId') IS NULL
+    WHERE g.status IN ('queued','running') AND g.deleted=0 AND g.kind IN ('image','audio','video')
+      AND g.ark_task_id IS NULL AND json_extract(g.params,'$.paidClaim') IS NULL AND json_extract(g.params,'$.falRequestId') IS NULL
+      AND json_extract(g.params,'$.producedOutcome') IS NULL
       AND json_extract(g.params,'$.identity') IS NULL AND (d.attempted_at IS NULL OR d.attempted_at<?)
     ORDER BY COALESCE(d.attempted_at,0),g.created_at,g.id LIMIT ?`,
     args: [now() - 60_000, Math.max(1, Math.min(10, options.limit ?? 4))],
@@ -131,12 +132,22 @@ export async function recoverRenderDispatches(
         args: [row.id, requireTenant().id],
       })
     ).rows[0];
-    if (reservation?.status !== "running") continue;
+    if (reservation?.status !== "running") {
+      // A crash between row creation and reservation must not occupy the
+      // first bounded page forever. Record this cheap check and rotate it.
+      await db().execute({
+        sql: `INSERT INTO render_dispatches(id,kind,created_at,attempted_at)
+          SELECT id,kind,created_at,? FROM generations WHERE id=?
+          ON CONFLICT(id) DO UPDATE SET attempted_at=excluded.attempted_at WHERE lease_until<=?`,
+        args: [now(), row.id, now()],
+      });
+      continue;
+    }
     result.attempted++;
     if (
       !(await dispatchRender(
         String(row.id),
-        String(row.kind) as "image" | "audio",
+        String(row.kind) as "image" | "audio" | "video",
         send,
       ))
     )
