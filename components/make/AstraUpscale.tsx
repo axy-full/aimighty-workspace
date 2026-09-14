@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Film, Upload } from "lucide-react";
 import { useApi } from "@/lib/useApi";
 import { useSession, useSignInHref } from "@/lib/session";
@@ -45,7 +45,9 @@ export default function AstraUpscale({
     data: uploads,
     error: uploadError,
     refresh,
-  } = useApi<{ uploads: UploadedFile[] }>("/api/uploads?limit=500");
+  } = useApi<{ uploads: UploadedFile[] }>(
+    signedIn ? "/api/uploads?limit=500" : null,
+  );
   const {
     data: takes,
     error: takeError,
@@ -64,22 +66,24 @@ export default function AstraUpscale({
     [uploading, setUploading] = useState(false),
     [error, setError] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  const sources = [
-    ...added,
-    ...(uploads?.uploads || []).filter((u) => u.kind === "video").map(asUpload),
-    ...(takes?.generations || [])
-      .filter((g) => g.kind === "video" && g.status === "succeeded")
-      .map((g): Source => ({
-        key: `generation:${g.id}`,
-        id: g.id,
-        name: g.title || g.prompt.slice(0, 70) || g.id,
-        url: `/api/media/${encodeURIComponent(g.id)}`,
-        origin: "generation",
-      })),
-  ].filter(
-    (item, index, all) =>
-      all.findIndex((other) => item.key === other.key) === index,
-  );
+  const sources = useMemo(() => {
+    const all = [
+      ...added,
+      ...(uploads?.uploads || [])
+        .filter((u) => u.kind === "video")
+        .map(asUpload),
+      ...(takes?.generations || [])
+        .filter((g) => g.kind === "video" && g.status === "succeeded")
+        .map((g): Source => ({
+          key: `generation:${g.id}`,
+          id: g.id,
+          name: g.title || g.prompt.slice(0, 70) || g.id,
+          url: `/api/media/${encodeURIComponent(g.id)}`,
+          origin: "generation",
+        })),
+    ];
+    return Array.from(new Map(all.map((item) => [item.key, item])).values());
+  }, [added, uploads, takes]);
   const source = sources.find((item) => item.key === key),
     saved = paid.pending
       ? (JSON.parse(paid.pending.body) as Record<string, unknown>)
@@ -282,7 +286,7 @@ export default function AstraUpscale({
                 }
               >
                 <option value={30}>30 fps</option>
-                <option value={60}>60 fps · interpolation</option>
+                <option value={60}>60 fps</option>
               </select>
             </label>
           </div>

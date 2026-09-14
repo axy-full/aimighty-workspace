@@ -736,3 +736,7 @@ The server inspects original dimensions, derives the output band, and binds sour
 ### 14 September 2026 — saved sound mix and transport
 
 Edit & sound now uses saved, asset-bound sound clips with frame timing, source trims, gain, pan, fades and mute/solo. Prepared playback follows the timeline, and the same mixer feeds final movies and 48 kHz stereo 24-bit PCM / 32-bit float WAV downloads. Audio source lineage accompanies the editorial package. The exact bounds and remaining professional audio requirements are in `docs/sound-mix.md`; this is not a long-form or mastering release. Stripe and the approved credit model are unchanged.
+
+## September 14 amendment — Astra 2 output controls and reconciliation
+
+Gen now has a dedicated Astra 2 video-upscale panel with original uploaded/generated sources, explicit 30/60 fps, creativity, realism and sharpness. Quotes inspect original track metadata and reserve the 4K rate rather than assuming that the provider obeys a requested 1080p size. Saved results retain measured output metadata and reconcile lower costs; over-budget output remains pending reconciliation without another paid request. Unsent legacy requests need a fresh quote, while existing paid claims and handles are preserved. See `docs/astra-video-upscale.md` for exact limits and remaining live-provider validation. The subscription tiers, credit formula and deferred Stripe scope are unchanged.

@@ -240,6 +240,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
               onTotals={setTotals}
               onUsePrompt={reuse}
               onEdit={mode.kind === "video" ? editSource : undefined}
+              onAstraUpscale={mode.kind === "video" ? astraSource : undefined}
               onUpscale={mode.kind === "image" ? upscaleSource : undefined}
             />
           </div>

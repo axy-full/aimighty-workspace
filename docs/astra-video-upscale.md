@@ -1,0 +1,15 @@
+# Astra 2 video upscaling
+
+Gen → Video → Engine → Topaz Astra 2 accepts an uploaded MP4/MOV original or a completed workspace video. Take actions also open **Upscale video**. The result is a new take with source lineage; the original remains available across the studio.
+
+Controls cover creativity, realism and sharpness (0–1), plus an explicit 30 or 60 fps output. Frame interpolation occurs when the output rate differs from the source. This creative model can reconstruct fine detail; it is not a guarantee of identity-preserving restoration. Text-directed changes use Seedance 2.5 Edit. Astra's optional text-prompt mode is not exposed because it has a separate 450-input-frame limit.
+
+Before quoting, the server inspects timing and dimensions from the original video track through private storage byte ranges. Client or stored upload dimensions and duration cannot lower the quote. Source limits are five minutes and 200 MB; metadata inspection has a 16 MB read budget, 256 range requests and a 20-second deadline. A clip that cannot be inspected must be remuxed before submission. The requested scale is derived from the source, while the provider chooses its supported output dimensions, typically 4K.
+
+Current provider pricing, verified 14 September 2026, is $0.50 per second for 4K at 30 fps and $1.00 at 60 fps. New quotes reserve the 4K tier and apply the existing workspace credit terms. Quotes bind the source and settings, and a changed request needs a fresh review. These are budget estimates, not a guaranteed delivered resolution. Lower-resolution output is reconciled at its measured duration/frame rate and the provider's lower rate ($0.30/second through 1080p at 30 fps; doubled above 30 fps). An output above the reviewed budget stays in reconciliation with its original reservation; it is not silently charged above the approval.
+
+Collection holds one per-job lease. It retains the known provider handle across transport, storage or output-inspection failures. Successful output metadata is saved as `astraOutput`, the original reviewed settings remain under `astraQuotedOutput`, and the take’s dimensions/duration describe the delivered video for downstream edits, with one conditional terminal write and settlement. Lost browser responses replay the saved idempotency key. Old queued requests lacking the explicit settings are released only if no paid claim or accepted handle exists; uncertain and already accepted submissions are preserved.
+
+Verification uses synthetic originals, actual storage/admission/ledger paths and mocked provider outcomes. A mocked 1.5-second 720×1280/24 fps output reconciles a 23-credit reservation to 7 credits, and the larger-output, interrupted-poll and concurrent-collection cases retain their correct reservations. No real paid Astra render has been rehearsed. Provider quality, latency and invoice agreement still require a bounded internal rehearsal.
+
+Sources: [Astra API controls and limits](https://fal.ai/models/topaz/upscale/video/creative/api), [official pricing](https://fal.ai/models/topaz/upscale/video/creative).

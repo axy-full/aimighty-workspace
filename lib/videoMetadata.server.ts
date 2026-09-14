@@ -6,6 +6,7 @@ export type VideoMetadata = {
   height: number;
   seconds: number;
   firstTimestamp: number;
+  fps?: number;
 };
 export const VIDEO_INSPECTION_LIMIT = 200 * 1024 * 1024;
 const METADATA_READ_LIMIT = 16 * 1024 * 1024;
@@ -14,6 +15,7 @@ const METADATA_READ_LIMIT = 16 * 1024 * 1024;
 export async function inspectOriginalVideo(
   ref: Reference,
   bytes: number,
+  includeFrameRate = false,
 ): Promise<VideoMetadata> {
   if (
     ref.kind !== "video" ||
@@ -114,7 +116,21 @@ export async function inspectOriginalVideo(
       throw new Error(
         "Astra accepts video clips up to five minutes with valid source dimensions.",
       );
-    return { width, height, seconds, firstTimestamp: first };
+    const fps = includeFrameRate
+      ? (await track.computePacketStats()).averagePacketRate
+      : undefined;
+    if (
+      includeFrameRate &&
+      (!Number.isFinite(fps) || !fps || fps <= 0 || fps > 120)
+    )
+      throw new Error("The delivered frame rate cannot be reconciled.");
+    return {
+      width,
+      height,
+      seconds,
+      firstTimestamp: first,
+      ...(fps === undefined ? {} : { fps }),
+    };
   } finally {
     clearTimeout(timer);
     abort.abort();
