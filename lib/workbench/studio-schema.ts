@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { validateAudio } from "./audio";
 import type { Project } from "./studio";
+import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
 const asset = z.object({
   id: z.string().max(100),
   name: z.string().max(200),
@@ -61,6 +62,15 @@ const node = z.object({
   ]),
   assetId: z.string().optional(),
   text: z.string().max(30000).optional(),
+  scriptScene: z
+    .object({
+      id: z.string().max(100),
+      sourceKey: z.string().max(64),
+      sourceAssetId: z.string().max(100).optional(),
+      pageStart: z.number().int().min(1).max(MAX_SCRIPT_PAGES).optional(),
+      pageEnd: z.number().int().min(1).max(MAX_SCRIPT_PAGES).optional(),
+    })
+    .optional(),
   x: z.number().min(-10000).max(20000),
   y: z.number().min(-10000).max(20000),
   width: z.number().min(150).max(1200),
@@ -150,7 +160,39 @@ export const projectSchema = z.object({
     )
     .max(64)
     .optional(),
-  script: z.string().max(100000).optional(),
+  script: z.string().max(MAX_SCRIPT_CHARS).optional(),
+  scriptSource: z
+    .object({
+      assetId: z.string().max(100),
+      filename: z.string().max(200),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      pages: z
+        .array(
+          z.object({
+            page: z.number().int().min(1).max(MAX_SCRIPT_PAGES),
+            start: z.number().int().min(0).max(MAX_SCRIPT_CHARS),
+            end: z.number().int().min(0).max(MAX_SCRIPT_CHARS),
+          }),
+        )
+        .max(MAX_SCRIPT_PAGES),
+      importedAt: z.string().max(50),
+      edited: z.boolean(),
+      acknowledgedEmptyPages: z
+        .array(z.number().int().min(1).max(MAX_SCRIPT_PAGES))
+        .max(MAX_SCRIPT_PAGES),
+    })
+    .optional(),
+  scriptReviews: z
+    .record(
+      z.string().max(100),
+      z.object({
+        sourceKey: z.string().max(64),
+        intent: z.string().max(5000),
+        beats: z.array(z.string().max(5000)).max(100),
+      }),
+    )
+    .refine((value) => Object.keys(value).length <= 500)
+    .optional(),
   sharedNodes: z.array(node).max(250).optional(),
   sharedAssets: z.array(asset).max(500).optional(),
 });
@@ -160,14 +202,60 @@ export const saveSchema = z
     project: projectSchema,
     revision: z.number().int().min(0),
   })
-  .superRefine((value, ctx) => {
+  .superRefine(({ project }, context) => {
     try {
-      validateAudio(value.project as Project);
+      validateAudio(project as Project);
     } catch (error) {
-      ctx.addIssue({
+      context.addIssue({
         code: "custom",
         path: ["project", "audioClips"],
         message: (error as Error).message,
       });
     }
+    const assets = new Map(project.assets.map((asset) => [asset.id, asset]));
+    const source = project.scriptSource;
+    if (source) {
+      const asset = assets.get(source.assetId);
+      if (!asset || asset.kind !== "document" || !asset.uploadId)
+        context.addIssue({
+          code: "custom",
+          message: "Keep the uploaded screenplay source in the asset library.",
+          path: ["project", "scriptSource"],
+        });
+      let end = 0;
+      source.pages.forEach((page, index) => {
+        if (
+          page.page !== index + 1 ||
+          page.start !== end ||
+          page.end <= page.start
+        )
+          context.addIssue({
+            code: "custom",
+            message: "Invalid screenplay page boundaries.",
+            path: ["project", "scriptSource", "pages", index],
+          });
+        end = page.end;
+      });
+      if (
+        source.pages.length &&
+        !source.edited &&
+        end !== (project.script || "").length
+      )
+        context.addIssue({
+          code: "custom",
+          message:
+            "The screenplay page mapping no longer matches its source text.",
+          path: ["project", "scriptSource"],
+        });
+    }
+    for (const node of project.nodes)
+      if (
+        node.scriptScene?.sourceAssetId &&
+        !assets.has(node.scriptScene.sourceAssetId)
+      )
+        context.addIssue({
+          code: "custom",
+          message: "Keep the original source for each screenplay node.",
+          path: ["project", "nodes"],
+        });
   });

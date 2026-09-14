@@ -1,3 +1,4 @@
+import {readProjectBody} from '@/lib/workbench/request-body';
 import { withTenant, requireSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { saveSchema } from '@/lib/workbench/studio-schema';
@@ -37,9 +38,8 @@ export const PUT=withTenant(async(req:Request)=>{
   const scopeError=workbenchScopeProblem(req,requireTenant().id,auth.user.id,true);
   if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   if(originProblem(req))return Response.json({error:'Invalid request origin'},{status:403});
-  if(Number(req.headers.get('content-length')||0)>2_000_000)return Response.json({error:'Production exceeds the 2 MB limit.'},{status:413});
-  const raw=await req.text();if(raw.length>2_000_000)return Response.json({error:'Production exceeds the 2 MB limit.'},{status:413});
-  let value:unknown;try{value=JSON.parse(raw)}catch{return Response.json({error:'Invalid project JSON'},{status:400})}
+  const body=await readProjectBody(req);if(!body.ok)return Response.json({error:body.error},{status:body.status});
+  const value=body.value;
   const parsed=saveSchema.safeParse(value);
   if(!parsed.success)return Response.json({error:'Check the production fields before saving.'},{status:400});
   await workbenchReady();
@@ -61,7 +61,7 @@ export const POST=withTenant(async(req:Request)=>{
     if(!row)return Response.json({error:'Production not found'},{status:404});
     const latest=(await db().execute({sql:'SELECT body,version FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[body.projectId]})).rows[0];
     const shared=latest?JSON.parse(String(latest.body)):null;
-    const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
+    const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
     return Response.json({project:p,revision:0});
   }
   const draft=await readDraft(auth.user.id,body.projectId);
