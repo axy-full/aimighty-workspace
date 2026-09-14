@@ -416,7 +416,7 @@ try {
       },
       data: generation,
     }),
-    200,
+    202,
   );
   let job;
   for (let i = 0; i < 30; i++) {
@@ -467,7 +467,7 @@ try {
       },
       data: generation,
     }),
-    200,
+    202,
   );
   assert.equal(repeat.id, started.id);
   // Authoritative text/training bills and another tenant's sentinel verify
