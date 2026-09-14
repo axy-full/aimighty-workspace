@@ -2,7 +2,7 @@
 
 Gen → Images → Engine → Topaz Image Upscale accepts an original workspace image or a new upload. Completed images also offer **Upscale image** in the take actions. The output is a new reusable take; the original is retained.
 
-The precision choices are Standard V2, High Fidelity V2, Low Resolution V2, CGI and Text Refine. Scale is 1×, 2× or 4×. Face enhancement is opt-in, with adjustable strength and zero creative face reconstruction. Output is PNG at the source aspect. Animated images and transparency require exporting an individual, flattened frame first. Inputs are PNG/JPEG/WebP up to 30 MB; outputs are bounded at 48 megapixels and 16,384 pixels per side.
+The precision choices are Standard V2, High Fidelity V2, Low Resolution V2, CGI and Text Refine. Scale is 1×, 2× or 4×. Face enhancement is opt-in, with adjustable strength and zero creative face reconstruction. Output is PNG at the source aspect, stored byte-for-byte without stripping color metadata. Provider files are limited to 200 MB before storage. Animated images and transparency require exporting an individual, flattened frame first. Inputs are PNG/JPEG/WebP up to 30 MB; outputs are bounded at 48 megapixels and 16,384 pixels per side.
 
 The server reads the original file's metadata before pricing; neither client dimensions nor a delivery JPEG determine the price. It chooses the provider's output band (up to 24 MP or 48 MP), applies the existing credit formula, and binds the quote to the source and settings. Any change requires a fresh quote. Source ownership, membership, caps, quota and credit reservation use the existing admission gates. Saved parameters retain the input reference and upscale settings for the worker and subsequent reuse.
 

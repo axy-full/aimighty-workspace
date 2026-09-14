@@ -628,8 +628,7 @@ test("Topaz persists its queue handle, resumes after a lost polling attempt, and
   expect(accepted.ok).toBe(true); const id = (await accepted.json()).id;
   const engineModule = await import("../../lib/engines");
   const fal = await import("../../lib/fal");
-  const actualWork = await import("../../lib/renderWork");
-  const work = load<typeof actualWork>("lib/renderWork.ts", { "./engines": engineModule, "./fal": { ...fal, falAwait: async () => { throw new Error("Worker interrupted after queue acknowledgment"); } } });
+  const work = load<typeof import("../../lib/renderWork")>("lib/renderWork.ts", { "./engines": engineModule, "./fal": { ...fal, falAwait: async () => { throw new Error("Worker interrupted after queue acknowledgment"); } } });
   const job = await work.loadJob(id); expect(job?.kind).toBe("image");
   await expect(work.produce(job!)).resolves.toBeNull();
   const queued = JSON.parse(String((await rows())[0].params));

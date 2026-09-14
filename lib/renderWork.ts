@@ -374,7 +374,13 @@ async function finishStill(job: StillJob, img: EngineProduced, queueMs: number, 
   // generation loss to a PNG. (sharp is for THIS transcode and for delivery
   // copies only — reference masters never pass through it.)
   const sharp = (await import("sharp")).default;
-  const png = await sharp(img.bytes, job.modelId === TOPAZ_IMAGE_MODEL ? { limitInputPixels: 48_000_000 } : {}).png().toBuffer();
+  let png: Buffer;
+  if (job.modelId === TOPAZ_IMAGE_MODEL) {
+    const meta = await sharp(img.bytes, { limitInputPixels: 48_000_000 }).metadata();
+    if (meta.format !== "png" || !meta.width || !meta.height || meta.width * meta.height > 48_000_000)
+      throw new Error("Topaz returned an unsupported master. The original provider request is retained for review.");
+    png = img.bytes; // Keep precision, color profile and metadata; the requested PNG needs no transcode.
+  } else png = await sharp(img.bytes).png().toBuffer();
   const storeStart = now();
   /* Google has already drawn and charged for this image. A brief Blob
      outage here would otherwise throw the whole render away. The put is
@@ -427,7 +433,7 @@ export async function reconcileTopazImage(genId: string): Promise<void> {
       if (state.status !== "COMPLETED") return;
       const result = await falResult<{ image?: { url?: string; content_type?: string } }>(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
       if (!result.image?.url) throw new Error("Topaz returned no image. The existing request remains available for reconciliation.");
-      const out = await finishStill(job, { bytes: await fetchBytes(result.image.url), mime: result.image.content_type ?? "image/png",
+      const out = await finishStill(job, { bytes: await fetchBytes(result.image.url, 60_000, 200 * 1024 * 1024), mime: result.image.content_type ?? "image/png",
         costUsd: estimateImageCostUsd(job.modelId, job.size, 0)?.net ?? null, totalTokens: null, via: "fal" }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0", args: [JSON.stringify(out), now(), genId] });
       await seal(job, out);

@@ -41,3 +41,17 @@ test("Topaz precision bounds use output pixel count and never crop or invent fac
   ])
     expect(() => topazImageSettings(value)).toThrow();
 });
+
+test("provider download bounds stop oversized streams and cancel their readers", async () => {
+  const { fetchBytes } = await import("../../lib/mockFs");
+  const previous = globalThis.fetch; let cancelled = 0;
+  try {
+    globalThis.fetch = async () => new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(6)); }, cancel() { cancelled++; } }));
+    await expect(fetchBytes("https://provider.invalid/output", 1000, 10)).rejects.toThrow("download limit");
+    expect(cancelled).toBe(1);
+    globalThis.fetch = async () => new Response(new Uint8Array([1,2,3]), { headers: { "Content-Length": "99" } });
+    await expect(fetchBytes("https://provider.invalid/output", 1000, 10)).rejects.toThrow("download limit");
+    globalThis.fetch = async () => new Response(new Uint8Array([1,2,3]));
+    expect(await fetchBytes("https://provider.invalid/output", 1000, 10)).toEqual(Buffer.from([1,2,3]));
+  } finally { globalThis.fetch = previous; }
+});
