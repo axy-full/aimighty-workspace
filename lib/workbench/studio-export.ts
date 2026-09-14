@@ -26,6 +26,7 @@ export function collectExportAssets(p:Project):Asset[]{
  };
  for(const shot of p.shots)visit(shot.assetId);
  for(const clip of audioClips(p))visit(clip.assetId);
+ if(p.colorGrade?.lutAssetId)visit(p.colorGrade.lutAssetId);
  if(p.scriptSource)visit(p.scriptSource.assetId);
  for(const node of p.nodes)if(node.scriptScene?.sourceAssetId)visit(node.scriptScene.sourceAssetId);
  return result;
@@ -83,7 +84,7 @@ reference-links.json (when present): saved website references. Web pages are not
 
 Import the EDL at the stated frame rate and relink using FROM CLIP NAME comments. Image sources are still-frame holds, not rendered video; configure still duration manually if your editor does not conform them. Some editors need WebP/GIF stills converted to PNG before relinking. Export a PNG from the Particl asset editor if needed. Video must already match the sequence frame rate and have zero-based source timecode; embedded timecodes and source frame rates have not been probed.
 
-Audio source files and Sound mix clip positions, gain, pan, fades, mute and solo states are preserved in production.json. They are not placed by the EDL. Export the 48 kHz WAV mix from Edit & sound for an aligned stereo handoff. Aspect ratio is a delivery instruction, not a reframe. Crop and colour are baked only into newly saved image takes. Transitions, motion effects, a sound mix, synchronized audio, subtitles and a rendered master are not carried by this EDL. Fractional and drop-frame rates are unsupported.
+Audio source files and Sound mix clip positions, gain, pan, fades, mute and solo states are preserved in production.json. They are not placed by the EDL. Export the 48 kHz WAV mix from Edit & sound for an aligned stereo handoff. Aspect ratio is a delivery instruction, not a reframe. Sequence color settings and the original .cube LUT are preserved in this package. Apply them manually in your NLE; the EDL does not carry grades. The Particl final movie bakes its sequence look. Saved image takes retain their own edits. Transitions, motion effects, a sound mix, synchronized audio, subtitles and a rendered master are not carried by this EDL. Fractional and drop-frame rates are unsupported.
 
 The manifest preserves take lineage and saved versions. It is not an audit log of every edit. Relinking must be tested in your target NLE before a client delivery.
 `);
