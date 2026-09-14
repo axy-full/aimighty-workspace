@@ -18,3 +18,5 @@ Exit status is nonzero for an unexpected error, failed invariant or a source cha
 The local client defaults to a 2,000 ms native SQLite busy timeout, applied to replacement connections and reconnects. Callers can explicitly choose `timeout: 0`. Waiting in the synchronous native driver blocks that process’s JavaScript event loop, so this is bounded contention handling rather than unlimited capacity; persistent locks still fail without replaying SQL. Remote database client configuration is unchanged.
 
 These numbers describe this local host and driver configuration. They do **not** establish Vercel, Turso, Inngest, provider, browser, HTTP, upload or movie-export capacity. The report records the Git revision, source digest and Node/platform identity to make those limits explicit. Stripe is excluded.
+
+The source digest covers TypeScript, TSX, JavaScript, MJS and CJS modules under lib, including the recovery controller, plus both rehearsal scripts and package manifests. Older reports that omitted MJS cannot establish that controller code stayed unchanged.
