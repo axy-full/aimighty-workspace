@@ -205,7 +205,11 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
   const playhead = page.getByRole("slider", { name: "Sequence playhead" });
   await playhead.focus();
   await playhead.press("Home");
-  for (let i = 0; i < 12; i++) await playhead.press("ArrowRight");
+  await expect(playhead).toHaveAttribute("aria-valuenow", "0");
+  for (let i = 0; i < 12; i++) {
+    await playhead.press("ArrowRight");
+    await expect(playhead).toHaveAttribute("aria-valuenow", String(i + 1));
+  }
   const play = page.getByRole("button", { name: "Play timeline", exact: true });
   await play.focus();
   await play.press("Space");
@@ -216,7 +220,7 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
           window as Window & {
             soundTransport?: { offset: number; duration: number }[];
           }
-        ).soundTransport?.at(-1),
+        ).soundTransport?.at(0),
       ),
     )
     .toMatchObject({ offset: 0.5, duration: 3 });
