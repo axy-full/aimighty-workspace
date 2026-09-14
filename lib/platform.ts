@@ -1,4 +1,5 @@
 import { fenceDatabase } from "./recoveryDatabaseClient";
+import { columnInstaller } from "./schemaInitialization";
 import { ACCOUNT_SECURITY_SCHEMA } from "./accountSecuritySchema";
 import { SECURITY_AUDIT_SCHEMA, securityAuditStatement } from "./securityAudit";
 import { createClient, type Client } from "@libsql/client";
@@ -341,45 +342,26 @@ export function platformReady(): Promise<void> {
   if (!_ready) {
     _ready = (async () => {
       const p = platformDb();
-      for (const stmt of SCHEMA) await p.execute(stmt);
+      await p.batch(SCHEMA, "write");
+      const addColumn = await columnInstaller(p);
       /* Columns added after the table first shipped reach an existing
          database only by ALTER; a duplicate is the one error to ignore. */
       for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`, `internal_test INTEGER`, `plan_id TEXT`, `requires_mfa INTEGER NOT NULL DEFAULT 0`]) {
-        try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
-        catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
+        await addColumn("workspaces", col);
       }
       for (const col of [`accepted_policy_at INTEGER`]) {
-        try { await p.execute(`ALTER TABLE accounts ADD COLUMN ${col}`); }
-        catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
+        await addColumn("accounts", col);
       }
-      /* The grant's kind, and the one classification of the rows written
-         before there was one.
-         The backfill sits INSIDE the try, after the ALTER, on purpose: the
-         ALTER succeeding is the single moment this database gains the column,
-         so it is the one moment the old rows need reading and the only time
-         it is worth scanning them. `platformReady` is memoised per process,
-         not per deployment — a backfill outside this branch would replay two
-         full table scans on every cold container, for ever.
-         Classified by the note, because the note is all there is: the welcome
-         grant writes a fixed string, and a top-up writes "<Label> pack · N
-         credits". Anything else was an admin, which is what the default says. */
-      for (const col of [GRANT_KIND_COLUMN]) {
-        try {
-          await p.execute(`ALTER TABLE credit_grants ADD COLUMN ${col}`);
-          for (const stmt of GRANT_KIND_BACKFILL) await p.execute(stmt);
-        } catch (e) { if (!/duplicate column|already exists/i.test(String((e as Error).message))) throw e; }
-      }
-      for (const col of [TOPUP_BONUS_COLUMN]) {
-        try { await p.execute(`ALTER TABLE topup_requests ADD COLUMN ${col}`); }
-        catch (e) { if (!/duplicate column|already exists/i.test(String((e as Error).message))) throw e; }
-      }
+      // Existing grants are classified once, atomically with the new column.
+      // Already-migrated databases skip the data scan on cold starts.
+      await addColumn("credit_grants", GRANT_KIND_COLUMN, GRANT_KIND_BACKFILL);
+      await addColumn("topup_requests", TOPUP_BONUS_COLUMN);
       /* Reporting content is open to anybody — a victim must not need an
          account — so the counting has to be by something an anonymous caller
          still has. Salted and truncated, the same shape access_requests
          already uses: this exists to count, not to identify. */
       for (const col of [`ip_hash TEXT`]) {
-        try { await p.execute(`ALTER TABLE reports ADD COLUMN ${col}`); }
-        catch (e) { if (!/duplicate column|already exists/i.test(String((e as Error).message))) throw e; }
+        await addColumn("reports", col);
       }
       const count = await p.execute(`SELECT COUNT(*) AS n FROM workspaces`);
       if (Number((count.rows[0] as any)?.n ?? 0) === 0) await importLegacy();
