@@ -12,6 +12,10 @@ import {
   writeGenerationOutcome,
   deliverGenerationSettlement,
 } from "./generationSettlement";
+import { TOPAZ_IMAGE_MODEL } from "./topaz";
+import { falAwait, falStatus, falResult, FalHttpError, falSubmissionRejected } from "./fal";
+import { fetchBytes } from "./mockFs";
+import type { Produced as EngineProduced } from "./engines/types";
 import { engineFor } from "./engines";
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
 
@@ -52,6 +56,7 @@ type Row = {
 };
 
 export type StillJob = {
+  topaz?: import("./topaz").TopazImageSettings;
   kind: "image";
   genId: string;
   modelId: string;
@@ -138,6 +143,7 @@ export async function loadJob(genId: string): Promise<Job | null> {
     prompt: row.prompt,
     ratio: String(params.ratio ?? "16:9"),
     size: String(params.resolution ?? "2K"),
+    topaz: params.topaz as import("./topaz").TopazImageSettings | undefined,
     references: await hydrate(refs),
     startedAt,
   };
@@ -301,6 +307,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     );
     const out =
       job.kind === "audio" ? await produceAudio(job) : await produceStill(job);
+    if (!out) return null;
     // Persist the small result independently of queue step memoization, so
     // the record step can recover after an inline/worker handoff or restart.
     await withRetry(
@@ -318,7 +325,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     await failJob(
       job.genId,
       (error as Error).message,
-      error instanceof FundingSourceChangedError ||
+      error instanceof FundingSourceChangedError || falSubmissionRejected(error) ||
         (error instanceof ElevenLabsError && error.rejectedBeforeGeneration),
     );
     throw error;
@@ -327,7 +334,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
 });
 }
 
-async function produceStill(job: StillJob): Promise<Produced> {
+async function produceStill(job: StillJob): Promise<Produced | null> {
   const model = getModel(job.modelId);
   const queueMs = Math.max(0, now() - job.startedAt);
   const engineStart = now();
@@ -338,20 +345,36 @@ async function produceStill(job: StillJob): Promise<Produced> {
     prompt: job.prompt,
     ratio: job.ratio,
     size: job.size,
+    topaz: job.topaz,
     references: job.references,
   });
-  if (!("produced" in out))
-    throw new Error(
-      "The still engine answered with a job where bytes were expected.",
-    );
-  const img = out.produced;
-  const engineMs = now() - engineStart;
+  if (!("produced" in out)) {
+    if (job.modelId !== TOPAZ_IMAGE_MODEL || out.handle.provider !== "fal")
+      throw new Error("The still engine returned an unsupported queue handle.");
+    await withRetry(() => db().execute({
+      sql: "UPDATE generations SET params=json_set(params,'$.falStillRequestId',?),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
+      args: [out.handle.ref, now(), job.genId],
+    }), { max: 3 });
+    try {
+      await falAwait(TOPAZ_IMAGE_MODEL, out.handle.ref, { timeoutMs: 150_000, pollMs: 3000 });
+      await reconcileTopazImage(job.genId);
+    } catch (error) {
+      // The acknowledged job survives this function. Cron and explicit polling
+      // continue collecting it; never turn a lost poll into another paid submit.
+      console.warn("Topaz collection deferred:", (error as Error).message);
+    }
+    return producedOutcome(job.genId);
+  }
+  return finishStill(job, out.produced, queueMs, now() - engineStart);
+}
+
+async function finishStill(job: StillJob, img: EngineProduced, queueMs: number, engineMs: number): Promise<Produced> {
   // Google can only emit JPEG; the library keeps PNG. Decode once and
   // re-encode LOSSLESSLY — pixel-identical, and nothing downstream can add
   // generation loss to a PNG. (sharp is for THIS transcode and for delivery
   // copies only — reference masters never pass through it.)
   const sharp = (await import("sharp")).default;
-  const png = await sharp(img.bytes).png().toBuffer();
+  const png = await sharp(img.bytes, job.modelId === TOPAZ_IMAGE_MODEL ? { limitInputPixels: 48_000_000 } : {}).png().toBuffer();
   const storeStart = now();
   /* Google has already drawn and charged for this image. A brief Blob
      outage here would otherwise throw the whole render away. The put is
@@ -380,6 +403,46 @@ async function produceStill(job: StillJob): Promise<Produced> {
     // it is our work, not the engine's.
     timings: { queueMs, engineMs, storeMs: now() - storeStart },
   };
+}
+
+/** Polling never submits. A per-job lease avoids parallel file downloads across tabs/workers. */
+export async function reconcileTopazImage(genId: string): Promise<void> {
+  return withRecoveryJob(requireTenant().id, genId, async () => {
+    const until = now() + 300_000;
+    const claim = await db().execute({
+      sql: `UPDATE generations SET params=json_set(params,'$.falStillPollUntil',?)
+        WHERE id=? AND kind='image' AND model=? AND deleted=0 AND status IN ('queued','running')
+        AND json_extract(params,'$.falStillRequestId') IS NOT NULL
+        AND COALESCE(json_extract(params,'$.falStillPollUntil'),0) < ? RETURNING params`,
+      args: [until, genId, TOPAZ_IMAGE_MODEL, now()],
+    });
+    if (!claim.rows.length) return;
+    const params = JSON.parse(String(claim.rows[0].params));
+    try {
+      const job = await loadJob(genId);
+      if (!job || job.kind !== "image") return;
+      const previous = await producedOutcome(genId);
+      if (previous) { await seal(job, previous); return; }
+      const state = await falStatus(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
+      if (state.status !== "COMPLETED") return;
+      const result = await falResult<{ image?: { url?: string; content_type?: string } }>(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
+      if (!result.image?.url) throw new Error("Topaz returned no image. The existing request remains available for reconciliation.");
+      const out = await finishStill(job, { bytes: await fetchBytes(result.image.url), mime: result.image.content_type ?? "image/png",
+        costUsd: estimateImageCostUsd(job.modelId, job.size, 0)?.net ?? null, totalTokens: null, via: "fal" }, 0, now() - job.startedAt);
+      await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0", args: [JSON.stringify(out), now(), genId] });
+      await seal(job, out);
+    } catch (error) {
+      // A refused result is terminal; a transport/storage failure keeps the
+      // known handle and reservation so the same render can be collected later.
+      if (error instanceof FalHttpError && [400, 422].includes(error.status)) await failJob(genId, error.message, true);
+      else {
+        await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running')", args: [(error as Error).message.slice(0,600), now(), genId] });
+        throw error;
+      }
+    } finally {
+      await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.falStillPollUntil') WHERE id=? AND json_extract(params,'$.falStillPollUntil')=?", args: [genId, until] });
+    }
+  });
 }
 
 async function produceAudio(job: AudioJob): Promise<Produced> {
@@ -441,7 +504,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
                 cost_usd=?, rate_usd_per_m=?, error=NULL, duration_ms=?,
                 queue_ms=?, engine_ms=?, store_ms=?, bytes=?,
                 params=json_set(params, '$.via', ?), billed_to=?, updated_at=?
-            WHERE id=?`,
+            WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
         args: [
           produced.storedUrl,
           produced.tokens,
@@ -494,7 +557,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
             SET status='succeeded', stored_url=?, total_tokens=?, cost_usd=?, rate_usd_per_m=?,
                 error=NULL, duration_ms=?, queue_ms=?, engine_ms=?, store_ms=?, bytes=?,
                 params=json_set(params, '$.credits', ?, '$.tier', ?, '$.requestId', ?), updated_at=?
-            WHERE id=?`,
+            WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
         args: [
           produced.storedUrl,
           credits,

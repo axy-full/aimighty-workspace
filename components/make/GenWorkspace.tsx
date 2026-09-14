@@ -16,6 +16,7 @@ import type { Generation } from "@/lib/jobs";
 import Composer, { type ComposerHandle, type ComposerKind } from "./Composer";
 import UnfiledWall from "./UnfiledWall";
 import SeedanceEdit from "./SeedanceEdit";
+import TopazImageUpscale from "./TopazImageUpscale";
 import styles from "./gen.module.css";
 
 export const GEN_MODES = [
@@ -77,6 +78,16 @@ function Workspace({ initialKind }: { initialKind?: string }) {
       setMobileView("create");
   };
   const scope = JSON.stringify([workspace?.id, email, mode.kind]);
+  const upscaling = mode.kind === "image" && search.get("task") === "upscale";
+  const upscaleSource = (take?: Generation) => {
+    const params = new URLSearchParams(search.toString());
+    params.set("mode", "images");
+    params.set("task", "upscale");
+    if (take) params.set("source", `generation:${take.id}`);
+    else params.delete("source");
+    router.push(`/generate?${params}`);
+    setMobileView("create");
+  };
   const editing = mode.kind === "video" && search.get("task") === "edit";
   const editSource = (take?: Generation) => {
     const params = new URLSearchParams(search.toString());
@@ -139,7 +150,19 @@ function Workspace({ initialKind }: { initialKind?: string }) {
       </div>
       <div className={styles.desk}>
         <div className={styles.creationPane}>
-          {editing ? (
+          {upscaling ? (
+            <TopazImageUpscale
+              key={`${scope}:${search.get("source") ?? ""}`}
+              initialSource={search.get("source")}
+              onMade={() => setTick((value) => value + 1)}
+              onBack={() => {
+                const params = new URLSearchParams(search.toString());
+                params.delete("task");
+                params.delete("source");
+                router.push(`/generate?${params}`);
+              }}
+            />
+          ) : editing ? (
             <SeedanceEdit
               key={`${scope}:${search.get("source") ?? ""}`}
               initialSource={search.get("source")}
@@ -158,6 +181,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
               controller={composer}
               initialRef={search.get("ref")}
               onEditRequested={() => editSource()}
+              onUpscaleRequested={() => upscaleSource()}
               onMade={() => {
                 setTick((value) => value + 1);
               }}
@@ -192,6 +216,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
               onTotals={setTotals}
               onUsePrompt={reuse}
               onEdit={mode.kind === "video" ? editSource : undefined}
+              onUpscale={mode.kind === "image" ? upscaleSource : undefined}
             />
           </div>
         </section>

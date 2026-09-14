@@ -107,6 +107,8 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
       withAudio: 0.06
     }]
   },
+  // fal.ai/models/fal-ai/topaz/upscale/image, verified 14 September 2026.
+  "fal-ai/topaz/upscale/image": { imagePricing: { "24MP": 0.08, "48MP": 0.16 }, imageRefInUsd: 0 },
   "fal-ai/bria/expand": {
     tiers: [],
     imagePricing: {

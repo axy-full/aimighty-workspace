@@ -585,3 +585,67 @@ test("Seedance edits price the actual source shape and length and reject stale q
       status: 400,
     });
   }));
+
+test("Topaz prices the original image, retains settings for its worker and rejects oversized or changed work before spending", async () => scope("topaz-originals", async service => {
+  const { db } = await import("../../lib/db");
+  const { storeUpload } = await import("../../lib/storage");
+  const { DEFAULT_TOPAZ_IMAGE, TOPAZ_IMAGE_MODEL } = await import("../../lib/topaz");
+  const sharp = (await import("sharp")).default;
+  const bytes = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: "#456789" } }).png().toBuffer();
+  const stored = await storeUpload("topaz-original", "png", bytes, "image/png");
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,kind,ext,bytes,sha256,width,height,stored_url,derivative_url,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,0)", args: ["topaz-original", "Original.png", "image/png", "image", "png", bytes.length, stored.sha256, 100, 100, stored.url, "/not-the-original.jpg"] });
+  const body = { model: TOPAZ_IMAGE_MODEL, prompt: "", references: [{ uploadId: "topaz-original" }], topaz: { ...DEFAULT_TOPAZ_IMAGE, factor: 4 }, resolution: "24MP", projectId: "project" };
+  const prepared = value(await service.gen.prepareGeneration(body, actor));
+  expect(prepared.compiled).toMatchObject({ params: { resolution: "48MP", topazOutput: { width: 8000, height: 4000 }, topaz: { factor: 4, model: "High Fidelity V2", faceEnhancement: false } } });
+  expect(prepared.quote.estimatedCredits).toBe(3);
+  expect(await rows()).toHaveLength(0); expect(await meters()).toHaveLength(0);
+  const rejected = await route("generation", service).POST(request("generate", { ...body, maxCredits: 2 }, "topaz-too-low"));
+  expect(rejected.status).toBe(409); expect(dispatched).toHaveLength(0);
+  const changed = await route("generation", service).POST(request("generate", { ...body, topaz: { ...body.topaz, model: "Standard V2" }, quoteFingerprint: prepared.quote.fingerprint }, "topaz-changed"));
+  expect(changed.status).toBe(409); expect(dispatched).toHaveLength(0);
+  for (const topaz of [{ ...body.topaz, factor: 8 }, { ...body.topaz, faceStrength: 2 }, { ...body.topaz, model: "Invented model" }]) {
+    expect((await service.gen.prepareGeneration({ ...body, topaz }, actor)).ok).toBe(false);
+  }
+  const accepted = await route("generation", service).POST(request("generate", { ...body, maxCredits: 3, quoteFingerprint: prepared.quote.fingerprint }, "topaz-accepted"));
+  expect(accepted.status, await accepted.text()).toBe(200);
+  const saved = JSON.parse(String((await rows())[0].params));
+  expect(saved.topaz).toEqual(body.topaz); expect(saved.resolution).toBe("48MP");
+  expect(saved.references).toEqual([{ uploadId: "topaz-original", role: "reference_image", kind: "image" }]);
+  expect(dispatched).toHaveLength(1);
+}));
+
+test("Topaz persists its queue handle, resumes after a lost polling attempt, and settles once under concurrent reconciliation", async () => scope("topaz-queue", async service => {
+  const { db } = await import("../../lib/db");
+  const { storeUpload } = await import("../../lib/storage");
+  const { DEFAULT_TOPAZ_IMAGE, TOPAZ_IMAGE_MODEL } = await import("../../lib/topaz");
+  const sharp = (await import("sharp")).default;
+  const bytes = await sharp({ create: { width: 300, height: 300, channels: 3, background: "#254567" } }).png().toBuffer();
+  const stored = await storeUpload("topaz-queued-original", "png", bytes, "image/png");
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,kind,ext,bytes,sha256,width,height,stored_url,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,0)", args: ["topaz-queued-original", "Source.png", "image/png", "image", "png", bytes.length, stored.sha256, 300, 300, stored.url] });
+  const body = { model: TOPAZ_IMAGE_MODEL, prompt: "", references: [{ uploadId: "topaz-queued-original" }], topaz: DEFAULT_TOPAZ_IMAGE };
+  const prepared = value(await service.gen.prepareGeneration(body, actor));
+  const accepted = await route("generation", service).POST(request("generate", prepared.request, "topaz-queue-once"));
+  expect(accepted.ok).toBe(true); const id = (await accepted.json()).id;
+  const engineModule = await import("../../lib/engines");
+  const fal = await import("../../lib/fal");
+  const actualWork = await import("../../lib/renderWork");
+  const work = load<typeof actualWork>("lib/renderWork.ts", { "./engines": engineModule, "./fal": { ...fal, falAwait: async () => { throw new Error("Worker interrupted after queue acknowledgment"); } } });
+  const job = await work.loadJob(id); expect(job?.kind).toBe("image");
+  await expect(work.produce(job!)).resolves.toBeNull();
+  const queued = JSON.parse(String((await rows())[0].params));
+  expect(queued.falStillRequestId).toMatch(/^mock_fal_/);
+  await expect(work.produce(job!)).resolves.toBeNull();
+  expect(JSON.parse(String((await rows())[0].params)).falStillRequestId).toBe(queued.falStillRequestId);
+  const polling = load<typeof work>("lib/renderWork.ts", { "./engines": engineModule, "./fal": { ...fal, falStatus: async () => { throw new Error("Interrupted poll"); } } });
+  await expect(polling.reconcileTopazImage(id)).rejects.toThrow("Interrupted poll");
+  expect((await rows())[0].status).toBe("running");
+  expect((await meters())[0].status).toBe("running");
+  const completed = load<typeof work>("lib/renderWork.ts", { "./engines": engineModule, "./fal": { ...fal, falStatus: async () => ({ status: "COMPLETED" }) } });
+  await Promise.all([completed.reconcileTopazImage(id), completed.reconcileTopazImage(id), completed.reconcileTopazImage(id)]);
+  const terminal = (await rows())[0]; expect(terminal.status).toBe("succeeded"); expect(Number(terminal.bytes)).toBeGreaterThan(0);
+  expect((await meters()).filter(row => row.id === id)).toHaveLength(1);
+  expect((await meters())[0].status).toBe("succeeded");
+  const events = await db().execute("SELECT * FROM generation_settlements"); expect(events.rows).toHaveLength(1);
+  await completed.reconcileTopazImage(id);
+  expect(JSON.parse(String((await rows())[0].params)).falStillRequestId).toBe(queued.falStillRequestId);
+}));

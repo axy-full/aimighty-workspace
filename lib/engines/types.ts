@@ -17,6 +17,7 @@ export type VideoRenderRequest = {
   params: VideoParams; references: Reference[]; source: Reference | null;
 };
 export type StillRenderRequest = {
+  topaz?: import("../topaz").TopazImageSettings;
   kind: "image"; genId: string; model: ModelDef; prompt: string; ratio: string; size: string; references: Reference[];
 };
 export type AudioRenderRequest = {
