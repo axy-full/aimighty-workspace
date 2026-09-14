@@ -4,7 +4,7 @@ Updated 14 September 2026, 16:18 UTC. Scope: independent production-house worksp
 
 ## Released source and product evidence
 
-Current released main: `c950ae8ac5c858ae55d670b53d0cf4003b02d85a`. Its production deployment is `dpl_EL9vD26MSkZhXcTvYevN2jQGuieF`, serving www.particl.app with mock:false. The authenticated studio, account-security read and pinned PDF worker returned 200. Public health reported database:ok/storage:ok, and the inspected ten-minute runtime error window was empty. Those checks demonstrate availability of the inspected paths, not universal reliability.
+Current released main: `15460abcf6319525674ef19fda75ecea0edcb9bf`. Its production deployment is `dpl_CKhrkFEknMVR1rCKdPnu7FfZNyjJ`, serving www.particl.app with mock:false. The authenticated studio, account-security read and pinned PDF worker returned 200. Public health reported database:ok/storage:ok, and the inspected ten-minute runtime error window was empty. Those checks demonstrate availability of the inspected paths, not universal reliability.
 
 | Release | Implemented behavior | Verification |
 | --- | --- | --- |
@@ -33,8 +33,8 @@ The baseline already included separate Gen/Studio/workspace/account surfaces, pr
 | Area | Remaining acceptance work |
 | --- | --- |
 | Screenplay and production planning | OCR for scanned PDFs; durable whole-feature AI analysis with visible coverage and per-stage budgets; review of complex screenplay layouts and typography |
-| Edit and sound | Saved multitrack sound, synchronized transport, uncompressed WAV and uploaded-video byte-range support are implemented on the post-production branch and undergoing combined release verification. They are not yet included in the released main above. Long-form editing/rendering, bins/edit snapshots, mastering tools, stems, surround and professional interchange need additional implementation |
-| Colour and upscale | LUT import with explicit input/output colour spaces and matching preview/export; verified current Topaz video output/billing controls and separate photo-upscale integration. Existing SDR canvas output is not HDR/ACES mastering |
+| Edit and sound | Saved multitrack sound, synchronized transport, 48 kHz PCM/float WAV and private uploaded-video byte ranges are released in PR152, with full CI and authenticated production checks. Long-form editing/rendering, bins/edit snapshots, mastering tools, stems, surround and professional interchange need additional implementation |
+| Colour and upscale | Sequence LUT import and matching GPU preview/movie output are implemented in this change with explicit SDR limits. Topaz image upscaling is under release review in PR153. Camera-log/HDR/ACES color management, per-shot grades, scopes, and verified Astra 2 video output/billing controls remain additional work |
 | Asset/pipeline completion | Broader discoverable lineage/version flows, whole-production review and persistent server-rendered deliverables. Current movie export is limited to three minutes and 200 MB; a manifest is not a rendered master |
 | Live engine validation | Bounded, explicitly cost-approved internal rehearsals for every launch engine/input mode: task persistence, output retrieval, actual settlement, timeout and rejection paths. No paid rehearsal is implied by mock CI |
 | Traffic and operations | Isolated remote HTTP/load tests for sessions, workspace switches, saves/publish races, uploads, dispatch/polling, ledger contention and delivery; measured capacity limits; freshness/error alerts and tested incident/rollback procedures |

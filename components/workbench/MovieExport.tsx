@@ -53,6 +53,7 @@ export function MovieExport({
     project.audioAssetId,
     project.audioClips,
     project.clipAudio,
+    project.colorGrade,
     options,
   ]);
   useEffect(() => {
@@ -256,7 +257,7 @@ export function MovieExport({
       </fieldset>
       <p className="movie-spec">
         {size ? `${size.width} × ${size.height} · ` : ""}
-        {project.fps} fps · {project.aspect} · SDR
+        {project.fps} fps · {project.aspect} · SDR{project.colorGrade && !project.colorGrade.bypassed ? " · Saved sequence look included" : ""}
       </p>
       <p className="movie-limit">
         Rendered on this device, with no generation credits. Up to 3 minutes and

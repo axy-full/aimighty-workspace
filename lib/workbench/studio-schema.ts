@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateColor } from "./color";
 import { validateAudio } from "./audio";
 import type { Project } from "./studio";
 import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
@@ -139,6 +140,16 @@ export const projectSchema = z.object({
   createdAt: z.string().max(50),
   sharedAssetIds: z.array(z.string()).max(500),
   sharedNodeIds: z.array(z.string()).max(250),
+  colorGrade: z
+    .object({
+      lutAssetId: z.string().min(1).max(100).optional(),
+      mix: z.number().min(0).max(1),
+      brightness: z.number().min(0).max(2),
+      contrast: z.number().min(0).max(2),
+      saturation: z.number().min(0).max(2),
+      bypassed: z.boolean(),
+    })
+    .optional(),
   audioAssetId: z.string().optional(),
   clipAudio: z.boolean().optional(),
   audioClips: z
@@ -209,6 +220,15 @@ export const saveSchema = z
       context.addIssue({
         code: "custom",
         path: ["project", "audioClips"],
+        message: (error as Error).message,
+      });
+    }
+    try {
+      validateColor(project as Project);
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        path: ["project", "colorGrade"],
         message: (error as Error).message,
       });
     }

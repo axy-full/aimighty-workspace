@@ -20,6 +20,8 @@ import {
   type VideoCodec,
 } from "mediabunny";
 import { type Asset, type Project } from "./studio";
+import { colorActive, colorLutAsset } from "./color";
+import { loadCube, createColorRenderer } from "./color-render";
 import { audioClips, audibleClips } from "./audio";
 import { mixAudio } from "./mix-audio";
 import { encodeMovieAac, prepareMovieAac } from "./movie-aac";
@@ -103,6 +105,7 @@ export async function renderMovie(
     );
   const loaded = new Map<string, Loaded>();
   let output: Output | undefined;
+  let color: ReturnType<typeof createColorRenderer> | undefined;
   let sourceBytes = 0,
     encodedBytes = 0;
   const abort = () => {
@@ -112,6 +115,10 @@ export async function renderMovie(
   };
   signal.addEventListener("abort", abort, { once: true });
   try {
+    if (colorActive(project.colorGrade)) {
+      const asset = colorLutAsset(project);
+      color = createColorRenderer(asset ? await loadCube(asset, signal) : undefined);
+    }
     const needed = new Map(
       plan.clips.map((clip) => [clip.asset.id, clip.asset]),
     );
@@ -310,6 +317,7 @@ export async function renderMovie(
           check();
           context.fillStyle = "black";
           context.fillRect(0, 0, plan.width, plan.height);
+          let frameRect: ReturnType<typeof fittedRect>;
           if (samples) {
             const sample = (await samples.next()).value;
             if (!sample)
@@ -324,6 +332,7 @@ export async function renderMovie(
                 plan.height,
                 options.fit,
               );
+              frameRect = rect;
               sample.draw(context, rect.x, rect.y, rect.width, rect.height);
             } finally {
               sample.close();
@@ -337,8 +346,10 @@ export async function renderMovie(
               plan.height,
               options.fit,
             );
+            frameRect = rect;
             context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
           }
+          if (color) context.drawImage(color.render(canvas, project.colorGrade, frameRect!), 0, 0);
           const timelineFrame = clip.startFrame + frame;
           await videoSource.add(timelineFrame / project.fps, 1 / project.fps, {
             keyFrame: frame === 0,
@@ -374,6 +385,7 @@ export async function renderMovie(
       mixGain,
     };
   } finally {
+    color?.dispose();
     signal.removeEventListener("abort", abort);
     for (const source of loaded.values()) {
       source.image?.close();
