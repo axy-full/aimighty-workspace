@@ -117,6 +117,11 @@ test("studio context actions edit the right node, respect locks, support keyboar
   }
   await target.click({button:'right'});
   await expect(assetMenu).toBeVisible();
+  await expect.poll(async () => {
+    const bounds = await assetMenu.boundingBox();
+    const viewport = page.viewportSize()!;
+    return !!bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width + 1 && bounds.y + bounds.height <= viewport.height + 1;
+  }).toBe(true);
   await page.screenshot({path:testInfo.outputPath('studio-context-menu.png')});
   const before=state.current().nodes.length;
   await assetMenu.getByRole('menuitem',{name:'Add to canvas',exact:true}).click();

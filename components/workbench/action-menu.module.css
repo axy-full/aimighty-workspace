@@ -1,6 +1,7 @@
 .menu {
   z-index: 250;
   width: min(256px, calc(100vw - 16px));
+  max-width: var(--radix-context-menu-content-available-width, calc(100vw - 16px));
   max-height: min(
     520px,
     var(--radix-context-menu-content-available-height, 80dvh)
