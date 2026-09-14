@@ -43,9 +43,9 @@ test("a lost upload finish response recovers the same stored upload after reload
     .png()
     .toBuffer();
   await page.goto("/generate?mode=video");
-  const referencePicker = page.locator(
-    'input[type="file"][accept="image/*,video/*"]',
-  );
+  const referencePicker = page
+    .getByRole("region", { name: "Video composer", exact: true })
+    .locator('input[type="file"][accept="image/*,video/*"]');
   await expect(referencePicker).toBeEnabled();
   await referencePicker.setInputFiles({
     name: "recover-reference.png",
@@ -77,9 +77,10 @@ test("a lost upload finish response recovers the same stored upload after reload
   ).toHaveAttribute("href", `/api/uploads/${original}`);
   expect(finishes).toBe(1);
   expect(chunks).toBe(1);
-  const uploaded = await page.request
-    .get("/api/uploads")
-    .then((response) => response.json());
+  // Retry only a transport reset on this read; never repeat a write or HTTP failure.
+  const listed = await page.request.get("/api/uploads", { maxRetries: 1 });
+  expect(listed.ok(), await listed.text()).toBeTruthy();
+  const uploaded = await listed.json();
   expect(uploaded.uploads).toHaveLength(1);
   expect(uploaded.uploads[0].id).toBe(original);
   expect((await uploadEntries(page))[0].session).toBe(pending.session);
@@ -142,9 +143,9 @@ test("a paused upload requires the original file and resends only the missing im
     buffer: bytes,
   };
   await page.goto("/generate?mode=video");
-  const referencePicker = page.locator(
-    'input[type="file"][accept="image/*,video/*"]',
-  );
+  const referencePicker = page
+    .getByRole("region", { name: "Video composer", exact: true })
+    .locator('input[type="file"][accept="image/*,video/*"]');
   await expect(referencePicker).toBeEnabled();
   await referencePicker.setInputFiles(original);
   await expect
@@ -180,9 +181,10 @@ test("a paused upload requires the original file and resends only the missing im
   expect(new Set(chunks.map((chunk) => chunk.session))).toEqual(
     new Set([entry.session]),
   );
-  const rows = await page.request
-    .get("/api/uploads")
-    .then((response) => response.json());
+  // Retry only a transport reset on this read; never repeat a write or HTTP failure.
+  const listed = await page.request.get("/api/uploads", { maxRetries: 1 });
+  expect(listed.ok(), await listed.text()).toBeTruthy();
+  const rows = await listed.json();
   expect(rows.uploads).toHaveLength(1);
   expect(rows.uploads[0].filename).toBe(original.name);
   expect(rows.uploads[0].bytes).toBe(bytes.length);
