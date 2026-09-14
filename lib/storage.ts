@@ -485,10 +485,22 @@ export async function openUploadStream(
   if (usingBlob()) {
     const { get } = await import("@vercel/blob");
     const target = storedUrl && /^https?:\/\//.test(storedUrl) ? storedUrl : uploadPath(uploadId, ext);
-    const found = await get(target, { access: target.includes('.public.blob.vercel-storage.com/') ? 'public' : "private", abortSignal:signal, ...(range?{headers:{Range:`bytes=${range.start}-${range.end}`}}:{}) });
+    const found = await get(target, {
+      access: target.includes('.public.blob.vercel-storage.com/') ? 'public' : "private",
+      abortSignal: signal,
+      headers: { 'Accept-Encoding': 'identity', ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {}) },
+    });
     if (!found?.stream) throw new Error("blob not found");
-    if(range && found.headers.get('content-range')!==`bytes ${range.start}-${range.end}/${range.total}`){await found.stream.cancel().catch(()=>{});throw new Error('Storage did not honor the requested media range');}
-    return { stream: found.stream as ReadableStream, size: found.blob?.size ?? null };
+    const encoding = found.headers.get('content-encoding');
+    const identity = !encoding || encoding.trim().toLowerCase() === 'identity';
+    if(range && (!identity || found.headers.get('content-range')!==`bytes ${range.start}-${range.end}/${range.total}`)){await found.stream.cancel().catch(()=>{});throw new Error('Storage did not honor the requested media range');}
+    // Blob's SDK uses size: 0 when Content-Length is absent. Forwarding that
+    // fallback truncates a nonempty stream at the HTTP boundary. A decoded
+    // response's encoded length is equally unsafe; let unknown lengths stream.
+    const length = found.headers.get('content-length');
+    const knownLength = identity && length !== null && /^\d+$/.test(length) && Number.isSafeInteger(Number(length));
+    const size = range ? range.end - range.start + 1 : knownLength ? Number(length) : null;
+    return { stream: found.stream as ReadableStream, size };
   }
   const { createReadStream } = await import("node:fs");
   const { stat } = await import("node:fs/promises");
@@ -506,9 +518,10 @@ export async function openVideoStream(genId: string, range: ByteRange, signal?: 
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad generation id");
   if (usingBlob()) {
     const { get } = await import("@vercel/blob");
-    const found = await get(videoPath(genId), {access:"private",abortSignal:signal,headers:{Range:`bytes=${range.start}-${range.end}`}});
+    const found = await get(videoPath(genId), {access:"private",abortSignal:signal,headers:{'Accept-Encoding':'identity',Range:`bytes=${range.start}-${range.end}`}});
     if (!found?.stream) throw new Error("Original video not found");
-    if (found.headers.get("content-range") !== `bytes ${range.start}-${range.end}/${range.total}`) { await found.stream.cancel().catch(()=>{}); throw new Error("Storage did not honor the requested original range"); }
+    const encoding = found.headers.get('content-encoding');
+    if ((encoding && encoding.trim().toLowerCase() !== 'identity') || found.headers.get("content-range") !== `bytes ${range.start}-${range.end}/${range.total}`) { await found.stream.cancel().catch(()=>{}); throw new Error("Storage did not honor the requested original range"); }
     return found.stream as ReadableStream<Uint8Array>;
   }
   const {createReadStream} = await import("node:fs");
