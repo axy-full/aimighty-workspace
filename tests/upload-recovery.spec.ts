@@ -53,8 +53,11 @@ test("a lost upload finish response recovers the same stored upload after reload
     buffer: bytes,
   });
   await expect
-    .poll(async () => (await uploadEntries(page))[0]?.state)
-    .toBe("pending");
+    .poll(async () => {
+      const entry = (await uploadEntries(page))[0];
+      return entry?.state === "pending" && Boolean(entry.error);
+    })
+    .toBe(true);
   await expect.poll(() => finishes).toBe(1);
   const pending = (await uploadEntries(page))[0];
   expect(pending.scope).toBe(scope);
@@ -145,8 +148,11 @@ test("a paused upload requires the original file and resends only the missing im
   await expect(referencePicker).toBeEnabled();
   await referencePicker.setInputFiles(original);
   await expect
-    .poll(async () => (await uploadEntries(page))[0]?.state)
-    .toBe("pending");
+    .poll(async () => {
+      const entry = (await uploadEntries(page))[0];
+      return entry?.state === "pending" && Boolean(entry.error);
+    })
+    .toBe(true);
   const entry = (await uploadEntries(page))[0];
   expect(entry.storedChunks).toEqual([0]);
   await page.reload();

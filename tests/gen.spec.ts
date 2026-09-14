@@ -73,9 +73,21 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
         height: 256,
         durationS: uploaded === 4 ? 15 : null,
         sha256: `fixture-${uploaded}`,
-        url: video ? "/fixtures/clip.mp4" : "/fixtures/still.png",
+        url: `/api/uploads/gen-reference-${uploaded}`,
       });
     }
+    if (
+      path.startsWith("/api/uploads/gen-reference-") &&
+      request.method() === "GET"
+    )
+      return route.fulfill({
+        contentType:
+          Number(path.split("-").at(-1)) > 2 ? "video/mp4" : "image/png",
+        path:
+          Number(path.split("-").at(-1)) > 2
+            ? "public/fixtures/clip.mp4"
+            : "public/fixtures/still.png",
+      });
     if (path === "/api/jobs")
       return json({
         generations: jobs.filter(
@@ -410,7 +422,7 @@ test("a stale Gen tab cannot upload into another workspace or another account in
   ).toEqual([]);
 
   const code = randomBytes(18).toString("base64url");
-  const platform = createClient({ url: localPlatformDbUrl() });
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 2_000 });
   try {
     await platform.execute({
       sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
