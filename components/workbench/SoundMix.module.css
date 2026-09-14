@@ -1,0 +1,182 @@
+.panel {
+  min-width: 0;
+  padding: 18px;
+  border-top: 1px solid var(--line, #303030);
+  background: var(--panel, #161716);
+  color: var(--text, #eceee8);
+}
+.panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.panel h3 {
+  font-size: 17px;
+  margin: 5px 0 14px;
+}
+.panel p {
+  font-size: 12px;
+  color: var(--muted, #a7aaa2);
+  line-height: 1.5;
+}
+.add,
+.actions,
+.track {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.add select {
+  flex: 1;
+  min-width: 0;
+}
+.panel select,
+.panel input[type="number"] {
+  border: 1px solid #3b3e37;
+  background: #20231f;
+  color: inherit;
+  border-radius: 7px;
+  padding: 8px;
+  min-height: 36px;
+  font: inherit;
+  font-size: 12px;
+  max-width: 100%;
+}
+.inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  margin: 14px 0;
+}
+.clips {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+}
+.clip {
+  border: 1px solid #343830;
+  border-radius: 10px;
+  padding: 12px;
+  min-width: 0;
+  margin: 0;
+}
+.clip legend {
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 0 5px;
+}
+.track span {
+  font: 11px monospace;
+  color: #a8b197;
+}
+.track label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.track button {
+  margin-left: auto;
+}
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.controls label {
+  display: grid;
+  gap: 5px;
+  color: #adb0a8;
+  font-size: 11px;
+}
+.controls input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.placement {
+  position: relative;
+  height: 22px;
+  border-radius: 4px;
+  background: #252a22;
+  margin-top: 12px;
+  overflow: hidden;
+}
+.placement span {
+  position: absolute;
+  height: 100%;
+  background: #849b67;
+  border-radius: 3px;
+}
+.placement small {
+  position: absolute;
+  inset: 0;
+  text-align: center;
+  background: #502e28;
+  color: #fff;
+  font-size: 11px;
+  padding-top: 3px;
+}
+.error {
+  color: #f5a49a !important;
+}
+.actions {
+  margin-top: 16px;
+}
+.panel button:disabled {
+  opacity: 0.45;
+}
+.panel input:focus-visible,
+.panel select:focus-visible {
+  outline: 2px solid #a4c879;
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .panel {
+    padding: 12px;
+  }
+  .controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .add {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .actions button {
+    flex: 1;
+    min-height: 40px;
+  }
+  .track button {
+    margin-left: 0;
+  }
+  .panel header {
+    gap: 6px;
+  }
+}
+
+.panel button {
+  border: 1px solid #3b3e37;
+  border-radius: 7px;
+  padding: 8px 12px;
+  min-height: 36px;
+  font-size: 12px;
+}
+.track select {
+  width: auto;
+  flex: 0 1 auto;
+}
+.panel .track {
+  align-items: center;
+}
+.panel input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #a4c879;
+}

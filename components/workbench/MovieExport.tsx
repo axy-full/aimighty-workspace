@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Download, Film, Loader2 } from "lucide-react";
+import { audioClips } from "@/lib/workbench/audio";
 import { safeName, type Project } from "@/lib/workbench/studio";
 import {
   defaultMovieOptions,
@@ -21,7 +22,10 @@ export function MovieExport({
   project: Project;
   scope: string;
 }) {
-  const [options, setOptions] = useState(defaultMovieOptions);
+  const [options, setOptions] = useState({
+    ...defaultMovieOptions,
+    clipAudio: project.clipAudio !== false,
+  });
   const [capabilities, setCapabilities] = useState<{
     key: string;
     formats: MovieCapability[];
@@ -47,6 +51,8 @@ export function MovieExport({
     project.shots,
     project.assets,
     project.audioAssetId,
+    project.audioClips,
+    project.clipAudio,
     options,
   ]);
   useEffect(() => {
@@ -235,7 +241,7 @@ export function MovieExport({
           <input
             type="checkbox"
             checked={options.soundtrack}
-            disabled={!project.audioAssetId}
+            disabled={!audioClips(project).length}
             onChange={(event) =>
               setOptions((old) => ({
                 ...old,
@@ -243,9 +249,9 @@ export function MovieExport({
               }))
             }
           />
-          {project.audioAssetId
-            ? "Include sequence soundtrack"
-            : "No sequence soundtrack selected"}
+          {audioClips(project).length
+            ? "Include saved sound mix"
+            : "No sound clips selected"}
         </label>
       </fieldset>
       <p className="movie-spec">
@@ -254,8 +260,9 @@ export function MovieExport({
       </p>
       <p className="movie-limit">
         Rendered on this device, with no generation credits. Up to 3 minutes and
-        200 MB of sources and output. Straight cuts; stills hold. The soundtrack
-        starts at 00:00 and ends with the sequence. Keep this page open.{" "}
+        200 MB of sources and output. Straight cuts; stills hold. Sound mix uses
+        its saved positions, gain, pan, fades, mute and solo settings. Keep this
+        page open.{" "}
         <a href="/licenses/mediabunny.txt" target="_blank" rel="noreferrer">
           Media toolkit license
         </a>

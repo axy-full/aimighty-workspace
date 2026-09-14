@@ -2,11 +2,18 @@ import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
 import { mediaBindingProblem } from "@/lib/mediaBindings";
-import { uploadReservationsReady, queueUploadDeletion, cleanupExpiredUploads, UploadError, uploadFailure } from "@/lib/uploadReservations";
+import {
+  uploadReservationsReady,
+  queueUploadDeletion,
+  cleanupExpiredUploads,
+  UploadError,
+  uploadFailure,
+} from "@/lib/uploadReservations";
 import { db, ready } from "@/lib/db";
 import { servingFor } from "@/lib/serveType";
 import { requireUser, withTenant } from "@/lib/auth";
-import { readUploadBytes, openUploadStream } from "@/lib/storage";
+import { openUploadStream } from "@/lib/storage";
+import { byteRange } from "@/lib/mediaRange";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -18,7 +25,10 @@ type Ctx = { params: Promise<{ id: string }> };
  * into function memory. Unknown types download as attachments with sniffing
  * off, so an uploaded HTML file can't run in the app's origin.
  */
-export const GET = withTenant(async function GET(_req: Request, { params }: Ctx) {
+export const GET = withTenant(async function GET(
+  req: Request,
+  { params }: Ctx,
+) {
   const got = await requireUser();
   if (got.response) return got.response;
   await ready();
@@ -28,9 +38,16 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
     sql: `SELECT mime, ext, bytes, kind, filename, stored_url FROM uploads WHERE id = ? LIMIT 1`,
     args: [id],
   });
-  const row = rs.rows[0] as unknown as {
-    mime: string; ext: string; bytes: number; kind: string; filename: string; stored_url: string;
-  } | undefined;
+  const row = rs.rows[0] as unknown as
+    | {
+        mime: string;
+        ext: string;
+        bytes: number;
+        kind: string;
+        filename: string;
+        stored_url: string;
+      }
+    | undefined;
   if (!row) return new Response("Not found", { status: 404 });
 
   /* The stored `mime` is not evidence, so it decides nothing on its own.
@@ -48,43 +65,74 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
     "Content-Type": serve.contentType,
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
+    "Accept-Ranges": "bytes",
   };
   if (!serve.inline) {
     headers["Content-Disposition"] =
       `attachment; filename="${row.filename.replace(/[^\w. -]/g, "_")}"`;
   }
 
+  let range;
   try {
-    if (Number(row.bytes) > 8 * 1024 * 1024 || row.kind === "file") {
-      const { stream, size } = await openUploadStream(id, row.ext);
-      if (size != null) headers["Content-Length"] = String(size);
-      return new Response(stream, { headers });
-    }
-    const buf = await readUploadBytes(id, row.ext, row.stored_url);
-    headers["Content-Length"] = String(buf.length);
-    return new Response(new Uint8Array(buf), { headers });
+    range = byteRange(
+      req.headers.has("if-range") ? null : req.headers.get("range"),
+      Number(row.bytes),
+    );
+  } catch {
+    return new Response(null, {
+      status: 416,
+      headers: { ...headers, "Content-Range": `bytes */${row.bytes}` },
+    });
+  }
+  try {
+    const { stream, size } = await openUploadStream(
+      id,
+      row.ext,
+      range,
+      row.stored_url,
+      req.signal,
+    );
+    if (size != null) headers["Content-Length"] = String(size);
+    if (range)
+      headers["Content-Range"] =
+        `bytes ${range.start}-${range.end}/${range.total}`;
+    return new Response(stream, { status: range ? 206 : 200, headers });
   } catch {
     return new Response("Not found", { status: 404 });
   }
 });
 
-export const DELETE = withTenant(async function DELETE(req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(
+  req: Request,
+  { params }: Ctx,
+) {
   const got = await requireUser();
   if (got.response) return got.response;
-  const scopeProblem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
-  if (scopeProblem) return Response.json({ error: scopeProblem }, { status: 409 });
+  const scopeProblem = workbenchScopeProblem(
+    req,
+    requireTenant().id,
+    got.user.id,
+    !got.token,
+  );
+  if (scopeProblem)
+    return Response.json({ error: scopeProblem }, { status: 409 });
   await ready();
   const { id } = await params;
   try {
     await workbenchReady();
     await uploadReservationsReady();
-    const key = await workbenchTransaction(async tx => {
+    const key = await workbenchTransaction(async (tx) => {
       const problem = await mediaBindingProblem(tx, "upload", id);
       if (problem) throw new UploadError(problem, 409);
       return queueUploadDeletion(tx, got.user.id, id);
     });
     // If storage is unavailable, the durable cleanup row retains quota and retries in cron.
     const result = key ? await cleanupExpiredUploads(1, Date.now(), key) : null;
-    return Response.json({ ok: true, cleanupPending: Boolean(result && result.cleaned !== 1) });
-  } catch (error) { return uploadFailure(error); }
+    return Response.json({
+      ok: true,
+      cleanupPending: Boolean(result && result.cleaned !== 1),
+    });
+  } catch (error) {
+    return uploadFailure(error);
+  }
 });

@@ -1,3 +1,4 @@
+import {audioClips} from './audio';
 import {zipSync,strToU8} from 'fflate';
 import {Asset,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} from './studio';
 
@@ -24,7 +25,7 @@ export function collectExportAssets(p:Project):Asset[]{
   for(const reference of [...asset.refs,...(asset.parentId?[asset.parentId]:[])])visit(reference);
  };
  for(const shot of p.shots)visit(shot.assetId);
- if(p.audioAssetId)visit(p.audioAssetId);
+ for(const clip of audioClips(p))visit(clip.assetId);
  return result;
 }
 const EXPORT_LIMIT=200*1024*1024;
@@ -80,7 +81,7 @@ reference-links.json (when present): saved website references. Web pages are not
 
 Import the EDL at the stated frame rate and relink using FROM CLIP NAME comments. Image sources are still-frame holds, not rendered video; configure still duration manually if your editor does not conform them. Some editors need WebP/GIF stills converted to PNG before relinking. Export a PNG from the Particl asset editor if needed. Video must already match the sequence frame rate and have zero-based source timecode; embedded timecodes and source frame rates have not been probed.
 
-Audio is included as a separate scratch file, not placed by the EDL. Aspect ratio is a delivery instruction, not a reframe. Crop and colour are baked only into newly saved image takes. Transitions, motion effects, a sound mix, synchronized audio, subtitles and a rendered master are not carried by this EDL. Fractional and drop-frame rates are unsupported.
+Audio source files and Sound mix clip positions, gain, pan, fades, mute and solo states are preserved in production.json. They are not placed by the EDL. Export the 48 kHz WAV mix from Edit & sound for an aligned stereo handoff. Aspect ratio is a delivery instruction, not a reframe. Crop and colour are baked only into newly saved image takes. Transitions, motion effects, a sound mix, synchronized audio, subtitles and a rendered master are not carried by this EDL. Fractional and drop-frame rates are unsupported.
 
 The manifest preserves take lineage and saved versions. It is not an audit log of every edit. Relinking must be tested in your target NLE before a client delivery.
 `);

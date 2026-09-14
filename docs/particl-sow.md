@@ -721,3 +721,7 @@ allowances and the §2.8 board pipeline they would count.
 # September 2026 amendment: durable published-context pipelines
 
 The additive pipeline executor introduces immutable versioned DAGs and private creator-owned runs from an explicit published production context. It never publishes a private draft. Each ready image/video/audio stage receives an exact batch quote and explicit approval; later stages require their own approval after inputs resolve. Permanent attempt keys, CAS revisions, fenced leases, and a persisted wakeup outbox prevent lost responses from creating replacement spend. Review selections become fixed once downstream attempts depend on them. Assembly produces an editorial timeline for the existing browser movie renderer, not a falsely completed movie. New tables and the full limits/recovery contract are documented in `docs/durable-production-pipelines.md`; historical recipes and runs remain compatible. This amendment does not introduce Stripe changes.
+
+### 14 September 2026 — saved sound mix and transport
+
+Edit & sound now uses saved, asset-bound sound clips with frame timing, source trims, gain, pan, fades and mute/solo. Prepared playback follows the timeline, and the same mixer feeds final movies and 48 kHz stereo 24-bit PCM / 32-bit float WAV downloads. Audio source lineage accompanies the editorial package. The exact bounds and remaining professional audio requirements are in `docs/sound-mix.md`; this is not a long-form or mastering release. Stripe and the approved credit model are unchanged.
