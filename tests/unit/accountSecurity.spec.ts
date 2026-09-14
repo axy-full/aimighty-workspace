@@ -34,13 +34,23 @@ async function enrolled(id: string) {
   });
   if (!started.setup) throw Error("Expected setup");
   const secret = started.setup.secret;
-  const result = await f.security.changeAccountSecurity({
-    accountId: id,
-    session: f.session,
-    password,
-    action: "enable",
-    code: totpAt(secret, Date.now() - 30_000),
-  });
+  // Keep the fixture's previous-step code and verification on one clock
+  // instant. Otherwise the password check can cross a 30-second boundary
+  // and make that code two steps old before the enrollment transaction.
+  const clock = Date.now, enrollmentAt = clock();
+  let result: Awaited<ReturnType<typeof f.security.changeAccountSecurity>>;
+  Date.now = () => enrollmentAt;
+  try {
+    result = await f.security.changeAccountSecurity({
+      accountId: id,
+      session: f.session,
+      password,
+      action: "enable",
+      code: totpAt(secret, enrollmentAt - 30_000),
+    });
+  } finally {
+    Date.now = clock;
+  }
   if (!result.session || !result.recoveryCodes)
     throw Error("Expected rotated session and recovery codes");
   return {
