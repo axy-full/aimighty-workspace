@@ -19,7 +19,7 @@
     "@mediabunny/aac-encoder": "file:public/open-source/mediabunny-aac-encoder-1.56.2-particl.1.tgz",
     "@vercel/blob": "^2.8.0",
     "@vercel/oidc": "^3.8.5",
-    "ai": "^7.0.92",
+    "ai": "^7.0.97",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "fflate": "0.8.3",
