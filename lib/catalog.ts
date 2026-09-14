@@ -1,22 +1,14 @@
+import { ATOMIK_MODEL_IDS, isAtomikModel } from "./atomikModelPolicy";
 import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
 
 /**
  * Everything the Vercel AI Gateway will run, read from the gateway itself.
  *
- * Particl's own five engines are hand-written in lib/models.ts, because each
- * one is wired to a vendor by hand and carries knowledge no catalogue has —
- * which durations Seedance accepts as an interval, that an edit source must
- * be 480p or 720p, that Nano Banana wants an uppercase K. Atomik is the
- * opposite case: it offers WHATEVER the gateway is serving, which on the day
- * this was written was 369 models and will not be 369 tomorrow.
- *
- * So this is deliberately not a hand-written list. It reads /v1/models and
- * keeps the answer for an hour. A model that appears at Vercel appears in
- * Atomik without a deploy; one that is retired stops being offered without a
- * bug report. The only hand-written parts are the shortlist of engines worth
- * putting at the top of a menu, and the cost arithmetic — because the
- * catalogue states prices in five different shapes and a person needs one
- * number before they spend.
+ * Provider-specific media contracts live in lib/models.ts. This catalogue
+ * supplies live availability and prices; Atomik applies a separate verified
+ * thinking-model allowlist, so new Gateway entries are not offered automatically.
+ * Retired or disconnected models disappear from the menu.
+
  */
 
 /* ── What the gateway says about a model ──────────────────────────────── */
@@ -113,25 +105,8 @@ export async function findModel(id: string): Promise<CatalogModel | null> {
  * serves that is NOT here is still reachable under "everything else".
  */
 export const FEATURED = {
-  /** Models that plan a production.
-   *
-   *  Cheap-and-capable first is deliberate: a brief becoming a shot list is
-   *  not the hardest thing a frontier model does, and Sonnet 5 did it well
-   *  in the tests this was built against for about two cents a turn. The
-   *  expensive ones are offered rather than defaulted to — Fable 5.1 bills
-   *  five times Sonnet's output rate, which is worth it for a difficult
-   *  production and wasted on "three product stills". */
-  planner: [
-    "anthropic/claude-sonnet-5",
-    "anthropic/claude-opus-5",
-    "anthropic/claude-fable-5.1",
-    "google/gemini-3-flash",
-    "google/gemini-3.1-pro-preview",
-    "openai/gpt-5.2",
-    "deepseek/deepseek-v4-pro",
-    "moonshotai/kimi-k2-thinking",
-    "zai/glm-4.6",
-  ],
+  /** Only the verified Supercomputer thinking models are offered in Atomik. */
+  planner: ATOMIK_MODEL_IDS,
   video: [
     "bytedance/seedance-2.5",
     "google/veo-3.1-generate-001",
@@ -163,7 +138,7 @@ export async function menuFor(kind: keyof typeof FEATURED): Promise<{
   featured: CatalogModel[]; rest: CatalogModel[];
 }> {
   const type: CatalogType = kind === "planner" ? "language" : kind;
-  const all = await byType(type);
+  const all = (await byType(type)).filter(m => kind !== "planner" || isAtomikModel(m.id));
   const want = FEATURED[kind] as readonly string[];
   const featured = want
     .map((id) => all.find((m) => m.id === id))

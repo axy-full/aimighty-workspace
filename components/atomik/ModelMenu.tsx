@@ -5,10 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 /**
  * Which model does the thinking.
  *
- * The gateway serves some two hundred and fifty text models, and offering
- * all of them as a list is not a choice — it is a search problem handed to
- * the user. So a short featured set is named and described, everything else
- * is behind the search field, and each row carries a cost BAND rather than
+ * The server offers only verified Supercomputer thinking models which are
+ * connected through the gateway. Each row carries a cost BAND rather than
  * a rate. "Low cost" answers the question people actually have; "$2.00 per
  * million output tokens" does not, unless they already know how many
  * tokens a conversation takes, which nobody does.
@@ -63,8 +61,7 @@ export default function ModelMenu({ value, models, onPick, disabled }: {
         onClick={() => { setQ(""); setOpen((v) => !v); }}
         className={`chip-ctl ${open ? "is-open" : ""}`}
         title="Which model does the thinking">
-        {current ? current.name : "Auto"}
-        {!current && <span className="atomik-free">Free to pick</span>}
+        {current ? current.name : value === "auto" ? "Auto" : "Choose model"}
         <span className="chip-caret" aria-hidden>⌄</span>
       </button>
 
@@ -79,7 +76,7 @@ export default function ModelMenu({ value, models, onPick, disabled }: {
                 <Row
                   m={{
                     id: "auto", name: "Auto", owner: "", band: "",
-                    description: "Picks a capable planner that the gateway is serving today",
+                    description: "Selects from the supported, connected thinking models",
                     price: "",
                   }}
                   on={value === "auto"}
