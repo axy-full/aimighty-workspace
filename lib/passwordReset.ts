@@ -1,5 +1,5 @@
 import { securityAuditStatement } from "./securityAudit";
-import { randomBytes } from "node:crypto";
+import { insertAccountSession } from "./accountSecurity";
 import { accountTransaction, AccountError } from "./accountDb";
 import { hashPassword, passwordProblem, tokenHash } from "./auth";
 import { now } from "./platform";
@@ -9,7 +9,6 @@ export async function resetAccountPassword(token: string, password: string) {
   const problem = passwordProblem(password);
   if (problem) throw new AccountError(problem);
   const passwordHash = hashPassword(password);
-  const session = randomBytes(32).toString("base64url");
   return accountTransaction(async (tx) => {
     const at = now();
     const row = (
@@ -34,6 +33,14 @@ export async function resetAccountPassword(token: string, password: string) {
       args: [passwordHash, accountId],
     });
     await tx.execute({
+      sql: "DELETE FROM account_recovery_batches WHERE account_id=?",
+      args: [accountId],
+    });
+    await tx.execute({
+      sql: "DELETE FROM session_security WHERE token_hash IN (SELECT token_hash FROM p_sessions WHERE account_id=?)",
+      args: [accountId],
+    });
+    await tx.execute({
       sql: "DELETE FROM p_sessions WHERE account_id=?",
       args: [accountId],
     });
@@ -44,19 +51,35 @@ export async function resetAccountPassword(token: string, password: string) {
         args: [accountId],
       })
     ).rows[0];
-    await tx.execute({
-      sql: "INSERT INTO p_sessions(token_hash,account_id,workspace_id,created_at,expires_at) VALUES(?,?,?,?,?)",
-      args: [
-        tokenHash(session),
-        accountId,
-        membership?.workspace_id == null
-          ? null
-          : String(membership.workspace_id),
-        at,
-        at + 30 * 86400_000,
-      ],
-    });
-    await tx.execute(securityAuditStatement({ workspaceId: membership?.workspace_id == null ? null : String(membership.workspace_id), actorId: accountId, action: "account.password_reset", targetType: "account", targetId: accountId }));
+    const security = (
+      await tx.execute({
+        sql: "SELECT enabled_at FROM account_security WHERE account_id=?",
+        args: [accountId],
+      })
+    ).rows[0];
+    // A mailbox/password reset is never a replacement for the second factor.
+    const session =
+      security?.enabled_at != null
+        ? null
+        : await insertAccountSession(tx, {
+            accountId,
+            workspaceId:
+              membership?.workspace_id == null
+                ? null
+                : String(membership.workspace_id),
+          });
+    await tx.execute(
+      securityAuditStatement({
+        workspaceId:
+          membership?.workspace_id == null
+            ? null
+            : String(membership.workspace_id),
+        actorId: accountId,
+        action: "account.password_reset",
+        targetType: "account",
+        targetId: accountId,
+      }),
+    );
     return { session, name: String(row.name) };
   });
 }

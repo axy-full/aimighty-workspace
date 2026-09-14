@@ -733,6 +733,9 @@ function SettingsContent() {
                           Sign out
                         </button>
                       </ManagementCard>
+                      <ManagementCard title="Account security" description="Manage two-step sign-in, recovery codes and your signed-in sessions across every workspace.">
+                        <Link href="/account/security" className="management-button">Manage account security <ShieldCheck size={14}/></Link>
+                      </ManagementCard>
                       {owner && (
                         <ManagementCard
                           title="Export workspace data"

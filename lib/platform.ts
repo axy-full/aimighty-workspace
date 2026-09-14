@@ -1,3 +1,4 @@
+import { ACCOUNT_SECURITY_SCHEMA } from "./accountSecuritySchema";
 import { SECURITY_AUDIT_SCHEMA, securityAuditStatement } from "./securityAudit";
 import { createClient, type Client } from "@libsql/client";
 import { isPaidKind, type GrantKind } from "./creditTerms";
@@ -43,6 +44,7 @@ export const isSuperAdmin = (email: string | null | undefined) =>
 
 const SCHEMA = [
   ...SECURITY_AUDIT_SCHEMA,
+  ...ACCOUNT_SECURITY_SCHEMA,
   `CREATE TABLE IF NOT EXISTS accounts (
      id            TEXT PRIMARY KEY,
      email         TEXT NOT NULL UNIQUE,
@@ -649,16 +651,10 @@ export async function updateWorkspaceVendorKey(id: string, name: string, value: 
 
 /* ── sessions ─────────────────────────────────────────────────────────── */
 
-const SESSION_DAYS = 30;
 export async function createPlatformSession(accountId: string, workspaceId: string | null): Promise<string> {
-  await platformReady();
-  const token = randomBytes(32).toString("base64url");
-  const ts = now();
-  await platformDb().batch([{
-    sql: `INSERT INTO p_sessions (token_hash, account_id, workspace_id, created_at, expires_at) VALUES (?,?,?,?,?)`,
-    args: [hashToken(token), accountId, workspaceId, ts, ts + SESSION_DAYS * 86400_000],
-  }, securityAuditStatement({workspaceId,actorId:accountId,action:"session.created",targetType:"account",targetId:accountId})], "write");
-  return token;
+  const { accountTransaction } = await import("./accountDb");
+  const { insertAccountSession } = await import("./accountSecurity");
+  return accountTransaction(tx => insertAccountSession(tx, { accountId, workspaceId }));
 }
 export async function destroyPlatformSession(token: string): Promise<void> {
   const { accountTransaction } = await import("./accountDb");
@@ -687,7 +683,10 @@ export async function sessionLookup(token: string): Promise<{ account: any; work
   await platformReady();
   const rs = await platformDb().execute({
     sql: `SELECT a.*, s.workspace_id AS s_ws FROM p_sessions s JOIN accounts a ON a.id = s.account_id
-          WHERE s.token_hash = ? AND s.expires_at > ? AND a.disabled = 0 AND a.deleted_at IS NULL LIMIT 1`,
+          LEFT JOIN account_security asec ON asec.account_id=a.id
+          LEFT JOIN session_security ss ON ss.token_hash=s.token_hash
+          WHERE s.token_hash = ? AND s.expires_at > ? AND a.disabled = 0 AND a.deleted_at IS NULL
+          AND (asec.enabled_at IS NULL OR (ss.factor_at IS NOT NULL AND ss.epoch=asec.epoch)) LIMIT 1`,
     args: [hashToken(token), now()],
   });
   const r = rs.rows[0] as any;

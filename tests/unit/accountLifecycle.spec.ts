@@ -84,9 +84,17 @@ test("email proof creates an isolated zero-grant workspace once and preserves pa
     "/billing?plan=agency&cadence=annual&onboarding=1",
   );
   await expect(verifySignup(reg.token)).rejects.toMatchObject({ status: 409 });
-  expect((await verifySignup(reg.token, verified.owner.id)).requestId).toBe(
-    verified.requestId,
-  );
+  expect(
+    (
+      await verifySignup(
+        reg.token,
+        verified.owner.id,
+        await (
+          await import("../../lib/platform")
+        ).createPlatformSession(verified.owner.id, null),
+      )
+    ).requestId,
+  ).toBe(verified.requestId);
   await expect(
     resumeWorkspace(verified.requestId, "different-owner"),
   ).rejects.toMatchObject({ status: 404 });
@@ -176,7 +184,13 @@ test("approved invitation survives provisioning failure and grants welcome credi
   } finally {
     process.env.WORKSPACE_DB_DIRECTORY = path.join(dir, "tenants");
   }
-  const replay = await acceptSignupInvitation(input, accepted.owner.id);
+  const replay = await acceptSignupInvitation(
+    input,
+    accepted.owner.id,
+    await (
+      await import("../../lib/platform")
+    ).createPlatformSession(accepted.owner.id, null),
+  );
   expect(replay.requestId).toBe(accepted.requestId);
   const ws = (await resumeWorkspace(replay.requestId, replay.owner.id))
     .workspace!;
@@ -319,6 +333,9 @@ test("concurrent invitation accepts cannot exceed seats; an existing owner is ne
   await acceptWorkspaceInvitation({
     code: "owner-stale",
     signedInAccountId: user.id,
+    signedInSession: await (
+      await import("../../lib/platform")
+    ).createPlatformSession(user.id, null),
   });
   expect(
     (
@@ -333,6 +350,9 @@ test("concurrent invitation accepts cannot exceed seats; an existing owner is ne
       await acceptWorkspaceInvitation({
         code: "owner-stale",
         signedInAccountId: user.id,
+        signedInSession: await (
+          await import("../../lib/platform")
+        ).createPlatformSession(user.id, null),
       })
     ).accountId,
   ).toBe(user.id);
@@ -521,6 +541,9 @@ test("tenant mirror failure retains a repairable accepted membership and never c
       await acceptWorkspaceInvitation({
         code: "repair-invite",
         signedInAccountId: accountId,
+        signedInSession: await (
+          await import("../../lib/platform")
+        ).createPlatformSession(accountId, null),
       })
     ).accountId,
   ).toBe(accountId);
