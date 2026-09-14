@@ -301,6 +301,13 @@ async function customerFixture(page: Page) {
         url: "/billing?checkout=success&plan=agency&cadence=annual",
       });
     }
+    if (path === "/api/workspaces/security" && request.method() === "GET")
+      return json({
+        requiresMfa: false,
+        ownerEnrolled: false,
+        members: 1,
+        unenrolled: 1,
+      });
     if (path === "/api/workspaces") {
       if (request.method() === "GET")
         return json({

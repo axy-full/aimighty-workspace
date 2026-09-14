@@ -76,6 +76,22 @@ function request(method: string, scope?: string) {
   });
 }
 
+test("MFA enrollment is required before any private handler executes, while scoped identity reads remain available", async () => {
+  const api = wrapper();
+  api.setStore({ workspace: { id: "workspace" }, user: { id: "owner" }, mfaRequired: true } as TenantStore);
+  let calls = 0;
+  const handler = api.withTenant(async () => { calls++; return Response.json({ ok: true }); });
+  for (const method of ["GET", "HEAD", "POST", "PATCH", "DELETE"]) {
+    const response = await handler(request(method, workbenchScopeFor("workspace", "owner")), undefined);
+    expect(response.status).toBe(428);
+    expect(await response.json()).toMatchObject({ code: "MFA_REQUIRED", securityUrl: "/account/security" });
+  }
+  expect(calls).toBe(0);
+  const identity = api.withTenant(async () => Response.json({ enrollment: true }), { allowMfaEnrollment: true });
+  expect((await identity(request("GET", workbenchScopeFor("workspace", "owner")), undefined)).status).toBe(200);
+  expect((await identity(request("GET", workbenchScopeFor("workspace", "other")), undefined)).status).toBe(409);
+});
+
 test("captured scope is authoritative for every method and stale requests never enter the handler", async () => {
   const api = wrapper();
   let calls = 0;

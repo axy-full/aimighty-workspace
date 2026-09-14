@@ -538,6 +538,11 @@ export async function changeAccountSecurity(input: {
     if (input.action === "disable") {
       if (!enabled(state))
         throw new AccountError("Two-step sign-in is already off.", 409);
+      if ((await requiredWorkspaces(tx, input.accountId)).length)
+        throw new AccountError(
+          "A workspace you belong to requires two-step sign-in. Its owner must remove that requirement, or remove your membership, before you can turn it off.",
+          409,
+        );
       const epoch = Number(state!.epoch) + 1;
       await tx.execute({
         sql: "UPDATE account_security SET secret_enc=NULL,enabled_at=NULL,last_counter=-1,epoch=?,pending_enc=NULL,pending_session_hash=NULL,pending_expires_at=NULL WHERE account_id=?",
@@ -689,6 +694,7 @@ export async function readAccountSecurity(
     ).rows[0];
     return {
       enabled: enabled(state),
+      requiredWorkspaces: await requiredWorkspaces(tx, accountId),
       pendingRecoveryBatch: pending ? String(pending.id) : null,
       recoveryReplacementAuthorizedUntil: replacementAuthorized
         ? Number(authorization.expires_at)
@@ -703,5 +709,132 @@ export async function readAccountSecurity(
         expiresAt: Number(row.expires_at),
       })),
     };
+  });
+}
+
+async function requiredWorkspaces(tx: Transaction, accountId: string) {
+  const rows = await tx.execute({
+    sql: `SELECT w.id,w.name FROM memberships m JOIN workspaces w ON w.id=m.workspace_id
+      WHERE m.account_id=? AND m.disabled=0 AND w.deleted_at IS NULL AND w.requires_mfa=1 ORDER BY w.name,w.id`,
+    args: [accountId],
+  });
+  return rows.rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name),
+  }));
+}
+
+async function ownedSecurityWorkspace(
+  tx: Transaction,
+  workspaceId: string | null,
+  accountId: string,
+) {
+  const row = (
+    await tx.execute({
+      sql: `SELECT w.requires_mfa FROM workspaces w JOIN memberships m ON m.workspace_id=w.id
+      WHERE w.id=? AND w.owner_id=? AND m.account_id=? AND m.role='owner' AND m.disabled=0 AND w.deleted_at IS NULL`,
+      args: [workspaceId, accountId, accountId],
+    })
+  ).rows[0];
+  if (!row)
+    throw new AccountError(
+      "Only this workspace's owner can manage its sign-in policy.",
+      403,
+    );
+  return row;
+}
+
+export async function readWorkspaceSecurity(
+  accountId: string,
+  session: string,
+  requestScope: string,
+) {
+  return accountTransaction(async (tx) => {
+    const workspaceId = await assertLiveAccountSession(
+      tx,
+      accountId,
+      session,
+      undefined,
+      requestScope,
+    );
+    const row = await ownedSecurityWorkspace(tx, workspaceId, accountId);
+    const members = (
+      await tx.execute({
+        sql: `SELECT count(*) total,coalesce(sum(CASE WHEN asec.enabled_at IS NULL THEN 1 ELSE 0 END),0) unenrolled
+        FROM memberships m JOIN accounts a ON a.id=m.account_id LEFT JOIN account_security asec ON asec.account_id=a.id
+        WHERE m.workspace_id=? AND m.disabled=0 AND a.disabled=0 AND a.deleted_at IS NULL`,
+        args: [workspaceId],
+      })
+    ).rows[0];
+    return {
+      requiresMfa: Number(row.requires_mfa) === 1,
+      ownerEnrolled: enabled(await security(tx, accountId)),
+      members: Number(members.total),
+      unenrolled: Number(members.unenrolled),
+    };
+  });
+}
+
+/** Password, fresh factor, ownership, policy and audit commit under the same
+ * platform write lock as factor disablement. No cross-database mirror decides access. */
+export async function changeWorkspaceSecurity(input: {
+  accountId: string;
+  session: string;
+  requestScope: string;
+  password: string;
+  code: string;
+  requiresMfa: boolean;
+}) {
+  const passwordHash = await passwordProof(input.accountId, input.password);
+  return accountTransaction(async (tx) => {
+    const workspaceId = await assertLiveAccountSession(
+      tx,
+      input.accountId,
+      input.session,
+      passwordHash,
+      input.requestScope,
+    );
+    await ownedSecurityWorkspace(tx, workspaceId, input.accountId);
+    const state = await security(tx, input.accountId);
+    if (!enabled(state))
+      throw new AccountError(
+        "Set up your own authenticator before changing the workspace sign-in policy.",
+        409,
+      );
+    const factor = await consumeFactor(
+      tx,
+      input.accountId,
+      input.code.trim(),
+      state!,
+    );
+    if (factor === "recovery") {
+      const remaining = (
+        await tx.execute({
+          sql: "SELECT count(*) n FROM account_recovery_codes WHERE account_id=? AND used_at IS NULL",
+          args: [input.accountId],
+        })
+      ).rows[0];
+      if (!Number(remaining.n))
+        throw new AccountError(
+          "Save and activate replacement recovery codes before using your last code to change workspace policy.",
+          409,
+        );
+    }
+    await tx.execute({
+      sql: "UPDATE workspaces SET requires_mfa=?,updated_at=? WHERE id=?",
+      args: [input.requiresMfa ? 1 : 0, now(), workspaceId],
+    });
+    await tx.execute(
+      securityAuditStatement({
+        workspaceId,
+        actorId: input.accountId,
+        action: input.requiresMfa
+          ? "workspace.mfa_required"
+          : "workspace.mfa_optional",
+        targetType: "workspace",
+        targetId: workspaceId,
+      }),
+    );
+    return { requiresMfa: input.requiresMfa };
   });
 }

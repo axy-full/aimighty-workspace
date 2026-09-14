@@ -31,6 +31,7 @@ import UploadRecovery from "@/components/UploadRecovery";
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await currentContext();
+  if (ctx?.mfaRequired) redirect("/account/security");
   const user = ctx?.user ?? null;
   // No accounts at all yet → the first person here becomes the platform's owner.
   if (!user && (await userCount()) === 0) redirect("/setup");

@@ -18,7 +18,7 @@ export const SECURITY_AUDIT_SCHEMA = [
 const actions = [
   "session.created", "session.revoked", "session.workspace_changed",
   "account.password_reset", "account.mfa_enabled", "account.mfa_disabled", "account.recovery_codes_rotated", "account.recovery_code_used", "account.sessions_revoked", "member.updated", "member.removed",
-  "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed",
+  "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional",
   "api_token.created", "api_token.revoked", "review_link.created", "review_link.revoked",
 ] as const;
 export type SecurityAction = (typeof actions)[number];

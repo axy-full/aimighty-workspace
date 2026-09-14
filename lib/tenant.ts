@@ -49,6 +49,8 @@ export type TenantWorkspace = {
   /** The Vercel AI Gateway key minted for this workspace, by id, so it can be revoked. */
   gatewayKeyId: string | null;
   ownerId: string;
+  /** Browser members must enrol before reading or changing workspace data. */
+  requiresMfa?: boolean;
   createdAt: number;
 };
 
@@ -64,6 +66,7 @@ export type TenantStore = {
   workspace: TenantWorkspace | null;
   user: TenantUser | null;
   token?: TenantToken;
+  mfaRequired?: boolean;
   /** Every workspace the signed-in account belongs to, for the switcher. */
   workspaces?: { id: string; slug: string; name: string; role: WorkspaceRole }[];
 };

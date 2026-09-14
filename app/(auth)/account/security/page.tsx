@@ -33,7 +33,7 @@ export default async function AccountSecurityPage() {
       />
       <div className="shell-body">
         <div className="shell-page">
-          <AccountSecurity key={scope} scope={scope} name={context.user.name} />
+          <AccountSecurity key={scope} scope={scope} name={context.user.name} requiredBy={context.mfaRequired ? context.workspace?.name : undefined} />
         </div>
       </div>
       <StudioDock />
