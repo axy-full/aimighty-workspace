@@ -213,8 +213,9 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   }
   await goStage(page, "Script & breakdown");
   await page.getByLabel("Production screenplay", { exact: true }).fill("EXT. TEST DUNES - DAY\n\nMIRA walks into the light.");
-  await expect(page.locator(".breakdown-scene")).toHaveCount(1);
-  await page.getByRole("button", { name: "Build scene canvas", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Screenplay scene breakdown" }).getByRole("checkbox")).toHaveCount(1);
+  await page.getByRole("button", { name: "Select all scenes", exact: true }).click();
+  await page.getByRole("button", { name: "Build 1 scene nodes", exact: true }).click();
   await expect.poll(() => state.current().nodes.some(node => node.title.includes("TEST DUNES"))).toBeTruthy();
   await goStage(page, "Assets & takes");
   await page.getByLabel("Upload production files", { exact: true }).setInputFiles({ name: "Uploaded reference.webp", mimeType: "image/webp", buffer: await readFile("public/campaign/hero.webp") });

@@ -52,3 +52,5 @@ vapid-keys-for-vercel.txt
 test-results/
 playwright-report/
 ci-results/
+
+/public/vendor/pdfjs-*/
