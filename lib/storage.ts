@@ -383,7 +383,7 @@ export async function streamAssembleUpload(
   async function* chunks(): AsyncGenerator<Buffer> {
     for (let i = 0; i < count; i++) {
       const buf = usingBlob()
-        ? await readBlob(`chunks/${sess}/${i}`)
+        ? await readBlob(chunkPath(sess, i))
         : await readFile(path.join(CHUNK_DIR, sess, String(i)));
       if (i === 0) headChunk = buf;
       hash.update(buf);
