@@ -514,3 +514,74 @@ test("video-reference quotes use measured generated/upload durations and current
       expect(impossible.body.error).toMatch(/length does not match/);
     expect(dispatched).toHaveLength(1);
   }));
+
+test("Seedance edits price the actual source shape and length and reject stale quotes before admission", async () =>
+  scope("edit-source-quote", async (service) => {
+    const { db } = await import("../../lib/db");
+    const { estimateCostUsd } = await import("../../lib/vendorPricing");
+    const { billCredits } = await import("../../lib/creditTerms");
+    await db().execute(
+      "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,width,height,duration_s,created_at) VALUES('source','source.mp4','video/mp4','mp4',1000,'hash','source','video',1280,720,12.5,0)",
+    );
+    const body = {
+      model: "dreamina-seedance-2-5-260628",
+      task: "edit",
+      prompt: "Edit @Video1: change the lighting",
+      sourceUploadId: "source",
+      resolution: "720p",
+      duration: 4,
+      ratio: "1:1",
+      refine: false,
+    };
+    const prepared = value(await service.gen.prepareGeneration(body, actor));
+    expect(prepared.compiled.params as Record<string, unknown>).toMatchObject({
+      duration: 12.5,
+      ratio: "1280:720",
+      sourceSeconds: 12.5,
+    });
+    const cost = estimateCostUsd(
+      body.model,
+      "720p",
+      "1280:720",
+      12.5,
+      12.5,
+      true,
+      { task: "edit", audio: false },
+    )!.net;
+    expect(prepared.quote.estimatedCredits).toBe(billCredits(cost, body.model));
+    expect(await rows()).toHaveLength(0);
+    expect(dispatched).toHaveLength(0);
+    const quoted = {
+      ...body,
+      maxCredits: prepared.quote.estimatedCredits,
+      quoteFingerprint: prepared.quote.fingerprint,
+    };
+    const changed = await route("generation", service).POST(
+      request(
+        "generate",
+        { ...quoted, prompt: "Edit @Video1: replace the actor" },
+        "changed-edit-quote",
+      ),
+    );
+    expect(changed.status).toBe(409);
+    expect(await rows()).toHaveLength(0);
+    expect(dispatched).toHaveLength(0);
+    const accepted = await route("generation", service).POST(
+      request("generate", quoted, "approved-edit-quote"),
+    );
+    expect(accepted.status).toBe(202);
+    const result = await accepted.json();
+    const replay = await route("generation", service).POST(
+      request("generate", quoted, "approved-edit-quote"),
+    );
+    expect((await replay.json()).id).toBe(result.id);
+    expect(dispatched).toHaveLength(1);
+    expect((await rows()).filter((row) => row.id === result.id)).toHaveLength(
+      1,
+    );
+    await db().execute("UPDATE uploads SET width=NULL WHERE id='source'");
+    expect(await service.gen.prepareGeneration(body, actor)).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+  }));

@@ -90,4 +90,9 @@
   .actions a {
     min-height: 42px;
   }
+  /* Gen reserves this row for the price and paid action. Keep recovery above it. */
+  :global(body:has([data-generation-workspace][data-mobile-view="create"]))
+    .panel {
+    bottom: calc(158px + env(safe-area-inset-bottom));
+  }
 }
