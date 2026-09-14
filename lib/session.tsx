@@ -83,6 +83,10 @@ export function clearPrivateLocal(): void {
       if (PRIVATE_KEYS.includes(k) || PRIVATE_PREFIXES.some((p) => k.startsWith(p))) doomed.push(k);
     }
     for (const k of doomed) localStorage.removeItem(k);
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith("particl-movie-private:")) sessionStorage.removeItem(key);
+    }
   } catch { /* private mode, or storage disabled — nothing to clear */ }
 }
 

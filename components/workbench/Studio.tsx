@@ -141,6 +141,7 @@ import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {useProductionJobs} from './use-production-jobs';
 import {uploadWorkbench} from '@/lib/workbench/upload';
 import {AssetPreview} from './AssetPreview';
+import {createMovieHandoff} from '@/lib/workbench/movie-handoff';
 import DesignReview from "./design-review";
 import { CrewPanel, ScriptPanel, StoryboardPanel } from "./production-crew";
 import { CREW, ScriptScene } from "@/lib/workbench/crew";
@@ -2318,7 +2319,7 @@ export default function Studio({
                                     />
                                   )}
                                   <span>
-                                    Scratch audio plays independently.
+                                    Preview plays independently. Movie export syncs this track from 00:00.
                                   </span>
                                 </>
                               )}
@@ -2331,6 +2332,7 @@ export default function Studio({
                       <div className="stage-scroll">
                         <div className="delivery-grid">
                           <div className="delivery-main">
+                            <section className="movie-export"><h3>Final movie</h3><p>Render the selected takes and sound into a downloadable MP4 or WebM, on this device.</p><button className="btn primary large" onClick={()=>{try{const path=createMovieHandoff(pRef.current,storageKey);void leaveWorkspace(path);}catch(error){toast.error(error instanceof Error?error.message:'This browser cannot prepare the export.');}}}>Open movie renderer</button><p className="movie-limit">Up to 3 minutes · 720p or 1080p · no generation credits</p></section>
                             <span className="eyebrow">
                               THE EDITORIAL HANDOFF
                             </span>
@@ -3136,7 +3138,7 @@ export default function Studio({
                 ))}
               </div>
             )}
-            {dialog === "connections" && <div className="connection-info"><p>These models are available for Atomik. Choose an image or video engine when generating a take.</p><div className="provider-list">{jobs.models.length?jobs.models.map(m=><div key={m.id}><span>{m.name}</span><small>Available</small></div>):<p>Sign in to view configured reasoning models.</p>}</div><p>Canvas edits, private versions, shared project bibles, source uploads, sequence timing and exports are saved in your workspace. Website links are references; arbitrary website content is not automatically fetched. Audio remains a separate scratch track. Final video encoding and NLE conform validation are not included.</p><a href="/settings">Workspace settings</a></div>}
+            {dialog === "connections" && <div className="connection-info"><p>These models are available for Atomik. Choose an image or video engine when generating a take.</p><div className="provider-list">{jobs.models.length?jobs.models.map(m=><div key={m.id}><span>{m.name}</span><small>Available</small></div>):<p>Sign in to view configured reasoning models.</p>}</div><p>Canvas edits, private versions, shared project bibles, source uploads, sequence timing and exports are saved in your workspace. Website links are references; arbitrary website content is not automatically fetched. Delivery renders a synchronized final movie on your device, or exports original media and an EDL. Target-NLE conform validation remains separate.</p><a href="/settings">Workspace settings</a></div>}
             {dialog === "review" && <DesignReview />}
           </DialogContent>
         </Dialog>

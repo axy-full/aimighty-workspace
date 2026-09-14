@@ -9,11 +9,17 @@ import type { NextConfig } from "next";
  * anything), not the browser.
  */
 const headers = [
-  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains; preload",
+  },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+  },
   /* The policy had no `default-src`, so every fetch destination was open and
      an injected script could exfiltrate anywhere it liked. These directives
      bound WHERE things may go.
@@ -49,7 +55,27 @@ const headers = [
 
 const nextConfig: NextConfig = {
   async headers() {
-    return [{ source: "/(.*)", headers }];
+    // Only the dedicated movie document can create the bundled AAC WASM worker.
+    // Every other page retains the policy above; production never enables general eval.
+    const movieHeaders = headers.map((header) =>
+      header.key === "Content-Security-Policy"
+        ? {
+            ...header,
+            value:
+              header.value
+                .replace(
+                  "script-src 'self'",
+                  "script-src 'self' 'wasm-unsafe-eval'",
+                )
+                .replace("connect-src 'self' https:", "connect-src 'self'") +
+              "; worker-src 'self' blob:",
+          }
+        : header,
+    );
+    return [
+      { source: "/(.*)", headers },
+      { source: "/workbench/movie", headers: movieHeaders },
+    ];
   },
 };
 

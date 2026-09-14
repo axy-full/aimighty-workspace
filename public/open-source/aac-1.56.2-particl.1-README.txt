@@ -1,0 +1,116 @@
+Particl AAC source rebuild 1.56.2-particl.1
+=========================================
+
+This source kit corresponds to the separately licensed AAC encoder used by the
+Particl movie exporter. It replaces the precompiled WASM in the npm
+@mediabunny/aac-encoder 1.56.2 package; that binary's exact FFmpeg source revision
+was not published with it. The Mediabunny core remains pinned to 1.56.2.
+
+Source contents
+---------------
+source/ffmpeg/: complete, unmodified FFmpeg 8.0.1 source at
+  894da5ca7d742e4429ffb2af534fcda0103ef593 (tag n8.0.1), LGPL-2.1-or-later.
+source/mediabunny/src/ and shared/: Mediabunny core/shared source; and
+source/mediabunny/packages/aac-encoder/src/: unmodified AAC wrapper, worker,
+  and C bridge from f48609437864d569dfd2e853396a7236a46ab0d5 (tag v1.56.2).
+  These files are MPL-2.0. Upstream copyright/license headers are retained.
+  Public declarations come from the exact npm 1.56.2 package (API unchanged).
+recipe/: AAC-only bundler adapted from upstream scripts/bundle.ts, unchanged
+  upstream worker plugin, exact build-tool lockfile, and shell build recipe.
+evidence/: shipped build configuration, hashes, and bridge LLVM object. The
+  bridge object and all its source are provided for relinking with modified
+  FFmpeg libraries. No FFmpeg code changes were applied; changes.diff is empty.
+
+Build prerequisites and pinned inputs
+-------------------------------------
+The shipped build used macOS arm64, Node 24.18.0, Python 3.14, Apple make 3.81,
+Emscripten 4.0.10, esbuild 0.25.1, TypeScript 5.9.3,
+esbuild-plugin-external-global 1.0.1, and find-cache-dir 5.0.0.
+
+Install Emscripten from the official emsdk repository, at the recorded tag:
+
+  git clone https://github.com/emscripten-core/emsdk.git emsdk
+  git -C emsdk checkout 62a853cd3b3134398ce85cde8bb5cbb2ef0194cb
+  ./emsdk/emsdk install 4.0.10
+  ./emsdk/emsdk activate 4.0.10
+  . ./emsdk/emsdk_env.sh
+
+The build used this official macOS arm64 release archive directly, with an
+EM_CONFIG pointing LLVM_ROOT at install/bin, BINARYEN_ROOT at install, and
+NODE_JS at Node 24.18.0:
+https://storage.googleapis.com/webassembly/emscripten-releases-builds/mac/8103ffedfb0c42d231c6af6859a5a1a832260b43/wasm-binaries-arm64.tar.xz
+SHA-256: c744ffe06ffed55cd8dae42862b7646f15550c7decd47a48d09a474af83732b0
+emcc reports 4.0.10-git (b7dc6e5747465580df5984e723b9d1f10d8e804b).
+Emscripten's official emsdk recipe uses the same release build hash.
+
+Rebuild from this source kit
+----------------------------
+Extract this archive into a new writable directory, activate the toolchain,
+then run from its top level:
+
+  bash recipe/build.sh
+
+The script checks the Emscripten version, compiles FFmpeg's AAC encoder and
+libavutil with GPL/version3/nonfree disabled, compiles and links the C bridge,
+and creates all four AAC JS bundles plus an npm package in output/.
+DYNAMIC_EXECUTION=0 permits the browser's strict CSP without JavaScript eval;
+WebAssembly compilation still requires the movie page's wasm-unsafe-eval policy.
+The build tools are installed from recipe/package-lock.json with lifecycle
+scripts disabled. npm registry access is needed unless they are already cached.
+
+The recipe refuses to overwrite an existing output directory. For another run:
+
+  AAC_OUTPUT_ROOT="$PWD/output-custom" bash recipe/build.sh
+
+AAC_BUILD_JOBS controls make parallelism (default 4). The source kit deliberately
+does not contain the 1.3 GB compiler or node_modules. Their pinned official inputs
+and checksums are recorded in provenance.json and the build-tool lockfile.
+Binary hashes may differ on another host/toolchain; source identity and flags
+are recorded so a source rebuild can be examined without trusting an opaque WASM.
+
+Modification, relinking, and replacement
+---------------------------------------
+You may modify the FFmpeg or bridge source, rerun the same build, and use the
+resulting AAC library under its included licenses. It is not signed or tied to a
+workspace. For a modified FFmpeg source tree, set AAC_FFMPEG_ROOT to its absolute
+path; AAC_SOURCE_ROOT may likewise select another copy of the Mediabunny source.
+The recipe always relinks the bridge with those libraries. The original bridge
+object is also in evidence/bridge.o; the exact link command is in recipe/build.sh.
+
+In a Particl checkout, install the resulting local tarball as the
+@mediabunny/aac-encoder dependency, retaining mediabunny 1.56.2, then run the normal
+application build. For example:
+
+  npm install --save-exact /absolute/path/output-custom/mediabunny-aac-encoder-1.56.2-particl.1.tgz
+  npm run build
+
+This keeps the registerAacEncoder API and the separately imported library module
+replaceable. The distributed browser JavaScript is not encrypted or subject to
+an integrity/signature check preventing local modification. The npm package also
+provides the library's standalone ESM/UMD bundles for use without Particl.
+No Particl term restricts modification, replacement, or reverse engineering for
+debugging modifications to this library. Run the MP4 AAC pulse/duration test when
+replacing it, because the exporter compensates FFmpeg's 1024-sample priming delay.
+
+Licenses and download locations
+------------------------------
+Mediabunny/bridge: source/mediabunny/LICENSE (MPL-2.0).
+FFmpeg: source/ffmpeg/COPYING.LGPLv2.1 and LICENSE.md (LGPL-2.1-or-later).
+The AAC package's licenses/ directory includes Emscripten, musl, and compiler-rt
+notices; its NOTICE.txt identifies the components. These license rights remain
+in effect regardless of Particl's other terms. This technical source/provenance
+record is not an assurance about codec patent rights or other legal questions.
+
+On the same server as the browser application's encoder:
+/open-source/aac-1.56.2-particl.1-source.tar.gz
+/open-source/aac-1.56.2-particl.1-provenance.json
+/open-source/aac-1.56.2-particl.1-README.txt
+/open-source/mediabunny-aac-encoder-1.56.2-particl.1.tgz
+/licenses/mediabunny.txt
+/licenses/LGPL-2.1.txt
+
+Primary upstream references:
+https://github.com/FFmpeg/FFmpeg/tree/894da5ca7d742e4429ffb2af534fcda0103ef593
+https://github.com/Vanilagy/mediabunny/tree/f48609437864d569dfd2e853396a7236a46ab0d5
+https://github.com/emscripten-core/emsdk/tree/62a853cd3b3134398ce85cde8bb5cbb2ef0194cb
+https://ffmpeg.org/legal.html
