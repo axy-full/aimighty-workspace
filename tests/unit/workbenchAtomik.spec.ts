@@ -12,7 +12,7 @@ import type { MeterEvent } from '../../lib/meter';
 import type { CatalogModel } from '../../lib/catalog';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-workbench-atomik-'));
-const model: CatalogModel = { id: 'test/economy', name: 'Economy', owner: 'test', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
+const model: CatalogModel = { id: 'test/economy', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
 const validReply = { intent: 'shots', summary: 'Mira enters the dunes after the sphere catches first light.', steps: ['Open on the mirrored dunes for 96 frames at 24 fps.', 'Hold the encounter for 144 frames; keep Mira’s ivory scarf consistent.'] };
 function workspace(): TenantWorkspace {
   const id = randomUUID();

@@ -2,12 +2,18 @@ import { after } from 'next/server';
 import { z } from 'zod';
 import { requireRender, requireUser, withTenant } from '@/lib/auth';
 import { currentTenant, runWithStore } from '@/lib/tenant';
+import { creditsApply } from '@/lib/credits';
+import { atomikPublicResponse } from '@/lib/workbench/atomik-response';
 import { atomikRequestSchema, atomikState, AtomikError, prepareAtomikJob, quoteAtomikJob, runAtomikJob, listAtomikJobs } from '@/lib/workbench/atomik-server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
-const response = (value: unknown, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
+const response = (value: unknown, status = 200) => Response.json(atomikPublicResponse(value, creditsApply(currentTenant()?.workspace)), { status, headers: { 'Cache-Control': 'no-store' } });
+function wrongScope(req: Request, userId: string) {
+  const scope = req.headers.get('X-Workbench-Scope');
+  return scope && scope !== `particl-active-${currentTenant()?.workspace?.id}-${userId}`;
+}
 function failure(error: unknown) {
   const status = error instanceof AtomikError ? error.status : Number((error as { status?: number })?.status) || 500;
   console.error('Workbench Atomik request failed with status', status);
@@ -16,6 +22,7 @@ function failure(error: unknown) {
 export const GET = withTenant(async (req: Request) => {
   const auth = await requireUser();
   if (auth.response) return auth.response;
+  if (wrongScope(req, auth.user.id)) return response({ error: 'This workspace or account changed. Return to the original production.' }, 409);
   const projectId = new URL(req.url).searchParams.get('projectId');
   if (!projectId || !/^[a-zA-Z0-9-]{1,100}$/.test(projectId)) return response({ error: 'Choose a saved production.' }, 400);
   const requestId = new URL(req.url).searchParams.get('requestId');
@@ -29,6 +36,7 @@ export const GET = withTenant(async (req: Request) => {
 export const POST = withTenant(async (req: Request) => {
   const auth = await requireRender();
   if (auth.response) return auth.response;
+  if (wrongScope(req, auth.user.id)) return response({ error: 'This workspace or account changed. Return to the original production.' }, 409);
   const origin = req.headers.get('origin');
   if (origin && origin !== new URL(req.url).origin) return response({ error: 'Invalid request origin.' }, 403);
   if (Number(req.headers.get('content-length') || 0) > 20000) return response({ error: 'Keep this request under 20 KB.' }, 413);

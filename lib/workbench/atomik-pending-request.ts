@@ -1,8 +1,9 @@
+import type { AtomikVideoFrame } from './atomik-reference-types';
 /** Browser-side write-ahead record: a lost HTTP response must never mint another paid request ID. */
 export type AtomikPendingStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export type AtomikSubmission = {
   projectId: string; requestId: string; request: string; model: string; depth: string;
-  refs: string[]; role?: string; maxCredits: number;
+  refs: string[]; role?: string; maxCredits: number; videoFrames?: AtomikVideoFrame[];
 };
 export type PendingAtomikRequest = {
   version: 1; scope: string; projectId: string; requestId: string;
@@ -28,6 +29,7 @@ export function atomikPendingInput(record: PendingAtomikRequest): AtomikSubmissi
   if (!value || typeof value !== 'object' || value.projectId !== record.projectId || value.requestId !== record.requestId ||
     typeof value.request !== 'string' || typeof value.model !== 'string' || !['Quick', 'Considered', 'Deep'].includes(value.depth ?? '') ||
     !Array.isArray(value.refs) || !value.refs.every(ref => typeof ref === 'string') ||
+    (value.videoFrames != null && (!Array.isArray(value.videoFrames) || value.videoFrames.length > 6 || !value.videoFrames.every(frame => frame && typeof frame.assetId === 'string' && typeof frame.uploadId === 'string' && typeof frame.timeSeconds === 'number' && Number.isFinite(frame.timeSeconds) && frame.timeSeconds >= 0 && frame.timeSeconds <= 3600))) ||
     (value.role != null && typeof value.role !== 'string') || value.quoteOnly != null ||
     typeof value.maxCredits !== 'number' || !Number.isInteger(value.maxCredits) || value.maxCredits < 0) {
     throw new Error('The saved Atomik request cannot be verified. Review Activity before starting another request.');
