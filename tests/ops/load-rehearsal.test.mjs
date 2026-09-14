@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  sourceDigest,
   parseOptions,
   validateLocalDatabase,
   summarizeSamples,
@@ -131,3 +132,14 @@ test(
     assert.equal(result.fixtureDirectory, undefined);
   },
 );
+
+
+test("source evidence changes when a recovery MJS or runtime CJS module changes", async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),"load-digest-"));
+  try{
+    await mkdir(path.join(dir,'lib/recovery'),{recursive:true});await mkdir(path.join(dir,'scripts/ops'),{recursive:true});
+    for(const file of ['package.json','package-lock.json','scripts/ops/load-rehearsal.mjs','scripts/ops/load-rehearsal-runtime.cjs','lib/client.ts','lib/recovery/control.mjs','lib/runtime.cjs'])await writeFile(path.join(dir,file),'original');
+    const before=await sourceDigest(dir);await writeFile(path.join(dir,'lib/recovery/control.mjs'),'changed fence');const after=await sourceDigest(dir);assert.notEqual(before,after);
+    await writeFile(path.join(dir,'lib/runtime.cjs'),'changed runtime');assert.notEqual(after,await sourceDigest(dir));
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
