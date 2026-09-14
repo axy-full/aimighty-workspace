@@ -15,7 +15,7 @@
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.74",
     "@anthropic-ai/sdk": "^0.123.0",
-    "@libsql/client": "^0.17.4",
+    "@libsql/client": "^0.18.0",
     "@mediabunny/aac-encoder": "file:public/open-source/mediabunny-aac-encoder-1.56.2-particl.1.tgz",
     "@vercel/blob": "^2.8.0",
     "@vercel/oidc": "^3.8.5",
