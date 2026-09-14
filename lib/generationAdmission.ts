@@ -288,6 +288,7 @@ export async function executeGenerationAdmission(
     let sourceRef: Reference | null = null;
     let sourceSeconds: number | null = null;
     let sourceResolution: string | null = null;
+    let sourceRatio: string | null = null;
     /* An engine with no generate mode (Topaz only upscales) cannot be asked
      for a plain render, however it was reached. */
     if (
@@ -326,7 +327,7 @@ export async function executeGenerationAdmission(
       }
       if (sourceUploadId) {
         const up = await db().execute({
-          sql: `SELECT id, mime, ext, stored_url, kind, duration_s, height, bytes FROM uploads WHERE id = ? LIMIT 1`,
+          sql: `SELECT id, mime, ext, stored_url, kind, duration_s, width, height, bytes FROM uploads WHERE id = ? LIMIT 1`,
           args: [sourceUploadId],
         });
         if (!up.rows.length)
@@ -342,6 +343,7 @@ export async function executeGenerationAdmission(
           kind: string;
           duration_s: number | null;
           height: number | null;
+          width: number | null;
           bytes: number | null;
         };
         if (u.kind !== "video")
@@ -362,8 +364,10 @@ export async function executeGenerationAdmission(
         };
         const sp = uploadSourceParams({
           durationS: u.duration_s,
-          height: u.height,
+          height: u.width && u.height ? Math.min(u.width, u.height) : u.height,
         });
+        if (u.width && u.height && u.width > 0 && u.height > 0)
+          sourceRatio = `${u.width}:${u.height}`;
         if (typeof sp.duration === "number") sourceSeconds = sp.duration;
         if (typeof sp.resolution === "string") sourceResolution = sp.resolution;
         /* A LOCKED task is priced by the second of THIS clip, and the second
@@ -434,7 +438,10 @@ export async function executeGenerationAdmission(
           const sp = JSON.parse(src.params || "{}") as {
             duration?: number;
             resolution?: string;
+            ratio?: string;
           };
+          if (typeof sp.ratio === "string" && /^\d+:[1-9]\d*$/.test(sp.ratio))
+            sourceRatio = sp.ratio;
           if (typeof sp.duration === "number") sourceSeconds = sp.duration;
           if (typeof sp.resolution === "string")
             sourceResolution = sp.resolution;
@@ -450,6 +457,19 @@ export async function executeGenerationAdmission(
         } catch {
           /* unparseable params — no advice to give */
         }
+      }
+      if (
+        task.forceRatio === "adaptive" &&
+        model.billing === "token" &&
+        (!sourceRatio || !sourceSeconds || !Number.isFinite(sourceSeconds))
+      ) {
+        return admissionReply(
+          {
+            error:
+              "The source clip's dimensions or duration are unavailable. Upload the original clip so the edit can be quoted accurately.",
+          },
+          { status: 400 },
+        );
       }
       if (!hasTrigger(task, prompt)) {
         return admissionReply(
@@ -491,6 +511,11 @@ export async function executeGenerationAdmission(
       fps60: Boolean(body.fps60),
       sourceResolution: sourceResolution ?? undefined,
     };
+    // Provider payloads still force adaptive/-1. Store and price the known source
+    // shape here so client controls cannot understate a locked edit's cost.
+    if (task.forceRatio === "adaptive" && model.billing === "token" && sourceRatio)
+      params.ratio = sourceRatio;
+    if (task.id === "edit" && sourceSeconds) params.duration = sourceSeconds;
 
     /* ── Reference images ────────────────────────────────────────────── */
     const wanted: { uploadId: string; role: ImageRole }[] = Array.isArray(
