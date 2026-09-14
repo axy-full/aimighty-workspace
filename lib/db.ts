@@ -54,6 +54,19 @@ const SCHEMA = [
      updated_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_workbench_owner ON workbench_projects(owner,updated_at)`,
+  `CREATE TABLE IF NOT EXISTS workbench_edit_versions (
+     owner TEXT NOT NULL, draft_id TEXT NOT NULL, id TEXT NOT NULL,
+     label TEXT NOT NULL, source_revision INTEGER NOT NULL, created_at INTEGER NOT NULL,
+     shots INTEGER NOT NULL, frames INTEGER NOT NULL, fps INTEGER NOT NULL,
+     sha256 TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(owner,draft_id,id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_workbench_edit_versions ON workbench_edit_versions(owner,draft_id,created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS workbench_edit_sources (
+     owner TEXT NOT NULL, draft_id TEXT NOT NULL, version_id TEXT NOT NULL,
+     kind TEXT NOT NULL, source_id TEXT NOT NULL,
+     PRIMARY KEY(owner,draft_id,version_id,kind,source_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_workbench_edit_sources ON workbench_edit_sources(kind,source_id)`,
   `CREATE TABLE IF NOT EXISTS workbench_media (
      id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL,
      ext TEXT NOT NULL, size INTEGER NOT NULL, stored_url TEXT NOT NULL, sha256 TEXT NOT NULL
