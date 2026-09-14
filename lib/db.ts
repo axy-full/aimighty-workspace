@@ -1,4 +1,5 @@
 import { fenceDatabase } from "./recoveryDatabaseClient";
+import { columnInstaller } from "./schemaInitialization";
 import { SECURITY_AUDIT_SCHEMA } from "./securityAudit";
 import type { Client } from "@libsql/client";
 import { createHash } from "node:crypto";
@@ -810,24 +811,6 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_login_attempts_seen ON login_attempts(updated_at)`,
 ];
 
-/**
- * An ALTER expected to fail exactly once, when the column already exists.
- *
- * A bare `catch {}` here cannot tell "already there" from a dropped
- * connection, and swallowing the second one is the worse bug of the two:
- * ready() would resolve, report the schema complete, and cache that success
- * for the life of the instance while a column every query touches is simply
- * missing. Only the duplicate is ignored; anything else propagates, clears
- * the memo, and is retried by the next request.
- */
-async function addColumn(c: Client, table: string, decl: string): Promise<void> {
-  try {
-    await c.execute(`ALTER TABLE ${table} ADD COLUMN ${decl}`);
-  } catch (e) {
-    if (!/duplicate column|already exists/i.test((e as Error).message)) throw e;
-  }
-}
-
 /** Same reasoning for an index that may name a column added moments ago. */
 async function addIndex(c: Client, stmt: string): Promise<void> {
   try {
@@ -843,7 +826,8 @@ async function addIndex(c: Client, stmt: string): Promise<void> {
  * rather than inheriting a rejected promise for the life of the container.
  */
 async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
-      for (const stmt of SCHEMA) await c.execute(stmt);
+      await c.batch(SCHEMA, "write");
+      const addColumn = await columnInstaller(c);
       /* Bindings: drop the old one-row-per-slot constraint.
  
          `CREATE TABLE IF NOT EXISTS` cannot change a table that exists, and
@@ -881,30 +865,30 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       }
 
       // Lightweight migrations for columns added after first deploy.
-      await addColumn(c, "generations", `deleted INTEGER NOT NULL DEFAULT 0`);
-      await addColumn(c, "uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
-      await addColumn(c, "uploads", `duration_s REAL`);
+      await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
+      await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
+      await addColumn("uploads", `duration_s REAL`);
       for (const col of [
         // Reference uploads keep their master untouched; when a downstream
         // API can't accept the master, the derivative lives alongside it.
         `derivative_url TEXT`, `derivative_bytes INTEGER`,
         `derivative_note TEXT`, `sha256 TEXT`,
       ]) {
-        await addColumn(c, "uploads", col);
+        await addColumn("uploads", col);
       }
       // A deleted member is retired, not erased: their renders and spend keep
       // their name on the ledger, while access and listings treat them as gone.
-      await addColumn(c, "users", `deleted_at INTEGER`);
+      await addColumn("users", `deleted_at INTEGER`);
       // What this person wants to be told about, in this workspace (brief 2.7).
-      await addColumn(c, "users", `notify TEXT`);
+      await addColumn("users", `notify TEXT`);
       // What a person handed the agent with a message, and what a step carries forward.
-      await addColumn(c, "atomik_messages", `attachments TEXT`);
-      await addColumn(c, "atomik_steps", `refs TEXT`);
+      await addColumn("atomik_messages", `attachments TEXT`);
+      await addColumn("atomik_steps", `refs TEXT`);
       // Who a note called out, so the mention is a record and not only a nudge (brief 2.1).
-      await addColumn(c, "notes", `mentions TEXT NOT NULL DEFAULT '[]'`);
+      await addColumn("notes", `mentions TEXT NOT NULL DEFAULT '[]'`);
       // Consent to train on a face, stored with the identity (brief 1.3).
-      await addColumn(c, "identities", `consent_by TEXT`);
-      await addColumn(c, "identities", `consent_at INTEGER`);
+      await addColumn("identities", `consent_by TEXT`);
+      await addColumn("identities", `consent_at INTEGER`);
       // Looks: a category, a cover, a blurb, a style block, references,
       // and whether the product shipped it.
       for (const col of [
@@ -913,11 +897,11 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `cover_gen_id TEXT`, `cover_upload_id TEXT`, `swatch TEXT`,
         `builtin INTEGER NOT NULL DEFAULT 0`, `updated_at INTEGER`,
       ]) {
-        await addColumn(c, "shot_presets", col);
+        await addColumn("shot_presets", col);
       }
       // Invites remember whether and when they were emailed.
       for (const col of [`sent_at INTEGER`, `send_count INTEGER NOT NULL DEFAULT 0`]) {
-        await addColumn(c, "invites", col);
+        await addColumn("invites", col);
       }
       for (const col of [`code TEXT NOT NULL DEFAULT ''`, `archived INTEGER NOT NULL DEFAULT 0`,
                          // What kind of job this is — the axis R2 calls
@@ -950,7 +934,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `format TEXT NOT NULL DEFAULT ''`,
         `step INTEGER NOT NULL DEFAULT 0`,
 ]) {
-        await addColumn(c, "projects", col);
+        await addColumn("projects", col);
       }
       await c.execute(`CREATE INDEX IF NOT EXISTS idx_projects_production ON projects(production_id)`);
       /* Every project under a production, once (§15). A project with none
@@ -1023,7 +1007,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
            what the ledger already assumed, so nothing restates itself. */
         `billed_to TEXT`,
       ]) {
-        await addColumn(c, "generations", col);
+        await addColumn("generations", col);
       }
       /* Indexes for columns added above — created AFTER the ALTERs, since on
          an existing database the column doesn't exist until they've run.
@@ -1042,7 +1026,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `dirty INTEGER NOT NULL DEFAULT 0`,
         `synced_at INTEGER`,
       ]) {
-        await addColumn(c, "shots", col);
+        await addColumn("shots", col);
       }
       /* An idea remembers which reasoning model was chosen for it. */
       /* `inputs` shipped inside recipe_stages' CREATE TABLE and never as an
@@ -1053,17 +1037,17 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          no wires — which is exactly how it looked. A write naming the column
          does not degrade, it throws, so this has to land before anything
          writes a graph's edges. */
-      await addColumn(c, "recipe_stages", `inputs TEXT NOT NULL DEFAULT '[]'`);
-      await addColumn(c, "ideas", `model TEXT`);
-      await addColumn(c, "topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
+      await addColumn("recipe_stages", `inputs TEXT NOT NULL DEFAULT '[]'`);
+      await addColumn("ideas", `model TEXT`);
+      await addColumn("topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */
-      await addColumn(c, "topups", `credits INTEGER`);
+      await addColumn("topups", `credits INTEGER`);
       /* Added after ledger_checks first shipped, so the CREATE TABLE above
          will not deliver them to a database that already has the table. A
          column added to a CREATE TABLE IF NOT EXISTS reaches new databases
          only; every existing one needs the ALTER. */
-      await addColumn(c, "ledger_checks", `balance_credits INTEGER`);
-      await addColumn(c, "ledger_checks", `spend_credits INTEGER`);
+      await addColumn("ledger_checks", `balance_credits INTEGER`);
+      await addColumn("ledger_checks", `spend_credits INTEGER`);
       if (opts.legacy) {
       /* Re-assert the super admin on every boot. A guarantee checked only at
          the point of use can be undone by a direct database edit or a bug in
