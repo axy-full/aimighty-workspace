@@ -1,10 +1,10 @@
 # Production platform release requirements
 
-Updated 14 September 2026, 16:18 UTC. Scope: independent production-house workspaces, preserving the approved tiers and credit pricing. Stripe setup and payment-provider activation remain deferred by the owner. This is an engineering evidence register, not a claim of feature, security or scale parity with another company's private platform.
+Updated 14 September 2026, 18:20 UTC. Scope: independent production-house workspaces, preserving the approved tiers and credit pricing. Stripe setup and payment-provider activation remain deferred by the owner. This is an engineering evidence register, not a claim of feature, security or scale parity with another company's private platform.
 
 ## Released source and product evidence
 
-Current released main: `15460abcf6319525674ef19fda75ecea0edcb9bf`. Its production deployment is `dpl_CKhrkFEknMVR1rCKdPnu7FfZNyjJ`, serving www.particl.app with mock:false. The authenticated studio, account-security read and pinned PDF worker returned 200. Public health reported database:ok/storage:ok, and the inspected ten-minute runtime error window was empty. Those checks demonstrate availability of the inspected paths, not universal reliability.
+Current released main: `27e06815eafa994f40a7592dd37bc917e3f78c85`. Its production deployment is `dpl_CPUyzkKSM9efjYsoENXXgLUGLCnW`, serving www.particl.app with mock:false. The authenticated studio, account-security read and pinned PDF worker returned 200. Public health reported database:ok/storage:ok, and the inspected ten-minute runtime error window was empty. Those checks demonstrate availability of the inspected paths, not universal reliability.
 
 | Release | Implemented behavior | Verification |
 | --- | --- | --- |
@@ -16,6 +16,10 @@ Current released main: `15460abcf6319525674ef19fda75ecea0edcb9bf`. Its productio
 | [PR149](https://github.com/axy-full/aimighty-workspace/pull/149) | Account-wide authenticator MFA, replay protection, one-use recovery codes, safe last-code replacement, session list/revocation and MFA-preserving reset/invite flows | 684 unit checks after integration, targeted MFA browser coverage, full release CI and authenticated production read. No production factor was enrolled or disabled by the verification |
 | [PR144](https://github.com/axy-full/aimighty-workspace/pull/144) | Enforced request/database/provider/provisioning/purge recovery admissions, draining epochs, retained uncertain outcomes, durable continuations and complete checkpoint inventory/receipts | 706 unit checks and 32 operations checks on the combined implementation, full CI 34863668226, isolated preview, production login/security read and healthy deployment dpl_7hXb2xkmyUe4wPuzjJD23MwBTPfT. Live maintenance/checkpoint activation is still pending |
 | [PR150](https://github.com/axy-full/aimighty-workspace/pull/150) | Full PDF/TXT/Fountain import, original asset retention, page-bound scenes, reviewed beats, capacity-safe canvas selection and quoted per-scene shot planning | 120-page / 141,768-character real local PDF upload/save/download/reload; all 120 nodes retained; ten new browser checks plus twenty existing workflow checks; full CI 34865116420. Scanned pages require explicit review; OCR is unfinished |
+
+
+| [PR153](https://github.com/axy-full/aimighty-workspace/pull/153) | Topaz precision image upscale in Gen; original-pixel quotes, retained controls, durable provider handles and leased collection | Full CI 34876680607, five compiled-build upload/review/recovery/reuse flows, production login/Gen/health checks and empty inspected error window; no paid provider rehearsal |
+| [PR154](https://github.com/axy-full/aimighty-workspace/pull/154) | Original .cube LUT assets, sequence colour controls and matching GPU preview/movie output | Combined CI 34878358388, five compiled-build import/save/reload/package/movie flows plus GPU/CPU pixel comparison; production reads and health passed with mock:false |
 
 The baseline already included separate Gen/Studio/workspace/account surfaces, private workbench drafts with explicit publication, physical tenant databases, source-bound generated/uploaded assets, cost ledgers, per-project accounting and bounded browser movie delivery. Next.js 16.3.5 and the framework security patch shipped through PR134. Mock generation checks do not establish real provider quality, latency or price variance.
 
@@ -34,7 +38,7 @@ The baseline already included separate Gen/Studio/workspace/account surfaces, pr
 | --- | --- |
 | Screenplay and production planning | OCR for scanned PDFs; durable whole-feature AI analysis with visible coverage and per-stage budgets; review of complex screenplay layouts and typography |
 | Edit and sound | Saved multitrack sound, synchronized transport, 48 kHz PCM/float WAV and private uploaded-video byte ranges are released in PR152, with full CI and authenticated production checks. Long-form editing/rendering, bins/edit snapshots, mastering tools, stems, surround and professional interchange need additional implementation |
-| Colour and upscale | Sequence LUT import and matching GPU preview/movie output are implemented in this change with explicit SDR limits. Topaz image upscaling is under release review in PR153. Camera-log/HDR/ACES color management, per-shot grades, scopes, and verified Astra 2 video output/billing controls remain additional work |
+| Colour and upscale | Sequence LUT import, matching GPU preview/movie output and Topaz image upscaling are released. Astra 2 controls, original-source pricing and delivered-output reconciliation are implemented in the current branch and undergoing release verification. Camera-log/HDR/ACES colour management, per-shot grades, scopes and live provider/invoice validation remain open |
 | Asset/pipeline completion | Broader discoverable lineage/version flows, whole-production review and persistent server-rendered deliverables. Current movie export is limited to three minutes and 200 MB; a manifest is not a rendered master |
 | Live engine validation | Bounded, explicitly cost-approved internal rehearsals for every launch engine/input mode: task persistence, output retrieval, actual settlement, timeout and rejection paths. No paid rehearsal is implied by mock CI |
 | Traffic and operations | Isolated remote HTTP/load tests for sessions, workspace switches, saves/publish races, uploads, dispatch/polling, ledger contention and delivery; measured capacity limits; freshness/error alerts and tested incident/rollback procedures |

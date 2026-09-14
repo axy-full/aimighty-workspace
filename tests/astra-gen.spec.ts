@@ -114,7 +114,7 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
   expect(job.params).toMatchObject({
     resolution: "720p",
     ratio: "720:1280",
-    astraQuotedOutput: {resolution:"4k",fps60:true},
+    astraQuotedOutput: { resolution: "4k", fps60: true },
     duration: 1.5,
     fps60: true,
     astra: { creativity: 0.5, realism: 0.5, sharpness: 0.5, fps: 60 },
@@ -136,6 +136,10 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
   const takes = page.getByRole("button", { name: /^Takes/ });
   if (await takes.isVisible()) await takes.click();
   await page
+    .locator("article")
+    .filter({
+      has: page.locator(`a[href="/api/media/${generationId}?download=1"]`),
+    })
     .getByRole("button", { name: "Upscale video", exact: true })
     .click();
   await expect(

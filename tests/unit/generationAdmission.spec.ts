@@ -696,8 +696,10 @@ test("Astra reconciles measured output below its quote, leases collection and re
     await syncFalVideo(gen,{strict:true});expect(calls).toBe(3);release();expect((await first).status).toBe("succeeded");
     const result=(await getGeneration(id))!;expect(result.params.astraOutput).toMatchObject({width:720,height:1280,seconds:1.5,fps:24});
     expect(result.params).toMatchObject({resolution:"720p",ratio:"720:1280",duration:1.5,astraQuotedOutput:{resolution:"4k",fps60:true}});
-    const edit=value(await service.gen.prepareGeneration({model:"dreamina-seedance-2-5-260628",task:"edit",sourceGenId:id,prompt:"Edit the sky",refine:false},actor));
-    expect(edit.compiled.params).toMatchObject({ratio:"720:1280",duration:1.5});
+    const edit=await service.gen.prepareGeneration({model:"dreamina-seedance-2-5-260628",task:"edit",sourceGenId:id,prompt:"Edit the sky",refine:false},actor);
+    expect(edit).toMatchObject({ok:false,status:400});if(!edit.ok)expect(edit.body.error).toMatch(/at least 4 seconds/);
+    const reuse=value(await service.gen.prepareGeneration({model:ASTRA_MODEL,task:"upscale",sourceGenId:id,prompt:"",refine:false,astra:DEFAULT_ASTRA},actor));
+    expect(reuse.compiled.params).toMatchObject({astraSource:{width:720,height:1280,seconds:1.5}});
     expect(Number((await meters())[0].engine_cost_usd)).toBeCloseTo(.45,8);expect((await meters())[0].billed_credits).toBe(7);
     await syncFalVideo(gen,{strict:true});expect(calls).toBe(3);expect((await db().execute("SELECT * FROM generation_settlements")).rows).toHaveLength(1);
   }finally{release?.();engine.poll=original;}
