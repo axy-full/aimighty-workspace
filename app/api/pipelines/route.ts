@@ -6,6 +6,7 @@ import { PipelineError } from "@/lib/pipeline/schema";
 import { MODELS } from "@/lib/models";
 import { SPEECH_MODELS, SFX_MODEL, MUSIC_MODEL } from "@/lib/elevenlabs";
 import { providerConfigured, PROVIDERS } from "@/lib/providers";
+import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -92,15 +93,11 @@ export const POST = withTenant(
   async (req) => {
     const auth = await requireSession();
     if (auth.response) return auth.response;
-    const raw = await req.text();
-    if (raw.length > 1_000_000)
-      return Response.json(
-        { error: "Pipeline is too large." },
-        { status: 413, headers },
-      );
     try {
-      const body = JSON.parse(raw),
-        store = await pipelineStore();
+      const body = JSON.parse(await readBoundedText(req, 1_000_000));
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        throw new PipelineError("Check the pipeline fields.");
+      const store = await pipelineStore();
       const version = await store.saveVersion(
         auth.user.id,
         body.spec,
@@ -114,6 +111,11 @@ export const POST = withTenant(
       );
       return Response.json({ run: publicRun(run) }, { status: 201, headers });
     } catch (error) {
+      if (error instanceof RequestBodyError)
+        return Response.json(
+          { error: error.status === 413 ? "Pipeline is too large." : "Check the pipeline fields." },
+          { status: error.status, headers },
+        );
       if (error instanceof PipelineError)
         return Response.json(
           { error: error.message, code: error.code },

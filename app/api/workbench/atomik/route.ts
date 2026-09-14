@@ -1,4 +1,5 @@
 import {reserveRecoveryContinuation} from "@/lib/recovery";
+import { readBoundedText, RequestBodyError } from '@/lib/requestBody';
 import { after } from 'next/server';
 import { z } from 'zod';
 import { requireRender, requireUser, withTenant } from '@/lib/auth';
@@ -40,11 +41,12 @@ export const POST = withTenant(async (req: Request) => {
   if (wrongScope(req, auth.user.id)) return response({ error: 'This workspace or account changed. Return to the original production.' }, 409);
   const origin = req.headers.get('origin');
   if (origin && origin !== new URL(req.url).origin) return response({ error: 'Invalid request origin.' }, 403);
-  if (Number(req.headers.get('content-length') || 0) > 20000) return response({ error: 'Keep this request under 20 KB.' }, 413);
-  const raw = await req.text();
-  if (raw.length > 20000) return response({ error: 'Keep this request under 20 KB.' }, 413);
   let value: unknown;
-  try { value = JSON.parse(raw); } catch { return response({ error: 'Invalid request JSON.' }, 400); }
+  try { value = JSON.parse(await readBoundedText(req, 20000)); }
+  catch (error) {
+    if (error instanceof RequestBodyError && error.status === 413) return response({ error: 'Keep this request under 20 KB.' }, 413);
+    return response({ error: 'Invalid request JSON.' }, 400);
+  }
   const parsed = atomikRequestSchema.extend({ quoteOnly: z.boolean().optional() }).safeParse(value);
   if (!parsed.success) return response({ error: 'Check the request, model, depth and selected references.' }, 400);
   try {
