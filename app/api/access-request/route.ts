@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse, type NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 import { platformDb as db, platformReady as ready, now, newId } from "@/lib/platform";
@@ -39,7 +40,7 @@ function hashIp(req: NextRequest): string {
 const looksLikeEmail = (s: string) =>
   /^[^\s@]+@[^\s@.]+\.[^\s@]{2,}$/.test(s) && s.length <= 200;
 
-export async function POST(req: NextRequest) {
+export const POST = recoveryRoute(async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
 
   /* The honeypot. A field positioned off-screen and never focusable, so
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, mailed });
-}
+});
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;")

@@ -13,8 +13,9 @@ export function retentionDays(at = Date.now()) {
   return new Date(at).getUTCDay() === 0 ? 84 : 30;
 }
 export function assertQuiescence(config, value, at = Date.now()) {
-  const issued = Date.parse(value?.issuedAt),
-    expires = Date.parse(value?.expiresAt);
+  const enforced = value?.protocol === "particl-recovery-fence-v1";
+  const issued = enforced ? value.issuedAt : Date.parse(value?.issuedAt),
+    expires = enforced ? value.expiresAt : Date.parse(value?.expiresAt);
   if (
     !Number.isFinite(issued) ||
     !Number.isFinite(expires) ||
@@ -28,11 +29,11 @@ export function assertQuiescence(config, value, at = Date.now()) {
     );
   if (
     value.sourceFingerprint !== sourceFingerprint(config) ||
-    value.mutationsPaused !== true ||
+    (!enforced && (value.mutationsPaused !== true ||
     value.workersPaused !== true ||
     value.uploadsPaused !== true ||
     value.provisioningPaused !== true ||
-    value.purgePaused !== true
+    value.purgePaused !== true))
   )
     throw new OpsError(
       "Quiescence must cover these exact sources and every mutating service.",
@@ -93,6 +94,10 @@ export async function assertNoActiveOrUncertain(config, env) {
           }
         }
       }
+      if (
+        names.has("generation_settlements") &&
+        (await db.execute("SELECT 1 FROM generation_settlements WHERE settled_at IS NULL LIMIT 1")).rows.length
+      ) blocked();
       if (
         names.has("identities") &&
         (
@@ -203,9 +208,11 @@ export async function captureVerified(
     capture,
     restore,
     preflight = assertNoActiveOrUncertain,
+    verifyFence = async (config, env, receipt) => (await import("./recovery-fence.mjs")).verifyLiveFence(config, env, receipt),
   } = {},
 ) {
   assertQuiescence(config, quiescence, now());
+  await verifyFence(config, env, quiescence);
   await preflight(config, env);
   const bundle = join(destination, "bundle"),
     verification = join(destination, "verification");
@@ -220,9 +227,11 @@ export async function captureVerified(
     // A stale fence or late uncertain work invalidates this capture; do not
     // publish even a fully encrypted bundle as a successfully verified backup.
     assertQuiescence(config, quiescence, now());
+    await verifyFence(config, env, quiescence);
     await preflight(config, env);
     const verified = await restore(bundle, verification, { env });
     assertQuiescence(config, quiescence, now());
+    await verifyFence(config, env, quiescence);
     if (!verified.verified)
       throw new OpsError("Restore verification did not succeed.");
     await rm(verification, { recursive: true, force: true });

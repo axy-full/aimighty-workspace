@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import {cookies} from 'next/headers';
 import {SESSION_COOKIE,createSession,currentContext,sourceKey} from '@/lib/auth';
 import {platformDb,platformReady,now,switchSessionWorkspace} from '@/lib/platform';
@@ -8,7 +9,7 @@ import {resumeWorkspace,workspaceCreationReadiness} from '@/lib/workspaceProvisi
 
 export const dynamic='force-dynamic';
 export const maxDuration=300;
-export async function POST(req:Request){
+export const POST = recoveryRoute(async function POST(req:Request){
  if(sameOriginProblem(req))return Response.json({error:'Invalid request origin.'},{status:403});
  try{
   const body=await accountJson(req);
@@ -35,8 +36,8 @@ export async function POST(req:Request){
   if(error instanceof AccountError&&error.status===409)return Response.json({error:error.message,needsSignIn:true},{status:409});
   return accountFailure(error);
  }
-}
-export async function GET(req:Request){
+});
+export const GET = recoveryRoute(async function GET(req:Request){
  const code=new URL(req.url).searchParams.get('code');
  if(!code)return Response.json(signupReadiness(),{headers:{'Cache-Control':'no-store'}});
  await platformReady();
@@ -45,4 +46,4 @@ export async function GET(req:Request){
  if(inv.used_at)return Response.json({error:'This invitation has already been used. Sign in to continue your workspace setup.'},{status:409});
  if(Number(inv.expires_at)<now())return Response.json({error:'This invitation has expired.'},{status:410});
  return Response.json({ok:true,email:inv.email,name:inv.name,open:workspaceCreationReadiness().canCreate},{headers:{'Cache-Control':'no-store'}});
-}
+});

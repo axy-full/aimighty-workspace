@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, createSession, currentContext } from "@/lib/auth";
@@ -19,7 +20,7 @@ async function lookup(code: string) {
 }
 
 /** What the invite is for, and whether the address already has an account. */
-export async function GET(req: Request) {
+export const GET = recoveryRoute(async function GET(req: Request) {
   await platformReady();
   const code = new URL(req.url).searchParams.get("code") ?? "";
   const got = await lookup(code);
@@ -31,13 +32,13 @@ export async function GET(req: Request) {
     hasAccount: Boolean(existing),
     signedInAsInvitee: Boolean(ctx && ctx.user.email.toLowerCase() === String(got.inv.email).toLowerCase()),
   });
-}
+});
 
 /**
  * Join the workspace. A new person chooses a password and gets an account;
  * someone who already has one joins while signed in as that account.
  */
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if(sameOriginProblem(req))return Response.json({error:'Invalid request origin.'},{status:403});
   try{
     const body=await accountJson(req),ctx=await currentContext();
@@ -49,4 +50,4 @@ export async function POST(req: Request) {
     if(error instanceof AccountError&&error.status===409)return Response.json({error:error.message,needsSignIn:true},{status:409});
     return accountFailure(error);
   }
-}
+});

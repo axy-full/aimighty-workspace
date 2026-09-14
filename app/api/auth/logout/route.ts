@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { accountRequestScopeMatches } from "@/lib/accountRequestScope";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -6,7 +7,7 @@ import { sameOriginProblem } from "@/lib/accountDb";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
@@ -17,4 +18,4 @@ export async function POST(req: Request) {
   }
   jar.delete(SESSION_COOKIE);
   return NextResponse.json({ ok: true });
-}
+});

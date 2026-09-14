@@ -1,3 +1,4 @@
+import { withRecoveryActivity } from './recovery';
 import { createHash } from "node:crypto";
 import { db, ready, now } from "./db";
 import { getWorkspace } from "./platform";
@@ -62,6 +63,8 @@ export async function runWorkerProbe(input: {
   expectedDeployment?: string;
   expectedEnvironment?: string;
 }): Promise<WorkerProbeReceipt> {
+return await withRecoveryActivity('worker-probe', async () => {
+
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(input.probeId) || !input.workspaceId)
     throw new Error("A scoped worker probe ID and workspace are required.");
   const identity = workerProbeIdentity();
@@ -171,4 +174,6 @@ export async function runWorkerProbe(input: {
       );
     return receipt;
   });
+
+});
 }

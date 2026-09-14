@@ -1,3 +1,4 @@
+import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
 import { type VideoParams, type Reference, type ImageRole } from "./ark";
 import { falEndpointFor } from "./falVideo";
@@ -93,6 +94,8 @@ async function submissionFailed(job:VideoJob,error:string,uncertain:boolean):Pro
 /** One durable owner per generation, including delayed held-job releases.
  * Claims never expire: uncertainty must not purchase another provider task. */
 export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
+return await withRecoveryJob(requireTenant().id, job.genId, async () => {
+
   await ready();
   let row=await submissionRow(job.genId);
   if(!row)return {ok:false,error:'No such take.',cls:'fatal'};
@@ -137,6 +140,8 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
     if(recovered&&knownTask(recovered)===submitted.taskId)return {ok:true,taskId:submitted.taskId,attempts:1};
     return submissionFailed(job,`The provider accepted task ${submitted.taskId}, but its tracking could not be saved. No additional request was sent; its estimated cost remains reserved. Keep this task ID for support to recover the result.`,true);
   }
+
+});
 }
 
 type StoredRef = { uploadId?: string; genId?: string; role: string; kind: string };
@@ -194,6 +199,8 @@ async function hydrateRefs(refs: StoredRef[]): Promise<Reference[]> {
 
 /** Send a take that already exists as a row — a held one, released. */
 export async function submitVideoRow(genId: string): Promise<SubmitOutcome> {
+return await withRecoveryJob(requireTenant().id, genId, async () => {
+
   const rs = await db().execute({
     sql: `SELECT id, model, prompt, params, task, source_gen_id, created_at FROM generations WHERE id = ? AND deleted = 0`,
     args: [genId],
@@ -209,4 +216,6 @@ export async function submitVideoRow(genId: string): Promise<SubmitOutcome> {
     ? references.find((r) => r.fromGeneration && r.id === row.source_gen_id) ?? null
     : null;
   return submitVideoJob({ genId, model, task, prompt: String(row.prompt), params, references, source, ts: Number(row.created_at) });
+
+});
 }

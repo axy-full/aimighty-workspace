@@ -1,3 +1,5 @@
+import { withRecoveryActivity } from "@/lib/recovery";
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { currentContext, requireSuperAdmin } from "@/lib/auth";
@@ -22,7 +24,7 @@ export const maxDuration = 30;
  * a hand-pasted token turned out to be the likeliest cause of upload
  * failures: presence of a credential proves nothing about its validity.
  */
-export async function GET(req: Request) {
+export const GET = recoveryRoute(async function GET(req: Request) {
   /* Two answers from one route, because it has two audiences.
    *
    * An uptime monitor needs to know the app is alive and can reach its
@@ -84,7 +86,8 @@ export async function GET(req: Request) {
     const probePath = `health/${randomUUID()}/range-probe.bin`;
     let probeUrl: string | null = null;
     try {
-      const { put } = await import("@vercel/blob");
+      const { put: rawPut } = await import("@vercel/blob");
+    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
       const probe = await put(probePath, Buffer.from("0123456789"), {
         access: "private",
         contentType: "application/octet-stream",
@@ -110,7 +113,8 @@ export async function GET(req: Request) {
       storage = "blob-BROKEN";
     } finally {
       if (probeUrl) {
-        try { const { del } = await import("@vercel/blob"); await del(probeUrl); }
+        try { const { del: rawDel } = await import("@vercel/blob");
+    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true }); await del(probeUrl); }
         catch { storage = "blob-BROKEN"; storageError = "Storage probe cleanup failed"; }
       }
     }
@@ -185,7 +189,7 @@ export async function GET(req: Request) {
       { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } },
     ),
   );
-}
+});
 
 /**
  * When the cron last ran, who ran it, and whether that is recent enough.

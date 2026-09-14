@@ -1,3 +1,4 @@
+import { withRecoveryJob } from "./recovery";
 import { inngest, EVENTS } from "./inngest";
 import { ready } from "./db";
 import { runWorkerProbe } from "./workerProbe";
@@ -71,17 +72,18 @@ export const render = inngest.createFunction(
       };
       const genId = String(data.genId ?? "");
       if (genId)
-        await runInTenant(await workspaceOf(data), () =>
+        await withRecoveryJob(String(data.workspaceId ?? ""), genId, async () => runInTenant(await workspaceOf(data), () =>
           failJob(genId, error.message),
-        );
+        ));
     },
   },
   async ({ event, step }) => {
     const genId = String(event.data.genId);
-    const ws = await workspaceOf(event.data as { workspaceId?: string });
+    const workspaceId = String(event.data.workspaceId ?? "");
+    const ws = await withRecoveryJob(workspaceId, genId, () => workspaceOf(event.data as { workspaceId?: string }));
 
     const produced = await step.run("produce", async () =>
-      runInTenant(ws, async () => {
+      withRecoveryJob(workspaceId, genId, () => runInTenant(ws, async () => {
         await workspaceOf(event.data as { workspaceId?: string });
         await ready();
         const job = await loadJob(genId);
@@ -89,18 +91,18 @@ export const render = inngest.createFunction(
         if (!job) return null;
         const out = await produce(job);
         return out ? { job, out } : null;
-      }),
+      })),
     );
 
     if (!produced) return { genId, skipped: true };
 
     await step.run("record", async () =>
-      runInTenant(ws, async () => {
+      withRecoveryJob(workspaceId, genId, () => runInTenant(ws, async () => {
         await workspaceOf(event.data as { workspaceId?: string });
         await ready();
         await seal(produced.job, produced.out);
         return { sealed: true };
-      }),
+      })),
     );
 
     return { genId, ok: true };

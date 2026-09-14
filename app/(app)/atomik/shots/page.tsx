@@ -20,7 +20,7 @@ import { CATEGORIES } from "@/lib/studio";
 import { appAlert } from "@/components/dialog";
 import { Waiting } from "@/components/ParticlMark";
 import PickProduction from "@/components/atomik/PickProduction";
-import { takeCost } from "../breakdown/page";
+import { takeCost } from "@/lib/breakdownCost";
 import type { Shot } from "@/lib/shots";
 import type { Treatment } from "@/lib/atomikDocs";
 import { useMoney } from "@/lib/price";

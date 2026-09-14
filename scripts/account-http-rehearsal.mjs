@@ -1,3 +1,4 @@
+import { RecoveryFence, RECOVERY_PROTOCOL } from "../lib/recovery/control.mjs";
 /** Local-only full HTTP rehearsal. No Stripe validation or external provider calls. */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -775,6 +776,22 @@ try {
   console.log(
     "PASS: HTTP password reset spends its link, revokes prior session cookies and creates a working new session.",
   );
+  const fence = new RecoveryFence(p, "local-http-coordinator");
+  const coordinator = "local-http-maintenance-owner-0123456789";
+  const epoch = await fence.begin(coordinator, {
+    deployments: [{ id: "local", protocol: RECOVERY_PROTOCOL }],
+    oldDeploymentsStopped: true, externalWritersExcluded: true,
+    evidence: "Disposable local HTTP fixture; network guard excludes every remote provider and database.",
+  });
+  const countsBefore = (await p.execute("SELECT (SELECT COUNT(*) FROM accounts) AS accounts,(SELECT COUNT(*) FROM workspaces) AS workspaces,(SELECT COUNT(*) FROM p_sessions) AS sessions")).rows[0];
+  await json(await resetBrowser.patch("/api/settings", {headers:{"X-Workbench-Scope": `particl-active-${first.id}-${ownerId}`},data:{defaultProject:"forbidden"}}), 503);
+  await json(await resetBrowser.post("/api/workspaces", {headers:{"X-Workbench-Scope": `particl-active-${first.id}-${ownerId}`},data:{name:"Forbidden during maintenance"}}), 503);
+  await json(await resetBrowser.post("/api/auth/logout", {headers:{"X-Workbench-Scope": `particl-active-${first.id}-${ownerId}`}}), 503);
+  await json(await resetBrowser.post("/api/auth/signup", {data:{...body,email:"blocked@example.test"}}), 503);
+  assert.deepEqual((await p.execute("SELECT (SELECT COUNT(*) FROM accounts) AS accounts,(SELECT COUNT(*) FROM workspaces) AS workspaces,(SELECT COUNT(*) FROM p_sessions) AS sessions")).rows[0],countsBefore);
+  await fence.reopen(coordinator, epoch.epoch);
+  assert.equal((await json(await resetBrowser.get("/api/workspaces"),200)).active,first.id);
+  console.log("PASS: enforced maintenance rejects actual routed settings, workspace creation, logout and signup before mutation; explicit reopen preserves the session.");
   // Next dev checks its latest npm version. That framework request is also
   // blocked; any attempted provider request still fails this rehearsal.
   assert.equal(

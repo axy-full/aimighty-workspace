@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, tokenHash } from "@/lib/auth";
@@ -24,15 +25,15 @@ async function lookup(token: string): Promise<{ row: any; user: any; problem: st
 }
 const mask = (email: string) => { const [l, d] = email.split("@"); return `${(l ?? "").slice(0, 1)}•••@${d ?? ""}`; };
 
-export async function GET(_req: Request, { params }: Ctx) {
+export const GET = recoveryRoute(async function GET(_req: Request, { params }: Ctx) {
   const { token } = await params;
   const { user, problem } = await lookup(token);
   if (problem) return NextResponse.json({ error: problem }, { status: 410 });
   return NextResponse.json({ ok: true, email: mask(String(user.email)) });
-}
+});
 
 /** Set the new password: the link is spent, every session ends, this browser signs in. */
-export async function POST(req: Request, { params }: Ctx) {
+export const POST = recoveryRoute(async function POST(req: Request, { params }: Ctx) {
   if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   try {
   const { token } = await params;
@@ -44,4 +45,4 @@ export async function POST(req: Request, { params }: Ctx) {
   });
   return NextResponse.json({ ok: true, name });
   } catch (error) { return accountFailure(error); }
-}
+});

@@ -1,3 +1,4 @@
+import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { NextResponse, after } from "next/server";
 import { allowanceCheck } from "@/lib/allowance";
 import { db, ready, now, id as newId } from "@/lib/db";
@@ -363,7 +364,7 @@ export const POST = withTenant(async function POST(req: Request) {
      voice has already spoken and been paid for. No queue reachable means
      the old inline path, unchanged. See lib/renderWork.ts. */
     if (!(await enqueueRender(genId, "audio"))) {
-      after(() => runInline(genId));
+      after(await reserveRecoveryContinuation('after-response', () => runInline(genId)));
     }
 
     return NextResponse.json({

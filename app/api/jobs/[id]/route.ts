@@ -1,3 +1,4 @@
+import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
 import { mediaBindingProblem } from "@/lib/mediaBindings";
 import { NextResponse, after } from "next/server";
@@ -69,13 +70,13 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
        to be asked (brief 2.7). Approving it, or sending it back, is the
        decision itself and needs no nudge. */
     if (state === "picked") {
-      after(async () => {
+      after(await reserveRecoveryContinuation('after-response', async () => {
         const admins = await db().execute({ sql: `SELECT id FROM users WHERE role = 'admin' AND disabled = 0 AND deleted_at IS NULL AND id <> ?`, args: [got.user.id] });
         const gen = await getGeneration(id).catch(() => null);
         const where = gen?.shotCode ? `${gen.shotCode} v${gen.version ?? 1}` : "A take";
         await notify("approvalNeeded", (admins.rows as unknown as { id: string }[]).map((r) => String(r.id)),
           { title: `${where} is waiting on you`, body: `${got.user.name} picked it.`, url: "/" }).catch(() => {});
-      });
+      }));
     }
   }
   /* Filing against a shot, moving between shots, or unfiling. A video or a

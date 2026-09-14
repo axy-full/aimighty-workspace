@@ -1,3 +1,5 @@
+import { recoveryFence, recoveryRoute } from "@/lib/recovery";
+import { drainRecoveryJobs, RECOVERY_DRAIN_WORK_BUDGET_MS } from "@/lib/recoveryDrain";
 import { NextResponse, after as afterResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncPending } from "@/lib/jobs";
@@ -18,12 +20,17 @@ export const maxDuration = 300;
 /** Durable, leased heartbeat. The 140s admission budget leaves room for a
  * final in-flight provider download before Vercel's 300s execution ceiling. */
 export async function GET(req: Request) {
+  const requestStartedAt = Date.now();
   const secret = process.env.CRON_SECRET;
   const authorized = secret
     ? req.headers.get("authorization") === `Bearer ${secret}`
     : process.env.NODE_ENV !== "production";
   if (!authorized) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const fence = await recoveryFence().status();
+  if (fence.state === "draining") return NextResponse.json(await drainRecoveryJobs(8, { deadlineAt: requestStartedAt + RECOVERY_DRAIN_WORK_BUDGET_MS }), { headers: { "Cache-Control": "no-store" } });
+  if (fence.state === "closed") return NextResponse.json({ maintenance: true }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  return recoveryRoute(async () => {
   const startedAt = Date.now();
   const by = /vercel-cron/i.test(req.headers.get("user-agent") ?? "") ? "vercel" : "manual";
   try {
@@ -96,6 +103,7 @@ export async function GET(req: Request) {
       status: 503, headers: { "Cache-Control": "no-store" },
     });
   }
+  })();
 }
 
 async function counts() {

@@ -1,3 +1,4 @@
+import { fenceDatabase } from "./recoveryDatabaseClient";
 import { SECURITY_AUDIT_SCHEMA, securityAuditStatement } from "./securityAudit";
 import { createClient, type Client } from "@libsql/client";
 import { isPaidKind, type GrantKind } from "./creditTerms";
@@ -29,10 +30,10 @@ let _client: Client | null = null;
 export function platformDb(): Client {
   if (!_client) {
     const url = process.env.PLATFORM_DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db";
-    _client = createPlatformDatabaseClient({
+    _client = fenceDatabase(createPlatformDatabaseClient({
       url,
       authToken: process.env.PLATFORM_AUTH_TOKEN ?? process.env.TURSO_AUTH_TOKEN,
-    });
+    }));
   }
   return _client;
 }

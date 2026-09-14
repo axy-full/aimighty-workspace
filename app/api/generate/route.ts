@@ -1,3 +1,4 @@
+import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { withMediaSources } from "@/lib/mediaMutation";
 import { generatedReferenceSeconds, videoReferenceSeconds } from "@/lib/referenceDuration";
@@ -581,7 +582,7 @@ export const POST = withTenant(async function POST(req: Request) {
         await db().execute({ sql: `UPDATE generations SET status='failed', error=?, updated_at=? WHERE id=?`, args: [(e as Error).message, now(), started.genId] });
         return NextResponse.json({ id: started.genId, status: "failed", error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 503 });
       }
-      after(() => runIdentityRender(started.genId, trained, { prompt: started.finalPrompt, ratio: idRatio, seed: null, startedAt: started.ts }));
+      after(await reserveRecoveryContinuation('after-response', () => runIdentityRender(started.genId, trained, { prompt: started.finalPrompt, ratio: idRatio, seed: null, startedAt: started.ts })));
       return NextResponse.json({ id: started.genId, status: "running", identity: trained.name });
     }
     const genId = id("gen");
@@ -644,7 +645,7 @@ export const POST = withTenant(async function POST(req: Request) {
        hand — no keys, or the send failed — it runs here in after() exactly
        as it always did. Same code either way; see lib/renderWork.ts. */
     if (!(await enqueueRender(genId, "image"))) {
-      after(() => runInline(genId));
+      after(await reserveRecoveryContinuation('after-response', () => runInline(genId)));
     }
 
     return NextResponse.json({ id: genId, status: "running", notices: capStill.notice ? [capStill.notice] : undefined });

@@ -1,3 +1,4 @@
+import { withRecoveryActivity } from './recovery';
 import { db, ready, id as newId, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
 import { findModel, textCostUsd, type CatalogModel } from "./catalog";
@@ -101,6 +102,8 @@ export async function runPaidText(
     ) => Promise<{ ok: boolean; status: number; text: string }>;
   } = {},
 ) {
+return await withRecoveryActivity('paid-text', async () => {
+
   const model = overrides.model ?? (await findModel(input.model));
   if (!model)
     throw new PaidTextError(
@@ -279,4 +282,6 @@ export async function runPaidText(
     }
     throw error;
   }
+
+});
 }

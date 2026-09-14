@@ -1,3 +1,4 @@
+import { acceptRecoveryJobTx } from "./recovery";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
@@ -153,6 +154,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
     credits: billCredits(Number(r.cost), marginKeyOf(String(r.kind), String(r.model))), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
   }]));
   await billingTransaction(async (tx, ts) => {
+    await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
     const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at FROM workspaces WHERE id=?`, args: [ws.id] });
     // Old internal/mock records may predate the workspace registry; a known deleted/suspended workspace never spends from a stale request scope.
     if (standing.rows[0]?.deleted_at != null) throw new SpendReservationError("This workspace has been deleted.", 410);

@@ -1,3 +1,4 @@
+import { withRecoveryJob } from './recovery';
 import type { Transaction } from "@libsql/client";
 import { mediaMutation, validateMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
@@ -404,6 +405,8 @@ type TrainResult = {
  * URL is written down and the identity joins the cast.
  */
 export async function syncIdentity(identity: Identity): Promise<{ identity: Identity; progress: number | null }> {
+return await withRecoveryJob(requireTenant().id, identity.trainingRunId ?? identity.id, async () => {
+
   if (identity.status === "training" && identity.trainingRunId && !identity.requestId) {
     await trainingReady();
     const tracked = (await db().execute({ sql: `SELECT * FROM identity_training_runs WHERE id=? AND identity_id=?`, args: [identity.trainingRunId, identity.id] })).rows[0];
@@ -451,6 +454,8 @@ export async function syncIdentity(identity: Identity): Promise<{ identity: Iden
     await markFailed(identity.id, (e as Error).message);
   }
   return { identity: (await getIdentity(identity.id))!, progress: 100 };
+
+});
 }
 
 async function markFailed(id: string, error: string): Promise<void> {
@@ -679,6 +684,8 @@ async function finishRender(
 export async function runIdentityRender(genId: string, identity: Identity, opts: {
   prompt: string; ratio: string; seed: number | null; startedAt: number;
 }): Promise<void> {
+return await withRecoveryJob(requireTenant().id, genId, async () => {
+
   if (!(await claimRender(genId))) return;
   let handle: string | null = null;
   let submitted = false;
@@ -711,6 +718,8 @@ export async function runIdentityRender(genId: string, identity: Identity, opts:
     }
     await failRender(genId, submitted && !falSubmissionRejected(err) ? "The image submission is uncertain. Its estimated credits remain reserved." : "The provider declined this image request.", opts.startedAt, !submitted || falSubmissionRejected(err));
   }
+
+});
 }
 
 /**
@@ -729,6 +738,8 @@ export async function reconcileFalRender(
   },
   options: { strict?: boolean } = {},
 ): Promise<void> {
+return await withRecoveryJob(requireTenant().id, row.id, async () => {
+
   let st;
   try {
     st = await falStatus(RENDERER, row.requestId);
@@ -781,6 +792,8 @@ export async function reconcileFalRender(
       await failRender(row.id, err.message, row.createdAt);
     } else if (options.strict) throw e;
   }
+
+});
 }
 
 /* ── A cited name that is a trained likeness (brief 1.3) ────────────── */

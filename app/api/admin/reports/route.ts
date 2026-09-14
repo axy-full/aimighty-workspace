@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/auth";
 import { platformDb, platformReady, now } from "@/lib/platform";
@@ -5,7 +6,7 @@ import { platformDb, platformReady, now } from "@/lib/platform";
 export const dynamic = "force-dynamic";
 
 /** The desk's reports: open ones first, then what was handled lately. */
-export async function GET() {
+export const GET = recoveryRoute(async function GET() {
   const got = await requireSuperAdmin();
   if (got.response) return got.response;
   await platformReady();
@@ -19,10 +20,10 @@ export async function GET() {
     accountEmail: (r.account_email as string | null) ?? null, createdAt: Number(r.created_at), handledAt: r.handled_at == null ? null : Number(r.handled_at),
   }));
   return NextResponse.json({ open: rows.filter((r) => !r.handledAt), handled: rows.filter((r) => r.handledAt) });
-}
+});
 
 /** Mark one handled. */
-export async function PATCH(req: Request) {
+export const PATCH = recoveryRoute(async function PATCH(req: Request) {
   const got = await requireSuperAdmin();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -30,4 +31,4 @@ export async function PATCH(req: Request) {
   await platformReady();
   await platformDb().execute({ sql: `UPDATE reports SET handled_at = ?, handled_by = ? WHERE id = ? AND handled_at IS NULL`, args: [now(), got.user.id, String(body.id)] });
   return NextResponse.json({ ok: true });
-}
+});

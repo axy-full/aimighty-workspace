@@ -1,3 +1,4 @@
+import { recoveryFetch as fetch } from "./recovery";
 import { getProvider, providerBaseUrl } from "./providers";
 import { vendorKey } from "./vendorKeys";
 import { engineMock, mockJobId, isMockJob, mockDone, fixtureUrl } from "./mock";

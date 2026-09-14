@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { requireSuperAdmin } from "@/lib/auth";
@@ -21,7 +22,7 @@ const INVITE_DAYS = 14;
  * address create an account and a workspace of its own.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-export async function GET() {
+export const GET = recoveryRoute(async function GET() {
   const got = await requireSuperAdmin();
   if (got.response) return got.response;
   await platformReady();
@@ -75,9 +76,9 @@ export async function GET() {
       suspended: Boolean(r.suspended_at), suspendedReason: r.suspended_reason ?? null, flagged: Boolean(r.flagged_at), flagNote: r.flag_note ?? null, internalTest: Number(r.internal_test ?? 0) === 1,
       limits: { concurrency: r.concurrency == null ? null : Number(r.concurrency), rendersPerHour: r.renders_per_hour == null ? null : Number(r.renders_per_hour), storageGb: r.storage_quota_bytes == null ? null : Math.round(Number(r.storage_quota_bytes) / 1e9 * 10) / 10 } })),
   });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   const got = await requireSuperAdmin();
   if (got.response) return got.response;
   await platformReady();
@@ -109,4 +110,4 @@ export async function POST(req: Request) {
     } catch (e) { mailError = (e as Error).message; }
   }
   return NextResponse.json({ code, link, email, name, expiresInDays: INVITE_DAYS, sent, mailError });
-}
+});

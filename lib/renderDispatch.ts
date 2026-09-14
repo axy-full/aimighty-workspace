@@ -1,3 +1,4 @@
+import { withRecoveryJob, withRecoveryActivity } from './recovery';
 import { randomUUID } from "node:crypto";
 import type { Client } from "@libsql/client";
 import { db, now, ready } from "./db";
@@ -45,6 +46,8 @@ export async function dispatchRender(
   send: (event: RenderDispatchEvent) => Promise<unknown>,
   timeoutMs = 5_000,
 ): Promise<boolean> {
+return await withRecoveryJob(requireTenant().id, genId, async () => {
+
   await renderDispatchReady();
   const workspaceId = requireTenant().id;
   await db().execute({
@@ -64,11 +67,11 @@ export async function dispatchRender(
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      send({
+      withRecoveryActivity("queue-send", () => send({
         id: `render-${workspaceId}-${genId}`,
         name: "render/requested",
         data: { genId, kind, workspaceId },
-      }),
+      }), { uncertainOnError: true }),
       new Promise((_, reject) => {
         timer = setTimeout(
           () => reject(new Error("Render dispatch acknowledgment timed out.")),
@@ -102,6 +105,8 @@ export async function dispatchRender(
   } finally {
     if (timer) clearTimeout(timer);
   }
+
+});
 }
 
 /** Reconstruct missing intents only for reserved synchronous jobs that never entered the paid step. */

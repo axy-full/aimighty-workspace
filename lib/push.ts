@@ -1,3 +1,4 @@
+import { withRecoveryActivity } from "./recovery";
 import { db, ready, now } from "./db";
 import { wants, type NotifyKind } from "./notifyPrefs";
 
@@ -104,11 +105,11 @@ export async function sendChatPush(opts: {
         url: "/",
       });
       try {
-        await webpush.sendNotification(
+        await withRecoveryActivity('push-send', () => webpush.sendNotification(
           { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } },
           payload,
           { TTL: 3600 }
-        );
+        ), { uncertainOnError: true });
       } catch (e: any) {
         // Gone subscriptions are normal churn — clean them up quietly.
         if (e?.statusCode === 404 || e?.statusCode === 410) {
@@ -141,7 +142,7 @@ export async function sendPushTo(userIds: string[], payload: { title: string; bo
   await Promise.allSettled(
     rs.rows.map(async (r: any) => {
       try {
-        await webpush.sendNotification({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }, body, { TTL: 3600 });
+        await withRecoveryActivity('push-send', () => webpush.sendNotification({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }, body, { TTL: 3600 }), { uncertainOnError: true });
       } catch (e: any) {
         if (e?.statusCode === 404 || e?.statusCode === 410) await removeSubscription(String(r.endpoint));
         else console.error("push failed:", e?.statusCode ?? e?.message);

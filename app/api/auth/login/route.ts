@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
@@ -8,7 +9,7 @@ import { accountJson, accountFailure, sameOriginProblem } from "@/lib/accountDb"
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   let body: Record<string, unknown>;
   try { body = await accountJson(req); } catch (error) { return accountFailure(error); }
@@ -40,4 +41,4 @@ export async function POST(req: Request) {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 30 * 86400,
   });
   return NextResponse.json({ ok: true, name: row.name });
-}
+});

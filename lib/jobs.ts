@@ -1,3 +1,5 @@
+import {requireTenant} from './tenant';
+import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
 import { storeVideo } from "./storage";
 import { costUsd } from "./models";
@@ -257,6 +259,8 @@ export async function syncGeneration(
   gen: Generation,
   options: { strict?: boolean } = {},
 ): Promise<Generation> {
+return await withRecoveryJob(requireTenant().id, gen.id, async () => {
+
   await deliverGenerationSettlement(gen.id);
   const savedCosts = await generationCosts(gen.id);
   // A succeeded row isn't final until the video is in our storage AND the
@@ -454,6 +458,8 @@ export async function syncGeneration(
     error: task.error,
     updatedAt: ts,
   };
+
+});
 }
 
 /**
