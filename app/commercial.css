@@ -1,0 +1,414 @@
+.commercial {
+  min-height: 100dvh;
+  background: #0b0d11;
+  color: #e8e9ed;
+  font-family: var(--font-outfit), Arial, sans-serif;
+}
+.commercial a,
+.commercial button,
+.commercial input,
+.commercial select {
+  outline-offset: 4px;
+}
+.commercial-header,
+.commercial-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1240px;
+  margin: auto;
+  padding: 26px 32px;
+}
+.commercial-header {
+  border-bottom: 1px solid #24272d;
+}
+.commercial-header nav,
+.commercial-footer nav {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+.commercial-header nav a {
+  font-size: 14px;
+  color: #b5b8c2;
+}
+.commercial-main {
+  max-width: 1176px;
+  margin: auto;
+  padding: 64px 32px 80px;
+}
+.commercial-intro {
+  max-width: 760px;
+  margin-bottom: 36px;
+}
+.commercial-eyebrow {
+  font:
+    12px var(--font-kode-mono),
+    monospace;
+  letter-spacing: 0.12em;
+  color: #a5a9b4;
+}
+.commercial h1 {
+  font-size: clamp(34px, 4.3vw, 56px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.09;
+  margin: 16px 0 20px;
+}
+.commercial-intro > p {
+  font-size: 19px;
+  color: #a9aeb9;
+  line-height: 1.7;
+  max-width: 660px;
+}
+.billing-cadence {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  gap: 5px;
+  border: 1px solid #353941;
+  border-radius: 12px;
+  padding: 5px;
+  margin: 0 0 28px;
+}
+.billing-cadence button {
+  min-height: 44px;
+  border-radius: 8px;
+  padding: 0 18px;
+  color: #b8bcc5;
+  font-size: 14px;
+}
+.billing-cadence button[aria-pressed="true"] {
+  background: #e6e7eb;
+  color: #15171d;
+}
+.billing-cadence button span {
+  font-size: 12px;
+  margin-left: 6px;
+}
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.plan-card {
+  border: 1px solid #343840;
+  border-radius: 16px;
+  padding: 26px;
+  background: #14171d;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.plan-card h2 {
+  font-size: 42px;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  margin-top: 21px;
+  line-height: 1.15;
+}
+.plan-card h2 small {
+  font-size: 15px;
+  color: #a6aab5;
+  font-weight: 400;
+  letter-spacing: 0;
+  margin-left: 6px;
+}
+.plan-billing {
+  font-size: 13px;
+  color: #a6aab5;
+  margin: 8px 0 22px;
+}
+.plan-credits {
+  font-size: 15px;
+  padding-bottom: 23px;
+  border-bottom: 1px solid #343840;
+}
+.plan-credits strong {
+  font-size: 21px;
+  font-weight: 500;
+}
+.plan-card ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #bbc0ca;
+  padding: 23px 0 28px;
+  flex: 1;
+}
+.plan-card li:before {
+  content: "✓";
+  color: #e1e3e9;
+  margin-right: 8px;
+}
+.commercial-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 12px 20px;
+  border: 1px solid #494e58;
+  border-radius: 9px;
+  color: #e1e3e9;
+  font-size: 15px;
+  text-align: center;
+  line-height: 1.3;
+}
+.commercial-button.primary {
+  background: #e6e7eb;
+  color: #14171d;
+  border-color: #e6e7eb;
+}
+.commercial-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.commercial-notice {
+  padding: 18px 20px;
+  border: 1px solid #424853;
+  border-radius: 12px;
+  background: #181c24;
+  font-size: 14px;
+  line-height: 1.7;
+  margin-bottom: 26px;
+  color: #c1c6d0;
+}
+.commercial-notice strong {
+  font-weight: 500;
+  color: #f0f1f4;
+}
+.commercial-notice button,
+.commercial-notice a {
+  color: #fff;
+  text-decoration: underline;
+}
+.commercial-details {
+  border-top: 1px solid #2d3138;
+  margin-top: 52px;
+  padding-top: 34px;
+}
+.commercial-details h2 {
+  font-size: 25px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin-bottom: 26px;
+}
+.commercial-details > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px 40px;
+}
+.commercial-details h3 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 9px;
+}
+.commercial-details p {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #a9aeb9;
+}
+.commercial-details a {
+  text-decoration: underline;
+}
+.commercial-footer {
+  border-top: 1px solid #24272d;
+  padding-top: 24px;
+  padding-bottom: 24px;
+  color: #9197a4;
+  font-size: 12px;
+}
+.billing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.billing-card {
+  padding: 26px;
+  border: 1px solid #343840;
+  border-radius: 14px;
+  background: #14171d;
+  min-width: 0;
+}
+.billing-card h2 {
+  font-size: 24px;
+  font-weight: 500;
+  margin: 12px 0;
+}
+.billing-card p {
+  font-size: 15px;
+  color: #a9aeb9;
+  line-height: 1.7;
+}
+.billing-card dl {
+  margin: 20px 0;
+}
+.billing-card dl > div {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  border-top: 1px solid #30343d;
+  padding: 13px 0;
+  font-size: 14px;
+}
+.billing-card dt {
+  color: #a9aeb9;
+}
+.billing-card dd {
+  text-align: right;
+}
+.billing-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+}
+.billing-pick {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.billing-pick label {
+  flex: 1;
+  font-size: 13px;
+  color: #a9aeb9;
+}
+.billing-pick select {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  background: #0b0d11;
+  border: 1px solid #414751;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #e8e9ed;
+  font-size: 15px;
+  margin-top: 8px;
+}
+.billing-credit-total {
+  font-size: 42px !important;
+  letter-spacing: -0.04em;
+  color: #eef0f4 !important;
+}
+.billing-empty {
+  max-width: 650px;
+}
+.billing-empty .commercial-button {
+  margin-top: 22px;
+}
+.billing-provision {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.billing-provision input {
+  min-width: 0;
+  flex: 1;
+  min-height: 46px;
+  border: 1px solid #454b56;
+  border-radius: 9px;
+  background: #0b0d11;
+  color: #edf0f4;
+  padding: 10px 14px;
+  font-size: 16px;
+}
+.auth-plan-choice {
+  font-size: 13px;
+  line-height: 1.7;
+  border: 1px solid #3a3f4a;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 18px;
+}
+.auth-plan-choice a {
+  text-decoration: underline;
+}
+.auth-status {
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 14px 0;
+  color: #bbc0cb;
+}
+.auth-status a {
+  text-decoration: underline;
+}
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 20px;
+}
+.auth-actions button,
+.auth-actions a {
+  font-size: 14px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  text-decoration: underline;
+}
+@media (max-width: 900px) {
+  .plan-grid {
+    grid-template-columns: 1fr;
+  }
+  .plan-card {
+    padding: 24px;
+  }
+  .plan-card ul {
+    gap: 12px;
+  }
+  .plan-card h2 {
+    margin-top: 16px;
+  }
+  .billing-grid {
+    grid-template-columns: 1fr;
+  }
+  .commercial-main {
+    padding-top: 40px;
+  }
+}
+@media (max-width: 600px) {
+  .commercial-header {
+    padding: 20px;
+    gap: 12px;
+  }
+  .commercial-header nav {
+    gap: 16px;
+  }
+  .commercial-header nav a {
+    font-size: 13px;
+  }
+  .commercial-main {
+    padding: 36px 20px 50px;
+  }
+  .commercial-intro > p {
+    font-size: 17px;
+  }
+  .commercial-details > div {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .commercial-footer {
+    padding: 24px 20px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .commercial-footer nav {
+    gap: 20px;
+  }
+  .billing-card {
+    padding: 20px;
+  }
+  .billing-cadence button {
+    padding: 0 14px;
+  }
+  .billing-actions .commercial-button {
+    width: 100%;
+  }
+}

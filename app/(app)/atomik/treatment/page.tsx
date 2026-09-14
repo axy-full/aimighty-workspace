@@ -12,6 +12,7 @@
  * the document, and the rail (cast found, notes in the margin). Autosaves
  * as you type; "Save draft" starts a new draft number.
  */
+import {usePaidAction} from "@/lib/usePaidAction";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
@@ -52,6 +53,7 @@ export default function TreatmentPage() {
 
 function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: string; runtimeTarget: number | null }) {
   const router = useRouter();
+  const paid=usePaidAction(`/api/atomik/treatment/scene:${projectId}`);
   const { signedIn, name: me , models: sessionModels, rates } = useSession();
   const { data, refresh } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
   const { data: shotData } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
@@ -106,7 +108,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
       body: JSON.stringify({ projectId, ...docRef.current, bump: false }),
     }).catch(() => { /* the next visit re-reads the server's copy */ });
   }, [projectId]);
-  const edit = (fn: (d: Doc) => Doc) => { dirty.current = true; setDoc((d) => (d ? fn(d) : d)); };
+  const edit = (fn: (d: Doc) => Doc) => { if(paid.pending)return; dirty.current = true; setDoc((d) => (d ? fn(d) : d)); };
 
   /* Regenerate one scene: a proposal, priced before pressing, shown beside the scene; "Use this" is the only way it lands (brief 1.8). */
   const [regen, setRegen] = useState<number | null>(null);
@@ -114,13 +116,12 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   const regenCr = writerCall(rates, textModelFor(sessionModels ?? null, "idea"), 900, 500) ?? 0.1;
   async function regenerate(idx: number) {
     if (!doc) return;
-    const s = doc.scenes[idx];
-    await save(false);
+    const pending=paid.pending?JSON.parse(paid.pending.body):null;
+    const s = pending?doc.scenes.find(scene=>scene.n===pending.n):doc.scenes[idx];if(!s)return;
+    if(!pending)await save(false);
     setRegen(s.n); setProposal(null);
     try {
-      const res = await fetch("/api/atomik/treatment/scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, n: s.n }) });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      const {data:j}=await paid.run<{scene:Scene;model:string;costUsd?:number}>("/api/atomik/treatment/scene",{projectId,n:s.n});
       setProposal({ n: s.n, scene: j.scene as Scene, model: String(j.model), credits: money.price(Number(j.costUsd ?? 0), "text") });
     } catch (e) { await appAlert("Not rewritten", (e as Error).message); }
     finally { setRegen(null); }
@@ -181,6 +182,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
 
   return (
     <div className="ak-trt">
+      {(paid.error||paid.pending)&&<p role={paid.error?"alert":"status"} className="ak-sub">{paid.error||"A scene rewrite awaits confirmation. Recover it from that scene."}</p>}
       <aside className="ak-trt-outline">
         <div className="flex flex-col gap-1">
           <span className="mono !tracking-[.14em] !text-[10px]">TREATMENT · DRAFT {t?.draft ?? 1}</span>
@@ -258,7 +260,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
               {/* Who wrote this scene's words, and a way to have the model try again — as a proposal, never over your edit (brief 1.8). */}
               <div className="ak-scene-foot">
                 <span className="mono-s">{s.by ? (s.by === "you" ? "BY YOU" : `BY ${s.by.split("/").pop()}`) : ""}</span>
-                <button type="button" className="ak-act" disabled={regen != null} onClick={() => regenerate(idx)}>{regen === s.n ? "Rewriting…" : `Regenerate · ≈ ${regenCr} cr`}</button>
+                <button type="button" className="ak-act" disabled={regen != null||!!paid.error||!!paid.pending&&JSON.parse(paid.pending.body).n!==s.n} onClick={() => regenerate(idx)}>{regen === s.n ? "Rewriting…" : paid.pending ? "Recover scene rewrite" : `Regenerate · ≈ ${regenCr} cr`}</button>
               </div>
               {proposal && proposal.n === s.n && (
                 <div className="ak-proposal">

@@ -136,7 +136,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
         <span className={title}>{c.ask.question}</span>
         {c.message.text && <span className={body}>{c.message.text}</span>}
         <span className="flex flex-col gap-[6px]">
-          {c.ask.options.map((o) => <Button key={o} placement="card" onClick={() => a.send(o)}>{o}</Button>)}
+          {c.ask.options.map((o) => <Button key={o} placement="card" disabled={!!a.recoveryText} onClick={() => a.send(o)}>{o}</Button>)}
         </span>
       </div>
     );
@@ -178,13 +178,13 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
 function Composer({ tall }: { tall: boolean }) {
   const a = useAtomik();
   const [text, setText] = useState("");
-  const submit = (e: FormEvent) => { e.preventDefault(); const t = text; setText(""); a.send(t); };
+  const submit = (e: FormEvent) => { e.preventDefault(); const t = a.recoveryText??text; setText(""); a.send(t); };
   const h = tall ? "h-[46px] rounded-card" : "h-[44px] rounded-tile";
   return (
     <form onSubmit={submit} className="flex flex-1 gap-[8px]">
-      <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask Atomik…" aria-label="Ask Atomik" disabled={a.busy}
+      <input value={a.recoveryText??text} onChange={(e) => setText(e.target.value)} placeholder="Ask Atomik…" aria-label="Ask Atomik" disabled={a.busy||!!a.recoveryText}
         className={`min-w-0 flex-1 border border-[rgba(245,246,248,.12)] bg-card px-[12px] font-normal leading-none text-ink placeholder:text-ink-muted ${h} ${tall ? "text-[14px]" : "text-[13.5px]"}`} />
-      <button type="submit" aria-label="Send" disabled={a.busy || !text.trim()}
+      <button type="submit" aria-label={a.recoveryText?"Recover saved request":"Send"} title={a.recoveryText?"Recover the saved request":"Send"} disabled={a.busy || (!text.trim()&&!a.recoveryText)}
         className={`flex flex-none items-center justify-center border border-border-mid font-medium leading-none text-ink ${tall ? "h-[46px] w-[46px] rounded-card text-[16px]" : "h-[44px] w-[44px] rounded-tile text-[15px]"}`}>↑</button>
     </form>
   );

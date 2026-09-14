@@ -1,0 +1,69 @@
+name: Verify Particl
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:unit
+      - name: Rehearse encrypted backup and restore
+        run: node --test tests/ops/*.test.mjs
+      - run: node scripts/account-http-rehearsal.mjs
+      - run: npm run build
+        env:
+          ENGINE_MOCK: '1'
+      - name: Verify production bundle privacy
+        run: npm run test:unit -- tests/unit/bundle.spec.ts
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ENGINE_MOCK: '1'
+      APP_ORIGIN: http://localhost:4551
+      PW_BASE_URL: http://localhost:4551
+      PLATFORM_DATABASE_URL: file:.data/browser-platform.db
+      PW_PLATFORM_DATABASE_URL: file:.data/browser-platform.db
+      TURSO_DATABASE_URL: file:.data/browser-legacy.db
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start isolated mock development server
+        run: |
+          npm run dev -- -p 4551 > dev-ci.log 2>&1 &
+          for attempt in {1..90}; do
+            if curl --fail --silent http://localhost:4551/api/health >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat dev-ci.log
+          exit 1
+      - run: npx playwright test --config=playwright.workbench.config.ts --output=ci-results/workbench
+      - run: npx playwright test --config=playwright.customer.config.ts --output=ci-results/customer
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-evidence
+          path: |
+            ci-results/
+            dev-ci.log
+          retention-days: 7

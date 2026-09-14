@@ -1,5 +1,6 @@
 "use client";
 
+import {usePaidAction,type PaidAction} from "@/lib/usePaidAction";
 import { setAtomikRail } from "@/lib/atomikRail";
 
 /**
@@ -63,10 +64,11 @@ export default function IdeasPage() {
   const models = index?.models ?? NO_MODELS;
   const [filter, setFilter] = useState<Filter>("all");
   const draft = useDraft<IdeaDraft>("atomik-idea", EMPTY_DRAFT);
+  const paid=usePaidAction("/api/atomik/ideas/draft");
   const [composingChoice, setComposingChoice] = useState<boolean | null>(null);
   /* The card is open when someone opened it — or when a draft came back
      from the last visit, so the words are on screen rather than in storage. */
-  const composing = composingChoice ?? draft.restored;
+  const composing = !!paid.pending || (composingChoice ?? draft.restored);
   const ideas = data?.ideas ?? [];
   const shown = ideas.filter((i) => filter === "all" || shownState(i) === filter);
   const counts = { all: ideas.length, pinned: 0, production: 0, parked: 0 };
@@ -126,7 +128,7 @@ export default function IdeasPage() {
       ) : (
         <div className="ak-ideas">
           {composing && (
-            <NewIdea draft={draft.value} set={draft.set} models={models}
+            <NewIdea onWriting={()=>setComposingChoice(true)} paid={paid} draft={draft.value} set={draft.set} models={models}
               onDone={() => { draft.clear(); setComposingChoice(false); refresh(); }}
               onCancel={() => { draft.clear(); setComposingChoice(false); }} />
           )}
@@ -190,11 +192,13 @@ export default function IdeasPage() {
  * model, then Save. The words live in the page's draft, so they are still
  * here after a detour to another screen.
  */
-function NewIdea({ draft: d, set, models, onDone, onCancel }: {
-  draft: IdeaDraft; set: (next: IdeaDraft | ((prev: IdeaDraft) => IdeaDraft)) => void; models: Models;
-  onDone: () => void; onCancel: () => void;
+function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onWriting }: {
+  draft: IdeaDraft; paid:PaidAction; set: (next: IdeaDraft | ((prev: IdeaDraft) => IdeaDraft)) => void; models: Models;
+  onDone: () => void; onCancel: () => void; onWriting:()=>void;
 }) {
   const { models: sessionModels, rates } = useSession();
+  const pendingBody=paid.pending?JSON.parse(paid.pending.body):null;
+  const d:IdeaDraft=pendingBody?{...currentDraft,logline:pendingBody.brief,tone:pendingBody.tone,model:pendingBody.model}:currentDraft;
   const [busy, setBusy] = useState<"" | "refs" | "write" | "save">("");
   /* What the model replaced, so one click brings the person's own words back. */
   const [written, setWritten] = useState<{ before: { logline: string; tone: string }; model: string; costUsd: number } | null>(null);
@@ -214,14 +218,10 @@ function NewIdea({ draft: d, set, models, onDone, onCancel }: {
   const writeCr = writerCall(rates, d.model !== "auto" ? d.model : textModelFor(sessionModels ?? null, "idea"), 600, 400) ?? 0.1;
   async function write() {
     if (!d.logline.trim()) return;
+    onWriting();
     setBusy("write");
     try {
-      const res = await fetch("/api/atomik/ideas/draft", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brief: d.logline, tone: d.tone, model: d.model }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      const {data:j}=await paid.run<{logline?:string;tone?:string[];model?:string;costUsd?:number}>("/api/atomik/ideas/draft",{brief:d.logline,tone:d.tone,model:d.model});
       setWritten({ before: { logline: d.logline, tone: d.tone }, model: String(j.model ?? d.model), costUsd: Number(j.costUsd ?? 0) });
       patch({
         logline: typeof j.logline === "string" && j.logline ? j.logline : d.logline,
@@ -255,15 +255,17 @@ function NewIdea({ draft: d, set, models, onDone, onCancel }: {
   return (
     <article className="ak-idea is-new">
       <span className="mono !tracking-[.14em] !text-[10px]">NEW IDEA</span>
-      <textarea className="ak-idea-input" rows={4} value={d.logline} onChange={(e) => patch({ logline: e.target.value })} autoFocus
+      {paid.error&&<p role="alert">{paid.error}</p>}
+      {paid.pending&&<p role="status" className="ak-sub">Recover the saved writing request before continuing.</p>}
+      <textarea className="ak-idea-input" rows={4} disabled={!!paid.pending} value={d.logline} onChange={(e) => patch({ logline: e.target.value })} autoFocus
         placeholder="The logline. One or two sentences: who, what happens, and what it should feel like — or just a note, and let the model write it up." />
-      <input className="ak-idea-input !min-h-0" value={d.tone} onChange={(e) => patch({ tone: e.target.value })} placeholder="Tone, comma-separated — Tense, Practicals, Bleach bypass, 30s" />
+      <input className="ak-idea-input !min-h-0" disabled={!!paid.pending} value={d.tone} onChange={(e) => patch({ tone: e.target.value })} placeholder="Tone, comma-separated — Tense, Practicals, Bleach bypass, 30s" />
       <div className="flex flex-wrap items-center gap-2">
         <span className="mono !tracking-[.14em] !text-[10px]">REASONING</span>
-        <ModelMenu value={d.model} models={models} onPick={(id) => patch({ model: id })} disabled={busy !== ""} />
-        <button type="button" className="ak-act" onClick={write} disabled={busy !== "" || !d.logline.trim()}
+        <ModelMenu value={d.model} models={models} onPick={(id) => patch({ model: id })} disabled={busy !== ""||!!paid.pending} />
+        <button type="button" className="ak-act" onClick={write} disabled={busy !== "" || !!paid.error || !d.logline.trim()}
           title="The model turns what you typed into a logline and a tone list. Your own words stay one click away.">
-          {busy === "write" ? "WRITING…" : `WRITE IT WITH THE MODEL · ≈ ${writeCr} CR →`}
+          {busy === "write" ? "WRITING…" : paid.pending ? "Recover writing request" : `WRITE IT WITH THE MODEL · ≈ ${writeCr} CR →`}
         </button>
         {written && (
           <span className="ak-sub !text-[11px] inline-flex items-center gap-2">
@@ -284,7 +286,7 @@ function NewIdea({ draft: d, set, models, onDone, onCancel }: {
       <input ref={file} type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files) addRefs(e.target.files); e.target.value = ""; }} />
       <div className="ak-idea-foot">
         <button type="button" className="ak-act is-muted" onClick={onCancel}>CANCEL</button>
-        <button type="button" className="btn-primary !h-[34px] !px-3.5 !text-[12.5px]" onClick={save} disabled={busy !== "" || !d.logline.trim()}>{busy === "save" ? "Saving…" : "Save idea"}</button>
+        <button type="button" className="btn-primary !h-[34px] !px-3.5 !text-[12.5px]" onClick={save} disabled={busy !== "" || !!paid.pending || !!paid.error || !d.logline.trim()}>{busy === "save" ? "Saving…" : "Save idea"}</button>
       </div>
     </article>
   );

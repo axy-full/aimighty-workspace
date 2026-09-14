@@ -110,8 +110,8 @@ export const creditsToUsd = (credits: number): number => credits * creditUsd();
  * recording a payment taken off-platform can say so when there is somewhere
  * to say it.
  */
-export type GrantKind = "purchase" | "bonus" | "welcome" | "manual";
-export const GRANT_KINDS: readonly GrantKind[] = ["purchase", "bonus", "welcome", "manual"];
+export type GrantKind = "purchase" | "bonus" | "welcome" | "manual" | "included";
+export const GRANT_KINDS: readonly GrantKind[] = ["purchase", "bonus", "welcome", "manual", "included"];
 export const isPaidKind = (kind: string | null | undefined): boolean => kind === "purchase";
 export function asGrantKind(v: unknown): GrantKind {
   return (GRANT_KINDS as readonly string[]).includes(String(v)) ? (String(v) as GrantKind) : "manual";

@@ -6,6 +6,7 @@ import type { StepState, RingMode } from "@/lib/ring";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
+import {usePaidAction} from "@/lib/usePaidAction";
 import { useMoney } from "@/lib/price";
 
 /**
@@ -56,6 +57,7 @@ export type AtomikLive = {
   engineLabel: (id: string) => string;
   busy: boolean;
   error: string | null;
+  recoveryText:string|null;
   send: (text: string) => Promise<void>;
   approve: (step: Step) => Promise<void>;
   stop: (step: Step) => Promise<void>;
@@ -72,6 +74,8 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const { signedIn } = useSession();
   const { current: production } = useProject();
   const money = useMoney();
+  const paid=usePaidAction(`/api/atomik/chat:${production?.id??"unfiled"}`);
+  const recoveryText=paid.pending?String(JSON.parse(paid.pending.body).text??""):null;
   const { data: index, refresh: refreshIndex } = useApi<Index>(signedIn ? "/api/atomik" : null, 60_000);
   /* A conversation this browser started, and the production it started it
      for — it stands in for the index's pick only while that production is
@@ -155,11 +159,12 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const totals = { total, underCap: cap === null ? null : cap - spent - total, planning };
 
   const send = useCallback(async (text: string) => {
-    const t = text.trim();
+    const t = (recoveryText??text).trim();
     if (!t || busy) return;
     setBusy(true); setError(null);
     try {
-      let id = activeId;
+      let id = paid.pending?decodeURIComponent(paid.pending.url.split("/").at(-1)!):activeId;
+      if(paid.pending)setChatFor({id:id!,projectId:production?.id??null});
       if (!id) {
         const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: production?.id ?? null }) });
         const j = await r.json().catch(() => ({}));
@@ -167,9 +172,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
         id = String(j.id); setChatFor({ id, projectId: production?.id ?? null }); setDismissed(null);
       }
       setThinking(true);
-      const r = await fetch(`/api/atomik/${encodeURIComponent(id)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error ?? "Atomik didn't answer.");
+      await paid.run(`/api/atomik/${encodeURIComponent(id)}`,{text:t});
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -178,7 +181,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       refreshIndex();
       setBusy(false);
     }
-  }, [activeId, busy, production, refreshIndex]);
+  }, [activeId, busy, production, refreshIndex,paid,recoveryText]);
 
   /* Continue: the gate. Claim, then render through the ordinary routes. */
   const approve = useCallback(async (proposed: Step) => {
@@ -192,10 +195,10 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       const step: Step = cj.step;
       const projectId = loaded?.chat.projectId ?? null;
       const res = step.kind === "audio"
-        ? await fetch("/api/audio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        ? await fetch("/api/audio", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `atomik-step:${step.id}` }, body: JSON.stringify({
             task: typeof step.params.task === "string" ? step.params.task : "sound", text: step.prompt, projectId, title: step.title,
             durationSeconds: Number(step.params.seconds) || undefined }) })
-        : await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        : await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `atomik-step:${step.id}` }, body: JSON.stringify({
             prompt: step.prompt, model: step.model, projectId, ratio: step.params.ratio, resolution: step.params.resolution,
             duration: Number(step.params.seconds) || undefined, references: step.refs?.length ? step.refs : undefined }) });
       const j = await res.json().catch(() => ({}));
@@ -233,7 +236,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
     chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, fmt, engineLabel,
-    busy, error, send, approve, stop, changeEngine, clear,
+    busy, error:paid.error??error, recoveryText, send, approve, stop, changeEngine, clear,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -241,7 +244,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
   totals: { total: 0, underCap: null, planning: 0 }, credits: () => 0, fmt: (n) => String(n), engineLabel: (id) => id,
-  busy: false, error: null, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
+  busy: false, error: null, recoveryText:null, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
 };
 
 export function useAtomik(): AtomikLive {

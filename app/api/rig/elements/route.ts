@@ -3,6 +3,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { listElements, ensureRig, createElement, addVersion, syncTrainedVersions } from "@/lib/elements";
 import { isElementKind } from "@/lib/rig";
 import { getSetting } from "@/lib/settings";
+import { withGenerationRequest } from "@/lib/generationRequests";
 
 /**
  * The element library of the workspace in scope (brief 3).
@@ -39,6 +40,7 @@ export const GET = withTenant(async function GET(req: Request) {
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  return withGenerationRequest(req, got.user.id, async () => {
   const b = await req.json().catch(() => ({}));
   const name = String(b?.name ?? "").trim().slice(0, 60);
   if (!name) return NextResponse.json({ error: "Name it first — you'll type it as @Name." }, { status: 400 });
@@ -67,4 +69,5 @@ export const POST = withTenant(async function POST(req: Request) {
   if ((await getSetting("lockNewAssets")) === "1") { const { setElementLock } = await import("@/lib/elements"); await setElementLock(el.id, true, got.user.id); }
   const { getElement } = await import("@/lib/elements");
   return NextResponse.json({ element: (await getElement(el.id)) ?? el }, { status: 201 });
+  });
 });

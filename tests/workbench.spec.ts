@@ -17,6 +17,7 @@ async function goStage(page: Page, label: string) {
 }
 
 async function fixture(page: Page) {
+  const me=await page.request.get('/api/me').then(response=>response.json());
   let project: Project = seedProject();
   project.productionProjectId = "prod-browser";
   project.shotMappings = { "generate-browser": "shot-browser" };
@@ -33,6 +34,7 @@ async function fixture(page: Page) {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const body = request.method() === "POST" || request.method() === "PUT" ? (() => { try { return request.postDataJSON(); } catch { return {}; } })() : {};
     const json = (value: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (path === "/api/me") return json(me);
     if (path === "/api/workbench/projects") {
       if (request.method() === "PUT") {
         project = { ...body.project, productionProjectId: "prod-browser", shotMappings: { "generate-browser": "shot-browser" } };
@@ -65,6 +67,42 @@ async function fixture(page: Page) {
   });
   return { current: () => project, generationRequests };
 }
+
+test("mobile navigation waits for hydration and initial load, then accepts the first workflow tap", async ({page},testInfo)=>{
+  test.skip(testInfo.project.name!=="workbench-360x640","one deterministic startup regression; responsive flow covers both phone sizes");
+  await signInLocally(page.request);
+  await fixture(page);
+  let releaseScripts=()=>{};
+  const scripts=new Promise<void>(resolve=>{releaseScripts=resolve;});
+  await page.route("**/_next/static/**",async route=>{
+    if(route.request().resourceType()==="script")await scripts;
+    await route.continue();
+  });
+  let releaseProject=()=>{},projectRequested=false;
+  const project=new Promise<void>(resolve=>{releaseProject=resolve;});
+  await page.route("**/api/workbench/projects?*",async route=>{
+    if(route.request().method()==="GET"){projectRequested=true;await project;}
+    await route.fallback();
+  });
+  await page.goto("/workbench",{waitUntil:"commit"});
+  const workflow=page.getByRole("navigation",{name:"Mobile studio navigation"}).getByRole("button",{name:"Workflow",exact:true});
+  await expect(workflow).toBeVisible();
+  await expect(workflow).toBeDisabled();
+  releaseScripts();
+  await expect.poll(()=>projectRequested).toBeTruthy();
+  await expect(workflow).toBeDisabled();
+  releaseProject();
+  await expect(workflow).toBeEnabled();
+  await workflow.click();
+  await expect(page.getByRole("dialog",{name:"Production workflow"})).toBeVisible();
+
+  // A verified workspace with no draft still completes initialization and keeps recovery/navigation available.
+  await page.route("**/api/workbench/projects?*",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({projects:[],productions:[],revision:0})}));
+  await page.reload();
+  await expect(workflow).toBeEnabled();
+  await workflow.click();
+  await expect(page.getByRole("dialog",{name:"Production workflow"})).toBeVisible();
+});
 
 test("responsive production: save, stages, node versions, jobs, refresh and editorial export", async ({ page }, testInfo) => {
   await signInLocally(page.request);

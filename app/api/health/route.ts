@@ -58,10 +58,12 @@ export async function GET(req: Request) {
       videosSaved = Number(r?.saved ?? 0);
       videosAtRisk = Number(r?.atrisk ?? 0);
     }
-  } catch { /* leave as unreachable */ }
+  } catch {
+    /* leave as unreachable */
+  }
 
   /* Live storage probe: write one tiny private object, then remove it.
-     GATED ON `full`, which means signed in. It used to run for everyone, so
+     GATED ON `deep`, which requires a signed-in request and explicit deep=1. It used to run for everyone, so
      an unauthenticated caller made this deployment write and delete a Blob
      object on every request — a loop against a public URL turning into
      storage operations and their billing, on somebody else's account.
@@ -70,9 +72,13 @@ export async function GET(req: Request) {
      reported as configured-or-not rather than proven by a write. The probe
      exists because a hand-pasted token proved nothing by being present, and
      the person who needs that proof is the one signed in looking for it. */
-  let storage = process.env.BLOB_READ_WRITE_TOKEN ? "blob-configured" : "local-disk";
+  let storage = process.env.BLOB_READ_WRITE_TOKEN
+    ? "blob-configured"
+    : process.env.NODE_ENV === "production"
+      ? "missing"
+      : "local-disk";
   let storageError: string | null = null;
-  if (full && process.env.BLOB_READ_WRITE_TOKEN) {
+  if (deep && process.env.BLOB_READ_WRITE_TOKEN) {
     try {
       const { put, del } = await import("@vercel/blob");
       const probe = await put("health/probe.txt", `ok ${Date.now()}`, {
@@ -99,13 +105,19 @@ export async function GET(req: Request) {
     try {
       const { put, del } = await import("@vercel/blob");
       const probe = await put(probePath, Buffer.from("0123456789"), {
-        access: "private", contentType: "application/octet-stream",
-        addRandomSuffix: false, allowOverwrite: true,
+        access: "private",
+        contentType: "application/octet-stream",
+        addRandomSuffix: false,
+        allowOverwrite: true,
       });
       const signed = await presignedReadUrl(probePath, 1);
-      const r = await fetch(signed, { headers: { Range: "bytes=0-1" }, cache: "no-store" });
-      presignRange = `${r.status} ${r.headers.get("content-range") ?? "no-content-range"} ` +
-                     `accept-ranges=${r.headers.get("accept-ranges") ?? "-"}`;
+      const r = await fetch(signed, {
+        headers: { Range: "bytes=0-1" },
+        cache: "no-store",
+      });
+      presignRange =
+        `${r.status} ${r.headers.get("content-range") ?? "no-content-range"} ` +
+        `accept-ranges=${r.headers.get("accept-ranges") ?? "-"}`;
       await del(probe.url);
     } catch (e) {
       presignRange = `ERROR ${(e as Error).message.slice(0, 160)}`;
@@ -114,54 +126,73 @@ export async function GET(req: Request) {
 
   /* What anyone may know: is it up, and can it reach its two dependencies.
      A monitor needs exactly this and nothing more. */
+  const ok =
+    database !== "unreachable" &&
+    storage !== "blob-BROKEN" &&
+    storage !== "missing";
   if (!full) {
-    return NextResponse.json({
-      /* "blob-BROKEN" is only reachable when signed in now, so for a monitor
+    return NextResponse.json(
+      {
+        /* "blob-BROKEN" is only reachable when signed in now, so for a monitor
          this is the database answer — which is the one that goes down. */
-      ok: database !== "unreachable" && storage !== "blob-BROKEN",
-    mock: engineMock(),
-      database: database === "unreachable" ? "unreachable" : "ok",
-      storage: storage === "blob-BROKEN" ? "broken" : "ok",
-    });
+        ok,
+        mock: engineMock(),
+        database: database === "unreachable" ? "unreachable" : "ok",
+        storage:
+          storage === "blob-BROKEN"
+            ? "broken"
+            : storage === "missing"
+              ? "missing"
+              : "ok",
+      },
+      { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   /* The rest is one workspace's briefing, answered inside that workspace. */
-  return runInTenant(ctx!.workspace!, async () => NextResponse.json({
-    ok: database !== "unreachable" && storage !== "blob-BROKEN",
-    mock: engineMock(),
-    workspace: { id: ctx!.workspace!.id, name: ctx!.workspace!.name },
-    database,
-    storage,
-    ...(storageError ? { storageError } : {}),
-    ...(presignRange ? { presignRange } : {}),
-    videosSaved,
-    videosAtRisk,
-    /* `via` is the door, not just whether a vendor is reachable: stills can
+  return runInTenant(ctx!.workspace!, async () =>
+    NextResponse.json(
+      {
+        ok,
+        mock: engineMock(),
+        workspace: { id: ctx!.workspace!.id, name: ctx!.workspace!.name },
+        database,
+        storage,
+        ...(storageError ? { storageError } : {}),
+        ...(presignRange ? { presignRange } : {}),
+        videosSaved,
+        videosAtRisk,
+        /* `via` is the door, not just whether a vendor is reachable: stills can
        be served by Google's own key or by the Vercel gateway, and which one
        it is decides whose balance pays. Without it the only way to find out
        was to make a render and read the ledger afterwards. */
-    providers: PROVIDERS.map((p) => ({
-      id: p.id, configured: providerConfigured(p), via: providerVia(p),
-    })),
-    // Reads the settings table, so during a database outage it throws — and
-    // the one endpoint whose job is to SAY "database unreachable" would 500
-    // instead of answering. Its absence is itself the signal.
-    cron: await cronStatus().catch(() => null),
-    arkKeyConfigured: Boolean(vendorKey("ark")),
-    /* Whether invitations can be emailed, and from what address. Neither is
+        providers: PROVIDERS.map((p) => ({
+          id: p.id,
+          configured: providerConfigured(p),
+          via: providerVia(p),
+        })),
+        // Reads the settings table, so during a database outage it throws — and
+        // the one endpoint whose job is to SAY "database unreachable" would 500
+        // instead of answering. Its absence is itself the signal.
+        cron: await cronStatus().catch(() => null),
+        arkKeyConfigured: Boolean(vendorKey("ark")),
+        /* Whether invitations can be emailed, and from what address. Neither is
        a secret — the address appears in every invitation it sends — and
        without this the only way to tell was to send one and see. */
-    mail: mailConfigured()
-      ? { configured: true, from: mailFrom() }
-      : { configured: false, needs: ["RESEND_API_KEY", "MAIL_FROM"] },
-    pushConfigured: Boolean(
-      process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+        mail: mailConfigured()
+          ? { configured: true, from: mailFrom() }
+          : { configured: false, needs: ["RESEND_API_KEY", "MAIL_FROM"] },
+        pushConfigured: Boolean(
+          process.env.VAPID_PRIVATE_KEY &&
+          process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+        ),
+        region: process.env.VERCEL_REGION ?? "local",
+        commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7),
+      },
+      { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } },
     ),
-    region: process.env.VERCEL_REGION ?? "local",
-    commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7),
-  }));
+  );
 }
-
 
 /**
  * When the cron last ran, who ran it, and whether that is recent enough.
@@ -170,12 +201,27 @@ export async function GET(req: Request) {
 async function cronStatus() {
   const st = await allSettings();
   const at = Number(st.lastCronAt ?? 0);
-  if (!at) return { lastRunAt: null, by: null, agoMinutes: null, healthy: null,
-                    note: "no run recorded yet — instrumentation is new" };
+  if (!at)
+    return {
+      lastRunAt: null,
+      by: null,
+      agoMinutes: null,
+      healthy: null,
+      note: "no run recorded yet — instrumentation is new",
+    };
   const ago = Math.round((Date.now() - at) / 60000);
   let result: unknown = null;
-  try { result = JSON.parse(st.lastCronResult ?? "null"); } catch { /* ignore */ }
-  return { lastRunAt: new Date(at).toISOString(), by: st.lastCronBy ?? null,
-           agent: st.lastCronAgent ?? null,
-           agoMinutes: ago, healthy: ago <= 15, result };
+  try {
+    result = JSON.parse(st.lastCronResult ?? "null");
+  } catch {
+    /* ignore */
+  }
+  return {
+    lastRunAt: new Date(at).toISOString(),
+    by: st.lastCronBy ?? null,
+    agent: st.lastCronAgent ?? null,
+    agoMinutes: ago,
+    healthy: ago <= 15,
+    result,
+  };
 }

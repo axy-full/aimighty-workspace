@@ -1,11 +1,14 @@
 import { db, ready, now, id as newId } from "./db";
-import { falConfigured, falSubmit, falStatus, falResult, falAwait, progressFromLogs } from "./fal";
+import { falConfigured, falSubmit, falStatus, falResult, falAwait, progressFromLogs, falSubmissionRejected } from "./fal";
 import { readUploadBytes, storeIdentityZip, storeImageBytes, presignedReadUrl, usingBlob } from "./storage";
 import { nameProblem } from "./cast";
 import { invalidate, PROJECTS_KEY } from "./cache";
-import { withRetry, getProvider } from "./providers";
-import { meter } from "./meter";
+import { withRetry } from "./providers";
+import { meter, assertMeterFunding } from "./meter";
 import { fetchBytes } from "./mockFs";
+import { currentTenant, requireTenant } from "./tenant";
+import { reserveGenerationSpend } from "./generationRequests";
+import { claimRender } from "./renderWork";
 
 /**
  * Identities — a real face, learned.
@@ -33,6 +36,7 @@ export type Identity = {
   provider: string;
   trainer: string | null;
   requestId: string | null;
+  trainingRunId?: string | null;
   trigger: string | null;
   steps: number | null;
   loraUrl: string | null;
@@ -100,6 +104,7 @@ export function rowToIdentity(r: any): Identity {
     provider: r.provider ?? "fal",
     trainer: r.trainer ?? null,
     requestId: r.request_id ?? null,
+    trainingRunId: r.training_run_id ?? null,
     trigger: r.trigger ?? null,
     steps: r.steps == null ? null : Number(r.steps),
     loraUrl: r.lora_url ?? null,
@@ -237,41 +242,73 @@ async function buildTrainingZip(identity: Identity): Promise<Buffer> {
   return Buffer.from(zipSync(files, { level: 0 }));
 }
 
-export async function startTraining(id: string, consent?: { by: string }): Promise<Identity> {
+const trainingBoot = new Map<string, Promise<void>>();
+async function trainingReady() {
+  const workspace = requireTenant().id;
+  if (!trainingBoot.has(workspace)) trainingBoot.set(workspace, (async () => {
+    await ready();
+    await db().execute(`CREATE TABLE IF NOT EXISTS identity_training_runs(id TEXT PRIMARY KEY,identity_id TEXT NOT NULL,status TEXT NOT NULL,request_id TEXT,cost_usd REAL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)`);
+    const columns = (await db().execute(`PRAGMA table_info(identities)`)).rows;
+    if (!columns.some((r) => r.name === "training_run_id")) await db().execute(`ALTER TABLE identities ADD COLUMN training_run_id TEXT`);
+  })().catch((error) => { trainingBoot.delete(workspace); throw error; }));
+  await trainingBoot.get(workspace);
+}
+
+export async function startTraining(id: string, consent?: { by: string }, overrides: {
+  archive?: (identity: Identity) => Promise<string>;
+  submit?: typeof falSubmit;
+} = {}): Promise<Identity> {
+  await trainingReady();
   const identity = await getIdentity(id);
   if (!identity) throw new Error("No such identity.");
-  if (!falConfigured()) {
-    throw new Error("Identity training isn't connected for this workspace. Ask the platform to connect it.");
+  if (!falConfigured()) throw new Error("Identity training isn't connected for this workspace. Ask the platform to connect it.");
+  if (identity.status === "training") throw new Error("This identity already has an active or uncertain training request.");
+  if (identity.trainingRunId) {
+    const prior = (await db().execute({ sql: `SELECT status FROM identity_training_runs WHERE id=?`, args: [identity.trainingRunId] })).rows[0];
+    if (prior?.status === "uncertain") throw new Error("The previous training submission is uncertain. Reconcile it before purchasing another run.");
   }
-  if (identity.status === "training") throw new Error("It's already training.");
-  // The person pressing Train confirms the right to train on this face; it is stored with the identity.
   if (!consent?.by && !identity.consentAt) throw new Error("Confirm you have the right to train on this person's face.");
-  if (identity.photos.length < MIN_PHOTOS) {
-    throw new Error(`Add at least ${MIN_PHOTOS} photos first — ${RECOMMENDED_PHOTOS} is the sweet spot.`);
+  if (identity.photos.length < MIN_PHOTOS) throw new Error(`Add at least ${MIN_PHOTOS} photos first — ${RECOMMENDED_PHOTOS} is the sweet spot.`);
+  if (!usingBlob() && !overrides.archive) throw new Error("Training needs the deployed store: the trainer fetches a signed photo archive.");
+  const runId = newId("train");
+  const claimed = await db().execute({ sql: `UPDATE identities SET status='training',training_run_id=?,request_id=NULL,error=NULL,
+    consent_by=COALESCE(?,consent_by),consent_at=COALESCE(consent_at,?),updated_at=? WHERE id=? AND status<>'training'`, args: [runId, consent?.by ?? null, now(), now(), id] });
+  if (!claimed.rowsAffected) throw new Error("Training was already started by another request.");
+  let reserved = false; let submitted = false; let handle: string | null = null;
+  const event = { id: runId, kind: "training" as const, engine: "fal", model: TRAINER, projectId: identity.projectId, createdBy: consent?.by ?? currentTenant()?.user?.id };
+  try {
+    await db().execute({ sql: `INSERT INTO identity_training_runs(id,identity_id,status,created_at,updated_at) VALUES(?,?,'preparing',?,?)`, args: [runId, id, now(), now()] });
+    const imagesUrl = overrides.archive ? await overrides.archive(identity) : await (async () => {
+      const zip = await buildTrainingZip(identity);
+      const pathname = await storeIdentityZip(identity.id, zip);
+      return presignedReadUrl(pathname, 24);
+    })();
+    const trigger = identity.trigger ?? triggerFor(identity.name);
+    await reserveGenerationSpend({ ...event, status: "running", engineCostUsd: trainCostUsd() }, { token: currentTenant()?.token });
+    reserved = true;
+    await db().execute({ sql: `UPDATE identity_training_runs SET status='submitting',cost_usd=?,updated_at=? WHERE id=?`, args: [trainCostUsd(), now(), runId] });
+    submitted = true;
+    const queued = await (overrides.submit ?? falSubmit)(TRAINER, { images_data_url: imagesUrl, trigger_phrase: trigger, steps: TRAIN_STEPS,
+      multiresolution_training: true, subject_crop: true, create_masks: false });
+    handle = queued.request_id;
+    if (!handle) throw new Error("The trainer returned no request handle.");
+    await db().execute({ sql: `UPDATE identity_training_runs SET status='running',request_id=?,updated_at=? WHERE id=?`, args: [handle, now(), runId] });
+    await db().execute({ sql: `UPDATE identities SET trainer=?,request_id=?,trigger=?,steps=?,cost_usd=?,error=NULL,
+      consent_by=COALESCE(?,consent_by),consent_at=COALESCE(consent_at,?),updated_at=? WHERE id=? AND training_run_id=?`,
+      args: [TRAINER, handle, trigger, TRAIN_STEPS, trainCostUsd(), consent?.by ?? null, now(), now(), id, runId] });
+    return (await getIdentity(id))!;
+  } catch (error) {
+    const rejected = !submitted || falSubmissionRejected(error);
+    const cost = rejected ? 0 : trainCostUsd();
+    const message = rejected ? "Training could not start. No training credits were charged." : "Training submission is uncertain. Its estimated credits remain reserved; this run will not be submitted again.";
+    // A known handle survives even when the ordinary identity update failed.
+    await db().execute({ sql: `UPDATE identity_training_runs SET status=?,request_id=COALESCE(?,request_id),cost_usd=?,updated_at=? WHERE id=?`, args: [handle ? "running" : rejected ? "failed" : "uncertain", handle, cost, now(), runId] }).catch(() => {});
+    await db().execute({ sql: `UPDATE identities SET status=?,trainer=?,request_id=COALESCE(?,request_id),cost_usd=?,error=?,updated_at=? WHERE id=? AND training_run_id=?`,
+      args: [handle ? "training" : "failed", TRAINER, handle, cost, message, now(), id, runId] }).catch(() => {});
+    if (reserved) await meter({ ...event, status: handle ? "running" : "failed", engineCostUsd: cost });
+    if (!submitted) throw error;
+    throw new Error(message);
   }
-  if (!usingBlob()) {
-    throw new Error("Training needs the deployed store: the trainer fetches the photos from a signed link, which local files can't provide.");
-  }
-  const zip = await buildTrainingZip(identity);
-  const pathname = await storeIdentityZip(identity.id, zip);
-  const imagesUrl = await presignedReadUrl(pathname, 24);
-  const trigger = identity.trigger ?? triggerFor(identity.name);
-  const queued = await falSubmit(TRAINER, {
-    images_data_url: imagesUrl,
-    trigger_phrase: trigger,
-    steps: TRAIN_STEPS,
-    multiresolution_training: true,
-    subject_crop: true,
-    create_masks: false,
-  });
-  await db().execute({
-    sql: `UPDATE identities SET status='training', trainer=?, request_id=?, trigger=?, steps=?, cost_usd=?, error=NULL,
-                                consent_by=COALESCE(?, consent_by), consent_at=COALESCE(consent_at, ?), updated_at=? WHERE id=?`,
-    args: [TRAINER, queued.request_id, trigger, TRAIN_STEPS, trainCostUsd(TRAIN_STEPS), consent?.by ?? null, now(), now(), identity.id],
-  });
-  await meter({ id: identity.id, kind: "training", engine: "fal", model: TRAINER, status: "running",
-                engineCostUsd: trainCostUsd(TRAIN_STEPS), projectId: identity.projectId });
-  return (await getIdentity(identity.id))!;
 }
 
 type TrainResult = {
@@ -285,6 +322,17 @@ type TrainResult = {
  * URL is written down and the identity joins the cast.
  */
 export async function syncIdentity(identity: Identity): Promise<{ identity: Identity; progress: number | null }> {
+  if (identity.status === "training" && identity.trainingRunId && !identity.requestId) {
+    await trainingReady();
+    const tracked = (await db().execute({ sql: `SELECT * FROM identity_training_runs WHERE id=? AND identity_id=?`, args: [identity.trainingRunId, identity.id] })).rows[0];
+    if (tracked?.request_id) {
+      await db().execute({ sql: `UPDATE identities SET request_id=?,trainer=? WHERE id=? AND training_run_id=?`, args: [String(tracked.request_id), TRAINER, identity.id, identity.trainingRunId] });
+      identity = { ...identity, requestId: String(tracked.request_id), trainer: TRAINER };
+    } else if (now() - identity.updatedAt > TRAIN_CEILING_MS) {
+      await markFailed(identity.id, "Training submission could not be confirmed. Its estimated credits remain reserved for reconciliation.");
+      return { identity: (await getIdentity(identity.id))!, progress: null };
+    }
+  }
   if (identity.status !== "training" || !identity.requestId || !identity.trainer) return { identity, progress: null };
   let st;
   try {
@@ -292,7 +340,7 @@ export async function syncIdentity(identity: Identity): Promise<{ identity: Iden
   } catch (e) {
     // A status call failing is weather, not a verdict — unless the key is gone.
     const msg = (e as Error).message;
-    if (/rejected the key/.test(msg)) await markFailed(identity.id, msg);
+    if (/rejected the key/.test(msg)) await markFailed(identity.id, "The training provider could not be accessed. Its estimated credits remain reserved.");
     return { identity: (await getIdentity(identity.id))!, progress: null };
   }
   if (st.status !== "COMPLETED") {
@@ -301,8 +349,7 @@ export async function syncIdentity(identity: Identity): Promise<{ identity: Iden
     const since = identity.updatedAt || identity.createdAt;
     if (now() - since > TRAIN_CEILING_MS) {
       await markFailed(identity.id,
-        "The trainer never finished. Nothing usable came back, so train again — " +
-        "fal only bills for a completed run.");
+        "The trainer has not confirmed a final result. Its estimated credits remain reserved for reconciliation.");
       return { identity: (await getIdentity(identity.id))!, progress: null };
     }
     return { identity, progress: progressFromLogs(st.logs) };
@@ -316,7 +363,8 @@ export async function syncIdentity(identity: Identity): Promise<{ identity: Iden
       sql: `UPDATE identities SET status='ready', lora_url=?, config_url=?, cast_id=?, trained_at=?, updated_at=?, error=NULL WHERE id=?`,
       args: [lora, out.config_file?.url ?? null, castId, now(), now(), identity.id],
     });
-    await meter({ id: identity.id, kind: "training", engine: "fal", model: TRAINER, status: "succeeded", projectId: identity.projectId }, { critical: false });
+    await meter({ id: identity.trainingRunId ?? identity.id, kind: "training", engine: "fal", model: TRAINER, status: "succeeded", projectId: identity.projectId }, { critical: false });
+    if (identity.trainingRunId) await db().execute({ sql: `UPDATE identity_training_runs SET status='succeeded',updated_at=? WHERE id=?`, args: [now(), identity.trainingRunId] });
   } catch (e) {
     await markFailed(identity.id, (e as Error).message);
   }
@@ -324,12 +372,14 @@ export async function syncIdentity(identity: Identity): Promise<{ identity: Iden
 }
 
 async function markFailed(id: string, error: string): Promise<void> {
+  const identity = await getIdentity(id);
   await db().execute({
     sql: `UPDATE identities SET status='failed', error=?, updated_at=? WHERE id=?`,
     args: [error.slice(0, 600), now(), id],
   });
-  await meter({ id, kind: "training", engine: "fal", model: TRAINER, status: "failed",
-                engineCostUsd: getProvider("fal").billsFailures ? null : 0 }, { critical: false }).catch(() => {});
+  if (identity?.trainingRunId) await db().execute({ sql: `UPDATE identity_training_runs SET status='uncertain',updated_at=? WHERE id=?`, args: [now(), identity.trainingRunId] }).catch(() => {});
+  await meter({ id: identity?.trainingRunId ?? id, kind: "training", engine: "fal", model: TRAINER, status: "failed",
+                engineCostUsd: null }, { critical: false }).catch(() => {});
 }
 
 /** A trained identity is also a cast character, so @Name works everywhere. */
@@ -407,13 +457,13 @@ function renderInput(identity: Identity, opts: { prompt: string; ratio: string; 
  */
 class RenderRefused extends Error {}
 
-async function failRender(genId: string, message: string, startedAt: number): Promise<void> {
+async function failRender(genId: string, message: string, startedAt: number, rejected = false): Promise<void> {
   await db().execute({
     sql: `UPDATE generations SET status='failed', error=?, duration_ms=?, updated_at=? WHERE id=?`,
     args: [message.slice(0, 600), Math.max(0, now() - startedAt), now(), genId],
   }).catch(() => {});
   await meter({ id: genId, kind: "image", engine: "fal", model: RENDERER, status: "failed",
-                engineCostUsd: getProvider("fal").billsFailures ? null : 0, durationMs: Math.max(0, now() - startedAt) }, { critical: false }).catch(() => {});
+                engineCostUsd: rejected ? 0 : null, durationMs: Math.max(0, now() - startedAt) }, { critical: false }).catch(() => {});
   invalidate(PROJECTS_KEY);
 }
 
@@ -463,10 +513,15 @@ async function finishRender(genId: string, out: RenderResult, startedAt: number,
 export async function runIdentityRender(genId: string, identity: Identity, opts: {
   prompt: string; ratio: string; seed: number | null; startedAt: number;
 }): Promise<void> {
+  if (!(await claimRender(genId))) return;
   let handle: string | null = null;
+  let submitted = false;
   try {
+    await assertMeterFunding(genId, "fal");
     if (!identity.loraUrl) throw new Error("This identity has no trained model yet.");
-    const queued = await falSubmit(RENDERER, renderInput(identity, opts));
+    const input = renderInput(identity, opts);
+    submitted = true;
+    const queued = await falSubmit(RENDERER, input);
     handle = queued.request_id;
     // Written down BEFORE the wait: this is the whole point.
     await db().execute({
@@ -488,7 +543,7 @@ export async function runIdentityRender(genId: string, identity: Identity, opts:
       console.error(`identity render ${genId} interrupted; left for the cron:`, err.message);
       return;
     }
-    await failRender(genId, err.message, opts.startedAt);
+    await failRender(genId, submitted && !falSubmissionRejected(err) ? "The image submission is uncertain. Its estimated credits remain reserved." : "The provider declined this image request.", opts.startedAt, !submitted || falSubmissionRejected(err));
   }
 }
 

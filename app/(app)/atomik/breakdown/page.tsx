@@ -12,6 +12,7 @@
  * Shots written here ARE the production's shots — the same rows the shot
  * list sends across and Particl files takes against.
  */
+import {usePaidAction} from "@/lib/usePaidAction";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
@@ -69,6 +70,7 @@ export default function BreakdownPage() {
 
 function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTarget: number | null }) {
   const router = useRouter();
+  const paid=usePaidAction(`/api/atomik/shots/draft:${projectId}`);
   const money = useMoney();
   const { signedIn , models: sessionModels, rates } = useSession();
   const { data } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
@@ -105,12 +107,12 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   const [drafting, setDrafting] = useState<number | null>(null);
   const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; sceneUsd: number; model: string; costUsd: number } | null>(null);
   const draftCr = writerCall(rates, textModelFor(sessionModels ?? null, "shot"), 1800, 900) ?? 0.1;
-  async function draftShots(scene: Scene) {
+  async function draftShots(currentScene: Scene) {
+    const pending=paid.pending?JSON.parse(paid.pending.body):null;
+    const scene=pending?scenes.find(item=>item.n===pending.scene):currentScene;if(!scene)return;
     setDrafting(scene.n); setProposals(null);
     try {
-      const res = await fetch("/api/atomik/shots/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, scene: scene.n }) });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      const {data:j}=await paid.run<{shots:ShotProposal[];sceneUsd?:number;model:string;costUsd?:number}>("/api/atomik/shots/draft",{projectId,scene:scene.n});
       setProposals({ scene: scene.n, shots: j.shots as ShotProposal[], sceneUsd: Number(j.sceneUsd ?? 0), model: String(j.model), costUsd: Number(j.costUsd ?? 0) });
     } catch (e) { await appAlert("No shots drafted", (e as Error).message); }
     finally { setDrafting(null); }
@@ -135,6 +137,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   return (
     <>
       <div className="ak-bar">
+        {(paid.error||paid.pending)&&<p role={paid.error?"alert":"status"} className="ak-sub">{paid.error||"A shot draft awaits confirmation. Recover it from that scene."}</p>}
         <span className="text-[14px] font-semibold">Breakdown</span>
         <span className="mono-s">{shots.length} SHOT{shots.length === 1 ? "" : "S"} · {mmss(runtime)} OF {mmss(target)} · EST. {usd(estimate, 2)} AT ONE TAKE EACH</span>
         <div className="cv-bar !h-1.5 w-[220px]">
@@ -168,7 +171,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
                 <div className="flex flex-wrap gap-1">{sceneCast.map((c) => <span key={c} className="ak-tag">@{c}</span>)}</div>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" className="btn-dashed self-start !px-2.5 !py-1.5" onClick={() => add(sc)}>+ Shot in this scene</button>
-                  <button type="button" className="btn-dashed self-start !px-2.5 !py-1.5" disabled={drafting != null} onClick={() => draftShots(sc)}>{drafting === sc.n ? "Drafting…" : `Draft shots · ≈ ${draftCr} cr`}</button>
+                  <button type="button" className="btn-dashed self-start !px-2.5 !py-1.5" disabled={drafting != null||!!paid.error||!!paid.pending&&JSON.parse(paid.pending.body).scene!==sc.n} onClick={() => draftShots(sc)}>{drafting === sc.n ? "Drafting…" : paid.pending ? "Recover shot draft" : `Draft shots · ≈ ${draftCr} cr`}</button>
                 </div>
                 {proposals && proposals.scene === sc.n && (
                   <div className="ak-proposal">

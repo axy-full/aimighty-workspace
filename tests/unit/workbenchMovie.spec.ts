@@ -1,0 +1,73 @@
+import { test, expect } from "@playwright/test";
+import nextConfig from "../../next.config";
+import { seedProject } from "../../lib/workbench/studio";
+import { readMovieHandoff } from "../../lib/workbench/movie-handoff";
+import { defaultMovieOptions, moviePlan } from "../../lib/workbench/movie";
+
+test("movie snapshots reject another account in the same workspace and expire before loading content", () => {
+  const project = seedProject();
+  const scope = "particl-active-workspace-a-user-one";
+  const raw = JSON.stringify({ scope, project, createdAt: Date.now() });
+  expect(readMovieHandoff(raw, scope).name).toBe(project.name);
+  expect(() =>
+    readMovieHandoff(raw, "particl-active-workspace-a-user-two"),
+  ).toThrow(/another account/);
+  expect(() =>
+    readMovieHandoff(raw, "particl-active-workspace-b-user-one"),
+  ).toThrow(/another account/);
+  expect(() =>
+    readMovieHandoff(
+      JSON.stringify({ scope, project, createdAt: Date.now() - 600_001 }),
+      scope,
+    ),
+  ).toThrow(/expired/);
+  expect(() =>
+    readMovieHandoff(
+      JSON.stringify({
+        scope,
+        project: { ...project, aspect: "unsupported" },
+        createdAt: Date.now(),
+      }),
+      scope,
+    ),
+  ).toThrow();
+});
+
+test("movie planning keeps cumulative frame time and refuses unbounded edits", () => {
+  const project = seedProject();
+  project.fps = 25;
+  project.aspect = "9:16";
+  project.shots = project.shots
+    .slice(0, 2)
+    .map((shot, i) => ({ ...shot, sourceIn: i * 7, duration: i ? 38 : 17 }));
+  const plan = moviePlan(project, defaultMovieOptions);
+  expect(plan.clips.map((clip) => [clip.startFrame, clip.sourceIn])).toEqual([
+    [0, 0],
+    [17, 7],
+  ]);
+  expect(plan.duration).toBe(2.2);
+  expect([plan.width, plan.height]).toEqual([720, 1280]);
+  project.shots[1].duration = 25 * 180;
+  expect(() => moviePlan(project, defaultMovieOptions)).toThrow(
+    /up to 3 minutes/,
+  );
+});
+
+test("WASM and blob workers are restricted to the exact movie document", async () => {
+  const entries = await nextConfig.headers!();
+  const general = entries.find((entry) => entry.source === "/(.*)")!;
+  const policy = general.headers.find(
+    (header) => header.key === "Content-Security-Policy",
+  )!.value;
+  expect(policy).not.toContain("wasm-unsafe-eval");
+  expect(policy).not.toContain("worker-src");
+  const movie = entries.filter((entry) =>
+    entry.headers.some((header) => header.value.includes("wasm-unsafe-eval")),
+  );
+  expect(movie.map((entry) => entry.source)).toEqual(["/workbench/movie"]);
+  const moviePolicy = movie[0].headers.find(
+    (header) => header.key === "Content-Security-Policy",
+  )!.value;
+  expect(moviePolicy).toContain("worker-src 'self' blob:");
+  expect(moviePolicy).toContain("connect-src 'self';");
+});

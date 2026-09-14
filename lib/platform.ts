@@ -1,13 +1,12 @@
 import { createClient, type Client } from "@libsql/client";
-import { signupCredits, isPaidKind, type GrantKind } from "./creditTerms";
+import { isPaidKind, type GrantKind } from "./creditTerms";
 import { asPlanId, planById, DEFAULT_PLANS, type PlanId, type PlanDef } from "./plans";
-import { gatewayMintConfigured, mintGatewayKey } from "./vercelKeys";
 import { randomBytes, createHash } from "node:crypto";
 import { seal, open } from "./keyring";
-import { provisionTenantDatabase } from "./provision";
 import { runInTenant, type TenantWorkspace, type WorkspaceRole } from "./tenant";
-import { seedStarterProduction } from "./starter";
 import { mergeLayer, LAYER_KEYS, type PlatformLayer, type LayerKey } from "./platformLayer";
+import { prepareLocalDatabaseDirectory } from "./localDatabase";
+import { createPlatformDatabaseClient } from "./localDatabaseClient";
 
 /**
  * The platform: what spans workspaces.
@@ -28,8 +27,9 @@ import { mergeLayer, LAYER_KEYS, type PlatformLayer, type LayerKey } from "./pla
 let _client: Client | null = null;
 export function platformDb(): Client {
   if (!_client) {
-    _client = createClient({
-      url: process.env.PLATFORM_DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db",
+    const url = process.env.PLATFORM_DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db";
+    _client = createPlatformDatabaseClient({
+      url,
       authToken: process.env.PLATFORM_AUTH_TOKEN ?? process.env.TURSO_AUTH_TOKEN,
     });
   }
@@ -385,8 +385,10 @@ export function platformReady(): Promise<void> {
 /** The original workspace, from the original users table. */
 async function importLegacy(): Promise<void> {
   const p = platformDb();
+  const url = process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db";
+  prepareLocalDatabaseDirectory(url);
   const legacyDb = createClient({
-    url: process.env.TURSO_DATABASE_URL ?? "file:.data/ark.db",
+    url,
     authToken: process.env.TURSO_AUTH_TOKEN,
   });
   let users: any[] = [];
@@ -490,67 +492,13 @@ export function platformKeysByDefault(): boolean {
   return process.env.PLATFORM_KEYS_FOR_NEW_WORKSPACES !== "0";
 }
 
-/**
- * A new workspace: its own database, provisioned and bootstrapped, with
- * the creator as owner and mirrored into it so their renders carry a name.
- *
- * Its engines come with it. On the platform's keys by default (with the
- * allowance), and — when the deployment can mint one — a Vercel AI Gateway
- * key of its own, so its text spend sits under its own name and budget in
- * Vercel's books. Minting is best effort: a workspace is never refused
- * because Vercel was slow.
- */
+/** Existing callers use the same durable, zero-grant customer provisioning path. */
 export async function createWorkspace(input: { name: string; owner: { id: string; email: string; name: string } }): Promise<TenantWorkspace> {
-  await platformReady();
-  const p = platformDb();
-  const base = slugify(input.name);
-  let slug = base;
-  for (let i = 2; i < 50; i++) {
-    const taken = await p.execute({ sql: `SELECT 1 FROM workspaces WHERE slug = ?`, args: [slug] });
-    if (!taken.rows.length) break;
-    slug = `${base}-${i}`;
-  }
-  const db = await provisionTenantDatabase(slug);
-  const id = newId("ws");
-  const ts = now();
-  const platformKeys = platformKeysByDefault();
-  await p.execute({
-    sql: `INSERT INTO workspaces (id, slug, name, db_url, db_token_enc, db_name, legacy, uses_platform_keys, owner_id, created_at, updated_at)
-          VALUES (?,?,?,?,?,?,0,?,?,?,?)`,
-    args: [id, slug, input.name.trim().slice(0, 80), db.url, db.token ? seal(db.token) : null, db.name, platformKeys ? 1 : 0, input.owner.id, ts, ts],
-  });
-  await p.execute({
-    sql: `INSERT INTO memberships (workspace_id, account_id, role, created_at) VALUES (?,?,'owner',?)`,
-    args: [id, input.owner.id, ts],
-  });
-  /* Something to spend on day one: the layer's number, or the deployment's. */
-  const welcome = (await getPlatformLayer().catch(() => null))?.caps.signupCredits ?? signupCredits();
-  if (platformKeys && welcome > 0) {
-    await p.execute({
-      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
-      args: [newId("cg"), id, welcome, "Welcome credits", "welcome" satisfies GrantKind, input.owner.id, ts],
-    });
-  }
-  if (gatewayMintConfigured()) {
-    try {
-      const minted = await mintGatewayKey(`particl · ${slug}`);
-      await p.execute({
-        sql: `UPDATE workspaces SET keys_enc = ?, gateway_key_id = ?, updated_at = ? WHERE id = ?`,
-        args: [seal(JSON.stringify({ gateway: minted.key })), minted.id, now(), id],
-      });
-    } catch (e) {
-      console.warn(`[workspace ${slug}] no gateway key minted: ${(e as Error).message}`);
-    }
-  }
-  const ws = (await getWorkspace(id))!;
-  await mirrorUser(ws, { id: input.owner.id, email: input.owner.email, name: input.owner.name }, "owner", false);
-  /* The first screen has something on it: the starter production from the platform layer. */
-  try {
-    await runInTenant(ws, () => seedStarterProduction(input.owner.id));
-  } catch (e) {
-    console.warn(`[workspace ${slug}] starter production not seeded: ${(e as Error).message}`);
-  }
-  return ws;
+  const {requestWorkspace,resumeWorkspace}=await import('./workspaceProvisioning');
+  const requestId=await requestWorkspace(input);
+  const result=await resumeWorkspace(requestId,input.owner.id);
+  if(result.workspace)return result.workspace;
+  throw new Error(result.provisioning.error??'Workspace setup is pending. Resume this request from the workspace chooser.');
 }
 
 /** Whose keys a workspace's engines run on. */
@@ -579,11 +527,7 @@ export async function setWorkspaceAllowance(id: string, usd: number | null): Pro
  * about it — which is exactly how the welcome grant came to read as revenue.
  */
 export async function grantCredits(workspaceId: string, credits: number, note: string, by: string | null, kind: GrantKind): Promise<void> {
-  await platformReady();
-  await platformDb().execute({
-    sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
-    args: [newId("cg"), workspaceId, credits, note.slice(0, 200), kind, by, now()],
-  });
+  await grantCreditsBatch([{workspaceId,credits,note,by,kind}]);
 }
 
 /**
@@ -600,12 +544,18 @@ export async function grantCreditsBatch(
   rows: { workspaceId: string; credits: number; note: string; by: string | null; kind: GrantKind }[],
 ): Promise<void> {
   if (!rows.length) return;
-  await platformReady();
-  const ts = now();
-  await platformDb().batch(rows.map((r) => ({
-    sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
-    args: [newId("cg"), r.workspaceId, r.credits, r.note.slice(0, 200), r.kind, r.by, ts],
-  })), "write");
+  const {billingTransaction,syncBillingLedger}=await import('./billingLedger');
+  await billingTransaction(async(tx,ts)=>{
+    const workspaces=[...new Set(rows.map(r=>r.workspaceId))];
+    // Bootstrap before inserting so a first paid pack cannot be mistaken for
+    // an old, non-expiring grant. Its clock starts when management grants it.
+    for(const workspaceId of workspaces)await syncBillingLedger(tx,workspaceId,ts);
+    for(const r of rows)await tx.execute({
+      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
+      args: [newId("cg"), r.workspaceId, r.credits, r.note.slice(0, 200), r.kind, r.by, ts],
+    });
+    for(const workspaceId of workspaces)await syncBillingLedger(tx,workspaceId,ts);
+  });
 }
 
 export type GrantSplit = { paid: number; free: number };
@@ -807,10 +757,16 @@ export async function resetPlatformLayer(key: LayerKey): Promise<PlatformLayer> 
  * put on one — and null rather than a default, because "no plan" and "the
  * cheapest plan" are different states and only one of them carries ceilings.
  */
-export async function planOf(ws: { planId?: PlanId | null } | null | undefined): Promise<PlanDef | null> {
-  if (!ws?.planId) return null;
+export async function planOf(ws: { id?: string; planId?: PlanId | null } | null | undefined): Promise<PlanDef | null> {
+  if (!ws) return null;
+  const { paidPlanEntitlement, effectivePlanId } = await import("./billingLedger");
+  const paid = ws.id ? await paidPlanEntitlement(ws.id) : null;
+  // Billing never writes plan_id: pre-existing paid labels remain explicit admin entitlements.
+  // A lapsed subscriber without that override returns to Invite; existing work is never removed.
+  const id = effectivePlanId(paid, ws.planId);
+  if (!id) return null;
   const layer = await getPlatformLayer().catch(() => null);
-  return planById(layer?.plans ?? DEFAULT_PLANS, ws.planId);
+  return planById(layer?.plans ?? DEFAULT_PLANS, id);
 }
 
 /** How many people can still open this workspace. Disabled seats do not count. */

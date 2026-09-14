@@ -35,12 +35,15 @@ export type CatalogModel = {
   maxTokens: number | null;
   /** Raw pricing, exactly as the gateway states it. Shapes vary by type. */
   pricing: Record<string, unknown> | null;
+  /** Accepted inputs reported by /v1/models; absence is not evidence of vision support. */
+  inputModalities?: string[];
 };
 
 type RawModel = {
   id?: string; name?: string; type?: string; description?: string;
   context_window?: number; max_tokens?: number;
   pricing?: Record<string, unknown> | null;
+  modalities?: { input?: unknown };
 };
 
 /* ── The read, cached ─────────────────────────────────────────────────── */
@@ -80,6 +83,7 @@ export async function catalog(force = false): Promise<CatalogModel[]> {
         contextWindow: m.context_window ?? null,
         maxTokens: m.max_tokens ?? null,
         pricing: m.pricing ?? null,
+        inputModalities: Array.isArray(m.modalities?.input) ? m.modalities.input.filter((v): v is string => typeof v === 'string') : [],
       }));
     if (models.length) cache = { at: Date.now(), models };
     return models;

@@ -4,6 +4,8 @@ import { startTraining, trainCostUsd } from "@/lib/identities";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
 
+import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 type Ctx = { params: Promise<{ id: string }> };
@@ -32,6 +34,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
+  return withGenerationRequest(req, got.user.id, async () => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   if (body.consent !== true) return NextResponse.json({ error: "Confirm you have the right to train on this person's face." }, { status: 400 });
@@ -55,6 +58,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
     const identity = await startTraining(id, { by: got.user.id });
     return NextResponse.json({ identity: { ...identity, loraUrl: undefined, configUrl: undefined, trained: false } }, { status: 202 });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    return NextResponse.json({ error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 400 });
   }
+  });
 });

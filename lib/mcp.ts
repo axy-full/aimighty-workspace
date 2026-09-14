@@ -269,8 +269,9 @@ export async function runTool(
 
     case "usage_summary": {
       const u = (await call("/api/usage/summary")) as {
-        spentUsd: number; purchasedUsd: number; remainingUsd: number; pending: number;
+        spentUsd: number; purchasedUsd: number; remainingUsd: number; pending: number; unit?: "credits"; spentCredits?: number; credits?: {granted:number;used:number;balance:number};
       };
+      if(u.unit==='credits'&&u.credits)return `Spent all time: ${u.spentCredits??u.credits.used} cr\nCredit recorded: ${u.credits.granted} cr\nRemaining: ${u.credits.balance} cr\nRendering now: ${u.pending}`;
       return (
         `Spent all time: ${usd(u.spentUsd)}\nCredit recorded: ${usd(u.purchasedUsd)}\n` +
         `Remaining: ${usd(u.remainingUsd)}\nRendering now: ${u.pending}`

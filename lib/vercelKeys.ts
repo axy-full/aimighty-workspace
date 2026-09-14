@@ -26,30 +26,55 @@ function teamQuery(): string {
   return `teamId=${encodeURIComponent(process.env.VERCEL_TEAM_ID ?? "")}`;
 }
 function headers(): Record<string, string> {
-  return { Authorization: `Bearer ${process.env.VERCEL_TOKEN ?? ""}`, "Content-Type": "application/json" };
+  return {
+    Authorization: `Bearer ${process.env.VERCEL_TOKEN ?? ""}`,
+    "Content-Type": "application/json",
+  };
 }
 
 /** Create a gateway key named for the workspace. The plaintext comes back once. */
-export async function mintGatewayKey(name: string): Promise<{ id: string; key: string }> {
-  if (!gatewayMintConfigured()) throw new Error("VERCEL_TOKEN and VERCEL_TEAM_ID are not set.");
+export async function mintGatewayKey(
+  name: string,
+): Promise<{ id: string; key: string }> {
+  if (!gatewayMintConfigured())
+    throw new Error("VERCEL_TOKEN and VERCEL_TEAM_ID are not set.");
   const res = await fetch(`${API}/v1/api-keys?${teamQuery()}`, {
-    method: "POST", headers: headers(), signal: AbortSignal.timeout(15_000),
-    body: JSON.stringify({ purpose: "ai-gateway", name: name.slice(0, 80), metadata: { spendAttribution: "team" } }),
+    method: "POST",
+    headers: headers(),
+    signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({
+      purpose: "ai-gateway",
+      name: name.slice(0, 80),
+      metadata: { spendAttribution: "team" },
+    }),
   });
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const j: any = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Vercel answered ${res.status}${j?.error?.message ? `: ${j.error.message}` : ""}`);
+  if (!res.ok)
+    throw new Error(
+      `Vercel answered ${res.status}${j?.error?.message ? `: ${j.error.message}` : ""}`,
+    );
   const key = j?.apiKeyString ?? j?.apiKey?.apiKeyString ?? null;
   const id = j?.id ?? j?.apiKey?.id ?? null;
-  if (typeof key !== "string" || !key || typeof id !== "string" || !id) throw new Error("Vercel's answer carried no key.");
+  if (typeof key !== "string" || !key || typeof id !== "string" || !id)
+    throw new Error("Vercel's answer carried no key.");
   return { id, key };
 }
 
 /** Invalidate a minted key — when its workspace goes, or its owner asks. */
 export async function revokeGatewayKey(id: string): Promise<void> {
-  if (!gatewayMintConfigured()) return;
-  const res = await fetch(`${API}/v1/api-keys/${encodeURIComponent(id)}?${teamQuery()}`, {
-    method: "DELETE", headers: headers(), signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok && res.status !== 404) throw new Error(`Vercel answered ${res.status} revoking the key.`);
+  if (!gatewayMintConfigured())
+    throw new Error(
+      "Gateway key revocation is not configured; cleanup must be retried.",
+    );
+  const res = await fetch(
+    `${API}/v1/api-keys/${encodeURIComponent(id)}?${teamQuery()}`,
+    {
+      method: "DELETE",
+      headers: headers(),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!res.ok && res.status !== 404)
+    throw new Error(`Vercel answered ${res.status} revoking the key.`);
 }

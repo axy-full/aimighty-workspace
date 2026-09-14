@@ -10,6 +10,9 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { listChecks, spendSince, computedSpendUpTo } from "@/lib/reconcile";
 import { storageLedger } from "@/lib/storageCost";
 import { billedCreditsSum } from "@/lib/creditSql";
+import {creditUsage} from "@/lib/creditUsage";
+import {creditsApply} from "@/lib/credits";
+import {requireTenant} from "@/lib/tenant";
 import { billCredits, marginKeyOf } from "@/lib/creditTerms";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +24,7 @@ export const maxDuration = 60;
 export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
+  if(creditsApply(requireTenant()))return NextResponse.json(await creditUsage(),{headers:{"Cache-Control":"no-store"}});
   await ready();
   try { await syncActive(); } catch { /* report on what we have */ }
 

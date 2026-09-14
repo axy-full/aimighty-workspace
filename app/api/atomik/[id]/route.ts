@@ -6,6 +6,8 @@ import {
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { effectiveRules } from "@/lib/rules";
+import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
+import { PaidTextError } from "@/lib/paidText";
 import { cleanAttachments } from "@/lib/attachments";
 
 export const dynamic = "force-dynamic";
@@ -49,11 +51,9 @@ export const DELETE = withTenant(async function DELETE(_req: NextRequest, ctx: C
 /**
  * Say something, and let the agent answer.
  *
- * The turn runs inside the request rather than on a queue. A planning call
- * is seconds, not minutes, and the person is watching the composer — moving
- * it to a worker would buy durability for the one part of this system that
- * costs almost nothing to repeat, at the price of never being able to show
- * them what went wrong.
+ * The turn runs inside the request. Its durable request claim and paid
+ * reservation are saved before submission, so an interrupted response
+ * cannot cause a second paid attempt.
  */
 export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   /* A turn is a paid call to the gateway, so this is a spending route and
@@ -62,10 +62,11 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
      planner and bill the workspace for it. */
   const got = await requireRender();
   if (got.response) return got.response;
+  return withGenerationRequest(req, got.user.id, async () => {
   const { id } = await ctx.params;
 
   const b = await req.json().catch(() => ({}));
-  const text = String(b.text ?? "").trim();
+  const text = String(b.text ?? "").trim().slice(0, 20000);
   if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
 
   const loaded = await getChat(id);
@@ -77,10 +78,12 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     await runTurn(id, { context, rules: writerRulesByScope(await effectiveRules()) });
   } catch (e) {
     await patchChat(id, { status: "failed" });
+    const known = e instanceof PaidTextError || e instanceof SpendReservationError;
     return NextResponse.json(
-      { error: (e as Error).message, chat: await getChat(id) },
-      { status: 502 },
+      { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: await getChat(id) },
+      { status: known ? e.status : 502 },
     );
   }
   return NextResponse.json(await getChat(id));
+  });
 });

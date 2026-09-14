@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import WorkspaceMenu,{type WorkbenchAccount} from "./WorkspaceMenu";
+import {clearPrivateLocal} from "@/lib/session";
 import React, {
   useState,
   useLayoutEffect,
@@ -139,6 +141,7 @@ import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {useProductionJobs} from './use-production-jobs';
 import {uploadWorkbench} from '@/lib/workbench/upload';
 import {AssetPreview} from './AssetPreview';
+import {createMovieHandoff} from '@/lib/workbench/movie-handoff';
 import DesignReview from "./design-review";
 import { CrewPanel, ScriptPanel, StoryboardPanel } from "./production-crew";
 import { CREW, ScriptScene } from "@/lib/workbench/crew";
@@ -309,11 +312,13 @@ export default function Studio({
   sourceMode = false,
   signedIn = false,
   storageKey = "particl-visitor",
+  initialAccount = null,
 }: {
   apiBase?: string;
   sourceMode?: boolean;
   signedIn?: boolean;
   storageKey?: string;
+  initialAccount?: WorkbenchAccount|null;
 }) {
   const [generationTarget,setGenerationTarget]=useState<(GenerationTarget & {draftId:string})|null>(null);
   const [atomikTarget,setAtomikTarget]=useState<(AtomikRunTarget & {draftId:string})|null>(null);
@@ -332,6 +337,8 @@ export default function Studio({
     if (mobile) setAtomOpen(false);
   }
   const [scope, setScope] = useState("My space");
+  const [welcomeChoice,setWelcomeChoice]=useState(false);
+  const [samplePreview,setSamplePreview]=useState(false);
   const [atomOpen, setAtomOpen] = useState(false);
   const [atomTab, setAtomTab] = useState("genie");
   const [model, setModel] = useState("auto");
@@ -364,6 +371,7 @@ export default function Studio({
   const [saveState, setSaveState] = useState(signedIn?"Loading":"Sample project");
   const [saveError, setSaveError] = useState("");
   const [ready, setReady] = useState(false);
+  const [initializedScope, setInitializedScope] = useState<string|null>(null);
   const [transitioning,setTransitioning]=useState(false);
   const transitioningRef=useRef(false);
   const readyRef=useRef(false);
@@ -494,6 +502,7 @@ export default function Studio({
     return false;
   },[flushSave]);
   async function ensureSaved(expectedId=pRef.current.id,refreshIdentities=false){
+    if(!readyRef.current&&signedIn){toast.error("Create a production to save your work and generate takes.");return false;}
     if(!signedIn){toast.error("Sign in to save your production.");return false;}
     if(transitioningRef.current||pRef.current.id!==expectedId)return false;
     if(refreshIdentities)savedSnapshots.current.delete(expectedId);
@@ -541,7 +550,11 @@ export default function Studio({
       if(transition.wasReady&&signedIn&&!(await drainSaves(transition.from)))throw new Error('Your latest changes could not be saved. The current production remains open.');
       if(transition.token!==loadToken.current)return;
       const persisted=data.project;
-      const next=persisted?{...persisted}:(id==='dune-studies'?seedProject():newProject('Untitled production'));
+      if(!persisted){
+        setProjects(data.projects??[]);setProductions(data.productions??[]);setWelcomeChoice(true);setSamplePreview(false);setHome(true);readyRef.current=false;setReady(false);setSaveState('Choose a production');return;
+      }
+      setWelcomeChoice(false);setSamplePreview(false);
+      const next={...persisted};
       if(data.shared){next.sharedAssets=data.shared.assets;next.sharedNodes=data.shared.nodes;next.bibleVersion=data.shared.version;next.sharedAssetIds=data.shared.assets.map(a=>a.id);next.sharedNodeIds=data.shared.nodes.map(n=>n.id);}
       adoptProject(next,data.revision,Boolean(persisted),persisted??next);
       setProductions(data.productions??[]);setProjects(data.projects??[]);
@@ -555,8 +568,10 @@ export default function Studio({
     // The shared async loader hydrates from the server after flushing any pending write.
     let last='dune-studies';
     try{last=localStorage.getItem(storageKey)||last;}catch{/* Hydrate the default draft when local storage is disabled. */}
+    let active=true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the private draft from the server on mount.
-    void loadProject(last);
+    void loadProject(last).finally(()=>{if(active)setInitializedScope(storageKey);});
+    return()=>{active=false;};
   }, [loadProject,signedIn,storageKey]);
   useEffect(() => {
     if (!ready||!signedIn||transitioning) return;
@@ -780,6 +795,7 @@ export default function Studio({
     for (const file of Array.from(files)) {
       try {
         if(!signedIn)throw new Error('Sign in to upload production media.');
+        if(!readyRef.current)throw new Error('Create a production before uploading media.');
         const data=await uploadWorkbench(file);
         received.push({
           id: data.id,
@@ -905,7 +921,7 @@ export default function Studio({
       if(transition.token!==loadToken.current)return;
       if(transition.wasReady&&signedIn&&!(await drainSaves(transition.from)))throw new Error('Your latest changes could not be saved.');
       if(transition.token!==loadToken.current)return;
-      adoptProject(data.project,0,false);setStage('canvas');setScope('My space');toast.success('Your own working space is ready.');
+      setWelcomeChoice(false);setSamplePreview(false);adoptProject(data.project,0,false);setStage('canvas');setScope('My space');toast.success('Your own working space is ready.');
     }catch(error){if(transition.token===loadToken.current){readyRef.current=transition.wasReady;setReady(transition.wasReady);toast.error(error instanceof Error?error.message:'Could not open production.');}}
     finally{endTransition(transition.token);}
   }
@@ -1001,10 +1017,18 @@ export default function Studio({
     const transition=await beginTransition();if(!transition)return;
     try{
       if(transition.token!==loadToken.current)return;
-      const next=newProject(name);adoptProject(next,0,false);
+      const next=newProject(name);setWelcomeChoice(false);setSamplePreview(false);adoptProject(next,0,false);
       setNewName('');setDialog(null);setStage('brief');setScope('My space');setContextIds([]);
     }finally{endTransition(transition.token);}
   }
+  async function leaveWorkspace(path:string,action?:{kind:'switch';id:string}|{kind:'logout'}){
+    const transition=await beginTransition();if(!transition)return;
+    try{
+      if(action){const response=await fetch(action.kind==='switch'?'/api/workspaces/switch':'/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action.kind==='switch'?{id:action.id}:{})});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'Your account could not be changed.');}clearPrivateLocal();}
+      window.location.assign(path);
+    }catch(error){readyRef.current=transition.wasReady;setReady(transition.wasReady);setSaveState(transition.wasReady?'Saved':'Choose a production');toast.error(error instanceof Error?error.message:'Your current work has been kept. Try again.');endTransition(transition.token);}
+  }
+  function exploreSample(){setWelcomeChoice(false);setSamplePreview(true);const sample=seedProject();pRef.current=sample;setP(sample);setStage('canvas');setSaveState('Sample preview');setSelectedNode('scene');}
   function focusShot(s: Shot) {
     setShotId(s.id);
     let start = 0;
@@ -1026,7 +1050,7 @@ export default function Studio({
         <div
           className={
             "studio-shell studio-redesign " +
-            (home ? "is-home " : "") +
+            (home ? "is-home " : "") + (welcomeChoice ? "is-welcome " : "") +
             (sequenceExpanded ? "mobile-sequence-expanded" : "")
           }
           inert={transitioning?true:undefined}
@@ -1122,7 +1146,7 @@ export default function Studio({
                     <DropdownMenuItem onClick={() => setDialog("shortcuts")}>
                       Keyboard shortcuts
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild><a href={signedIn?'/settings':'/login'}>{signedIn?'Account & workspace':'Sign in'}</a></DropdownMenuItem>
+                    <DropdownMenuItem onSelect={()=>void leaveWorkspace(signedIn?'/settings':'/login')}>{signedIn?'Account & workspace':'Sign in'}</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setDialog("connections")}>
                       Connected engines
                     </DropdownMenuItem>
@@ -1137,14 +1161,13 @@ export default function Studio({
                       </DropdownMenuItem>
                     )}
                     {sourceMode && (
-                      <DropdownMenuItem asChild>
-                        <Link href="/make/video">Open existing generation tools</Link>
-                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={()=>void leaveWorkspace("/make/video")}>Open existing generation tools</DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
             </header>
+            <div className="workbench-account-bar"><WorkspaceMenu initial={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/></div>
             <div className="project-bar">
               <div className="project-breadcrumb">
                 <button onClick={() => setHome(true)}>Productions</button>
@@ -1271,7 +1294,9 @@ export default function Studio({
                   (stage === "canvas" && !home ? "graph-area" : "")
                 }
               >
-                {home && (
+                {welcomeChoice&&<section className="production-welcome"><span className="eyebrow">YOUR WORKSPACE IS READY</span><h1>What are you making next?</h1><p>Start a production for your team, or explore how a brief becomes a sequence in the sample workspace.</p><div className="production-welcome-actions"><Button className="btn primary" onClick={()=>setDialog('project')}>Start a production<Plus size={16}/></Button><Button className="btn" onClick={exploreSample}>Explore sample<ArrowUpRight size={16}/></Button></div>{projects.length>0&&<div className="production-welcome-existing"><h2>Your saved productions</h2>{projects.map(project=><button key={project.id} onClick={()=>{void loadProject(project.id);setStage('canvas')}}>{project.name}<ArrowUpRight size={15}/></button>)}</div>}{productions.length>0&&<div className="production-welcome-existing"><h2>Workspace productions</h2>{productions.map(project=><button key={project.id} onClick={()=>void openProduction(project.id)}>{project.name}<ArrowUpRight size={15}/></button>)}</div>}<div className="production-welcome-steps"><span>01 · Name your production</span><span>02 · Bring your references</span><span>03 · Make your first take</span><span>04 · Review and deliver</span></div><button className="workbench-welcome-team" onClick={()=>void leaveWorkspace('/team')}>Invite your team</button></section>}
+                {samplePreview&&<div className="sample-preview-banner"><span>Sample preview · Create a production to save your own work.</span><button onClick={()=>setDialog('project')}>Start a production</button></div>}
+                {home && !welcomeChoice && (
                   <div className="production-home">
                     <div className="home-heading">
                       <div>
@@ -1375,7 +1400,7 @@ export default function Studio({
                     </div>
                   </div>
                 )}
-                {!home && (
+                {!home && !welcomeChoice && (
                   <>
                     {stage !== "canvas" && (
                       <div className="page-heading">
@@ -2294,7 +2319,7 @@ export default function Studio({
                                     />
                                   )}
                                   <span>
-                                    Scratch audio plays independently.
+                                    Preview plays independently. Movie export syncs this track from 00:00.
                                   </span>
                                 </>
                               )}
@@ -2307,6 +2332,7 @@ export default function Studio({
                       <div className="stage-scroll">
                         <div className="delivery-grid">
                           <div className="delivery-main">
+                            <section className="movie-export"><h3>Final movie</h3><p>Render the selected takes and sound into a downloadable MP4 or WebM, on this device.</p><button className="btn primary large" onClick={()=>{try{const path=createMovieHandoff(pRef.current,storageKey);void leaveWorkspace(path);}catch(error){toast.error(error instanceof Error?error.message:'This browser cannot prepare the export.');}}}>Open movie renderer</button><p className="movie-limit">Up to 3 minutes · 720p or 1080p · no generation credits</p></section>
                             <span className="eyebrow">
                               THE EDITORIAL HANDOFF
                             </span>
@@ -2844,6 +2870,7 @@ export default function Studio({
               </MobilePanel>
             </div>
             <MobileNavigation
+              disabled={(signedIn&&initializedScope!==storageKey)||transitioning}
               home={home}
               stage={stage}
               projectName={p.name}
@@ -3111,7 +3138,7 @@ export default function Studio({
                 ))}
               </div>
             )}
-            {dialog === "connections" && <div className="connection-info"><p>These models are available for Atomik. Choose an image or video engine when generating a take.</p><div className="provider-list">{jobs.models.length?jobs.models.map(m=><div key={m.id}><span>{m.name}</span><small>Available</small></div>):<p>Sign in to view configured reasoning models.</p>}</div><p>Canvas edits, private versions, shared project bibles, source uploads, sequence timing and exports are saved in your workspace. Website links are references; arbitrary website content is not automatically fetched. Audio remains a separate scratch track. Final video encoding and NLE conform validation are not included.</p><a href="/settings">Workspace settings</a></div>}
+            {dialog === "connections" && <div className="connection-info"><p>These models are available for Atomik. Choose an image or video engine when generating a take.</p><div className="provider-list">{jobs.models.length?jobs.models.map(m=><div key={m.id}><span>{m.name}</span><small>Available</small></div>):<p>Sign in to view configured reasoning models.</p>}</div><p>Canvas edits, private versions, shared project bibles, source uploads, sequence timing and exports are saved in your workspace. Website links are references; arbitrary website content is not automatically fetched. Delivery renders a synchronized final movie on your device, or exports original media and an EDL. Target-NLE conform validation remains separate.</p><a href="/settings">Workspace settings</a></div>}
             {dialog === "review" && <DesignReview />}
           </DialogContent>
         </Dialog>

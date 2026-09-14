@@ -7,6 +7,7 @@ import { setSetting } from "@/lib/settings";
 import { listWorkspaces } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
+import { retryWorkspacePurges } from "@/lib/purge";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -45,8 +46,17 @@ export async function GET(req: Request) {
   }
 
   const ua = req.headers.get("user-agent") ?? "";
-  const by = req.headers.get("x-vercel-cron") || /vercel-cron/i.test(ua) ? "vercel" : "manual";
-  const totals = { pending: 0, atRisk: 0, rescued: 0, completed: 0, workspaces: 0 };
+  const by =
+    req.headers.get("x-vercel-cron") || /vercel-cron/i.test(ua)
+      ? "vercel"
+      : "manual";
+  const totals = {
+    pending: 0,
+    atRisk: 0,
+    rescued: 0,
+    completed: 0,
+    workspaces: 0,
+  };
 
   /* Every workspace has its own database, so the heartbeat visits each in
      turn: pending renders pulled into storage, faces mid-training asked
@@ -61,33 +71,51 @@ export async function GET(req: Request) {
           await syncPending(30);
           await syncTrainingIdentities(10).catch(() => {});
           await backfillSizes().catch(() => {});
-          await releaseHeldJobs({ defer: (fn) => afterResponse(fn) }).catch(() => {});
+          await releaseHeldJobs({ defer: (fn) => afterResponse(fn) }).catch(
+            () => {},
+          );
         } catch (e) {
-          console.error(`cron sync failed for ${ws.slug}:`, (e as Error).message);
+          console.error(
+            `cron sync failed for ${ws.slug}:`,
+            (e as Error).message,
+          );
         }
         const after = await counts();
         totals.workspaces++;
-        totals.pending += after.pending; totals.atRisk += after.atRisk;
+        totals.pending += after.pending;
+        totals.atRisk += after.atRisk;
         totals.rescued += Math.max(0, before.atRisk - after.atRisk);
         totals.completed += Math.max(0, before.pending - after.pending);
         try {
           await setSetting("lastCronAt", String(Date.now()), "cron");
           await setSetting("lastCronBy", by, "cron");
           await setSetting("lastCronAgent", ua.slice(0, 120), "cron");
-          await setSetting("lastCronResult", JSON.stringify({
-            pending: after.pending, atRisk: after.atRisk,
-            rescued: Math.max(0, before.atRisk - after.atRisk),
-            completed: Math.max(0, before.pending - after.pending),
-          }), "cron");
+          await setSetting(
+            "lastCronResult",
+            JSON.stringify({
+              pending: after.pending,
+              atRisk: after.atRisk,
+              rescued: Math.max(0, before.atRisk - after.atRisk),
+              completed: Math.max(0, before.pending - after.pending),
+            }),
+            "cron",
+          );
         } catch (e) {
-          console.error("cron: could not record the run:", (e as Error).message);
+          console.error(
+            "cron: could not record the run:",
+            (e as Error).message,
+          );
         }
       } catch (e) {
-        console.error(`cron: workspace ${ws.slug} unreachable:`, (e as Error).message);
+        console.error(
+          `cron: workspace ${ws.slug} unreachable:`,
+          (e as Error).message,
+        );
       }
     });
   }
 
+  const cleanup = await retryWorkspacePurges();
   return NextResponse.json({
     ok: true,
     workspaces: totals.workspaces,
@@ -95,6 +123,7 @@ export async function GET(req: Request) {
     videosAtRisk: totals.atRisk,
     rescuedThisRun: totals.rescued,
     completedThisRun: totals.completed,
+    cleanup,
   });
 }
 

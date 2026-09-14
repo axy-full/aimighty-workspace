@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, withTenant } from "@/lib/auth";
-import { enhancePrompt, activeWriter } from "@/lib/enhance";
+import { activeWriter } from "@/lib/enhance";
 import { invalidateSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * One real, tiny refine, so an admin can hear the chosen writer answer from
- * the Settings screen — right after topping up gateway credits, say —
- * rather than discovering on a paid render that it could not. Costs about
- * a tenth of a cent on Sonnet; nothing is stored.
+ * Configuration check only. A settings probe must not trigger unquoted,
+ * unmetered generation. A priced Atomik request verifies actual generation.
  */
 export const POST = withTenant(async function POST() {
   const got = await requireAdmin();
@@ -19,26 +17,25 @@ export const POST = withTenant(async function POST() {
   const writer = await activeWriter();
   if (writer.writer === "none") {
     return NextResponse.json({
-      ok: true, writer, ms: 0,
-      sample: "Pro: prompts reach the engine exactly as written. There is no writer to test.",
+      ok: true,
+      writer,
+      ms: 0,
+      sample:
+        "Pro: prompts reach the engine exactly as written. There is no writer to test.",
     });
   }
-  const t0 = Date.now();
-  try {
-    const r = await enhancePrompt({
-      prompt: "a woman walks into a bar",
-      citations: [],
-      model: "dreamina-seedance-2-5-260628",
-      durationS: 5,
-      task: "generate",
-      provider: writer.provider === "none" ? undefined : writer.provider,
-    });
-    return NextResponse.json({
-      ok: true, writer, model: r.model, ms: Date.now() - t0,
-      inTokens: r.inTokens, outTokens: r.outTokens, move: r.move ?? null,
-      sample: r.text.slice(0, 240),
-    });
-  } catch (e) {
-    return NextResponse.json({ ok: false, writer, ms: Date.now() - t0, error: (e as Error).message });
-  }
+  return NextResponse.json(
+    {
+      ok: writer.configured,
+      writer,
+      model: writer.model,
+      ms: 0,
+      check: "configuration",
+      generationVerified: false,
+      sample: writer.configured
+        ? "Writer credentials are configured. Create a priced Atomik draft to verify generation."
+        : "Connect the writer in workspace settings before creating a draft.",
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 });

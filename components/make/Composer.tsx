@@ -9,7 +9,7 @@ import { MODELS, DEFAULT_MODEL_ID, getModel, estimateTokens, costUsd } from "@/l
 import { estimateVideo, estimateImage } from "@/lib/rateTable";
 import { COUNTS, newBatchId } from "@/lib/variations";
 import { CATEGORIES, composePrompt, detectSpec, type ShotSpec } from "@/lib/studio";
-import { loadDraft, saveDraft, clearDraft } from "@/lib/draft";
+import { saveDraft, clearDraft } from "@/lib/draft";
 import { uploadFile } from "@/lib/uploadClient";
 import type { RefItem, ImageRole } from "@/lib/refs";
 import type { CastMember } from "@/lib/cast";
@@ -22,6 +22,10 @@ import { useToast } from "@/components/ui/Toast";
 import { useAtomikRail } from "@/lib/atomikRail";
 import NewAssetSheet from "@/components/assets/NewAssetSheet";
 import type { ElementKind } from "@/lib/rig";
+import {useGenerationBatch,type GenerationBatch} from "@/lib/useGenerationBatch";
+import {lockedClaim} from "@/lib/usePaidAction";
+import {pendingGenerationKey,readPendingGeneration,claimPendingGeneration,clearPendingGeneration} from "@/lib/workbench/pending-generation";
+import {useComposerPersistence,notifyComposerStorage,type PendingAudio} from "@/lib/useComposerPersistence";
 
 /**
  * The one composer (design/particl-v2/README.md §10; board 8a), identical
@@ -84,19 +88,34 @@ const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 /** `@Name` tokens in a prompt, the way the composer highlights and the engine reads them. */
 const NAME_RE = /@([A-Za-z][\w'-]*(?: (?=[A-Z])[A-Z][\w'-]*)*)/g;
 
-export default function Composer({ kind, onMade, initialRef = null, className = "" }: { kind: ComposerKind; onMade?: () => void; initialRef?: string | null; className?: string }) {
+type ComposerProps={kind:ComposerKind;onMade?:()=>void;initialRef?:string|null;className?:string};
+export default function Composer(props:ComposerProps){
+  const {workspace,email,signedIn}=useSession();
+  const scope=JSON.stringify([signedIn?workspace?.id:null,signedIn?email:null,props.kind]);
+  return <ScopedComposer key={scope} {...props} scope={scope}/>;
+}
+function ScopedComposer({kind,onMade,initialRef=null,className="",scope}:ComposerProps&{scope:string}) {
   const router = useRouter();
   const phone = usePhone();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const { signedIn, rates } = useSession();
+  const { signedIn, rates,workspace,email } = useSession();
   const signIn = useSignInHref();
   const money = useMoney();
   const toast = useToast();
   const rail = useAtomikRail();
-  const surface = `make:${kind}`;
+  const surface = `make:${scope}`;
+  const recoveryKey=pendingGenerationKey(scope,'unfiled',surface);
+  const persisted=useComposerPersistence(surface,recoveryKey,signedIn,kind==='audio');
+  const pendingAudio=persisted.pending??null;
+  const generationBatch=useGenerationBatch(surface,kind!=="audio");
+  const pendingBatch=generationBatch.pending;
+  const batchDisplay=pendingBatch?.display;
 
   /* ── the words ─────────────────────────────────────────────────────── */
-  const [prompt, setPromptState] = useState(() => loadDraft(surface, signedIn));
+  const [promptState,setPromptState]=useState<string|null>(null);
+  const recoveredBody=pendingAudio?JSON.parse(pendingAudio.body):null;
+  const recoveredText=recoveredBody?.text;
+  const prompt=batchDisplay?.prompt??promptState??(typeof recoveredText==='string'?recoveredText:persisted.draft??'');
   const setPrompt = useCallback((v: string) => { setPromptState(v); saveDraft(surface, v); }, [surface]);
   const field = useRef<HTMLTextAreaElement>(null);
   const insertAtCaret = (token: string) => {
@@ -110,7 +129,8 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   };
 
   /* ── references ────────────────────────────────────────────────────── */
-  const [refs, setRefs] = useState<RefItem[]>([]);
+  const [refsChoice, setRefs] = useState<RefItem[]>([]);
+  const refs=batchDisplay?.refs??refsChoice;
   const [uploading, setUploading] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const addFiles = async (files: FileList | File[]) => {
@@ -135,18 +155,25 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
       if (u) setRefs((prev) => prev.some((r) => r.id === u.id) ? prev : [...prev, { ...u, sha256: "", base64Bytes: 0, role: u.kind === "video" ? "reference_video" : kind === "video" ? "first_frame" : "reference_image", verified: true }]);
     }).catch(() => {});
   }, [initialRef, signedIn, kind]);
-  const [useAs, setUseAs] = useState<"loose" | "first">("loose");
+  const [useAsChoice, setUseAs] = useState<"loose" | "first">("loose");
+  const useAs=batchDisplay?.useAs??useAsChoice;
 
   /* ── the engine and its settings (§1: read from the engine, never typed) ── */
   const choices = useMemo(() => MODELS.filter((m) => m.kind === (kind === "image" ? "image" : "video") && !m.hidden && (kind !== "video" || m.durations.length > 0)), [kind]);
-  const [modelId, setModelId] = useState<string>(() => kind === "image" ? (MODELS.find((m) => m.kind === "image" && !m.hidden)?.id ?? DEFAULT_MODEL_ID) : DEFAULT_MODEL_ID);
+  const [modelChoice, setModelId] = useState<string>(() => kind === "image" ? (MODELS.find((m) => m.kind === "image" && !m.hidden)?.id ?? DEFAULT_MODEL_ID) : DEFAULT_MODEL_ID);
+  const modelId=batchDisplay?.modelId??modelChoice;
   const model = getModel(modelId);
   const [listOpen, setListOpen] = useState(false);
-  const [ratio, setRatio] = useState<string>(() => (model.ratios.includes("16:9") ? "16:9" : model.ratios[0]));
-  const [seconds, setSeconds] = useState<number>(() => (model.durations.includes(5) ? 5 : model.durations[0] ?? 5));
-  const [resolution, setResolution] = useState<string>(() => (model.resolutions.includes("1080p") ? "1080p" : model.resolutions.includes("1K") ? "1K" : model.resolutions[0]));
-  const [count, setCount] = useState(1);
-  const [audio, setAudio] = useState(true);
+  const [ratioChoice, setRatio] = useState<string>(() => (model.ratios.includes("16:9") ? "16:9" : model.ratios[0]));
+  const ratio=batchDisplay?.ratio??ratioChoice;
+  const [secondsChoice, setSeconds] = useState<number>(() => (model.durations.includes(5) ? 5 : model.durations[0] ?? 5));
+  const seconds=batchDisplay?.seconds??secondsChoice;
+  const [resolutionChoice, setResolution] = useState<string>(() => (model.resolutions.includes("1080p") ? "1080p" : model.resolutions.includes("1K") ? "1K" : model.resolutions[0]));
+  const resolution=batchDisplay?.resolution??resolutionChoice;
+  const [countChoice, setCount] = useState(1);
+  const count=batchDisplay?.count??countChoice;
+  const [audioChoice, setAudio] = useState(true);
+  const audio=batchDisplay?.audio??audioChoice;
   const pickModel = (id: string) => {
     const m = getModel(id);
     setModelId(id); setListOpen(false);
@@ -165,7 +192,8 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
     return estimateVideo(rates, mId, res, secs, estimateTokens(res, ratio, secs), costUsd, { audio: withAudio && m.supportsAudio });
   }, [rates, ratio]);
   const unit = priceOf(modelId, resolution, seconds, audio, refs.filter((r) => r.kind === "image").length);
-  const price = unit == null ? null : unit * count;
+  const perTakePrice=unit==null?null:rates.unit==="cr"?Math.ceil(unit-1e-9):unit;
+  const price = perTakePrice == null ? null : perTakePrice * count;
   /** `19 CR / 5S` on a video chip; `3 CR / STILL` on an image chip. */
   const rateLine = (mId: string) => {
     const m = getModel(mId);
@@ -174,7 +202,8 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   };
 
   /* ── setup rows and cast (§10) ─────────────────────────────────────── */
-  const [spec, setSpec] = useState<ShotSpec>({});
+  const [specChoice, setSpec] = useState<ShotSpec>({});
+  const spec=batchDisplay?.spec??specChoice;
   const detected = useMemo(() => detectSpec(prompt), [prompt]);
   const rows = CATEGORIES.map((c) => ({ c, value: spec[c.key] ?? null })).filter((r) => r.value);
   const setRow = (key: string, value: string | null) => setSpec((s) => ({ ...s, [key]: value }));
@@ -184,7 +213,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   const { data: idTerms } = useApi<{ terms: { trainCostUsd: number } }>(signedIn && kind !== "audio" ? "/api/identities" : null, 0);
   /* 3b: a name the prompt cites that nobody has made yet. */
   const known = useMemo(() => new Set([...cast.map((m) => m.name.toLowerCase()), ...(elsData?.elements ?? []).map((e) => e.name.toLowerCase())]), [cast, elsData]);
-  const unknown = useMemo(() => kind === "audio" || !signedIn ? [] : [...new Set([...prompt.matchAll(NAME_RE)].map((m) => m[1]).filter((n) => !known.has(n.toLowerCase())))], [prompt, known, kind, signedIn]);
+  const unknown = useMemo(() => kind === "audio" || !signedIn || !!pendingBatch ? [] : [...new Set([...prompt.matchAll(NAME_RE)].map((m) => m[1]).filter((n) => !known.has(n.toLowerCase())))], [prompt, known, kind, signedIn, pendingBatch]);
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [sheetKind, setSheetKind] = useState<ElementKind>("character");
   const [pickFor, setPickFor] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -200,13 +229,19 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
 
   /* ── audio (§10: script, kind, voice with a sample, language, duration) ── */
   const { data: audioSetup } = useApi<AudioSetup>(kind === "audio" && signedIn ? "/api/audio" : null, 0);
-  const [track, setTrack] = useState<Track>("speech");
-  const [voiceId, setVoiceId] = useState("");
+  const [trackChoice,setTrack]=useState<Track>("speech");
+  const track:Track=recoveredBody?.task??trackChoice;
+  const [voiceChoice,setVoiceId]=useState("");
+  const voiceId:string=recoveredBody?.voiceId??voiceChoice;
   const [voiceQuery, setVoiceQuery] = useState("");
-  const [speechModel, setSpeechModel] = useState("");
-  const [lengthS, setLengthS] = useState(30);
-  const [sfxS, setSfxS] = useState<number | null>(null);
-  const [instrumental, setInstrumental] = useState(true);
+  const [speechChoice,setSpeechModel]=useState("");
+  const speechModel:string=recoveredBody?.modelId??speechChoice;
+  const [lengthChoice,setLengthS]=useState(30);
+  const lengthS:number=recoveredBody?.lengthMs?recoveredBody.lengthMs/1000:lengthChoice;
+  const [sfxChoice,setSfxS]=useState<number|null>(null);
+  const sfxS:number|null=recoveredBody?recoveredBody.durationSeconds??null:sfxChoice;
+  const [instrumentalChoice,setInstrumental]=useState(true);
+  const instrumental:boolean=recoveredBody?.instrumental??instrumentalChoice;
   const sample = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
   const voices = useMemo(() => audioSetup?.voices ?? [], [audioSetup]);
@@ -215,8 +250,29 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
   const sModel = (audioSetup?.speechModels ?? []).find((m) => m.id === (speechModel || audioSetup?.defaultSpeechModel)) ?? audioSetup?.speechModels[0] ?? null;
   const spokenS = Math.max(1, Math.round(words(prompt) / 2.5));
   const audioLen = track === "speech" ? spokenS : track === "music" ? lengthS : (sfxS ?? Math.min(30, Math.max(3, spokenS)));
-  const audioCredits = track === "speech" ? Math.ceil(prompt.length * (sModel?.creditsPerChar ?? 1)) : track === "sound" ? (audioSetup?.terms.sfxCredits ?? 200) : Math.ceil((lengthS / 60) * (audioSetup?.terms.musicCreditsPerMinute ?? 900));
-  const audioUsd = audioCredits * (audioSetup?.account?.usdPerCredit ?? 22 / 121_000);
+  const audioBody=useMemo(()=>{
+    const body:Record<string,unknown>={task:track,text:prompt,projectId:null,shotId:null,title:track==='speech'?`${voice?.name??'Voice'} · ${prompt.trim().slice(0,40)}`:prompt.trim().slice(0,60)};
+    if(track==='speech')Object.assign(body,{voiceId:voice?.id,voiceName:voice?.name,modelId:sModel?.id});
+    if(track==='sound')Object.assign(body,{durationSeconds:sfxS});
+    if(track==='music')Object.assign(body,{lengthMs:lengthS*1000,instrumental});
+    return JSON.stringify(body);
+  },[track,prompt,voice?.name,voice?.id,sModel?.id,sfxS,lengthS,instrumental]);
+  const [quote,setQuote]=useState<{body:string;estimatedCredits:number;price:number;unit:'cr'|'usd';error?:string}|null>(null);
+  const canQuote=kind==='audio'&&signedIn&&!!prompt.trim()&&(track!=='speech'||!!voice)&&!pendingAudio&&!persisted.error;
+  useEffect(()=>{
+    if(!canQuote)return;
+    const controller=new AbortController();
+    const timer=setTimeout(()=>{fetch('/api/audio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...JSON.parse(audioBody),quoteOnly:true}),signal:controller.signal}).then(async response=>{
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||'Audio pricing could not be loaded.');
+      if(!Number.isInteger(result.estimatedCredits)||result.estimatedCredits<0||!Number.isFinite(result.price)||result.price<0||!['cr','usd'].includes(result.unit))throw new Error('Audio pricing returned an invalid estimate.');
+      if(!controller.signal.aborted)setQuote({...result,body:audioBody});
+    }).catch(error=>{if(!controller.signal.aborted)setQuote({body:audioBody,estimatedCredits:0,price:0,unit:'cr',error:error.message})})},300);
+    return()=>{clearTimeout(timer);controller.abort()};
+  },[audioBody,canQuote]);
+  const currentQuote=quote?.body===audioBody&&!quote.error?quote:null;
+  const audioCostLabel=(value:{price?:number;unit?:'cr'|'usd';credits?:number})=>value.unit==='usd'&&typeof value.price==='number'?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:4}).format(value.price):`${Math.ceil(value.price??value.credits??0).toLocaleString()} cr`;
+  const costLabel=kind==='audio'?(pendingAudio?audioCostLabel(pendingAudio):currentQuote?audioCostLabel(currentQuote):canQuote&&quote?.body!==audioBody?'Getting quote…':'Quote unavailable'):pendingBatch?audioCostLabel({price:pendingBatch.display.price/pendingBatch.variants.length*(pendingBatch.variants.length-pendingBatch.cursor),unit:pendingBatch.display.unit}):money.price(price??0);
   const playSample = (v: Voice) => {
     if (!v.previewUrl) return;
     if (playing === v.id) { sample.current?.pause(); setPlaying(null); return; }
@@ -227,21 +283,31 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
 
   /* ── the press ─────────────────────────────────────────────────────── */
   const [busy, setBusy] = useState(false);
-  const ready = prompt.trim().length > 0 && !uploading && (kind !== "audio" || (track !== "speech" || Boolean(voice)));
+  const ready = !uploading && (kind === "audio" ? !persisted.error&&(!!pendingAudio||!!currentQuote) : !generationBatch.error&&(!!pendingBatch||prompt.trim().length>0&&price!==null));
   const render = async () => {
     if (!signedIn) { router.push(signIn); return; }
     if (!ready || busy || unknown.length) return;
     setBusy(true);
     try {
       if (kind === "audio") {
-        const body: Record<string, unknown> = { task: track, text: prompt, projectId: null, shotId: null, title: track === "speech" ? `${voice?.name ?? "Voice"} · ${prompt.trim().slice(0, 40)}` : prompt.trim().slice(0, 60) };
-        if (track === "speech") Object.assign(body, { voiceId: voice?.id, voiceName: voice?.name, modelId: sModel?.id });
-        if (track === "sound") Object.assign(body, { durationSeconds: sfxS });
-        if (track === "music") Object.assign(body, { lengthMs: lengthS * 1000, instrumental });
-        const r = await fetch("/api/audio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error ?? "Couldn't start.");
-        if (Array.isArray(j.notices) && j.notices.length) toast(j.notices.join(" · "));
+        if(!pendingAudio&&!currentQuote)return;
+        const proposed:PendingAudio=pendingAudio??{key:crypto.randomUUID(),body:JSON.stringify({...JSON.parse(audioBody),maxCredits:currentQuote!.estimatedCredits}),credits:currentQuote!.estimatedCredits,price:currentQuote!.price,unit:currentQuote!.unit};
+        const submitted=await lockedClaim(recoveryKey,()=>{
+          const saved=readPendingGeneration(localStorage,recoveryKey);
+          if(pendingAudio&&(!saved||saved.key!==pendingAudio.key))throw new Error("This audio request has already been recovered. Refresh before starting another.");
+          if(saved&&saved.body!==proposed.body)throw new Error("Recover the saved audio request before starting another.");
+          return claimPendingGeneration(localStorage,recoveryKey,proposed);
+        });
+        notifyComposerStorage();setMenu(null);
+        const r=await fetch('/api/audio',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':submitted.key,'X-Workspace-Id':workspace!.id,'X-Actor-Email':email!},body:submitted.body});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok){
+          if(r.headers.get('Idempotency-Status')==='complete'){await lockedClaim(recoveryKey,()=>clearPendingGeneration(localStorage,recoveryKey,submitted.key));notifyComposerStorage()}
+          throw new Error(j.error??'Audio submission could not be confirmed. Recover it with the same request.');
+        }
+        if(typeof j.id!=='string')throw new Error('Audio submission could not be confirmed. Recover the submitted audio before starting another.');
+        await lockedClaim(recoveryKey,()=>clearPendingGeneration(localStorage,recoveryKey,submitted.key));notifyComposerStorage();
+        if(Array.isArray(j.notices)&&j.notices.length)toast(j.notices.join(' · '));
       } else {
         const applied: ShotSpec = { ...detected, ...spec };
         const base = {
@@ -249,26 +315,25 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
           projectId: null, shotId: null, task: "generate", shotSpec: applied,
           references: refs.map((r) => ({ uploadId: r.id, role: r.role })),
           useAs: kind === "image" ? useAs : undefined,
+          ...(rates.unit === "cr" ? {maxCredits:perTakePrice} : {}),
         };
         const batchId = count > 1 ? newBatchId() : undefined;
-        let reason: string | null = null;
-        for (let i = 0; i < count; i++) {
-          const body = batchId ? { ...base, batchId, variation: i + 1, count } : base;
-          let r = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reason ? { ...body, reason } : body) });
-          let j = await r.json().catch(() => ({}));
-          if (r.status === 409 && j.needsReason) {
-            const said = await appPrompt(j.error ?? "Why render another?", "", j.line ?? "");
-            if (!said?.trim()) return;
-            reason = said.trim();
-            r = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, reason }) });
-            j = await r.json().catch(() => ({}));
-          }
-          if (!r.ok) throw new Error(j.error ?? "Submit failed.");
-          if (Array.isArray(j.notices) && j.notices.length) toast(j.notices.join(" · "));
-        }
+        const proposed:GenerationBatch=pendingBatch??{
+          id:crypto.randomUUID(),cursor:0,
+          variants:Array.from({length:count},(_,i)=>({key:crypto.randomUUID(),body:JSON.stringify(batchId?{...base,batchId,variation:i+1,count}:base)})),
+          display:{prompt,modelId,ratio,resolution,seconds,count,audio,refs,useAs,spec,price:price!,unit:rates.unit},
+        };
+        setMenu(null);setListOpen(false);setPickFor(null);
+        const finished=await generationBatch.run(proposed,{
+          review:async refusal=>refusal.needsReason?(await appPrompt(refusal.message,"",refusal.line??""))?.trim()||null:undefined,
+          notices:notices=>toast(notices.join(" · ")),
+        });
+        if(!finished)return;
+        clearDraft(surface);setPromptState("");setRefs([]);
+        await generationBatch.complete(proposed.id);
       }
       clearDraft(surface); setPromptState(""); setRefs([]);
-      toast(`Rendering · ${money.price(kind === "audio" ? audioUsd : price ?? 0)} · lands on the wall unfiled`);
+      toast(`Rendering · ${costLabel} · lands on the wall unfiled`);
       onMade?.();
     } catch (e) { toast((e as Error).message); }
     finally { setBusy(false); }
@@ -296,7 +361,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
     return CATEGORIES.map((c): MenuItem => ({ kind: "sub", label: c.label, open: openCat === c.key, onToggle: () => setOpenCat((k) => (k === c.key ? null : c.key)), items: c.options.map((o) => ({ label: o.label, onSelect: () => { setRow(c.key, o.value); setMenu(null); } })) }));
   };
   const suffix = kind === "audio" ? ` · ${mmss(audioLen)}` : kind === "image" ? ` · ${resolution.toUpperCase()}` : ` · ${seconds}s · ${resolution.toUpperCase()}`;
-  const cost = kind === "audio" ? audioUsd : price ?? 0;
+  const cost = price ?? 0;
   /* M4's docked card: the engine and the settings in mono, the prompt's first line with its names marked. */
   const eyebrow = kind === "audio" ? `Composer · ${TRACKS.find((t) => t.id === track)!.label} · ${mmss(audioLen)}` : kind === "image" ? `Composer · ${model.label} · ${ratio} · ${resolution}` : `Composer · ${model.label} · ${ratio} · ${seconds}s`;
   const firstLine = prompt.split("\n").find((l) => l.trim()) ?? "";
@@ -306,13 +371,14 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
     <button type="button" onClick={render} disabled={busy || (signedIn && (!ready || unknown.length > 0))} data-render=""
       className={`flex ${tall ? "h-[52px]" : "h-[50px]"} w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${
         blocked || rail.open || (!tall && sheetOpen) ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-ink text-ground"}`}>
-      <span>{busy ? "Rendering…" : signedIn ? "Render" : "Sign in to render"}</span>
-      <span className={`ui-mono ui-mono-cost !text-[12px] ${blocked || rail.open || (!tall && sheetOpen) ? "text-ink-muted" : "text-on-primary-cost"}`}>{money.price(cost)}{suffix}</span>
+      <span>{busy ? "Rendering…" : signedIn ? pendingAudio ? "Recover submitted audio" : pendingBatch ? pendingBatch.refusal ? "Retry remaining takes" : "Recover batch" : "Render" : "Sign in to render"}</span>
+      <span className={`ui-mono ui-mono-cost !text-[12px] ${blocked || rail.open || (!tall && sheetOpen) ? "text-ink-muted" : "text-on-primary-cost"}`}>{costLabel}{pendingAudio||pendingBatch?"":suffix}</span>
     </button>
   );
 
+  const batchStatus=kind!=="audio"&&(generationBatch.error||pendingBatch)?<p role={generationBatch.error?"alert":"status"} className="px-4 py-3 text-[13px] leading-relaxed text-ink-body">{generationBatch.error||(pendingBatch&&`${pendingBatch.cursor} of ${pendingBatch.variants.length} takes submitted. ${pendingBatch.refusal?pendingBatch.refusal.message+" Retry only the remaining takes.":"Recover to confirm the pending take and finish the remaining requests."}`)}</p>:null;
   const body = (
-      <>
+      <fieldset disabled={!!pendingAudio||!!pendingBatch||busy} className="contents">
         {kind === "audio" && (
           <Segmented label="Track kind" placement="bar" value={track} onChange={(t) => setTrack(t)} options={TRACKS.map((t) => ({ value: t.id, label: t.label }))} />
         )}
@@ -339,7 +405,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
         ); })()}
 
         {kind !== "audio" && (
-          <div className="flex items-center gap-[8px]" onDragOver={(e) => { e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
+          <div className="flex items-center gap-[8px]" onDragOver={(e) => { e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); if (!pendingBatch && !busy && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}>
             <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
             <button type="button" onClick={() => picker.current?.click()} disabled={uploading} aria-label="Add a reference"
               className={`tap44 flex flex-none flex-col items-center justify-center gap-[2px] rounded-ctl border border-dashed border-[rgba(245,246,248,.22)] ${phone ? "ui-mono h-[56px] w-[56px] !text-[12px] tracking-normal text-ink-body" : "h-[52px] w-[52px] text-[11px] leading-[1.2] text-ink-muted"}`}>
@@ -494,7 +560,7 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
             </div>
           </>
         )}
-      </>
+      </fieldset>
   );
 
   return (
@@ -521,7 +587,8 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
               </div>
             }
             footer={<span className="flex w-full flex-col gap-[6px]">{primary(true)}<Mono className="text-center">{footLine}</Mono></span>}>
-            {body}
+            {kind==='audio'&&(persisted.error||pendingAudio||quote?.error)&&<p role={persisted.error||quote?.error?'alert':'status'} className="px-4 py-3 text-[13px] leading-relaxed text-ink-body">{persisted.error||(pendingAudio?'This audio request is awaiting confirmation. Recover it to check the same submission.':quote?.body===audioBody?quote.error:'')}</p>}
+            {batchStatus}{body}
           </Sheet>
         </>
       ) : (
@@ -530,11 +597,11 @@ export default function Composer({ kind, onMade, initialRef = null, className = 
             <span className="text-[15px] font-semibold leading-none text-ink">Composer</span>
             <Mono>Unfiled · file later</Mono>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto p-[16px]">{body}</div>
+          <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto p-[16px]">{kind==='audio'&&(persisted.error||pendingAudio||quote?.body===audioBody&&quote.error)&&<p role={persisted.error||quote?.error?'alert':'status'} className="text-[13px] leading-relaxed text-ink-body">{persisted.error||(pendingAudio?'This audio request is awaiting confirmation. Recover it to check the same submission.':quote?.error)}</p>}{batchStatus}{body}</div>
           <div className="flex flex-none flex-col gap-[8px] border-t border-border px-[16px] pb-[16px] pt-[12px]">
-            <Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
+            {kind==="audio"||pendingBatch?primary(true):<Button variant="primary" placement="composer" cost={cost} costSuffix={unknown.length ? ` · after @${unknown[0]} exists` : suffix} busy={busy} busyLabel="Rendering…" outlined={rail.open || unknown.length > 0} muted={unknown.length > 0} disabled={signedIn && (!ready || unknown.length > 0)} onClick={render} data-render="">
               {signedIn ? "Render" : "Sign in to render"}
-            </Button>
+            </Button>}
             <Mono cost className="text-center !leading-[1.4]">Lands on the wall unfiled · file to a shot any time</Mono>
           </div>
         </>

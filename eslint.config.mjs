@@ -9,6 +9,10 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    ".data/**",
+    "test-results/**",
+    "playwright-report/**",
+    "ci-results/**",
     "docs/handoff/**/design-references/**",
     "design/**", // Supplied standalone design reference runtimes, not application code.
     "out/**",

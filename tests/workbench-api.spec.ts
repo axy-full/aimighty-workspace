@@ -3,11 +3,11 @@ import { createClient } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 
 test("real local routes persist a single generated take and isolate another workspace", async ({ request, playwright }) => {
   const signed = await signInLocally(request); // refuses any non-local or non-mock deployment before writes
-  const db = createClient({ url: "file:.data/ark.db" });
+  const db = createClient({ url: localPlatformDbUrl() });
   await db.execute({
     sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
     args: [randomUUID(), signed.workspace.id, 500, "Local mock integration fixture", "admin", "test", Date.now()],

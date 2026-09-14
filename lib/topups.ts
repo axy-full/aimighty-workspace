@@ -1,9 +1,10 @@
-import { platformDb, platformReady, newId, now, grantCreditsBatch, getWorkspace, workspaceAdmins } from "./platform";
+import { platformDb, platformReady, newId, now, getWorkspace, workspaceAdmins } from "./platform";
 import { packById, capBonus } from "./packs";
 import { runInTenant } from "./tenant";
 import { releaseHeldJobs } from "./held";
 import { sendMail, mailConfigured } from "./mail";
 import { notify } from "./push";
+import { billingTransaction, syncBillingLedger } from "./billingLedger";
 
 /**
  * Top-up requests: a workspace asks for a pack, the platform answers.
@@ -123,45 +124,45 @@ export async function topupQueue(): Promise<{ open: QueueRow[]; decided: QueueRo
  */
 export async function decideTopup(opts: { id: string; action: "approve" | "decline"; by: string; note?: string; defer?: Defer }):
   Promise<{ request: TopupRequest; released: number }> {
-  await platformReady();
-  const rs = await platformDb().execute({ sql: `SELECT * FROM topup_requests WHERE id = ?`, args: [opts.id] });
-  const row = rs.rows[0] as unknown as Record<string, unknown> | undefined;
-  if (!row) throw new Error("No such request.");
-  const req = rowToRequest(row);
-  const next = nextStatus(req.status, opts.action);
-  if (!next) throw new Error(`This request was already ${req.status}.`);
-  const ts = now();
-  const upd = await platformDb().execute({
-    sql: `UPDATE topup_requests SET status = ?, decided_at = ?, decided_by = ?, decision_note = ? WHERE id = ? AND status = 'requested'`,
-    args: [next, ts, opts.by, (opts.note ?? "").slice(0, 300) || null, opts.id],
-  });
-  if (!upd.rowsAffected) throw new Error("This request was answered a moment ago.");
-  const request = { ...req, status: next, decidedAt: ts, decidedBy: opts.by, decisionNote: (opts.note ?? "") || null };
+  const { request, changed } = await decideTopupCredits(opts);
   let released = 0;
-  if (next === "approved") {
-    /* Two rows, atomically: what was bought and what was given.
-       A pack is the one thing a workspace pays for, so `purchase` is the one
-       grant that counts as revenue; the bonus is §7A's discount and no money
-       arrives for it, so it goes in as its own free row. Kept apart rather
-       than summed because the platform's margin figure reads the difference —
-       summing them is how the welcome grant came to look like revenue. */
-    const n = (v: number) => v.toLocaleString("en-US");
-    await grantCreditsBatch([
-      { workspaceId: req.workspaceId, credits: req.credits, note: `${req.label} pack · ${n(req.credits)} credits`, by: opts.by, kind: "purchase" },
-      ...(req.bonus > 0 ? [{
-        workspaceId: req.workspaceId, credits: req.bonus,
-        note: `${req.label} pack · ${n(req.bonus)} bonus credits`, by: opts.by, kind: "bonus" as const,
-      }] : []),
-    ]);
-    const ws = await getWorkspace(req.workspaceId);
+  if (request.status === "approved") {
+    const ws = await getWorkspace(request.workspaceId);
     if (ws) {
       try {
         released = (await runInTenant(ws, () => releaseHeldJobs({ defer: opts.defer }))).released.length;
-        await runInTenant(ws, () => notifyApproved(ws.id, ws.name, request, released));
+        if (changed) await runInTenant(ws, () => notifyApproved(ws.id, ws.name, request, released));
       } catch (e) { console.error("top-up approve follow-through:", (e as Error).message); }
     }
   }
   return { request, released };
+}
+
+/** The decision and both credit grants commit together. Replaying an answer never grants twice. */
+export async function decideTopupCredits(opts: { id: string; action: "approve" | "decline"; by: string; note?: string }):
+  Promise<{ request: TopupRequest; changed: boolean }> {
+  return billingTransaction(async (tx, ts) => {
+    const rows = await tx.execute({ sql: `SELECT * FROM topup_requests WHERE id=?`, args: [opts.id] });
+    if (!rows.rows[0]) throw new Error("No such request.");
+    const req = rowToRequest(rows.rows[0] as Record<string, unknown>);
+    const next = opts.action === "approve" ? "approved" : "declined";
+    if (req.status === next) return { request: req, changed: false };
+    if (!nextStatus(req.status, opts.action)) throw new Error(`This request was already ${req.status}.`);
+    // Initialize the old balance before this new paid pack is inserted, so its lifetime is dated.
+    await syncBillingLedger(tx, req.workspaceId, ts);
+    await tx.execute({ sql: `UPDATE topup_requests SET status=?,decided_at=?,decided_by=?,decision_note=? WHERE id=? AND status='requested'`,
+      args: [next, ts, opts.by, (opts.note ?? "").slice(0, 300) || null, req.id] });
+    if (next === "approved") {
+      if (!Number.isSafeInteger(req.credits) || req.credits <= 0 || !Number.isFinite(req.usd) || req.usd <= 0) throw new Error("This pack has invalid billing terms.");
+      for (const [kind, amount] of [["purchase", req.credits], ["bonus", req.bonus]] as const) {
+        if (!amount) continue;
+        await tx.execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)`,
+          args: [`topup:${req.id}:${kind}`, req.workspaceId, amount, `${req.label} pack · ${amount.toLocaleString("en-US")} ${kind === "bonus" ? "bonus " : ""}credits`, kind, opts.by, ts] });
+      }
+      await syncBillingLedger(tx, req.workspaceId, ts);
+    }
+    return { request: { ...req, status: next, decidedAt: ts, decidedBy: opts.by, decisionNote: (opts.note ?? "").slice(0, 300) || null }, changed: true };
+  });
 }
 
 async function notifyApproved(workspaceId: string, workspaceName: string, req: TopupRequest, released: number): Promise<void> {

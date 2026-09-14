@@ -49,7 +49,7 @@ function ShotBuilder() {
   usePageTitle("Studio · Setup");
   const router = useRouter();
   const search = useSearchParams();
-  const { signedIn, workspace, setup: platformSetup } = useSession();
+  const { signedIn, workspace, email, setup: platformSetup } = useSession();
   const { selection: bin, current } = useProject();
   const scoped = bin !== "all" && bin !== "unfiled";
   const { data: shotData } = useApi<{ shots: ShotRow[] }>(signedIn && scoped ? `/api/shots?projectId=${encodeURIComponent(bin)}` : null, 30_000);
@@ -107,13 +107,13 @@ function ShotBuilder() {
     if (!savedSpec || !Object.keys(savedSpec).length) return;
     const incoming = JSON.stringify(savedSpec);
     if (stamped.current === incoming) return;
-    const draft = peekDraft<ShotSpec>(workspace?.id, `studio-spec:${bin}`);
+    const draft = peekDraft<ShotSpec>(workspace?.id, email, `studio-spec:${bin}`);
     const untouched = !draft || (stamped.current !== null && JSON.stringify(draft) === stamped.current);
     if (!untouched) return;
     stamped.current = incoming;
     Promise.resolve().then(() => setSpec(savedSpec));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bin, workspace?.id, savedSpec]);
+  }, [bin, workspace?.id, email, savedSpec]);
 
   // A different production is a different draft; forget what was stamped.
   useEffect(() => { stamped.current = null; }, [bin]);

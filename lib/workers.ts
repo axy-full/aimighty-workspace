@@ -7,8 +7,11 @@ import { getWorkspace, legacyWorkspace } from "./platform";
 
 /** The workspace an event belongs to; the studio's original one for events that predate workspaces. */
 async function workspaceOf(data: { workspaceId?: string }) {
-  const ws = data.workspaceId ? await getWorkspace(String(data.workspaceId)) : await legacyWorkspace();
-  if (!ws) throw new Error("No workspace for this event.");
+  const ws = data.workspaceId
+    ? await getWorkspace(String(data.workspaceId))
+    : await legacyWorkspace();
+  if (!ws || ws.deletedAt)
+    throw new Error("No active workspace for this event.");
   return ws;
 }
 
@@ -39,7 +42,9 @@ export const probe = inngest.createFunction(
       const ws = await workspaceOf({});
       return runInTenant(ws, async () => {
         await ready();
-        const rs = await db().execute(`SELECT COUNT(*) AS n FROM generations WHERE deleted = 0`);
+        const rs = await db().execute(
+          `SELECT COUNT(*) AS n FROM generations WHERE deleted = 0`,
+        );
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         return { renders: Number((rs.rows[0] as any)?.n ?? 0) };
       });
@@ -50,7 +55,7 @@ export const probe = inngest.createFunction(
     }));
 
     return { ok: true, ...database, ...storage };
-  }
+  },
 );
 
 /**
@@ -81,34 +86,46 @@ export const render = inngest.createFunction(
        ends it. Without this the render would sit at "running" until the
        cron's long backstop noticed, hours later. */
     onFailure: async ({ event, error }) => {
-      const data = (event.data.event?.data ?? {}) as { genId?: string; workspaceId?: string };
+      const data = (event.data.event?.data ?? {}) as {
+        genId?: string;
+        workspaceId?: string;
+      };
       const genId = String(data.genId ?? "");
-      if (genId) await runInTenant(await workspaceOf(data), () => failJob(genId, error.message));
+      if (genId)
+        await runInTenant(await workspaceOf(data), () =>
+          failJob(genId, error.message),
+        );
     },
   },
   async ({ event, step }) => {
     const genId = String(event.data.genId);
     const ws = await workspaceOf(event.data as { workspaceId?: string });
 
-    const produced = await step.run("produce", async () => runInTenant(ws, async () => {
-      await ready();
-      const job = await loadJob(genId);
-      // Already finished, or gone. Nothing to do, and nothing to pay for.
-      if (!job) return null;
-      const out = await produce(job);
-      return out ? { job, out } : null;
-    }));
+    const produced = await step.run("produce", async () =>
+      runInTenant(ws, async () => {
+        await workspaceOf(event.data as { workspaceId?: string });
+        await ready();
+        const job = await loadJob(genId);
+        // Already finished, or gone. Nothing to do, and nothing to pay for.
+        if (!job) return null;
+        const out = await produce(job);
+        return out ? { job, out } : null;
+      }),
+    );
 
     if (!produced) return { genId, skipped: true };
 
-    await step.run("record", async () => runInTenant(ws, async () => {
-      await ready();
-      await seal(produced.job, produced.out);
-      return { sealed: true };
-    }));
+    await step.run("record", async () =>
+      runInTenant(ws, async () => {
+        await workspaceOf(event.data as { workspaceId?: string });
+        await ready();
+        await seal(produced.job, produced.out);
+        return { sealed: true };
+      }),
+    );
 
     return { genId, ok: true };
-  }
+  },
 );
 
 /** Everything the route serves. Workers are added here as they are written. */

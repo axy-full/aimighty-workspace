@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server";
-import { allowanceCheck } from "@/lib/allowance";
-import { checkLimits } from "@/lib/limits";
-import { vendorKeyNameFor } from "@/lib/platformSpend";
 import { requireRender, withTenant } from "@/lib/auth";
-import { db, ready, now, id as newId } from "@/lib/db";
+import { now } from "@/lib/db";
 import { getTreatment, sceneFromReply } from "@/lib/atomikDocs";
 import { resolveModel } from "@/lib/atomik";
-import { gatewayAuth, gatewayReachable, explainGatewayFailure } from "@/lib/gateway";
-import { engineFor } from "@/lib/engines";
-import { findModel, textCostUsd } from "@/lib/catalog";
-import { estimateRefineUsd } from "@/lib/refineGate";
-import { meter } from "@/lib/meter";
+import { gatewayReachable } from "@/lib/gateway";
 import { specToPhrase } from "@/lib/studio";
+
+import { runPaidText, paidTextFailure } from "@/lib/paidText";
+import { withGenerationRequest } from "@/lib/generationRequests";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +32,8 @@ export const POST = withTenant(async function POST(req: Request) {
      these two were left behind. */
   const got = await requireRender();
   if (got.response) return got.response;
+  return withGenerationRequest(req, got.user.id, async () => {
+  try {
   const body = await req.json().catch(() => ({}));
   const projectId = String(body.projectId ?? "");
   const n = Number(body.n);
@@ -46,7 +44,6 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!gatewayReachable()) return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
 
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
-  const auth = await gatewayAuth();
   const user = [
     `LOGLINE: ${t.logline || "(none yet)"}`,
     Object.keys(t.setup).length ? `SETUP: ${specToPhrase(t.setup)}` : "",
@@ -54,39 +51,13 @@ export const POST = withTenant(async function POST(req: Request) {
     `REWRITE SCENE ${n}:`, `title: ${scene.title || "(untitled)"}`, `secs: ${scene.secs}`, `prose: ${scene.prose || "(empty)"}`,
     typeof body.note === "string" && body.note.trim() ? `THE PERSON ASKS: ${body.note.trim().slice(0, 400)}` : "",
   ].filter(Boolean).join("\n");
-  /* The gateway's money is the platform's — `lib/platformSpend.ts` counts
-     atomik spend against it — so this asks the same question the render path
-     asks before spending any of it. Text is cheap per call and unlimited per
-     minute was the actual hole: nothing here refused a workspace at zero
-     credits or past its monthly allowance, and nothing rate-limited it. */
-  const estUsd = estimateRefineUsd(model, user.length, SYSTEM.length) ?? 0;
-  const wall = await allowanceCheck(vendorKeyNameFor("vercel"), estUsd, model);
-  if (!wall.ok) return NextResponse.json({ error: wall.error }, { status: wall.status });
-  const lim = await checkLimits();
-  if (!lim.allow) return NextResponse.json({ error: lim.error }, { status: lim.why === "rate" ? 429 : 409 });
-  const res = await engineFor("vercel").chat!({ model, system: SYSTEM, user, maxTokens: 900, auth, timeoutMs: 90_000, mock: "scene" });
-  const raw = res.text;
-  if (!res.ok) {
-    const plain = explainGatewayFailure(res.status, raw);
-    let msg = raw.slice(0, 300); try { msg = JSON.parse(raw)?.error?.message ?? msg; } catch { /* raw */ }
-    return NextResponse.json({ error: plain ?? `${model} failed (${res.status}): ${msg}` }, { status: 502 });
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let j: any = null; try { j = JSON.parse(raw); } catch { /* handled below */ }
-  const text: string = j?.choices?.[0]?.message?.content ?? "";
+  const result = await runPaidText({ model, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene", createdBy: got.user.id, projectId });
+  const text = result.text;
+  const costUsd = result.costUsd;
   const out = sceneFromReply(text);
   if (!out) return NextResponse.json({ error: `${model} answered, but not with a scene. Try once more, or another model.` }, { status: 502 });
 
-  let costUsd = Number(j?.usage?.cost ?? NaN);
-  if (!Number.isFinite(costUsd)) {
-    const cm = await findModel(model);
-    const inTok = Number(j?.usage?.prompt_tokens ?? (SYSTEM.length + user.length) / 4);
-    const outTok = Number(j?.usage?.completion_tokens ?? text.length / 4);
-    costUsd = (cm && textCostUsd(cm, inTok, outTok)) || estimateRefineUsd(model, user.length, SYSTEM.length) || 0;
-  }
-  await ready();
-  const spendId = newId("spend");
-  await db().execute({ sql: `INSERT INTO atomik_spend (id, kind, model, cost_usd, user_id, created_at) VALUES (?,?,?,?,?,?)`, args: [spendId, "scene", model, costUsd, got.user.id, now()] });
-  await meter({ id: spendId, kind: "text", engine: "vercel", model, status: "succeeded", engineCostUsd: costUsd, projectId, createdBy: got.user.id }, { critical: false });
   return NextResponse.json({ scene: { ...out, n, by: model, at: now() }, model, costUsd });
+  } catch (error) { return paidTextFailure(error); }
+  });
 });
