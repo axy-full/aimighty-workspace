@@ -1,3 +1,4 @@
+import { assertRecoveryOpen } from "./recovery";
 import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
@@ -108,6 +109,7 @@ async function heldRows(only?: string): Promise<HeldRow[]> {
  * its response (Next's `after` inside a request).
  */
 export async function releaseHeldJobs(opts: { only?: string; defer?: Defer } = {}): Promise<{ released: string[]; short: number }> {
+  await assertRecoveryOpen();
   const rows = await heldRows(opts.only);
   if (!rows.length) return { released: [], short: 0 };
   const state = await creditState();

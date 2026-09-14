@@ -1,3 +1,4 @@
+import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { after } from 'next/server';
 import { z } from 'zod';
 import { requireRender, requireUser, withTenant } from '@/lib/auth';
@@ -53,7 +54,7 @@ export const POST = withTenant(async (req: Request) => {
     if (prepared.scheduled) {
       const store = currentTenant();
       if (!store) throw new AtomikError('This workspace session expired. Reload the production.', 401);
-      after(() => runWithStore(store, () => runAtomikJob(prepared.job.id, auth.user.id)));
+      after(await reserveRecoveryContinuation('after-response', () => runWithStore(store, () => runAtomikJob(prepared.job.id, auth.user.id))));
     }
     return response({ job: prepared.job, ...prepared.job }, prepared.job.status === 'queued' || prepared.job.status === 'running' ? 202 : 200);
   } catch (error) { return failure(error); }

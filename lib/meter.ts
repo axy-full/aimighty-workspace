@@ -1,3 +1,4 @@
+import { resolveRecoveryJobTx } from "./recovery";
 import { platformDb, platformReady, now } from "./platform";
 import { currentTenant } from "./tenant";
 import { billCredits, marginKeyOf } from "./creditTerms";
@@ -130,6 +131,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         args: [e.id, workspaceId, e.projectId ?? null, e.shotId ?? null, e.kind, e.engine, e.model, e.status,
                cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts],
         });
+        if (e.status === "succeeded" || (e.status === "failed" && cost === 0)) await resolveRecoveryJobTx(tx, workspaceId, e.id);
       }, ts);
       return;
     } catch (err) {

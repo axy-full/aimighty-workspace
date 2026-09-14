@@ -184,6 +184,7 @@ test("capture publishes only after full restore and removes plaintext verificati
   let checks = 0;
   const result = await captureVerified(config, join(root, "capture"), {
     env: {},
+    verifyFence: async () => true,
     quiescence: confirmation(),
     now: () => at,
     preflight: async () => {
@@ -219,6 +220,7 @@ test("late uncertain work, expired fence or failed restore removes the unpublish
     await assert.rejects(
       captureVerified(config, destination, {
         env: {},
+        verifyFence: async () => true,
         quiescence: confirmation(),
         now: () => clock,
         preflight: async () => {

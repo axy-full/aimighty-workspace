@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, currentContext } from "@/lib/auth";
 import { accountInvitationSession } from "@/lib/accountInvitationSession";
@@ -11,7 +12,7 @@ import {
 } from "@/lib/accountDb";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req))
     return Response.json({ error: "Invalid request origin." }, { status: 403 });
   try {
@@ -65,4 +66,4 @@ export async function POST(req: Request) {
   } catch (error) {
     return accountFailure(error);
   }
-}
+});

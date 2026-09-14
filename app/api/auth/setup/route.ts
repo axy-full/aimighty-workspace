@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, createSession, createFirstAdmin, passwordProblem, userCount } from "@/lib/auth";
@@ -6,7 +7,7 @@ import { accountJson, accountFailure, sameOriginProblem } from "@/lib/accountDb"
 export const dynamic = "force-dynamic";
 
 /** First run only: the first account becomes the platform's owner. Closed once one exists. */
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   if ((await userCount()) > 0) {
     return NextResponse.json({ error: "Setup is already complete. Ask for an invitation." }, { status: 403 });
@@ -28,4 +29,4 @@ export async function POST(req: Request) {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 30 * 86400,
   });
   return NextResponse.json({ ok: true });
-}
+});

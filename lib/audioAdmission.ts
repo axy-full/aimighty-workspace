@@ -372,7 +372,7 @@ export async function executeAudioAdmission(
      voice has already spoken and been paid for. No queue reachable means
      the old inline path, unchanged. See lib/renderWork.ts. */
   if (!(await enqueueRender(genId, "audio"))) {
-    options.defer(() => runInline(genId));
+    await options.defer(() => runInline(genId));
   }
 
   return admissionReply({

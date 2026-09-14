@@ -1,3 +1,4 @@
+import { recoveryFetch as fetch } from "./recovery";
 /**
  * The ONLY file that knows BytePlus ModelArk exists.
  * Everything else talks to these types. Swapping provider = rewriting this file.

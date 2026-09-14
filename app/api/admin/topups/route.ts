@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse, after } from "next/server";
 import { requireSuperAdmin } from "@/lib/auth";
 import { topupQueue, decideTopup } from "@/lib/topups";
@@ -6,15 +7,15 @@ import { paymentProvider } from "@/lib/payments";
 export const dynamic = "force-dynamic";
 
 /** The platform's top-up queue. */
-export async function GET() {
+export const GET = recoveryRoute(async function GET() {
   const got = await requireSuperAdmin();
   if (got.response) return got.response;
   const queue = await topupQueue();
   return NextResponse.json({ ...queue, provider: paymentProvider() });
-}
+});
 
 /** Answer one: approve adds the credits and releases held takes; decline leaves the balance alone. */
-export async function PATCH(req: Request) {
+export const PATCH = recoveryRoute(async function PATCH(req: Request) {
   const got = await requireSuperAdmin();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
@@ -26,4 +27,4 @@ export async function PATCH(req: Request) {
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 409 });
   }
-}
+});

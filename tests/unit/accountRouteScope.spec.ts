@@ -44,6 +44,7 @@ function load(action: Action, ctx: Context | null) {
       },
     },
     "@/lib/tenant": {},
+    "@/lib/recovery": { recoveryRoute: (handler: unknown) => handler, reserveRecoveryContinuation: async (_kind: string, handler: unknown) => handler },
     "@/lib/workspaceProvisioning": {
       workspaceCreationReadiness: () => ({ canCreate: true }),
       pendingWorkspaces: async () => {

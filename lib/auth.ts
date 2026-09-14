@@ -1,3 +1,4 @@
+import { recoveryRoute } from "./recovery";
 import { MediaSourceError } from "./mediaBindings";
 import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
@@ -216,7 +217,7 @@ async function resolveStore(): Promise<TenantStore> {
  * cannot get any.
  */
 export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean } = {}) {
-  return async (req: Req, ctx: Ctx): Promise<Response> => {
+  return recoveryRoute(async (req: Req, ctx: Ctx): Promise<Response> => {
     let store: TenantStore;
     try { store = await resolveStore(); }
     catch {
@@ -243,7 +244,7 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
       }
       throw e;
     }
-  };
+  });
 }
 
 /** Who is asking — a signed-in browser, or a token. */

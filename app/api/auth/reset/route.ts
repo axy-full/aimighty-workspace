@@ -1,3 +1,5 @@
+import {reserveRecoveryContinuation} from "@/lib/recovery";
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse, after } from "next/server";
 import { randomBytes } from "node:crypto";
 import { findByEmail, sourceKey, tokenHash } from "@/lib/auth";
@@ -16,7 +18,7 @@ const PER_USER = 3;
  * answer is the same whatever the address, and the email is sent after the
  * response, so neither the words nor the timing say which emails exist.
  */
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   await platformReady();
   let body: Record<string, unknown>;
@@ -46,9 +48,9 @@ export async function POST(req: Request) {
   });
   const origin = inviteOrigin(req);
   const mail = resetEmail({ name: String(user.name), link: `${origin}/reset/${token}`, expiresAt, origin });
-  after(async () => {
+  after(await reserveRecoveryContinuation('after-response', async () => {
     try { await sendMail({ to: email, ...mail }); }
     catch (e) { console.error("[reset] email not sent:", (e as Error).message); }
-  });
+  }));
   return NextResponse.json(generic);
-}
+});

@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { platformDb, platformReady, newId, now, SUPER_ADMIN_EMAIL } from "@/lib/platform";
@@ -43,7 +44,7 @@ function hashIp(req: Request): string {
   return createHash("sha256").update(`${salt}:${ip}`).digest("hex").slice(0, 32);
 }
 
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const v = reportInput(body);
   if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 });
@@ -86,4 +87,4 @@ export async function POST(req: Request) {
   /* The same answer either way. A reporter learning which of their reports
      mailed the desk is a reporter learning how to stay under the ceiling. */
   return NextResponse.json({ ok: true, id }, { status: 201 });
-}
+});

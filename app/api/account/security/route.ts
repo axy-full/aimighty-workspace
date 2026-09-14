@@ -1,3 +1,4 @@
+import { recoveryRoute } from "@/lib/recovery";
 import { cookies } from "next/headers";
 import { currentContext, SESSION_COOKIE } from "@/lib/auth";
 import { accountRequestScopeMatches } from "@/lib/accountRequestScope";
@@ -43,7 +44,7 @@ async function captured(req: Request) {
     };
   return { context, session, scope: req.headers.get("X-Workbench-Scope")! };
 }
-export async function GET(req: Request) {
+export const GET = recoveryRoute(async function GET(req: Request) {
   try {
     const got = await captured(req);
     if (got.response) return got.response;
@@ -53,8 +54,8 @@ export async function GET(req: Request) {
   } catch (error) {
     return accountFailure(error);
   }
-}
-export async function POST(req: Request) {
+});
+export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req))
     return json({ error: "Invalid request origin." }, 403);
   try {
@@ -96,4 +97,4 @@ export async function POST(req: Request) {
   } catch (error) {
     return accountFailure(error);
   }
-}
+});

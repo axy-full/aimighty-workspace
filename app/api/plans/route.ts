@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { getPlatformLayer } from "@/lib/platform";
 import {
@@ -6,7 +7,7 @@ import {
 } from "@/lib/billingConfig";
 
 export const dynamic = "force-dynamic";
-export async function GET() {
+export const GET = recoveryRoute(async function GET() {
   try {
     const layer = await getPlatformLayer();
     const billing = billingConfiguration();
@@ -25,4 +26,4 @@ export async function GET() {
       { status: 503 },
     );
   }
-}
+});

@@ -43,6 +43,7 @@ function wrapper() {
     "MediaSourceError",
     "workbenchScopeFor",
     "console",
+    "recoveryRoute",
     compiled,
   )(
     exports,
@@ -55,6 +56,7 @@ function wrapper() {
     MediaSourceError,
     workbenchScopeFor,
     { error: (line: string) => logs.push(line) },
+    (handler: unknown) => handler,
   );
   return {
     withTenant: exports.withTenant,

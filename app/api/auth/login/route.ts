@@ -1,3 +1,4 @@
+import { recoveryRoute } from "@/lib/recovery";
 import {
   completePasswordLogin,
   sessionDeviceLabel,
@@ -25,7 +26,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req))
     return NextResponse.json(
       { error: "Invalid request origin." },
@@ -95,4 +96,4 @@ export async function POST(req: Request) {
   });
   await repairPendingMemberships(String(row.id)).catch(() => {});
   return NextResponse.json({ ok: true, name: row.name });
-}
+});

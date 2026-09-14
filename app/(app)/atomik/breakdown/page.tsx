@@ -22,8 +22,8 @@ import { useOnChange } from "@/lib/changes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { usd } from "@/lib/format";
 import { specToPhrase, CATEGORIES } from "@/lib/studio";
-import { DEFAULT_MODEL_ID, estimateTokens, costUsd } from "@/lib/models";
-import { estimateVideo, estimateImage, type RateTable, writerCall } from "@/lib/rateTable";
+import { takeCost } from "@/lib/breakdownCost";
+import { writerCall } from "@/lib/rateTable";
 import { mentionsIn } from "@/lib/mentions";
 import { appAlert, appConfirm } from "@/components/dialog";
 import { Waiting } from "@/components/ParticlMark";
@@ -31,7 +31,7 @@ import PickProduction from "@/components/atomik/PickProduction";
 import type { Treatment, Scene } from "@/lib/atomikDocs";
 import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
-import { ENGINE_LABEL, ENGINE_MODEL, type ShotProposal as BaseShotProposal } from "@/lib/shotBuilder";
+import { ENGINE_LABEL, type ShotProposal as BaseShotProposal } from "@/lib/shotBuilder";
 type ShotProposal = BaseShotProposal & { takeUsd?: number };
 import { useMoney } from "@/lib/price";
 import { textModelFor } from "@/lib/platformLayer";
@@ -41,24 +41,6 @@ type Loaded = { treatment: Treatment | null; cast: CastMember[] };
 const sceneNo = (scene: string) => Number((scene ?? "").replace(/\D/g, "")) || 0;
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 const SETUP = ["shot", "angle", "move", "lens"];
-/**
- * One take of a shot: Seedance bills 5s minimum, so shorter shots price at 5s.
- *
- * The rate table is an argument because this is a browser: it used to call
- * `shotCostUsd`, which reads the vendors' dollars, and importing that from a
- * client component is what put those dollars in the bundle. The table it is
- * handed is already in the unit this workspace pays in.
- */
-export function takeCost(rates: RateTable, planned: number | null, engine?: string | null): number {
-  const secs = Math.max(5, planned ?? 5);
-  const model = engine === "kling" || engine === "nano-banana"
-    ? ENGINE_MODEL[engine as "kling" | "nano-banana"]
-    : DEFAULT_MODEL_ID;
-  if (engine === "nano-banana") return estimateImage(rates, model, "2K", 0) ?? 0;
-  return estimateVideo(rates, model, "1080p", secs,
-    estimateTokens("1080p", "16:9", secs, 0), costUsd,
-    { audio: engine !== "kling" }) ?? 0;
-}
 
 export default function BreakdownPage() {
   usePageTitle("Atomik · Breakdown");

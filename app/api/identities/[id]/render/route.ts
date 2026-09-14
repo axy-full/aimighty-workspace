@@ -1,3 +1,4 @@
+import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { NextResponse, after } from "next/server";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
@@ -94,7 +95,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   }
 
   const store = currentTenant()!;
-  after(() => runWithStore(store, async () => {
+  after(await reserveRecoveryContinuation('after-response', () => runWithStore(store, async () => {
     // Two at a time: fal queues the rest anyway, and the wall fills in as
     // each lands rather than all at once.
     const queue = [...ids];
@@ -111,7 +112,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
       }
     };
     await Promise.all([worker(), worker()]);
-  }));
+  })));
 
   return NextResponse.json({ ids, status: "running" });
   });

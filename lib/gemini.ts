@@ -1,3 +1,4 @@
+import { recoveryFetch as fetch } from "./recovery";
 import { readUploadBytes, readImageBytes } from "./storage";
 import type { Reference } from "./ark";
 import type { ModelDef } from "./models";

@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { withTenant, requireSession } from "@/lib/auth";
 import { pipelineStore } from "@/lib/pipeline/store";
 import { publicRun, quotePipelineStage } from "@/lib/pipeline/service";
@@ -109,14 +110,26 @@ export const POST = withTenant(
       } else throw new PipelineError("Unknown pipeline action.");
       if (["approve", "resume", "select", "recover"].includes(body.action)) {
         const workspaceId = requireTenant().id;
-        after(async () => {
-          await withPipelineActor(workspaceId, auth.user.id, (actor) =>
-            advancePipelineRun(store, id, {
-              actor,
-              defer: (work) => after(work),
-            }),
-          );
-        });
+        after(
+          await reserveRecoveryContinuation(
+            "pipeline-continuation",
+            async () => {
+              await withPipelineActor(workspaceId, auth.user.id, (actor) =>
+                advancePipelineRun(store, id, {
+                  actor,
+                  defer: async (work) => {
+                    after(
+                      await reserveRecoveryContinuation(
+                        "pipeline-render",
+                        work,
+                      ),
+                    );
+                  },
+                }),
+              );
+            },
+          ),
+        );
       }
       return Response.json({ run: publicRun(run) }, { headers });
     } catch (error) {

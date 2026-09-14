@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { requireRender, withTenant } from "@/lib/auth";
 import { withGenerationRequest } from "@/lib/generationRequests";
 import { executeAudioAdmission } from "@/lib/audioAdmission";
@@ -30,10 +31,9 @@ export const POST = withTenant(async function POST(req: Request) {
     admissionResponse(
       await executeAudioAdmission(body, got, {
         requestClaim,
-        defer: (work) =>
-          after(async () => {
-            await work();
-          }),
+        defer: async (work) => {
+          after(await reserveRecoveryContinuation("after-response", work));
+        },
       }),
     );
   return body.quoteOnly === true

@@ -1036,7 +1036,7 @@ export async function executeGenerationAdmission(
             { status: e instanceof SpendReservationError ? e.status : 503 },
           );
         }
-        options.defer(() =>
+        await options.defer(() =>
           runIdentityRender(started.genId, trained, {
             prompt: started.finalPrompt,
             ratio: idRatio,
@@ -1204,7 +1204,7 @@ export async function executeGenerationAdmission(
        hand — no keys, or the send failed — it runs here in options.defer() exactly
        as it always did. Same code either way; see lib/renderWork.ts. */
       if (!(await enqueueRender(genId, "image"))) {
-        options.defer(() => runInline(genId));
+        await options.defer(() => runInline(genId));
       }
 
       return admissionReply({
@@ -1786,7 +1786,7 @@ export async function executeGenerationAdmission(
     }
 
     if (!(await enqueueRender(genId, "video")))
-      options.defer(() => submitVideoRow(genId));
+      await options.defer(() => submitVideoRow(genId));
     return admissionReply(
       {
         id: genId,

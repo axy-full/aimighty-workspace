@@ -1,3 +1,4 @@
+import { recoveryFetch as fetch } from "./recovery";
 import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
 import { engineMock, mockCompletion } from "./mock";
 /**

@@ -35,7 +35,7 @@ export type AdmissionCheckpoint = {
 };
 export type AdmissionExecution = {
   requestClaim?: GenerationRequest;
-  defer: (work: () => Promise<unknown>) => void;
+  defer: (work: () => Promise<unknown>) => void | Promise<void>;
   /** Internal server-only checkpoint; never supplied from an HTTP request. */
   checkpoint?: (value: AdmissionCheckpoint) => AdmissionReply | undefined;
 };

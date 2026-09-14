@@ -1,3 +1,4 @@
+import {recoveryRoute} from '@/lib/recovery';
 import { sourceKey } from "@/lib/auth";
 import {
   resendSignup,
@@ -11,7 +12,7 @@ import {
   AccountError,
 } from "@/lib/accountDb";
 export const dynamic = "force-dynamic";
-export async function POST(req: Request) {
+export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req))
     return Response.json({ error: "Invalid request origin." }, { status: 403 });
   try {
@@ -38,4 +39,4 @@ export async function POST(req: Request) {
   } catch (error) {
     return accountFailure(error);
   }
-}
+});
