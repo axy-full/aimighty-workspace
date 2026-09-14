@@ -133,6 +133,7 @@ type ComposerProps = {
   controller?: Ref<ComposerHandle>;
   onEditRequested?: () => void;
   onAstraRequested?: () => void;
+  onUpscaleRequested?: () => void;
 };
 export default function Composer(props: ComposerProps) {
   const { workspace, email, signedIn } = useSession();
@@ -152,6 +153,7 @@ function ScopedComposer({
   controller,
   onEditRequested,
   onAstraRequested,
+  onUpscaleRequested,
 }: ComposerProps & { scope: string }) {
   const router = useRouter();
   const hydrated = useSyncExternalStore(
@@ -1451,6 +1453,9 @@ function ScopedComposer({
                   </span>
                   <span>Source clip</span>
                 </button>
+              )}
+              {kind === "image" && onUpscaleRequested && (
+                <button type="button" onClick={() => { setListOpen(false); onUpscaleRequested(); }}><span><strong>Topaz Image Upscale</strong><small>Enhance an original image with precision models.</small></span><span>Source image</span></button>
               )}
               {kind === "video" && onAstraRequested && (
                 <button type="button" onClick={() => { setListOpen(false); onAstraRequested(); }}>

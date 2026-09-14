@@ -10,7 +10,30 @@ concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Unit shard
+        run: npm run test:unit -- --shard=${{ matrix.shard }}/3
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: unit-failure-${{ matrix.shard }}
+          path: test-results/
+          retention-days: 7
   core:
+    needs: unit
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -23,7 +46,6 @@ jobs:
       - name: Reject known high and critical dependency vulnerabilities
         run: npm audit --audit-level=high
       - run: npm run lint
-      - run: npm run test:unit
       - name: Rehearse encrypted backup and restore
         run: node --test tests/ops/*.test.mjs
       - run: node scripts/account-http-rehearsal.mjs
@@ -33,6 +55,10 @@ jobs:
       - name: Verify production bundle privacy
         run: npm run test:unit -- tests/unit/bundle.spec.ts
   browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [workbench, customer]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -59,12 +85,12 @@ jobs:
           done
           cat dev-ci.log
           exit 1
-      - run: npx playwright test --config=playwright.workbench.config.ts --output=ci-results/workbench
-      - run: npx playwright test --config=playwright.customer.config.ts --output=ci-results/customer
+      - name: Browser suite
+        run: npx playwright test --config=playwright.${{ matrix.suite }}.config.ts --output=ci-results/${{ matrix.suite }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-failure-evidence
+          name: browser-failure-${{ matrix.suite }}
           path: |
             ci-results/
             dev-ci.log

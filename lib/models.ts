@@ -122,7 +122,7 @@ export type ModelDef = {
   /** The fal endpoint family the engine is served at (see lib/falVideo.ts). */
   falEndpoint?: string;
   /** A still tool rather than a still engine: works on one still of ours (see lib/falImage.ts). */
-  stillTask?: "outpaint" | "cutout";
+  stillTask?: "outpaint" | "cutout" | "upscale";
   paramStyle: ParamStyle;
 
   resolutions: string[];
@@ -289,6 +289,14 @@ export const MODELS: ModelDef[] = [
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 300,
     note: "Luma's Ray 2 Flash reframe on fal — a finished clip re-cut to another aspect, the new frame's edges painted in. $0.06 a second.",
+  },
+  {
+    id: "fal-ai/topaz/upscale/image", billing: "image", use: "Enhance an original image with Topaz precision models.",
+    label: "Topaz Image Upscale", short: "TOPAZ", family: "topaz", provider: "fal", kind: "image",
+    hidden: true, stillTask: "upscale", falEndpoint: "fal-ai/topaz/upscale/image", paramStyle: "fields",
+    resolutions: ["24MP", "48MP"], ratios: ["adaptive"], durations: [], supportsAudio: false,
+    supportsCameraFixed: false, maxReferenceImages: 1, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
+    note: "Precision image enhancement from the original asset. Output up to 48 megapixels, preserved as PNG.",
   },
   /* ── Bria on fal.ai: the still post tools (brief 1.2) ───────────────
    * Flat per image, read off fal's model pages on 7 September 2026:

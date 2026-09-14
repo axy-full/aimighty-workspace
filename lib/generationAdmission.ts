@@ -63,6 +63,12 @@ import { rulesBlock, DEFAULT_LAYER } from "@/lib/platformLayer";
 import { getPlatformLayer } from "@/lib/platform";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 import { effectiveRules } from "@/lib/rules";
+import {
+  TOPAZ_IMAGE_MODEL,
+  topazImageSettings,
+  type TopazImageSettings,
+} from "@/lib/topaz";
+import { inspectTopazImage } from "@/lib/topazImage.server";
 import { stillToolFor } from "@/lib/stillTools";
 import {
   identityForCast,
@@ -536,7 +542,11 @@ export async function executeGenerationAdmission(
     };
     // Provider payloads still force adaptive/-1. Store and price the known source
     // shape here so client controls cannot understate a locked edit's cost.
-    if (task.forceRatio === "adaptive" && model.billing === "token" && sourceRatio)
+    if (
+      task.forceRatio === "adaptive" &&
+      model.billing === "token" &&
+      sourceRatio
+    )
       params.ratio = sourceRatio;
     if (task.id === "edit" && sourceSeconds) params.duration = sourceSeconds;
 
@@ -862,7 +872,7 @@ export async function executeGenerationAdmission(
       const ratio = model.ratios.includes(body.ratio)
         ? String(body.ratio)
         : model.ratios[0];
-      const size = model.resolutions.includes(body.resolution)
+      let size = model.resolutions.includes(body.resolution)
         ? String(body.resolution)
         : model.resolutions[0];
       const isRaw = /^raw:/i.test(castPrompt);
@@ -912,6 +922,21 @@ export async function executeGenerationAdmission(
           { error: "Pick the still to work on." },
           { status: 400 },
         );
+      let topaz: TopazImageSettings | undefined;
+      let topazOutput:
+        { width: number; height: number; resolution: string } | undefined;
+      if (modelId === TOPAZ_IMAGE_MODEL) {
+        try {
+          topaz = topazImageSettings(body.topaz);
+          topazOutput = await inspectTopazImage(stillRefs[0], topaz);
+          size = topazOutput.resolution;
+        } catch (error) {
+          return admissionReply(
+            { error: (error as Error).message },
+            { status: 400 },
+          );
+        }
+      }
       // The cast just added its stills — the vendor's ceiling counts those too.
       if (stillRefs.length > model.maxReferenceImages) {
         return admissionReply(
@@ -1076,6 +1101,8 @@ export async function executeGenerationAdmission(
       const genId = id("gen");
       const ts = now();
       const stillParams = {
+        topaz,
+        topazOutput,
         ratio,
         resolution: size,
         /* Its role on the production, chosen in the composer's USE AS row: a
