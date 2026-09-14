@@ -15,6 +15,7 @@ import { ToastHost } from "@/components/ui/Toast";
 import type { Generation } from "@/lib/jobs";
 import Composer, { type ComposerHandle, type ComposerKind } from "./Composer";
 import UnfiledWall from "./UnfiledWall";
+import SeedanceEdit from "./SeedanceEdit";
 import styles from "./gen.module.css";
 
 export const GEN_MODES = [
@@ -76,6 +77,16 @@ function Workspace({ initialKind }: { initialKind?: string }) {
       setMobileView("create");
   };
   const scope = JSON.stringify([workspace?.id, email, mode.kind]);
+  const editing = mode.kind === "video" && search.get("task") === "edit";
+  const editSource = (take?: Generation) => {
+    const params = new URLSearchParams(search.toString());
+    params.set("mode", "video");
+    params.set("task", "edit");
+    if (take) params.set("source", `generation:${take.id}`);
+    else params.delete("source");
+    router.push(`/generate?${params}`);
+    setMobileView("create");
+  };
   return (
     <div
       className={styles.workspace}
@@ -128,15 +139,30 @@ function Workspace({ initialKind }: { initialKind?: string }) {
       </div>
       <div className={styles.desk}>
         <div className={styles.creationPane}>
-          <Composer
-            key={scope}
-            kind={mode.kind as ComposerKind}
-            controller={composer}
-            initialRef={search.get("ref")}
-            onMade={() => {
-              setTick((value) => value + 1);
-            }}
-          />
+          {editing ? (
+            <SeedanceEdit
+              key={`${scope}:${search.get("source") ?? ""}`}
+              initialSource={search.get("source")}
+              onBack={() => {
+                const params = new URLSearchParams(search.toString());
+                params.delete("task");
+                params.delete("source");
+                router.push(`/generate?${params}`);
+              }}
+              onMade={() => setTick((value) => value + 1)}
+            />
+          ) : (
+            <Composer
+              key={scope}
+              kind={mode.kind as ComposerKind}
+              controller={composer}
+              initialRef={search.get("ref")}
+              onEditRequested={() => editSource()}
+              onMade={() => {
+                setTick((value) => value + 1);
+              }}
+            />
+          )}
         </div>
         <section className={styles.takesPane} aria-label="Generated takes">
           <div className={styles.takesHeader}>
@@ -165,6 +191,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
               search={query}
               onTotals={setTotals}
               onUsePrompt={reuse}
+              onEdit={mode.kind === "video" ? editSource : undefined}
             />
           </div>
         </section>

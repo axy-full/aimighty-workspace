@@ -37,6 +37,7 @@ type Props = {
   columns?: string;
   phone?: boolean;
   onUsePrompt?: (take: Generation) => void;
+  onEdit?: (take: Generation) => void;
 };
 
 export default function UnfiledWall(props: Props) {
@@ -48,7 +49,13 @@ export default function UnfiledWall(props: Props) {
     />
   );
 }
-function ScopedWall({ kind, search = "", onTotals, onUsePrompt }: Props) {
+function ScopedWall({
+  kind,
+  search = "",
+  onTotals,
+  onUsePrompt,
+  onEdit,
+}: Props) {
   const { signedIn, workspace, email } = useSession(),
     money = useMoney(),
     toast = useToast(),
@@ -221,6 +228,13 @@ function ScopedWall({ kind, search = "", onTotals, onUsePrompt }: Props) {
                   <RefreshCw size={14} />
                   Use prompt
                 </button>
+                {onEdit &&
+                  take.kind === "video" &&
+                  take.status === "succeeded" && (
+                    <button type="button" onClick={() => onEdit(take)}>
+                      Edit clip
+                    </button>
+                  )}
                 <button
                   type="button"
                   disabled={!finished || busy === take.id}
