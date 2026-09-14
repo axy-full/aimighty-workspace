@@ -131,6 +131,7 @@ type ComposerProps = {
   initialRef?: string | null;
   className?: string;
   controller?: Ref<ComposerHandle>;
+  onEditRequested?: () => void;
 };
 export default function Composer(props: ComposerProps) {
   const { workspace, email, signedIn } = useSession();
@@ -148,9 +149,14 @@ function ScopedComposer({
   className = "",
   scope,
   controller,
+  onEditRequested,
 }: ComposerProps & { scope: string }) {
   const router = useRouter();
-  const hydrated = useSyncExternalStore(subscribeHydration, clientHydrated, serverHydrated);
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    clientHydrated,
+    serverHydrated,
+  );
   const { signedIn, rates, workspace, email } = useSession();
   const uploadFile = useUploadFile();
   const signIn = useSignInHref();
@@ -1429,6 +1435,21 @@ function ScopedComposer({
               </DialogPrimitive.Close>
             </div>
             <div className={styles.modelList}>
+              {kind === "video" && onEditRequested && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setListOpen(false);
+                    onEditRequested();
+                  }}
+                >
+                  <span>
+                    <strong>Seedance 2.5 Edit</strong>
+                    <small>Change an existing clip, including its audio.</small>
+                  </span>
+                  <span>Source clip</span>
+                </button>
+              )}
               {choices.map((m) => (
                 <button
                   type="button"
