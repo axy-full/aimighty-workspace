@@ -89,7 +89,7 @@ const image = () =>
     .png()
     .toBuffer();
 const model: CatalogModel = {
-  id: "test/vision",
+  id: "anthropic/claude-sonnet-4.6",
   name: "Vision",
   owner: "test",
   type: "language",
@@ -484,7 +484,7 @@ test("vision-aware free quote includes visual input and auto selects a capable e
     f.deps.models = async () => [
       {
         ...model,
-        id: "test/text",
+        id: "anthropic/claude-opus-4.7",
         inputModalities: ["text"],
         pricing: { input: 0, output: 0 },
       },
@@ -500,7 +500,7 @@ test("vision-aware free quote includes visual input and auto selects a capable e
     expect(visual.visualCount).toBe(1);
     expect(visual.estimateUsd).toBeGreaterThan(text.estimateUsd);
     await expect(
-      quoteAtomikJob({ ...f.input, model: "test/text" }, "owner", f.deps),
+      quoteAtomikJob({ ...f.input, model: "anthropic/claude-opus-4.7" }, "owner", f.deps),
     ).rejects.toThrow("vision-capable");
     expect(f.calls()).toBe(0);
     expect(f.reservations()).toBe(0);
