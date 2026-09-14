@@ -132,6 +132,7 @@ type ComposerProps = {
   className?: string;
   controller?: Ref<ComposerHandle>;
   onEditRequested?: () => void;
+  onAstraRequested?: () => void;
 };
 export default function Composer(props: ComposerProps) {
   const { workspace, email, signedIn } = useSession();
@@ -150,6 +151,7 @@ function ScopedComposer({
   scope,
   controller,
   onEditRequested,
+  onAstraRequested,
 }: ComposerProps & { scope: string }) {
   const router = useRouter();
   const hydrated = useSyncExternalStore(
@@ -1448,6 +1450,11 @@ function ScopedComposer({
                     <small>Change an existing clip, including its audio.</small>
                   </span>
                   <span>Source clip</span>
+                </button>
+              )}
+              {kind === "video" && onAstraRequested && (
+                <button type="button" onClick={() => { setListOpen(false); onAstraRequested(); }}>
+                  <span><strong>Topaz Astra 2</strong><small>Creative upscale with frame rate and detail controls.</small></span><span>Source clip</span>
                 </button>
               )}
               {choices.map((m) => (

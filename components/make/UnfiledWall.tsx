@@ -38,6 +38,7 @@ type Props = {
   phone?: boolean;
   onUsePrompt?: (take: Generation) => void;
   onEdit?: (take: Generation) => void;
+  onAstraUpscale?: (take: Generation) => void;
 };
 
 export default function UnfiledWall(props: Props) {
@@ -55,6 +56,7 @@ function ScopedWall({
   onTotals,
   onUsePrompt,
   onEdit,
+  onAstraUpscale,
 }: Props) {
   const { signedIn, workspace, email } = useSession(),
     money = useMoney(),
@@ -228,6 +230,9 @@ function ScopedWall({
                   <RefreshCw size={14} />
                   Use prompt
                 </button>
+                {onAstraUpscale && take.kind === "video" && take.status === "succeeded" && (
+                  <button type="button" onClick={() => onAstraUpscale(take)}>Upscale video</button>
+                )}
                 {onEdit &&
                   take.kind === "video" &&
                   take.status === "succeeded" && (

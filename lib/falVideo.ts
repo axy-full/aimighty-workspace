@@ -13,6 +13,7 @@
  * is known before the render and sealed from the row's own params after —
  * there is no token count to wait for.
  */
+import { ASTRA_MODEL, astraInput } from "./astra";
 import { falSubmit, } from "./fal";
 import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
@@ -89,20 +90,11 @@ export async function buildFalInput(opts: {
 
   if (task.id === "upscale") {
     if (!source) throw new Error("Upscale needs a finished clip to work on.");
-    /* Astra prices by OUTPUT resolution, so the factor is whatever gets the
-       source's short side to the tier chosen — never past fal's 4×. */
-    const target = params.resolution.toLowerCase() === "4k" ? 2160 : 1080;
-    const srcPx = Number(String(params.sourceResolution ?? "720p").replace(/p$/i, "")) || 720;
-    const factor = Math.min(4, Math.max(1, Math.round((target / srcPx) * 100) / 100));
-    return {
-      endpoint: falEndpointFor(model, "upscale", false),
-      input: {
-        video_url: await mediaUrl(source),
-        upscale_factor: factor, creativity: 0.5, sharp: 0.5,
-        ...(params.fps60 ? { target_fps: 60 } : {}),
-        H264_output: true,
-      },
-    };
+    if (model.id !== ASTRA_MODEL) throw new Error("Choose the supported Astra upscale engine.");
+    // Astra may override its requested scale with a model-selected output size.
+    // New work is quoted at the 4K tier and always names its output frame rate.
+    if (!params.astra || !params.astraSource) throw new Error("Review the Astra source and output settings before submitting.");
+    return {endpoint:falEndpointFor(model,"upscale",false),input:astraInput(await mediaUrl(source),params.astra,Math.min(params.astraSource.width,params.astraSource.height))};
   }
 
   if (task.id === "reframe") {

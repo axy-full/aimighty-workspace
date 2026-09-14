@@ -1,3 +1,5 @@
+import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
+import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { withMediaSources } from "@/lib/mediaMutation";
 import {
@@ -287,6 +289,9 @@ export async function executeGenerationAdmission(
 
     let sourceRef: Reference | null = null;
     let sourceSeconds: number | null = null;
+    let sourceBytes = 0;
+    let astra: AstraSettings | undefined;
+    let astraSource: VideoMetadata | undefined;
     let sourceResolution: string | null = null;
     let sourceRatio: string | null = null;
     /* An engine with no generate mode (Topaz only upscales) cannot be asked
@@ -301,6 +306,11 @@ export async function executeGenerationAdmission(
         },
         { status: 400 },
       );
+    }
+    if (modelId === ASTRA_MODEL) {
+      try { astra = astraSettings(body.astra); }
+      catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
+      if (prompt) return admissionReply({error:"Astra uses its detail controls. Text-directed video edits use the Seedance edit model."},{status:400});
     }
     if (task.locked) {
       /* An engine that cannot do the task must say so here, not drop the
@@ -362,6 +372,7 @@ export async function executeGenerationAdmission(
           kind: "video",
           fromGeneration: false,
         };
+        sourceBytes = Number(u.bytes);
         const sp = uploadSourceParams({
           durationS: u.duration_s,
           height: u.width && u.height ? Math.min(u.width, u.height) : u.height,
@@ -376,7 +387,7 @@ export async function executeGenerationAdmission(
          believed: absent (which every ceiling below silently lets through,
          since each is written `!= null && > max`) or shorter than the file's
          own size permits. Unpriceable is not the same as cheap. */
-        if (task.locked) {
+        if (task.locked && modelId !== ASTRA_MODEL) {
           const doubt = clipDoubt(u.duration_s, u.bytes);
           if (doubt)
             return admissionReply(
@@ -384,7 +395,7 @@ export async function executeGenerationAdmission(
               { status: 400 },
             );
         }
-        const refused = sourceProblem(task, sp, "upload");
+        const refused = modelId === ASTRA_MODEL ? null : sourceProblem(task, sp, "upload");
         if (refused) return admissionReply({ error: refused }, { status: 400 });
         const advice = sourceAdvice(
           task,
@@ -394,7 +405,7 @@ export async function executeGenerationAdmission(
       }
       if (!sourceUploadId) {
         const rs = await db().execute({
-          sql: `SELECT id, status, stored_url, kind, params FROM generations
+          sql: `SELECT id, status, stored_url, kind, params, bytes FROM generations
             WHERE id = ? AND deleted = 0 LIMIT 1`,
           args: [sourceGenId],
         });
@@ -415,7 +426,7 @@ export async function executeGenerationAdmission(
             { status: 400 },
           );
         }
-        if (src.kind === "image") {
+        if (src.kind !== "video") {
           return admissionReply(
             {
               error: `${task.label} works on video, and that render is a still.`,
@@ -423,6 +434,7 @@ export async function executeGenerationAdmission(
             { status: 400 },
           );
         }
+        sourceBytes = Number(src.bytes);
         sourceRef = {
           id: src.id,
           mime: "video/mp4",
@@ -446,7 +458,7 @@ export async function executeGenerationAdmission(
           if (typeof sp.resolution === "string")
             sourceResolution = sp.resolution;
           // The vendor's limits, applied here as well as in the picker.
-          const refused = sourceProblem(task, sp);
+          const refused = modelId === ASTRA_MODEL ? null : sourceProblem(task, sp);
           if (refused)
             return admissionReply({ error: refused }, { status: 400 });
           const advice = sourceAdvice(
@@ -457,6 +469,15 @@ export async function executeGenerationAdmission(
         } catch {
           /* unparseable params — no advice to give */
         }
+      }
+      if (modelId === ASTRA_MODEL && sourceRef) {
+        try {
+          astraSource = await inspectOriginalVideo(sourceRef,sourceBytes);
+          sourceSeconds = astraSource.seconds;
+          sourceRatio = `${astraSource.width}:${astraSource.height}`;
+          sourceResolution = `${Math.min(astraSource.width,astraSource.height)}p`;
+        } catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
+        notices.push("Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
       }
       if (
         task.forceRatio === "adaptive" &&
@@ -508,7 +529,9 @@ export async function executeGenerationAdmission(
           : "mp4",
       characterOrientation:
         body.characterOrientation === "image" ? "image" : "video",
-      fps60: Boolean(body.fps60),
+      fps60: astra ? astra.fps === 60 : Boolean(body.fps60),
+      astra,
+      astraSource,
       sourceResolution: sourceResolution ?? undefined,
     };
     // Provider payloads still force adaptive/-1. Store and price the known source
