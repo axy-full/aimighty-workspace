@@ -31,6 +31,8 @@ export type SessionWorkspace = { id: string; name: string; slug: string; suspend
 export type SessionCredits = { creditUsd: number; granted: number; used: number; balance: number };
 export type Session = {
   signedIn: boolean;
+  /** Captured by the server-rendered document; never refreshed just before a private mutation. */
+  requestScope?: string | null;
   name: string | null;
   email: string | null;
   /** The workspace this session is in, and the account's standing there. */

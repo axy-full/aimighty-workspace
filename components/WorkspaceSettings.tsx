@@ -6,6 +6,7 @@
  */
 import { useState } from "react";
 import { useApi } from "@/lib/useApi";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { sampleFilename, TOKENS } from "@/lib/naming";
 import { appAlert } from "@/components/dialog";
 import { Switch } from "@/components/Panel";
@@ -13,6 +14,7 @@ import { Switch } from "@/components/Panel";
 type Settings = Record<string, string>;
 
 export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
+  const scopedFetch = useScopedFetch();
   const { data, error, refresh } = useApi<{ settings: Settings }>("/api/settings");
   /** null means "showing what the server has"; a string means someone typed.
    *  Derived rather than copied into state by an effect — copying would fight
@@ -24,7 +26,7 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/settings", {
+      const res = await scopedFetch("/api/settings", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });

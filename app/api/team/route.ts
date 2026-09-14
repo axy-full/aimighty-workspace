@@ -103,4 +103,4 @@ export const POST = withTenant(async function POST(req: Request) {
     } catch (e) { mailError = (e as Error).message; }
   }
   return NextResponse.json({ code, email, name, role, expiresInDays: INVITE_DAYS, sent, mailError });
-});
+}, { requireRequestScope: true });

@@ -14,7 +14,8 @@ import Review from "./Review";
 import { ParticlSpinner } from "./ParticlMark";
 import { appConfirm, appPrompt, appAlert } from "./dialog";
 import { renameClip } from "./ContextMenu";
-import { uploadFile } from "@/lib/uploadClient";
+import { useUploadFile } from "@/lib/useUploadFile";
+import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
 import { usd, timeAgo, downloadHref, compactTokens } from "@/lib/format";
 import { shortLabel } from "@/lib/models";
@@ -52,6 +53,8 @@ export default function Theatre({
   onRetry?: (gen: Gen) => void;
 }) {
   const idx = gens.findIndex((g) => g.id === activeId);
+  const uploadFile = useUploadFile();
+  const { requestScope } = useSession();
   const gen = idx >= 0 ? gens[idx] : null;
   /* Every take on this shot, under the player (§10 4.3). Derived from the
      rows already in the browser — a Gen carries its shotId — so opening a
@@ -260,7 +263,7 @@ export default function Theatre({
       setSaving("Uploading…");
       const up = await uploadFile(f, "reference", (pct) => setSaving(`Uploading ${pct}%`));
       const res = await fetch("/api/cast", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope ?? "visitor" },
         body: JSON.stringify({ name: name.trim(), kind, description, uploadId: up.id, projectId: gen!.projectId ?? projectScope }),
       });
       const json = await res.json().catch(() => ({}));

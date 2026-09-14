@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   useImperativeHandle,
   type Ref,
   type ChangeEvent,
@@ -26,7 +27,7 @@ import {
   type ShotSpec,
 } from "@/lib/studio";
 import { saveDraft, clearDraft } from "@/lib/draft";
-import { uploadFile } from "@/lib/uploadClient";
+import { useUploadFile } from "@/lib/useUploadFile";
 import type { RefItem } from "@/lib/refs";
 import type { CastMember } from "@/lib/cast";
 import { appPrompt } from "@/components/dialog";
@@ -65,6 +66,9 @@ import {
 } from "@/lib/useComposerPersistence";
 
 /** The Gen creation desk. Paid requests retain the existing scoped recovery protocol. */
+const subscribeHydration = () => () => {};
+const clientHydrated = () => true;
+const serverHydrated = () => false;
 export type ComposerKind = "video" | "image" | "audio";
 
 type Voice = {
@@ -146,7 +150,9 @@ function ScopedComposer({
   controller,
 }: ComposerProps & { scope: string }) {
   const router = useRouter();
+  const hydrated = useSyncExternalStore(subscribeHydration, clientHydrated, serverHydrated);
   const { signedIn, rates, workspace, email } = useSession();
+  const uploadFile = useUploadFile();
   const signIn = useSignInHref();
   const money = useMoney();
   const toast = useToast();
@@ -1053,6 +1059,7 @@ function ScopedComposer({
               <input
                 ref={picker}
                 type="file"
+                disabled={!hydrated || uploading}
                 accept="image/*,video/*"
                 multiple
                 hidden
@@ -1093,7 +1100,7 @@ function ScopedComposer({
                   type="button"
                   className={styles.addReference}
                   onClick={() => picker.current?.click()}
-                  disabled={uploading}
+                  disabled={!hydrated || uploading}
                   aria-label="Add a reference"
                 >
                   <Plus size={20} />

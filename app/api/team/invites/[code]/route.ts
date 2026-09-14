@@ -15,4 +15,4 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const { code } = await params;
   await platformDb().execute({ sql: `DELETE FROM workspace_invites WHERE code = ? AND workspace_id = ? AND used_at IS NULL`, args: [code, ws.id] });
   return NextResponse.json({ ok: true });
-});
+}, { requireRequestScope: true });

@@ -112,7 +112,7 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
     "Content-Type": contentType,
     "Accept-Ranges": "bytes",
     // private: a shared cache must never hold a signed-in user's media
-    "Cache-Control": "private, max-age=31536000, immutable",
+    "Cache-Control": "private, no-store",
   };
 
   const range = req.headers.get("range");

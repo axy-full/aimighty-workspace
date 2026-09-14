@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { saveSchema } from '@/lib/workbench/studio-schema';
 import { newProject, type Project } from '@/lib/workbench/studio';
 import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible } from '@/lib/workbench/records';
+import {requireTenant} from '@/lib/tenant';
+import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -13,6 +15,8 @@ function originProblem(req:Request) {
 
 export const GET=withTenant(async(req:Request)=>{
   const auth=await requireSession();if(auth.response)return auth.response;
+  const scopeError=workbenchScopeProblem(req,requireTenant().id,auth.user.id);
+  if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   await workbenchReady();
   const id=new URL(req.url).searchParams.get('id');
   const [list,productions,draft]=await Promise.all([
@@ -30,6 +34,8 @@ export const GET=withTenant(async(req:Request)=>{
 
 export const PUT=withTenant(async(req:Request)=>{
   const auth=await requireSession();if(auth.response)return auth.response;
+  const scopeError=workbenchScopeProblem(req,requireTenant().id,auth.user.id,true);
+  if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   if(originProblem(req))return Response.json({error:'Invalid request origin'},{status:403});
   if(Number(req.headers.get('content-length')||0)>2_000_000)return Response.json({error:'Production exceeds the 2 MB limit.'},{status:413});
   const raw=await req.text();if(raw.length>2_000_000)return Response.json({error:'Production exceeds the 2 MB limit.'},{status:413});
@@ -44,6 +50,8 @@ export const PUT=withTenant(async(req:Request)=>{
 
 export const POST=withTenant(async(req:Request)=>{
   const auth=await requireSession();if(auth.response)return auth.response;
+  const scopeError=workbenchScopeProblem(req,requireTenant().id,auth.user.id,true);
+  if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   if(originProblem(req))return Response.json({error:'Invalid request origin'},{status:403});
   const body=await req.json().catch(()=>null);
   if(!body || typeof body.projectId!=='string')return Response.json({error:'Choose a production.'},{status:400});
@@ -63,7 +71,12 @@ export const POST=withTenant(async(req:Request)=>{
     catch(e){return Response.json({error:e instanceof Error?e.message:'Cannot map this node'},{status:400})}
   }
   if(body.action==='publish'){
-    return Response.json(await publishBible(auth.user.id,auth.user.name,body.projectId));
+    if(!Number.isInteger(body.expectedBibleVersion)||body.expectedBibleVersion<0)return Response.json({error:'Load the current shared context before publishing.'},{status:400});
+    try{return Response.json(await publishBible(auth.user.id,auth.user.name,body.projectId,body.expectedBibleVersion));}
+    catch(error){
+      const problem=error as Error&{code?:string;currentVersion?:number};
+      return Response.json({error:problem.message||'Unable to publish shared context.',...(problem.code==='bible_conflict'?{code:problem.code,currentVersion:problem.currentVersion}:{})},{status:problem.code==='bible_conflict'?409:400});
+    }
   }
   return Response.json({error:'Unknown production action'},{status:400});
 });

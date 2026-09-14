@@ -257,15 +257,14 @@ export async function retryWorkspacePurges(limit = 5) {
     args: [now() - PURGE_GRACE_MS, now(), limit],
   });
   let completed = 0;
+  let failed = 0;
   for (const row of rows.rows) {
     try {
       if ((await purgeWorkspace(rowToWorkspace(row))).completed) completed++;
-    } catch (error) {
-      console.error(
-        "Workspace cleanup retry failed:",
-        (error as Error).message.slice(0, 200),
-      );
+    } catch {
+      failed++;
+      console.error(JSON.stringify({ level: "error", event: "workspace_cleanup.retry_failed" }));
     }
   }
-  return { attempted: rows.rows.length, completed };
+  return { attempted: rows.rows.length, completed, failed };
 }

@@ -1,4 +1,7 @@
-import { createClient, type Client } from "@libsql/client";
+import { SECURITY_AUDIT_SCHEMA } from "./securityAudit";
+import type { Client } from "@libsql/client";
+import { createHash } from "node:crypto";
+import { createPlatformDatabaseClient as createDatabaseClient } from "./localDatabaseClient";
 import { currentTenant, NoTenantError, type TenantWorkspace } from "./tenant";
 
 /**
@@ -15,12 +18,20 @@ import { currentTenant, NoTenantError, type TenantWorkspace } from "./tenant";
  */
 const clients = new Map<string, Client>();
 const bootstrapped = new Map<string, Promise<void>>();
+const clientKey = (ws: TenantWorkspace) => `${ws.id}:${createHash("sha256").update(JSON.stringify([ws.dbUrl, ws.dbToken, ws.legacy])).digest("hex")}`;
 
 export function tenantClient(ws: TenantWorkspace): Client {
-  let c = clients.get(ws.id);
-  if (!c) {
-    c = createClient({ url: ws.dbUrl, authToken: ws.dbToken ?? undefined });
-    clients.set(ws.id, c);
+  const key = clientKey(ws);
+  let c = clients.get(key);
+  if (!c || c.closed) {
+    c = createDatabaseClient({ url: ws.dbUrl, authToken: ws.dbToken ?? undefined });
+    clients.set(key, c);
+    // Bound cache retention without closing a client another in-flight request owns.
+    if (clients.size > 256) {
+      const oldest = clients.keys().next().value!;
+      clients.delete(oldest);
+      bootstrapped.delete(oldest);
+    }
   }
   return c;
 }
@@ -32,6 +43,7 @@ export function db(): Client {
 }
 
 const SCHEMA = [
+  ...SECURITY_AUDIT_SCHEMA,
   /* Workbench redesign: private drafts inside the resolved tenant database.
      Shared bible versions and node/shot mappings are added by workbenchReady. */
   `CREATE TABLE IF NOT EXISTS workbench_projects (
@@ -1120,10 +1132,11 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
 export function ready(): Promise<void> {
   const ws = currentTenant()?.workspace;
   if (!ws) return Promise.reject(new NoTenantError());
-  let p = bootstrapped.get(ws.id);
+  const key = clientKey(ws);
+  let p = bootstrapped.get(key);
   if (!p) {
-    p = bootstrap(tenantClient(ws), { legacy: ws.legacy }).catch((e) => { bootstrapped.delete(ws.id); throw e; });
-    bootstrapped.set(ws.id, p);
+    p = bootstrap(tenantClient(ws), { legacy: ws.legacy }).catch((e) => { bootstrapped.delete(key); throw e; });
+    bootstrapped.set(key, p);
   }
   return p;
 }

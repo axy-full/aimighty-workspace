@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
-import { uploadFile } from "@/lib/uploadClient";
+import { useUploadFile } from "@/lib/useUploadFile";
+import { useSession } from "@/lib/session";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 import type { CastMember } from "@/lib/cast";
 import { IconPlus, IconClose } from "./Icons";
@@ -30,6 +31,8 @@ export default function Cast({ projectId, onCite, chips = false }: {
   chips?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
+  const uploadFile = useUploadFile();
+  const { requestScope } = useSession();
   const scoped = projectId !== "all" && projectId !== "unfiled";
   const { data, refresh } = useApi<{ cast: CastMember[] }>(
     `/api/cast${scoped ? `?projectId=${encodeURIComponent(projectId)}` : ""}`, 0
@@ -63,7 +66,7 @@ export default function Cast({ projectId, onCite, chips = false }: {
     try {
       const up = await uploadFile(f, "reference", () => {});
       const res = await fetch("/api/cast", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope ?? "visitor" },
         body: JSON.stringify({
           name: name.trim(), kind: pendingKind,
           description: description ?? "",

@@ -4,14 +4,17 @@ import {
   SESSION_COOKIE, LOCK_MESSAGE, DUMMY_HASH, createSession, findByEmail,
   verifyPassword, noteFailure, clearFailures, noteSourceFailure, sourceLocked, sourceKey,
 } from "@/lib/auth";
+import { accountJson, accountFailure, sameOriginProblem } from "@/lib/accountDb";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  let body: Record<string, unknown>;
+  try { body = await accountJson(req); } catch (error) { return accountFailure(error); }
   const email = String(body.email ?? "").trim().toLowerCase();
   const password = String(body.password ?? "");
-  if (!email || !password) return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
+  if (!email || !password || password.length > 200 || email.length > 320) return NextResponse.json({ error: "Enter a valid email and password." }, { status: 400 });
 
   /* Throttling hangs on where the attempt came from, not on the account:
      locking the account would let anyone who knows an address lock its

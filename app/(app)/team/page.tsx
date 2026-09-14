@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Plus, Search, Link2, Mail, Users } from "lucide-react";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { timeAgo } from "@/lib/format";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { appConfirm, appAlert } from "@/components/dialog";
@@ -57,6 +58,7 @@ export default function TeamPage() {
   return <TeamContent key={`${session.workspace?.id}:${session.email}`} />;
 }
 function TeamContent() {
+  const scopedFetch = useScopedFetch();
   usePageTitle("People");
   const session = useSession();
   const { data, error, refresh } = useApi<Team>("/api/team", 30000);
@@ -77,7 +79,7 @@ function TeamContent() {
   );
   const active = users.filter((user) => !user.disabled).length;
   async function mutate(path: string, method: string, body?: unknown) {
-    const response = await fetch(path, {
+    const response = await scopedFetch(path, {
       method,
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,

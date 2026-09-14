@@ -21,11 +21,18 @@ import {
 import { getModel, type ModelDef } from "./models";
 import { estimateCostUsd } from "./vendorPricing";
 import { type TaskDef, type TaskId } from "./tasks";
-import { db, now } from "./db";
+import { now } from "./db";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import type { Reference, VideoParams } from "./ark";
 import type { Generation } from "./jobs";
-import { meter } from "./meter";
+import {
+  writeGenerationOutcome,
+  deliverGenerationSettlement,
+  generationCosts,
+} from "./generationSettlement";
+import { creditsApply } from "./credits";
+import { currentTenant } from "./tenant";
+import { billCredits, marginKeyOf } from "./creditTerms";
 import { getProvider } from "./providers";
 import { engineFor } from "./engines";
 
@@ -163,16 +170,36 @@ export function falVideoCostUsd(modelId: string, p: FalVideoParams & { task?: st
   return est ? est.net : null;
 }
 
-async function fail(gen: Generation, message: string): Promise<Generation> {
+async function fail(
+  gen: Generation,
+  message: string,
+  confirmed = false,
+): Promise<Generation> {
   const ts = now();
-  await db().execute({
-    sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?), updated_at=? WHERE id=?`,
-    args: [message.slice(0, 600), Math.max(0, ts - gen.createdAt), ts, gen.id],
-  }).catch(() => {});
+  await writeGenerationOutcome(
+    {
+      sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+      args: [
+        message.slice(0, 600),
+        Math.max(0, ts - gen.createdAt),
+        ts,
+        gen.id,
+      ],
+    },
+    {
+      id: gen.id,
+      kind: "video",
+      engine: "fal",
+      model: gen.model,
+      status: "failed",
+      engineCostUsd: confirmed && !getProvider("fal").billsFailures ? 0 : null,
+      durationMs: Math.max(0, ts - gen.createdAt),
+      projectId: gen.projectId,
+      shotId: gen.shotId,
+    },
+  );
+  await deliverGenerationSettlement(gen.id);
   invalidate(PROJECTS_KEY);
-  await meter({ id: gen.id, kind: "video", engine: "fal", model: gen.model, status: "failed",
-                engineCostUsd: getProvider("fal").billsFailures ? null : 0, durationMs: Math.max(0, ts - gen.createdAt),
-                projectId: gen.projectId, shotId: gen.shotId }, { critical: false }).catch(() => {});
   return { ...gen, status: "failed", error: message, updatedAt: ts };
 }
 
@@ -182,26 +209,52 @@ async function fail(gen: Generation, message: string): Promise<Generation> {
  * again and again — nothing is charged twice, and a store that blips is
  * simply tried on the next pass.
  */
-export async function syncFalVideo(gen: Generation): Promise<Generation> {
-  const p = gen.params as FalVideoParams & { falRequestId?: string; falModel?: string; task?: string };
+export async function syncFalVideo(
+  gen: Generation,
+  options: { strict?: boolean } = {},
+): Promise<Generation> {
+  await deliverGenerationSettlement(gen.id);
+  const savedCosts = await generationCosts(gen.id);
+  const p = gen.params as FalVideoParams & {
+    falRequestId?: string;
+    falModel?: string;
+    task?: string;
+  };
   if (!p.falRequestId || !p.falModel) return gen;
 
   let polled;
   try {
-    polled = await engineFor("fal").poll!({ provider: "fal", ref: p.falRequestId, model: gen.model, endpoint: p.falModel });
+    polled = await engineFor("fal").poll!({
+      provider: "fal",
+      ref: p.falRequestId,
+      model: gen.model,
+      endpoint: p.falModel,
+    });
   } catch (e) {
     const msg = (e as Error).message;
-    if (/\b404\b|not found/i.test(msg)) return fail(gen, "fal.ai no longer has this job. Render again.");
+    if (/\b404\b|not found/i.test(msg))
+      return fail(gen, "fal.ai no longer has this job. Render again.");
     // A refusal (422) is final; anything else gets another pass, until the ceiling.
-    if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg)) return fail(gen, msg);
+    if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg))
+      return fail(gen, msg, true);
     if (now() - gen.createdAt > UNREACHABLE_CEILING_MS) {
-      return fail(gen, `Could not reach fal.ai to find out how this render went: ${msg} If it did complete, fal will still have charged for it.`);
+      return fail(
+        gen,
+        `Could not reach fal.ai to find out how this render went: ${msg} If it did complete, fal will still have charged for it.`,
+      );
     }
+    if (options.strict) throw e;
     return { ...gen, error: msg };
   }
-  if (polled.status === "failed") return fail(gen, polled.error ?? "fal.ai could not finish this render.");
+  if (polled.status === "failed" || polled.status === "cancelled")
+    return fail(
+      gen,
+      polled.error ?? "fal.ai could not finish this render.",
+      true,
+    );
   if (polled.status !== "succeeded") {
-    if (now() - gen.createdAt > CEILING_MS) return fail(gen, "The render never came back from fal.ai. Render again.");
+    if (now() - gen.createdAt > CEILING_MS)
+      return fail(gen, "The render never came back from fal.ai. Render again.");
     return gen;
   }
   const url = polled.videoUrl!;
@@ -213,22 +266,62 @@ export async function syncFalVideo(gen: Generation): Promise<Generation> {
   } catch (e) {
     // fal's URL lives for a while; the next pass stores it. Loud, though.
     console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
+    if (options.strict) throw e;
     return { ...gen, error: (e as Error).message };
   }
-  let cost: number | null = null;
-  try { cost = falVideoCostUsd(getModel(gen.model).id, p); } catch { cost = null; }
+  let cost = savedCosts.cost;
+  if (cost == null)
+    try {
+      cost = falVideoCostUsd(getModel(gen.model).id, p);
+    } catch {
+      /* retain the reservation until pricing is known */
+    }
   const ts = now();
-  await db().execute({
-    sql: `UPDATE generations
+  await writeGenerationOutcome(
+    {
+      sql: `UPDATE generations
           SET status='succeeded', source_url=?, stored_url=?,
               cost_usd=COALESCE(cost_usd, ?), duration_ms=COALESCE(duration_ms, ?),
               store_ms=?, bytes=?, error=NULL, updated_at=?
           WHERE id=?`,
-    args: [url, stored.url, cost, Math.max(0, ts - gen.createdAt), ts - storeStart, stored.bytes, ts, gen.id],
-  });
+      args: [
+        url,
+        stored.url,
+        cost,
+        Math.max(0, ts - gen.createdAt),
+        ts - storeStart,
+        stored.bytes,
+        ts,
+        gen.id,
+      ],
+    },
+    {
+      id: gen.id,
+      kind: "video",
+      engine: "fal",
+      model: gen.model,
+      status: "succeeded",
+      engineCostUsd: cost != null ? cost + savedCosts.refinement : null,
+      durationMs: Math.max(0, ts - gen.createdAt),
+      projectId: gen.projectId,
+      shotId: gen.shotId,
+    },
+  );
+  await deliverGenerationSettlement(gen.id);
   invalidate(PROJECTS_KEY);
-  await meter({ id: gen.id, kind: "video", engine: "fal", model: gen.model, status: "succeeded",
-                engineCostUsd: cost != null ? cost + (gen.refineCostUsd ?? 0) : null, durationMs: Math.max(0, ts - gen.createdAt),
-                projectId: gen.projectId, shotId: gen.shotId }, { critical: false });
-  return { ...gen, status: "succeeded", sourceUrl: url, storedUrl: stored.url, costUsd: cost ?? gen.costUsd, error: null, updatedAt: ts };
+  return {
+    ...gen,
+    status: "succeeded",
+    sourceUrl: url,
+    storedUrl: stored.url,
+    costUsd: creditsApply(currentTenant()?.workspace) ? null : cost,
+    creditsBilled: creditsApply(currentTenant()?.workspace)
+      ? billCredits(
+          (cost ?? 0) + savedCosts.refinement,
+          marginKeyOf(gen.kind, gen.model),
+        )
+      : null,
+    error: null,
+    updatedAt: ts,
+  };
 }

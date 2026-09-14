@@ -1,6 +1,6 @@
 import { inngest, EVENTS } from "./inngest";
-import { db, ready } from "./db";
-import { usingBlob } from "./storage";
+import { ready } from "./db";
+import { runWorkerProbe } from "./workerProbe";
 import { loadJob, produce, seal, failJob } from "./renderWork";
 import { runInTenant } from "./tenant";
 import { getWorkspace, legacyWorkspace } from "./platform";
@@ -15,47 +15,26 @@ async function workspaceOf(data: { workspaceId?: string }) {
   return ws;
 }
 
-/**
- * The functions the worker route serves.
- *
- * Nothing here does render work yet. This is the wiring, and the one thing
- * worth proving before trusting a queue with paid renders: that a function
- * running OUTSIDE a request can still reach the database and the store. A
- * worker that cannot read the row it was handed is exactly the failure you
- * do not want to discover halfway through the first migration.
- */
-
-/**
- * Wiring check. Send `worker/probe`, or run it by hand from the Inngest
- * dashboard. Two steps on purpose: the second only runs if the first
- * succeeded, and on a retry the first replays from cache rather than
- * running again — the memoisation the whole design rests on.
- */
+/** A scoped deployment probe proves DB/storage access without spending on a model. */
 export const probe = inngest.createFunction(
   {
     id: "worker-probe",
     name: "Worker probe",
     triggers: [{ event: EVENTS.probe }],
   },
-  async ({ step }) => {
-    const database = await step.run("read-the-database", async () => {
-      const ws = await workspaceOf({});
-      return runInTenant(ws, async () => {
-        await ready();
-        const rs = await db().execute(
-          `SELECT COUNT(*) AS n FROM generations WHERE deleted = 0`,
-        );
-        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-        return { renders: Number((rs.rows[0] as any)?.n ?? 0) };
-      });
-    });
-
-    const storage = await step.run("check-the-store", async () => ({
-      blob: usingBlob(),
-    }));
-
-    return { ok: true, ...database, ...storage };
-  },
+  async ({ event, step }) =>
+    step.run("verify-scoped-database-and-storage", () =>
+      runWorkerProbe({
+        workspaceId: String(event.data.workspaceId ?? ""),
+        probeId: String(event.data.probeId ?? ""),
+        ...(event.data.expectedDeployment
+          ? { expectedDeployment: String(event.data.expectedDeployment) }
+          : {}),
+        ...(event.data.expectedEnvironment
+          ? { expectedEnvironment: String(event.data.expectedEnvironment) }
+          : {}),
+      }),
+    ),
 );
 
 /**
@@ -78,9 +57,9 @@ export const render = inngest.createFunction(
     id: "render",
     name: "Render a still or audio",
     triggers: [{ event: EVENTS.render }],
-    // Four at a time. These vendors bill per call and rate-limit per key, so
-    // an unbounded fan-out would spend money faster than anyone could stop it.
-    concurrency: [{ limit: 4 }],
+    // Cap total provider work; one busy workspace can occupy at most half
+    // the shared workers. Workspace plan admission remains enforced at reservation.
+    concurrency: [{ limit: 4 }, { limit: 2, key: "event.data.workspaceId" }],
     retries: 3,
     /* Inngest owns the row while it is working on it, so Inngest is what
        ends it. Without this the render would sit at "running" until the

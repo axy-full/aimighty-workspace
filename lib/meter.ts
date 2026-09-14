@@ -43,20 +43,44 @@ export type MeterEvent = {
 };
 
 export class FundingSourceChangedError extends Error {
-  constructor() {
-    super("The workspace's engine credentials changed before this job started. No paid request was sent; prepare a new request using the current credentials.");
+  constructor(
+    message = "The workspace's engine credentials changed before this job started. No paid request was sent; prepare a new request using the current credentials.",
+  ) {
+    super(message);
     this.name = "FundingSourceChangedError";
   }
 }
 
 /** Queued workers reload credentials. Do not submit with a different funding source from their reservation. */
-export async function assertMeterFunding(id: string, engine: string): Promise<void> {
+export async function assertMeterFunding(
+  id: string,
+  engine: string,
+): Promise<void> {
   const workspaceId = currentTenant()?.workspace?.id;
   if (!workspaceId) return;
   await platformReady();
-  const row = (await platformDb().execute({ sql: "SELECT workspace_id,paid_by_platform FROM meter_events WHERE id=?", args: [id] })).rows[0];
+  const standing = (
+    await platformDb().execute({
+      sql: "SELECT deleted_at,suspended_at FROM workspaces WHERE id=?",
+      args: [workspaceId],
+    })
+  ).rows[0];
+  if (standing?.deleted_at != null || standing?.suspended_at != null)
+    throw new FundingSourceChangedError(
+      "This workspace was paused or deleted before the job started. No paid request was sent.",
+    );
+  const row = (
+    await platformDb().execute({
+      sql: "SELECT workspace_id,paid_by_platform FROM meter_events WHERE id=?",
+      args: [id],
+    })
+  ).rows[0];
   if (!row) return; // Historical queued work can predate the meter.
-  if (row.workspace_id !== workspaceId || Boolean(row.paid_by_platform) !== paidByPlatform(vendorKeyNameFor(engine))) throw new FundingSourceChangedError();
+  if (
+    row.workspace_id !== workspaceId ||
+    Boolean(row.paid_by_platform) !== paidByPlatform(vendorKeyNameFor(engine))
+  )
+    throw new FundingSourceChangedError();
 }
 
 

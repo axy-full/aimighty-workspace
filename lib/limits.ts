@@ -61,14 +61,15 @@ export async function workspaceLimits(): Promise<Limits> {
 /** Where the workspace stands right now. */
 export async function standing(): Promise<Standing> {
   await ready();
-  const [live, hour, gens, ups] = await Promise.all([
+  const [live, hour, gens, ups, reserved] = await Promise.all([
     db().execute(`SELECT COUNT(*) AS n FROM generations WHERE status IN ('queued','running') AND deleted = 0`),
     db().execute({ sql: `SELECT COUNT(*) AS n FROM generations WHERE created_at >= ? AND status <> 'held'`, args: [now() - 3_600_000] }),
-    db().execute(`SELECT COALESCE(SUM(bytes), 0) AS b FROM generations WHERE deleted = 0`),
+    db().execute(`SELECT COALESCE(SUM(bytes), 0) AS b FROM generations`),
     db().execute(`SELECT COALESCE(SUM(COALESCE(bytes, 0) + COALESCE(derivative_bytes, 0)), 0) AS b FROM uploads`),
+    import("./uploadReservations").then(module => module.reservedUploadBytes()),
   ]);
   const n = (rs: { rows: unknown[] }, k: string) => Number((rs.rows[0] as Record<string, unknown>)?.[k] ?? 0);
-  return { running: n(live, "n"), startedLastHour: n(hour, "n"), usedBytes: n(gens, "b") + n(ups, "b") };
+  return { running: n(live, "n"), startedLastHour: n(hour, "n"), usedBytes: n(gens, "b") + n(ups, "b") + reserved };
 }
 
 /** The check at every submit: rate first (a refusal), then slots (a wait). */

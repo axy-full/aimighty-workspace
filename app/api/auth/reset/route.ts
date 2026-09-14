@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { findByEmail, sourceKey, tokenHash } from "@/lib/auth";
 import { platformDb, platformReady, now } from "@/lib/platform";
 import { mailConfigured, sendMail, resetEmail, inviteOrigin } from "@/lib/mail";
+import { accountJson, accountFailure, sameOriginProblem } from "@/lib/accountDb";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,10 @@ const PER_USER = 3;
  * response, so neither the words nor the timing say which emails exist.
  */
 export async function POST(req: Request) {
+  if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   await platformReady();
-  const body = await req.json().catch(() => ({}));
+  let body: Record<string, unknown>;
+  try { body = await accountJson(req); } catch (error) { return accountFailure(error); }
   const email = String(body.email ?? "").trim().toLowerCase();
   if (!email || !email.includes("@")) return NextResponse.json({ error: "Enter the email you signed up with." }, { status: 400 });
   if (!mailConfigured()) {

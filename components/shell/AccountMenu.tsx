@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession, useSignInHref, clearPrivateLocal } from "@/lib/session";
 import { creditsNumber } from "@/lib/price";
 import { useApi } from "@/lib/useApi";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import Mono from "@/components/ui/Mono";
 
 /**
@@ -26,12 +27,14 @@ const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEPT", 
 type UsageMonths = { months?: { month: string; credits: number }[] };
 
 export default function AccountMenu() {
+  const scopedFetch = useScopedFetch();
   const { signedIn, name, role, workspace, workspaces } = useSession();
   const signIn = useSignInHref();
   const path = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [error, setError] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const { data: usage } = useApi<UsageMonths>(open && signedIn ? "/api/usage" : null);
 
@@ -63,15 +66,23 @@ export default function AccountMenu() {
       on ? "bg-selected text-ink" : "text-ink-body hover:bg-[rgba(245,246,248,.08)]"}`;
 
   const signOut = async () => {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-    clearPrivateLocal();
-    router.push("/login");
-    router.refresh();
+    setError("");
+    try {
+      const response = await scopedFetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Sign out failed. Try again.");
+      clearPrivateLocal();
+      router.push("/login");
+      router.refresh();
+    } catch (problem) { setError((problem as Error).message); }
   };
   const switchTo = async (id: string) => {
     if (id === workspace?.id) { setOpen(false); return; }
-    const r = await fetch("/api/workspaces/switch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
-    if (r.ok) { clearPrivateLocal(); setOpen(false); router.push("/"); router.refresh(); }
+    setError("");
+    try {
+      const r = await scopedFetch("/api/workspaces/switch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Workspace could not be changed. Try again.");
+      clearPrivateLocal(); setOpen(false); router.push("/"); router.refresh();
+    } catch (problem) { setError((problem as Error).message); }
   };
 
   return (
@@ -81,6 +92,7 @@ export default function AccountMenu() {
           open ? "bg-ink text-ground" : "border border-border-mid bg-card text-ink"}`}>
         <span className="ui-mono">{initials}</span>
       </button>
+      {error && <p role="alert" className="text-[13px] text-lift">{error}</p>}
       {open && (
         <div role="menu" className="absolute right-0 top-[44px] z-[5] flex w-[220px] flex-col rounded-card border border-border-mid bg-card p-[6px]">
           {switching ? (

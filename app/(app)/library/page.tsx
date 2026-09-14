@@ -7,7 +7,7 @@ import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useAtomikRail } from "@/lib/atomikRail";
-import { uploadFile } from "@/lib/uploadClient";
+import { useUploadFile } from "@/lib/useUploadFile";
 import { ELEMENT_KINDS, type ElementKind } from "@/lib/rig";
 import type { ElementFull } from "@/lib/elements";
 import type { ProductionRow } from "@/lib/productions";
@@ -59,6 +59,7 @@ export default function LibraryPage() {
 }
 
 function Library() {
+  const uploadFile = useUploadFile();
   const router = useRouter();
   const search = useSearchParams();
   const { signedIn } = useSession();

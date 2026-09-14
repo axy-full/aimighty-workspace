@@ -97,10 +97,7 @@ export function sameOriginProblem(req: Request): boolean {
 export function accountFailure(error: unknown): Response {
   if (error instanceof AccountError)
     return Response.json({ error: error.message }, { status: error.status });
-  console.error(
-    "Account operation failed:",
-    error instanceof Error ? error.message : "Unknown error",
-  );
+  console.error(JSON.stringify({ event: "account_operation_failed" }));
   return Response.json(
     {
       error:

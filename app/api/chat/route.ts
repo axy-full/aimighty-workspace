@@ -1,3 +1,4 @@
+import { withMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -88,10 +89,6 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json({ error: "Say something or attach a file" }, { status: 400 });
   }
 
-  if (uploadId) {
-    const up = await db().execute({ sql: `SELECT id FROM uploads WHERE id=? LIMIT 1`, args: [uploadId] });
-    if (!up.rows[0]) return NextResponse.json({ error: "That attachment is gone" }, { status: 400 });
-  }
 
   // Mentions come as ids from the composer's autocomplete, but only ids that
   // belong to real, active users survive — the client's list is a suggestion.
@@ -109,10 +106,10 @@ export const POST = withTenant(async function POST(req: Request) {
 
   const mid = id("msg");
   const ts = now();
-  await db().execute({
+  await withMediaSources({ uploadId }, (tx) => tx.execute({
     sql: `INSERT INTO messages (id, user_id, text, mentions, upload_id, created_at) VALUES (?,?,?,?,?,?)`,
     args: [mid, got.user.id, text, JSON.stringify(mentions), uploadId, ts],
-  });
+  }));
 
   // Banner on every teammate's device; never blocks the send.
   let attachmentName: string | null = null;

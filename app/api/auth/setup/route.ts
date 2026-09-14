@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, createSession, createFirstAdmin, passwordProblem, userCount } from "@/lib/auth";
+import { accountJson, accountFailure, sameOriginProblem } from "@/lib/accountDb";
 
 export const dynamic = "force-dynamic";
 
 /** First run only: the first account becomes the platform's owner. Closed once one exists. */
 export async function POST(req: Request) {
+  if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   if ((await userCount()) > 0) {
     return NextResponse.json({ error: "Setup is already complete. Ask for an invitation." }, { status: 403 });
   }
-  const body = await req.json().catch(() => ({}));
+  let body: Record<string, unknown>;
+  try { body = await accountJson(req); } catch (error) { return accountFailure(error); }
   const email = String(body.email ?? "").trim().toLowerCase();
   const name = String(body.name ?? "").trim();
   const password = String(body.password ?? "");

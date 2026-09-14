@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { SESSION_COOKIE, createSession, hashPassword, passwordProblem, tokenHash, clearFailures } from "@/lib/auth";
-import { platformDb, platformReady, destroyAccountSessions, now } from "@/lib/platform";
+import { SESSION_COOKIE, tokenHash } from "@/lib/auth";
+import { platformDb, platformReady, now } from "@/lib/platform";
+import { accountJson, accountFailure, sameOriginProblem } from "@/lib/accountDb";
+import { resetAccountPassword } from "@/lib/passwordReset";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -31,22 +33,15 @@ export async function GET(_req: Request, { params }: Ctx) {
 
 /** Set the new password: the link is spent, every session ends, this browser signs in. */
 export async function POST(req: Request, { params }: Ctx) {
+  if (sameOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  try {
   const { token } = await params;
-  const body = await req.json().catch(() => ({}));
+  const body = await accountJson(req);
   const password = String(body.password ?? "");
-  const pwProblem = passwordProblem(password);
-  if (pwProblem) return NextResponse.json({ error: pwProblem }, { status: 400 });
-  const { user, problem } = await lookup(token);
-  if (problem) return NextResponse.json({ error: problem }, { status: 410 });
-  const p = platformDb();
-  const spent = await p.execute({ sql: `UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL`, args: [now(), tokenHash(token)] });
-  if (Number(spent.rowsAffected ?? 0) !== 1) return NextResponse.json({ error: "That link has already been used." }, { status: 410 });
-  await p.execute({ sql: `UPDATE accounts SET password_hash = ?, locked_until = NULL, failed_count = 0 WHERE id = ?`, args: [hashPassword(password), user.id] });
-  await destroyAccountSessions(String(user.id));
-  await clearFailures(String(user.id));
-  const session = await createSession(String(user.id));
+  const { session, name } = await resetAccountPassword(token, password);
   (await cookies()).set(SESSION_COOKIE, session, {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 30 * 86400,
   });
-  return NextResponse.json({ ok: true, name: user.name });
+  return NextResponse.json({ ok: true, name });
+  } catch (error) { return accountFailure(error); }
 }

@@ -179,7 +179,8 @@ test("asset training retains its identity through close and retries one asset cr
             true,
           );
     }
-    if (path === "/api/uploads" && r.method() === "POST")
+    if (path === "/api/uploads/chunk") return json({ ok: true });
+    if (path === "/api/uploads/finish" && r.method() === "POST")
       return json(
         {
           id: "upload-face",
@@ -207,13 +208,11 @@ test("asset training retains its identity through close and retries one asset cr
   await sheet
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Recoverable face");
-  await sheet
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "face.webp",
-      mimeType: "image/webp",
-      buffer: image,
-    });
+  await sheet.locator("input[type=file]").setInputFiles({
+    name: "face.webp",
+    mimeType: "image/webp",
+    buffer: image,
+  });
   await sheet
     .getByRole("checkbox", { name: "Consent to train", exact: true })
     .check();
@@ -404,7 +403,7 @@ test("ordinary drafts belong to each account even inside the same workspace", as
   await signInLocally(page.request);
   const member = await page.request.get("/api/me").then((r) => r.json());
   const code = randomBytes(18).toString("base64url"),
-    db = createClient({ url: localPlatformDbUrl() });
+    db = createClient({ url: localPlatformDbUrl(), timeout: 2_000 });
   await db.execute({
     sql: "INSERT INTO workspace_invites(code,workspace_id,email,name,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
     args: [

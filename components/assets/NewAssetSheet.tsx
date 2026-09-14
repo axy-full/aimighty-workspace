@@ -7,7 +7,7 @@ import {usePaidAction} from "@/lib/usePaidAction";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
 import { useProject } from "@/lib/projectContext";
-import { uploadFile } from "@/lib/uploadClient";
+import { useUploadFile } from "@/lib/useUploadFile";
 import type { ElementKind } from "@/lib/rig";
 import type { Generation } from "@/lib/jobs";
 import { Mono } from "@/components/ui";
@@ -111,6 +111,7 @@ export default function NewAssetSheet(props: SheetProps) {
 }
 
 function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
+  const uploadFile = useUploadFile();
   const router = useRouter();
   const { signedIn,workspace,email } = useSession();
   const paid=usePaidAction("/api/identities/train:new-asset");

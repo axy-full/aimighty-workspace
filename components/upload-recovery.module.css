@@ -1,0 +1,93 @@
+.panel {
+  position: fixed;
+  z-index: 90;
+  right: 16px;
+  bottom: 18px;
+  width: min(390px, calc(100vw - 32px));
+  color: #eee;
+  background: #141517;
+  border: 1px solid #383a3e;
+  border-radius: 12px;
+  font:
+    13px/1.45 "Particl Geist",
+    Arial,
+    sans-serif;
+  box-shadow: 0 8px 32px #0005;
+}
+.panel summary {
+  cursor: pointer;
+  padding: 11px 14px;
+  font-weight: 600;
+}
+.panel:not([open]) {
+  width: 130px;
+}
+.panel summary span {
+  float: right;
+  color: #aaa;
+}
+.body {
+  padding: 0 14px 14px;
+  max-height: min(50vh, 450px);
+  overflow: auto;
+}
+.body > p {
+  color: #aaa;
+  margin: 0 0 12px;
+}
+.row {
+  border-top: 1px solid #383a3e;
+  padding: 12px 0 0;
+  margin-top: 12px;
+}
+.row > strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.row > span {
+  display: block;
+  font-size: 12px;
+  color: #aaa;
+  margin: 3px 0 8px;
+}
+.row p {
+  overflow-wrap: anywhere;
+  margin: 7px 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.actions button,
+.actions a {
+  border: 1px solid #414348;
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: #25272b;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.actions button:focus-visible,
+.actions a:focus-visible,
+.panel summary:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 3px;
+}
+@media (max-width: 900px) {
+  .panel {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    right: 12px;
+    width: min(390px, calc(100vw - 24px));
+  }
+  .actions button,
+  .actions a {
+    min-height: 42px;
+  }
+}

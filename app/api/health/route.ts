@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
-import { currentContext } from "@/lib/auth";
+import { currentContext, requireSuperAdmin } from "@/lib/auth";
+import { randomUUID } from "node:crypto";
 import { runInTenant } from "@/lib/tenant";
 import { platformDb, platformReady } from "@/lib/platform";
 import { vendorKey } from "@/lib/vendorKeys";
@@ -35,16 +36,20 @@ export async function GET(req: Request) {
    * `deep` is stricter still: it WRITES to Vercel Blob, presigns, ranges
    * and deletes on every call, so anonymously it was an unauthenticated
    * lever on the studio's storage account. */
-  const ctx = await currentContext();
+  const ctx = await currentContext().catch(() => null);
   const full = Boolean(ctx?.workspace);
-  const deep = full && new URL(req.url).searchParams.get("deep") === "1";
+  const deep = new URL(req.url).searchParams.get("deep") === "1";
+  if (deep) {
+    const auth = await requireSuperAdmin().catch(() => ({ response: NextResponse.json({ error: "Diagnostics unavailable" }, { status: 503 }) }));
+    if (auth.response) return auth.response;
+  }
   let database = "unreachable";
   let videosSaved = 0;
   let videosAtRisk = 0; // succeeded renders whose file never landed in our storage
   try {
     await platformReady();
     await platformDb().execute("SELECT 1");
-    database = process.env.TURSO_DATABASE_URL ? "turso" : "local-file";
+    database = /^(libsql|https):/.test(process.env.PLATFORM_DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "") ? "turso" : "local-file";
     if (ctx?.workspace) {
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
       const r: any = await runInTenant(ctx.workspace, async () => {
@@ -52,75 +57,62 @@ export async function GET(req: Request) {
         const rs = await db().execute(`
           SELECT SUM(CASE WHEN stored_url IS NOT NULL THEN 1 ELSE 0 END) AS saved,
                  SUM(CASE WHEN stored_url IS NULL THEN 1 ELSE 0 END) AS atrisk
-          FROM generations WHERE status='succeeded'`);
+          FROM generations WHERE status='succeeded' AND deleted=0`);
         return rs.rows[0];
       });
       videosSaved = Number(r?.saved ?? 0);
       videosAtRisk = Number(r?.atrisk ?? 0);
     }
   } catch {
-    /* leave as unreachable */
+    database = "unreachable";
   }
 
-  /* Live storage probe: write one tiny private object, then remove it.
-     GATED ON `deep`, which requires a signed-in request and explicit deep=1. It used to run for everyone, so
-     an unauthenticated caller made this deployment write and delete a Blob
-     object on every request — a loop against a public URL turning into
-     storage operations and their billing, on somebody else's account.
-     A monitor does not need it: what it asks is whether the app is alive and
-     can reach its dependencies, and an anonymous caller now gets storage
-     reported as configured-or-not rather than proven by a write. The probe
-     exists because a hand-pasted token proved nothing by being present, and
-     the person who needs that proof is the one signed in looking for it. */
+  // Public checks are read-only. Writing a storage probe requires a platform
+  // administrator; ordinary workspace accounts cannot trigger Blob probes.
   let storage = process.env.BLOB_READ_WRITE_TOKEN
     ? "blob-configured"
     : process.env.NODE_ENV === "production"
       ? "missing"
       : "local-disk";
   let storageError: string | null = null;
-  if (deep && process.env.BLOB_READ_WRITE_TOKEN) {
-    try {
-      const { put, del } = await import("@vercel/blob");
-      const probe = await put("health/probe.txt", `ok ${Date.now()}`, {
-        access: "private",
-        addRandomSuffix: false,
-        allowOverwrite: true,
-      });
-      await del(probe.url);
-      storage = "blob-private";
-    } catch (e) {
-      storage = "blob-BROKEN";
-      // Error text only — a Blob error never contains the token itself.
-      storageError = (e as Error).message.slice(0, 140);
-    }
-  }
-
   /* Deep probe (?deep=1): the playback path itself. Media is served by
      redirecting to a presigned private-blob URL, so what actually matters is
      whether THAT url answers a Range request the way iOS Safari demands —
      a 206 with a Content-Range. Presign, ask for two bytes, report, clean up. */
   let presignRange: string | null = null;
   if (deep && process.env.BLOB_READ_WRITE_TOKEN) {
-    const probePath = "health/range-probe.bin";
+    const probePath = `health/${randomUUID()}/range-probe.bin`;
+    let probeUrl: string | null = null;
     try {
-      const { put, del } = await import("@vercel/blob");
+      const { put } = await import("@vercel/blob");
       const probe = await put(probePath, Buffer.from("0123456789"), {
         access: "private",
         contentType: "application/octet-stream",
         addRandomSuffix: false,
         allowOverwrite: true,
       });
+      probeUrl = probe.url;
       const signed = await presignedReadUrl(probePath, 1);
       const r = await fetch(signed, {
         headers: { Range: "bytes=0-1" },
         cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
       });
       presignRange =
         `${r.status} ${r.headers.get("content-range") ?? "no-content-range"} ` +
         `accept-ranges=${r.headers.get("accept-ranges") ?? "-"}`;
-      await del(probe.url);
-    } catch (e) {
-      presignRange = `ERROR ${(e as Error).message.slice(0, 160)}`;
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      if (r.status !== 206 || r.headers.get("content-range") !== "bytes 0-1/10" || bytes.length !== 2 || bytes[0] !== 48 || bytes[1] !== 49) {
+        storage = "blob-BROKEN";
+      } else { storage = "blob-private"; }
+    } catch {
+      presignRange = "ERROR: Private media range probe failed";
+      storage = "blob-BROKEN";
+    } finally {
+      if (probeUrl) {
+        try { const { del } = await import("@vercel/blob"); await del(probeUrl); }
+        catch { storage = "blob-BROKEN"; storageError = "Storage probe cleanup failed"; }
+      }
     }
   }
 
@@ -144,6 +136,7 @@ export async function GET(req: Request) {
             : storage === "missing"
               ? "missing"
               : "ok",
+        storageVerified: false,
       },
       { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } },
     );
@@ -221,7 +214,9 @@ async function cronStatus() {
     by: st.lastCronBy ?? null,
     agent: st.lastCronAgent ?? null,
     agoMinutes: ago,
-    healthy: ago <= 15,
+    healthy: ago <= 15 && st.lastCronStatus !== "failed" && st.lastCronStatus !== "partial",
+    status: st.lastCronStatus ?? "unknown",
+    lastAttemptAt: Number(st.lastCronAttemptAt ?? 0) || null,
     result,
   };
 }

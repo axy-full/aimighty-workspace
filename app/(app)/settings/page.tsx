@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowUpRight, Building2, Download, ShieldCheck } from "lucide-react";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useMoney } from "@/lib/price";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { usePageLeaveGuard, withPageLeaveGuard } from "@/lib/usePageLeaveGuard";
@@ -21,6 +22,7 @@ import ManagementPage, {
   ManagementCard,
   ManagementNotice,
 } from "@/components/management/ManagementPage";
+import WorkspaceAudit from "@/components/management/WorkspaceAudit";
 
 type Me = {
   name: string;
@@ -51,6 +53,7 @@ const tabs = [
   ["storage", "Files & assets"],
   ["notifications", "Notifications"],
   ["account", "Account"],
+  ["activity", "Activity"],
 ] as const;
 const gb = (n: number) =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${Math.round(n / 1e6)} MB`;
@@ -111,6 +114,7 @@ export default function SettingsPage() {
   return <SettingsContent key={`${session.workspace?.id}:${session.email}`} />;
 }
 function SettingsContent() {
+  const scopedFetch = useScopedFetch();
   usePageTitle("Workspace");
   const router = useRouter();
   const session = useSession();
@@ -171,7 +175,7 @@ function SettingsContent() {
     setNotice("");
     try {
       if (nameChanged) {
-        const r = await fetch("/api/workspaces", {
+        const r = await scopedFetch("/api/workspaces", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: workspaceName.trim() }),
@@ -184,7 +188,7 @@ function SettingsContent() {
         router.refresh();
       }
       if (dirty) {
-        const r = await fetch("/api/settings", {
+        const r = await scopedFetch("/api/settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(draft),
@@ -207,7 +211,7 @@ function SettingsContent() {
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/me/notify", {
+      const r = await scopedFetch("/api/me/notify", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind, on }),
@@ -227,7 +231,7 @@ function SettingsContent() {
     setError("");
     try {
       await withPageLeaveGuard(async () => {
-        const r = await fetch("/api/auth/logout", { method: "POST" });
+        const r = await scopedFetch("/api/auth/logout", { method: "POST" });
         if (!r.ok) throw new Error("Sign out failed. Try again.");
         router.push("/login");
         router.refresh();
@@ -250,7 +254,7 @@ function SettingsContent() {
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/workspaces", {
+      const r = await scopedFetch("/api/workspaces", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: typed }),
@@ -363,7 +367,7 @@ function SettingsContent() {
                   className="management-tabs"
                   aria-label="Workspace settings"
                 >
-                  {tabs.map(([id, label]) => (
+                  {tabs.filter(([id]) => id !== "activity" || owner || admin).map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
@@ -380,6 +384,8 @@ function SettingsContent() {
               </div>
               <div className="management-split">
                 <div className="management-stack">
+                  {tab === "activity" && (owner || admin) && session.requestScope && <WorkspaceAudit key={session.requestScope} scope={session.requestScope} />}
+                  {tab === "activity" && !owner && !admin && <ManagementNotice>Workspace activity is available to owners and admins.</ManagementNotice>}
                   {tab === "general" && (
                     <ManagementCard
                       title="Workspace identity"
@@ -855,6 +861,7 @@ function SettingsContent() {
 
 /** Push on this device — a switch, or the one-line reason it can't be. */
 function PushRow() {
+  const scopedFetch = useScopedFetch();
   type PushState =
     | "off"
     | "on"
@@ -906,7 +913,7 @@ function PushRow() {
         userVisibleOnly: true,
         applicationServerKey: urlB64ToUint8Array(PUSH_KEY),
       });
-      const res = await fetch("/api/push/subscribe", {
+      const res = await scopedFetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription: sub.toJSON() }),
@@ -928,11 +935,13 @@ function PushRow() {
       const reg = await navigator.serviceWorker.getRegistration();
       const sub = reg && (await reg.pushManager.getSubscription());
       if (sub) {
-        await fetch("/api/push/unsubscribe", {
+        const response = await scopedFetch("/api/push/unsubscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: sub.endpoint }),
         });
+        if (!response.ok)
+          throw new Error((await response.json().catch(() => ({}))).error || "Notification settings could not be changed.");
         await sub.unsubscribe();
       }
       setState("off");

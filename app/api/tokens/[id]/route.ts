@@ -1,3 +1,5 @@
+import { securityAuditStatement } from "@/lib/securityAudit";
+import { requireTenant } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireSession, withTenant } from "@/lib/auth";
@@ -18,9 +20,10 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const user = got.user;
   await ready();
   const { id } = await params;
-  await db().execute({
+  if(!/^[A-Za-z0-9_.:-]{1,160}$/.test(id))return NextResponse.json({error:"Invalid token."},{status:400});
+  await db().batch([{
     sql: `UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL`,
     args: [now(), id, user.id],
-  });
+  }, securityAuditStatement({workspaceId:requireTenant().id,actorId:user.id,action:"api_token.revoked",targetType:"api_token",targetId:id}, true)], "write");
   return NextResponse.json({ ok: true });
-});
+}, { requireRequestScope: true });

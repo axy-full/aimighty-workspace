@@ -24,7 +24,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const projectId = String(body.projectId ?? "");
   if (!ws || !projectId) return NextResponse.json({ error: "Which production?" }, { status: 400 });
-  const { share, token } = await mintShare({ workspaceId: ws.id, projectId, label: String(body.label ?? ""), days: Number(body.days) || SHARE_DAYS, by: got.user.name });
+  const { share, token } = await mintShare({ workspaceId: ws.id, projectId, label: String(body.label ?? ""), days: Number(body.days) || SHARE_DAYS, by: got.user.name, actorId: got.user.id });
   return NextResponse.json({ share: { ...share, live: true }, url: `${new URL(req.url).origin}/review/${token}` }, { status: 201 });
 });
 
@@ -35,6 +35,7 @@ export const DELETE = withTenant(async function DELETE(req: Request) {
   const ws = currentTenant()?.workspace;
   const shareId = new URL(req.url).searchParams.get("id") ?? "";
   if (!ws || !shareId) return NextResponse.json({ error: "Which link?" }, { status: 400 });
-  const gone = await revokeShare(ws.id, shareId);
+  if(!/^[A-Za-z0-9_.:-]{1,160}$/.test(shareId))return NextResponse.json({error:"Invalid review link."},{status:400});
+  const gone = await revokeShare(ws.id, shareId, got.user.id);
   return NextResponse.json({ ok: gone });
 });

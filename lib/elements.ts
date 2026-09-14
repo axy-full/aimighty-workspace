@@ -1,3 +1,5 @@
+import { mediaMutation, validateMediaSources } from "./mediaMutation";
+import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id } from "./db";
 import { getSetting, setSetting } from "./settings";
 import {
@@ -195,30 +197,51 @@ export type NewElement = {
  * is there so the shape of a character is the same everywhere before anyone
  * has photographed a wardrobe.
  */
-export async function createElement(input: NewElement, by: string): Promise<ElementFull> {
+export async function createElement(
+  input: NewElement,
+  by: string,
+): Promise<ElementFull> {
   await ready();
   const ts = now();
   const eid = id("el");
-  await db().execute({
-    sql: `INSERT INTO elements (id, project_id, cast_id, kind, name, description,
-                                from_shot_id, from_gen_id, created_by, created_at, updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    args: [eid, input.projectId ?? null, input.castId ?? null, input.kind, input.name.trim(),
-           (input.description ?? "").trim(), input.fromShotId ?? null, input.fromGenId ?? null, by, ts, ts],
-  });
-
-  const kinds = attributesOf(input.kind);
-  for (let i = 0; i < kinds.length; i++) {
-    await db().execute({
-      sql: `INSERT INTO element_attributes (id, element_id, kind, label, position, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?)`,
-      args: [id("attr"), eid, kinds[i], "", i, ts, ts],
+  await mediaMutation(async (tx) => {
+    await validateMediaSources(tx, { genId: input.fromGenId });
+    await tx.execute({
+      sql: `INSERT INTO elements (id, project_id, cast_id, kind, name, description,
+                                  from_shot_id, from_gen_id, created_by, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      args: [
+        eid,
+        input.projectId ?? null,
+        input.castId ?? null,
+        input.kind,
+        input.name.trim(),
+        (input.description ?? "").trim(),
+        input.fromShotId ?? null,
+        input.fromGenId ?? null,
+        by,
+        ts,
+        ts,
+      ],
     });
-  }
+
+    const kinds = attributesOf(input.kind);
+    for (let i = 0; i < kinds.length; i++) {
+      await tx.execute({
+        sql: `INSERT INTO element_attributes (id, element_id, kind, label, position, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?)`,
+        args: [id("attr"), eid, kinds[i], "", i, ts, ts],
+      });
+    }
+  });
   return (await getElement(eid))!;
 }
 
-export type VersionSource = { uploadId?: string | null; genId?: string | null; identityId?: string | null };
+export type VersionSource = {
+  uploadId?: string | null;
+  genId?: string | null;
+  identityId?: string | null;
+};
 
 /**
  * A new version of one attribute.
@@ -229,31 +252,76 @@ export type VersionSource = { uploadId?: string | null; genId?: string | null; i
  * is what costs — expressed as two writes rather than one.
  */
 export async function addVersion(
-  attributeId: string, source: VersionSource, opts: { label?: string; status?: VersionRow["status"]; makeCurrent?: boolean }, by: string,
+  attributeId: string,
+  source: VersionSource,
+  opts: {
+    label?: string;
+    status?: VersionRow["status"];
+    makeCurrent?: boolean;
+  },
+  by: string,
 ): Promise<VersionRow | null> {
   await ready();
-  const attr = await db().execute({ sql: `SELECT id, element_id FROM element_attributes WHERE id = ?`, args: [attributeId] });
-  if (!attr.rows.length) return null;
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  const elementId = String((attr.rows[0] as any).element_id);
+  return mediaMutation(async (tx) => {
+    const attr = await tx.execute({
+      sql: `SELECT id, element_id FROM element_attributes WHERE id = ?`,
+      args: [attributeId],
+    });
+    if (!attr.rows.length) return null;
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const elementId = String((attr.rows[0] as any).element_id);
 
-  const sources = [source.uploadId, source.genId, source.identityId].filter(Boolean);
-  if (sources.length !== 1) return null;
+    const sources = [source.uploadId, source.genId, source.identityId].filter(
+      Boolean,
+    );
+    if (sources.length !== 1) return null;
 
-  const ts = now();
-  const vid = id("ver");
-  const status = opts.status ?? "ready";
-  await db().execute({
-    sql: `INSERT INTO attribute_versions (id, attribute_id, element_id, label, upload_id, gen_id, identity_id, status, created_by, created_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    args: [vid, attributeId, elementId, (opts.label ?? "").trim(),
-           source.uploadId ?? null, source.genId ?? null, source.identityId ?? null, status, by, ts],
+    await validateMediaSources(tx, source);
+    if (
+      source.identityId &&
+      !(
+        await tx.execute({
+          sql: "SELECT id FROM identities WHERE id=?",
+          args: [source.identityId],
+        })
+      ).rows.length
+    )
+      throw new MediaSourceError(
+        "The referenced identity is no longer available.",
+      );
+
+    const ts = now();
+    const vid = id("ver");
+    const status = opts.status ?? "ready";
+    await tx.execute({
+      sql: `INSERT INTO attribute_versions (id, attribute_id, element_id, label, upload_id, gen_id, identity_id, status, created_by, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      args: [
+        vid,
+        attributeId,
+        elementId,
+        (opts.label ?? "").trim(),
+        source.uploadId ?? null,
+        source.genId ?? null,
+        source.identityId ?? null,
+        status,
+        by,
+        ts,
+      ],
+    });
+    // A version whose views are still rendering is not something to point at yet.
+    if (opts.makeCurrent && status === "ready")
+      await tx.execute({
+        sql: "UPDATE element_attributes SET current_id=?,updated_at=? WHERE id=?",
+        args: [vid, ts, attributeId],
+      });
+
+    const rs = await tx.execute({
+      sql: `SELECT * FROM attribute_versions WHERE id = ?`,
+      args: [vid],
+    });
+    return rowToVersion(rs.rows[0]);
   });
-  // A version whose views are still rendering is not something to point at yet.
-  if (opts.makeCurrent && status === "ready") await setCurrentVersion(attributeId, vid);
-
-  const rs = await db().execute({ sql: `SELECT * FROM attribute_versions WHERE id = ?`, args: [vid] });
-  return rowToVersion(rs.rows[0]);
 }
 
 /** Point an attribute at one of its versions. What this costs is the quote engine's business. */

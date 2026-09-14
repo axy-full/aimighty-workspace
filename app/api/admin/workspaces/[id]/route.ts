@@ -93,7 +93,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (mode === "platform" && !platformKeysByDefault()) {
       return NextResponse.json({ error: "The platform doesn't lend its keys on this deployment." }, { status: 400 });
     }
-    await setWorkspaceMode(id, mode === "platform");
+    await setWorkspaceMode(id, mode === "platform", got.user.id);
     out.mode = mode;
   }
   return NextResponse.json(out);

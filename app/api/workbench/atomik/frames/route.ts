@@ -1,9 +1,7 @@
-import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { db } from "@/lib/db";
-import { checkQuota } from "@/lib/limits";
+import { abandonUpload, beginDirectUpload, completeUpload, planUploadObjects, prepareUpload, type FinishClaim } from "@/lib/uploadReservations";
 import { storeUpload } from "@/lib/storage";
 import { getAtomikProject } from "@/lib/workbench/atomik-server";
 import { assertAtomikVideoSource } from "@/lib/workbench/atomik-references";
@@ -37,6 +35,7 @@ export const POST = withTenant(async (req: Request) => {
     return json({ error: "Choose a saved video reference." }, 400);
   if (Number(req.headers.get("content-length") || 0) > 1_000_000)
     return json({ error: "Keep sampled stills under 1 MB." }, 413);
+  let claim: FinishClaim | undefined;
   try {
     const project = await getAtomikProject(auth.user.id, projectId);
     await assertAtomikVideoSource(project, assetId, auth.user.id);
@@ -72,27 +71,18 @@ export const POST = withTenant(async (req: Request) => {
       .flatten({ background: "#fff" })
       .jpeg({ quality: 85 })
       .toBuffer({ resolveWithObject: true });
-    const quota = await checkQuota(data.length);
-    if (!quota.allow) return json({ error: quota.error }, 507);
-    const id = randomUUID(),
-      stored = await storeUpload(id, "jpg", data, "image/jpeg");
-    await db().execute({
-      sql: `INSERT INTO uploads (id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?,'image',?)`,
-      args: [
-        id,
-        "Atomik video review still.jpg",
-        "image/jpeg",
-        "jpg",
-        data.length,
-        stored.sha256,
-        info.width,
-        info.height,
-        stored.url,
-        Date.now(),
-      ],
-    });
+    claim = await beginDirectUpload(auth.user.id, data.length);
+    const id = claim.uploadId;
+    await planUploadObjects(claim, [{ id, ext: "jpg" }], data.length);
+    const stored = await storeUpload(id, "jpg", data, "image/jpeg");
+    await prepareUpload(claim, { count: 0, response: { id }, record: {
+      id, filename: "Atomik video review still.jpg", mime: "image/jpeg", ext: "jpg", bytes: data.length,
+      sha256: stored.sha256, width: info.width, height: info.height, storedUrl: stored.url, kind: "image", durationS: null,
+    } });
+    await completeUpload(claim);
     return json({ id });
   } catch (error) {
+    if (claim) await abandonUpload(claim).catch(() => {});
     const status = Number((error as { status?: number })?.status) || 422;
     return json(
       {

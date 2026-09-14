@@ -24,4 +24,4 @@ export const POST = withTenant(async function POST(req: Request) {
   }
   await saveSubscription(got.user.id, sub);
   return NextResponse.json({ ok: true });
-});
+}, { requireRequestScope: true });

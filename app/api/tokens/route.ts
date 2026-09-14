@@ -1,3 +1,5 @@
+import { securityAuditStatement } from "@/lib/securityAudit";
+import { requireTenant } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import {
@@ -72,12 +74,12 @@ export const POST = withTenant(async function POST(req: Request) {
 
   const secret = mintTokenSecret();
   const tid = id("tok");
-  await db().execute({
+  await db().batch([{
     sql: `INSERT INTO api_tokens (id, token_hash, name, user_id, scope, cap_usd, created_at)
           VALUES (?,?,?,?,?,?,?)`,
     args: [tid, tokenHash(secret), name, user.id, scope, capUsd, now()],
-  });
+  }, securityAuditStatement({workspaceId:requireTenant().id,actorId:user.id,action:"api_token.created",targetType:"api_token",targetId:tid,details:{scope}})], "write");
 
   // The only time the secret exists outside a hash. Shown once, never again.
   return NextResponse.json({ id: tid, name, scope, capUsd, token: secret });
-});
+}, { requireRequestScope: true });

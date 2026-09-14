@@ -1,3 +1,5 @@
+import { accountRequestScopeMatches } from "@/lib/accountRequestScope";
+import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { NextResponse, after } from "next/server";
 import { currentContext,requireOwner,withTenant,SESSION_COOKIE } from "@/lib/auth";
 import {cookies} from "next/headers";
@@ -12,16 +14,18 @@ export const dynamic = "force-dynamic";
 export const maxDuration=300;
 
 /** The workspaces this account belongs to, and which one the session is in. */
-export async function GET() {
+export async function GET(req: Request) {
   const ctx = await currentContext();
   if (!ctx) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  return NextResponse.json({ active: ctx.workspace?.id ?? null, workspaces: ctx.workspaces, pending:await pendingWorkspaces(ctx.user.id),...workspaceCreationReadiness() });
+  if(req.headers.has("X-Workbench-Scope")&&!accountRequestScopeMatches(req,ctx))return Response.json({error:"Your account or workspace changed. Reload before viewing workspaces."},{status:409});
+  return NextResponse.json({ active: ctx.workspace?.id ?? null, workspaces: ctx.workspaces, pending:await pendingWorkspaces(ctx.user.id),...workspaceCreationReadiness() }, {headers:{"Cache-Control":"private, no-store"}});
 }
 
 /** Another workspace of one's own — a second studio, a client, a side project. */
 export async function POST(req: Request) {
   if(sameOriginProblem(req))return Response.json({error:'Invalid request origin.'},{status:403});
   const ctx=await currentContext();if(!ctx)return Response.json({error:'Not signed in'},{status:401});
+  if(req.headers.has("X-Workbench-Scope")&&!accountRequestScopeMatches(req,ctx))return Response.json({error:"Your account or workspace changed. Reload before creating a workspace."},{status:409});
   try{
     const body=await req.json().catch(()=>({}));
     let requestId=String(body.requestId??'');
@@ -46,7 +50,7 @@ export const PATCH=withTenant(async(req:Request)=>{
   const ws=requireTenant();
   await platformDb().execute({sql:'UPDATE workspaces SET name=?,updated_at=? WHERE id=? AND deleted_at IS NULL',args:[name,now(),ws.id]});
   return Response.json({ok:true,workspace:{id:ws.id,name,slug:ws.slug}});
-});
+}, { requireRequestScope: true });
 
 /**
  * Delete the workspace the session is in: the owner, by its exact name.
@@ -55,10 +59,12 @@ export const PATCH=withTenant(async(req:Request)=>{
  * platform's books.
  */
 export async function DELETE(req: Request) {
+  if(sameOriginProblem(req))return Response.json({error:"Invalid request origin."},{status:403});
   const ctx = await currentContext();
   if (!ctx) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   const ws = ctx.workspace;
   if (!ws) return NextResponse.json({ error: "Pick a workspace first." }, { status: 400 });
+  if(workbenchScopeProblem(req,ws.id,ctx.user.id,true))return Response.json({error:"Your account or workspace changed. Reload settings before deleting a workspace."},{status:409});
   const body = await req.json().catch(() => ({}));
   const verdict = deletionAllowed({ name: ws.name, legacy: ws.legacy, role: ctx.role }, String(body.name ?? ""));
   if (!verdict.ok) return NextResponse.json({ error: verdict.error }, { status: 400 });

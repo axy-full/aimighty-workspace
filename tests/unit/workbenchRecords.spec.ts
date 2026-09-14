@@ -73,13 +73,13 @@ test('shared bible versions are immutable while private drafts remain editable',
  const {saveDraft,readDraft,publishBible}=await import('../../lib/workbench/records');const {seedProject}=await import('../../lib/workbench/studio');const {runInTenant}=await import('../../lib/tenant');const {db}=await import('../../lib/db');
  await runInTenant(workspace('bible'),async()=>{
   const p=seedProject();await saveDraft('author',p,0);
-  await expect(publishBible('other','Other',p.id)).rejects.toThrow(/Save/);
-  const v1=await publishBible('author','Author',p.id);expect(v1.version).toBe(1);
+  await expect(publishBible('other','Other',p.id,0)).rejects.toThrow(/Save/);
+  const v1=await publishBible('author','Author',p.id,0);expect(v1.version).toBe(1);
   const stored=String((await db().execute('SELECT body FROM workbench_bibles WHERE version=1')).rows[0].body);
   const draft=(await readDraft('author',p.id))!;
   await saveDraft('author',{...draft.project,brief:'New private idea',sharedAssets:[]},draft.revision);
   expect(String((await db().execute('SELECT body FROM workbench_bibles WHERE version=1')).rows[0].body)).toBe(stored);
-  const versions=await Promise.all([publishBible('author','Author',p.id),publishBible('author','Author',p.id)]);
+  const versions=[await publishBible('author','Author',p.id,1),await publishBible('author','Author',p.id,2)];
   expect(versions.map(v=>v.version).sort()).toEqual([2,3]);
   expect(JSON.parse(stored).brief).toBe(p.brief);expect(JSON.parse(stored).assets.length).toBeGreaterThan(0);
   expect(String((await db().execute('SELECT body FROM workbench_bibles WHERE version=1')).rows[0].body)).toBe(stored);
@@ -101,4 +101,31 @@ test('only an uploader publication grants shared legacy media access within the 
   expect(await findWorkbenchMedia('wb_private','bob')).not.toBeNull();
  });
  await runInTenant(workspace('unrelated-media'),async()=>{expect(await findWorkbenchMedia('wb_private','bob')).toBeNull();});
+});
+
+test('two collaborators publishing the same base accept one winner and can explicitly recover without losing either context',async()=>{
+ const {saveDraft,readDraft,publishBible}=await import('../../lib/workbench/records');
+ const {seedProject}=await import('../../lib/workbench/studio');const {runInTenant}=await import('../../lib/tenant');const {db}=await import('../../lib/db');
+ await runInTenant(workspace('publication-race'),async()=>{
+  const a={...seedProject(),id:'alice-draft'};
+  const saved=await saveDraft('alice',a,0);
+  await publishBible('alice','Alice',a.id,0);
+  const b={...a,id:'bob-draft',productionProjectId:saved.productionProjectId,bibleVersion:1};
+  await saveDraft('bob',b,0);
+  const update=async(owner:string,id:string,brief:string)=>{const current=(await readDraft(owner,id))!;await saveDraft(owner,{...current.project,brief,bibleVersion:1},current.revision);};
+  await update('alice',a.id,'Alice private revision');await update('bob',b.id,'Bob private revision');
+  const results=await Promise.allSettled([publishBible('alice','Alice',a.id,1),publishBible('bob','Bob',b.id,1)]);
+  expect(results.filter(item=>item.status==='fulfilled')).toHaveLength(1);
+  const refused=results.find(item=>item.status==='rejected') as PromiseRejectedResult;
+  expect(refused.reason).toMatchObject({code:'bible_conflict',currentVersion:2});
+  const rows=(await db().execute('SELECT version,body FROM workbench_bibles ORDER BY version')).rows;
+  expect(rows).toHaveLength(2);expect(JSON.parse(String(rows[0].body)).brief).toBe(a.brief);
+  const loser=results[0].status==='rejected'?{owner:'alice',id:a.id}:{owner:'bob',id:b.id};
+  const privateDraft=(await readDraft(loser.owner,loser.id))!;
+  expect(privateDraft.project.brief).toBe(loser.owner==='alice'?'Alice private revision':'Bob private revision');
+  // A deliberate reload/save acknowledges v2; no retry can silently choose it.
+  await saveDraft(loser.owner,{...privateDraft.project,bibleVersion:2},privateDraft.revision);
+  expect((await publishBible(loser.owner,loser.owner,loser.id,2)).version).toBe(3);
+  expect(String((await db().execute('SELECT body FROM workbench_bibles WHERE version=2')).rows[0].body)).toBe(String(rows[1].body));
+ });
 });

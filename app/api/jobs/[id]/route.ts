@@ -1,7 +1,9 @@
+import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
+import { mediaBindingProblem } from "@/lib/mediaBindings";
 import { NextResponse, after } from "next/server";
 import { getGeneration, syncGeneration } from "@/lib/jobs";
 import { db, ready } from "@/lib/db";
-import { deleteVideo } from "@/lib/storage";
+import { mediaDeletionReady, markGenerationDeletion, cleanupDeletedGenerations } from "@/lib/mediaDeletion";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
@@ -124,15 +126,20 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
-  /* The row first, the bytes second. If the order were reversed and the
-     UPDATE then failed, the render would still be listed as delivered with
-     its file already gone — a permanently broken tile with no repair path.
-     An orphaned blob is only storage, and the reverse is unrecoverable. */
-  await db().execute({
-    sql: `UPDATE generations SET deleted=1, stored_url=NULL, source_url=NULL, updated_at=? WHERE id=?`,
-    args: [Date.now(), id],
+  await workbenchReady();
+  await mediaDeletionReady();
+  const problem = await workbenchTransaction(async tx => {
+    const row = (await tx.execute({ sql: "SELECT status FROM generations WHERE id=?", args: [id] })).rows[0];
+    if (row && ["queued", "running", "held"].includes(String(row.status))) return "This generation is still active. Wait for it to finish before deleting it.";
+    const binding = await mediaBindingProblem(tx, "generation", id);
+    if (binding) return binding;
+    // Keep the cost row for accounting. Source validation in draft saves shares this lock.
+    await markGenerationDeletion(tx, id);
+    return null;
   });
-  await deleteVideo(id);
+  if (problem) return NextResponse.json({ error: problem }, { status: 409 });
+  const cleanup = await cleanupDeletedGenerations(1, Date.now(), id);
   invalidate(PROJECTS_KEY);
-  return NextResponse.json({ ok: true });
+  const pending = (await db().execute({ sql: "SELECT 1 FROM generation_deletions WHERE id=?", args: [id] })).rows.length > 0;
+  return NextResponse.json({ ok: true, cleanupPending: pending }, { status: pending || cleanup.failed ? 202 : 200 });
 });
