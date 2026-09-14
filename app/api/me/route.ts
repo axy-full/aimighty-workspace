@@ -16,6 +16,12 @@ export const GET = withTenant(async function GET() {
   /* `owner` is decided here, against the server's own idea of who owns the
      workspace, so the client never has to carry that address. */
   const store = currentTenant();
+  if (store?.mfaRequired) return NextResponse.json({
+    id, name, email, role, owner: got.user.owner, superAdmin: false,
+    mfaRequired: true, securityUrl: "/account/security",
+    workspace: store.workspace ? { id: store.workspace.id, name: store.workspace.name, slug: store.workspace.slug } : null,
+    workspaces: store.workspaces ?? [], credits: null, models: null, setup: null,
+  }, { headers: { "Cache-Control": "private, no-store" } });
   return NextResponse.json({
     id, name, email, role,
     owner: got.user.owner, superAdmin: await isPlatformOwner(got.user),
@@ -31,4 +37,4 @@ export const GET = withTenant(async function GET() {
     models: store?.workspace ? await effectiveModels().catch(() => null) : null,
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
   });
-});
+}, { allowMfaEnrollment: true });

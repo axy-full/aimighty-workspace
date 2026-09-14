@@ -10,6 +10,7 @@ import styles from "./account-security.module.css";
 
 type SecurityState = {
   enabled: boolean;
+  requiredWorkspaces?: { id: string; name: string }[];
   enabledAt: number | null;
   recoveryCodesRemaining: number;
   pendingRecoveryBatch: string | null;
@@ -26,9 +27,11 @@ type Setup = { secret: string; uri: string; expiresAt: number };
 export default function AccountSecurity({
   scope,
   name,
+  requiredBy,
 }: {
   scope: string;
   name: string;
+  requiredBy?: string;
 }) {
   const [state, setState] = useState<SecurityState | null>(null),
     [error, setError] = useState(""),
@@ -165,6 +168,18 @@ export default function AccountSecurity({
       description="Protect your sign-in across all your production workspaces."
     >
       <div className={styles.layout}>
+        {requiredBy && (
+          <ManagementNotice>
+            {state?.enabled
+              ? "Your authenticator is ready. Save your recovery codes before continuing."
+              : `${requiredBy} requires two-step sign-in. Set up your authenticator to open this workspace.`}
+            {state?.enabled && !codes.length && (
+              <a href="/workbench" className="management-button primary">
+                Continue to workspace
+              </a>
+            )}
+          </ManagementNotice>
+        )}
         {error && (
           <ManagementNotice error>
             {error}{" "}
@@ -270,13 +285,25 @@ export default function AccountSecurity({
                   ) : (
                     <button
                       className="management-button danger"
-                      disabled={busy || !password || !code}
+                      disabled={
+                        busy ||
+                        !password ||
+                        !code ||
+                        Boolean(state.requiredWorkspaces?.length)
+                      }
                       onClick={() => void change("disable")}
                     >
                       Turn off two-step sign-in
                     </button>
                   )}
                 </div>
+              )}
+              {Boolean(state.requiredWorkspaces?.length) && (
+                <p>
+                  Two-step sign-in is required by{" "}
+                  {state.requiredWorkspaces!.map((w) => w.name).join(", ")}. It
+                  cannot be turned off while that membership requires it.
+                </p>
               )}
             </ManagementCard>
             {state.enabled && (
@@ -286,9 +313,12 @@ export default function AccountSecurity({
               >
                 {state.recoveryReplacementAuthorizedUntil != null && (
                   <p>
-                    You signed in with a recovery code. Use your current password
-                    to prepare a replacement set before {new Date(state.recoveryReplacementAuthorizedUntil).toLocaleTimeString()}.
-                    This permission can be used once in this browser.
+                    You signed in with a recovery code. Use your current
+                    password to prepare a replacement set before{" "}
+                    {new Date(
+                      state.recoveryReplacementAuthorizedUntil,
+                    ).toLocaleTimeString()}
+                    . This permission can be used once in this browser.
                   </p>
                 )}
                 {codes.length > 0 ? (
@@ -321,7 +351,12 @@ export default function AccountSecurity({
                     >
                       I have saved my recovery codes
                     </button>
-                    {batchId && !password && <p>Enter your current password above to activate this saved set.</p>}
+                    {batchId && !password && (
+                      <p>
+                        Enter your current password above to activate this saved
+                        set.
+                      </p>
+                    )}
                     {batchId && (
                       <button
                         className="management-button"

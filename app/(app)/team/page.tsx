@@ -7,6 +7,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { timeAgo } from "@/lib/format";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { appConfirm, appAlert } from "@/components/dialog";
+import WorkspaceSecurity from "@/components/management/WorkspaceSecurity";
 import ManagementPage, {
   ManagementCard,
   ManagementNotice,
@@ -219,6 +220,7 @@ function TeamContent() {
         </ManagementNotice>
       )}
       {notice && <ManagementNotice>{notice}</ManagementNotice>}
+      {session.owner && <WorkspaceSecurity />}
       {!data && !error && (
         <ManagementNotice>
           {session.signedIn
