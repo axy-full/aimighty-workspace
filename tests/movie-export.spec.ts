@@ -126,7 +126,35 @@ async function movieFixture(page: Page) {
     if (path === "/api/workbench/atomik") return json({ models: [], jobs: [] });
     if (path === "/api/jobs") return json({ generations: [] });
     const item = media.get(path);
-    if (item) return route.fulfill({ body: item.body, contentType: item.type });
+    if (item) {
+      const requested = request.headers()["range"];
+      const match = requested?.match(/^bytes=(\d+)-(\d*)$/);
+      if (match) {
+        const start = Number(match[1]),
+          end = Math.min(
+            match[2] ? Number(match[2]) : item.body.length - 1,
+            item.body.length - 1,
+          );
+        return route.fulfill({
+          status: 206,
+          headers: {
+            "Content-Type": item.type,
+            "Accept-Ranges": "bytes",
+            "Content-Range": `bytes ${start}-${end}/${item.body.length}`,
+            "Content-Length": String(end - start + 1),
+          },
+          body: item.body.subarray(start, end + 1),
+        });
+      }
+      return route.fulfill({
+        body: item.body,
+        contentType: item.type,
+        headers: {
+          "Accept-Ranges": "bytes",
+          "Content-Length": String(item.body.length),
+        },
+      });
+    }
     if (path.startsWith("/api/workbench/preview/"))
       return route.fulfill({
         body: await readFile("public/campaign/hero.webp"),
@@ -250,6 +278,149 @@ async function movieFixture(page: Page) {
     mutations,
   };
 }
+
+test("timeline scrubbing and the final movie use the same saved multitrack stereo mix as WAV", async ({
+  page,
+}, info) => {
+  test.skip(
+    page.viewportSize()!.width !== 1440,
+    "Detailed codec comparison runs once; responsive sound controls run at every size.",
+  );
+  const fixture = await movieFixture(page);
+  fixture.setProject((p) => ({
+    ...p,
+    audioAssetId: undefined,
+    clipAudio: false,
+    audioClips: [
+      {
+        id: "score",
+        assetId: "soundtrack",
+        lane: "music",
+        startFrame: 12,
+        sourceIn: 0,
+        duration: 12,
+        gainDb: -3,
+        pan: -1,
+        fadeIn: 0,
+        fadeOut: 0,
+        muted: false,
+        solo: false,
+      },
+      {
+        id: "muted",
+        assetId: "soundtrack",
+        lane: "sfx",
+        startFrame: 0,
+        sourceIn: 0,
+        duration: 24,
+        gainDb: 0,
+        pan: 1,
+        fadeIn: 0,
+        fadeOut: 0,
+        muted: true,
+        solo: false,
+      },
+    ],
+  }));
+  await page.goto("/workbench");
+  await page.locator(".workflow-stages").getByRole("tab").nth(8).click();
+  const playhead = page.getByRole("slider", { name: "Sequence playhead" });
+  await playhead.focus();
+  await playhead.press("End");
+  const video = page.getByLabel("Timeline video preview", { exact: true });
+  await expect
+    .poll(() => video.evaluate((el: HTMLVideoElement) => el.readyState))
+    .toBeGreaterThanOrEqual(1);
+  await expect
+    .poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime))
+    .toBeCloseTo(35 / 24, 2);
+  const color = await video.evaluate((el: HTMLVideoElement) => {
+    const c = document.createElement("canvas");
+    c.width = 16;
+    c.height = 16;
+    const ctx = c.getContext("2d")!;
+    ctx.drawImage(el, 0, 0, 16, 16);
+    return [...ctx.getImageData(8, 8, 1, 1).data];
+  });
+  expect(color[0]).toBeGreaterThan(200);
+  expect(color[1]).toBeGreaterThan(200);
+  const mix = page.getByRole("region", { name: "Sound mix" });
+  await mix.getByRole("button", { name: "Prepare mix", exact: true }).click();
+  await expect(mix.getByRole("status")).toContainText("Mix ready");
+  const wavDownload = page.waitForEvent("download");
+  await mix
+    .getByRole("button", { name: "WAV · 32-bit float", exact: true })
+    .click();
+  const wav = await readFile((await (await wavDownload).path())!);
+  await openDelivery(page);
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Include original clip audio",
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await page.getByLabel("Movie format", { exact: true }).selectOption("webm");
+  await page.getByRole("button", { name: "Render movie", exact: true }).click();
+  const link = page.getByRole("link", { name: "Download WebM", exact: true });
+  await expect(link).toBeVisible({ timeout: 60000 });
+  const download = page.waitForEvent("download");
+  await link.click();
+  const encoded = await readFile((await (await download).path())!);
+  const compare = await page.evaluate(
+    async ({ encoded, wav, url }) => {
+      const { Input, BlobSource, ALL_FORMATS, AudioBufferSink } = (await import(
+        url
+      )) as typeof import("mediabunny");
+      const input = new Input({
+        source: new BlobSource(new Blob([new Uint8Array(encoded)])),
+        formats: ALL_FORMATS,
+      });
+      try {
+        const track = (await input.getPrimaryAudioTrack())!;
+        const pcm = [new Float32Array(72000), new Float32Array(72000)];
+        for await (const { buffer, timestamp } of new AudioBufferSink(
+          track,
+        ).buffers()) {
+          for (let ch = 0; ch < 2; ch++) {
+            const samples = buffer.getChannelData(ch);
+            for (let i = 0; i < samples.length; i++) {
+              const n = Math.round(timestamp * 48000) + i;
+              if (n >= 0 && n < 72000) pcm[ch][n] = samples[i];
+            }
+          }
+        }
+        const original = new DataView(new Uint8Array(wav).buffer);
+        let error = 0,
+          energy = 0,
+          right = 0,
+          before = 0;
+        for (let i = 0; i < 72000; i++) {
+          for (let ch = 0; ch < 2; ch++)
+            error +=
+              (pcm[ch][i] - original.getFloat32(56 + i * 8 + ch * 4, true)) **
+              2;
+          energy += pcm[0][i] ** 2;
+          right += pcm[1][i] ** 2;
+          if (i < 20000) before += pcm[0][i] ** 2;
+        }
+        return {
+          error: Math.sqrt(error / 144000),
+          left: Math.sqrt(energy / 72000),
+          right: Math.sqrt(right / 72000),
+          before: Math.sqrt(before / 20000),
+        };
+      } finally {
+        input.dispose();
+      }
+    },
+    { encoded: [...encoded], wav: [...wav], url: moduleUrl },
+  );
+  expect(compare.error).toBeLessThan(0.02);
+  expect(compare.left).toBeGreaterThan(0.04);
+  expect(compare.right).toBeLessThan(0.001);
+  expect(compare.before).toBeLessThan(0.001);
+  await page.screenshot({ path: info.outputPath("sound-movie-parity.png") });
+});
 
 test("encoded final movie preserves frames, trims, aspect and synchronized clip/soundtrack audio", async ({
   page,
@@ -435,7 +606,7 @@ test("movie format encodes a cropped silent file and cancellation discards an un
     .getByRole("checkbox", { name: "Include original clip audio", exact: true })
     .uncheck();
   await page
-    .getByRole("checkbox", { name: "Include sequence soundtrack", exact: true })
+    .getByRole("checkbox", { name: "Include saved sound mix", exact: true })
     .uncheck();
   let startFetch!: () => void;
   const fetching = new Promise<void>((resolve) => {
@@ -516,7 +687,7 @@ test("movie format encodes a cropped silent file and cancellation discards an un
   if (format === "mp4") {
     await page
       .getByRole("checkbox", {
-        name: "Include sequence soundtrack",
+        name: "Include saved sound mix",
         exact: true,
       })
       .check();

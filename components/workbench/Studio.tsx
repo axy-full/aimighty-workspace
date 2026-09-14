@@ -146,6 +146,9 @@ import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {useProductionJobs} from './use-production-jobs';
 import {uploadWorkbench} from '@/lib/workbench/upload';
 import {AssetPreview} from './AssetPreview';
+import {SoundMix} from './SoundMix';
+import {TimelinePreview} from './TimelinePreview';
+import {audioClips} from '@/lib/workbench/audio';
 import {createMovieHandoff} from '@/lib/workbench/movie-handoff';
 import DesignReview from "./design-review";
 import { CrewPanel, StoryboardPanel } from "./production-crew";
@@ -613,7 +616,7 @@ export default function Studio({
         e.shiftKey ? redo() : undo();
       }
       if (e.key === "?" && !editing) setDialog("shortcuts");
-      if (e.code === "Space" && !editing && stage === "edit") {
+      if (e.code === "Space" && !editing && !(e.target as HTMLElement)?.closest('button,a,select,[role="slider"]') && stage === "edit") {
         e.preventDefault();
         setPlaying((v) => !v);
       }
@@ -1970,8 +1973,7 @@ export default function Studio({
                           <div>
                             <span className="small-tag">ASSEMBLY 01</span>
                             <span className="muted">
-                              {p.shots.length} shots · {p.fps} fps · Still-frame
-                              animatic
+                              {p.shots.length} shots · {p.fps} fps · Timeline preview
                             </span>
                           </div>
                           <Button
@@ -1987,10 +1989,11 @@ export default function Studio({
                           <div className="edit-player">
                             <div className="player-screen">
                               {currentShot.shot && (
-                                <Media
-                                  asset={assetsById.get(
-                                    currentShot.shot.assetId,
-                                  )}
+                                <TimelinePreview
+                                  key={currentShot.shot.id}
+                                  asset={assetsById.get(currentShot.shot.assetId)}
+                                  seconds={(currentShot.shot.sourceIn + frame - currentShot.start) / p.fps}
+                                  playing={playing}
                                 />
                               )}
                               <span className="player-slug">
@@ -2017,7 +2020,7 @@ export default function Studio({
                                   <SkipBack size={15} />
                                 </IconButton>
                                 <IconButton
-                                  label={playing ? "Pause" : "Play animatic"}
+                                  label={playing ? "Pause" : "Play timeline"}
                                   onClick={() => {
                                     if (frame >= totalFrames - 1) setFrame(0);
                                     setPlaying((v) => !v);
@@ -2292,63 +2295,7 @@ export default function Studio({
                               ))}
                             </div>
                           </div>
-                          <div className="audio-lane">
-                            <div className="track-label">
-                              A1
-                              <AudioLines size={13} />
-                            </div>
-                            <div className="audio-track">
-                              {p.audioAssetId ? (
-                                <>
-                                  <AudioLines size={16} />
-                                  <span>
-                                    {assetsById.get(p.audioAssetId)?.name}
-                                  </span>
-                                  <audio
-                                    controls
-                                    src={assetsById.get(p.audioAssetId)?.url}
-                                  />
-                                  <IconButton
-                                    label="Remove audio track"
-                                    onClick={() =>
-                                      setField("audioAssetId", undefined)
-                                    }
-                                  >
-                                    <X size={14} />
-                                  </IconButton>
-                                </>
-                              ) : (
-                                <>
-                                  <button onClick={() => pickUpload("Audio")}>
-                                    <Plus size={14} />
-                                    Upload a scratch track
-                                  </button>
-                                  {p.assets.some((a) => a.kind === "audio") && (
-                                    <Choice
-                                      label="Choose audio track"
-                                      value="Select audio"
-                                      options={[
-                                        "Select audio",
-                                        ...p.assets
-                                          .filter((a) => a.kind === "audio")
-                                          .map((a) => a.name),
-                                      ]}
-                                      onChange={(v) =>
-                                        setField(
-                                          "audioAssetId",
-                                          p.assets.find((a) => a.name === v)
-                                            ?.id,
-                                        )
-                                      }
-                                    />
-                                  )}
-                                  <span>
-                                    Preview plays independently. Movie export syncs this track from 00:00.
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          </div>
+                          <SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/>
                         </div>
                       </div>
                     )}
@@ -2393,6 +2340,10 @@ export default function Studio({
                                       change((old) => ({
                                         ...old,
                                         fps,
+                                        audioAssetId: undefined,
+                                        audioClips: audioClips(old).map(clip=>({...clip,
+                                          startFrame:Math.round(clip.startFrame / old.fps * fps),sourceIn:Math.round(clip.sourceIn / old.fps * fps),duration:Math.max(1,Math.round(clip.duration / old.fps * fps)),fadeIn:Math.floor(clip.fadeIn / old.fps * fps),fadeOut:Math.floor(clip.fadeOut / old.fps * fps)
+                                        })),
                                         shots: old.shots.map((s) => ({
                                           ...s,
                                           duration: Math.max(

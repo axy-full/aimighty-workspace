@@ -1,3 +1,4 @@
+import {validateAudio, type AudioClip} from './audio';
 import type {ScriptSource, SceneReview} from './screenplay';
 export type Stage = 'brief' | 'script' | 'moodboard' | 'characters' | 'elements' | 'canvas' | 'storyboard' | 'assets' | 'edit' | 'export';
 export type AssetKind = 'image' | 'video' | 'audio' | 'document' | 'link';
@@ -9,7 +10,7 @@ export type NodeVersion = {id:string;label:string;assetId?:string;text?:string;o
 export type CanvasNode = {id:string; title:string; type:NodeType; assetId?:string; text?:string;scriptScene?:{id:string;sourceKey:string;sourceAssetId?:string;pageStart?:number;pageEnd?:number}; x:number; y:number; width:number; linked:string[];operations?:NodeOperation[];bypassed?:boolean;locked?:boolean;collapsed?:boolean;role?:string;mode?:string;status?:'draft'|'review'|'approved';versions?:NodeVersion[];activeInput?:string};
 export type Shot = {id:string; name:string; assetId:string; duration:number; sourceIn:number; note:string};
 export type Plan = {id:string; request:string; model:string; depth:string; intent:string; summary:string; steps:string[]; applied:boolean; refs:string[]; role?:string};
-export type Project = {productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; script?:string;scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[]};
+export type Project = {productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; audioClips?:AudioClip[]; clipAudio?:boolean; script?:string;scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[]};
 export const STAGES: {id:Stage; label:string; hint:string}[] = [
  {id:'brief',label:'Brief & ideas',hint:'Find the story'}, {id:'script',label:'Script & breakdown',hint:'Find the production in the story'}, {id:'moodboard',label:'Moodboard',hint:'Define the visual world'},
  {id:'characters',label:'Characters',hint:'Keep identity consistent'}, {id:'elements',label:'Elements',hint:'Build a reusable world'},
@@ -63,6 +64,7 @@ export function validateSequence(p:Project):void {
   record+=shot.duration;
  }
  if(p.audioAssetId&&assets.get(p.audioAssetId)?.kind!=='audio')throw new Error('The sequence scratch audio is missing or is not an audio file.');
+ validateAudio(p);
 }
 export function makeEDL(p:Project) {
  validateSequence(p);
