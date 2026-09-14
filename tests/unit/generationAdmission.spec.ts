@@ -648,3 +648,59 @@ test("Topaz persists its queue handle, resumes after a lost polling attempt, and
   await completed.reconcileTopazImage(id);
   expect(JSON.parse(String((await rows())[0].params)).falStillRequestId).toBe(queued.falStillRequestId);
 }));
+
+test("Astra quotes measured original bytes and explicit FPS, persists controls and refuses changed approvals", async () => scope("astra-original",async service=>{
+  const {db}=await import("../../lib/db"),{storeUpload}=await import("../../lib/storage");
+  const {ASTRA_MODEL,DEFAULT_ASTRA}=await import("../../lib/astra");
+  const bytes=readFileSync("tests/fixtures/astra-source.mp4"),stored=await storeUpload("astra-clip","mp4",bytes,"video/mp4");
+  await db().execute({sql:"INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,width,height,duration_s,created_at) VALUES('astra-clip','clip.mp4','video/mp4','mp4',?,'hash',?,'video',1,1,0.01,0)",args:[bytes.length,stored.url]});
+  const body={model:ASTRA_MODEL,task:"upscale",sourceUploadId:"astra-clip",prompt:"",refine:false,resolution:"1080p",duration:.01,fps60:false,astra:{...DEFAULT_ASTRA,fps:60},astraSource:{seconds:.01,width:1,height:1}};
+  const prepared=value(await service.gen.prepareGeneration(body,actor));
+  expect(prepared.compiled.params).toMatchObject({resolution:"4k",duration:1.5,fps60:true,astra:{...DEFAULT_ASTRA,fps:60},astraSource:{width:720,height:1280,seconds:1.5}});
+  expect(prepared.quote.estimatedCredits).toBe(23);
+  const quoted={...body,maxCredits:prepared.quote.estimatedCredits,quoteFingerprint:prepared.quote.fingerprint};
+  const changed=await route("generation",service).POST(request("generate",{...quoted,astra:{...body.astra,creativity:.8}},"changed-astra"));
+  expect(changed.status).toBe(409);expect(await rows()).toHaveLength(0);
+  const capped=await route("generation",service).POST(request("generate",{...body,maxCredits:1},"capped-astra"));
+  expect(capped.status).toBe(409);expect(await rows()).toHaveLength(0);
+  const accepted=await route("generation",service).POST(request("generate",quoted,"approved-astra"));
+  const result=await accepted.json();expect(accepted.status,JSON.stringify(result)).toBe(202);
+  const replay=await route("generation",service).POST(request("generate",quoted,"approved-astra"));
+  expect((await replay.json()).id).toBe(result.id);expect(dispatched).toHaveLength(1);
+  expect(JSON.parse(String((await rows())[0].params))).toMatchObject({astra:{...DEFAULT_ASTRA,fps:60},astraSource:{seconds:1.5,width:720,height:1280},sourceUploadId:"astra-clip"});
+  expect(await service.gen.prepareGeneration({...body,astra:undefined},actor)).toMatchObject({ok:false,status:400});
+  expect(await service.gen.prepareGeneration({...body,prompt:"Change the actor"},actor)).toMatchObject({ok:false,status:400});
+}));
+
+test("Astra reconciles measured output below its quote, leases collection and retains uncertain delivery without a second provider call",async()=>scope("astra-settle",async service=>{
+  const {db}=await import("../../lib/db"),{storeUpload}=await import("../../lib/storage"),{ASTRA_MODEL,DEFAULT_ASTRA}=await import("../../lib/astra");
+  const {getGeneration}=await import("../../lib/jobs"),{syncFalVideo}=await import("../../lib/falVideo"),{engineFor}=await import("../../lib/engines");
+  const bytes=readFileSync("tests/fixtures/astra-source.mp4"),stored=await storeUpload("astra-result-source","mp4",bytes,"video/mp4");
+  await db().execute({sql:"INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('astra-result-source','clip.mp4','video/mp4','mp4',?,'hash',?,'video',0)",args:[bytes.length,stored.url]});
+  const prepared=value(await service.gen.prepareGeneration({model:ASTRA_MODEL,task:"upscale",sourceUploadId:"astra-result-source",prompt:"",refine:false,astra:{...DEFAULT_ASTRA,fps:60}},actor));
+  const response=await route("generation",service).POST(request("generate",prepared.request,"astra-settlement"));expect(response.status).toBe(202);const {id}=await response.json();
+  await db().execute({sql:"UPDATE generations SET status='running',params=json_set(params,'$.falRequestId','known-astra','$.falModel',?,'$.paidClaim',1) WHERE id=?",args:[ASTRA_MODEL,id]});
+  const engine=engineFor("fal"),original=engine.poll;let calls=0,release!:()=>void,entered!:()=>void;
+  try{
+    engine.poll=async()=>{calls++;throw new Error("Connection interrupted");};
+    const gen=(await getGeneration(id))!;
+    await expect(syncFalVideo(gen,{strict:true})).rejects.toThrow("Connection interrupted");
+    expect((await rows())[0].status).toBe("running");expect(Number((await meters())[0].engine_cost_usd)).toBe(1.5);
+    // A real, larger fixture would cost more than the approved 1.5-second request.
+    engine.poll=async()=>{calls++;return {status:"succeeded",videoUrl:"fixture:clip.mp4",totalTokens:null,error:null,vendorStartedAt:null,vendorEndedAt:null,raw:{}};};
+    await expect(syncFalVideo(gen,{strict:true})).rejects.toThrow(/exceeds the reviewed budget/);
+    expect((await rows())[0].status).toBe("running");expect(Number((await meters())[0].engine_cost_usd)).toBe(1.5);
+    const started=new Promise<void>(r=>entered=r),wait=new Promise<void>(r=>release=r);
+    engine.poll=async()=>{calls++;entered();await wait;return {status:"succeeded",videoUrl:"fixture:astra-clip.mp4",totalTokens:null,error:null,vendorStartedAt:null,vendorEndedAt:null,raw:{}};};
+    const first=syncFalVideo(gen,{strict:true});await started;
+    await syncFalVideo(gen,{strict:true});expect(calls).toBe(3);release();expect((await first).status).toBe("succeeded");
+    const result=(await getGeneration(id))!;expect(result.params.astraOutput).toMatchObject({width:720,height:1280,seconds:1.5,fps:24});
+    expect(result.params).toMatchObject({resolution:"720p",ratio:"720:1280",duration:1.5,astraQuotedOutput:{resolution:"4k",fps60:true}});
+    const edit=await service.gen.prepareGeneration({model:"dreamina-seedance-2-5-260628",task:"edit",sourceGenId:id,prompt:"Edit the sky",refine:false},actor);
+    expect(edit).toMatchObject({ok:false,status:400});if(!edit.ok)expect(edit.body.error).toMatch(/at least 4 seconds/);
+    const reuse=value(await service.gen.prepareGeneration({model:ASTRA_MODEL,task:"upscale",sourceGenId:id,prompt:"",refine:false,astra:DEFAULT_ASTRA},actor));
+    expect(reuse.compiled.params).toMatchObject({astraSource:{width:720,height:1280,seconds:1.5}});
+    expect(Number((await meters())[0].engine_cost_usd)).toBeCloseTo(.45,8);expect((await meters())[0].billed_credits).toBe(7);
+    await syncFalVideo(gen,{strict:true});expect(calls).toBe(3);expect((await db().execute("SELECT * FROM generation_settlements")).rows).toHaveLength(1);
+  }finally{release?.();engine.poll=original;}
+}));

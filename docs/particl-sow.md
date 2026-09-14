@@ -737,6 +737,10 @@ The server inspects original dimensions, derives the output band, and binds sour
 
 Edit & sound now uses saved, asset-bound sound clips with frame timing, source trims, gain, pan, fades and mute/solo. Prepared playback follows the timeline, and the same mixer feeds final movies and 48 kHz stereo 24-bit PCM / 32-bit float WAV downloads. Audio source lineage accompanies the editorial package. The exact bounds and remaining professional audio requirements are in `docs/sound-mix.md`; this is not a long-form or mastering release. Stripe and the approved credit model are unchanged.
 
+## September 14 amendment — Astra 2 output controls and reconciliation
+
+Gen now has a dedicated Astra 2 video-upscale panel with original uploaded/generated sources, explicit 30/60 fps, creativity, realism and sharpness. Quotes inspect original track metadata and reserve the 4K rate rather than assuming that the provider obeys a requested 1080p size. Saved results retain measured output metadata and reconcile lower costs; over-budget output remains pending reconciliation without another paid request. Unsent legacy requests need a fresh quote, while existing paid claims and handles are preserved. See `docs/astra-video-upscale.md` for exact limits and remaining live-provider validation. The subscription tiers, credit formula and deferred Stripe scope are unchanged.
+
 ### 14 September 2026 — sequence color and imported LUTs
 
 Edit gains a sequence color inspector, original .cube asset import/reuse, saved mix/bypass and display-referred brightness/contrast/saturation. Preview and final movie use one GPU trilinear processor; editorial packages retain LUT bytes and settings. The loader supports standalone 3D tables with 2–65 points and bounded 16 MB UTF-8 files. This is a sequence-wide SDR/8-bit workflow with explicit limits, not automatic log/ACES/HDR conversion or mastering. Official ARRI/Sony sourcing guidance and the pixel-level verification contract are in `docs/sequence-color.md`. Original assets, Stripe behavior and approved commercial pricing are unchanged.

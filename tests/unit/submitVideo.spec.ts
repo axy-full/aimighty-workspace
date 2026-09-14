@@ -131,3 +131,21 @@ test('missing queued references release only unsent reservations; stale worker f
   expect(calls).toBe(0);
  });}finally{engine.render=original;}
 });
+
+test('Astra releases unsent legacy quotes, retains prior claims and restores accepted requests without another purchase',async()=>{
+ const {runInTenant}=await import('../../lib/tenant'),{engineFor}=await import('../../lib/engines');
+ const {submitVideoJob}=await import('../../lib/submitVideo'),{db}=await import('../../lib/db'),{platformDb}=await import('../../lib/platform');
+ const {ASTRA_MODEL,DEFAULT_ASTRA}=await import('../../lib/astra'),{getModel}=await import('../../lib/models'),{getTask}=await import('../../lib/tasks');
+ const engine=engineFor('fal'),original=engine.render;let calls=0;
+ engine.render=async input=>{calls++;expect(input.kind).toBe('video');if(input.kind==='video')expect(input.params).toMatchObject({astra:{...DEFAULT_ASTRA,fps:60},astraSource:{seconds:1.5},fps60:true,resolution:'4k'});return {handle:{provider:'fal',ref:'astra-accepted',model:ASTRA_MODEL,endpoint:ASTRA_MODEL}};};
+ try {for(const kind of ['unsent','claimed','accepted','reviewed'])await runInTenant(workspace('astra-'+kind),async()=>{
+  const job=await makeJob('astra-'+kind,'fal');job.model=getModel(ASTRA_MODEL);job.task=getTask('upscale');
+  if(kind==='reviewed')job.params={...job.params,resolution:'4k',fps60:true,astra:{...DEFAULT_ASTRA,fps:60},astraSource:{seconds:1.5,width:720,height:1280,firstTimestamp:0}};
+  await db().execute({sql:"UPDATE generations SET model=?,task='upscale',params=? WHERE id=?",args:[ASTRA_MODEL,JSON.stringify({...job.params,...(kind==='claimed'?{paidClaim:1}:{}),...(kind==='accepted'?{falRequestId:'already-paid',falModel:ASTRA_MODEL}:{})}),job.genId]});
+  const result=await submitVideoJob(job);
+  if(kind==='unsent'){expect(result).toMatchObject({ok:false,cls:'fatal'});expect((await platformDb().execute({sql:'SELECT engine_cost_usd FROM meter_events WHERE id=?',args:[job.genId]})).rows[0].engine_cost_usd).toBe(0);}
+  if(kind==='claimed'){expect(result).toMatchObject({ok:false,cls:'uncertain'});expect((await platformDb().execute({sql:'SELECT engine_cost_usd FROM meter_events WHERE id=?',args:[job.genId]})).rows[0].engine_cost_usd).toBe(.7);}
+  if(kind==='accepted')expect(result).toMatchObject({ok:true,taskId:'already-paid'});
+  if(kind==='reviewed'){expect(result).toMatchObject({ok:true,taskId:'astra-accepted'});expect(await submitVideoJob(job)).toMatchObject({ok:true,taskId:'astra-accepted'});}
+ });expect(calls).toBe(1);}finally{engine.render=original;}
+});

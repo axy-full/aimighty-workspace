@@ -18,7 +18,7 @@ export const engineMock = (): boolean => process.env.ENGINE_MOCK === "1";
 
 /** A fixture URL: the adapters hand these out; storage reads them from disk. */
 export const FIXTURE = "fixture:";
-export type FixtureName = "clip.mp4" | "tone.mp3" | "still.png";
+export type FixtureName = "clip.mp4" | "astra-clip.mp4" | "tone.mp3" | "still.png";
 
 export const isFixtureUrl = (url: string): boolean => url.startsWith(FIXTURE);
 export const fixtureUrl = (name: FixtureName): string => `${FIXTURE}${name}`;

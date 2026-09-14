@@ -500,3 +500,20 @@ export async function openUploadStream(
     size: range ? range.end-range.start+1 : st.size,
   };
 }
+
+/** Bounded reads of a retained generation, for metadata inspection without a full download. */
+export async function openVideoStream(genId: string, range: ByteRange, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad generation id");
+  if (usingBlob()) {
+    const { get } = await import("@vercel/blob");
+    const found = await get(videoPath(genId), {access:"private",abortSignal:signal,headers:{Range:`bytes=${range.start}-${range.end}`}});
+    if (!found?.stream) throw new Error("Original video not found");
+    if (found.headers.get("content-range") !== `bytes ${range.start}-${range.end}/${range.total}`) { await found.stream.cancel().catch(()=>{}); throw new Error("Storage did not honor the requested original range"); }
+    return found.stream as ReadableStream<Uint8Array>;
+  }
+  const {createReadStream} = await import("node:fs");
+  const {stat} = await import("node:fs/promises");
+  const file = path.join(LOCAL_DIR, `${genId}.mp4`);
+  if ((await stat(file)).size !== range.total) throw new Error("Original video length changed");
+  return Readable.toWeb(createReadStream(file,{start:range.start,end:range.end,signal})) as ReadableStream<Uint8Array>;
+}

@@ -108,6 +108,7 @@ export const TASKS: TaskDef[] = [
   },
   {
     id: "upscale",
+    promptOptional: true,
     label: "Upscale",
     blurb: "Re-render a finished clip at up to 4K with Topaz Astra 2, inventing the fine detail the original never had.",
     locked: true,

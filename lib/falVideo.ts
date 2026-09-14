@@ -13,6 +13,7 @@
  * is known before the render and sealed from the row's own params after —
  * there is no token count to wait for.
  */
+import { ASTRA_MODEL, astraInput } from "./astra";
 import { falSubmit, } from "./fal";
 import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
@@ -21,7 +22,8 @@ import {
 import { getModel, type ModelDef } from "./models";
 import { estimateCostUsd } from "./vendorPricing";
 import { type TaskDef, type TaskId } from "./tasks";
-import { now } from "./db";
+import { db, now } from "./db";
+import { inspectOriginalVideo, type VideoMetadata } from "./videoMetadata.server";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import type { Reference, VideoParams } from "./ark";
 import type { Generation } from "./jobs";
@@ -31,7 +33,8 @@ import {
   generationCosts,
 } from "./generationSettlement";
 import { creditsApply } from "./credits";
-import { currentTenant } from "./tenant";
+import { currentTenant, requireTenant } from "./tenant";
+import { withRecoveryJob } from "./recovery";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { getProvider } from "./providers";
 import { engineFor } from "./engines";
@@ -89,20 +92,11 @@ export async function buildFalInput(opts: {
 
   if (task.id === "upscale") {
     if (!source) throw new Error("Upscale needs a finished clip to work on.");
-    /* Astra prices by OUTPUT resolution, so the factor is whatever gets the
-       source's short side to the tier chosen — never past fal's 4×. */
-    const target = params.resolution.toLowerCase() === "4k" ? 2160 : 1080;
-    const srcPx = Number(String(params.sourceResolution ?? "720p").replace(/p$/i, "")) || 720;
-    const factor = Math.min(4, Math.max(1, Math.round((target / srcPx) * 100) / 100));
-    return {
-      endpoint: falEndpointFor(model, "upscale", false),
-      input: {
-        video_url: await mediaUrl(source),
-        upscale_factor: factor, creativity: 0.5, sharp: 0.5,
-        ...(params.fps60 ? { target_fps: 60 } : {}),
-        H264_output: true,
-      },
-    };
+    if (model.id !== ASTRA_MODEL) throw new Error("Choose the supported Astra upscale engine.");
+    // Astra may override its requested scale with a model-selected output size.
+    // New work is quoted at the 4K tier and always names its output frame rate.
+    if (!params.astra || !params.astraSource) throw new Error("Review the Astra source and output settings before submitting.");
+    return {endpoint:falEndpointFor(model,"upscale",false),input:astraInput(await mediaUrl(source),params.astra,Math.min(params.astraSource.width,params.astraSource.height))};
   }
 
   if (task.id === "reframe") {
@@ -213,6 +207,16 @@ export async function syncFalVideo(
   gen: Generation,
   options: { strict?: boolean } = {},
 ): Promise<Generation> {
+  if (gen.model !== ASTRA_MODEL) return collectFalVideo(gen, options);
+  return withRecoveryJob(requireTenant().id,gen.id,async()=>{
+    const until=now()+300_000;
+    const claim=await db().execute({sql:`UPDATE generations SET params=json_set(params,'$.astraPollUntil',?) WHERE id=? AND kind='video' AND model=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.falRequestId') IS NOT NULL AND COALESCE(json_extract(params,'$.astraPollUntil'),0) < ? RETURNING params`,args:[until,gen.id,ASTRA_MODEL,now()]});
+    if(!claim.rows.length) return (await import("./jobs")).getGeneration(gen.id).then(current=>current??gen);
+    try { return await collectFalVideo({...gen,params:JSON.parse(String(claim.rows[0].params))},options); }
+    finally {await db().execute({sql:"UPDATE generations SET params=json_remove(params,'$.astraPollUntil') WHERE id=? AND json_extract(params,'$.astraPollUntil')=?",args:[gen.id,until]});}
+  });
+}
+async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise<Generation> {
   await deliverGenerationSettlement(gen.id);
   const savedCosts = await generationCosts(gen.id);
   const p = gen.params as FalVideoParams & {
@@ -276,14 +280,31 @@ export async function syncFalVideo(
     } catch {
       /* retain the reservation until pricing is known */
     }
+  let output: VideoMetadata | undefined;
+  if (gen.model === ASTRA_MODEL) {
+    try {
+      output=await inspectOriginalVideo({id:gen.id,kind:"video",role:"reference_video",mime:"video/mp4",ext:"mp4",storedUrl:stored.url,fromGeneration:true},stored.bytes,true);
+      const delivered=falVideoCostUsd(gen.model,{...p,resolution:Math.min(output.width,output.height)<=1080?"1080p":"4k",duration:output.seconds,fps60:output.fps!>30.01});
+      const quoted=falVideoCostUsd(gen.model,p);
+      if(delivered==null||quoted==null||delivered>quoted+0.000001)throw new Error("Astra's delivered output exceeds the reviewed budget. The existing result is retained for reconciliation; no additional credits were charged.");
+      cost=delivered;
+    } catch(error) {
+      const message=(error as Error).message;
+      await db().execute({sql:"UPDATE generations SET error=?,updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running')",args:[message.slice(0,600),now(),gen.id]});
+      if(options.strict)throw error;
+      return {...gen,error:message};
+    }
+  }
+  const deliveredParams = output ? {astraOutput:output,astraQuotedOutput:{resolution:p.resolution,duration:p.duration,fps60:p.fps60,ratio:p.ratio},resolution:`${Math.min(output.width,output.height)}p`,ratio:`${output.width}:${output.height}`,duration:output.seconds} : undefined;
   const ts = now();
-  await writeGenerationOutcome(
+  const sealed = await writeGenerationOutcome(
     {
       sql: `UPDATE generations
           SET status='succeeded', source_url=?, stored_url=?,
               cost_usd=COALESCE(cost_usd, ?), duration_ms=COALESCE(duration_ms, ?),
               store_ms=?, bytes=?, error=NULL, updated_at=?
-          WHERE id=?`,
+              ${output ? ",params=json_patch(params,json(?))" : ""}
+          WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
       args: [
         url,
         stored.url,
@@ -292,6 +313,7 @@ export async function syncFalVideo(
         ts - storeStart,
         stored.bytes,
         ts,
+        ...(deliveredParams ? [JSON.stringify(deliveredParams)] : []),
         gen.id,
       ],
     },
@@ -308,9 +330,11 @@ export async function syncFalVideo(
     },
   );
   await deliverGenerationSettlement(gen.id);
+  if(!sealed) return (await import("./jobs")).getGeneration(gen.id).then(current=>current??gen);
   invalidate(PROJECTS_KEY);
   return {
     ...gen,
+    params: deliveredParams ? {...gen.params,...deliveredParams} : gen.params,
     status: "succeeded",
     sourceUrl: url,
     storedUrl: stored.url,

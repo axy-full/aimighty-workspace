@@ -22,6 +22,8 @@ const HOST =
 const TASKS_URL = `${HOST}/api/v3/contents/generations/tasks`;
 
 export type VideoParams = {
+  astra?: import("./astra").AstraSettings;
+  astraSource?: import("./videoMetadata.server").VideoMetadata;
   ratio: string;
   resolution: string;
   duration: number;

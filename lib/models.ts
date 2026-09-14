@@ -236,15 +236,15 @@ export const MODELS: ModelDef[] = [
     note: "The Pro tier: more detail and steadier motion, a third more per second.",
   },
   /* ── Topaz Astra, on fal.ai ───────────────────────────────────────────
-   * Topaz Labs' creative video upscale (Astra 2): $0.30 a second up to
-   * 1080p, $0.50 at 4K, doubled at 60 fps. It only ever works on a finished
+   * Topaz Labs' creative video upscale (Astra 2): new quotes use the
+   * $0.50/second 4K tier, doubled at 60 fps. It only works on a finished
    * clip, so its one task is Upscale and the composer reaches it that way.
    * ------------------------------------------------------------------ */
   {
     id: "topaz/upscale/video/creative",
     billing: "second",
-    use: "Upscale a finished clip to 4K.",
-    label: "Topaz Astra",
+    use: "Creative video upscale with frame rate and detail controls.",
+    label: "Topaz Astra 2",
     short: "ASTRA",
     family: "topaz",
     provider: "fal",
@@ -252,7 +252,7 @@ export const MODELS: ModelDef[] = [
     supportsTasks: ["upscale"],
     falEndpoint: "topaz/upscale/video/creative",
     paramStyle: "fields",
-    resolutions: ["1080p", "4k"],
+    resolutions: ["4k"],
     ratios: ["adaptive"],
     durations: [],
     supportsAudio: false,
@@ -260,7 +260,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 0,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 300,
-    note: "Topaz Labs' Astra 2 — a creative upscale to 1080p or 4K that reimagines fine detail. Works on a finished clip.",
+    note: "Astra 2 creative video upscale. The provider chooses output dimensions, typically 4K; quotes use the 4K tier and an explicit 30 or 60 fps output.",
   },
   /* ── Luma Ray 2 Flash Reframe, on fal.ai ─────────────────────────────
    * Luma's reframe: a finished clip re-cut to another aspect, the missing

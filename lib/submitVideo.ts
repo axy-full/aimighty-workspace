@@ -1,3 +1,4 @@
+import { ASTRA_MODEL, astraSettings } from "./astra";
 import { withRecoveryJob } from "./recovery";
 import { db, ready, now } from "./db";
 import { type VideoParams, type Reference, type ImageRole } from "./ark";
@@ -220,6 +221,22 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
         error: row.error || "This take is no longer awaiting submission.",
         cls: "fatal",
       };
+    if (job.model.id === ASTRA_MODEL) {
+      try {
+        const settings = astraSettings(job.params.astra), source = job.params.astraSource;
+        if (job.params.resolution !== "4k" || job.params.fps60 !== (settings.fps === 60) || !source || ![source.width,source.height,source.seconds].every(n=>Number.isFinite(n)&&n>0) || source.seconds>300)
+          throw new Error("Astra source and output settings need a new quote.");
+      } catch {
+        const message = "Astra's output requirements changed. Review this source again in Gen before submitting a new upscale. No provider request was sent.";
+        await failVideoDispatch(job.genId, message);
+        const current = await submissionRow(job.genId);
+        const handle = current && knownTask(current);
+        if (handle) return {ok:true,taskId:handle,attempts:1};
+        if (current && JSON.parse(current.params || "{}").paidClaim != null)
+          return {ok:false,cls:"uncertain",error:"A prior Astra submission is still being reconciled. No additional request was sent; its estimated cost remains reserved."};
+        return {ok:false,cls:"fatal",error:message};
+      }
+    }
     const claimed = await db().execute({
       sql: `UPDATE generations SET params=json_set(params,'$.paidClaim',?),attempts=1,updated_at=?
     WHERE id=? AND kind='video' AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.paidClaim') IS NULL
