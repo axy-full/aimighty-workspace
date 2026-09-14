@@ -147,6 +147,9 @@ import {useProductionJobs} from './use-production-jobs';
 import {uploadWorkbench} from '@/lib/workbench/upload';
 import {AssetPreview} from './AssetPreview';
 import {SoundMix} from './SoundMix';
+import {AssetBins,AssetBinPicker} from './AssetBins';
+import {EditVersions} from './EditVersions';
+import {applyEdit,type EditVersion} from '@/lib/workbench/editorial';
 import { SequenceColor } from "./SequenceColor";
 import colorStyles from "./SequenceColor.module.css";
 import { defaultColorGrade, colorLutAsset } from "@/lib/workbench/color";
@@ -337,7 +340,7 @@ export default function Studio({
   const mobile = useMobileLayout();
   useMobileViewport();
   const [sequenceExpanded, setSequenceExpanded] = useState(false);
-  const [editInspector,setEditInspector] = useState<"shot"|"color">("shot");
+  const [editInspector,setEditInspector] = useState<"shot"|"color"|"versions">("shot");
   const [p, setP] = useState<Project>(seedProject);
   const [stage, storeStage] = useState<Stage>("canvas");
   const [homeOverride, setHome] = useState<boolean|null>(null);
@@ -380,6 +383,9 @@ export default function Studio({
   const [referenceUrl, setReferenceUrl] = useState("");
   const [assetSearch, setAssetSearch] = useState("");
   const [assetFilter, setAssetFilter] = useState("All assets");
+  const [binSelection,setBinSelection]=useState({projectId:"",id:""});
+  const selectedBin=binSelection.projectId===p.id?binSelection.id:"";
+  const [binAssetId,setBinAssetId]=useState<string|null>(null);
   const [saveState, setSaveState] = useState(signedIn?"Loading":"Sample project");
   const [saveError, setSaveError] = useState("");
   const [bibleConflict,setBibleConflict]=useState<{draftId:string;version:number;message:string}|null>(null);
@@ -521,6 +527,35 @@ export default function Studio({
     if(transitioningRef.current||pRef.current.id!==expectedId)return false;
     if(refreshIdentities)savedSnapshots.current.delete(expectedId);
     return drainSaves(expectedId);
+  }
+  async function saveNamedEdit(label:string,id:string):Promise<EditVersion>{
+    const draftId=pRef.current.id;
+    const endpoint=apiBase+'/edit-versions?draftId='+encodeURIComponent(draftId)+'&id='+encodeURIComponent(id);
+    const prior=await fetch(endpoint,{headers:{'X-Workbench-Scope':storageKey},cache:'no-store'});
+    if(prior.ok){const found=await prior.json();if(found.version.label!==label.trim())throw Error('This request names another edit version.');return found.version;}
+    if(prior.status!==404)throw Error((await prior.json()).error||'Could not check the saved version.');
+    if(!await ensureSaved(draftId))throw Error('Save the current production before naming this cut.');
+    const payload={draftId,id,label,revision:revisions.current.get(draftId)};
+    try {
+      const response=await fetch(apiBase+'/edit-versions',{method:'POST',headers:{'Content-Type':'application/json','X-Workbench-Scope':storageKey},body:JSON.stringify(payload)});
+      const value=await response.json();if(!response.ok)throw Error(value.error||'Could not save edit version.');return value.version;
+    }catch(error){
+      const check=await fetch(endpoint,{headers:{'X-Workbench-Scope':storageKey},cache:'no-store'}).catch(()=>null);
+      if(check?.ok){const found=(await check.json()).version;if(found.label===label.trim()&&found.revision===payload.revision)return found;}
+      throw error;
+    }
+  }
+  async function restoreNamedEdit(id:string){
+    const draftId=pRef.current.id;
+    if(!await ensureSaved(draftId))throw Error('Save your current work before restoring a cut.');
+    const original=JSON.stringify(pRef.current);
+    const response=await fetch(apiBase+'/edit-versions?draftId='+encodeURIComponent(draftId)+'&id='+encodeURIComponent(id),{headers:{'X-Workbench-Scope':storageKey},cache:'no-store'});
+    const value=await response.json();if(!response.ok)throw Error(value.error||'Could not read edit version.');
+    if(pRef.current.id!==draftId||JSON.stringify(pRef.current)!==original)throw Error('The edit changed while loading this version. Your current work was kept.');
+    const restored=applyEdit(pRef.current,value.edit);
+    if(pRef.current.shots.length)await saveNamedEdit(('Before restoring '+value.version.label).slice(0,100),crypto.randomUUID());
+    if(pRef.current.id!==draftId||JSON.stringify(pRef.current)!==original)throw Error('The edit changed while retaining its backup. Your current work was kept.');
+    change(()=>restored);setPlaying(false);setFrame(0);setShotId(restored.shots[0]?.id??'');
   }
   const beginTransition=useCallback(async()=>{
     if(uploadingRef.current){toast.error('Wait for your uploads to finish before switching productions.');return null;}
@@ -738,6 +773,7 @@ export default function Studio({
       {label: 'Open asset', run: () => setSelectedAsset(a.id)},
       {label: 'Add to canvas', run: () => addNode(a.category === 'Character' ? 'character' : a.category === 'Environment' || a.category === 'Element' ? 'element' : 'media', a.id)},
       {label: 'Add to sequence', disabled: !['image','video'].includes(a.kind), run: () => addToSequence(a)},
+      {label: 'Organize in bins', run: () => setBinAssetId(a.id)},
       {label: 'Copy prompt', disabled: !a.prompt, run: () => { void navigator.clipboard.writeText(a.prompt || '').then(() => toast.success('Prompt copied')).catch(() => toast.error('Clipboard access is unavailable. Open the asset to copy its prompt.')); }},
     ];
   }
@@ -1755,6 +1791,7 @@ export default function Studio({
                             Upload
                           </Button>
                         </div>
+                        {stage === "assets" && <AssetBins key={p.id+storageKey} project={p} selected={selectedBin} onSelect={id=>setBinSelection({projectId:p.id,id})} onChange={change}/>}
                         {stage === "moodboard" && (
                           <>
                             <div className="moodboard-intro">
@@ -1814,6 +1851,8 @@ export default function Studio({
                         >
                           {p.assets
                             .filter((a) => {
+                              if(stage==='assets'&&selectedBin==='unfiled'&&(p.bins??[]).some(b=>b.assetIds.includes(a.id)))return false;
+                              if(stage==='assets'&&selectedBin&&selectedBin!=='unfiled'&&p.bins?.some(b=>b.id===selectedBin)&&!p.bins.find(b=>b.id===selectedBin)!.assetIds.includes(a.id))return false;
                               if (
                                 assetSearch &&
                                 !`${a.name} ${a.description} ${a.category}`
@@ -2086,8 +2125,8 @@ export default function Studio({
                             </div>
                           </div>
                           <aside className={colorStyles.inspector} aria-label="Edit inspector">
-                            <div className={colorStyles.tabs} role="group" aria-label="Inspector view"><button aria-pressed={editInspector==='shot'} onClick={()=>setEditInspector('shot')}>Shot details</button><button aria-pressed={editInspector==='color'} onClick={()=>setEditInspector('color')}>Sequence color</button></div>
-                            {editInspector==='color' ? <SequenceColor key={p.id+storageKey} project={p} onChange={change} onImport={importSequenceLut}/> :
+                            <div className={colorStyles.tabs} role="group" aria-label="Inspector view"><button aria-pressed={editInspector==='shot'} onClick={()=>setEditInspector('shot')}>Shot details</button><button aria-pressed={editInspector==='color'} onClick={()=>setEditInspector('color')}>Sequence color</button><button aria-pressed={editInspector==='versions'} onClick={()=>setEditInspector('versions')}>Edit versions</button></div>
+                            {editInspector==='versions' ? <EditVersions key={p.id+storageKey} draftId={p.id} apiBase={apiBase} requestScope={storageKey} onSave={saveNamedEdit} onRestore={restoreNamedEdit}/> : editInspector==='color' ? <SequenceColor key={p.id+storageKey} project={p} onChange={change} onImport={importSequenceLut}/> :
                           <div className="shot-inspector">
                             <div className="eyebrow">SHOT DETAILS</div>
                             {activeShot ? (
@@ -3140,7 +3179,8 @@ export default function Studio({
             {dialog === "review" && <DesignReview />}
           </DialogContent>
         </Dialog>
-        {selected && (
+        {binAssetId&&p.assets.some(a=>a.id===binAssetId)&&<AssetBinPicker project={p} asset={p.assets.find(a=>a.id===binAssetId)!} onChange={change} onClose={()=>setBinAssetId(null)}/>}
+      {selected && (
           <AssetEditor
             key={selected.id}
             asset={selected}

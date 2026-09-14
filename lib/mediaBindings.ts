@@ -62,6 +62,8 @@ export async function mediaBindingProblem(
           "SELECT 1 FROM shot_presets WHERE cover_gen_id=?",
           "SELECT 1 FROM generations WHERE source_gen_id=? AND deleted=0",
         ];
+  if ((await tx.execute({sql:'SELECT 1 FROM workbench_edit_sources WHERE kind=? AND source_id=? LIMIT 1',args:[kind,id]})).rows.length)
+    return 'This media is retained by an edit version. Keep its original source so earlier cuts remain recoverable.';
   if (
     (
       await tx.execute({
@@ -99,7 +101,7 @@ export async function mediaBindingProblem(
     if (
       (kind === "upload" ? references.uploads : references.generations).has(id)
     )
-      return "This media is used by a production draft or published shared context. Remove draft references first; published source media must be kept.";
+      return "This media is used by a production draft, retained edit version or published shared context. Remove draft references first; retained source media must be kept.";
   }
   const pipelineProblem = await pipelineMediaBindingProblem(tx, kind, id);
   if (pipelineProblem) return pipelineProblem;

@@ -748,3 +748,8 @@ Edit gains a sequence color inspector, original .cube asset import/reuse, saved 
 ### 14 September 2026 — workspace sign-in policy
 
 Owners can require authenticator enrollment for workspace members through People. Enrollment gates private requests and server-rendered workspace pages, preserves account security and workspace switching, and checks existing API-token standing. Fresh owner password/factor checks, protection against disabling a required factor and transactional security history prevent policy changes from stranding an unenrolled owner. Existing workspaces remain optional until an owner enables their policy. See `docs/workspace-security-policy.md` for verification, previously authorized work, recovery-code behavior and the remaining SSO/passkey/SCIM scope. No customer policy, provider spend, email or Stripe configuration is changed by the release rehearsal.
+
+
+## Editorial continuity — 15 September 2026
+
+Private productions now retain named asset bins and immutable named cuts. The editor captures acknowledged saved revisions, retains original media and source lineage, and saves a safety cut before restoring a non-empty edit. The existing draft, request-scope, tenant, MFA and recovery protections apply throughout. See [editorial history](editorial-history.md) for verification, retention limits, restore conflicts and current export boundaries. Stripe and the approved credit model are unchanged.

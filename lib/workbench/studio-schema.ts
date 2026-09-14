@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateBins } from "./editorial";
 import { validateColor } from "./color";
 import { validateAudio } from "./audio";
 import type { Project } from "./studio";
@@ -131,6 +132,7 @@ export const projectSchema = z.object({
   direction: z.string().max(30000),
   fps: z.union([z.literal(24), z.literal(25), z.literal(30)]),
   aspect: z.enum(["16:9", "9:16", "1:1", "4:5"]),
+  bins: z.array(z.object({id:z.string().min(1).max(100),name:z.string().trim().min(1).max(80),assetIds:z.array(z.string().max(100)).max(500)})).max(50).optional(),
   assets: z.array(asset).max(500),
   nodes: z.array(node).max(250),
   shots: z.array(shot).max(250),
@@ -214,6 +216,8 @@ export const saveSchema = z
     revision: z.number().int().min(0),
   })
   .superRefine(({ project }, context) => {
+    try {validateBins(project as Project);} catch(error) {context.addIssue({code:"custom",path:["project","bins"],message:(error as Error).message});}
+
     try {
       validateAudio(project as Project);
     } catch (error) {

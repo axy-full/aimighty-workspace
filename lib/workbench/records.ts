@@ -59,7 +59,7 @@ export async function workbenchTransaction<T>(fn:(tx:Transaction)=>Promise<T>):P
 
 /** Validate under the same write lock as saving; a concurrent deletion cannot
  * leave a newly saved snapshot pointing at a source it just removed. */
-async function validateStoredMedia(tx:Transaction,value:unknown) {
+export async function validateStoredMedia(tx:Transaction,value:unknown) {
   const refs=referencedMedia(value);
   for(const [kind,ids] of [['upload',refs.uploads],['generation',refs.generations]] as const){
     const all=[...ids];

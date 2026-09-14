@@ -1,0 +1,145 @@
+.bins {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 14px;
+  border: 1px solid var(--border, #34342e);
+  border-radius: 10px;
+  background: var(--card, #1d1e19);
+}
+.bins label,
+.versions label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+}
+.bins input,
+.bins select,
+.versions input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border, #44443b);
+  border-radius: 5px;
+  padding: 8px 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.bins select {
+  max-width: 300px;
+}
+.bins option {
+  background: #20211c;
+  color: #eceee7;
+}
+.bins small {
+  flex-basis: 100%;
+  color: #a6a99c;
+  font-size: 11px;
+}
+.bins p {
+  flex-basis: 100%;
+  margin: 0;
+  color: #ffbbab;
+}
+.dialog {
+  max-width: min(440px, calc(100vw - 24px));
+  background: #20211c;
+  color: #eceee7;
+}
+.binChoices {
+  display: grid;
+  gap: 12px;
+  max-height: 50vh;
+  overflow: auto;
+}
+.binChoices label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.versions {
+  padding: 16px;
+  min-width: 0;
+}
+.versions h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+.versions p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #a6a99c;
+}
+.versions [role="alert"] {
+  color: #ffbbab;
+}
+.versions [role="status"] {
+  color: #c6dfab;
+}
+.versions input {
+  margin-bottom: 10px;
+}
+.versionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 20px 0 8px;
+  font-size: 11px;
+  color: #a6a99c;
+}
+.versions ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.versions li {
+  border-top: 1px solid #383a30;
+  padding: 12px 0;
+  display: grid;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.versions li strong {
+  font-size: 13px;
+}
+.versions li small {
+  font-size: 11px;
+  color: #a6a99c;
+}
+.versions li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.versions button {
+  white-space: normal;
+  height: auto;
+  min-height: 32px;
+  font-size: 11px;
+}
+.bins button {
+  height: 35px;
+}
+@media (max-width: 600px) {
+  .bins label {
+    flex: 1 1 130px;
+  }
+  .bins select {
+    max-width: 100%;
+  }
+  .bins {
+    padding: 10px;
+    gap: 8px;
+  }
+  .versions {
+    padding: 12px;
+  }
+}

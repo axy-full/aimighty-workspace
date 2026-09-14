@@ -97,6 +97,8 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     }
     for (const name of [
       "workbench_projects",
+      "workbench_edit_versions",
+      "workbench_edit_sources",
       "workbench_shots",
       "workbench_media",
     ] as const) {
