@@ -92,12 +92,10 @@ test("audio uses the server quote and recovers one exact request across reload w
     ),
   );
   await page.reload();
-  const mobile = page.viewportSize()!.width < 768;
   const open = async () => {
-    if (mobile)
-      await page
-        .getByRole("button", { name: "Open the composer", exact: true })
-        .click();
+    await expect(
+      page.getByRole("textbox", { name: "Prompt", exact: true }),
+    ).toBeVisible();
   };
   await open();
   const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });

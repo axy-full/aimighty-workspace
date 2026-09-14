@@ -1,164 +1,409 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  AudioLines,
+  Download,
+  Film,
+  FolderPlus,
+  Image as ImageIcon,
+  RefreshCw,
+  X,
+} from "lucide-react";
+import { Dialog as DialogPrimitive } from "radix-ui";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
+import { saveDraft } from "@/lib/draft";
 import { shortLabel } from "@/lib/models";
 import { timeAgo } from "@/lib/format";
 import type { Generation } from "@/lib/jobs";
 import type { ProductionRow } from "@/lib/productions";
 import type { Shot } from "@/lib/shots";
-import { Mono, Waveform } from "@/components/ui";
-import Menu, { type MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
-import Loader, { LOADER_SIZES, PageLoader } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
+import styles from "./gen.module.css";
 
-/**
- * The unfiled wall (design/particl-v2/README.md §10; board 8a), and the
- * Library's Unfiled lens (§11): every take with no project, grouped by
- * day. A group: its day at 600 14 with `5 takes · 71 cr` at 400 12.5 and a
- * .07 rule; four columns 12 apart. A card: `--card`, .08, radius 12; the
- * 16:9 well with `VIDEO · 5S · 1080P` in a scrim chip at 8/8 and the cost
- * in another at the bottom right (audio draws its bars across the well);
- * the prompt at 400 13.5/1.35 clamped to two lines; `MODEL · BY · WHEN` in
- * mono; `File to shot` (34px, .16, radius 8) and `Again`.
- *
- * `File to shot` gives the take a shot and a version — the one thing an
- * unfiled take is missing (§1). `Again` renders it again, at the same
- * settings, and says what it costs on the toast before anything runs.
- *
- * Below 768 (design/particl-v2-mobile, board M4, `phone`): the day in mono,
- * two columns 8 apart, the card at radius 10 with its chips at 7/7 (the
- * cost top-right), the prompt at 400 12.5/1.35, `model · by · when` in
- * mono, and the split footer — `File to shot` / `Again` at 40px.
- */
 type Kind = "video" | "image" | "audio" | "all";
-type Filing = { id: string; x: number; y: number; project: { id: string; name: string } | null };
+type Filing = {
+  id: string;
+  project: { id: string; name: string } | null;
+};
+type Props = {
+  kind: Kind;
+  search?: string;
+  onTotals?: (totals: { takes: number; spent: string }) => void;
+  columns?: string;
+  phone?: boolean;
+  onUsePrompt?: (take: Generation) => void;
+};
 
-export default function UnfiledWall({ kind, search = "", onTotals, columns = "grid-cols-4", phone = false }: { kind: Kind; search?: string; onTotals?: (t: { takes: number; spent: string }) => void; columns?: string; phone?: boolean }) {
-  const { signedIn } = useSession();
-  const money = useMoney();
-  const toast = useToast();
+export default function UnfiledWall(props: Props) {
+  const { workspace, email, signedIn } = useSession();
+  return (
+    <ScopedWall
+      key={JSON.stringify([signedIn, workspace?.id, email, props.kind])}
+      {...props}
+    />
+  );
+}
+function ScopedWall({ kind, search = "", onTotals, onUsePrompt }: Props) {
+  const { signedIn, workspace, email } = useSession(),
+    money = useMoney(),
+    toast = useToast(),
+    router = useRouter();
   const q = search.trim() ? `&q=${encodeURIComponent(search.trim())}` : "";
-  const url = signedIn ? `/api/jobs?unfiled=1&limit=200&sync=0${kind === "all" ? "" : `&kind=${kind}`}${q}` : null;
-  const { data, refresh, loading } = useApi<{ generations: Generation[] }>(url, 10_000);
-  const { data: prods } = useApi<{ productions: ProductionRow[] }>(signedIn ? "/api/productions" : null, 60_000);
+  const { data, refresh, error } = useApi<{ generations: Generation[] }>(
+    signedIn
+      ? `/api/jobs?unfiled=1&limit=200&sync=0${kind === "all" ? "" : `&kind=${kind}`}${q}`
+      : null,
+    5000,
+  );
+  const { data: prods } = useApi<{ productions: ProductionRow[] }>(
+    signedIn ? "/api/productions" : null,
+    60000,
+  );
   const gens = useMemo(() => data?.generations ?? [], [data]);
-  const [filing, setFiling] = useState<Filing | null>(null);
-  const { data: shotsData } = useApi<{ shots: Shot[] }>(filing?.project ? `/api/shots?projectId=${encodeURIComponent(filing.project.id)}` : null, 0);
-  const [busy, setBusy] = useState<string | null>(null);
-
-  const days = useMemo(() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const label = (ts: number) => {
-      const d = new Date(ts); d.setHours(0, 0, 0, 0);
-      const diff = Math.round((today.getTime() - d.getTime()) / 86_400_000);
-      return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "short" });
-    };
-    const groups = new Map<string, Generation[]>();
-    for (const g of gens) { const k = label(g.createdAt); groups.set(k, [...(groups.get(k) ?? []), g]); }
-    return [...groups.entries()].map(([day, items]) => ({ day, items, meta: `${items.length} ${items.length === 1 ? "take" : "takes"} · ${money.sum(items)}` }));
-  }, [gens, money]);
-  const takes = gens.length, spent = money.sum(gens);
-  useEffect(() => { onTotals?.({ takes, spent }); }, [takes, spent, onTotals]);
-
-  const file = async (g: Generation, shot: Shot) => {
-    setBusy(g.id); setFiling(null);
-    const r = await fetch(`/api/jobs/${g.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shotId: shot.id }) });
-    setBusy(null);
-    if (!r.ok) { toast("That take wasn't filed."); return; }
-    toast(`Filed as ${shot.code} · its next version`); refresh();
-  };
-  const again = async (g: Generation) => {
-    if (busy) return;
-    const p = g.params as Record<string, unknown>;
-    setBusy(g.id);
+  const [filing, setFiling] = useState<Filing | null>(null),
+    [busy, setBusy] = useState<string | null>(null),
+    [selected, setSelected] = useState<string | null>(null);
+  const takes = gens.length,
+    spent = money.sum(gens);
+  useEffect(() => {
+    if (signedIn && data) onTotals?.({ takes, spent });
+  }, [takes, spent, onTotals, signedIn, data]);
+  const file = async (take: Generation, shot: Shot) => {
+    setBusy(take.id);
+    setFiling(null);
     try {
-      const body = g.kind === "audio"
-        ? { task: p.task ?? "speech", text: g.prompt, projectId: null, shotId: null, title: g.title ?? null, voiceId: p.voiceId, voiceName: p.voiceName, modelId: p.modelId, durationSeconds: p.durationSeconds, lengthMs: p.lengthMs, instrumental: p.instrumental }
-        : { prompt: (p.rawPrompt as string | undefined) || g.prompt, model: g.model, ratio: p.ratio, resolution: p.resolution, duration: p.duration, generateAudio: Boolean(p.generateAudio), fps60: Boolean(p.fps60),
-            projectId: null, shotId: null, task: (p.task as string | undefined) ?? "generate", sourceGenId: (p.sourceGenId as string | undefined) ?? null, references: Array.isArray(p.references) ? p.references : [], shotSpec: p.shotSpec ?? undefined };
-      const r = await fetch(g.kind === "audio" ? "/api/audio" : "/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error ?? "Not started.");
-      toast(`Again · ${money.sum([g])} · lands on the wall unfiled`); setTimeout(refresh, 600);
-    } catch (e) { toast((e as Error).message); }
-    finally { setBusy(null); }
+      const r = await fetch(`/api/jobs/${encodeURIComponent(take.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shotId: shot.id }),
+      });
+      if (!r.ok) throw Error("That take could not be filed. Try again.");
+      toast(`Filed to ${shot.code}`);
+      await refresh();
+    } catch (error) {
+      toast((error as Error).message);
+    } finally {
+      setBusy(null);
+    }
   };
-
-  const chip = (g: Generation) => {
-    const p = g.params as Record<string, unknown>;
-    if (g.kind === "audio") { const s = Number(p.durationSeconds ?? (Number(p.lengthMs ?? 0) / 1000)) || null; return `Audio${s ? ` · ${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}` : ""}`; }
-    if (g.kind === "image") return `Still${p.resolution ? ` · ${String(p.resolution).toUpperCase()}` : ""}`;
-    return `Video${p.duration ? ` · ${p.duration}s` : ""}${p.resolution ? ` · ${String(p.resolution).toUpperCase()}` : ""}`;
+  const reusePrompt = (take: Generation) => {
+    if (onUsePrompt) {
+      onUsePrompt(take);
+      return;
+    }
+    // Loading an existing prompt is an edit; generation still requires its priced action.
+    const scope = JSON.stringify([workspace?.id, email, take.kind]);
+    saveDraft(`make:${scope}`, String(take.params.rawPrompt || take.prompt));
+    router.push(
+      `/generate?mode=${take.kind === "image" ? "images" : take.kind}`,
+    );
   };
-  const running = (g: Generation) => g.status === "running" || g.status === "queued" || g.status === "held";
-  const menuItems: MenuItem[] = !filing ? [] : !filing.project
-    ? (prods?.productions ?? []).flatMap((pr) => pr.projects.map((j): MenuItem => ({ kind: "item", label: pr.projects.length > 1 ? `${pr.name} › ${j.name}` : pr.name, keys: `${j.shots} SHOTS`, onSelect: () => setFiling((f) => f && { ...f, project: { id: j.id, name: j.name } }) })))
-    : (shotsData?.shots ?? []).map((s): MenuItem => ({ kind: "item", label: `${s.code} · ${s.description || s.title || "shot"}`.slice(0, 44), onSelect: () => { const g = gens.find((x) => x.id === filing.id); if (g) file(g, s); } }));
-
-  if (!signedIn) return <span className="max-w-[760px] text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>Sign in and everything you make lands here, unfiled, until you file it to a shot.</span>;
-  if (!data) return loading || !url ? <PageLoader what="Opening · the wall" /> : null;
-
+  const running = (g: Generation) =>
+    ["running", "queued", "held"].includes(g.status);
+  const openFile = (g: Generation) => setFiling({ id: g.id, project: null });
+  const current = gens.find((g) => g.id === selected);
+  const mediaUrl = (take: Generation) =>
+    `/api/media/${encodeURIComponent(take.id)}?stream=1`;
+  const description = (take: Generation) =>
+    String(take.params.rawPrompt || take.title || take.prompt);
+  const kindLabel = (take: Generation) =>
+    take.kind === "image" ? "Image" : take.kind === "audio" ? "Audio" : "Video";
+  if (error)
+    return (
+      <div className={styles.empty}>
+        <h3>Takes could not be loaded</h3>
+        <p>{error}</p>
+        <button type="button" className={styles.secondary} onClick={refresh}>
+          <RefreshCw size={16} />
+          Try again
+        </button>
+      </div>
+    );
+  if (signedIn && !data)
+    return (
+      <div className={styles.empty} role="status">
+        <span className={styles.loadingMark} />
+        <p>Loading your takes…</p>
+      </div>
+    );
+  if (!gens.length)
+    return (
+      <div className={styles.empty}>
+        <div className={styles.emptyFrame}>
+          {kind === "audio" ? (
+            <AudioLines size={36} />
+          ) : kind === "image" ? (
+            <ImageIcon size={36} />
+          ) : (
+            <Film size={36} />
+          )}
+          <span>01</span>
+        </div>
+        <h3>{search ? "No matching takes" : "Your next take starts here."}</h3>
+        <p>
+          {search
+            ? "Try another word from your prompt."
+            : signedIn
+              ? "Describe an idea and generate. Review, download or file the result to a shot."
+              : "Explore the controls. Sign in when you’re ready to make your first take."}
+        </p>
+      </div>
+    );
   return (
     <>
-      {days.map((d) => (
-        <div key={d.day} className={`flex flex-col ${phone ? "gap-[8px]" : "gap-[10px]"}`}>
-          {phone ? <Mono>{d.day} · {d.meta}</Mono> : (
-            <div className="flex items-baseline gap-[10px]"><span className="text-[14px] font-semibold leading-none text-ink">{d.day}</span><span className="text-[12.5px] leading-none text-ink-body">{d.meta}</span><span className="h-px flex-1 self-center bg-[rgba(245,246,248,.07)]" /></div>
-          )}
-          <div className={phone ? "grid grid-cols-2 gap-[8px]" : `grid gap-[12px] ${columns}`} data-wall="">
-            {d.items.map((g) => {
-              const u = g.storedUrl ?? g.sourceUrl;
-              const open = (e: { currentTarget: EventTarget }) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setFiling({ id: g.id, x: r.left, y: r.bottom + 6, project: null }); };
-              if (phone) return (
-                <article key={g.id} className="flex flex-col overflow-hidden rounded-tile border border-border bg-card" aria-label={`${chip(g)} take`}>
-                  <span className="relative block aspect-video border-b border-hairline ui-placeholder">
-                    {g.kind === "audio" ? <Waveform className="absolute left-[10px] right-[10px] top-1/2 h-[20px] -translate-y-1/2" /> : u && !running(g) ? <LazyMedia url={u} kind={g.kind === "image" ? "image" : "video"} className="absolute inset-0 h-full w-full object-cover" /> : null}
-                    {running(g) && <span className="absolute inset-0 flex items-center justify-center"><Loader size={LOADER_SIZES.well} /></span>}
-                    <span className="ui-chip-scrim absolute left-[7px] top-[7px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{chip(g)}</span></span>
-                    <span className="ui-chip-scrim absolute right-[7px] top-[7px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono tracking-normal text-ink">{money.sum([g])}</span></span>
+      <div className={styles.takeGrid} data-wall="">
+        {gens.map((take) => {
+          const active = running(take),
+            finished =
+              take.status === "succeeded" && (take.storedUrl || take.sourceUrl);
+          return (
+            <article
+              key={take.id}
+              className={styles.takeCard}
+              aria-label={`${kindLabel(take)} take`}
+            >
+              <button
+                type="button"
+                className={styles.takeMedia}
+                disabled={!finished}
+                onClick={() => setSelected(take.id)}
+                aria-label={`Preview ${take.title || kindLabel(take) + " take"}`}
+              >
+                {finished && take.kind !== "audio" ? (
+                  <LazyMedia
+                    url={mediaUrl(take)}
+                    kind={take.kind}
+                    className={styles.thumbnail}
+                    hoverPlay={take.kind === "video"}
+                  />
+                ) : (
+                  <span className={styles.mediaSymbol}>
+                    {take.kind === "audio" ? (
+                      <AudioLines size={32} />
+                    ) : (
+                      <Film size={28} />
+                    )}
                   </span>
-                  <span className="flex flex-1 flex-col gap-[6px] px-[10px] pb-[10px] pt-[9px]">
-                    <span className="line-clamp-2 text-[12.5px] leading-[1.35] text-ink">{(g.params as { rawPrompt?: string }).rawPrompt || g.title || g.prompt}</span>
-                    <Mono cost className="truncate">{shortLabel(g.model)} · {g.authorName ?? "—"} · {timeAgo(g.createdAt)}</Mono>
+                )}
+                <span className={styles.takeKind}>
+                  {kindLabel(take)}
+                  {take.params.duration ? ` · ${take.params.duration}s` : ""}
+                </span>
+                <span className={styles.takeCost}>{money.take(take)}</span>
+                {active && (
+                  <span className={styles.jobStatus}>
+                    {take.status === "held"
+                      ? "Needs attention"
+                      : take.status === "queued"
+                        ? "Queued"
+                        : "Generating"}
+                    <i />
                   </span>
-                  <span className="grid grid-cols-[1fr_1fr] border-t border-border">
-                    <button type="button" disabled={busy === g.id || running(g)} onClick={open} className="flex h-[40px] items-center justify-center border-r border-border text-[12.5px] font-medium leading-none text-ink disabled:opacity-60">File to shot</button>
-                    <button type="button" disabled={busy === g.id} onClick={() => again(g)} className="flex h-[40px] items-center justify-center text-[12.5px] font-medium leading-none text-ink-body disabled:opacity-60">Again</button>
-                  </span>
-                </article>
-              );
-              return (
-                <article key={g.id} className="flex flex-col overflow-hidden rounded-card border border-border bg-card" aria-label={`${chip(g)} take`}>
-                  <span className="relative block aspect-video border-b border-hairline ui-placeholder">
-                    {g.kind === "audio" ? <Waveform className="absolute left-[12px] right-[12px] top-1/2 h-[26px] -translate-y-1/2" /> : u && !running(g) ? <LazyMedia url={u} kind={g.kind === "image" ? "image" : "video"} className="absolute inset-0 h-full w-full object-cover" hoverPlay /> : null}
-                    {running(g) && <span className="absolute inset-0 flex items-center justify-center"><Loader size={LOADER_SIZES.well} /></span>}
-                    <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{chip(g)}</span></span>
-                    <span className="ui-chip-scrim absolute bottom-[8px] right-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono ui-mono-cost text-ink">{money.sum([g])}</span></span>
-                  </span>
-                  <span className="flex flex-col gap-[8px] px-[12px] pb-[12px] pt-[10px]">
-                    <span className="line-clamp-2 min-h-[36px] text-[13.5px] leading-[1.35] text-ink">{(g.params as { rawPrompt?: string }).rawPrompt || g.title || g.prompt}</span>
-                    <span className="flex items-center justify-between gap-[8px]"><Mono cost className="truncate">{shortLabel(g.model)} · {g.authorName ?? "—"} · {timeAgo(g.createdAt)}</Mono></span>
-                    <span className="flex gap-[6px]">
-                      <button type="button" disabled={busy === g.id || running(g)} onClick={open}
-                        className="tap44 flex h-[34px] flex-1 items-center justify-center rounded-ctl border border-[rgba(245,246,248,.16)] text-[12.5px] font-medium leading-none text-ink disabled:opacity-60">File to shot</button>
-                      <button type="button" disabled={busy === g.id} onClick={() => again(g)} className="tap44 flex h-[34px] items-center justify-center rounded-ctl border border-[rgba(245,246,248,.16)] px-[10px] text-[12.5px] font-medium leading-none text-ink-body disabled:opacity-60">Again</button>
-                    </span>
-                  </span>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-      <span className="max-w-[760px] text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>
-        {gens.length ? "Unfiled takes have no shot ID, no version and no place in a production until you file them. Nothing here is lost — the Library keeps it." : "Nothing unfiled yet. Whatever you render here lands on this wall with no shot ID and no version until you file it."} New here? Open a <Link href="/productions" className="text-ink">production</Link> to see a finished one.
-      </span>
-      {filing && <Menu x={filing.x} y={filing.y} title={filing.project ? `File to · ${filing.project.name}` : "File to · which project?"} items={menuItems.length ? menuItems : [{ kind: "note", text: filing.project ? "No shots in this project yet." : "No productions yet." }]} onClose={() => setFiling(null)} />}
+                )}
+                {take.status === "failed" && (
+                  <span className={styles.jobStatus}>Failed</span>
+                )}
+              </button>
+              <div className={styles.takeInfo}>
+                <p>{description(take)}</p>
+                <span>
+                  {shortLabel(take.model)} · {timeAgo(take.createdAt)}
+                </span>
+                {take.error && <p className={styles.takeError}>{take.error}</p>}
+              </div>
+              <div className={styles.takeActions}>
+                <button type="button" onClick={() => reusePrompt(take)}>
+                  <RefreshCw size={14} />
+                  Use prompt
+                </button>
+                <button
+                  type="button"
+                  disabled={!finished || busy === take.id}
+                  onClick={() => openFile(take)}
+                >
+                  <FolderPlus size={14} />
+                  File to shot
+                </button>
+                {finished && (
+                  <a
+                    href={`/api/media/${encodeURIComponent(take.id)}?download=1`}
+                    download
+                    aria-label="Download take"
+                  >
+                    <Download size={15} />
+                  </a>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <DialogPrimitive.Root
+        open={!!current}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+      >
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className={styles.dialogOverlay} />
+          <DialogPrimitive.Content
+            className={`${styles.dialog} ${styles.previewDialog}`}
+            aria-describedby={undefined}
+          >
+            <div className={styles.dialogHeader}>
+              <DialogPrimitive.Title>
+                {current?.title || "Review take"}
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Close aria-label="Close preview">
+                <X size={19} />
+              </DialogPrimitive.Close>
+            </div>
+            {current && (
+              <>
+                <div className={styles.preview}>
+                  {current.kind === "image" ? (
+                    <img src={mediaUrl(current)} alt={description(current)} />
+                  ) : current.kind === "audio" ? (
+                    <audio src={mediaUrl(current)} controls />
+                  ) : (
+                    <video src={mediaUrl(current)} controls playsInline />
+                  )}
+                </div>
+                <p className={styles.previewPrompt}>{description(current)}</p>
+                <a
+                  className={styles.secondary}
+                  href={`/api/media/${encodeURIComponent(current.id)}?download=1`}
+                  download
+                >
+                  <Download size={16} />
+                  Download take
+                </a>
+              </>
+            )}
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+      <DialogPrimitive.Root
+        open={!!filing}
+        onOpenChange={(open) => {
+          if (!open) setFiling(null);
+        }}
+      >
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className={styles.dialogOverlay} />
+          <DialogPrimitive.Content
+            className={styles.dialog}
+            aria-describedby={undefined}
+          >
+            <div className={styles.dialogHeader}>
+              <DialogPrimitive.Title>
+                {filing?.project
+                  ? `File to ${filing.project.name}`
+                  : "File to a production"}
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Close aria-label="Close filing">
+                <X size={19} />
+              </DialogPrimitive.Close>
+            </div>
+            {filing?.project ? (
+              <>
+                <button
+                  type="button"
+                  className={styles.secondary}
+                  onClick={() =>
+                    setFiling((value) => value && { ...value, project: null })
+                  }
+                >
+                  Choose another production
+                </button>
+                <FilingShots
+                  key={filing.project.id}
+                  projectId={filing.project.id}
+                  onSelect={(shot) => {
+                    const take = gens.find((g) => g.id === filing.id);
+                    if (take) void file(take, shot);
+                  }}
+                />
+              </>
+            ) : (
+              <div className={styles.modelList}>
+                {(prods?.productions ?? []).flatMap((production) =>
+                  production.projects.map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      onClick={() =>
+                        setFiling(
+                          (value) =>
+                            value && {
+                              ...value,
+                              project: { id: project.id, name: project.name },
+                            },
+                        )
+                      }
+                    >
+                      <span>
+                        <strong>{production.name}</strong>
+                        <small>
+                          {production.projects.length > 1
+                            ? project.name
+                            : "Main film"}
+                        </small>
+                      </span>
+                      <span>{project.shots} shots</span>
+                    </button>
+                  )),
+                )}
+                {prods && !prods.productions.length && (
+                  <p>No productions yet.</p>
+                )}
+              </div>
+            )}
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
     </>
+  );
+}
+
+function FilingShots({
+  projectId,
+  onSelect,
+}: {
+  projectId: string;
+  onSelect: (shot: Shot) => void;
+}) {
+  const { data, error, refresh } = useApi<{ shots: Shot[] }>(
+    `/api/shots?projectId=${encodeURIComponent(projectId)}`,
+    0,
+  );
+  if (error)
+    return (
+      <div role="alert">
+        <p>{error}</p>
+        <button type="button" className={styles.secondary} onClick={refresh}>
+          Try again
+        </button>
+      </div>
+    );
+  if (!data) return <p role="status">Loading shots…</p>;
+  return (
+    <div className={styles.modelList}>
+      {data.shots.map((shot) => (
+        <button key={shot.id} type="button" onClick={() => onSelect(shot)}>
+          <span>
+            <strong>{shot.code}</strong>
+            <small>{shot.description || shot.title || "Untitled shot"}</small>
+          </span>
+          <FolderPlus size={18} />
+        </button>
+      ))}
+      {!data.shots.length && <p>No shots in this production yet.</p>}
+    </div>
   );
 }

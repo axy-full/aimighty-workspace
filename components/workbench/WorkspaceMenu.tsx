@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   Check,
@@ -8,6 +8,7 @@ import {
   ChartNoAxesColumn,
   LogOut,
   Settings2,
+  Plus,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -34,7 +35,9 @@ export default function WorkspaceMenu({
   onSignOut: () => Promise<void>;
 }) {
   const [account, setAccount] = useState(initial),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const busyRef = useRef(false);
   useEffect(() => {
     if (!initial?.workspace?.id) return;
     const controller = new AbortController();
@@ -59,29 +62,35 @@ export default function WorkspaceMenu({
     };
   }, [initial?.workspace?.id]);
   async function run(fn: () => Promise<void>) {
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
+    setError("");
     try {
       await fn();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Your account could not be changed. Please try again.");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
-  if (!account)
-    return (
-      <a className="workbench-account-entry" href="/pricing">
-        Create workspace
-      </a>
-    );
+  if (!account) return <div className="studio-account-entry">
+    <a className="studio-account-signin" href="/login">Sign in</a>
+    <a href="/pricing">Create workspace</a>
+  </div>;
+  const initials = account.name.split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join("").toUpperCase() || "P";
   return (
-    <div className="workbench-account">
+    <div className="studio-account">
+      {error && <span className="studio-navigation-error" role="alert">{error}</span>}
       <button
         type="button"
-        className="workbench-credit"
+        className="studio-credit"
         disabled={busy}
         onClick={() => void run(() => onNavigate("/billing"))}
         aria-label="Workspace credits and billing"
       >
+        <span className="studio-credit-label">Credits</span>
         {typeof account.credits?.balance === "number"
           ? `${Math.round(account.credits.balance).toLocaleString()} cr`
           : "Billing"}
@@ -89,18 +98,19 @@ export default function WorkspaceMenu({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="workbench-workspace"
+            className="studio-workspace-trigger"
             aria-label="Workspace menu"
             disabled={busy}
           >
-            <span>{account.workspace?.name || account.name}</span>
+            <span className="studio-account-avatar" aria-hidden="true">{initials}</span>
+            <span className="studio-workspace-name">{account.workspace?.name || account.name}</span>
             <ChevronDown size={13} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="ps workbench-account-menu" align="end">
-          <div className="workbench-account-identity">
-            <strong>{account.name}</strong>
-            <span>{account.workspace?.name || "Workspace setup"}</span>
+        <DropdownMenuContent className="studio-account-menu" align="end">
+          <div className="studio-account-identity">
+            <span className="studio-account-avatar" aria-hidden="true">{initials}</span>
+            <div><strong>{account.name}</strong><small>{account.workspace?.name || "Workspace setup"}</small></div>
           </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -113,7 +123,7 @@ export default function WorkspaceMenu({
             onSelect={() => void run(() => onNavigate("/billing"))}
           >
             <CreditCard size={15} />
-            Billing
+            Credits & plan
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => void run(() => onNavigate("/usage"))}
@@ -125,17 +135,18 @@ export default function WorkspaceMenu({
             onSelect={() => void run(() => onNavigate("/settings"))}
           >
             <Settings2 size={15} />
-            Account & settings
+            Workspace & account
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <div className="workbench-menu-label">Switch workspace</div>
+          <div className="studio-menu-label">Switch workspace</div>
           {account.workspaces.map((workspace) => (
             <DropdownMenuItem
               key={workspace.id}
+              aria-label={workspace.name}
               disabled={busy || workspace.id === account.workspace?.id}
               onSelect={() => void run(() => onSwitch(workspace.id))}
             >
-              {workspace.name}
+              <span className="studio-account-workspace-item"><span>{workspace.name}</span><small>{workspace.role}</small></span>
               {workspace.id === account.workspace?.id && <Check size={13} />}
             </DropdownMenuItem>
           ))}
@@ -144,7 +155,7 @@ export default function WorkspaceMenu({
               void run(() => onNavigate("/billing?workspace=new"))
             }
           >
-            Create a workspace
+            <Plus size={15} />Create a workspace
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => void run(onSignOut)}>

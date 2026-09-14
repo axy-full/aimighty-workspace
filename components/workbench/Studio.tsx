@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import WorkspaceMenu,{type WorkbenchAccount} from "./WorkspaceMenu";
+import {type WorkbenchAccount} from "./WorkspaceMenu";
+import StudioNavigation from "@/components/studio/StudioNavigation";
+import {AtomikMark} from "@/components/AtomikMark";
 import {clearPrivateLocal} from "@/lib/session";
 import React, {
   useState,
@@ -10,6 +12,7 @@ import React, {
   useRef,
   useCallback,
   useMemo,
+  useSyncExternalStore,
 } from "react";
 import {
   ArrowUp,
@@ -240,6 +243,10 @@ function Choice({
     </Select>
   );
 }
+const subscribeHydration = () => () => {};
+const clientHydrated = () => true;
+const serverHydrated = () => false;
+
 function Mark({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -259,14 +266,7 @@ function Mark({ className = "" }: { className?: string }) {
   );
 }
 function AtomMark() {
-  return (
-    <svg viewBox="0 0 32 32" className="atom-mark" aria-hidden="true">
-      <ellipse cx="16" cy="16" rx="13" ry="5.3" />
-      <ellipse cx="16" cy="16" rx="13" ry="5.3" transform="rotate(60 16 16)" />
-      <ellipse cx="16" cy="16" rx="13" ry="5.3" transform="rotate(120 16 16)" />
-      <circle cx="16" cy="16" r="2" />
-    </svg>
-  );
+  return <AtomikMark size={20} className="atom-mark" />;
 }
 function Media({
   asset,
@@ -372,6 +372,7 @@ export default function Studio({
   const [saveError, setSaveError] = useState("");
   const [ready, setReady] = useState(false);
   const [initializedScope, setInitializedScope] = useState<string|null>(null);
+  const hydrated = useSyncExternalStore(subscribeHydration, clientHydrated, serverHydrated);
   const [transitioning,setTransitioning]=useState(false);
   const transitioningRef=useRef(false);
   const readyRef=useRef(false);
@@ -1061,6 +1062,7 @@ export default function Studio({
               <button
                 className={"particl-home " + (home ? "active" : "")}
                 aria-label="Particl home"
+                disabled={!hydrated || (signedIn && initializedScope !== storageKey)}
                 onClick={() => {
                   setHome(true);
                   setAtomOpen(false);
@@ -1085,6 +1087,7 @@ export default function Studio({
                         <TooltipTrigger asChild>
                           <TabsTrigger
                             value={s.id}
+                            disabled={!hydrated || (signedIn && initializedScope !== storageKey) || transitioning}
                             className={
                               "workflow-step " +
                               ([2, 5, 8].includes(i)
@@ -1128,6 +1131,7 @@ export default function Studio({
                   aria-label="Toggle Atomik creative engine"
                   aria-expanded={atomOpen}
                   aria-controls="atomik-panel"
+                  disabled={!hydrated}
                   onClick={() => setAtomOpen((v) => !v)}
                 >
                   <AtomMark />
@@ -1161,13 +1165,13 @@ export default function Studio({
                       </DropdownMenuItem>
                     )}
                     {sourceMode && (
-                      <DropdownMenuItem onSelect={()=>void leaveWorkspace("/make/video")}>Open existing generation tools</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={()=>void leaveWorkspace("/generate")}>Open Gen</DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
             </header>
-            <div className="workbench-account-bar"><WorkspaceMenu initial={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/></div>
+            <StudioNavigation compact active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/>
             <div className="project-bar">
               <div className="project-breadcrumb">
                 <button onClick={() => setHome(true)}>Productions</button>
@@ -2870,7 +2874,7 @@ export default function Studio({
               </MobilePanel>
             </div>
             <MobileNavigation
-              disabled={(signedIn&&initializedScope!==storageKey)||transitioning}
+              disabled={!hydrated||(signedIn&&initializedScope!==storageKey)||transitioning}
               home={home}
               stage={stage}
               projectName={p.name}
@@ -3138,7 +3142,7 @@ export default function Studio({
                 ))}
               </div>
             )}
-            {dialog === "connections" && <div className="connection-info"><p>These models are available for Atomik. Choose an image or video engine when generating a take.</p><div className="provider-list">{jobs.models.length?jobs.models.map(m=><div key={m.id}><span>{m.name}</span><small>Available</small></div>):<p>Sign in to view configured reasoning models.</p>}</div><p>Canvas edits, private versions, shared project bibles, source uploads, sequence timing and exports are saved in your workspace. Website links are references; arbitrary website content is not automatically fetched. Delivery renders a synchronized final movie on your device, or exports original media and an EDL. Target-NLE conform validation remains separate.</p><a href="/settings">Workspace settings</a></div>}
+            {dialog === "connections" && <div className="connection-info"><p>These models are available for Atomik. Choose an image or video engine when generating a take.</p><div className="provider-list">{jobs.models.length?jobs.models.map(m=><div key={m.id}><span>{m.name}</span><small>Available</small></div>):<p>Sign in to view configured reasoning models.</p>}</div><p>Canvas edits, private versions, shared project bibles, source uploads, sequence timing and exports are saved in your workspace. Website links are references; arbitrary website content is not automatically fetched. Delivery renders a synchronized final movie on your device, or exports original media and an EDL. Target-NLE conform validation remains separate.</p><button type="button" onClick={()=>void leaveWorkspace("/settings")}>Workspace settings</button></div>}
             {dialog === "review" && <DesignReview />}
           </DialogContent>
         </Dialog>

@@ -1,6 +1,14 @@
 # Particl production workbench
 
-The September 13 redesign is integrated selectively over current main. The source archive’s application baseline was not substituted for the newer backend. The original Particl logo, neutral palette, desktop stages/canvas/inspector and mobile bottom navigation are retained. `/` redirects to `/workbench`; existing production, settings and review routes remain available.
+The September 13 redesign is integrated selectively over current main. The source archive’s application baseline was not substituted for the newer backend. The original Particl logo, neutral palette, desktop stages/canvas/inspector and mobile bottom navigation are retained. `/` redirects to `/workbench`; existing production and review routes remain available.
+
+## Studio, Gen and workspace
+
+Studio, Gen and Workspace are first-class sections in the shared navigation. `/generate?mode=video|images|audio` opens the dedicated creation desk and searchable take browser. Existing `/make/video`, `/make/images` and `/make/audio` links open the same redesigned interface and retain reference parameters. Drafts and interrupted paid requests remain scoped to the signed-in person, workspace and generation mode. Reusing a take loads its prompt for editing and an explicit priced submission; it does not start a paid job directly.
+
+Workspace/account settings, team, credits/plan and usage share the studio's monochrome management design. Their existing endpoints, roles and prices are unchanged. Workspace switching and sign-out clear private browser caches only after the server accepts the change. Leaving the production workbench through the section navigation or workspace menu drains pending saves first. Stripe remains deferred and checkout continues to fail closed when unconfigured.
+
+Atomik uses the original eight-dot ring in `components/AtomikMark.tsx`, matching the previous website's `design/particl-v2/assets/atomik-ring-on-dark.svg`. The prototype's orbital atom illustration is removed. The original Particl trail and branded wordmark remain intact.
 
 ## Connected workflow
 

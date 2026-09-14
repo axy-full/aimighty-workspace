@@ -9,7 +9,7 @@ const sizes = [
 export default defineConfig({
   testDir: "tests",
   testMatch:
-    /(customer|composer-audio|composer-batch|paid-action|recovery-race)\.spec\.ts$/,
+    /(gen|customer|composer-audio|composer-batch|paid-action|recovery-race)\.spec\.ts$/,
   timeout: 90_000,
   expect: { timeout: 15_000 },
   workers: 1,
