@@ -65,6 +65,17 @@ export async function withGenerationRequest(req: Request, userId: string, run: (
   }
   const key = supplied ?? randomUUID();
   const fingerprint = generationFingerprint({ method: req.method, path: new URL(req.url).pathname, body: await req.clone().json().catch(() => ({})) });
+  return withGenerationRequestData({ userId, key, fingerprint }, run);
+}
+
+/** Server-side admission uses the same durable claim without making an HTTP request.
+ * The caller supplies a namespace-bound fingerprint and an authenticated actor. */
+export async function withGenerationRequestData(
+  input: { userId: string; key: string; fingerprint: string },
+  run: (claim: GenerationRequest) => Promise<Response>,
+): Promise<Response> {
+  const { userId, key, fingerprint } = input;
+  if (!/^[A-Za-z0-9._:-]{8,160}$/.test(key)) return Response.json({ error: "The request key is invalid." }, { status: 400 });
   await generationRequestsReady();
   const inserted = await db().execute({
     sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?)`,

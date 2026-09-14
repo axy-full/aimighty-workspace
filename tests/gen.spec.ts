@@ -5,6 +5,194 @@ import { randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 
+test("Gen Seedance Edit quotes source-bound work and recovers a lost submission without buying a second edit", async ({
+  page,
+}, testInfo) => {
+  await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((r) => r.json());
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const submissions: { body: string | null; key: string }[] = [];
+  let quotes = 0,
+    uploaded = false;
+  const reference = {
+    id: "edit-look",
+    filename: "Blue hour.png",
+    mime: "image/png",
+    kind: "image",
+    width: 256,
+    height: 256,
+    bytes: 1000,
+    durationS: null,
+    url: "/api/uploads/edit-look",
+    sha256: "fixture",
+  };
+  const source = {
+    id: "edit-source",
+    filename: "Camera original.mp4",
+    mime: "video/mp4",
+    kind: "video",
+    width: 1280,
+    height: 720,
+    bytes: 1000,
+    durationS: 12.5,
+    url: "/api/uploads/edit-source",
+    sha256: "fixture",
+  };
+  await page.route("**/api/**", async (route) => {
+    const req = route.request(),
+      url = new URL(req.url()),
+      pathname = url.pathname;
+    const json = (data: unknown, status = 200) =>
+      route.fulfill({
+        status,
+        contentType: "application/json",
+        body: JSON.stringify(data),
+      });
+    if (pathname === "/api/me") return json(me);
+    if (pathname === "/api/jobs") return json({ generations: [] });
+    if (pathname === "/api/cast") return json({ cast: [] });
+    if (pathname === "/api/productions") return json({ productions: [] });
+    if (pathname === "/api/uploads" && req.method() === "GET")
+      return json({ uploads: uploaded ? [reference, source] : [reference] });
+    if (pathname === "/api/uploads/chunk") return json({ ok: true });
+    if (pathname === "/api/uploads/finish") {
+      uploaded = true;
+      return json(source);
+    }
+    if (pathname.startsWith("/api/uploads/edit-"))
+      return route.fulfill({
+        path: pathname.endsWith("source")
+          ? "public/fixtures/clip.mp4"
+          : "public/fixtures/still.png",
+        contentType: pathname.endsWith("source") ? "video/mp4" : "image/png",
+      });
+    if (pathname === "/api/generate/quote") {
+      quotes++;
+      expect(req.headers()["x-workbench-scope"]).toBe(
+        `particl-active-${me.workspace.id}-${me.id}`,
+      );
+      expect(req.postDataJSON()).toMatchObject({
+        model: "dreamina-seedance-2-5-260628",
+        task: "edit",
+        sourceUploadId: "edit-source",
+        refine: false,
+        references: [{ uploadId: "edit-look", role: "reference_image" }],
+      });
+      return json({
+        fingerprint: "a".repeat(64),
+        estimatedCredits: 24,
+        price: 24,
+        unit: "cr",
+      });
+    }
+    if (pathname === "/api/generate") {
+      submissions.push({
+        body: req.postData(),
+        key: req.headers()["idempotency-key"],
+      });
+      expect(req.headers()["x-workspace-id"]).toBe(me.workspace.id);
+      if (submissions.length === 1) return route.abort("failed");
+      return json({ id: "recovered-edit", status: "queued" }, 202);
+    }
+    return route.fallback();
+  });
+  await page.goto("/generate");
+  await page.getByRole("button", { name: "Engine", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Choose a model" })
+    .getByRole("button", { name: /Seedance 2.5 Edit/ })
+    .click();
+  const editor = page.getByRole("region", {
+    name: "Seedance 2.5 Edit",
+    exact: true,
+  });
+  await expect(editor).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: /Review edit cost/ }),
+  ).toBeDisabled();
+  await editor
+    .getByLabel("Upload edit source", { exact: true })
+    .setInputFiles("public/fixtures/clip.mp4");
+  await expect(editor.getByLabel("Source clip", { exact: true })).toHaveValue(
+    "upload:edit-source",
+  );
+  await editor.getByLabel(/Visual references/).selectOption("upload:edit-look");
+  await editor
+    .getByLabel("Edit direction", { exact: true })
+    .fill("Change the daylight to blue hour. Preserve the actor and dialogue.");
+  await editor.getByRole("button", { name: /Review edit cost/ }).click();
+  await expect(
+    editor.getByRole("button", { name: /Generate edit.*24 cr/ }),
+  ).toBeEnabled();
+  expect(submissions).toHaveLength(0);
+  await editor
+    .getByLabel("Edit direction", { exact: true })
+    .fill(
+      "Change the daylight to blue hour. Preserve the actor, camera and dialogue.",
+    );
+  await expect(
+    editor.getByRole("button", { name: /Review edit cost/ }),
+  ).toBeEnabled();
+  await editor.getByRole("button", { name: /Review edit cost/ }).click();
+  const primary = editor.getByRole("button", { name: /Generate edit.*24 cr/ });
+  await expect(primary).toBeEnabled();
+  const box = await primary.boundingBox(),
+    size = page.viewportSize()!;
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(size.width + 1);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(size.height + 1);
+  const price = primary.locator("strong");
+  expect(
+    await price.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return element.contains(
+        document.elementFromPoint(
+          rect.x + rect.width / 2,
+          rect.y + rect.height / 2,
+        ),
+      );
+    }),
+  ).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("seedance-edit.png") });
+  await primary.click();
+  await expect(
+    editor.getByRole("button", { name: /Recover edit/ }),
+  ).toBeEnabled();
+  await page.reload();
+  await expect(
+    editor.getByLabel("Edit direction", { exact: true }),
+  ).toBeDisabled();
+  await expect(
+    editor.getByText("@Image1 · Blue hour.png", { exact: true }),
+  ).toBeVisible();
+  await editor.getByRole("button", { name: /Recover edit/ }).click();
+  await expect.poll(() => submissions.length).toBe(2);
+  await expect(
+    page.getByText("Edit queued. Its progress is in Your takes.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: /Recover edit/ }),
+  ).toHaveCount(0);
+  expect(quotes).toBe(2);
+  expect(submissions).toHaveLength(2);
+  expect(submissions[1]).toEqual(submissions[0]);
+  expect(JSON.parse(submissions[0].body!)).toMatchObject({
+    task: "edit",
+    sourceUploadId: "edit-source",
+    maxCredits: 24,
+    quoteFingerprint: "a".repeat(64),
+  });
+  expect(errors).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+});
+
 test("Gen makes video, images and each audio kind with quoted requests, then reviews and reuses takes", async ({
   page,
 }, testInfo) => {

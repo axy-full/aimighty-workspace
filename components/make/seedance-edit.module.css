@@ -1,0 +1,74 @@
+.source {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.select {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--gen-edge);
+  border-radius: 7px;
+  background: var(--gen-ground);
+  color: var(--gen-ink);
+  font-size: 14px;
+}
+.preview {
+  width: 100%;
+  max-height: 230px;
+  background: #000;
+  border-radius: 8px;
+}
+.settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+}
+.settings label {
+  min-width: 0;
+}
+.settings select {
+  margin-top: 8px;
+}
+.audio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reference {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  border: 1px solid var(--gen-edge);
+  border-radius: 6px;
+  padding: 8px;
+}
+.reference span {
+  overflow-wrap: anywhere;
+}
+.reference button {
+  padding: 8px;
+  flex: none;
+}
+.error,
+.recovery {
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px;
+  margin-top: 14px;
+  border-radius: 7px;
+  overflow-wrap: anywhere;
+}
+.error {
+  color: #f6b1b1;
+  background: #e45a5a12;
+}
+.recovery {
+  color: var(--gen-body);
+  background: var(--gen-raised);
+}

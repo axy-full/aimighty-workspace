@@ -2,6 +2,7 @@ import { inngest, EVENTS } from "./inngest";
 import { ready } from "./db";
 import { runWorkerProbe } from "./workerProbe";
 import { loadJob, produce, seal, failJob } from "./renderWork";
+import { submitVideoRow, failVideoDispatch } from "./submitVideo";
 import { runInTenant } from "./tenant";
 import { getWorkspace, legacyWorkspace } from "./platform";
 
@@ -68,17 +69,26 @@ export const render = inngest.createFunction(
       const data = (event.data.event?.data ?? {}) as {
         genId?: string;
         workspaceId?: string;
+        kind?: string;
       };
       const genId = String(data.genId ?? "");
       if (genId)
         await runInTenant(await workspaceOf(data), () =>
-          failJob(genId, error.message),
+          data.kind === "video" ? failVideoDispatch(genId, error.message) : failJob(genId, error.message),
         );
     },
   },
   async ({ event, step }) => {
     const genId = String(event.data.genId);
     const ws = await workspaceOf(event.data as { workspaceId?: string });
+
+    if (event.data.kind === "video") {
+      return step.run("submit-video", () => runInTenant(ws, async () => {
+        await workspaceOf(event.data as { workspaceId?: string });
+        await ready();
+        return { genId, ...await submitVideoRow(genId) };
+      }));
+    }
 
     const produced = await step.run("produce", async () =>
       runInTenant(ws, async () => {

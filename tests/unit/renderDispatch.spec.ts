@@ -230,3 +230,49 @@ test("workspace suspension after reservation stops the worker before a paid prov
     engine.render = original;
   }
 });
+
+test("a lost video dispatch recovers a reserved row once; accepted handles and paid claims are never sent again", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { meter } = await import("../../lib/meter");
+  const { recoverRenderDispatches } = await import("../../lib/renderDispatch");
+  const { submitVideoRow } = await import("../../lib/submitVideo");
+  const { engineFor } = await import("../../lib/engines");
+  const engine = engineFor("byteplus"), original = engine.render;
+  let paid = 0;
+  engine.render = async () => { paid++; return { handle: { provider: "byteplus", model: "mock", ref: "recovered-video" } }; };
+  try { await runInTenant(workspace("video_recover"), async () => {
+    for (const id of ["pending_video", "accepted_video", "claimed_video", "unreserved_video"]) {
+      await insert(id);
+      await db().execute({ sql: "UPDATE generations SET kind='video',provider='byteplus',model='dreamina-seedance-2-0-260128',status='queued',params=? WHERE id=?", args: [JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false }), id] });
+      if (id !== "unreserved_video") await meter({ id, kind: "video", engine: "byteplus", model: "dreamina-seedance-2-0-260128", status: "running", engineCostUsd: 0.7 });
+    }
+    await db().execute("UPDATE generations SET ark_task_id='already-accepted' WHERE id='accepted_video'");
+    await db().execute("UPDATE generations SET params=json_set(params,'$.paidClaim',1) WHERE id='claimed_video'");
+    const delivered: string[] = [];
+    expect(await recoverRenderDispatches(async event => {
+      expect(event.data.kind).toBe("video"); delivered.push(event.data.genId);
+      const outcomes = await Promise.all([submitVideoRow(event.data.genId), submitVideoRow(event.data.genId)]);
+      expect(outcomes.some(out => out.ok)).toBe(true);
+    })).toEqual({ attempted: 1, failed: 0, deferred: 0 });
+    expect(delivered).toEqual(["pending_video"]); expect(paid).toBe(1);
+    expect(await recoverRenderDispatches(async () => { throw new Error("Must not resend"); })).toEqual({ attempted: 0, failed: 0, deferred: 0 });
+    expect(await submitVideoRow("pending_video")).toMatchObject({ ok: true, taskId: "recovered-video" }); expect(paid).toBe(1);
+  }); } finally { engine.render = original; }
+});
+
+test("unreserved rows cannot permanently starve the bounded dispatch recovery page", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { meter } = await import("../../lib/meter");
+  const { recoverRenderDispatches } = await import("../../lib/renderDispatch");
+  await runInTenant(workspace("unreserved_fairness"), async () => {
+    await insert("abandoned_first");
+    await insert("reserved_second");
+    await meter({ id: "reserved_second", kind: "image", engine: "google", model: "gemini-3.1-flash-image", status: "running", engineCostUsd: 0.1 });
+    const sent: string[] = [];
+    const send = async (event: { data: { genId: string } }) => { sent.push(event.data.genId); };
+    expect((await recoverRenderDispatches(send, { limit: 1 })).attempted).toBe(0);
+    expect((await recoverRenderDispatches(send, { limit: 1 })).attempted).toBe(1);
+    expect(sent).toEqual(["reserved_second"]);
+  });
+});
