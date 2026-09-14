@@ -1,0 +1,56 @@
+.menu {
+  z-index: 250;
+  width: min(256px, calc(100vw - 16px));
+  max-width: var(--radix-context-menu-content-available-width, calc(100vw - 16px));
+  max-height: min(
+    520px,
+    var(--radix-context-menu-content-available-height, 80dvh)
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border: 1px solid #393c44;
+  border-radius: 10px;
+  background: #171a21;
+  color: #e6e8ec;
+  box-shadow: 0 16px 60px #0009;
+  font:
+    13px/1.4 "Particl Geist",
+    sans-serif;
+}
+.label {
+  padding: 7px 10px;
+  color: #969aa4;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid #ffffff0d;
+  margin-bottom: 4px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  cursor: default;
+  outline: none;
+  user-select: none;
+}
+.item[data-highlighted] {
+  background: #ffffff16;
+  color: #fff;
+}
+.item[data-danger] {
+  color: #f68c8e;
+}
+.item[data-disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+@media (pointer: coarse) {
+  .item {
+    min-height: 44px;
+  }
+}

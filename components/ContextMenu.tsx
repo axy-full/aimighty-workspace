@@ -39,7 +39,7 @@ function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: strin
   Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, value);
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.focus();
-  el.setSelectionRange(caret, caret);
+  if (el instanceof HTMLTextAreaElement || /^(text|search|url|password)$/.test(el.type)) el.setSelectionRange(caret, caret);
 }
 
 async function moveClip(genId: string, projectId: string | null) {
@@ -120,12 +120,13 @@ export default function ContextMenu() {
         const end = field.selectionEnd ?? 0;
         const sel = field.value.slice(start, end);
         const has = sel.length > 0;
+        const writable = !field.readOnly && !field.disabled;
 
         items.push(
           {
-            kind: "item", label: "Cut", disabled: has === false,
+            kind: "item", label: "Cut", disabled: !has || !writable,
             action: async () => {
-              try { await navigator.clipboard.writeText(sel); } catch { /* still remove */ }
+              try { await navigator.clipboard.writeText(sel); } catch { await appAlert("Clipboard blocked", "The text was kept. Use the keyboard shortcut to cut it."); return; }
               setNativeValue(field, field.value.slice(0, start) + field.value.slice(end), start);
             },
           },
@@ -134,7 +135,7 @@ export default function ContextMenu() {
             action: async () => { try { await navigator.clipboard.writeText(sel); } catch { /* blocked */ } },
           },
           {
-            kind: "item", label: "Paste",
+            kind: "item", label: "Paste", disabled: !writable,
             action: async () => {
               try {
                 const text = await navigator.clipboard.readText();
@@ -144,7 +145,7 @@ export default function ContextMenu() {
             },
           },
           {
-            kind: "item", label: "Delete", disabled: !has,
+            kind: "item", label: "Delete", disabled: !has || !writable,
             action: () => setNativeValue(field, field.value.slice(0, start) + field.value.slice(end), start),
           },
         );

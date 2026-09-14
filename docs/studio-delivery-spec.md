@@ -1,0 +1,15 @@
+# Professional studio delivery requirements
+
+Owner instructions, 14 September 2026. This supplements the scope of work and enterprise release requirements. Stripe activation remains excluded. A feature is complete only when its UI, persisted state, authorization, job lifecycle, asset references, billing and recovery work together and have evidence.
+
+- Import a complete Final Draft screenplay exported as PDF; preserve source pages and scene numbering. Extract scenes and beats with editable review, then develop shot breakdowns and storyboards. Long documents must not silently truncate. Scanned documents need explicit OCR handling.
+- Carry mood, lighting, palette, lens, framing, characters, props, elements and worlds through connected nodes into generation requests. Preserve source lineage and editable versions across every surface, including uploaded references.
+- Atomik thinking choices must be limited to models actually offered by Higgsfield Supercomputer, further limited by connected, priced, supported providers. Never invent model IDs or silently route a selected model to a different one. Seedance 2.5 Edit must be discoverable directly in Gen with correct source, timing and provider validation.
+- Make right-click, visible action menus, keyboard commands and touch actions operate on the selected asset, node or edit. Canvas dragging must not steal menu commands. Locked and shared views retain their restrictions.
+- Provide a scrubbable, persistent post-production timeline with bins and edit versions, source in/out points, image/video processing, LUT import with stated input/output color spaces, and sound tracks for score and SFX. Real-time preview and rendered outputs must agree.
+- Verify and integrate Topaz Astra 2 for video and appropriate Topaz image enhancement models through documented APIs; do not label an image model as Astra. Every paid request needs an exact quote, durable state and idempotent accounting.
+- Support sound synchronization, uncompressed audio delivery, EDL/interchange export and final delivery artifacts with honest codec, channel, frame-rate and size limits. A timeline manifest is not a finished media file.
+- Track usage and customer spend per project and job without revealing platform-only cost data. Maintain tenant isolation, durable media storage, recovery, monitoring and measured load limits.
+- Use a clean, fast professional interface. Verify five required viewports and test real complete workflows, including failures, interrupted responses and concurrency. Local mock success is not heavy-traffic or vendor-quality proof.
+
+Sources for model verification: [Supercomputer model overview](https://higgsfield.ai/supercomputer-intro), [Supercomputer help](https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer), [Seedance guide](https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-seedance), [Topaz developer documentation](https://developer.topazlabs.com/). Vendor pages and controls can change; record the actual supported API contract with each integration.
