@@ -311,88 +311,106 @@ async function interleave(
   }
 }
 
-test("legacy catalog and chat attachments serialize against deletion in both commit orders", async () => {
-  const { runInTenant } = await import("../../lib/tenant");
-  const { db } = await import("../../lib/db");
-  const { workbenchReady, workbenchTransaction } =
-    await import("../../lib/workbench/records");
-  const { mediaBindingProblem } = await import("../../lib/mediaBindings");
-  const { queueUploadDeletion, uploadReservationsReady } =
-    await import("../../lib/uploadReservations");
-  const { markGenerationDeletion, mediaDeletionReady } =
-    await import("../../lib/mediaDeletion");
-  for (const writer of await writers())
-    for (const order of ["attach-first", "delete-first"] as const) {
-      await test.step(`${writer.name}: ${order}`, async () => {
-        await runInTenant(
-          workspace((writer.name + "-" + order).replaceAll(" ", "-")),
-          async () => {
-            await workbenchReady();
-            await uploadReservationsReady();
-            await mediaDeletionReady();
+const raceWriters = [
+  "chat attachment",
+  "new cast",
+  "cast update",
+  "new identity photos",
+  "identity photos",
+  "identity cover",
+  "catalog upload",
+  "catalog generation",
+  "catalog origin",
+  "board nested output",
+  "Atomik message",
+  "Atomik step params",
+  "shot create setup",
+  "shot update setup",
+] as const;
+// Each transaction ordering has its own timeout and failure report. A slow
+// hosted filesystem must not exhaust a single budget shared by 28 races.
+for (const writerName of raceWriters)
+  for (const order of ["attach-first", "delete-first"] as const)
+    test(`legacy media mutation: ${writerName}, ${order}`, async () => {
+      const { runInTenant } = await import("../../lib/tenant");
+      const { db } = await import("../../lib/db");
+      const { workbenchReady, workbenchTransaction } =
+        await import("../../lib/workbench/records");
+      const { mediaBindingProblem } = await import("../../lib/mediaBindings");
+      const { queueUploadDeletion, uploadReservationsReady } =
+        await import("../../lib/uploadReservations");
+      const { markGenerationDeletion, mediaDeletionReady } =
+        await import("../../lib/mediaDeletion");
+      const cases = await writers();
+      expect(cases.map((writer) => writer.name)).toEqual([...raceWriters]);
+      const writer = cases.find((writer) => writer.name === writerName)!;
+      await runInTenant(
+        workspace((writer.name + "-" + order).replaceAll(" ", "-")),
+        async () => {
+          await workbenchReady();
+          await uploadReservationsReady();
+          await mediaDeletionReady();
+          await db().execute(
+            "INSERT INTO users(id,email,name,role,password_hash,created_at) VALUES('owner','owner@example.test','Owner','admin','fixture',0)",
+          );
+          await db().execute(
+            "INSERT INTO projects(id,name,created_at) VALUES('project','Project',0)",
+          );
+          if (writer.kind === "upload")
             await db().execute(
-              "INSERT INTO users(id,email,name,role,password_hash,created_at) VALUES('owner','owner@example.test','Owner','admin','fixture',0)",
+              "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('source','Source','image/png','png',1,'hash','fixture','image',0)",
             );
+          else
             await db().execute(
-              "INSERT INTO projects(id,name,created_at) VALUES('project','Project',0)",
+              "INSERT INTO generations(id,model,prompt,params,status,stored_url,bytes,created_at,updated_at) VALUES('source','fixture','','{}','succeeded','fixture',1,0,0)",
             );
-            if (writer.kind === "upload")
-              await db().execute(
-                "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('source','Source','image/png','png',1,'hash','fixture','image',0)",
+          const attach = await writer.prepare();
+          const remove = () =>
+            workbenchTransaction(async (tx) => {
+              const problem = await mediaBindingProblem(
+                tx,
+                writer.kind,
+                "source",
               );
-            else
+              if (problem) throw new Error(problem);
+              if (writer.kind === "upload")
+                await queueUploadDeletion(tx, "owner", "source");
+              else await markGenerationDeletion(tx, "source", 1);
+            });
+          const results =
+            order === "attach-first"
+              ? await interleave(attach, remove)
+              : await interleave(remove, attach);
+          expect(results.map((result) => result.status)).toEqual([
+            "fulfilled",
+            "rejected",
+          ]);
+          const rejection = results[1] as PromiseRejectedResult;
+          expect(String(rejection.reason)).toMatch(
+            order === "attach-first"
+              ? /used by/
+              : /referenced.*no longer available/,
+          );
+          const present = Number(
+            (
               await db().execute(
-                "INSERT INTO generations(id,model,prompt,params,status,stored_url,bytes,created_at,updated_at) VALUES('source','fixture','','{}','succeeded','fixture',1,0,0)",
-              );
-            const attach = await writer.prepare();
-            const remove = () =>
-              workbenchTransaction(async (tx) => {
-                const problem = await mediaBindingProblem(
-                  tx,
-                  writer.kind,
-                  "source",
-                );
-                if (problem) throw new Error(problem);
-                if (writer.kind === "upload")
-                  await queueUploadDeletion(tx, "owner", "source");
-                else await markGenerationDeletion(tx, "source", 1);
-              });
-            const results =
-              order === "attach-first"
-                ? await interleave(attach, remove)
-                : await interleave(remove, attach);
-            expect(results.map((result) => result.status)).toEqual([
-              "fulfilled",
-              "rejected",
-            ]);
-            const rejection = results[1] as PromiseRejectedResult;
-            expect(String(rejection.reason)).toMatch(
-              order === "attach-first"
-                ? /used by/
-                : /referenced.*no longer available/,
-            );
-            const present = Number(
-              (
-                await db().execute(
-                  writer.kind === "upload"
-                    ? "SELECT COUNT(*) n FROM uploads WHERE id='source'"
-                    : "SELECT COUNT(*) n FROM generations WHERE id='source' AND deleted=0",
-                )
-              ).rows[0].n,
-            );
-            expect(present).toBe(order === "attach-first" ? 1 : 0);
-            expect(
-              Boolean(
-                await workbenchTransaction((tx) =>
-                  mediaBindingProblem(tx, writer.kind, "source"),
-                ),
+                writer.kind === "upload"
+                  ? "SELECT COUNT(*) n FROM uploads WHERE id='source'"
+                  : "SELECT COUNT(*) n FROM generations WHERE id='source' AND deleted=0",
+              )
+            ).rows[0].n,
+          );
+          expect(present).toBe(order === "attach-first" ? 1 : 0);
+          expect(
+            Boolean(
+              await workbenchTransaction((tx) =>
+                mediaBindingProblem(tx, writer.kind, "source"),
               ),
-            ).toBe(order === "attach-first");
-          },
-        );
-      });
-    }
-});
+            ),
+          ).toBe(order === "attach-first");
+        },
+      );
+    });
 
 test("a missing source rolls back earlier attachment writes and the same ID in another tenant cannot satisfy it", async () => {
   const { runInTenant } = await import("../../lib/tenant");
@@ -444,7 +462,9 @@ test("actual image and video generation handlers reject a source deleted after r
       const name = (statement.moduleSpecifier as ts.StringLiteral).text;
       dependencies[name] = name.startsWith("@/")
         ? require(path.resolve(name.slice(2) + ".ts"))
-        : name.startsWith(".") ? require(path.resolve("lib", name + ".ts")) : require(name);
+        : name.startsWith(".")
+          ? require(path.resolve("lib", name + ".ts"))
+          : require(name);
     }
   let gates = 0,
     paid = 0;
@@ -508,78 +528,111 @@ test("actual image and video generation handlers reject a source deleted after r
       esModuleInterop: true,
     },
   }).outputText;
-  const compiledService = { exports: {} as typeof import("../../lib/generationAdmission") };
+  const compiledService = {
+    exports: {} as typeof import("../../lib/generationAdmission"),
+  };
   new Function("require", "module", "exports", compiled)(
     (name: string) => dependencies[name],
     compiledService,
     compiledService.exports,
   );
-  const routeSource = ts.transpileModule(readFileSync("app/api/generate/route.ts", "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
+  const routeSource = ts.transpileModule(
+    readFileSync("app/api/generate/route.ts", "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText;
   dependencies["@/lib/generationAdmission"] = compiledService.exports;
-  dependencies["@/lib/admissionSupport"] = require(path.resolve("lib/admissionSupport.ts"));
+  dependencies["@/lib/admissionSupport"] = require(
+    path.resolve("lib/admissionSupport.ts"),
+  );
   const compiledModule = { exports: {} as { POST: Handler } };
-  new Function("require", "module", "exports", routeSource)((name: string) => dependencies[name], compiledModule, compiledModule.exports);
+  new Function("require", "module", "exports", routeSource)(
+    (name: string) => dependencies[name],
+    compiledModule,
+    compiledModule.exports,
+  );
   const fetch = globalThis.fetch;
   globalThis.fetch = async () => {
     throw new Error("External calls disabled for source-deletion regression");
   };
   try {
     for (const kind of ["image", "video"] as const)
-      await runInTenant(workspace("generation-" + kind), async () => {
-        await workbenchReady();
-        await uploadReservationsReady();
-        await db().execute(
-          "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('source','Source','image/png','png',1,'hash','fixture','image',0)",
-        );
-        const model = MODELS.find(
-          (model) =>
-            model.kind === kind &&
-            model.maxReferenceImages > 0 &&
-            !model.stillTask &&
-            (model.supportsTasks ?? ["generate"]).includes("generate"),
-        )!;
-        const request = () =>
-          new Request("http://localhost/api/generate", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": "deleted-source-key",
-            },
-            body: JSON.stringify({
-              model: model.id,
-              prompt: "raw: Source regression",
-              refine: false,
-              references: [{ uploadId: "source", role: "reference_image" }],
-            }),
+      await runInTenant(
+        workspace("generation-" + kind),
+        async () => {
+          await workbenchReady();
+          await uploadReservationsReady();
+          await db().execute(
+            "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('source','Source','image/png','png',1,'hash','fixture','image',0)",
+          );
+          const model = MODELS.find(
+            (model) =>
+              model.kind === kind &&
+              model.maxReferenceImages > 0 &&
+              !model.stillTask &&
+              (model.supportsTasks ?? ["generate"]).includes("generate"),
+          )!;
+          const request = () =>
+            new Request("http://localhost/api/generate", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Idempotency-Key": "deleted-source-key",
+              },
+              body: JSON.stringify({
+                model: model.id,
+                prompt: "raw: Source regression",
+                refine: false,
+                references: [{ uploadId: "source", role: "reference_image" }],
+              }),
+            });
+          const response = await compiledModule.exports.POST(request(), {
+            params: Promise.resolve({ id: "unused" }),
           });
-        const response = await compiledModule.exports.POST(request(), {
-          params: Promise.resolve({ id: "unused" }),
-        });
-        expect(
-          response.status,
-          JSON.stringify(await response.clone().json()),
-        ).toBe(409);
-        expect(await response.json()).toMatchObject({
-          error: expect.stringMatching(/referenced upload/),
-        });
-        expect(response.headers.get("Idempotency-Status")).toBe("complete");
-        const priorGates = gates;
-        const replay = await compiledModule.exports.POST(request(), {
-          params: Promise.resolve({ id: "unused" }),
-        });
-        expect(replay.status).toBe(409);
-        expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-        expect(gates).toBe(priorGates);
-        expect(
-          (await db().execute("SELECT COUNT(*) n FROM generations")).rows[0].n,
-        ).toBe(0);
-        expect(
-          (await db().execute("SELECT generation_id FROM generation_requests"))
-            .rows[0].generation_id,
-        ).toBeNull();
-      }, { user: { id: "owner", email: "owner@example.invalid", name: "Owner", role: "admin", owner: true, disabled: false, lastSeen: null, createdAt: 0 } });
+          expect(
+            response.status,
+            JSON.stringify(await response.clone().json()),
+          ).toBe(409);
+          expect(await response.json()).toMatchObject({
+            error: expect.stringMatching(/referenced upload/),
+          });
+          expect(response.headers.get("Idempotency-Status")).toBe("complete");
+          const priorGates = gates;
+          const replay = await compiledModule.exports.POST(request(), {
+            params: Promise.resolve({ id: "unused" }),
+          });
+          expect(replay.status).toBe(409);
+          expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
+          expect(gates).toBe(priorGates);
+          expect(
+            (await db().execute("SELECT COUNT(*) n FROM generations")).rows[0]
+              .n,
+          ).toBe(0);
+          expect(
+            (
+              await db().execute(
+                "SELECT generation_id FROM generation_requests",
+              )
+            ).rows[0].generation_id,
+          ).toBeNull();
+        },
+        {
+          user: {
+            id: "owner",
+            email: "owner@example.invalid",
+            name: "Owner",
+            role: "admin",
+            owner: true,
+            disabled: false,
+            lastSeen: null,
+            createdAt: 0,
+          },
+        },
+      );
     expect(gates).toBe(3); // Image final admission; video early and final admission.
     expect(paid).toBe(0);
   } finally {
