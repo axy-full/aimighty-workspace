@@ -33,6 +33,7 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
       await import("../../lib/workbench/request-scope"),
     "@/lib/workbench/records": await import("../../lib/workbench/records"),
     "@/lib/mediaBindings": await import("../../lib/mediaBindings"),
+    "@/lib/mediaRange": await import("../../lib/mediaRange"),
     "@/lib/mediaDeletion": {
       ...(await import("../../lib/mediaDeletion")),
       cleanupDeletedGenerations: async (
