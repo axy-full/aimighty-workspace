@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { validateAudio } from "./audio";
+import type { Project } from "./studio";
 import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
 const asset = z.object({
   id: z.string().max(100),
@@ -138,6 +140,26 @@ export const projectSchema = z.object({
   sharedAssetIds: z.array(z.string()).max(500),
   sharedNodeIds: z.array(z.string()).max(250),
   audioAssetId: z.string().optional(),
+  clipAudio: z.boolean().optional(),
+  audioClips: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(100),
+        assetId: z.string().max(100),
+        lane: z.enum(["dialogue", "music", "sfx"]),
+        startFrame: z.number().int().min(0).max(21600000),
+        sourceIn: z.number().int().min(0).max(21600000),
+        duration: z.number().int().min(1).max(216000),
+        gainDb: z.number().min(-60).max(12),
+        pan: z.number().min(-1).max(1),
+        fadeIn: z.number().int().min(0).max(216000),
+        fadeOut: z.number().int().min(0).max(216000),
+        muted: z.boolean(),
+        solo: z.boolean(),
+      }),
+    )
+    .max(64)
+    .optional(),
   script: z.string().max(MAX_SCRIPT_CHARS).optional(),
   scriptSource: z
     .object({
@@ -181,6 +203,15 @@ export const saveSchema = z
     revision: z.number().int().min(0),
   })
   .superRefine(({ project }, context) => {
+    try {
+      validateAudio(project as Project);
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        path: ["project", "audioClips"],
+        message: (error as Error).message,
+      });
+    }
     const assets = new Map(project.assets.map((asset) => [asset.id, asset]));
     const source = project.scriptSource;
     if (source) {

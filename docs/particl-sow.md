@@ -726,3 +726,7 @@ The additive pipeline executor introduces immutable versioned DAGs and private c
 ### 14 September 2026 — complete screenplay source import
 
 Studio Script now accepts complete PDF, TXT and Fountain screenplays. The original file is a durable scoped asset; PDF page boundaries, scene numbering, reviewed intent and beat notes survive private saves and explicit bible publication. PDF extraction is local, bounded to 20 MB / 400 pages / one million characters, with explicit incomplete-page review and no silent truncation. Canvas selection replaces the old first-60-scenes behavior and enforces the remaining 250-node capacity as an all-or-nothing operation. Each selected scene can open the existing quoted Atomik shot-coverage flow with its complete source. See `docs/screenplay-import.md` for validation and limits. OCR and automatic whole-feature AI analysis remain separate work; no pricing or Stripe behavior changes.
+
+### 14 September 2026 — saved sound mix and transport
+
+Edit & sound now uses saved, asset-bound sound clips with frame timing, source trims, gain, pan, fades and mute/solo. Prepared playback follows the timeline, and the same mixer feeds final movies and 48 kHz stereo 24-bit PCM / 32-bit float WAV downloads. Audio source lineage accompanies the editorial package. The exact bounds and remaining professional audio requirements are in `docs/sound-mix.md`; this is not a long-form or mastering release. Stripe and the approved credit model are unchanged.

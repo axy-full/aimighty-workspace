@@ -5,6 +5,7 @@ import { Readable } from "node:stream";
 import { currentTenant } from "./tenant";
 import { isFixtureUrl } from "./mock";
 import { fetchBytes } from "./mockFs";
+import type { ByteRange } from './mediaRange';
 
 /**
  * Ark's video_url expires (~24h). We copy every finished render into our own
@@ -478,21 +479,24 @@ return await withRecoveryActivity('storage', async () => {
 /** Streams a stored upload out without buffering — a 2GB download must flow
  *  through the function, never sit in it. */
 export async function openUploadStream(
-  uploadId: string, ext: string
+  uploadId: string, ext: string, range?: ByteRange | null, storedUrl?: string, signal?: AbortSignal
 ): Promise<{ stream: ReadableStream; size: number | null }> {
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
   if (usingBlob()) {
     const { get } = await import("@vercel/blob");
-    const found = await get(uploadPath(uploadId, ext), { access: "private" });
+    const target = storedUrl && /^https?:\/\//.test(storedUrl) ? storedUrl : uploadPath(uploadId, ext);
+    const found = await get(target, { access: target.includes('.public.blob.vercel-storage.com/') ? 'public' : "private", abortSignal:signal, ...(range?{headers:{Range:`bytes=${range.start}-${range.end}`}}:{}) });
     if (!found?.stream) throw new Error("blob not found");
+    if(range && found.headers.get('content-range')!==`bytes ${range.start}-${range.end}/${range.total}`){await found.stream.cancel().catch(()=>{});throw new Error('Storage did not honor the requested media range');}
     return { stream: found.stream as ReadableStream, size: found.blob?.size ?? null };
   }
   const { createReadStream } = await import("node:fs");
   const { stat } = await import("node:fs/promises");
   const file = path.join(UPLOAD_DIR, `${uploadId}.${ext}`);
   const st = await stat(file);
+  if(range && st.size!==range.total)throw new Error('Upload length changed');
   return {
-    stream: Readable.toWeb(createReadStream(file)) as ReadableStream,
-    size: st.size,
+    stream: Readable.toWeb(createReadStream(file, {...(range?{start:range.start,end:range.end}:{}),signal})) as ReadableStream,
+    size: range ? range.end-range.start+1 : st.size,
   };
 }

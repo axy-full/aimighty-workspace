@@ -2,7 +2,6 @@
 
 import {
   ALL_FORMATS,
-  AudioBufferSink,
   AudioBufferSource,
   BlobSource,
   BufferTarget,
@@ -21,6 +20,8 @@ import {
   type VideoCodec,
 } from "mediabunny";
 import { type Asset, type Project } from "./studio";
+import { audioClips, audibleClips } from "./audio";
+import { mixAudio } from "./mix-audio";
 import { encodeMovieAac, prepareMovieAac } from "./movie-aac";
 import {
   fittedRect,
@@ -114,11 +115,12 @@ export async function renderMovie(
     const needed = new Map(
       plan.clips.map((clip) => [clip.asset.id, clip.asset]),
     );
-    if (options.soundtrack && project.audioAssetId)
-      needed.set(
-        project.audioAssetId,
-        project.assets.find((asset) => asset.id === project.audioAssetId)!,
-      );
+    if (options.soundtrack)
+      for (const clip of audibleClips(project))
+        needed.set(
+          clip.assetId,
+          project.assets.find((asset) => asset.id === clip.assetId)!,
+        );
     for (const asset of needed.values()) {
       check();
       onProgress({
@@ -197,7 +199,12 @@ export async function renderMovie(
               `${asset.name} exceeds the supported source dimensions.`,
             );
         }
-        if (asset.kind === "audio" || options.clipAudio) {
+        if (
+          asset.kind === "audio" ||
+          options.clipAudio ||
+          (options.soundtrack &&
+            audioClips(project).some((c) => c.assetId === asset.id))
+        ) {
           source.audio = await source.input.getPrimaryAudioTrack();
           if (asset.kind === "audio" && !source.audio)
             throw new Error(`${asset.name} has no audio track.`);
@@ -220,72 +227,11 @@ export async function renderMovie(
         );
     }
     check();
-    const hasAudio = [...loaded.values()].some((source) => source.audio);
-    let mixed: AudioBuffer | undefined;
-    let mixGain = 1;
-    if (hasAudio) {
-      onProgress({ phase: "Mixing audio", fraction: 0 });
-      const context = new OfflineAudioContext(
-        2,
-        Math.round(plan.duration * sampleRate),
-        sampleRate,
-      );
-      const schedule = async (
-        source: Loaded,
-        start: number,
-        duration: number,
-        offset: number,
-      ) => {
-        if (!source.audio) return;
-        const end = start + duration;
-        for await (const { buffer, timestamp } of new AudioBufferSink(
-          source.audio,
-        ).buffers(start, end)) {
-          check();
-          const from = Math.max(start, timestamp),
-            to = Math.min(end, timestamp + buffer.duration);
-          if (to <= from) continue;
-          const node = context.createBufferSource();
-          node.buffer = buffer;
-          node.connect(context.destination);
-          node.start(offset + from - start, from - timestamp, to - from);
-        }
-      };
-      if (options.clipAudio)
-        for (const clip of plan.clips) {
-          const source = loaded.get(clip.asset.id)!;
-          if (source.video)
-            await schedule(
-              source,
-              source.origin! + clip.sourceIn / project.fps,
-              clip.duration / project.fps,
-              clip.startFrame / project.fps,
-            );
-        }
-      if (options.soundtrack && project.audioAssetId) {
-        const source = loaded.get(project.audioAssetId)!;
-        await schedule(
-          source,
-          Math.max(0, await source.audio!.getFirstTimestamp()),
-          plan.duration,
-          0,
-        );
-      }
-      check();
-      mixed = await context.startRendering();
-      check();
-      // Preserve the relative mix; reduce the whole mix only when needed to prevent clipping.
-      let peak = 1;
-      for (let channel = 0; channel < mixed.numberOfChannels; channel++)
-        for (const value of mixed.getChannelData(channel))
-          peak = Math.max(peak, Math.abs(value));
-      mixGain = 1 / peak;
-      if (peak > 1)
-        for (let channel = 0; channel < mixed.numberOfChannels; channel++) {
-          const samples = mixed.getChannelData(channel);
-          for (let i = 0; i < samples.length; i++) samples[i] *= mixGain;
-        }
-    }
+    onProgress({ phase: "Mixing audio", fraction: 0 });
+    const mix = await mixAudio(project, loaded, options, signal);
+    let mixed = mix.buffer;
+    const mixGain = mix.gain,
+      hasAudio = Boolean(mixed);
     check();
     const canvas = document.createElement("canvas");
     canvas.width = plan.width;
