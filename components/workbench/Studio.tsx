@@ -147,6 +147,9 @@ import {useProductionJobs} from './use-production-jobs';
 import {uploadWorkbench} from '@/lib/workbench/upload';
 import {AssetPreview} from './AssetPreview';
 import {SoundMix} from './SoundMix';
+import { SequenceColor } from "./SequenceColor";
+import colorStyles from "./SequenceColor.module.css";
+import { defaultColorGrade, colorLutAsset } from "@/lib/workbench/color";
 import {TimelinePreview} from './TimelinePreview';
 import {audioClips} from '@/lib/workbench/audio';
 import {createMovieHandoff} from '@/lib/workbench/movie-handoff';
@@ -334,6 +337,7 @@ export default function Studio({
   const mobile = useMobileLayout();
   useMobileViewport();
   const [sequenceExpanded, setSequenceExpanded] = useState(false);
+  const [editInspector,setEditInspector] = useState<"shot"|"color">("shot");
   const [p, setP] = useState<Project>(seedProject);
   const [stage, storeStage] = useState<Stage>("canvas");
   const [homeOverride, setHome] = useState<boolean|null>(null);
@@ -851,6 +855,19 @@ export default function Studio({
     uploadingRef.current--;
     setUploading(uploadingRef.current>0);
     if (fileInput.current) fileInput.current.value = "";
+  }
+  async function importSequenceLut(file: File) {
+    if (!signedIn || !readyRef.current || transitioningRef.current) throw new Error('Open a saved production before importing a LUT.');
+    const draftId = pRef.current.id;
+    uploadingRef.current++; setUploading(true);
+    try {
+      const data = await uploadWorkbench(file, undefined, storageKey);
+      if (pRef.current.id !== draftId || transitioningRef.current) throw new Error('The production changed. The original LUT remains in your workspace uploads.');
+      const asset: Asset = { id:data.id, uploadId:data.id, name:file.name.slice(0,200), kind:'document', category:'LUT', url:data.url, mime:data.mime, description:'Original 3D color LUT', prompt:'', status:'Draft', version:1, locked:false, refs:[] };
+      change(previous => ({ ...previous, assets:[...previous.assets,asset], colorGrade:{...defaultColorGrade,...previous.colorGrade,lutAssetId:asset.id,bypassed:false} }));
+      if (!(await ensureSaved(draftId))) throw new Error('The LUT uploaded. Save this production before leaving to retain its binding.');
+      toast.success('LUT imported and applied to the sequence.');
+    } finally { uploadingRef.current--; setUploading(uploadingRef.current>0); }
   }
   function pickUpload(category = "Reference") {
     uploadCategory.current = category;
@@ -1994,6 +2011,8 @@ export default function Studio({
                                   asset={assetsById.get(currentShot.shot.assetId)}
                                   seconds={(currentShot.shot.sourceIn + frame - currentShot.start) / p.fps}
                                   playing={playing}
+                                  grade={p.colorGrade}
+                                  lut={colorLutAsset(p)}
                                 />
                               )}
                               <span className="player-slug">
@@ -2066,6 +2085,9 @@ export default function Studio({
                               </div>
                             </div>
                           </div>
+                          <aside className={colorStyles.inspector} aria-label="Edit inspector">
+                            <div className={colorStyles.tabs} role="group" aria-label="Inspector view"><button aria-pressed={editInspector==='shot'} onClick={()=>setEditInspector('shot')}>Shot details</button><button aria-pressed={editInspector==='color'} onClick={()=>setEditInspector('color')}>Sequence color</button></div>
+                            {editInspector==='color' ? <SequenceColor key={p.id+storageKey} project={p} onChange={change} onImport={importSequenceLut}/> :
                           <div className="shot-inspector">
                             <div className="eyebrow">SHOT DETAILS</div>
                             {activeShot ? (
@@ -2199,7 +2221,8 @@ export default function Studio({
                             ) : (
                               <p>Select a shot to edit timing and direction.</p>
                             )}
-                          </div>
+                          </div>}
+                          </aside>
                         </div>
                         <div className="timeline">
                           <div className="timeline-title">

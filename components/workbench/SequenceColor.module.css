@@ -1,0 +1,90 @@
+.inspector {
+  min-width: 0;
+  align-self: start;
+}
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #303630;
+  border-radius: 9px;
+  margin-bottom: 8px;
+  background: #141713;
+}
+.tabs button {
+  flex: 1;
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #aeb5aa;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tabs button[aria-pressed="true"] {
+  background: #30382b;
+  color: #e5eddc;
+}
+.tabs button:focus-visible {
+  outline: 2px solid #b3cd96;
+  outline-offset: 2px;
+}
+.panel {
+  border: 1px solid #303630;
+  border-radius: 10px;
+  padding: 14px;
+}
+.panel p {
+  color: #aeb5a7;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.panel h3 {
+  margin: 4px 0 8px;
+}
+.panel header {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.panel fieldset {
+  padding: 10px;
+}
+.panel input[type="range"] {
+  accent-color: #bed29f;
+  min-height: 30px;
+  cursor: pointer;
+}
+.panel label {
+  font-size: 12px;
+}
+.sources {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.sources select {
+  width: 100%;
+}
+.panel summary {
+  font-size: 12px;
+  color: #d2dec5;
+  cursor: pointer;
+  min-height: 32px;
+  padding: 8px 0;
+}
+.panel a {
+  color: #c6dfa7;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (min-width: 1100px) {
+  .inspector {
+    max-height: 560px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+}
