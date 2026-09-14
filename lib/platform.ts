@@ -255,6 +255,7 @@ export function rowToWorkspace(r: any): TenantWorkspace {
     allowanceUsd: r.allowance_usd == null ? null : Number(r.allowance_usd),
     gatewayKeyId: r.gateway_key_id ? String(r.gateway_key_id) : null,
     ownerId: String(r.owner_id), createdAt: Number(r.created_at ?? 0),
+    requiresMfa: Number(r.requires_mfa ?? 0) === 1,
     suspendedAt: r.suspended_at == null ? null : Number(r.suspended_at),
     suspendedReason: r.suspended_reason ? String(r.suspended_reason) : null,
     flaggedAt: r.flagged_at == null ? null : Number(r.flagged_at),
@@ -343,7 +344,7 @@ export function platformReady(): Promise<void> {
       for (const stmt of SCHEMA) await p.execute(stmt);
       /* Columns added after the table first shipped reach an existing
          database only by ALTER; a duplicate is the one error to ignore. */
-      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`, `internal_test INTEGER`, `plan_id TEXT`]) {
+      for (const col of [`allowance_usd REAL`, `gateway_key_id TEXT`, `suspended_at INTEGER`, `suspended_reason TEXT`, `flagged_at INTEGER`, `flag_note TEXT`, `concurrency INTEGER`, `renders_per_hour INTEGER`, `storage_quota_bytes INTEGER`, `deleted_at INTEGER`, `purged_at INTEGER`, `internal_test INTEGER`, `plan_id TEXT`, `requires_mfa INTEGER NOT NULL DEFAULT 0`]) {
         try { await p.execute(`ALTER TABLE workspaces ADD COLUMN ${col}`); }
         catch (e) { if (!/duplicate column/i.test(String((e as Error).message))) throw e; }
       }
@@ -683,7 +684,7 @@ export async function switchSessionWorkspace(token: string, workspaceId: string)
 export async function sessionLookup(token: string): Promise<{ account: any; workspaceId: string | null } | null> {
   await platformReady();
   const rs = await platformDb().execute({
-    sql: `SELECT a.*, s.workspace_id AS s_ws FROM p_sessions s JOIN accounts a ON a.id = s.account_id
+    sql: `SELECT a.*, s.workspace_id AS s_ws, (asec.enabled_at IS NOT NULL) AS mfa_enabled FROM p_sessions s JOIN accounts a ON a.id = s.account_id
           LEFT JOIN account_security asec ON asec.account_id=a.id
           LEFT JOIN session_security ss ON ss.token_hash=s.token_hash
           WHERE s.token_hash = ? AND s.expires_at > ? AND a.disabled = 0 AND a.deleted_at IS NULL

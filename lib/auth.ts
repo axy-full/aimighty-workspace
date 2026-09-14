@@ -96,6 +96,7 @@ function userFrom(account: any, role: WorkspaceRole): TenantUser {
 
 export type Context = {
   user: TenantUser;
+  mfaRequired?: boolean;
   workspace: TenantWorkspace | null;
   role: WorkspaceRole | null;
   workspaces: { id: string; slug: string; name: string; role: WorkspaceRole }[];
@@ -116,7 +117,7 @@ export async function currentContext(): Promise<Context | null> {
   if (!pick) return { user: userFrom(found.account, "member"), workspace: null, role: null, workspaces };
   // A session pointing at a workspace the account has since left falls back to its first.
   if (found.workspaceId !== pick.workspace.id) pick = mine[0];
-  return { user: userFrom(found.account, pick.role), workspace: pick.workspace, role: pick.role, workspaces };
+  return { user: userFrom(found.account, pick.role), workspace: pick.workspace, role: pick.role, workspaces, mfaRequired: Boolean(pick.workspace.requiresMfa && !Number(found.account.mfa_enabled)) };
 }
 
 /** The signed-in user for this request, or null. */
@@ -175,7 +176,9 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
     if (!row) return null;
     const membership = (await platformDb().execute({
       sql: `SELECT m.role FROM memberships m JOIN accounts a ON a.id=m.account_id JOIN workspaces w ON w.id=m.workspace_id
-        WHERE m.workspace_id=? AND m.account_id=? AND m.disabled=0 AND a.disabled=0 AND a.deleted_at IS NULL AND w.deleted_at IS NULL`,
+        LEFT JOIN account_security asec ON asec.account_id=a.id
+        WHERE m.workspace_id=? AND m.account_id=? AND m.disabled=0 AND a.disabled=0 AND a.deleted_at IS NULL AND w.deleted_at IS NULL
+        AND (w.requires_mfa=0 OR asec.enabled_at IS NOT NULL)`,
       args:[ws.id,String(row.id)],
     })).rows[0];
     if(!membership)return null;
@@ -204,7 +207,7 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
 /** Resolve the request's store: session first, then token, else nobody. */
 async function resolveStore(): Promise<TenantStore> {
   const ctx = await currentContext();
-  if (ctx?.workspace) return { workspace: ctx.workspace, user: ctx.user, workspaces: ctx.workspaces };
+  if (ctx?.workspace) return { workspace: ctx.workspace, user: ctx.user, workspaces: ctx.workspaces, mfaRequired: ctx.mfaRequired };
   if (ctx) return { workspace: null, user: ctx.user, workspaces: ctx.workspaces };
   const bearer = await callerFromBearer();
   return bearer ?? { workspace: null, user: null };
@@ -216,7 +219,7 @@ async function resolveStore(): Promise<TenantStore> {
  * handler that reaches for data before checking who is asking still
  * cannot get any.
  */
-export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean } = {}) {
+export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean; allowMfaEnrollment?: boolean } = {}) {
   return recoveryRoute(async (req: Req, ctx: Ctx): Promise<Response> => {
     let store: TenantStore;
     try { store = await resolveStore(); }
@@ -234,6 +237,9 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
     if ((capturedScope !== null || needsScope) &&
         (!store.workspace || !store.user || capturedScope !== workbenchScopeFor(store.workspace.id, store.user.id))) {
       return Response.json({ error: "Your account or workspace changed. Reload this page before continuing." }, { status: 409 });
+    }
+    if (store.mfaRequired && !options.allowMfaEnrollment) {
+      return Response.json({ code: "MFA_REQUIRED", error: "This workspace requires two-step sign-in. Set up your authenticator to continue.", securityUrl: "/account/security" }, { status: 428, headers: { "Cache-Control": "private, no-store" } });
     }
     try {
       return await runWithStore(store, () => handler(req, ctx));

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   ChevronDown,
   Check,
@@ -19,6 +20,7 @@ import {
 } from "./ui/dropdown-menu";
 export type WorkbenchAccount = {
   name: string;
+  mfaRequired?: boolean;
   workspace: { id: string; name: string } | null;
   workspaces: { id: string; name: string; role: string }[];
   credits?: { balance: number } | null;
@@ -34,6 +36,7 @@ export default function WorkspaceMenu({
   onSwitch: (id: string) => Promise<void>;
   onSignOut: () => Promise<void>;
 }) {
+  const pathname = usePathname();
   const [account, setAccount] = useState(initial),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -83,7 +86,13 @@ export default function WorkspaceMenu({
   return (
     <div className="studio-account">
       {error && <span className="studio-navigation-error" role="alert">{error}</span>}
-      <button
+      {account.mfaRequired && pathname !== "/account/security" ? <a
+        className="studio-account-signin"
+        href="/account/security"
+        target="_blank"
+        rel="noopener"
+        title="Set up two-step sign-in in a new tab, then return to your unsaved work."
+      >Set up sign-in</a> : <button
         type="button"
         className="studio-credit"
         disabled={busy}
@@ -94,7 +103,7 @@ export default function WorkspaceMenu({
         {typeof account.credits?.balance === "number"
           ? `${Math.round(account.credits.balance).toLocaleString()} cr`
           : "Billing"}
-      </button>
+      </button>}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button

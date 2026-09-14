@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
 import BillingClient from "@/components/commercial/BillingClient";
 import StudioNavigation, {
   StudioDock,
@@ -12,6 +13,7 @@ import {
 export const metadata = { title: "Plans & credits · Particl" };
 export default async function BillingPage() {
   const context = await currentContext();
+  if (context?.mfaRequired) redirect("/account/security");
   const requestScope = context
     ? context.workspace
       ? workbenchScopeFor(context.workspace.id, context.user.id)
