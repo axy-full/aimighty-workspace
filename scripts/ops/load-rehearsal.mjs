@@ -127,16 +127,16 @@ function cleanEnvironment(directory) {
     LEGACY_WORKSPACE_NAME: "Local load fixture",
   };
 }
-async function sourceDigest() {
-  const files = (await readdir(path.join(root, "lib"), { recursive: true }))
-    .filter((file) => /\.tsx?$/.test(file))
+export async function sourceDigest(sourceRoot = root) {
+  const files = (await readdir(path.join(sourceRoot, "lib"), { recursive: true }))
+    .filter((file) => /\.(?:[cm]?js|tsx?)$/.test(file))
     .sort();
   const hash = createHash("sha256");
   for (const file of files)
     hash
       .update(file)
       .update("\0")
-      .update(await readFile(path.join(root, "lib", file)))
+      .update(await readFile(path.join(sourceRoot, "lib", file)))
       .update("\0");
   for (const file of [
     "package.json",
@@ -144,7 +144,7 @@ async function sourceDigest() {
     "scripts/ops/load-rehearsal.mjs",
     "scripts/ops/load-rehearsal-runtime.cjs",
   ])
-    hash.update(await readFile(path.join(root, file)));
+    hash.update(await readFile(path.join(sourceRoot, file)));
   return hash.digest("hex");
 }
 async function child(configFile, environment, mode, index = 0) {
