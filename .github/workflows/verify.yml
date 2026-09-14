@@ -20,6 +20,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Reject known high and critical dependency vulnerabilities
+        run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm run test:unit
       - name: Rehearse encrypted backup and restore
