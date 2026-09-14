@@ -616,7 +616,7 @@ export default function Studio({
         e.shiftKey ? redo() : undo();
       }
       if (e.key === "?" && !editing) setDialog("shortcuts");
-      if (e.code === "Space" && !editing && stage === "edit") {
+      if (e.code === "Space" && !editing && !(e.target as HTMLElement)?.closest('button,a,select,[role="slider"]') && stage === "edit") {
         e.preventDefault();
         setPlaying((v) => !v);
       }
@@ -2020,7 +2020,7 @@ export default function Studio({
                                   <SkipBack size={15} />
                                 </IconButton>
                                 <IconButton
-                                  label={playing ? "Pause" : "Play animatic"}
+                                  label={playing ? "Pause" : "Play timeline"}
                                   onClick={() => {
                                     if (frame >= totalFrames - 1) setFrame(0);
                                     setPlaying((v) => !v);

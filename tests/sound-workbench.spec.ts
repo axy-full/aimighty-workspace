@@ -98,7 +98,10 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
       })
     ).status(),
   ).toBe(416);
-  const outsider = await page.context().browser()!.newContext({baseURL:process.env.PW_BASE_URL});
+  const outsider = await page
+    .context()
+    .browser()!
+    .newContext({ baseURL: process.env.PW_BASE_URL });
   try {
     expect(
       (
@@ -145,6 +148,23 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
         headers,
       })
       .then((r) => r.json()) as Promise<{ project: Project }>;
+  await page.addInitScript(() => {
+    const root = window as Window & {
+      soundTransport?: { offset: number; duration: number }[];
+    };
+    root.soundTransport = [];
+    const original = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (
+      ...args: Parameters<typeof original>
+    ) {
+      if (this.context instanceof AudioContext)
+        root.soundTransport!.push({
+          offset: args[1] || 0,
+          duration: this.buffer?.duration || 0,
+        });
+      return original.apply(this, args);
+    };
+  });
   await page.goto("/workbench");
   await page.evaluate(({ scope, id }) => localStorage.setItem(scope, id), {
     scope,
@@ -182,6 +202,26 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
   await expect(mix.getByRole("status")).toContainText("Mix ready", {
     timeout: 60000,
   });
+  const playhead = page.getByRole("slider", { name: "Sequence playhead" });
+  await playhead.focus();
+  await playhead.press("Home");
+  for (let i = 0; i < 12; i++) await playhead.press("ArrowRight");
+  const play = page.getByRole("button", { name: "Play timeline", exact: true });
+  await play.focus();
+  await play.press("Space");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as Window & {
+            soundTransport?: { offset: number; duration: number }[];
+          }
+        ).soundTransport?.at(-1),
+      ),
+    )
+    .toMatchObject({ offset: 0.5, duration: 3 });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(play).toBeVisible();
   const download = page.waitForEvent("download");
   await mix
     .getByRole("button", { name: "WAV · 24-bit PCM", exact: true })
