@@ -2,6 +2,9 @@ import { db, ready, now } from "./db";
 import { requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { creditsApply } from "./credits";
+import { PipelineStore } from "./pipeline/store";
+import { publicRun } from "./pipeline/public";
+import type { CompiledPipeline } from "./pipeline/schema";
 
 // An allowlist keeps new credential/session tables out of customer exports.
 const SHARED_TABLES = [
@@ -115,6 +118,39 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
           })
         ).rows.map((row) => ({ ...row }))
       : [];
+    // Pipelines are creator-private, unlike legacy shared recipe/run rows.
+    // Child attempts, quote summaries, selections and timelines are sanitized
+    // through the same public view as their authenticated API.
+    contents.pipeline_versions = [];
+    contents.pipeline_runs = [];
+    if (tables.has("pipeline_versions")) {
+      const versions = await tx.execute({
+        sql: "SELECT id,version,body,created_at FROM pipeline_versions WHERE workspace_id=? AND owner=? ORDER BY created_at,id,version",
+        args: [workspace.id, ownerId],
+      });
+      contents.pipeline_versions = versions.rows.map((row) => {
+        const compiled = JSON.parse(String(row.body)) as CompiledPipeline;
+        return {
+          id: String(row.id),
+          version: Number(row.version),
+          spec: compiled.spec,
+          contextHash: compiled.contextHash,
+          fingerprint: compiled.fingerprint,
+          createdAt: Number(row.created_at),
+        };
+      });
+    }
+    if (tables.has("pipeline_runs")) {
+      const pipeline = new PipelineStore(db(), workspace.id);
+      const runs = await tx.execute({
+        sql: "SELECT id FROM pipeline_runs WHERE workspace_id=? AND owner=? ORDER BY created_at,id",
+        args: [workspace.id, ownerId],
+      });
+      for (const row of runs.rows)
+        contents.pipeline_runs.push(
+          publicRun(await pipeline.getRunSnapshot(tx, ownerId, String(row.id))),
+        );
+    }
     await tx.commit();
   } catch (error) {
     await tx.rollback();

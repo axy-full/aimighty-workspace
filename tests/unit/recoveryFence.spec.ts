@@ -49,17 +49,30 @@ test("completed request bookkeeping stays bounded without clearing outstanding c
     const id = await fence.admit({ kind: "completed-request" });
     await fence.finish(id);
   }
-  expect((await raw().execute("SELECT count(*) n FROM recovery_activities")).rows[0].n).toBe(0);
+  expect(
+    (await raw().execute("SELECT count(*) n FROM recovery_activities")).rows[0]
+      .n,
+  ).toBe(0);
   const parent = await fence.admit({ kind: "parent" });
   const child = await fence.admit({ kind: "child", parentId: parent });
   await fence.finish(parent);
   const lease = await fence.begin(owner, preconditions);
-  await expect(fence.admit({ kind: "late-child", parentId: parent })).rejects.toThrow(/paused/);
-  await expect(fence.seal(owner, lease.epoch, hash, inventory)).rejects.toThrow(/remain/);
+  await expect(
+    fence.admit({ kind: "late-child", parentId: parent }),
+  ).rejects.toThrow(/paused/);
+  await expect(fence.seal(owner, lease.epoch, hash, inventory)).rejects.toThrow(
+    /remain/,
+  );
   await fence.finish(child, true);
   await fence.finish(child); // A late success must never erase a recorded uncertainty.
-  expect((await fence.status()).activities.map((row: { state: string }) => row.state)).toEqual(["uncertain"]);
-  await expect(fence.seal(owner, lease.epoch, hash, inventory)).rejects.toThrow(/remain/);
+  expect(
+    (await fence.status()).activities.map(
+      (row: { state: string }) => row.state,
+    ),
+  ).toEqual(["uncertain"]);
+  await expect(fence.seal(owner, lease.epoch, hash, inventory)).rejects.toThrow(
+    /remain/,
+  );
 });
 
 test("atomic close rejects new writes while an admitted transaction drains", async () => {

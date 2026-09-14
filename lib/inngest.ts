@@ -48,7 +48,7 @@ export function inngestConfigured(): boolean {
  */
 export async function enqueueRender(
   genId: string,
-  kind: "image" | "audio",
+  kind: "image" | "audio" | "video",
 ): Promise<boolean> {
   if (!inngestConfigured()) return false;
   return dispatchRender(genId, kind, (event) => inngest.send(event));

@@ -431,7 +431,7 @@ test("actual image and video generation handlers reject a source deleted after r
   const { MODELS } = await import("../../lib/models");
   const { DEFAULT_LAYER } = await import("../../lib/platformLayer");
   const require = createRequire(path.resolve("package.json"));
-  const source = readFileSync("app/api/generate/route.ts", "utf8");
+  const source = readFileSync("lib/generationAdmission.ts", "utf8");
   const dependencies: Record<string, Record<string, unknown>> = {};
   const ast = ts.createSourceFile(
     "route.ts",
@@ -444,7 +444,7 @@ test("actual image and video generation handlers reject a source deleted after r
       const name = (statement.moduleSpecifier as ts.StringLiteral).text;
       dependencies[name] = name.startsWith("@/")
         ? require(path.resolve(name.slice(2) + ".ts"))
-        : require(name);
+        : name.startsWith(".") ? require(path.resolve("lib", name + ".ts")) : require(name);
     }
   let gates = 0,
     paid = 0;
@@ -499,7 +499,7 @@ test("actual image and video generation handlers reject a source deleted after r
     ...dependencies["@/lib/generationRequests"],
     reserveGenerationSpend: forbidden,
   };
-  dependencies["@/lib/submitVideo"] = { submitVideoJob: forbidden };
+  dependencies["@/lib/submitVideo"] = { submitVideoRow: forbidden };
   dependencies["@/lib/renderWork"] = { runInline: forbidden };
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -508,12 +508,19 @@ test("actual image and video generation handlers reject a source deleted after r
       esModuleInterop: true,
     },
   }).outputText;
-  const compiledModule = { exports: {} as { POST: Handler } };
+  const compiledService = { exports: {} as typeof import("../../lib/generationAdmission") };
   new Function("require", "module", "exports", compiled)(
     (name: string) => dependencies[name],
-    compiledModule,
-    compiledModule.exports,
+    compiledService,
+    compiledService.exports,
   );
+  const routeSource = ts.transpileModule(readFileSync("app/api/generate/route.ts", "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  dependencies["@/lib/generationAdmission"] = compiledService.exports;
+  dependencies["@/lib/admissionSupport"] = require(path.resolve("lib/admissionSupport.ts"));
+  const compiledModule = { exports: {} as { POST: Handler } };
+  new Function("require", "module", "exports", routeSource)((name: string) => dependencies[name], compiledModule, compiledModule.exports);
   const fetch = globalThis.fetch;
   globalThis.fetch = async () => {
     throw new Error("External calls disabled for source-deletion regression");
@@ -572,7 +579,7 @@ test("actual image and video generation handlers reject a source deleted after r
           (await db().execute("SELECT generation_id FROM generation_requests"))
             .rows[0].generation_id,
         ).toBeNull();
-      });
+      }, { user: { id: "owner", email: "owner@example.invalid", name: "Owner", role: "admin", owner: true, disabled: false, lastSeen: null, createdAt: 0 } });
     expect(gates).toBe(3); // Image final admission; video early and final admission.
     expect(paid).toBe(0);
   } finally {

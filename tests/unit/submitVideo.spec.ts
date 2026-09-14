@@ -89,3 +89,45 @@ test('handle writes retry safely, and committed writes with lost acknowledgments
   });}finally{engine.render=original;}
  }
 });
+
+test('durable video dispatch restores an uploaded locked source and every reference in order', async () => {
+ const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoRow}=await import('../../lib/submitVideo');const {db}=await import('../../lib/db');
+ const engine=engineFor('byteplus'),original=engine.render;let calls=0;
+ engine.render=async input=>{
+  calls++;expect(input.kind).toBe('video');if(input.kind!=='video')throw new Error('Wrong kind');
+  expect(input.source).toMatchObject({id:'uploaded-source',kind:'video'});
+  expect(input.source?.fromGeneration).not.toBe(true);
+  expect(input.references.map(r=>[r.id,r.role])).toEqual([['uploaded-source','reference_video'],['uploaded-image','reference_image']]);
+  expect(input.task.id).toBe('edit');expect(input.prompt).toBe('Edit the source');
+  return {handle:{provider:'byteplus',ref:'edited-source',model:'mock'}};
+ };
+ try{await runInTenant(workspace('uploaded_source'),async()=>{
+  const job=await makeJob('gen_uploaded_source');
+  await db().batch([
+   "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('uploaded-source','source','video/mp4','mp4',1,'hash','source-bytes','video',0)",
+   "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('uploaded-image','image','image/png','png',1,'hash','image-bytes','image',0)",
+   {sql:"UPDATE generations SET model='dreamina-seedance-2-5-260628',task='edit',prompt='Edit the source',params=? WHERE id=?",args:[JSON.stringify({...job.params,sourceUploadId:'uploaded-source',references:[{uploadId:'uploaded-source',role:'reference_video',kind:'video'},{uploadId:'uploaded-image',role:'reference_image',kind:'image'}]}),job.genId]},
+  ],'write');
+  expect(await submitVideoRow(job.genId)).toMatchObject({ok:true,taskId:'edited-source'});
+  expect(await submitVideoRow(job.genId)).toMatchObject({ok:true,taskId:'edited-source'});expect(calls).toBe(1);
+ });}finally{engine.render=original;}
+});
+
+test('missing queued references release only unsent reservations; stale worker failure cannot refund a paid claim', async () => {
+ const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoRow,failVideoDispatch}=await import('../../lib/submitVideo');const {db}=await import('../../lib/db');const {platformDb}=await import('../../lib/platform');
+ const engine=engineFor('byteplus'),original=engine.render;let calls=0;
+ engine.render=async()=>{calls++;throw new Error('Missing reference must never reach provider');};
+ try{await runInTenant(workspace('missing_source'),async()=>{
+  const missing=await makeJob('gen_missing_source');
+  await db().execute({sql:'UPDATE generations SET params=? WHERE id=?',args:[JSON.stringify({...missing.params,references:[{uploadId:'missing',role:'reference_image',kind:'image'}]}),missing.genId]});
+  expect(await submitVideoRow(missing.genId)).toMatchObject({ok:false,cls:'fatal'});
+  expect((await db().execute({sql:'SELECT status,cost_usd FROM generations WHERE id=?',args:[missing.genId]})).rows[0]).toMatchObject({status:'failed',cost_usd:0});
+  expect((await platformDb().execute({sql:'SELECT engine_cost_usd FROM meter_events WHERE id=?',args:[missing.genId]})).rows[0].engine_cost_usd).toBe(0);
+  const claimed=await makeJob('gen_claimed_source');
+  await db().execute({sql:"UPDATE generations SET params=json_set(params,'$.paidClaim',1) WHERE id=?",args:[claimed.genId]});
+  await failVideoDispatch(claimed.genId,'Stale queue failure');
+  expect((await db().execute({sql:'SELECT status FROM generations WHERE id=?',args:[claimed.genId]})).rows[0].status).toBe('queued');
+  expect((await platformDb().execute({sql:'SELECT engine_cost_usd FROM meter_events WHERE id=?',args:[claimed.genId]})).rows[0].engine_cost_usd).toBe(.7);
+  expect(calls).toBe(0);
+ });}finally{engine.render=original;}
+});

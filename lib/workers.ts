@@ -3,6 +3,7 @@ import { inngest, EVENTS } from "./inngest";
 import { ready } from "./db";
 import { runWorkerProbe } from "./workerProbe";
 import { loadJob, produce, seal, failJob } from "./renderWork";
+import { submitVideoRow, failVideoDispatch } from "./submitVideo";
 import { runInTenant } from "./tenant";
 import { getWorkspace, legacyWorkspace } from "./platform";
 
@@ -69,40 +70,63 @@ export const render = inngest.createFunction(
       const data = (event.data.event?.data ?? {}) as {
         genId?: string;
         workspaceId?: string;
+        kind?: string;
       };
       const genId = String(data.genId ?? "");
       if (genId)
-        await withRecoveryJob(String(data.workspaceId ?? ""), genId, async () => runInTenant(await workspaceOf(data), () =>
-          failJob(genId, error.message),
-        ));
+        await withRecoveryJob(String(data.workspaceId ?? ""), genId, async () =>
+          runInTenant(await workspaceOf(data), () =>
+            data.kind === "video"
+              ? failVideoDispatch(genId, error.message)
+              : failJob(genId, error.message),
+          ),
+        );
     },
   },
   async ({ event, step }) => {
     const genId = String(event.data.genId);
     const workspaceId = String(event.data.workspaceId ?? "");
-    const ws = await withRecoveryJob(workspaceId, genId, () => workspaceOf(event.data as { workspaceId?: string }));
+    const ws = await withRecoveryJob(workspaceId, genId, () =>
+      workspaceOf(event.data as { workspaceId?: string }),
+    );
+
+    if (event.data.kind === "video") {
+      return step.run("submit-video", () =>
+        withRecoveryJob(workspaceId, genId, () =>
+          runInTenant(ws, async () => {
+            await workspaceOf(event.data as { workspaceId?: string });
+            await ready();
+            return { genId, ...(await submitVideoRow(genId)) };
+          }),
+        ),
+      );
+    }
 
     const produced = await step.run("produce", async () =>
-      withRecoveryJob(workspaceId, genId, () => runInTenant(ws, async () => {
-        await workspaceOf(event.data as { workspaceId?: string });
-        await ready();
-        const job = await loadJob(genId);
-        // Already finished, or gone. Nothing to do, and nothing to pay for.
-        if (!job) return null;
-        const out = await produce(job);
-        return out ? { job, out } : null;
-      })),
+      withRecoveryJob(workspaceId, genId, () =>
+        runInTenant(ws, async () => {
+          await workspaceOf(event.data as { workspaceId?: string });
+          await ready();
+          const job = await loadJob(genId);
+          // Already finished, or gone. Nothing to do, and nothing to pay for.
+          if (!job) return null;
+          const out = await produce(job);
+          return out ? { job, out } : null;
+        }),
+      ),
     );
 
     if (!produced) return { genId, skipped: true };
 
     await step.run("record", async () =>
-      withRecoveryJob(workspaceId, genId, () => runInTenant(ws, async () => {
-        await workspaceOf(event.data as { workspaceId?: string });
-        await ready();
-        await seal(produced.job, produced.out);
-        return { sealed: true };
-      })),
+      withRecoveryJob(workspaceId, genId, () =>
+        runInTenant(ws, async () => {
+          await workspaceOf(event.data as { workspaceId?: string });
+          await ready();
+          await seal(produced.job, produced.out);
+          return { sealed: true };
+        }),
+      ),
     );
 
     return { genId, ok: true };
