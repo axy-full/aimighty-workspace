@@ -6,7 +6,7 @@ import { canvasFor, falImageInput, stillToolFor, STILL_TOOLS } from "../../lib/s
 
 /** The still post tools (brief 1.2): Bria on fal, flat per image, one still of ours in, a take out. */
 test("outpaint and cutout resolve to Bria rows at fal's flat prices, and build the vendor's input", () => {
-  expect(STILL_TOOLS.map((t) => t.id)).toEqual(["outpaint", "cutout"]);
+  expect(STILL_TOOLS.map((t) => t.id)).toEqual(["upscale", "outpaint", "cutout"]);
   const expand = getModel("fal-ai/bria/expand"); const rmbg = getModel("fal-ai/bria/background/remove");
   expect(expand.hidden && rmbg.hidden).toBe(true);
   expect(stillToolFor(expand.id)).toBe("outpaint"); expect(stillToolFor(rmbg.id)).toBe("cutout"); expect(stillToolFor("gemini-3-pro-image")).toBeNull();

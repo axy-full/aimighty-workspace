@@ -38,6 +38,7 @@ type Props = {
   phone?: boolean;
   onUsePrompt?: (take: Generation) => void;
   onEdit?: (take: Generation) => void;
+  onUpscale?: (take: Generation) => void;
 };
 
 export default function UnfiledWall(props: Props) {
@@ -55,6 +56,7 @@ function ScopedWall({
   onTotals,
   onUsePrompt,
   onEdit,
+  onUpscale,
 }: Props) {
   const { signedIn, workspace, email } = useSession(),
     money = useMoney(),
@@ -235,6 +237,7 @@ function ScopedWall({
                       Edit clip
                     </button>
                   )}
+                {onUpscale && take.kind === "image" && finished && <button type="button" onClick={() => onUpscale(take)}>Upscale image</button>}
                 <button
                   type="button"
                   disabled={!finished || busy === take.id}

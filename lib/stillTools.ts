@@ -7,9 +7,10 @@ import { MODELS } from "./models";
  * input for one. No Node imports — the theatre prices a tool from here.
  * The call itself lives in lib/falImage.ts.
  */
-export type StillTool = "outpaint" | "cutout";
+export type StillTool = "outpaint" | "cutout" | "upscale";
 
 export const STILL_TOOLS: { id: StillTool; label: string; blurb: string; modelId: string }[] = [
+  { id: "upscale", label: "Upscale", blurb: "Enhance a source image with Topaz precision models.", modelId: "fal-ai/topaz/upscale/image" },
   { id: "outpaint", label: "Outpaint", blurb: "Extend a still to another aspect, painting in what the wider or taller frame reveals.", modelId: "fal-ai/bria/expand" },
   { id: "cutout", label: "Cut out", blurb: "Lift the subject off its background, transparent behind it.", modelId: "fal-ai/bria/background/remove" },
 ];
@@ -27,6 +28,7 @@ export function canvasFor(ratio: string): [number, number] {
 
 /** The vendor's input for a tool. Pure: the still is already a URL. */
 export function falImageInput(tool: StillTool, imageUrl: string, ratio: string, prompt = ""): { endpoint: string; input: Record<string, unknown> } {
+  if (tool === "upscale") throw new Error("Topaz requires reviewed source dimensions and upscale settings.");
   if (tool === "cutout") return { endpoint: "fal-ai/bria/background/remove", input: { image_url: imageUrl } };
   const model = stillToolModel("outpaint");
   const aspect = model.ratios.includes(ratio) ? ratio : "9:16";

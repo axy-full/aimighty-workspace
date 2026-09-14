@@ -128,6 +128,7 @@ export async function falResult<T>(model: string, requestId: string): Promise<T>
   if (isMockJob(requestId)) {
     return {
       video: { url: fixtureUrl("clip.mp4"), content_type: "video/mp4", file_size: 991017 },
+      image: { url: fixtureUrl("still.png"), content_type: "image/png" },
       images: [{ url: fixtureUrl("still.png"), width: 256, height: 256, content_type: "image/png" }],
       seed: 1, has_nsfw_concepts: [false],
       diffusers_lora_file: { url: fixtureUrl("still.png") }, config_file: { url: fixtureUrl("still.png") },

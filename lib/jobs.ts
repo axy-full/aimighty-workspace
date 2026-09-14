@@ -18,7 +18,8 @@ import {
   generationCosts,
   type ReconcileResult,
 } from "./generationSettlement";
-import { loadJob, producedOutcome, seal } from "./renderWork";
+import { TOPAZ_IMAGE_MODEL } from "./topaz";
+import { loadJob, producedOutcome, seal, reconcileTopazImage } from "./renderWork";
 import { retryRenderDispatches } from "./inngest";
 import { billedTo, getProvider } from "./providers";
 import { releaseHeldJobs } from "./held";
@@ -271,6 +272,10 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
     (gen.status !== "succeeded" || (gen.storedUrl && savedCosts.cost != null))
   ) {
     return gen;
+  }
+  if (gen.kind === "image" && gen.model === TOPAZ_IMAGE_MODEL && gen.params.falStillRequestId) {
+    try { await reconcileTopazImage(gen.id); } catch (error) { if (options.strict) throw error; }
+    return (await getGeneration(gen.id)) ?? gen;
   }
   // fal video rows carry a request id, not an Ark task: their own sync.
   if (gen.provider === "fal" && gen.kind === "video")
@@ -561,6 +566,7 @@ export async function syncPending(
           const orphan =
             !gen.arkTaskId &&
             !params.falRequestId &&
+            !params.falStillRequestId &&
             (params.worker
               ? Math.max(gen.createdAt, Number(params.workerDispatchedAt) || 0)
               : gen.createdAt) <

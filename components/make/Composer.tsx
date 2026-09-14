@@ -132,6 +132,7 @@ type ComposerProps = {
   className?: string;
   controller?: Ref<ComposerHandle>;
   onEditRequested?: () => void;
+  onUpscaleRequested?: () => void;
 };
 export default function Composer(props: ComposerProps) {
   const { workspace, email, signedIn } = useSession();
@@ -150,6 +151,7 @@ function ScopedComposer({
   scope,
   controller,
   onEditRequested,
+  onUpscaleRequested,
 }: ComposerProps & { scope: string }) {
   const router = useRouter();
   const hydrated = useSyncExternalStore(
@@ -1449,6 +1451,9 @@ function ScopedComposer({
                   </span>
                   <span>Source clip</span>
                 </button>
+              )}
+              {kind === "image" && onUpscaleRequested && (
+                <button type="button" onClick={() => { setListOpen(false); onUpscaleRequested(); }}><span><strong>Topaz Image Upscale</strong><small>Enhance an original image with precision models.</small></span><span>Source image</span></button>
               )}
               {choices.map((m) => (
                 <button
