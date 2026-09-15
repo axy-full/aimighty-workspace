@@ -119,7 +119,7 @@ export async function falSubmit(model: string, input: unknown, webhookUrl?: stri
 export async function falStatus(model: string, requestId: string, withLogs = false): Promise<FalStatus> {
   if (isMockJob(requestId)) return { status: mockDone(requestId) ? "COMPLETED" : "IN_PROGRESS", logs: [] } as FalStatus;
   return call<FalStatus>(
-    `${base()}/${model}/requests/${encodeURIComponent(requestId)}/status${withLogs ? "?logs=1" : ""}`,
+    `${base()}/${queueApp(model)}/requests/${encodeURIComponent(requestId)}/status${withLogs ? "?logs=1" : ""}`,
     { headers: { Authorization: auth() } }
   );
 }
@@ -134,9 +134,24 @@ export async function falResult<T>(model: string, requestId: string): Promise<T>
       diffusers_lora_file: { url: fixtureUrl("still.png") }, config_file: { url: fixtureUrl("still.png") },
     } as unknown as T;
   }
-  return call<T>(`${base()}/${model}/requests/${encodeURIComponent(requestId)}`, {
+  return call<T>(`${base()}/${queueApp(model)}/requests/${encodeURIComponent(requestId)}`, {
     headers: { Authorization: auth() },
   });
+}
+
+/** Queue receipts belong to the application, not the submission subpath.
+ * Match fal's client queue.ts: owner/alias, with an optional workflow/comfy
+ * namespace. Keeping /upscale/image or /video/creative here produces a 405
+ * even when the paid submission succeeded. Existing persisted handles work
+ * without changing their model or purchasing a replacement request. */
+function queueApp(endpoint: string): string {
+  const parts = endpoint.split("/");
+  const length = parts[0] === "workflows" || parts[0] === "comfy" ? 3 : 2;
+  if (
+    parts.length < length ||
+    parts.some((part) => !/^[a-zA-Z0-9_.-]+$/.test(part) || part === "." || part === "..")
+  ) throw new Error("Invalid fal queue application identifier.");
+  return parts.slice(0, length).join("/");
 }
 
 /**
