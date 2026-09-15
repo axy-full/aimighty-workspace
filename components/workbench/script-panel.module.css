@@ -256,3 +256,69 @@
     min-height: 40px;
   }
 }
+
+.ocrReview {
+  border-top: 1px solid #51445f;
+  margin-top: 18px;
+  padding-top: 8px;
+}
+.ocrReview h4 {
+  font-size: 14px;
+}
+.ocrReview > p {
+  color: #aca6b7;
+  line-height: 1.6;
+}
+.ocrReview .actions {
+  align-items: center;
+}
+.ocrReview select {
+  background: #16171e;
+  color: #e6e7ec;
+  border: 1px solid #51445f;
+  border-radius: 6px;
+  padding: 8px;
+  max-width: 100%;
+}
+.ocrColumns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  margin: 14px 0;
+}
+.ocrOriginal {
+  max-height: 500px;
+  overflow: auto;
+  background: #14151a;
+}
+.ocrOriginal img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ocrColumns textarea {
+  min-width: 0;
+  width: 100%;
+  min-height: 350px;
+  max-height: 500px;
+  resize: vertical;
+  background: #121318;
+  border: 1px solid #51445f;
+  border-radius: 6px;
+  color: #e6e7ec;
+  padding: 12px;
+  font:
+    12px/1.7 ui-monospace,
+    monospace;
+}
+@media (max-width: 700px) {
+  .ocrColumns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ocrOriginal {
+    max-height: 330px;
+  }
+  .ocrColumns textarea {
+    min-height: 220px;
+  }
+}

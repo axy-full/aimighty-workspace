@@ -190,6 +190,17 @@ export const projectSchema = z.object({
         .max(MAX_SCRIPT_PAGES),
       importedAt: z.string().max(50),
       edited: z.boolean(),
+      ocr: z.object({
+        engine: z.literal("tesseract-7.0.0"),
+        language: z.literal("eng"),
+        requestedPages: z.array(z.number().int().min(1).max(MAX_SCRIPT_PAGES)).min(1).max(MAX_SCRIPT_PAGES),
+        pages: z.array(z.object({
+          page: z.number().int().min(1).max(MAX_SCRIPT_PAGES),
+          confidence: z.number().min(0).max(100),
+          reviewed: z.literal(true),
+          corrected: z.boolean(),
+        })).min(1).max(MAX_SCRIPT_PAGES),
+      }).optional(),
       acknowledgedEmptyPages: z
         .array(z.number().int().min(1).max(MAX_SCRIPT_PAGES))
         .max(MAX_SCRIPT_PAGES),
@@ -246,6 +257,11 @@ export const saveSchema = z
           message: "Keep the uploaded screenplay source in the asset library.",
           path: ["project", "scriptSource"],
         });
+      if (source.ocr) {
+        const requested = source.ocr.requestedPages, recognized = source.ocr.pages.map(page => page.page);
+        if (new Set(requested).size !== requested.length || new Set(recognized).size !== recognized.length || requested.length !== recognized.length || requested.some(page => page > source.pages.length || !recognized.includes(page)))
+          context.addIssue({ code: "custom", path: ["project", "scriptSource", "ocr"], message: "Complete and review every requested OCR page before saving." });
+      }
       let end = 0;
       source.pages.forEach((page, index) => {
         if (

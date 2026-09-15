@@ -53,7 +53,7 @@ test("movie planning keeps cumulative frame time and refuses unbounded edits", (
   );
 });
 
-test("WASM and blob workers are restricted to the exact movie document", async () => {
+test("WASM is restricted to the movie document and isolated OCR worker", async () => {
   const entries = await nextConfig.headers!();
   const general = entries.find((entry) => entry.source === "/(.*)")!;
   const policy = general.headers.find(
@@ -64,7 +64,7 @@ test("WASM and blob workers are restricted to the exact movie document", async (
   const movie = entries.filter((entry) =>
     entry.headers.some((header) => header.value.includes("wasm-unsafe-eval")),
   );
-  expect(movie.map((entry) => entry.source)).toEqual(["/workbench/movie"]);
+  expect(movie.map((entry) => entry.source)).toEqual(["/workbench/movie", "/vendor/tesseract-7.0.0/worker.min.js"]);
   const moviePolicy = movie[0].headers.find(
     (header) => header.key === "Content-Security-Policy",
   )!.value;

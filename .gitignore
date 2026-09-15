@@ -54,3 +54,5 @@ playwright-report/
 ci-results/
 
 /public/vendor/pdfjs-*/
+
+/public/vendor/tesseract-*/
