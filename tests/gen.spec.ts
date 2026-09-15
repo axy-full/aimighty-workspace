@@ -489,7 +489,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   const videoTake = page.locator('[data-library-id="generation:gen-fixture-video"]');
   await videoTake.getByRole("button", { name: "Actions for Fixture video", exact: true }).click();
   await page.getByRole("menuitem", { name: "File to shot", exact: true }).click();
-  await page.getByLabel("Production for take", { exact: true }).selectOption("project-fixture");
+  await page.getByLabel("Project for take", { exact: true }).selectOption("project-fixture");
   await page.getByRole("button", { name: /SH01/ }).click();
   expect(patches).toEqual([{ shotId: "shot-fixture" }]);
   const before = submissions.length;

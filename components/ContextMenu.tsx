@@ -59,14 +59,14 @@ async function moveClip(genId: string, projectId: string | null) {
 
 /** Rename a project in place, wherever its card or row happens to be. */
 export async function renameProject(projectId: string, current: string): Promise<boolean> {
-  const next = await appPrompt("Rename production", current, "e.g. Nike AW26");
+  const next = await appPrompt("Rename project", current, "e.g. Nike AW26");
   if (next === null || !next.trim() || next.trim() === current) return false;
   const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: next.trim() }),
   });
   if (!res.ok) {
-    await appAlert("Couldn't rename the production", (await res.json().catch(() => ({}))).error);
+    await appAlert("Couldn't rename the project", (await res.json().catch(() => ({}))).error);
     return false;
   }
   announceChange();
@@ -220,7 +220,7 @@ export default function ContextMenu() {
         if (target !== "unfiled") {
           const count = Number(projEl.dataset.projectCount ?? "") || null;
           items.push({ kind: "sep" }, {
-            kind: "item", label: "Delete production…", danger: true,
+            kind: "item", label: "Delete project…", danger: true,
             action: async () => {
               if (!(await confirmDeleteProject(target, name, count))) return;
               const c = ctxRef.current;

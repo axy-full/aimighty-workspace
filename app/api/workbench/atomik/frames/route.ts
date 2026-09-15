@@ -22,7 +22,7 @@ export const POST = withTenant(async (req: Request) => {
     return json(
       {
         error:
-          "This account or workspace changed. Reopen the original production.",
+          "This account or workspace changed. Reopen the original project.",
       },
       409,
     );
@@ -89,7 +89,7 @@ export const POST = withTenant(async (req: Request) => {
         error:
           status === 404
             ? "This video is unavailable in the current workspace."
-            : "The video still could not be prepared. Reopen the production and try again.",
+            : "The video still could not be prepared. Reopen the project and try again.",
       },
       status,
     );

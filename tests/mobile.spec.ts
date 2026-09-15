@@ -89,7 +89,7 @@ test.describe("the app shell", () => {
          instead, and the dock only where it exists. */
       const width = await page.evaluate(() => window.innerWidth);
       if (width >= 768) {
-        await expect(page.getByRole("banner").getByRole("navigation", { name: "Sections" }).getByRole("link")).toHaveText(["Make", "Productions", "Rig", "Library"]);
+        await expect(page.getByRole("banner").getByRole("navigation", { name: "Sections" }).getByRole("link")).toHaveText(["Make", "Projects", "Rig", "Library"]);
         await expect(page.locator(".shell-dock")).toBeHidden();
         return;
       }
@@ -233,16 +233,16 @@ test.describe("the audio composer", () => {
  * rows and the 200px strip need a workspace and are measured when the
  * suite runs signed in.
  */
-test.describe("Productions on a phone", () => {
+test.describe("Projects on a phone", () => {
   test("the M1 frame: title, mono totals, the full-width segmented, no header buttons", async ({ page }) => {
     test.skip(page.viewportSize()!.width >= 768, "a phone on its side gets the desktop page (§14)");
     await page.goto("/productions");
     await settle(page);
-    const h1 = page.getByRole("heading", { name: "Productions" });
+    const h1 = page.getByRole("heading", { name: "Projects" });
     await expect(h1).toBeVisible();
     const t = await h1.evaluate((el) => { const cs = getComputedStyle(el); return { size: cs.fontSize, weight: cs.fontWeight, track: cs.letterSpacing }; });
     expect(t).toEqual({ size: "24px", weight: "600", track: "-0.48px" });
-    await expect(page.locator("[data-phone-body] .ui-mono").first()).toHaveText(/^\d+ · \d+ projects · \d+ need you$/i);
+    await expect(page.locator("[data-phone-body] .ui-mono").first()).toHaveText(/^\d+ projects · \d+ deliverables · \d+ need you$/i);
     const body = page.locator("[data-phone-body]");
     expect(await body.evaluate((el) => { const cs = getComputedStyle(el); return [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft]; })).toEqual(["16px", "16px", "100px", "16px"]);
     const group = page.getByRole("group", { name: "Show" });
@@ -252,8 +252,8 @@ test.describe("Productions on a phone", () => {
       const r = await b.boundingBox();
       expect(r!.height, "each option is 40px tall").toBeGreaterThanOrEqual(40);
     }
-    await expect(page.getByRole("button", { name: "New production" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "New project in…" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "New project" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "New deliverable in…" })).toHaveCount(0);
     const signedIn = await page.getByRole("button", { name: "Account" }).count();
     if (signedIn) {
       const row = page.locator("section").first();
@@ -263,7 +263,7 @@ test.describe("Productions on a phone", () => {
       expect(await strip.evaluate((el) => getComputedStyle(el).scrollSnapType)).toBe("x mandatory");
       const tile = strip.locator("a").first();
       if (await tile.count()) expect(await tile.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(200);
-      expect(await strip.getByRole("button", { name: "+ Project" }).evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(96);
+      expect(await strip.getByRole("button", { name: "+ Deliverable" }).evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(96);
     }
   });
 });

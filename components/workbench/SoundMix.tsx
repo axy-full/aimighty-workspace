@@ -172,7 +172,7 @@ export function SoundMix({
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
         >
-          <option value="">Choose a production asset</option>
+          <option value="">Choose a project asset</option>
           {project.assets
             .filter((a) => a.kind === "audio" || a.kind === "video")
             .map((a) => (

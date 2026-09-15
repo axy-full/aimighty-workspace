@@ -54,7 +54,7 @@ export function validateColor(project: Project): void {
       !/\.cube$/i.test(asset.name)
     )
       throw new Error(
-        "Keep the uploaded .cube LUT in this production's asset library.",
+        "Keep the uploaded .cube LUT in this project's asset library.",
       );
   }
 }

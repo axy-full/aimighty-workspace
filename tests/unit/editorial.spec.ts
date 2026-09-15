@@ -174,7 +174,7 @@ test("named versions are private, immutable, idempotent and bound to the actual 
     expect(await readEditVersion("alice", "another-draft", id)).toBeNull();
     await expect(
       saveEditVersion("bob", p.id, "request-foreign-1234", "Foreign", 1),
-    ).rejects.toThrow(/Save your production/);
+    ).rejects.toThrow(/Save your project/);
     const current = (await readDraft("alice", p.id))!;
     await saveDraft(
       "alice",

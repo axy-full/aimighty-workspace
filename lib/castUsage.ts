@@ -23,7 +23,7 @@ const n = (count: number, word: string) => `${count} ${word.toUpperCase()}${coun
 export function usageLine(s: UsageSummary): string {
   const parts = [n(s.shots, "shot"), n(s.takes, "take")];
   if (s.stills) parts.push(n(s.stills, "still"));
-  if (s.productions > 1) parts.push(`ACROSS ${n(s.productions, "production")}`);
+  if (s.productions > 1) parts.push(`ACROSS ${n(s.productions, "project")}`);
   return parts.join(" · ");
 }
 

@@ -79,7 +79,7 @@ export async function linkProduction(owner: string, project: Project): Promise<s
   await workbenchReady();
   if (project.productionProjectId) {
     const found=(await db().execute({sql:'SELECT id FROM projects WHERE id=?',args:[project.productionProjectId]})).rows[0];
-    if(!found) throw new Error('The linked production no longer exists in this workspace.');
+    if(!found) throw new Error('The linked project no longer exists in this workspace.');
     return project.productionProjectId;
   }
   const ws=requireTenant();
@@ -103,7 +103,7 @@ export async function linkProduction(owner: string, project: Project): Promise<s
 /** An explicit stable node→shot identity, independent of editable labels and collaborator drafts. */
 export async function mapNodeShot(owner:string, project:Project, nodeId:string):Promise<string> {
   const node=project.nodes.find(n=>n.id===nodeId);
-  if(!node || !project.productionProjectId) throw new Error('Save this node in a production first.');
+  if(!node || !project.productionProjectId) throw new Error('Save this node in a project first.');
   const pid=await linkProduction(owner,project);
   const sid=mappedId('shot_wb_',owner,project.id,nodeId);
   return workbenchTransaction(async(tx)=>{
@@ -121,9 +121,9 @@ export async function mapNodeShot(owner:string, project:Project, nodeId:string):
 export async function saveDraft(owner:string, project:Project, revision:number) {
   await workbenchReady();
   const current=await readDraft(owner,project.id);
-  if((current?.revision??0)!==revision)throw new Error('This production changed in another window. Download your work before reloading.');
+  if((current?.revision??0)!==revision)throw new Error('This project changed in another window. Download your work before reloading.');
   if(current?.project.productionProjectId && project.productionProjectId && current.project.productionProjectId!==project.productionProjectId)
-    throw new Error('A draft cannot change its production. Open a separate space.');
+    throw new Error('A draft cannot change its project. Open a separate space.');
   const pid=await linkProduction(owner,{...project,productionProjectId:current?.project.productionProjectId||project.productionProjectId});
   return workbenchTransaction(async(tx)=>{
     await validateStoredMedia(tx,project);
@@ -145,7 +145,7 @@ export class BibleConflictError extends Error {
 /** Immutable shared versions require the author's explicit current base. */
 export async function publishBible(owner:string, name:string, draftId:string, expectedVersion:number) {
   const draft=await readDraft(owner,draftId);
-  if(!draft?.project.productionProjectId)throw new Error('Save your production first.');
+  if(!draft?.project.productionProjectId)throw new Error('Save your project first.');
   const p=draft.project;
   if(!Number.isInteger(expectedVersion)||expectedVersion<0)throw new Error('Load the current shared context before publishing.');
   const snapshot={...publishedContext(p),publishedBy:name};

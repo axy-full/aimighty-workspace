@@ -73,7 +73,7 @@ export async function saveEditVersion(
     revision < 1
   )
     throw Error(
-      "Choose a saved production, a version name and its current revision.",
+      "Choose a saved project, a version name and its current revision.",
     );
   label = label.trim();
   await workbenchReady();
@@ -100,10 +100,10 @@ export async function saveEditVersion(
       })
     ).rows[0];
     if (!draft)
-      throw Error("Save your production before saving an edit version.");
+      throw Error("Save your project before saving an edit version.");
     if (Number(draft.revision) !== revision)
       throw Error(
-        "The production changed in another window. Refresh its saved revision before naming this cut.",
+        "The project changed in another window. Refresh its saved revision before naming this cut.",
       );
     const count = Number(
       (
@@ -115,7 +115,7 @@ export async function saveEditVersion(
     );
     if (count >= MAX_VERSIONS)
       throw Error(
-        "This production has 50 retained edit versions. Export its history before starting a new production.",
+        "This project has 50 retained edit versions. Export its history before starting a new project.",
       );
     const edit = captureEdit(JSON.parse(String(draft.body)) as Project),
       body = JSON.stringify(edit);

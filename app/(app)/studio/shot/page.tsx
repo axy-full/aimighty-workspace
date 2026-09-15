@@ -119,7 +119,7 @@ function ShotBuilder() {
   useEffect(() => { stamped.current = null; }, [bin]);
 
   /* Which renders used each move or technique — the bank's usage line. */
-  /* What this production has used, what the workspace has used, and the
+  /* What this project has used, what the workspace has used, and the
      last take that used each pick — for the order of the bank and the rows,
      and for a used move's tile (brief 1.4). */
   const { data: recentWs } = useApi<{ generations: Gen[] }>(signedIn && scoped ? "/api/jobs?limit=200&sync=0" : null, 0);
@@ -203,7 +203,7 @@ function ShotBuilder() {
   const rows = CATEGORIES.map((c) => ({
     ...c, options: orderByUse(c.options.filter((o) => matchesStudio(o, query)), (o) => `${c.key}:${o.value}`, usedProd, usedWs),
   })).filter((c) => !query || c.options.length);
-  const setupName = scoped ? current?.name ?? "this production" : "workspace";
+  const setupName = scoped ? current?.name ?? "this project" : "workspace";
 
   /* Two different things persist on this screen, and only one of them is the
      production's.
@@ -239,10 +239,10 @@ function ShotBuilder() {
             ? <>Building for <span className="text-ink">{shot.code} · {shot.title || "Untitled shot"}</span> · from the shot list</>
             : scoped ? (
               savedCount
-                ? <><span className="text-ink">{current?.name ?? "this production"}</span>&rsquo;s setup — {savedCount} row{savedCount === 1 ? "" : "s"}, carried into every shot{unsaved ? <> · <span className="text-lift">your changes aren&rsquo;t saved yet</span></> : null}</>
-                : <>No setup saved for <span className="text-ink">{current?.name ?? "this production"}</span> yet{unsaved ? <> · <span className="text-lift">your picks are yours alone until you save</span></> : null}</>
+                ? <><span className="text-ink">{current?.name ?? "this project"}</span>&rsquo;s setup — {savedCount} row{savedCount === 1 ? "" : "s"}, carried into every shot{unsaved ? <> · <span className="text-lift">your changes aren&rsquo;t saved yet</span></> : null}</>
+                : <>No setup saved for <span className="text-ink">{current?.name ?? "this project"}</span> yet{unsaved ? <> · <span className="text-lift">your picks are yours alone until you save</span></> : null}</>
             )
-              : "Building a setup for the whole workspace — pick a production to file it against a shot"}
+              : "Building a setup for the whole workspace — pick a project to file it against a shot"}
         </span>
       </nav>
 

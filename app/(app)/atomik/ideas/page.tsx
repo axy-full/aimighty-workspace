@@ -80,7 +80,7 @@ export default function IdeasPage() {
     refresh();
   }
   async function remove(i: Row) {
-    if (!(await appConfirm(`Delete idea #${String(i.num).padStart(2, "0")}?`, "Its production, if it has one, stays.", { confirmLabel: "Delete", danger: true }))) return;
+    if (!(await appConfirm(`Delete idea #${String(i.num).padStart(2, "0")}?`, "Its project, if it has one, stays.", { confirmLabel: "Delete", danger: true }))) return;
     await fetch(`/api/atomik/ideas/${i.id}`, { method: "DELETE" });
     refresh();
   }
@@ -88,11 +88,11 @@ export default function IdeasPage() {
      project, the project gets a treatment seeded from the logline. */
   async function produce(i: Row) {
     const suggested = i.logline.split(/[.!?]/)[0]?.trim().slice(0, 40) ?? "";
-    const name = await appPrompt("Name the production", suggested, "Northline");
+    const name = await appPrompt("Name the project", suggested, "Northline");
     if (!name?.trim()) return;
     const res = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.id) { await appAlert("Couldn't create the production", json.error); return; }
+    if (!res.ok || !json.id) { await appAlert("Couldn't create the project", json.error); return; }
     await fetch(`/api/atomik/ideas/${i.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: json.id, state: "pinned" }) });
     await fetch("/api/atomik/treatment", {
       method: "PUT", headers: { "Content-Type": "application/json" },
@@ -108,7 +108,7 @@ export default function IdeasPage() {
       <div className="page-head">
         <div className="flex max-w-[640px] flex-col gap-2.5">
           <h1 className="ak-h1">Ideas</h1>
-          <p className="ak-sub !text-[15px]">A logline, a tone, a few references. Pin the ones worth a brief. When one becomes a production it keeps its card, and the card keeps pointing at it.</p>
+          <p className="ak-sub !text-[15px]">A logline, a tone, a few references. Pin the ones worth a brief. When one becomes a project it keeps its card, and the card keeps pointing at it.</p>
         </div>
         <div className="page-acts items-center">
           <div className="seg" role="tablist">
@@ -161,11 +161,11 @@ export default function IdeasPage() {
                   <span className="flex items-center gap-3">
                     {s === "production" && i.projectId && (
                       <Link href={`/projects/${i.projectId}/canvas`} className="ak-act" onClick={() => setSelection(i.projectId!)}>
-                        {(i.projectName ?? "production").toUpperCase()} · {i.shots} SHOT{i.shots === 1 ? "" : "S"} → PARTICL
+                        {(i.projectName ?? "project").toUpperCase()} · {i.shots} SHOT{i.shots === 1 ? "" : "S"} → PARTICL
                       </Link>
                     )}
                     {s !== "production" && i.projectId && (
-                      <Link href="/atomik/shots" className="ak-act" onClick={() => setSelection(i.projectId!)}>{(i.projectName ?? "production").toUpperCase()} · BRIEF → SHOT LIST</Link>
+                      <Link href="/atomik/shots" className="ak-act" onClick={() => setSelection(i.projectId!)}>{(i.projectName ?? "project").toUpperCase()} · BRIEF → SHOT LIST</Link>
                     )}
                     {s === "pinned" && !i.projectId && <button type="button" className="ak-act" onClick={() => produce(i)}>WRITE THE TREATMENT →</button>}
                     {s === "open" && <button type="button" className="ak-act" onClick={() => patch(i, { pin: true })}>PIN IT</button>}

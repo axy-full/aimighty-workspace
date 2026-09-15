@@ -219,8 +219,8 @@ test("four nav items, a balance, and Usage / Settings only behind the avatar", a
   await settle(page);
   const header = page.locator("header").first();
   const nav = header.getByRole("navigation", { name: "Sections" });
-  await expect(nav.getByRole("link")).toHaveText(["Make", "Productions", "Rig", "Library"]);
-  await expect(nav.getByRole("link", { name: "Productions" })).toHaveAttribute("aria-current", "page");
+  await expect(nav.getByRole("link")).toHaveText(["Make", "Projects", "Rig", "Library"]);
+  await expect(nav.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
   // Usage and Settings are not in the nav…
   await expect(nav.getByRole("link", { name: /usage|settings/i })).toHaveCount(0);
   // …the Atomik button carries its shortcut…
@@ -302,24 +302,24 @@ test("Atomik: nothing when closed, compact on ⌘J, expanded on Expand, and it r
  * totals, the segmented, the two header pills (one filled), and a
  * production row with its project tiles in five columns.
  */
-test("Productions: the 7a header, one filled primary, rows with five-column tiles", async ({ page }) => {
+test("Projects: the 7a header, one filled primary, rows with five-column tiles", async ({ page }) => {
   await page.goto("/productions");
   await settle(page);
-  const h1 = page.getByRole("heading", { name: "Productions" });
+  const h1 = page.getByRole("heading", { name: "Projects" });
   await expect(h1).toBeVisible();
   const head = h1.locator("xpath=ancestor::div[contains(@class,'h-[64px]')][1]");
   expect(await head.evaluate((el) => el.getBoundingClientRect().height)).toBe(64);
   await expect(head.getByRole("group", { name: "Show" }).getByRole("button")).toHaveText(["Active", "Delivered", "All"]);
   const filled = await head.locator("button").evaluateAll((els) => els.filter((b) => getComputedStyle(b).backgroundColor === "rgb(245, 246, 248)").map((b) => b.textContent));
-  expect(filled, "exactly one filled primary in the header").toEqual(["New production"]);
+  expect(filled, "exactly one filled primary in the header").toEqual(["New project"]);
   const signedIn = await page.getByRole("button", { name: "Account" }).count();
   if (signedIn) {
     const row = page.locator("section").first();
     await expect(row).toBeVisible();
     const grid = row.locator(".grid");
     expect(await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(5);
-    await expect(grid.getByRole("button", { name: "+ Project" })).toBeVisible();
-    await expect(page.locator("text=/\\d+ productions · \\d+ projects · \\d+ need you/i")).toBeVisible();
+    await expect(grid.getByRole("button", { name: "+ Deliverable" })).toBeVisible();
+    await expect(page.locator("text=/\\d+ projects · \\d+ deliverables · \\d+ need you/i")).toBeVisible();
   }
 });
 

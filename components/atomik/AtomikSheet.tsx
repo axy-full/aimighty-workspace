@@ -93,7 +93,7 @@ export default function AtomikSheet() {
             : cur.kind === "question" ? "Pick a response, then review the planning estimate below."
             : cur.kind === "planning" ? "Atomik is working out what to render."
             : cur.kind === "done" ? `${done.length} ${done.length === 1 ? "take" : "takes"} on the grid; approve them there.`
-            : "Ask below, or open a production and Atomik plans it from there."}
+            : "Ask below, or open a project and Atomik plans it from there."}
         </span>
         {step && (
           <>

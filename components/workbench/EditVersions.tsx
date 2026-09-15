@@ -75,7 +75,7 @@ export function EditVersions({
     if (active.current) {
       setLabel("");
       setNotice(
-        `Saved “${result.label}” from production revision ${result.revision}.`,
+        `Saved “${result.label}” from project revision ${result.revision}.`,
       );
     }
   }

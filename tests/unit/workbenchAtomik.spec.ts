@@ -110,8 +110,8 @@ test('changed idempotency inputs and another owner cannot reuse a saved producti
     const h = harness();
     await prepareAtomikJob(input, 'owner', undefined, h.deps);
     await expect(prepareAtomikJob({ ...input, request: 'A different request' }, 'owner', undefined, h.deps)).rejects.toThrow('different instructions');
-    await expect(prepareAtomikJob(input, 'other-owner', undefined, h.deps)).rejects.toThrow('Save this production');
-    await expect(listAtomikJobs('other-owner', input.projectId)).rejects.toThrow('Save this production');
+    await expect(prepareAtomikJob(input, 'other-owner', undefined, h.deps)).rejects.toThrow('Save this project');
+    await expect(listAtomikJobs('other-owner', input.projectId)).rejects.toThrow('Save this project');
     expect(h.calls()).toBe(0);
   });
 });

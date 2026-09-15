@@ -147,7 +147,7 @@ export function atomikSystem(input: AtomikRequest) {
 export function atomikContext(project: Project, input: AtomikRequest, uploadedText: Record<string, string> = {}, images: AtomikReferenceContent['images'] = []) {
   const all = [...project.assets, ...(project.sharedAssets ?? [])];
   const refs = input.refs.map(id => all.find(a => a.id === id));
-  if (refs.some(r => !r)) throw new AtomikError('A selected reference is no longer part of this production. Refresh your references.');
+  if (refs.some(r => !r)) throw new AtomikError('A selected reference is no longer part of this project. Refresh your references.');
   const cap = LIMITS[input.depth].contextChars;
   return JSON.stringify({
     task: input.request,
@@ -203,9 +203,9 @@ const withDependencies = (overrides?: Partial<AtomikDependencies>) => ({ ...depe
 export async function getAtomikProject(owner: string, projectId: string) {
   await atomikReady();
   const row = (await db().execute({ sql: 'SELECT body FROM workbench_projects WHERE owner=? AND project_id=?', args: [owner, projectId] })).rows[0];
-  if (!row) throw new AtomikError('Save this production before asking Atomik to work on it.', 404);
+  if (!row) throw new AtomikError('Save this project before asking Atomik to work on it.', 404);
   const parsed = projectSchema.safeParse(JSON.parse(String(row.body)));
-  if (!parsed.success) throw new AtomikError('This saved production needs to be reopened and saved before Atomik can read it.', 409);
+  if (!parsed.success) throw new AtomikError('This saved project needs to be reopened and saved before Atomik can read it.', 409);
   return parsed.data as Project;
 }
 const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], cost?: number): MeterEvent => ({
@@ -216,7 +216,7 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
   if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
   const project = await getAtomikProject(owner, input.projectId);
-  if (!project.productionProjectId) throw new AtomikError('Save this production to link its budget before starting Atomik.', 409);
+  if (!project.productionProjectId) throw new AtomikError('Save this project to link its budget before starting Atomik.', 409);
   const references = await loadAtomikReferences(project, input.refs, owner, input.videoFrames);
   const models = await deps.models();
   const menu = atomikModels(models).filter(model => !references.images.length || model.vision);
@@ -233,7 +233,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const reasoning = atomikReasoningRequest(model, input.effort, LIMITS[input.depth].maxTokens);
   const maxTokens = reasoning.maxTokens;
   if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) {
-    throw new AtomikError('This model has too little context for the production. Choose a larger-context model or fewer references.');
+    throw new AtomikError('This model has too little context for the project. Choose a larger-context model or fewer references.');
   }
   const estimateUsd = textCostUsd(model, inputTokens, maxTokens);
   if (estimateUsd == null || !Number.isFinite(estimateUsd) || estimateUsd < 0) throw new AtomikError('This model has no confirmed price for the current context. Choose another model or refresh the catalogue.', 503);
@@ -296,7 +296,7 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
     const combined = limitVerdict({ running: lim.standing.running + Number(counters.live || 0), startedLastHour: lim.standing.startedLastHour + Number(counters.hour || 0), limits: lim.limits });
     if (!combined.allow) throw new AtomikError(combined.error, combined.why === 'rate' ? 429 : 409);
     const spent = (await tx.execute({ sql: 'SELECT COALESCE(SUM(COALESCE(cost_usd,estimate_usd)),0) AS spend FROM workbench_atomik_jobs WHERE production_project_id=?', args: [project.productionProjectId!] })).rows[0];
-    if (Number(spent.spend) + estimateUsd > budgets.maxProjectUsd) throw new AtomikError('This production has reached its Atomik spending limit.', 409);
+    if (Number(spent.spend) + estimateUsd > budgets.maxProjectUsd) throw new AtomikError('This project has reached its Atomik spending limit.', 409);
     await tx.execute({ sql: `INSERT INTO workbench_atomik_jobs (id,owner,project_id,production_project_id,request_id,fingerprint,request_body,model,status,provider_body,estimate_usd,estimate_credits,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?,?,?)`,
       args: [id, owner, input.projectId, project.productionProjectId ?? null, input.requestId, fingerprint, JSON.stringify(input), model.id, providerBody, estimateUsd, estimateCredits, ts, ts] });
     await tx.commit();

@@ -115,7 +115,7 @@ export default function ElementSheet({ member, onClose, onChanged }: {
             </span>
             <span className="text-[12.5px] text-mute">
               {KIND_LABEL[member.kind] ?? member.kind}
-              {member.projectId ? " · this production" : " · the whole workspace"}
+              {member.projectId ? " · this project" : " · the whole workspace"}
             </span>
           </span>
           <button type="button" onClick={onClose} className="ml-auto theatre-close" title="Close"><IconClose /></button>

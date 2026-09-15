@@ -41,11 +41,11 @@ export const PUT=withTenant(async(req:Request)=>{
   const body=await readProjectBody(req);if(!body.ok)return Response.json({error:body.error},{status:body.status});
   const value=body.value;
   const parsed=saveSchema.safeParse(value);
-  if(!parsed.success)return Response.json({error:'Check the production fields before saving.'},{status:400});
+  if(!parsed.success)return Response.json({error:'Check the project fields before saving.'},{status:400});
   await workbenchReady();
   const {project:p,revision}=parsed.data;
   try{return Response.json(await saveDraft(auth.user.id,p,revision));}
-  catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save production.'},{status:409});}
+  catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.'},{status:409});}
 });
 
 export const POST=withTenant(async(req:Request)=>{
@@ -54,18 +54,18 @@ export const POST=withTenant(async(req:Request)=>{
   if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   if(originProblem(req))return Response.json({error:'Invalid request origin'},{status:403});
   const body=await req.json().catch(()=>null);
-  if(!body || typeof body.projectId!=='string')return Response.json({error:'Choose a production.'},{status:400});
+  if(!body || typeof body.projectId!=='string')return Response.json({error:'Choose a project.'},{status:400});
   await workbenchReady();
   if(body.action==='open'){
     const row=(await db().execute({sql:'SELECT id,name,description FROM projects WHERE id=?',args:[body.projectId]})).rows[0];
-    if(!row)return Response.json({error:'Production not found'},{status:404});
+    if(!row)return Response.json({error:'Project not found'},{status:404});
     const latest=(await db().execute({sql:'SELECT body,version FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[body.projectId]})).rows[0];
     const shared=latest?JSON.parse(String(latest.body)):null;
     const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
     return Response.json({project:p,revision:0});
   }
   const draft=await readDraft(auth.user.id,body.projectId);
-  if(!draft)return Response.json({error:'Save your production first.'},{status:404});
+  if(!draft)return Response.json({error:'Save your project first.'},{status:404});
   if(body.action==='map-shot'){
     try{return Response.json({productionProjectId:draft.project.productionProjectId,shotId:await mapNodeShot(auth.user.id,draft.project,String(body.nodeId||''))})}
     catch(e){return Response.json({error:e instanceof Error?e.message:'Cannot map this node'},{status:400})}
@@ -78,5 +78,5 @@ export const POST=withTenant(async(req:Request)=>{
       return Response.json({error:problem.message||'Unable to publish shared context.',...(problem.code==='bible_conflict'?{code:problem.code,currentVersion:problem.currentVersion}:{})},{status:problem.code==='bible_conflict'?409:400});
     }
   }
-  return Response.json({error:'Unknown production action'},{status:400});
+  return Response.json({error:'Unknown project action'},{status:400});
 });

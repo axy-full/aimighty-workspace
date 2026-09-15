@@ -54,14 +54,14 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
 
 
   async function remove() {
-    if (!(await confirmDeleteProject(id, project?.name ?? "this production", data?.totals?.generations ?? null))) return;
+    if (!(await confirmDeleteProject(id, project?.name ?? "this project", data?.totals?.generations ?? null))) return;
     if (selection === id) setSelection("all");
     refreshCtx();
     router.push("/productions");
   }
 
   async function setCode() {
-    const code = await appPrompt("Production code", project?.code ?? "", "NKA26");
+    const code = await appPrompt("Project code", project?.code ?? "", "NKA26");
     if (code === null) return;
     const res = await fetch(`/api/projects/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -84,7 +84,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   }
 
   usePageTitle(project?.name ?? "Project");
-  if (!data) return error ? <Trouble label="The production didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the production" />;
+  if (!data) return error ? <Trouble label="The project didn't load" detail={error} onRetry={refresh} /> : <Waiting label="Reading the project" />;
 
   const t = data.totals;
   const shots = shotData?.shots ?? [];
@@ -93,7 +93,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
   return (
     <div className="screen">
       <div className="mx-auto w-full max-w-[1120px] pb-10">
-        <Link href="/productions" className="mt-6 inline-block text-[14px] text-blue">← Productions</Link>
+        <Link href="/productions" className="mt-6 inline-block text-[14px] text-blue">← Projects</Link>
         <ProductionNav id={id} on="production" />
         <Headline a={data} title={project?.name ?? "Project"} />
 
@@ -110,7 +110,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
           <button onClick={setCategory} className="text-blue">
             {project?.category || "set one"}
           </button>{" "}
-          — how this job is grouped on the production dashboard.
+          — how this job is grouped on the project dashboard.
         </p>
         {project && <CapLine project={project} spentCredits={t.credits} spentUsd={t.spend} isAdmin={isAdmin} onChanged={() => { refreshProjects(); refresh(); }} />}
         <ReviewLinks projectId={id} isAdmin={isAdmin} />
@@ -129,8 +129,8 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
           <Link href="/" className="chip bg-blue text-on-ink">Open in Generate</Link>
           <Link href={`/projects/${id}/canvas`} className="chip">Canvas</Link>
           <Link href="/all" className="chip">All takes</Link>
-          <Link href="/dashboard" className="chip">Production dashboard</Link>
-          <button type="button" onClick={remove} className="chip !text-lift">Delete production</button>
+          <Link href="/dashboard" className="chip">Project dashboard</Link>
+          <button type="button" onClick={remove} className="chip !text-lift">Delete project</button>
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -172,12 +172,12 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <section className="card px-5 py-5">
-            <p className="grouplabel">How this production was made</p>
+            <p className="grouplabel">How this project was made</p>
             <div className="mt-4"><Patterns a={data} /></div>
           </section>
 
           <section className="card px-5 py-5">
-            <p className="grouplabel">Cost of this production</p>
+            <p className="grouplabel">Cost of this project</p>
             <div className="rows mt-4">
               <div className="row"><span>Generations</span>
                 <span className="row-value tabular-nums">{t.generations}</span></div>
@@ -234,7 +234,7 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
     onChanged();
   }
   async function setCap() {
-    const raw = await appPrompt(money.inCredits ? "Cap for this production, in credits" : "Cap for this production, in dollars", cap ? String(Math.round(cap)) : "", money.inCredits ? "2000" : "250");
+    const raw = await appPrompt(money.inCredits ? "Cap for this project, in credits" : "Cap for this project, in dollars", cap ? String(Math.round(cap)) : "", money.inCredits ? "2000" : "250");
     if (raw === null) return;
     const v = raw.trim() === "" ? null : Number(raw.replace(/[^0-9.]/g, ""));
     if (v != null && !(v >= 0)) { await appAlert("Not a cap", "A cap is a number, or blank for none."); return; }
@@ -246,7 +246,7 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
       {isAdmin
         ? <button onClick={setCap} className="text-blue">{cap ? show(cap) : "set one"}</button>
         : <span className="text-ink">{cap ? show(cap) : "none"}</span>}
-      {cap ? <> — {show(spent)} spent{pct != null ? ` · ${pct}%` : ""}{project.capUnlocked ? " · unlocked past the cap" : ""}</> : <> — {unit === "cr" ? "credits" : "dollars"} this production may spend before the rule at the cap applies.</>}
+      {cap ? <> — {show(spent)} spent{pct != null ? ` · ${pct}%` : ""}{project.capUnlocked ? " · unlocked past the cap" : ""}</> : <> — {unit === "cr" ? "credits" : "dollars"} this project may spend before the rule at the cap applies.</>}
       {isAdmin && cap ? (
         <>{" "}<button onClick={() => patch({ capUnlocked: !project.capUnlocked })} className="text-blue">{project.capUnlocked ? "Lock again" : "Unlock"}</button></>
       ) : null}
@@ -255,7 +255,7 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
 }
 
 /**
- * Client review links (brief 2.6): a read-only page of this production's
+ * Client review links (brief 2.6): a read-only page of this project's
  * Approved takes, for someone with no account here. The link is shown once,
  * when it is made — after that only its label, its expiry and the power to
  * withdraw it, because the token itself is never stored in the clear.
@@ -270,7 +270,7 @@ function ReviewLinks({ projectId, isAdmin }: { projectId: string; isAdmin: boole
   if (!isAdmin && !live.length) return null;
 
   async function mint() {
-    const label = await appPrompt("A review link for this production", "", "Who is it for? (optional)");
+    const label = await appPrompt("A review link for this project", "", "Who is it for? (optional)");
     if (label === null) return;
     setBusy(true);
     try {
@@ -296,7 +296,7 @@ function ReviewLinks({ projectId, isAdmin }: { projectId: string; isAdmin: boole
         <span className="grouplabel !pb-0">Client review</span>
         {isAdmin && <button type="button" className="hdr-mono-link" disabled={busy} onClick={mint}>{busy ? "MAKING…" : "MAKE A LINK →"}</button>}
       </div>
-      <p className="rvl-note">A read-only page of this production&rsquo;s Approved takes, in shot order, under your own name. No login. Comments come back onto the take.</p>
+      <p className="rvl-note">A read-only page of this project&rsquo;s Approved takes, in shot order, under your own name. No login. Comments come back onto the take.</p>
       {minted && <p className="rvl-new"><code>{minted}</code> <span className="mono-s">COPIED · SHOWN ONCE</span></p>}
       {live.length > 0 && (
         <ul className="rvl-list">
@@ -314,7 +314,7 @@ function ReviewLinks({ projectId, isAdmin }: { projectId: string; isAdmin: boole
 }
 
 /**
- * The burn-down (brief 2.2): what this production has spent against its
+ * The burn-down (brief 2.2): what this project has spent against its
  * cap, what finishing it looks like at the rate it has actually run, and
  * which shots are eating it. The arithmetic is plain on purpose — a
  * producer who cannot check a projection will not act on it.

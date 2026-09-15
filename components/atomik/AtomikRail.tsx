@@ -148,7 +148,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
       <div className={box}>
         <Mono>Done</Mono>
         <span className={title}>{c.steps.length} steps · {a.fmt(c.spentCredits)}.</span>
-        <span className={body}>{needYou ? `${needYou} did not run.` : "Every step ran and filed to the production."}</span>
+        <span className={body}>{needYou ? `${needYou} did not run.` : "Every step ran and filed to the project."}</span>
         {production && (
           <Link href={production.productionId ? `/productions/${production.productionId}/${production.id}/shots` : "/productions"} className="flex h-[36px] items-center justify-center rounded-[9px] border border-border-mid text-[12.5px] font-medium leading-none text-ink">
             Open Approve{needYou ? ` · ${needYou} need you` : ""}

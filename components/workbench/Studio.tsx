@@ -524,8 +524,8 @@ export default function Studio({
     return false;
   },[flushSave]);
   async function ensureSaved(expectedId=pRef.current.id,refreshIdentities=false){
-    if(!readyRef.current&&signedIn){toast.error("Create a production to save your work and generate takes.");return false;}
-    if(!signedIn){toast.error("Sign in to save your production.");return false;}
+    if(!readyRef.current&&signedIn){toast.error("Create a project to save your work and generate takes.");return false;}
+    if(!signedIn){toast.error("Sign in to save your project.");return false;}
     if(transitioningRef.current||pRef.current.id!==expectedId)return false;
     if(refreshIdentities)savedSnapshots.current.delete(expectedId);
     return drainSaves(expectedId);
@@ -536,7 +536,7 @@ export default function Studio({
     const prior=await fetch(endpoint,{headers:{'X-Workbench-Scope':storageKey},cache:'no-store'});
     if(prior.ok){const found=await prior.json();if(found.version.label!==label.trim())throw Error('This request names another edit version.');return found.version;}
     if(prior.status!==404)throw Error((await prior.json()).error||'Could not check the saved version.');
-    if(!await ensureSaved(draftId))throw Error('Save the current production before naming this cut.');
+    if(!await ensureSaved(draftId))throw Error('Save the current project before naming this cut.');
     const payload={draftId,id,label,revision:revisions.current.get(draftId)};
     try {
       const response=await fetch(apiBase+'/edit-versions',{method:'POST',headers:{'Content-Type':'application/json','X-Workbench-Scope':storageKey},body:JSON.stringify(payload)});
@@ -560,8 +560,8 @@ export default function Studio({
     change(()=>restored);setPlaying(false);setFrame(0);setShotId(restored.shots[0]?.id??'');
   }
   const beginTransition=useCallback(async()=>{
-    if(uploadingRef.current){toast.error('Wait for your uploads to finish before switching productions.');return null;}
-    if(publishingRef.current){toast.error('Wait for the shared Bible to finish publishing before switching productions.');return null;}
+    if(uploadingRef.current){toast.error('Wait for your uploads to finish before switching projects.');return null;}
+    if(publishingRef.current){toast.error('Wait for the shared Bible to finish publishing before switching projects.');return null;}
     const token=++loadToken.current;
     const from=pRef.current.id,wasReady=readyRef.current;
     transitioningRef.current=true;setTransitioning(true);
@@ -599,11 +599,11 @@ export default function Studio({
       if(!res.ok)throw new Error(data.error||'Unable to load your work.');
       if(transition.token!==loadToken.current)return;
       // Recheck the outgoing draft before accepting the next server response.
-      if(transition.wasReady&&signedIn&&!(await drainSaves(transition.from)))throw new Error('Your latest changes could not be saved. The current production remains open.');
+      if(transition.wasReady&&signedIn&&!(await drainSaves(transition.from)))throw new Error('Your latest changes could not be saved. The current project remains open.');
       if(transition.token!==loadToken.current)return;
       const persisted=data.project;
       if(!persisted){
-        setProjects(data.projects??[]);setProductions(data.productions??[]);setWelcomeChoice(true);setSamplePreview(false);setHome(true);readyRef.current=false;setReady(false);setSaveState('Choose a production');return;
+        setProjects(data.projects??[]);setProductions(data.productions??[]);setWelcomeChoice(true);setSamplePreview(false);setHome(true);readyRef.current=false;setReady(false);setSaveState('Choose a project');return;
       }
       setWelcomeChoice(false);setSamplePreview(false);
       const next={...persisted};
@@ -719,7 +719,7 @@ export default function Studio({
     };
     register(
       "read_production",
-      "Read the currently visible production, nodes and sequence.",
+      "Read the currently visible project, nodes and sequence.",
       { type: "object", properties: {}, additionalProperties: false },
       true,
       () => ({
@@ -855,8 +855,8 @@ export default function Studio({
     const received: Asset[] = [];
     for (const file of Array.from(files)) {
       try {
-        if(!signedIn)throw new Error('Sign in to upload production media.');
-        if(!readyRef.current)throw new Error('Create a production before uploading media.');
+        if(!signedIn)throw new Error('Sign in to upload project media.');
+        if(!readyRef.current)throw new Error('Create a project before uploading media.');
         const data=await uploadWorkbench(file,undefined,storageKey);
         received.push({
           id: data.id,
@@ -895,15 +895,15 @@ export default function Studio({
     if (fileInput.current) fileInput.current.value = "";
   }
   async function importSequenceLut(file: File) {
-    if (!signedIn || !readyRef.current || transitioningRef.current) throw new Error('Open a saved production before importing a LUT.');
+    if (!signedIn || !readyRef.current || transitioningRef.current) throw new Error('Open a saved project before importing a LUT.');
     const draftId = pRef.current.id;
     uploadingRef.current++; setUploading(true);
     try {
       const data = await uploadWorkbench(file, undefined, storageKey);
-      if (pRef.current.id !== draftId || transitioningRef.current) throw new Error('The production changed. The original LUT remains in your workspace uploads.');
+      if (pRef.current.id !== draftId || transitioningRef.current) throw new Error('The project changed. The original LUT remains in your workspace uploads.');
       const asset: Asset = { id:data.id, uploadId:data.id, name:file.name.slice(0,200), kind:'document', category:'LUT', url:data.url, mime:data.mime, description:'Original 3D color LUT', prompt:'', status:'Draft', version:1, locked:false, refs:[] };
       change(previous => ({ ...previous, assets:[...previous.assets,asset], colorGrade:{...defaultColorGrade,...previous.colorGrade,lutAssetId:asset.id,bypassed:false} }));
-      if (!(await ensureSaved(draftId))) throw new Error('The LUT uploaded. Save this production before leaving to retain its binding.');
+      if (!(await ensureSaved(draftId))) throw new Error('The LUT uploaded. Save this project before leaving to retain its binding.');
       toast.success('LUT imported and applied to the sequence.');
     } finally { uploadingRef.current--; setUploading(uploadingRef.current>0); }
   }
@@ -996,7 +996,7 @@ export default function Studio({
       if(transition.wasReady&&signedIn&&!(await drainSaves(transition.from)))throw new Error('Your latest changes could not be saved.');
       if(transition.token!==loadToken.current)return;
       setWelcomeChoice(false);setSamplePreview(false);adoptProject(data.project,0,false);setStage('canvas');setScope('My space');toast.success('Your own working space is ready.');
-    }catch(error){if(transition.token===loadToken.current){readyRef.current=transition.wasReady;setReady(transition.wasReady);toast.error(error instanceof Error?error.message:'Could not open production.');}}
+    }catch(error){if(transition.token===loadToken.current){readyRef.current=transition.wasReady;setReady(transition.wasReady);toast.error(error instanceof Error?error.message:'Could not open project.');}}
     finally{endTransition(transition.token);}
   }
   async function publishBible(expectedId=pRef.current.id){
@@ -1017,17 +1017,17 @@ export default function Studio({
     await publishBible(current.id);
   }
   async function importScreenplay(file:File,result:ScreenplayImport) {
-    if(transitioningRef.current || !signedIn || !readyRef.current)throw new Error('Create and save a production before importing.');
+    if(transitioningRef.current || !signedIn || !readyRef.current)throw new Error('Create and save a project before importing.');
     const draftId=pRef.current.id;
     if(pRef.current.scriptSource?.sha256===result.sha256 && pRef.current.script===result.text && JSON.stringify(pRef.current.scriptSource.ocr)===JSON.stringify(result.ocr)){if(!(await ensureSaved(draftId)))throw new Error('The import is still unsaved. Retry when the connection returns.');return;}
     if(pRef.current.assets.length>=500)throw new Error('The asset library is full. Make space for the original screenplay first.');
     uploadingRef.current++;setUploading(true);
     try {
       const uploaded=await uploadWorkbench(file,undefined,storageKey);
-      if(pRef.current.id!==draftId)throw new Error('The production changed. The uploaded original remains in your workspace.');
+      if(pRef.current.id!==draftId)throw new Error('The project changed. The uploaded original remains in your workspace.');
       const asset:Asset={id:uploaded.id,uploadId:uploaded.id,name:file.name.slice(0,200),kind:'document',category:'Screenplay',url:uploaded.url,mime:uploaded.mime||file.type,description:'Original screenplay source',prompt:'',status:'Draft',version:1,locked:false,refs:[]};
       change(old=>({...old,script:result.text,scriptReviews:{},scriptSource:{assetId:asset.id,filename:asset.name,sha256:result.sha256,pages:result.pages,importedAt:new Date().toISOString(),edited:false,acknowledgedEmptyPages:result.emptyPages,ocr:result.ocr},assets:[...old.assets,asset]}));
-      if(!(await ensureSaved(draftId)))throw new Error('The source uploaded, but the production is not saved yet. Retry this import to save it without uploading again.');
+      if(!(await ensureSaved(draftId)))throw new Error('The source uploaded, but the project is not saved yet. Retry this import to save it without uploading again.');
     } finally {uploadingRef.current--;setUploading(uploadingRef.current>0);}
   }
   function buildScriptCanvas(scenes: ScriptScene[]) {
@@ -1093,7 +1093,7 @@ export default function Studio({
     try{
       if(action){const response=await fetch(action.kind==='switch'?'/api/workspaces/switch':'/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json','X-Workbench-Scope':storageKey},body:JSON.stringify(action.kind==='switch'?{id:action.id}:{})});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'Your account could not be changed.');}clearPrivateLocal();}
       window.location.assign(path);
-    }catch(error){readyRef.current=transition.wasReady;setReady(transition.wasReady);setSaveState(transition.wasReady?'Saved':'Choose a production');toast.error(error instanceof Error?error.message:'Your current work has been kept. Try again.');endTransition(transition.token);}
+    }catch(error){readyRef.current=transition.wasReady;setReady(transition.wasReady);setSaveState(transition.wasReady?'Saved':'Choose a project');toast.error(error instanceof Error?error.message:'Your current work has been kept. Try again.');endTransition(transition.token);}
   }
   function exploreSample(){setWelcomeChoice(false);setSamplePreview(true);const sample=seedProject();pRef.current=sample;setP(sample);setStage('canvas');setSaveState('Sample preview');setSelectedNode('scene');}
   function focusShot(s: Shot) {
@@ -1241,7 +1241,7 @@ export default function Studio({
             <StudioNavigation compact active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/>
             <div className="project-bar">
               <div className="project-breadcrumb">
-                <button onClick={() => setHome(true)}>Productions</button>
+                <button onClick={() => setHome(true)}>Projects</button>
                 <ChevronRight size={12} />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1261,7 +1261,7 @@ export default function Studio({
                   <DropdownMenuContent className="ps">
                     <DropdownMenuItem onClick={() => setDialog("project")}>
                       <Plus size={14} />
-                      New production
+                      New project
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setStage("brief")}>
                       Edit project brief
@@ -1370,22 +1370,22 @@ export default function Studio({
                   (stage === "canvas" && !home ? "graph-area" : "")
                 }
               >
-                {welcomeChoice&&<section className="production-welcome"><span className="eyebrow">YOUR WORKSPACE IS READY</span><h1>What are you making next?</h1><p>Start a production for your team, or explore how a brief becomes a sequence in the sample workspace.</p><div className="production-welcome-actions"><Button className="btn primary" onClick={()=>setDialog('project')}>Start a production<Plus size={16}/></Button><Button className="btn" onClick={exploreSample}>Explore sample<ArrowUpRight size={16}/></Button></div>{projects.length>0&&<div className="production-welcome-existing"><h2>Your saved productions</h2>{projects.map(project=><button key={project.id} onClick={()=>{void loadProject(project.id);setStage('canvas')}}>{project.name}<ArrowUpRight size={15}/></button>)}</div>}{productions.length>0&&<div className="production-welcome-existing"><h2>Workspace productions</h2>{productions.map(project=><button key={project.id} onClick={()=>void openProduction(project.id)}>{project.name}<ArrowUpRight size={15}/></button>)}</div>}<div className="production-welcome-steps"><span>01 · Name your production</span><span>02 · Bring your references</span><span>03 · Make your first take</span><span>04 · Review and deliver</span></div><button className="workbench-welcome-team" onClick={()=>void leaveWorkspace('/team')}>Invite your team</button></section>}
-                {samplePreview&&<div className="sample-preview-banner"><span>Sample preview · Create a production to save your own work.</span><button onClick={()=>setDialog('project')}>Start a production</button></div>}
+                {welcomeChoice&&<section className="production-welcome"><span className="eyebrow">YOUR WORKSPACE IS READY</span><h1>What are you making next?</h1><p>Start a project for your team, or explore how a brief becomes a sequence in the sample workspace.</p><div className="production-welcome-actions"><Button className="btn primary" onClick={()=>setDialog('project')}>Start a project<Plus size={16}/></Button><Button className="btn" onClick={exploreSample}>Explore sample<ArrowUpRight size={16}/></Button></div>{projects.length>0&&<div className="production-welcome-existing"><h2>Your saved projects</h2>{projects.map(project=><button key={project.id} onClick={()=>{void loadProject(project.id);setStage('canvas')}}>{project.name}<ArrowUpRight size={15}/></button>)}</div>}{productions.length>0&&<div className="production-welcome-existing"><h2>Workspace projects</h2>{productions.map(project=><button key={project.id} onClick={()=>void openProduction(project.id)}>{project.name}<ArrowUpRight size={15}/></button>)}</div>}<div className="production-welcome-steps"><span>01 · Name your project</span><span>02 · Bring your references</span><span>03 · Make your first take</span><span>04 · Review and deliver</span></div><button className="workbench-welcome-team" onClick={()=>void leaveWorkspace('/team')}>Invite your team</button></section>}
+                {samplePreview&&<div className="sample-preview-banner"><span>Sample preview · Create a project to save your own work.</span><button onClick={()=>setDialog('project')}>Start a project</button></div>}
                 {home && !welcomeChoice && (
                   <div className="production-home">
                     <div className="home-heading">
                       <div>
                         <span className="eyebrow">YOUR STUDIO</span>
-                        <h1>Productions</h1>
+                        <h1>Projects</h1>
                       </div>
                       <Button
-                        aria-label="New production"
+                        aria-label="New project"
                         className="btn primary"
                         onClick={() => setDialog("project")}
                       >
                         <Plus size={16} />
-                        New production
+                        New project
                       </Button>
                     </div>
                     <div className="home-projects">
@@ -1430,7 +1430,7 @@ export default function Studio({
                             <Folder size={25} />
                             <h2>{a.name}</h2>
                             <span>
-                              Open production
+                              Open project
                               <ArrowUpRight size={15} />
                             </span>
                           </button>
@@ -1459,7 +1459,7 @@ export default function Studio({
                       </button>
                     </div>
                     <div className="home-workflow">
-                      <h3>One production. Every department.</h3>
+                      <h3>One project. Every department.</h3>
                       <div>
                         {STAGES.map((s, i) => {
                           const Icon = icons[i];
@@ -1616,7 +1616,7 @@ export default function Studio({
                               className="field-label"
                               htmlFor="project-name"
                             >
-                              Production title
+                              Project title
                             </label>
                             <input
                               id="project-name"
@@ -1808,7 +1808,7 @@ export default function Studio({
                                 </h2>
                                 <p>
                                   {p.direction ||
-                                    "Collect the light, colour, texture and feeling of your production."}
+                                    "Collect the light, colour, texture and feeling of your project."}
                                 </p>
                               </div>
                               <div className="large-palette">
@@ -2374,7 +2374,7 @@ export default function Studio({
                             <h2>Ready for the next room.</h2>
                             <p>
                               Take the sequence, selected source files and
-                              production context into your edit.
+                              project context into your edit.
                             </p>
                             <div className="export-options">
                               <label className="export-option">
@@ -2688,7 +2688,7 @@ export default function Studio({
                               <div className="agent-byline">
                                 <AtomMark />
                                 <strong>{plan.role || "Atomik"}</strong>
-                                <small>Production plan</small>
+                                <small>Project plan</small>
                               </div>
                               <p>{plan.summary}</p>
                               <div className="plan-steps">
@@ -2921,7 +2921,7 @@ export default function Studio({
           multiple
           accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/*,application/pdf,text/plain"
           className="hidden"
-          aria-label="Upload production files"
+          aria-label="Upload project files"
           onChange={(e) => void uploadFiles(e.target.files)}
         />
         <Dialog
@@ -2942,7 +2942,7 @@ export default function Studio({
             <DialogHeader>
               <DialogTitle>
                 {dialog === "project"
-                  ? "A new production"
+                  ? "A new project"
                   : dialog === "node"
                     ? "Add to your canvas"
                     : dialog === "reference"
@@ -2970,14 +2970,14 @@ export default function Studio({
             {dialog === "project" && (
               <div className="dialog-fields">
                 <label className="field-label" htmlFor="new-production">
-                  Production name
+                  Project name
                 </label>
                 <input
                   id="new-production"
                   autoFocus
                   value={newName}
                   maxLength={100}
-                  placeholder="Name your next production"
+                  placeholder="Name your next project"
                   onChange={(e) => setNewName(e.target.value)}
                   onKeyDown={(e) =>
                     e.key === "Enter" && void createProduction()
@@ -2988,7 +2988,7 @@ export default function Studio({
                   disabled={!newName.trim()}
                   onClick={() => void createProduction()}
                 >
-                  Create production
+                  Create project
                   <ArrowRight size={15} />
                 </Button>
               </div>
@@ -3286,7 +3286,7 @@ function AssetEditor({
             {a.category} ·{" "}
             {a.kind === "image"
               ? "Non-destructive image editing"
-              : "Production asset"}
+              : "Project asset"}
           </DialogDescription>
         </DialogHeader>
         <div className="asset-editor-body">

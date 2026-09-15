@@ -405,7 +405,7 @@ export function ScriptPanel({
             </p>
           )}
           <textarea
-            aria-label="Production screenplay"
+            aria-label="Project screenplay"
             disabled={!!busy}
             value={project.script || ""}
             maxLength={MAX_SCRIPT_CHARS}

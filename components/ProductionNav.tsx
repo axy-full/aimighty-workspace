@@ -32,13 +32,13 @@ export default function ProductionNav({ id, on }: { id: string; on: ProductionTa
   const { projects } = useProject();
   const productionId = projects.find((p) => p.id === id)?.productionId ?? null;
   const tabs: [ProductionTab, string, string][] = [
-    ["production", "Production", `/projects/${id}`],
+    ["production", "Project", `/projects/${id}`],
     ["shots", "Shots", productionId ? `/productions/${productionId}/${id}/shots` : "/productions"],
     ["canvas", "Canvas", `/projects/${id}/canvas`],
     ["rig", "Rig", `/rig/canvas/new?project=${encodeURIComponent(id)}`],
   ];
   return (
-    <nav className="subnav" aria-label="Production">
+    <nav className="subnav" aria-label="Project">
       {tabs.map(([key, label, href]) =>
         key === on
           ? <span key={key} className="subnav-item is-on" aria-current="page">{label}</span>

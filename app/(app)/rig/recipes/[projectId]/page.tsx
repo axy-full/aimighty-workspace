@@ -75,7 +75,7 @@ function Recipes() {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <RigBar tab="recipes" hrefs={hrefs}
-        chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">›</span> {proj?.name ?? "project"}</>}
+        chip={<>{production?.name ?? "Project"} <span className="text-ink-muted">›</span> {proj?.name ?? "deliverable"}</>}
         mono={recipe ? `${recipe.name} · ${recipe.stages.length} stages · ${fmt(total)} a run` : "no recipe yet"}
         phoneTitle={recipe?.name ?? proj?.name ?? "Recipes"} phoneMono={recipe ? `${recipe.stages.length} stages · ${fmt(total)} a run` : "no recipe yet"}
         right={phone ? undefined : recipe ? <Button variant="primary" placement="header" cost={firstPaid?.credits ?? 0} busy={busy} busyLabel="Starting…" outlined={rail.open} onClick={run}>Run to first checkpoint</Button>

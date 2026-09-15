@@ -108,7 +108,7 @@ export default function ProjectMediaPage() {
 
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to see this project.</div>;
   if (!prods || !jobs) return <PageLoader what={`Opening · ${project?.name ?? "project"}`} />;
-  if (!production || !project) return <div className="p-[24px] text-[13px] text-ink-body">No such project. <Link href="/productions" className="text-ink">← Productions</Link></div>;
+  if (!production || !project) return <div className="p-[24px] text-[13px] text-ink-body">No such project. <Link href="/productions" className="text-ink">← Projects</Link></div>;
 
   const fmt = (n: number) => money.inCredits ? money.price(n) : money.price(n);
   const download = () => { for (const m of masters) window.open(m.url!, "_blank", "noopener"); };

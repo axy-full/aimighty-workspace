@@ -190,7 +190,7 @@ export default function Cast({ projectId, onCite, chips = false }: {
       {!scoped && (
         <p className="text-[12px] leading-relaxed text-mute">
           You&apos;re in All projects, so anyone added here is available everywhere.
-          Pick a project first to keep a cast to that production.
+          Pick a project first to keep a cast to that project.
         </p>
       )}
     </div>

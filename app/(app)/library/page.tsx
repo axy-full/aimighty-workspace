@@ -134,7 +134,7 @@ function Library() {
     const refItems: MenuItem[] = refSel ? [
       { kind: "item", label: "Promote to asset", keys: money.price(0), onSelect: () => setSheet({ refs: [{ uploadId: refSel.id, url: refSel.url, label: refSel.filename, kind: refSel.kind }], name: refSel.filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9 ]+/g, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() + w.slice(1)).join("") }) },
       { kind: "item", label: "Use in Make", onSelect: () => router.push(`/make/${refSel.kind === "video" ? "video" : "images"}?ref=${encodeURIComponent(refSel.id)}`) },
-      { kind: "item", label: "Add to Canvas", onSelect: () => current ? router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(refSel.id)}`) : toast("Pick a production first — Canvas belongs to a project.") },
+      { kind: "item", label: "Add to Canvas", onSelect: () => current ? router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(refSel.id)}`) : toast("Pick a project first — Canvas belongs to a project.") },
       { kind: "note", text: "References are free and unversioned until promoted." },
     ] : [];
     return (
@@ -148,7 +148,7 @@ function Library() {
           <div className="-mx-[16px] flex gap-[6px] overflow-x-auto px-[16px]" data-filters="">
             {lens === "assets" && <>
               <button type="button" className={pill(kind != null)} onClick={(e) => setMenu({ which: "kind", ...at(e) })}>Kind{kind ? ` · ${KIND_WORD[kind]}` : ""} ▾</button>
-              <button type="button" className={pill(production != null)} onClick={(e) => setMenu({ which: "production", ...at(e) })}>Production{production ? ` · ${prods.productions.find((p) => p.id === production)?.name ?? ""}` : ""} ▾</button>
+              <button type="button" className={pill(production != null)} onClick={(e) => setMenu({ which: "production", ...at(e) })}>Project{production ? ` · ${prods.productions.find((p) => p.id === production)?.name ?? ""}` : ""} ▾</button>
               <button type="button" className={pill(locked === true)} aria-pressed={locked === true} onClick={() => setLocked((l) => (l === true ? null : true))}>Locked</button>
             </>}
             {lens === "references" && <button type="button" className={pill(false)} onClick={() => picker.current?.click()}>+ Add references</button>}
@@ -177,7 +177,7 @@ function Library() {
                     </span>
                     <span className="flex flex-col gap-[5px] px-[10px] pb-[10px] pt-[9px]">
                       <span className="truncate text-[13.5px] font-semibold leading-[1.2] text-ink">@{a.name}</span>
-                      <Mono cost className="truncate">{a.attributes.length} {a.attributes.length === 1 ? "port" : "ports"} · {prod ? prod.name : "all productions"}</Mono>
+                      <Mono cost className="truncate">{a.attributes.length} {a.attributes.length === 1 ? "port" : "ports"} · {prod ? prod.name : "all projects"}</Mono>
                     </span>
                   </article>
                 );
@@ -203,7 +203,7 @@ function Library() {
         <PinnedBar>
           <PinnedPrimary cost={money.price(0)} outlined={rail.open || sheet != null || menu != null || refMenu != null} onClick={() => setSheet({ refs: [] })}>New asset</PinnedPrimary>
         </PinnedBar>
-        {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "kind" ? "Kind" : menu.which === "production" ? "Production" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
+        {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "kind" ? "Kind" : menu.which === "production" ? "Project" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
         {refSel && <Menu x={0} y={0} title={`Ref · ${refSel.filename.slice(0, 24)}`} items={refItems} onClose={() => setRefMenu(null)} />}
         <NewAssetSheet open={sheet != null} from="library" onClose={() => setSheet(null)} initial={sheet ? { name: sheet.name, references: sheet.refs } : undefined} onCreated={() => { refreshEls(); setLens("assets"); setSelected(null); }} />
       </div>
@@ -213,12 +213,12 @@ function Library() {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <div className="flex h-[52px] flex-none items-center gap-[14px] border-b border-hairline px-[24px]">
-        <span className="flex flex-none flex-col gap-[4px]"><span className="text-[16px] font-semibold leading-none text-ink">Library</span><Mono className="whitespace-nowrap">{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled {counts.unfiled === 1 ? "take" : "takes"} · all productions</Mono></span>
+        <span className="flex flex-none flex-col gap-[4px]"><span className="text-[16px] font-semibold leading-none text-ink">Library</span><Mono className="whitespace-nowrap">{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled {counts.unfiled === 1 ? "take" : "takes"} · all projects</Mono></span>
         <Segmented label="Lens" placement="toolbar" className="ml-[10px] max-md:ml-0" value={lens} onChange={(l) => { setLens(l); setFull(false); }} options={[{ value: "assets", label: "Assets" }, { value: "references", label: "References" }, { value: "unfiled", label: "Unfiled" }]} />
         {lens === "assets" && (
           <span className="flex flex-none gap-[6px] max-md:hidden">
             <button type="button" className={filter} onClick={(e) => setMenu({ which: "kind", ...at(e) })}>Kind <span className="text-ink-muted">{kind ? KIND_WORD[kind] : "any"}</span> ▾</button>
-            <button type="button" className={filter} onClick={(e) => setMenu({ which: "production", ...at(e) })}>Production <span className="text-ink-muted">{production ? prods.productions.find((p) => p.id === production)?.name ?? "any" : "any"}</span> ▾</button>
+            <button type="button" className={filter} onClick={(e) => setMenu({ which: "production", ...at(e) })}>Project <span className="text-ink-muted">{production ? prods.productions.find((p) => p.id === production)?.name ?? "any" : "any"}</span> ▾</button>
             <button type="button" className={filter} onClick={(e) => setMenu({ which: "locked", ...at(e) })}>Locked <span className="text-ink-muted">{locked == null ? "any" : locked ? "locked" : "open"}</span> ▾</button>
           </span>
         )}
@@ -255,7 +255,7 @@ function Library() {
                       </span>
                       <span className="flex flex-col gap-[5px] px-[11px] pb-[11px] pt-[9px]">
                         <span className="truncate text-[13.5px] font-semibold leading-[1.2] text-ink">@{a.name}</span>
-                        <span className="truncate text-[12px] leading-[1.3] text-ink-body">{a.attributes.length} {a.attributes.length === 1 ? "port" : "ports"} · {prod ? prod.name : "all productions"}</span>
+                        <span className="truncate text-[12px] leading-[1.3] text-ink-body">{a.attributes.length} {a.attributes.length === 1 ? "port" : "ports"} · {prod ? prod.name : "all projects"}</span>
                       </span>
                     </article>
                   );
@@ -289,7 +289,7 @@ function Library() {
                   <span className="absolute z-[3] flex gap-[6px]" style={{ left: p.x, top: p.y + p.h + 36 + 8 }}>
                     <button type="button" onClick={() => setSheet({ refs: [{ uploadId: sel.id, url: sel.url, label: sel.filename, kind: sel.kind }], name: sel.filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9 ]+/g, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() + w.slice(1)).join("") })} className="tap44 flex h-[34px] items-center gap-[8px] rounded-pill border border-[rgba(245,246,248,.3)] bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink">Promote to asset<Mono cost>0 cr</Mono></button>
                     <button type="button" onClick={() => router.push(`/make/${sel.kind === "video" ? "video" : "images"}?ref=${encodeURIComponent(sel.id)}`)} className="tap44 flex h-[34px] items-center rounded-pill border border-border-mid bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink">Use in Make</button>
-                    <button type="button" onClick={() => current ? router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(sel.id)}`) : toast("Pick a production first — Canvas belongs to a project.")} className="tap44 flex h-[34px] items-center rounded-pill border border-border-mid bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink-body">Add to Canvas</button>
+                    <button type="button" onClick={() => current ? router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}&ref=${encodeURIComponent(sel.id)}`) : toast("Pick a project first — Canvas belongs to a project.")} className="tap44 flex h-[34px] items-center rounded-pill border border-border-mid bg-ground px-[12px] text-[12.5px] font-medium leading-none text-ink-body">Add to Canvas</button>
                   </span>
                 ); })()}
                 {!placed.length && <span className="absolute left-[16px] top-[60px] text-[13px] leading-[1.5] text-ink-body">Nothing on the board yet. Drop images or clips here.</span>}
@@ -299,7 +299,7 @@ function Library() {
           )}
         </div>
       )}
-      {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "kind" ? "Kind" : menu.which === "production" ? "Production" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
+      {menu && <Menu x={menu.x} y={menu.y} title={menu.which === "kind" ? "Kind" : menu.which === "production" ? "Project" : "Locked"} items={menuItems} onClose={() => setMenu(null)} />}
       <NewAssetSheet open={sheet != null} from="library" onClose={() => setSheet(null)} initial={sheet ? { name: sheet.name, references: sheet.refs } : undefined} onCreated={() => { refreshEls(); setLens("assets"); setSelected(null); }} />
     </div>
   );

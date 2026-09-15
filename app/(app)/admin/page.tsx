@@ -361,7 +361,7 @@ function PlanChip({ w, plans, busy, patch }: {
   const label = on ? `${on.label}${on.priceUsd ? ` · $${on.priceUsd}/mo` : ""}` : "No plan";
   return (
     <label className={`chip !py-0.5 !text-[11.5px] ${on ? "is-on" : ""}`} title={on
-      ? `${on.label}: ${on.includedCredits.toLocaleString()} credits a cycle${on.maxProductions ? `, ${on.maxProductions} production${on.maxProductions === 1 ? "" : "s"}` : ""}${on.maxMembers ? `, ${on.maxMembers} members` : ""}. Included credits are not granted yet.`
+      ? `${on.label}: ${on.includedCredits.toLocaleString()} credits a cycle${on.maxProductions ? `, ${on.maxProductions} project${on.maxProductions === 1 ? "" : "s"}` : ""}${on.maxMembers ? `, ${on.maxMembers} members` : ""}. Included credits are not granted yet.`
       : "On no plan. Not the same as Invite, which carries its own ceilings."}>
       <select
         value={w.planId ?? ""}
@@ -503,7 +503,7 @@ function PlatformLayerCard() {
   const shots = layer.starter.shots;
   return (
     <section className="scard">
-      <div className="scard-h"><span>Platform layer</span><span>What every new workspace inherits: the default Setup, the starter production, the rules the compiler applies, and the numbers a workspace starts with. Each part has a default; Save keeps your version, Default puts it back.</span></div>
+      <div className="scard-h"><span>Platform layer</span><span>What every new workspace inherits: the default Setup, the starter project, the rules the compiler applies, and the numbers a workspace starts with. Each part has a default; Save keeps your version, Default puts it back.</span></div>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Default Setup</p>{actions("setup")}</div>
@@ -521,9 +521,9 @@ function PlatformLayerCard() {
       </div>
 
       <div className="mt-6 flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Starter production</p>{actions("starter")}</div>
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Starter project</p>{actions("starter")}</div>
         <div className="grid gap-2 md:grid-cols-[1fr_120px]">
-          <input className="ctl !h-8 !text-[13px]" value={layer.starter.name} aria-label="Production name" onChange={(e) => set({ starter: { ...layer.starter, name: e.target.value } })} />
+          <input className="ctl !h-8 !text-[13px]" value={layer.starter.name} aria-label="Project name" onChange={(e) => set({ starter: { ...layer.starter, name: e.target.value } })} />
           <input className="ctl !h-8 !text-[13px]" value={layer.starter.code} aria-label="Code" onChange={(e) => set({ starter: { ...layer.starter, code: e.target.value } })} />
         </div>
         <input className="ctl !h-8 !text-[13px]" value={layer.starter.description} aria-label="Description" onChange={(e) => set({ starter: { ...layer.starter, description: e.target.value } })} />
@@ -596,7 +596,7 @@ function PlatformLayerCard() {
         <div className="grid gap-3 md:grid-cols-3">
           <label className="flex flex-col gap-1 text-[12px] text-dim">Welcome credits (blank = the deployment&rsquo;s)
             <input className="ctl !h-8 !text-[13px]" type="number" min={0} value={layer.caps.signupCredits ?? ""} onChange={(e) => set({ caps: { ...layer.caps, signupCredits: e.target.value === "" ? null : Number(e.target.value) } })} /></label>
-          <label className="flex flex-col gap-1 text-[12px] text-dim">A new production&rsquo;s cap, in credits (blank = none)
+          <label className="flex flex-col gap-1 text-[12px] text-dim">A new project&rsquo;s cap, in credits (blank = none)
             <input className="ctl !h-8 !text-[13px]" type="number" min={0} value={layer.caps.defaultCapCredits ?? ""} onChange={(e) => set({ caps: { ...layer.caps, defaultCapCredits: e.target.value === "" ? null : Number(e.target.value) } })} /></label>
           <label className="flex flex-col gap-1 text-[12px] text-dim">Warn the producer at, % of cap
             <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={100} value={layer.caps.warnPct} onChange={(e) => set({ caps: { ...layer.caps, warnPct: Number(e.target.value) } })} /></label>

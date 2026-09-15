@@ -14,7 +14,7 @@ export default function PrivacyPage() {
         <p>
           Your account: name, email and password hash. Your workspace&rsquo;s
           work: prompts, references, takes and their masters, cast and
-          identities, shots and productions. Its records: what was billed, in
+          identities, shots and projects. Its records: what was billed, in
           credits, and the engine&rsquo;s cost behind it, for the
           platform&rsquo;s own books. Technical logs for a short while, to find
           faults.

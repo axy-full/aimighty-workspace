@@ -466,7 +466,7 @@ export function emptyNote(slot: Slot, candidates: number): string {
   }
   return candidates
     ? "Nothing bound. Pick one to wire it in."
-    : `No ${slot === "background" ? "location" : slot === "element" ? "prop" : slot} in this production yet.`;
+    : `No ${slot === "background" ? "location" : slot === "element" ? "prop" : slot} in this project yet.`;
 }
 
 /**

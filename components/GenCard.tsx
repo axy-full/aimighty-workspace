@@ -185,7 +185,7 @@ export default function GenCard({
         <select
           value={gen.projectId ?? ""}
           onChange={(e) => move(e.target.value)}
-          title="Move to production"
+          title="Move to project"
           className="reveal mt-1.5 h-7 w-fit max-w-full rounded-full bg-panel2 px-2 text-[12px] text-dim"
         >
           <option value="">Unfiled</option>

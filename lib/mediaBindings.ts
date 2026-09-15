@@ -95,13 +95,13 @@ export async function mediaBindingProblem(
       if (row.shape === "photos" && Array.isArray(value))
         value = value.map((uploadId) => ({ uploadId }));
     } catch {
-      return "A production record could not be checked. Keep this media until the record is repaired.";
+      return "A project record could not be checked. Keep this media until the record is repaired.";
     }
     const references = referencedMedia(value);
     if (
       (kind === "upload" ? references.uploads : references.generations).has(id)
     )
-      return "This media is used by a production draft, retained edit version or published shared context. Remove draft references first; retained source media must be kept.";
+      return "This media is used by a project draft, retained edit version or published shared context. Remove draft references first; retained source media must be kept.";
   }
   const pipelineProblem = await pipelineMediaBindingProblem(tx, kind, id);
   if (pipelineProblem) return pipelineProblem;
@@ -114,7 +114,7 @@ export async function mediaBindingProblem(
       })
     ).rows.length;
     if (mapped)
-      return "This take belongs to a production node. Keep its history while that production draft exists.";
+      return "This take belongs to a project node. Keep its history while that project draft exists.";
   }
   return null;
 }

@@ -55,8 +55,8 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
         <Link href="/settings#statements" className="text-[14px] text-blue">← Statements</Link>
         <span className="ml-auto flex gap-2">
           <label className="chip-dd !py-1.5">
-            <select value={project} aria-label="Production" onChange={(e) => router.push(`/statements/${month}${e.target.value ? `?project=${encodeURIComponent(e.target.value)}` : ""}`)}>
-              <option value="">Every production</option>
+            <select value={project} aria-label="Project" onChange={(e) => router.push(`/statements/${month}${e.target.value ? `?project=${encodeURIComponent(e.target.value)}` : ""}`)}>
+              <option value="">Every project</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
@@ -67,7 +67,7 @@ export default function StatementPage({ params }: { params: Promise<{ month: str
       <header className="statement-head">
         <p className="mono !tracking-[.14em] !text-[10px]">STATEMENT</p>
         <h1 className="h1">{data.workspace.name}</h1>
-        <p className="text-[15px] text-dim">{monthLabel(month)}{data.projectFilter ? ` · ${data.projects[0]?.name ?? "one production"}` : ""} · {data.totals.takes} take{data.totals.takes === 1 ? "" : "s"}</p>
+        <p className="text-[15px] text-dim">{monthLabel(month)}{data.projectFilter ? ` · ${data.projects[0]?.name ?? "one project"}` : ""} · {data.totals.takes} take{data.totals.takes === 1 ? "" : "s"}</p>
       </header>
       {data.projects.length === 0 && <p className="rail-help">Nothing billed this month.</p>}
       {data.projects.map((p) => (

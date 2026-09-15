@@ -177,7 +177,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
 
           <div className="cv-body">
             {!signedIn ? (
-              <Empty title="The canvas is for the team" line="Sign in to see this production's shots in order, with the references they came from." />
+              <Empty title="The canvas is for the team" line="Sign in to see this project's shots in order, with the references they came from." />
             ) : !shotData || !jobs ? (
               <Waiting label="Laying out the canvas" />
             ) : cols.length === 0 ? (

@@ -36,7 +36,7 @@ export function AssetBins({
       return;
     }
     if (bins.length >= 50) {
-      setError("This production has reached its 50-bin limit.");
+      setError("This project has reached its 50-bin limit.");
       return;
     }
     const id = uid("bin");

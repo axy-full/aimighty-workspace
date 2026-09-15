@@ -347,7 +347,7 @@ test("an empty slot offers the elements that slot can hold, and nothing else", (
   expect(candidatesFor("keyframe", ELEMENTS, none)).toEqual([]);
   expect(emptyNote("keyframe", 0)).toContain("this shot's own take");
   expect(emptyNote("background", 1)).toBe("Nothing bound. Pick one to wire it in.");
-  expect(emptyNote("background", 0)).toContain("No location in this production");
+  expect(emptyNote("background", 0)).toContain("No location in this project");
 });
 
 test("a picked take is not called a draft, and one version is not 1 versions", () => {

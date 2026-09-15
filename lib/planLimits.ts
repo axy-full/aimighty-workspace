@@ -3,7 +3,7 @@ import type { PlanDef } from "./plans";
 /**
  * The two ceilings a plan counts (SOW §7A).
  *
- * Only Invite has any: one production, three members. Every paid plan is
+ * Only Invite has any: one project, three members. Every paid plan is
  * uncounted, because §7A is explicit — "No seat fees on any paid tier.
  * Differentiate on credits, priority and features, never headcount."
  *
@@ -50,7 +50,7 @@ export function wouldExceed(have: number, ceiling: number | null): boolean {
  */
 export function ceilingMessage(plan: PlanDef, what: Counted, ceiling: number): string {
   const thing = what === "productions"
-    ? `${ceiling} production${ceiling === 1 ? "" : "s"}`
+    ? `${ceiling} project${ceiling === 1 ? "" : "s"}`
     : `${ceiling} member${ceiling === 1 ? "" : "s"}`;
   return `The ${plan.label} plan allows ${thing}. Move to a larger plan to add another.`;
 }
