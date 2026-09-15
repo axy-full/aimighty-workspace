@@ -2,7 +2,7 @@ import type { AtomikVideoFrame } from './atomik-reference-types';
 /** Browser-side write-ahead record: a lost HTTP response must never mint another paid request ID. */
 export type AtomikPendingStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export type AtomikSubmission = {
-  projectId: string; requestId: string; request: string; model: string; depth: string;
+  projectId: string; requestId: string; request: string; model: string; effort?: string; depth: string;
   refs: string[]; role?: string; maxCredits: number; videoFrames?: AtomikVideoFrame[];
 };
 export type PendingAtomikRequest = {
@@ -27,7 +27,8 @@ export function atomikPendingInput(record: PendingAtomikRequest): AtomikSubmissi
   try { data = JSON.parse(record.body); } catch { throw new Error('The saved Atomik request is unreadable. Review Activity before starting another request.'); }
   const value = data as Partial<AtomikSubmission> & { quoteOnly?: unknown };
   if (!value || typeof value !== 'object' || value.projectId !== record.projectId || value.requestId !== record.requestId ||
-    typeof value.request !== 'string' || typeof value.model !== 'string' || !['Quick', 'Considered', 'Deep'].includes(value.depth ?? '') ||
+    typeof value.request !== 'string' || typeof value.model !== 'string' ||
+    (value.effort != null && (typeof value.effort !== 'string' || value.effort.length < 1 || value.effort.length > 40)) || !['Quick', 'Considered', 'Deep'].includes(value.depth ?? '') ||
     !Array.isArray(value.refs) || !value.refs.every(ref => typeof ref === 'string') ||
     (value.videoFrames != null && (!Array.isArray(value.videoFrames) || value.videoFrames.length > 6 || !value.videoFrames.every(frame => frame && typeof frame.assetId === 'string' && typeof frame.uploadId === 'string' && typeof frame.timeSeconds === 'number' && Number.isFinite(frame.timeSeconds) && frame.timeSeconds >= 0 && frame.timeSeconds <= 3600))) ||
     (value.role != null && typeof value.role !== 'string') || value.quoteOnly != null ||

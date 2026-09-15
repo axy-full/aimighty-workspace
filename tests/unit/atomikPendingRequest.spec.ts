@@ -112,3 +112,25 @@ test('simultaneous attempts preserve the first unresolved identity before either
   expect(paidCalls).toBe(1);
   expect(readPendingAtomik(storage, scope, projectId)?.body).toBe(body);
 });
+
+test('effort survives exact request recovery while older records remain unchanged', () => {
+  const storage = new MemoryStorage();
+  const original = persistPendingAtomik(storage, scope, projectId, body);
+  expect(atomikPendingInput(original).effort).toBeUndefined();
+  expect(readPendingAtomik(storage, scope, projectId)?.body).toBe(body);
+  resolvePendingAtomik(storage, scope, projectId, original, { job: { id: 'old', requestId: original.requestId, status: 'succeeded' } });
+  const withEffort = JSON.stringify({ ...JSON.parse(body), effort: 'budget:4096' });
+  persistPendingAtomik(storage, scope, projectId, withEffort);
+  const restored = readPendingAtomik(storage, scope, projectId)!;
+  expect(restored.body).toBe(withEffort);
+  expect(atomikPendingInput(restored).effort).toBe('budget:4096');
+  expect(() => persistPendingAtomik(storage, scope, projectId, JSON.stringify({ ...JSON.parse(withEffort), effort: 'high' }))).toThrow(AtomikPendingConflict);
+});
+
+test('invalid saved effort cannot be submitted as a recoverable paid request', () => {
+  for (const effort of [false, 2048, {}, '', 'a'.repeat(41)]) {
+    const storage = new MemoryStorage();
+    expect(() => persistPendingAtomik(storage, scope, projectId, JSON.stringify({ ...JSON.parse(body), effort }))).toThrow('cannot be verified');
+    expect(readPendingAtomik(storage, scope, projectId)).toBeNull();
+  }
+});

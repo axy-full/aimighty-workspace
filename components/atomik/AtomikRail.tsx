@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useAtomikRail } from "@/lib/atomikRail";
 import { useProject } from "@/lib/projectContext";
@@ -8,6 +8,7 @@ import type { Step } from "@/lib/atomik";
 import Ring from "./Ring";
 import { MessageLoader } from "./Loader";
 import { useAtomik } from "./AtomikProvider";
+import { ChatComposer } from "./ChatComposer";
 import { Rail, Chip, Button, Mono, RAIL_WIDTHS } from "@/components/ui";
 
 /**
@@ -136,7 +137,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
         <span className={title}>{c.ask.question}</span>
         {c.message.text && <span className={body}>{c.message.text}</span>}
         <span className="flex flex-col gap-[6px]">
-          {c.ask.options.map((o) => <Button key={o} placement="card" disabled={!!a.recoveryText} onClick={() => a.send(o)}>{o}</Button>)}
+          {c.ask.options.map((o) => <Button key={o} placement="card" disabled={!!a.recoveryText} onClick={() => a.setDraftText(o)}>{o}</Button>)}
         </span>
       </div>
     );
@@ -175,25 +176,11 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
   );
 }
 
-function Composer({ tall }: { tall: boolean }) {
-  const a = useAtomik();
-  const [text, setText] = useState("");
-  const submit = (e: FormEvent) => { e.preventDefault(); const t = a.recoveryText??text; setText(""); a.send(t); };
-  const h = tall ? "h-[46px] rounded-card" : "h-[44px] rounded-tile";
-  return (
-    <form onSubmit={submit} className="flex flex-1 gap-[8px]">
-      <input value={a.recoveryText??text} onChange={(e) => setText(e.target.value)} placeholder="Ask Atomik…" aria-label="Ask Atomik" disabled={a.busy||!!a.recoveryText}
-        className={`min-w-0 flex-1 border border-[rgba(245,246,248,.12)] bg-card px-[12px] font-normal leading-none text-ink placeholder:text-ink-muted ${h} ${tall ? "text-[14px]" : "text-[13.5px]"}`} />
-      <button type="submit" aria-label={a.recoveryText?"Recover saved request":"Send"} title={a.recoveryText?"Recover the saved request":"Send"} disabled={a.busy || (!text.trim()&&!a.recoveryText)}
-        className={`flex flex-none items-center justify-center border border-border-mid font-medium leading-none text-ink ${tall ? "h-[46px] w-[46px] rounded-card text-[16px]" : "h-[44px] w-[44px] rounded-tile text-[15px]"}`}>↑</button>
-    </form>
-  );
-}
 
 function Compact() {
   const a = useAtomik();
   return (
-    <Rail width={RAIL_WIDTHS.compact} label="Atomik" header={<Head wide={false} />} footer={<Composer tall={false} />}>
+    <Rail width={RAIL_WIDTHS.compact} label="Atomik" header={<Head wide={false} />} footer={<ChatComposer inputHeight={44} />}>
       <ContextChip />
       <CurrentCard placement="card" />
       {a.error && <span className="text-[12.5px] leading-[1.45] text-ink-body">{a.error}</span>}
@@ -217,7 +204,7 @@ function Expanded() {
           Continue · {checkpoint.title}
         </Button>
       )}
-      <div className="flex gap-[8px] pt-[8px]"><Composer tall /></div>
+      <div className="flex gap-[8px] pt-[8px]"><ChatComposer inputHeight={46} /></div>
     </>
   );
   return (

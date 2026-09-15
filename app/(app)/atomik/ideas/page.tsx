@@ -25,24 +25,24 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
-import { writerCall } from "@/lib/rateTable";
+import { useAtomikQuote } from "@/lib/useAtomikQuote";
 import { useProject } from "@/lib/projectContext";
 import { useUploadFile } from "@/lib/useUploadFile";
 import { useDraft } from "@/lib/useDraft";
 import { usd } from "@/lib/format";
 import { appAlert, appConfirm, appPrompt } from "@/components/dialog";
 import { Empty, Waiting } from "@/components/ParticlMark";
+import { EffortPicker } from "@/components/atomik/ModelPicker";
 import ModelMenu, { type PlannerModel } from "@/components/atomik/ModelMenu";
 import { usePageTitle } from "@/lib/usePageTitle";
 import type { Idea, IdeaState } from "@/lib/atomikDocs";
-import { textModelFor } from "@/lib/platformLayer";
 
 type Row = Idea & { projectName: string | null; shots: number; byName: string | null; parkedByName: string | null };
 type Filter = "all" | "pinned" | "production" | "parked";
 type Models = { featured: PlannerModel[]; rest: PlannerModel[] };
-type IdeaDraft = { logline: string; tone: string; refs: string[]; model: string };
+type IdeaDraft = { logline: string; tone: string; refs: string[]; model: string; effort?: string };
 
-const EMPTY_DRAFT: IdeaDraft = { logline: "", tone: "", refs: [], model: "auto" };
+const EMPTY_DRAFT: IdeaDraft = { logline: "", tone: "", refs: [], model: "auto", effort: "auto" };
 const NO_MODELS: Models = { featured: [], rest: [] };
 
 const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -156,7 +156,7 @@ export default function IdeasPage() {
                 </div>
                 <div className="ak-idea-foot">
                   <span className="ak-sub !text-[12px]">
-                    {initials(i.byName)} · {i.pins.length} pin{i.pins.length === 1 ? "" : "s"}{s === "parked" && i.parkedByName ? ` · parked by ${initials(i.parkedByName)}` : ""}{i.model ? ` · ${modelTail(i.model)}` : ""}
+                    {initials(i.byName)} · {i.pins.length} pin{i.pins.length === 1 ? "" : "s"}{s === "parked" && i.parkedByName ? ` · parked by ${initials(i.parkedByName)}` : ""}{i.model ? ` · ${modelTail(i.model)}${i.effort && i.effort !== "auto" ? ` · ${i.effort} effort` : ""}` : ""}
                   </span>
                   <span className="flex items-center gap-3">
                     {s === "production" && i.projectId && (
@@ -196,10 +196,9 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
   draft: IdeaDraft; paid:PaidAction; set: (next: IdeaDraft | ((prev: IdeaDraft) => IdeaDraft)) => void; models: Models;
   onDone: () => void; onCancel: () => void; onWriting:()=>void;
 }) {
-  const { models: sessionModels, rates } = useSession();
   const uploadFile = useUploadFile();
   const pendingBody=paid.pending?JSON.parse(paid.pending.body):null;
-  const d:IdeaDraft=pendingBody?{...currentDraft,logline:pendingBody.brief,tone:pendingBody.tone,model:pendingBody.model}:currentDraft;
+  const d:IdeaDraft=pendingBody?{...currentDraft,logline:pendingBody.brief,tone:pendingBody.tone,model:pendingBody.model,effort:pendingBody.effort??"auto"}:currentDraft;
   const [busy, setBusy] = useState<"" | "refs" | "write" | "save">("");
   /* What the model replaced, so one click brings the person's own words back. */
   const [written, setWritten] = useState<{ before: { logline: string; tone: string }; model: string; costUsd: number } | null>(null);
@@ -216,13 +215,13 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
     finally { setBusy(""); }
   }
   /* What the write will cost, from the model that will run it — the one picked, else the platform's routing (brief 1.8). */
-  const writeCr = writerCall(rates, d.model !== "auto" ? d.model : textModelFor(sessionModels ?? null, "idea"), 600, 400) ?? 0.1;
+  const { quote, error: quoteError, loading: quoting } = useAtomikQuote("/api/atomik/ideas/draft", !paid.pending && d.logline.trim() ? { brief: d.logline, tone: d.tone, model: d.model, effort: d.effort ?? "auto" } : null);
   async function write() {
-    if (!d.logline.trim()) return;
+    if (!d.logline.trim() || (!paid.pending && !quote)) return;
     onWriting();
     setBusy("write");
     try {
-      const {data:j}=await paid.run<{logline?:string;tone?:string[];model?:string;costUsd?:number}>("/api/atomik/ideas/draft",{brief:d.logline,tone:d.tone,model:d.model});
+      const {data:j}=await paid.run<{logline?:string;tone?:string[];model?:string;costUsd?:number}>("/api/atomik/ideas/draft",pendingBody ?? {brief:d.logline,tone:d.tone,model:quote!.model,effort:d.effort??"auto",maxCredits:quote!.estimateCredits});
       setWritten({ before: { logline: d.logline, tone: d.tone }, model: String(j.model ?? d.model), costUsd: Number(j.costUsd ?? 0) });
       patch({
         logline: typeof j.logline === "string" && j.logline ? j.logline : d.logline,
@@ -247,6 +246,7 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
           tone: d.tone.split(",").map((t) => t.trim()).filter(Boolean),
           refs: d.refs,
           model: d.model === "auto" ? null : d.model,
+          effort: d.effort ?? "auto",
         }),
       });
       if (!res.ok) throw new Error(`The server answered ${res.status}.`);
@@ -263,10 +263,11 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
       <input className="ak-idea-input !min-h-0" disabled={!!paid.pending} value={d.tone} onChange={(e) => patch({ tone: e.target.value })} placeholder="Tone, comma-separated — Tense, Practicals, Bleach bypass, 30s" />
       <div className="flex flex-wrap items-center gap-2">
         <span className="mono !tracking-[.14em] !text-[10px]">REASONING</span>
-        <ModelMenu value={d.model} models={models} onPick={(id) => patch({ model: id })} disabled={busy !== ""||!!paid.pending} />
-        <button type="button" className="ak-act" onClick={write} disabled={busy !== "" || !!paid.error || !d.logline.trim()}
+        <ModelMenu value={d.model} models={models} onPick={(id) => patch({ model: id, effort: "auto" })} disabled={busy !== ""||!!paid.pending} />
+        <EffortPicker value={d.effort ?? "auto"} model={[...models.featured, ...models.rest].find((m) => m.id === d.model)} onPick={(effort) => patch({ effort })} disabled={busy !== "" || !!paid.pending} compact />
+        <button type="button" className="ak-act" onClick={write} disabled={busy !== "" || !!paid.error || !d.logline.trim() || (!paid.pending && !quote)}
           title="The model turns what you typed into a logline and a tone list. Your own words stay one click away.">
-          {busy === "write" ? "WRITING…" : paid.pending ? "Recover writing request" : `WRITE IT WITH THE MODEL · ≈ ${writeCr} CR →`}
+          {busy === "write" ? "WRITING…" : paid.pending ? "Recover writing request" : quote ? `WRITE IT · ${quote.estimateUsd === undefined ? `${quote.estimateCredits} CR RESERVED` : `$${quote.estimateUsd.toFixed(3)} ESTIMATE`} →` : quoting ? "QUOTING…" : "WRITE IT WITH THE MODEL"}
         </button>
         {written && (
           <span className="ak-sub !text-[11px] inline-flex items-center gap-2">
@@ -275,6 +276,7 @@ function NewIdea({ draft: currentDraft, paid, set, models, onDone, onCancel, onW
           </span>
         )}
       </div>
+      {quoteError && <p role="status" className="ak-sub">{quoteError}</p>}
       <div className="grid grid-cols-3 gap-1.5">
         {d.refs.map((r) => (
           <span key={r} className="ak-ref">

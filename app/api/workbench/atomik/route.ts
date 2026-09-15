@@ -10,7 +10,7 @@ import { atomikRequestSchema, atomikState, AtomikError, prepareAtomikJob, quoteA
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+export const maxDuration = 300;
 const response = (value: unknown, status = 200) => Response.json(atomikPublicResponse(value, creditsApply(currentTenant()?.workspace)), { status, headers: { 'Cache-Control': 'no-store' } });
 function wrongScope(req: Request, userId: string) {
   const scope = req.headers.get('X-Workbench-Scope');
@@ -48,7 +48,7 @@ export const POST = withTenant(async (req: Request) => {
     return response({ error: 'Invalid request JSON.' }, 400);
   }
   const parsed = atomikRequestSchema.extend({ quoteOnly: z.boolean().optional() }).safeParse(value);
-  if (!parsed.success) return response({ error: 'Check the request, model, depth and selected references.' }, 400);
+  if (!parsed.success) return response({ error: 'Check the request, model, effort, response detail and selected references.' }, 400);
   try {
     const { quoteOnly, ...input } = parsed.data;
     if (quoteOnly) return response(await quoteAtomikJob(input, auth.user.id));

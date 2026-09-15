@@ -12,6 +12,8 @@
  * Shots written here ARE the production's shots — the same rows the shot
  * list sends across and Particl files takes against.
  */
+import ModelMenu, { type PlannerModel } from "@/components/atomik/ModelMenu";
+import { EffortPicker } from "@/components/atomik/ModelPicker";
 import {usePaidAction} from "@/lib/usePaidAction";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -23,7 +25,8 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { usd } from "@/lib/format";
 import { specToPhrase, CATEGORIES } from "@/lib/studio";
 import { takeCost } from "@/lib/breakdownCost";
-import { writerCall } from "@/lib/rateTable";
+import QuotedAtomikAction from "@/components/atomik/QuotedAtomikAction";
+import type { PaidTextQuote } from "@/lib/paidText";
 import { mentionsIn } from "@/lib/mentions";
 import { appAlert, appConfirm } from "@/components/dialog";
 import { Waiting } from "@/components/ParticlMark";
@@ -34,7 +37,6 @@ import type { Shot } from "@/lib/shots";
 import { ENGINE_LABEL, type ShotProposal as BaseShotProposal } from "@/lib/shotBuilder";
 type ShotProposal = BaseShotProposal & { takeUsd?: number };
 import { useMoney } from "@/lib/price";
-import { textModelFor } from "@/lib/platformLayer";
 
 type Loaded = { treatment: Treatment | null; cast: CastMember[] };
 /** A shot's scene as a number: "SC01", "1" and "Scene 1" all mean scene 1. */
@@ -54,7 +56,14 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   const router = useRouter();
   const paid=usePaidAction(`/api/atomik/shots/draft:${projectId}`);
   const money = useMoney();
-  const { signedIn , models: sessionModels, rates } = useSession();
+  const { signedIn, rates } = useSession();
+  const { data: modelIndex } = useApi<{ models: { featured: PlannerModel[]; rest: PlannerModel[] } }>(signedIn ? "/api/atomik" : null, 0);
+  const models = modelIndex?.models ?? { featured: [], rest: [] };
+  const [selectedModel, setSelectedModel] = useState("auto");
+  const [selectedEffort, setSelectedEffort] = useState("auto");
+  const pendingInput = paid.pending ? JSON.parse(paid.pending.body) : null;
+  const model = pendingInput?.model ?? (paid.pending ? "auto" : selectedModel);
+  const effort = pendingInput?.effort ?? (paid.pending ? "auto" : selectedEffort);
   const { data } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
   const { data: shotData, refresh } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 15_000);
   useOnChange(refresh);
@@ -88,13 +97,13 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
   /* The shot builder (brief 1.8): a scene's shots proposed with every row filled, cast tagged, an engine and its credits each — added one by one, never over what is here. */
   const [drafting, setDrafting] = useState<number | null>(null);
   const [proposals, setProposals] = useState<{ scene: number; shots: ShotProposal[]; sceneUsd: number; model: string; costUsd: number } | null>(null);
-  const draftCr = writerCall(rates, textModelFor(sessionModels ?? null, "shot"), 1800, 900) ?? 0.1;
-  async function draftShots(currentScene: Scene) {
+  async function draftShots(currentScene: Scene, quote?: PaidTextQuote) {
+    if (!paid.pending && !quote) return;
     const pending=paid.pending?JSON.parse(paid.pending.body):null;
     const scene=pending?scenes.find(item=>item.n===pending.scene):currentScene;if(!scene)return;
     setDrafting(scene.n); setProposals(null);
     try {
-      const {data:j}=await paid.run<{shots:ShotProposal[];sceneUsd?:number;model:string;costUsd?:number}>("/api/atomik/shots/draft",{projectId,scene:scene.n});
+      const {data:j}=await paid.run<{shots:ShotProposal[];sceneUsd?:number;model:string;costUsd?:number}>("/api/atomik/shots/draft",pending ?? {projectId,scene:scene.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
       setProposals({ scene: scene.n, shots: j.shots as ShotProposal[], sceneUsd: Number(j.sceneUsd ?? 0), model: String(j.model), costUsd: Number(j.costUsd ?? 0) });
     } catch (e) { await appAlert("No shots drafted", (e as Error).message); }
     finally { setDrafting(null); }
@@ -130,6 +139,11 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
       </div>
 
       <div className="ak-page !pt-7">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mono !text-[10px]">SHOT PLANNER</span>
+          <ModelMenu value={model} models={models} onPick={(value) => { setSelectedModel(value); setSelectedEffort("auto"); }} disabled={drafting !== null || !!paid.pending} />
+          <EffortPicker value={effort} model={[...models.featured, ...models.rest].find((item) => item.id === model)} onPick={setSelectedEffort} disabled={drafting !== null || !!paid.pending} compact />
+        </div>
         {scenes.length === 0 && (
           <div className="ak-pick">
             <span className="ak-h2">No scenes yet</span>
@@ -153,7 +167,7 @@ function Breakdown({ projectId, runtimeTarget }: { projectId: string; runtimeTar
                 <div className="flex flex-wrap gap-1">{sceneCast.map((c) => <span key={c} className="ak-tag">@{c}</span>)}</div>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" className="btn-dashed self-start !px-2.5 !py-1.5" onClick={() => add(sc)}>+ Shot in this scene</button>
-                  <button type="button" className="btn-dashed self-start !px-2.5 !py-1.5" disabled={drafting != null||!!paid.error||!!paid.pending&&JSON.parse(paid.pending.body).scene!==sc.n} onClick={() => draftShots(sc)}>{drafting === sc.n ? "Drafting…" : paid.pending ? "Recover shot draft" : `Draft shots · ≈ ${draftCr} cr`}</button>
+                  <QuotedAtomikAction url="/api/atomik/shots/draft" body={{ projectId, scene: sc.n, model, effort, documentVersion: data?.treatment?.updatedAt }} label="Draft shots" className="btn-dashed self-start !px-2.5 !py-1.5" busy={drafting === sc.n} pending={!!paid.pending && pendingInput.scene === sc.n} disabled={drafting !== null || !!paid.error || (!!paid.pending && pendingInput.scene !== sc.n)} onRun={(quote) => draftShots(sc, quote)} />
                 </div>
                 {proposals && proposals.scene === sc.n && (
                   <div className="ak-proposal">

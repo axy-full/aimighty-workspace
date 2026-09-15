@@ -7,7 +7,7 @@ import { catalog, findModel, videoCostUsd, imageCostUsd } from "./catalog";
 import { MODELS } from "./models";
 import { getSetting } from "./settings";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
-import { runPaidText } from "./paidText";
+import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
 import { meter } from "./meter";
 import { getPlatformLayer } from "./platform";
 import { textModelFor } from "./platformLayer";
@@ -61,13 +61,13 @@ export type Message = {
   text: string; activity: string[]; ask: Ask | null;
   /** What the person handed the agent with this message. */
   attachments: Attachment[];
-  workedMs: number | null; costUsd: number; model: string;
+  workedMs: number | null; costUsd: number; model: string; effort?: string;
   createdAt: number;
 };
 
 export type Chat = {
   id: string; projectId: string | null; title: string;
-  model: string; agentMode: AgentMode; status: ChatStatus;
+  model: string; effort?: string; agentMode: AgentMode; status: ChatStatus;
   textCostUsd: number; createdBy: string;
   createdAt: number; updatedAt: number;
 };
@@ -101,13 +101,13 @@ const toMessage = (r: Row): Message => ({
   ask: jsonOr<Ask | null>(r.ask, null),
   attachments: cleanAttachments(jsonOr<unknown[]>(r.attachments, [])),
   workedMs: r.worked_ms == null ? null : Number(r.worked_ms),
-  costUsd: Number(r.cost_usd ?? 0), model: String(r.model ?? ""),
+  costUsd: Number(r.cost_usd ?? 0), model: String(r.model ?? ""), effort: typeof r.effort === "string" ? r.effort : undefined,
   createdAt: Number(r.created_at ?? 0),
 });
 
 const toChat = (r: Row): Chat => ({
   id: String(r.id), projectId: r.project_id ? String(r.project_id) : null,
-  title: String(r.title ?? "New chat"), model: String(r.model ?? "auto"),
+  title: String(r.title ?? "New chat"), model: String(r.model ?? "auto"), effort: typeof r.effort === "string" ? r.effort : undefined,
   agentMode: String(r.agent_mode ?? "ask") as AgentMode,
   status: String(r.status ?? "idle") as ChatStatus,
   textCostUsd: Number(r.text_cost_usd ?? 0), createdBy: String(r.created_by ?? ""),
@@ -130,17 +130,17 @@ export async function listChats(limit = 40): Promise<(Chat & { needsApproval: bo
 }
 
 export async function createChat(opts: {
-  userId: string; projectId: string | null; model: string; agentMode: AgentMode;
+  userId: string; projectId: string | null; model: string; effort?: string; agentMode: AgentMode;
 }): Promise<string> {
   await ready();
   const chatId = newId("ach");
   const ts = now();
   await db().execute({
     sql: `INSERT INTO atomik_chats
-            (id, project_id, title, model, agent_mode, status, text_cost_usd,
+            (id, project_id, title, model, effort, agent_mode, status, text_cost_usd,
              created_by, created_at, updated_at, deleted)
-          VALUES (?,?,?,?,?,'idle',0,?,?,?,0)`,
-    args: [chatId, opts.projectId, "New chat", opts.model, opts.agentMode, opts.userId, ts, ts],
+          VALUES (?,?,?,?,?,?,'idle',0,?,?,?,0)`,
+    args: [chatId, opts.projectId, "New chat", opts.model, opts.effort ?? null, opts.agentMode, opts.userId, ts, ts],
   });
   return chatId;
 }
@@ -165,7 +165,7 @@ export async function getChat(chatId: string): Promise<{
 }
 
 export async function patchChat(chatId: string, patch: {
-  title?: string; model?: string; agentMode?: AgentMode;
+  title?: string; model?: string; effort?: string; agentMode?: AgentMode;
   status?: ChatStatus; projectId?: string | null;
 }): Promise<void> {
   await ready();
@@ -173,6 +173,7 @@ export async function patchChat(chatId: string, patch: {
   const args: (string | number | null)[] = [];
   if (patch.title != null) { sets.push("title = ?"); args.push(patch.title.slice(0, 80)); }
   if (patch.model != null) { sets.push("model = ?"); args.push(patch.model); }
+  if (patch.effort != null) { sets.push("effort = ?"); args.push(patch.effort); }
   if (patch.agentMode != null) { sets.push("agent_mode = ?"); args.push(patch.agentMode); }
   if (patch.status != null) { sets.push("status = ?"); args.push(patch.status); }
   if (patch.projectId !== undefined) { sets.push("project_id = ?"); args.push(patch.projectId); }
@@ -420,11 +421,18 @@ export type TurnResult = {
  * the first featured planner the gateway is actually serving, so a chat
  * started before a model was retired still answers.
  */
-export async function runTurn(chatId: string, opts: { context?: string; rules?: string } = {}): Promise<TurnResult> {
+type TurnOptions = { context?: string; rules?: string; model?: string; effort?: string; maxCredits?: number;
+  quoteOnly?: boolean; userMessage?: { text: string; attachments: Attachment[] }; projectId?: string | null };
+export async function runTurn(chatId: string | null, opts: TurnOptions & { quoteOnly: true }): Promise<PaidTextQuote>;
+export async function runTurn(chatId: string, opts?: TurnOptions & { quoteOnly?: false }): Promise<TurnResult>;
+export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Promise<TurnResult | PaidTextQuote> {
   await ready();
-  const loaded = await getChat(chatId);
-  if (!loaded) throw new Error("That chat is gone.");
-  const { chat, messages } = loaded;
+  const loaded = chatId ? await getChat(chatId) : null;
+  if (!loaded && !opts.quoteOnly) throw new Error("That chat is gone.");
+  const chat: Chat = loaded?.chat ?? { id: "", projectId: opts.projectId ?? null, title: "New chat", model: "auto", effort: "auto", agentMode: "ask", status: "idle", textCostUsd: 0, createdBy: "", createdAt: 0, updatedAt: 0 };
+  const messages: Message[] = [...(loaded?.messages ?? [])];
+  if (opts.userMessage) messages.push({ id: "", chatId: chat.id, role: "user", text: opts.userMessage.text,
+    attachments: opts.userMessage.attachments, activity: [], ask: null, workedMs: null, costUsd: 0, model: "", createdAt: 0 });
 
   if (!gatewayReachable()) {
     throw new Error(
@@ -432,7 +440,8 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
     );
   }
 
-  const model = await resolveModel(chat.model, "shot");
+  const model = await resolveModel(opts.model ?? chat.model, "shot");
+  const effort = opts.effort;
   const list = await engines();
   const engineText = list.map((e) => `  ${e.id} — ${e.label} (${e.kind}). ${e.note}`).join("\n");
 
@@ -488,7 +497,9 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
       : []),
   ];
 
-  const result = await runPaidText({ model, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 180_000,
+  if (opts.quoteOnly) return quotePaidText({ model, effort, messages: base, maxTokens: 4000 });
+  if (!chatId) throw new Error("A saved conversation is required to run the planner.");
+  const result = await runPaidText({ model, effort, maxCredits: opts.maxCredits, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 270_000,
     projectId: chat.projectId, createdBy: chat.createdBy, recordSpend: false });
   const costUsd = result.costUsd;
   const turn = extractTurn(result.text) ?? {
@@ -501,11 +512,11 @@ export async function runTurn(chatId: string, opts: { context?: string; rules?: 
   const messageId = result.id;
   await db().execute({
     sql: `INSERT INTO atomik_messages
-            (id, chat_id, role, text, activity, ask, worked_ms, cost_usd, model, created_at)
-          VALUES (?,?, 'assistant', ?,?,?,?,?,?,?)`,
+            (id, chat_id, role, text, activity, ask, worked_ms, cost_usd, model, effort, created_at)
+          VALUES (?,?, 'assistant', ?,?,?,?,?,?,?,?)`,
     args: [messageId, chatId, turn.say, JSON.stringify(turn.activity),
       turn.ask ? JSON.stringify(turn.ask) : null,
-      Date.now() - started, costUsd, model, ts],
+      Date.now() - started, costUsd, model, effort ?? null, ts],
   });
   await meter({ id: messageId, kind: "text", engine: "vercel", model, status: "succeeded", engineCostUsd: costUsd,
                 projectId: chat.projectId, createdBy: chat.createdBy }, { critical: false });
@@ -551,7 +562,8 @@ export async function resolveModel(want: string, job: "idea" | "shot" = "idea"):
   const routed = !want || want === "auto"
     ? textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, job)
     : undefined;
-  return selectAtomikModel(want, cat.filter(m => m.type === "language").map(m => m.id), routed);
+  try { return selectAtomikModel(want, cat.filter(m => m.type === "language").map(m => m.id), routed); }
+  catch (error) { throw new PaidTextError(error instanceof Error ? error.message : "Choose an available Atomik model.", 400); }
 }
 
 type ParsedTurn = {
@@ -705,4 +717,12 @@ export async function projectContext(projectId: string | null): Promise<string> 
     `  @${String(r.name)} (${String(r.kind)})${r.description ? ` — ${String(r.description)}` : ""}`);
   if (!lines.length) return "";
   return ["Named cast and locations you can refer to by name:", ...lines].join("\n");
+}
+
+/** Keep omitted effort omitted so older durable requests keep their original identity. */
+export function requestEffort(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_:-]{0,31}$/.test(value))
+    throw new PaidTextError("Choose a supported reasoning effort.", 400);
+  return value;
 }

@@ -73,6 +73,10 @@ for (const surface of ["batch", "audio", "writing"] as const) {
         });
       if (path === "/api/audio" && request.postDataJSON()?.quoteOnly)
         return json({ estimatedCredits: 14, price: 14, unit: "cr" });
+      if (path === "/api/atomik/ideas/draft" && request.postDataJSON()?.quoteOnly === true) {
+        expect(request.headers()["idempotency-key"]).toBeUndefined();
+        return json({ model: "anthropic/claude-sonnet-4.6", effort: "auto", estimateCredits: 2 });
+      }
       if (
         ["/api/generate", "/api/audio", "/api/atomik/ideas/draft"].includes(
           path,
@@ -121,7 +125,7 @@ for (const surface of ["batch", "audio", "writing"] as const) {
         .locator(".ak-idea.is-new textarea")
         .fill("A private original brief.");
       await page
-        .getByRole("button", { name: /WRITE IT WITH THE MODEL/ })
+        .getByRole("button", { name: /WRITE IT · 2 CR RESERVED/ })
         .click();
       await page
         .getByRole("dialog")

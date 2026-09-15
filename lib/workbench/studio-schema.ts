@@ -112,6 +112,7 @@ const plan = z.object({
   request: z.string().max(20000),
   model: z.string().max(100),
   depth: z.string().max(100),
+  effort: z.string().max(40).optional(),
   intent: z.string().max(100),
   summary: z.string().max(5000),
   steps: z.array(z.string().max(10000)).max(50),

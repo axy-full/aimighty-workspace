@@ -37,6 +37,10 @@ test("paid writing recovers the same body after reload and is isolated from anot
       });
     if (path === "/api/atomik/ideas/draft") {
       const r = route.request();
+      if (r.postDataJSON().quoteOnly === true) {
+        expect(r.headers()["idempotency-key"]).toBeUndefined();
+        return json({ model: "anthropic/claude-sonnet-4.6", effort: "auto", estimateCredits: 2 });
+      }
       requests.push({
         body: r.postDataJSON(),
         key: r.headers()["idempotency-key"],
@@ -67,7 +71,7 @@ test("paid writing recovers the same body after reload and is isolated from anot
   await page.getByRole("button", { name: "New idea", exact: true }).click();
   const logline = page.locator(".ak-idea.is-new textarea");
   await logline.fill("Original paid writing brief.");
-  await page.getByRole("button", { name: /WRITE IT WITH THE MODEL/ }).click();
+  await page.getByRole("button", { name: /WRITE IT · 2 CR RESERVED/ }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "OK", exact: true })
@@ -96,6 +100,7 @@ test("paid writing recovers the same body after reload and is isolated from anot
   expect(requests[0]).toMatchObject({
     workspace: first.workspace.id,
     actor: me.email,
+    body: { brief: "Original paid writing brief.", tone: "", model: "anthropic/claude-sonnet-4.6", effort: "auto", maxCredits: 2 },
   });
   expect(requests[0].key).toBeTruthy();
   await page.screenshot({ path: testInfo.outputPath("recovered-writing.png") });
@@ -248,6 +253,7 @@ test("Atomik chat recovers its original message and conversation after reload", 
   await signInLocally(page.request);
   let creates = 0;
   const sends: { key: string | undefined; body: unknown }[] = [];
+  const model = { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision:true, efforts:[{value:"high",label:"High"}] };
   const loaded = {
     chat: {
       id: "chat-browser",
@@ -269,6 +275,7 @@ test("Atomik chat recovers its original message and conversation after reload", 
         headers: complete ? { "Idempotency-Status": "complete" } : {},
         body: JSON.stringify(data),
       });
+    if (r.method() === "POST" && r.postDataJSON().quoteOnly) return json({ model:model.id, effort:r.postDataJSON().effort, estimateCredits:8 });
     if (path === "/api/atomik/ideas") return json({ ideas: [] });
     if (path === "/api/atomik") {
       if (r.method() === "POST") {
@@ -278,7 +285,7 @@ test("Atomik chat recovers its original message and conversation after reload", 
       return json({
         chats: [],
         engines: [],
-        models: { featured: [], rest: [] },
+        models: { featured: [model], rest: [] },
       });
     }
     if (path === "/api/atomik/chat-browser") {
@@ -296,10 +303,14 @@ test("Atomik chat recovers its original message and conversation after reload", 
   });
   await page.goto("/atomik/ideas");
   await page.getByRole("button", { name: "Ask Atomik →", exact: true }).click();
+  await page.getByRole("button", {name:"Chat thinking model",exact:true}).click();
+  await page.getByRole("option", {name:"Claude Sonnet 4.6",exact:true}).click();
+  await page.getByRole("combobox", {name:"Chat reasoning effort",exact:true}).click();
+  await page.getByRole("option", {name:"High",exact:true}).click();
   await page
     .getByRole("textbox", { name: "Ask Atomik", exact: true })
     .fill("Plan the original production.");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Send · 8 cr estimated", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Recover saved request", exact: true }),
   ).toBeVisible();
@@ -315,6 +326,8 @@ test("Atomik chat recovers its original message and conversation after reload", 
   await expect(
     page.getByRole("textbox", { name: "Ask Atomik", exact: true }),
   ).toHaveValue("Plan the original production.");
+  await expect(page.getByRole("combobox", {name:"Chat reasoning effort",exact:true})).toBeDisabled();
+  await expect(page.getByRole("combobox", {name:"Chat reasoning effort",exact:true})).toContainText("High");
   await page
     .getByRole("button", { name: "Recover saved request", exact: true })
     .click();
@@ -325,6 +338,7 @@ test("Atomik chat recovers its original message and conversation after reload", 
   expect(sends).toHaveLength(2);
   expect(sends[1]).toEqual(sends[0]);
   expect(sends[0].key).toBeTruthy();
+  expect(sends[0].body).toMatchObject({model:model.id,effort:"high",maxCredits:8});
 });
 
 test("ordinary drafts belong to each account even inside the same workspace", async ({
@@ -352,6 +366,10 @@ test("ordinary drafts belong to each account even inside the same workspace", as
       }),
     }),
   );
+  await page.route("**/api/atomik/ideas/draft", async (route) => {
+    expect(route.request().postDataJSON().quoteOnly).toBe(true);
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ model: "anthropic/claude-sonnet-4.6", effort: "auto", estimateCredits: 2 }) });
+  });
   await page.goto("/atomik/ideas");
   await page.getByRole("button", { name: "New idea", exact: true }).click();
   const logline = page.locator(".ak-idea.is-new textarea");

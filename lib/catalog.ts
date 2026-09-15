@@ -6,7 +6,7 @@ import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
  *
  * Provider-specific media contracts live in lib/models.ts. This catalogue
  * supplies live availability and prices; Atomik applies a separate verified
- * thinking-model allowlist, so new Gateway entries are not offered automatically.
+ * catalogue of Claude, OpenAI and Gemini planning models.
  * Retired or disconnected models disappear from the menu.
 
  */
@@ -17,9 +17,12 @@ export type CatalogType =
   | "language" | "video" | "image" | "speech"
   | "embedding" | "transcription" | "reranking" | "realtime";
 
+export type ReasoningOption = { type: 'effort'; values: string[] } | { type: 'budget_tokens'; min: number; max?: number } | { type: 'toggle' };
+
 export type CatalogModel = {
   id: string;                       // "google/veo-3.1-generate-001"
   name: string;                     // "Veo 3.1"
+  released?: number;                // Provider release date, Unix seconds.
   owner: string;                    // "google" — the id's first segment
   type: CatalogType;
   description: string;
@@ -29,14 +32,38 @@ export type CatalogModel = {
   pricing: Record<string, unknown> | null;
   /** Accepted inputs reported by /v1/models; absence is not evidence of vision support. */
   inputModalities?: string[];
+  outputModalities?: string[];
+  tags?: string[];
+  supportedParameters?: string[];
+  reasoningOptions?: ReasoningOption[];
+  temperature?: boolean;
 };
 
 type RawModel = {
   id?: string; name?: string; type?: string; description?: string;
-  context_window?: number; max_tokens?: number;
+  context_window?: number; max_tokens?: number; released?: number;
   pricing?: Record<string, unknown> | null;
-  modalities?: { input?: unknown };
+  modalities?: { input?: unknown; output?: unknown };
+  tags?: unknown; supported_parameters?: unknown; reasoning_options?: unknown; temperature?: unknown;
 };
+
+/** Reject malformed capability metadata instead of advertising unsupported settings. */
+export function parseReasoningOptions(value: unknown): ReasoningOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): ReasoningOption[] => {
+    if (!entry || typeof entry !== 'object') return [];
+    if (entry.type === 'effort' && Array.isArray(entry.values)) {
+      const values = entry.values.filter((v: unknown): v is string => typeof v === 'string' && /^(none|minimal|low|medium|high|xhigh|max)$/.test(v));
+      return values.length ? [{ type: 'effort', values: [...new Set<string>(values)] }] : [];
+    }
+    if (entry.type === 'budget_tokens' && Number.isInteger(entry.min) && entry.min >= 0 &&
+      (entry.max == null || (Number.isInteger(entry.max) && entry.max >= entry.min))) {
+      return [{ type: 'budget_tokens', min: entry.min, ...(entry.max == null ? {} : { max: entry.max }) }];
+    }
+    return entry.type === 'toggle' ? [{ type: 'toggle' }] : [];
+  });
+}
+const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
 /* ── The read, cached ─────────────────────────────────────────────────── */
 
@@ -69,13 +96,19 @@ export async function catalog(force = false): Promise<CatalogModel[]> {
       .map((m): CatalogModel => ({
         id: m.id,
         name: m.name ?? m.id.split("/").pop() ?? m.id,
+        released: typeof m.released === "number" && Number.isFinite(m.released) ? m.released : undefined,
         owner: m.id.split("/")[0] ?? "",
         type: (m.type as CatalogType) ?? "language",
         description: m.description ?? "",
         contextWindow: m.context_window ?? null,
         maxTokens: m.max_tokens ?? null,
         pricing: m.pricing ?? null,
-        inputModalities: Array.isArray(m.modalities?.input) ? m.modalities.input.filter((v): v is string => typeof v === 'string') : [],
+        inputModalities: strings(m.modalities?.input),
+        outputModalities: strings(m.modalities?.output),
+        tags: strings(m.tags),
+        supportedParameters: strings(m.supported_parameters),
+        reasoningOptions: parseReasoningOptions(m.reasoning_options),
+        temperature: typeof m.temperature === 'boolean' ? m.temperature : undefined,
       }));
     if (models.length) cache = { at: Date.now(), models };
     return models;
@@ -105,7 +138,7 @@ export async function findModel(id: string): Promise<CatalogModel | null> {
  * serves that is NOT here is still reachable under "everything else".
  */
 export const FEATURED = {
-  /** Only the verified Supercomputer thinking models are offered in Atomik. */
+  /** The current verified Claude, OpenAI and Gemini planning catalogue. */
   planner: ATOMIK_MODEL_IDS,
   video: [
     "bytedance/seedance-2.5",
@@ -210,9 +243,43 @@ export function imageCostUsd(m: CatalogModel): number | null {
 export function textCostUsd(m: CatalogModel, inTokens: number, outTokens: number): number | null {
   const p = m.pricing;
   if (!p) return null;
-  const i = num(p.input), o = num(p.output);
-  if (i == null && o == null) return null;
-  return (i ?? 0) * inTokens + (o ?? 0) * outTokens;
+  if (![inTokens, outTokens].every(n => Number.isFinite(n) && n >= 0)) return null;
+  // Gateway ranges are [min, max). Both input and output prices depend on
+  // prompt/context size, not the number of generated tokens:
+  // https://vercel.com/docs/ai-gateway/sdks-and-apis/rest-api#tiered-pricing
+  // https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-pro-preview
+  const rate = (key: 'input' | 'output'): number | null | undefined => {
+    const tierKey = `${key}_tiers`;
+    if (!Object.prototype.hasOwnProperty.call(p, tierKey)) return num(p[key]) ?? undefined;
+    const raw: unknown = p[tierKey];
+    if (!Array.isArray(raw) || !raw.length) return null;
+    const tiers: { min: number; max: number; cost: number }[] = [];
+    for (const item of raw) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      // The live Astra catalog omits min on its first tier, meaning zero.
+      const min = item.min === undefined ? 0 : item.min;
+      const max = item.max === undefined ? Infinity : item.max;
+      const cost = typeof item.cost === 'string' && !item.cost.trim() ? null : num(item.cost);
+      if (!Number.isSafeInteger(min) || min < 0 ||
+        (item.max !== undefined && (!Number.isSafeInteger(max) || max <= min)) ||
+        cost == null || cost < 0) return null;
+      tiers.push({ min, max, cost });
+    }
+    tiers.sort((a, b) => a.min - b.min);
+    let end = 0, selected: number | null = null;
+    for (const tier of tiers) {
+      // Gaps or overlaps make the advertised price ambiguous. Never fall back
+      // to a cheaper base rate when declared tiers cannot be trusted.
+      if (tier.min !== end) return null;
+      if (inTokens >= tier.min && inTokens < tier.max) selected = tier.cost;
+      end = tier.max;
+    }
+    return selected;
+  };
+  const i = rate('input'), o = rate('output');
+  if (i === null || o === null || (i === undefined && o === undefined)) return null;
+  const cost = (i ?? 0) * inTokens + (o ?? 0) * outTokens;
+  return Number.isFinite(cost) ? cost : null;
 }
 
 /** A short, honest price label for a menu row. */

@@ -1,17 +1,18 @@
 'use client';
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {studioRequest} from './GenerationDialog';
+import type {ThinkingModel} from '@/components/atomik/ModelPicker';
 import type {Project,Plan} from '@/lib/workbench/studio';
 import {activeMediaJob,recoverMediaAssets,type MediaJob} from '@/lib/workbench/job-recovery';
 
-export type AtomikJob={id:string;status:string;model:string;request:string;role?:string;plan?:Plan|null;error?:string|null;credits?:number|null;estimateUsd?:number};
+export type AtomikJob={id:string;status:string;model:string;effort?:string;request:string;role?:string;plan?:Plan|null;error?:string|null;credits?:number|null;estimateUsd?:number};
 type MediaPage={generations:MediaJob[];nextCursor:number|null};
 type Recovery={jobs:Map<string,MediaJob>;cursor:number|null;started:boolean};
 const scopeOf=(p:Project)=>p.id+':'+(p.productionProjectId??'');
 export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:Project)=>Project,remember?:boolean)=>void){
  const [media,setMedia]=useState<{scope:string;jobs:MediaJob[]}>({scope:'',jobs:[]});
  const [atomik,setAtomik]=useState<{scope:string;jobs:AtomikJob[]}>({scope:'',jobs:[]});
- const [models,setModels]=useState<{id:string;name:string}[]>([]);
+ const [models,setModels]=useState<ThinkingModel[]>([]);
  const [errors,setErrors]=useState<{scope:string;atomik?:string;media?:string}>({scope:''});
  const ref=useRef(project);useLayoutEffect(()=>{ref.current=project},[project]);
  const epoch=useRef(0),inFlight=useRef<{scope:string;abort:AbortController;promise:Promise<void>}|null>(null);
@@ -26,7 +27,7 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
   const report=(channel:'media'|'atomik',error?:unknown)=>{if(current())setErrors(old=>({...((old.scope===scope)?old:{scope}),[channel]:error?(error instanceof Error?error.message:'Could not refresh '+channel+' activity.'):undefined}));};
   const atomTask=async()=>{
    try{
-    const result=await studioRequest<{models:{id:string;name:string}[];jobs:AtomikJob[]}>('/api/workbench/atomik?projectId='+encodeURIComponent(p.id),{signal:abort.signal});
+    const result=await studioRequest<{models:ThinkingModel[];jobs:AtomikJob[]}>('/api/workbench/atomik?projectId='+encodeURIComponent(p.id),{signal:abort.signal});
     if(!current())return;
     setModels(result.models??[]);setAtomik({scope,jobs:result.jobs??[]});
     const plans=(result.jobs??[]).filter(j=>j.status==='succeeded'&&j.plan).map(j=>j.plan!);

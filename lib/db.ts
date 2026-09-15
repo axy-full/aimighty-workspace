@@ -897,6 +897,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       await addColumn("users", `notify TEXT`);
       // What a person handed the agent with a message, and what a step carries forward.
       await addColumn("atomik_messages", `attachments TEXT`);
+      await addColumn("atomik_messages", `effort TEXT`);
+      await addColumn("atomik_chats", `effort TEXT`);
       await addColumn("atomik_steps", `refs TEXT`);
       // Who a note called out, so the mention is a record and not only a nudge (brief 2.1).
       await addColumn("notes", `mentions TEXT NOT NULL DEFAULT '[]'`);
@@ -1053,6 +1055,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          writes a graph's edges. */
       await addColumn("recipe_stages", `inputs TEXT NOT NULL DEFAULT '[]'`);
       await addColumn("ideas", `model TEXT`);
+      await addColumn("ideas", `effort TEXT`);
       await addColumn("topups", `provider TEXT NOT NULL DEFAULT 'byteplus'`);
       /* ElevenLabs is bought in credits; its ledger counts those. */
       await addColumn("topups", `credits INTEGER`);
