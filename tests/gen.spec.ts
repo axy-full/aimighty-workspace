@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 
-test("Gen Seedance Edit quotes source-bound work and recovers a lost submission without buying a second edit", async ({
+test("Gen Seedance Edit recovers a lost submission after returning to Studio without buying a second edit", async ({
   page,
 }, testInfo) => {
   await signInLocally(page.request);
@@ -159,7 +159,12 @@ test("Gen Seedance Edit quotes source-bound work and recovers a lost submission 
   await expect(
     editor.getByRole("button", { name: /Recover edit/ }),
   ).toBeEnabled();
-  await page.reload();
+  const savedGenUrl = page.url();
+  await page.getByRole("link", { name: "Back to Studio", exact: true }).click();
+  await expect(page).toHaveURL(/\/workbench$/);
+  await expect(editor).toHaveCount(0);
+  expect(submissions).toHaveLength(1);
+  await page.goto(savedGenUrl);
   await expect(
     editor.getByLabel("Edit direction", { exact: true }),
   ).toBeDisabled();
