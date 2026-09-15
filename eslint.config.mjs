@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     "test-results/**",
     "playwright-report/**",
     "ci-results/**",
+    "public/vendor/tesseract-*/**", // Unmodified pinned OCR distributions, copied by postinstall.
     "public/vendor/pdfjs-*/**", // Unmodified Mozilla distribution, copied by postinstall.
     "docs/handoff/**/design-references/**",
     "design/**", // Supplied standalone design reference runtimes, not application code.

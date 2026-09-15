@@ -1017,14 +1017,14 @@ export default function Studio({
   async function importScreenplay(file:File,result:ScreenplayImport) {
     if(transitioningRef.current || !signedIn || !readyRef.current)throw new Error('Create and save a production before importing.');
     const draftId=pRef.current.id;
-    if(pRef.current.scriptSource?.sha256===result.sha256 && pRef.current.script===result.text){if(!(await ensureSaved(draftId)))throw new Error('The import is still unsaved. Retry when the connection returns.');return;}
+    if(pRef.current.scriptSource?.sha256===result.sha256 && pRef.current.script===result.text && JSON.stringify(pRef.current.scriptSource.ocr)===JSON.stringify(result.ocr)){if(!(await ensureSaved(draftId)))throw new Error('The import is still unsaved. Retry when the connection returns.');return;}
     if(pRef.current.assets.length>=500)throw new Error('The asset library is full. Make space for the original screenplay first.');
     uploadingRef.current++;setUploading(true);
     try {
       const uploaded=await uploadWorkbench(file,undefined,storageKey);
       if(pRef.current.id!==draftId)throw new Error('The production changed. The uploaded original remains in your workspace.');
       const asset:Asset={id:uploaded.id,uploadId:uploaded.id,name:file.name.slice(0,200),kind:'document',category:'Screenplay',url:uploaded.url,mime:uploaded.mime||file.type,description:'Original screenplay source',prompt:'',status:'Draft',version:1,locked:false,refs:[]};
-      change(old=>({...old,script:result.text,scriptReviews:{},scriptSource:{assetId:asset.id,filename:asset.name,sha256:result.sha256,pages:result.pages,importedAt:new Date().toISOString(),edited:false,acknowledgedEmptyPages:result.emptyPages},assets:[...old.assets,asset]}));
+      change(old=>({...old,script:result.text,scriptReviews:{},scriptSource:{assetId:asset.id,filename:asset.name,sha256:result.sha256,pages:result.pages,importedAt:new Date().toISOString(),edited:false,acknowledgedEmptyPages:result.emptyPages,ocr:result.ocr},assets:[...old.assets,asset]}));
       if(!(await ensureSaved(draftId)))throw new Error('The source uploaded, but the production is not saved yet. Retry this import to save it without uploading again.');
     } finally {uploadingRef.current--;setUploading(uploadingRef.current>0);}
   }

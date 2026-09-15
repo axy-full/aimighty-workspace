@@ -3,6 +3,17 @@ export const MAX_SCRIPT_CHARS = 1_000_000;
 export const MAX_SCRIPT_PAGES = 400;
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 export type ScriptPage = { page: number; start: number; end: number };
+export type ScreenplayOcr = {
+  engine: "tesseract-7.0.0";
+  language: "eng";
+  requestedPages: number[];
+  pages: {
+    page: number;
+    confidence: number;
+    reviewed: boolean;
+    corrected: boolean;
+  }[];
+};
 export type ScriptSource = {
   assetId: string;
   filename: string;
@@ -11,6 +22,7 @@ export type ScriptSource = {
   importedAt: string;
   edited: boolean;
   acknowledgedEmptyPages: number[];
+  ocr?: ScreenplayOcr;
 };
 export type SceneReview = {
   sourceKey: string;
@@ -22,6 +34,7 @@ export type ScreenplayImport = {
   pages: ScriptPage[];
   sha256: string;
   emptyPages: number[];
+  ocr?: ScreenplayOcr;
 };
 export type ScriptScene = {
   id: string;

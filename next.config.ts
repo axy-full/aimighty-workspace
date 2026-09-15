@@ -75,6 +75,9 @@ const nextConfig: NextConfig = {
     return [
       { source: "/(.*)", headers },
       { source: "/workbench/movie", headers: movieHeaders },
+      { source: "/vendor/tesseract-7.0.0/worker.min.js", headers: [
+        { key: "Content-Security-Policy", value: "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" },
+      ] },
     ];
   },
 };

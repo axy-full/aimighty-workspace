@@ -1,6 +1,6 @@
 # Production platform release requirements
 
-Updated 14 September 2026, 20:56 UTC. Scope: independent production-house workspaces, preserving the approved tiers and credit pricing. Stripe setup and payment-provider activation remain deferred by the owner. This is an engineering evidence register, not a claim of feature, security or scale parity with another company's private platform.
+Updated 15 September 2026. Scope: independent production-house workspaces, preserving the approved tiers and credit pricing. Stripe setup and payment-provider activation remain deferred by the owner. This is an engineering evidence register, not a claim of feature, security or scale parity with another company's private platform.
 
 ## Released source and product evidence
 
@@ -42,7 +42,7 @@ The baseline already included separate Gen/Studio/workspace/account surfaces, pr
 
 | Area | Remaining acceptance work |
 | --- | --- |
-| Screenplay and production planning | OCR for scanned PDFs; durable whole-feature AI analysis with visible coverage and per-stage budgets; review of complex screenplay layouts and typography |
+| Screenplay and production planning | Local English OCR and per-page review are implemented in the current release candidate. Multilingual/degraded-scan qualification and durable import sessions remain; durable whole-feature AI analysis with visible coverage and per-stage budgets; review of complex screenplay layouts and typography |
 | Edit and sound | Saved multitrack sound, synchronized transport, 48 kHz PCM/float WAV and private uploaded-video byte ranges are released in PR152, with full CI and authenticated production checks. Bins and named edit versions are released in PR159. Long-form editing/rendering, archival beyond 50 retained cuts, mastering tools, stems, surround and professional interchange need additional implementation |
 | Colour and upscale | Sequence LUT import, matching GPU preview/movie output and Topaz image upscaling are released. Astra 2 controls, original-source pricing and delivered-output reconciliation are released in PR155/156; the real private source rehearsal passed without a paid execution. Camera-log/HDR/ACES colour management, per-shot grades, scopes and live provider/invoice validation remain open |
 | Asset/pipeline completion | Broader discoverable lineage/version flows, whole-production review and persistent server-rendered deliverables. Current movie export is limited to three minutes and 200 MB; a manifest is not a rendered master |

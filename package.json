@@ -11,13 +11,14 @@
     "test:onboarding": "PW_BASE_URL=${PW_BASE_URL:-http://localhost:4550} playwright test --project=onboarding",
     "test:unit": "PW_BASE_URL=${PW_BASE_URL:-http://localhost:4550} playwright test --project=unit",
     "test:screens": "playwright test tests/screens.spec.ts",
-    "postinstall": "node scripts/copy-pdf-worker.mjs"
+    "postinstall": "node scripts/copy-pdf-worker.mjs && node scripts/copy-ocr-worker.mjs"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.74",
     "@anthropic-ai/sdk": "^0.123.0",
     "@libsql/client": "^0.17.4",
     "@mediabunny/aac-encoder": "file:public/open-source/mediabunny-aac-encoder-1.56.2-particl.1.tgz",
+    "@tesseract.js-data/eng": "1.0.0",
     "@vercel/blob": "^2.8.0",
     "@vercel/oidc": "^3.8.5",
     "ai": "^7.0.92",
@@ -36,6 +37,8 @@
     "sharp": "^0.35.4",
     "sonner": "^2.0.8",
     "tailwind-merge": "3.6.0",
+    "tesseract.js": "7.0.0",
+    "tesseract.js-core": "7.0.0",
     "web-push": "^3.6.7",
     "zod": "^4.4.3"
   },

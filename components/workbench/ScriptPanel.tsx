@@ -17,6 +17,12 @@ import {
   type ScriptScene,
 } from "@/lib/workbench/screenplay";
 import styles from "./script-panel.module.css";
+import { ScreenplayOcrReview } from "./ScreenplayOcrReview";
+import {
+  ocrReviewComplete,
+  remainingOcrPages,
+  requestOcr,
+} from "@/lib/workbench/screenplay-ocr-state";
 
 export function ScriptPanel({
   project,
@@ -136,8 +142,43 @@ export function ScriptPanel({
       if (controller.current === abort) setBusy("");
     }
   }
+  async function runOcr(pages: number[]) {
+    if (!pending || busy) return;
+    const abort = new AbortController();
+    controller.current = abort;
+    const current = {
+      ...pending,
+      result: pages.length ? requestOcr(pending.result, pages) : pending.result,
+    };
+    setPending(current);
+    setAcknowledged(false);
+    setBusy("Loading local English OCR…");
+    setError("");
+    try {
+      const { recognizeScreenplayPdf } =
+        await import("@/lib/workbench/screenplay-ocr");
+      await recognizeScreenplayPdf(
+        current.file,
+        current.result,
+        abort.signal,
+        (result) => {
+          if (!abort.signal.aborted) setPending({ file: current.file, result });
+        },
+        (message) => {
+          if (!abort.signal.aborted) setBusy(message);
+        },
+      );
+    } catch (error) {
+      if (!abort.signal.aborted)
+        setError(
+          error instanceof Error ? error.message : "OCR could not finish.",
+        );
+    } finally {
+      if (controller.current === abort) setBusy("");
+    }
+  }
   async function accept() {
-    if (!pending) return;
+    if (!pending || busy || !ocrReviewComplete(pending.result)) return;
     setBusy("Saving original source…");
     setError("");
     try {
@@ -190,7 +231,7 @@ export function ScriptPanel({
       {busy && (
         <div className={styles.notice} role="status">
           {busy}
-          {busy.startsWith("Reading") && (
+          {busy !== "Saving original source…" && (
             <button
               onClick={() => {
                 controller.current?.abort();
@@ -229,8 +270,8 @@ export function ScriptPanel({
             <div className={styles.error}>
               <p>
                 Pages {pending.result.emptyPages.join(", ")} contain little or
-                no extractable text. Scanned pages need OCR before their content
-                can be broken down.
+                no extractable text. Recognize scanned pages below before
+                breaking them down.
               </p>
               <label>
                 <input
@@ -242,6 +283,66 @@ export function ScriptPanel({
                 contain no screenplay text.
               </label>
             </div>
+          )}
+          {!!pending.result.pages.length && (
+            <>
+              <div className={styles.actions}>
+                {!!pending.result.emptyPages.filter(
+                  (page) =>
+                    !pending.result.ocr?.pages.some(
+                      (record) => record.page === page,
+                    ),
+                ).length && (
+                  <button
+                    className="btn"
+                    disabled={!!busy}
+                    onClick={() => void runOcr(pending.result.emptyPages)}
+                  >
+                    Recognize scanned pages (English)
+                  </button>
+                )}
+                <button
+                  className="btn"
+                  disabled={
+                    !!busy ||
+                    pending.result.ocr?.pages.length ===
+                      pending.result.pages.length
+                  }
+                  onClick={() =>
+                    void runOcr(pending.result.pages.map((page) => page.page))
+                  }
+                >
+                  Run OCR on all PDF pages
+                </button>
+                {!!remainingOcrPages(pending.result).length && (
+                  <button
+                    className="btn"
+                    disabled={!!busy}
+                    onClick={() => void runOcr([])}
+                  >
+                    Resume OCR · {remainingOcrPages(pending.result).length}{" "}
+                    pages
+                  </button>
+                )}
+              </div>
+              <p className={styles.hint}>
+                OCR runs on this device in English, one page at a time. For
+                scans with headers or a faulty text layer, use all pages. Keep
+                this panel open; closing it discards the unimported review.
+              </p>
+            </>
+          )}
+          {pending.result.ocr && !busy && (
+            <ScreenplayOcrReview
+              file={pending.file}
+              result={pending.result}
+              busy={!!busy}
+              onChange={(result) => {
+                setPending({ ...pending, result });
+                setAcknowledged(false);
+              }}
+              onError={setError}
+            />
           )}
           {!!project.script?.trim() && (
             <label>
@@ -260,7 +361,8 @@ export function ScriptPanel({
               disabled={
                 !!busy ||
                 (!!project.script?.trim() && !replace) ||
-                (!!pending.result.emptyPages.length && !acknowledged)
+                (!!pending.result.emptyPages.length && !acknowledged) ||
+                !ocrReviewComplete(pending.result)
               }
               onClick={() => void accept()}
             >
@@ -294,6 +396,9 @@ export function ScriptPanel({
               </a>{" "}
               · {project.scriptSource?.pages.length || "Text"}
               {project.scriptSource?.pages.length ? " pages" : ""}
+              {project.scriptSource?.ocr
+                ? ` · English OCR: ${project.scriptSource.ocr.pages.length} reviewed pages`
+                : ""}
               {project.scriptSource?.edited
                 ? " · edited text; original page mapping retired"
                 : ""}
