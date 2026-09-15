@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowLeft,
   AudioLines,
   Film,
   Image as ImageIcon,
@@ -151,7 +153,10 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     >
       <header className={styles.header}>
         <div className={styles.heading}>
-          <span className={styles.eyebrow}>Generation workspace</span>
+          <Link className={styles.studioBack} href="/workbench">
+            <ArrowLeft size={15} aria-hidden="true" />
+            Back to Studio
+          </Link>
           <h1>
             Gen<span>/</span>
             {mode.label}

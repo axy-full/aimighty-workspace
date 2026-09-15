@@ -62,6 +62,22 @@
 .heading {
   flex: none;
 }
+.studioBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--gen-body);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.studioBack:hover {
+  color: var(--gen-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 .eyebrow {
   font:
     10px "Particl Mono",
