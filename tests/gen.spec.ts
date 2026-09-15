@@ -280,7 +280,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
       return json({
         generations: jobs.filter(
           (g) =>
-            g.kind === url.searchParams.get("kind") &&
+            (!url.searchParams.has("kind") || g.kind === url.searchParams.get("kind")) &&
             (!url.searchParams.get("q") ||
               g.prompt.includes(url.searchParams.get("q")!)),
         ),
@@ -410,7 +410,8 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await page.getByRole("button", { name: /^Aspect:/ }).click();
   await page.getByRole("menuitem", { name: "9:16", exact: true }).click();
   const frame = await readFile("public/fixtures/still.png");
-  await page.locator('input[type="file"]').setInputFiles([
+  const referencePicker = page.getByRole("region", { name: "Video composer", exact: true }).locator('input[type="file"]');
+  await referencePicker.setInputFiles([
     { name: "frame-1.png", mimeType: "image/png", buffer: frame },
     { name: "frame-2.png", mimeType: "image/png", buffer: frame },
   ]);
@@ -440,7 +441,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await expect(primary).toContainText(/\d+ cr/);
   const beforeClip = Number((await primary.innerText()).match(/(\d+) cr/)![1]);
   const clip = await readFile("public/fixtures/clip.mp4");
-  await page.locator('input[type="file"]').setInputFiles({
+  await referencePicker.setInputFiles({
     name: "clip-3.mp4",
     mimeType: "video/mp4",
     buffer: clip,
@@ -451,7 +452,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await expect(primary).toBeDisabled();
   await page.getByRole("button", { name: "Remove clip-3.mp4" }).click();
   await expect(primary).toBeEnabled();
-  await page.locator('input[type="file"]').setInputFiles({
+  await referencePicker.setInputFiles({
     name: "clip-4.mp4",
     mimeType: "video/mp4",
     buffer: clip,
@@ -485,12 +486,15 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await page
     .getByRole("button", { name: "Close preview", exact: true })
     .click();
-  await page.getByRole("button", { name: "File to shot", exact: true }).click();
-  await page.getByRole("button", { name: /Test production/ }).click();
+  const videoTake = page.locator('[data-library-id="generation:gen-fixture-video"]');
+  await videoTake.getByRole("button", { name: "Actions for Fixture video", exact: true }).click();
+  await page.getByRole("menuitem", { name: "File to shot", exact: true }).click();
+  await page.getByLabel("Production for take", { exact: true }).selectOption("project-fixture");
   await page.getByRole("button", { name: /SH01/ }).click();
   expect(patches).toEqual([{ shotId: "shot-fixture" }]);
   const before = submissions.length;
-  await page.getByRole("button", { name: "Use prompt", exact: true }).click();
+  await videoTake.getByRole("button", { name: "Actions for Fixture video", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Use prompt", exact: true }).click();
   await expect(prompt).toHaveValue("An existing video take to reuse.");
   expect(submissions).toHaveLength(before);
   await page.screenshot({

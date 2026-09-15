@@ -29,6 +29,7 @@ import {
 import { saveDraft, clearDraft } from "@/lib/draft";
 import { useUploadFile } from "@/lib/useUploadFile";
 import type { RefItem } from "@/lib/refs";
+import { useGenAssetInput, inputAsReference, referenceIdentity, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import type { CastMember } from "@/lib/cast";
 import { appPrompt } from "@/components/dialog";
 import { Dialog as DialogPrimitive } from "radix-ui";
@@ -124,7 +125,7 @@ const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 /** `@Name` tokens in a prompt, the way the composer highlights and the engine reads them. */
 const NAME_RE = /@([A-Za-z][\w'-]*(?: (?=[A-Z])[A-Z][\w'-]*)*)/g;
 
-export type ComposerHandle = { usePrompt: (text: string) => boolean };
+export type ComposerHandle = GenAssetInputHandle & { usePrompt: (text: string) => boolean };
 type ComposerProps = {
   kind: ComposerKind;
   onMade?: () => void;
@@ -161,7 +162,7 @@ function ScopedComposer({
     clientHydrated,
     serverHydrated,
   );
-  const { signedIn, rates, workspace, email } = useSession();
+  const { signedIn, rates, workspace, email, requestScope } = useSession();
   const uploadFile = useUploadFile();
   const signIn = useSignInHref();
   const money = useMoney();
@@ -214,88 +215,45 @@ function ScopedComposer({
 
   /* ── references ────────────────────────────────────────────────────── */
   const [refsChoice, setRefs] = useState<RefItem[]>([]);
-  const refs = batchDisplay?.refs ?? refsChoice;
-  const [uploading, setUploading] = useState(false);
-  const picker = useRef<HTMLInputElement>(null);
-  const addFiles = async (files: FileList | File[]) => {
-    const list = Array.from(files).slice(0, 8);
-    if (!list.length) return;
-    setUploading(true);
-    try {
-      for (const f of list) {
-        const up = await uploadFile(f, "reference");
-        setRefs((prev) =>
-          prev.some((r) => r.id === up.id)
-            ? prev
-            : [
-                ...prev,
-                {
-                  ...up,
-                  kind: up.kind === "video" ? "video" : "image",
-                  base64Bytes: up.base64Bytes ?? 0,
-                  role:
-                    up.kind === "video"
-                      ? "reference_video"
-                      : kind === "video" &&
-                          !prev.some((r) => r.role === "first_frame")
-                        ? "first_frame"
-                        : "reference_image",
-                  verified: true,
-                },
-              ],
-        );
-      }
-    } catch (e) {
-      toast((e as Error).message);
-    } finally {
-      setUploading(false);
-    }
+  const attachedRefs = useRef<RefItem[]>([]);
+  const removeReference = (reference: RefItem) => {
+    const next = attachedRefs.current.filter((item) => item.id !== reference.id || (item.origin ?? "upload") !== (reference.origin ?? "upload"));
+    attachedRefs.current = next;
+    setRefs(next);
   };
-  const seededRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!initialRef || !signedIn || seededRef.current === initialRef) return;
-    seededRef.current = initialRef;
-    fetch(`/api/uploads?limit=500`)
-      .then((r) => r.json())
-      .then((j) => {
-        const u = (
-          j.uploads as
-            | {
-                id: string;
-                filename: string;
-                mime: string;
-                bytes: number;
-                width: number | null;
-                height: number | null;
-                kind: "image" | "video";
-                durationS: number | null;
-                url: string;
-              }[]
-            | undefined
-        )?.find((x) => x.id === initialRef);
-        if (u)
-          setRefs((prev) =>
-            prev.some((r) => r.id === u.id)
-              ? prev
-              : [
-                  ...prev,
-                  {
-                    ...u,
-                    sha256: "",
-                    base64Bytes: 0,
-                    role:
-                      u.kind === "video"
-                        ? "reference_video"
-                        : kind === "video"
-                          ? "first_frame"
-                          : "reference_image",
-                    verified: true,
-                  },
-                ],
-          );
-      })
-      .catch(() => {});
-  }, [initialRef, signedIn, kind]);
+  const refs = batchDisplay?.refs ?? refsChoice;
+  const [busy, setBusy] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const receiver = useGenAssetInput({
+    scope: requestScope,
+    locked: !hydrated || !!pendingAudio || !!pendingBatch || busy || !!persisted.error || !!generationBatch.error,
+    initialSource: initialRef,
+    acceptFile(file) {
+      if (attachedRefs.current.length >= 8) throw Error("Remove a reference before adding another. Up to eight are supported.");
+      if (kind === "audio") throw Error("Use the production sound suite to edit existing audio.");
+      if (!file.type.startsWith("image/") && !(kind === "video" && file.type.startsWith("video/")))
+        throw Error(kind === "image" ? "Choose an image reference." : "Choose an image or video reference.");
+    },
+    upload: (file) => uploadFile(file, "reference"),
+    onAsset(asset) {
+      if (kind === "audio") throw Error("Use the production sound suite to edit existing audio.");
+      if (asset.kind !== "image" && !(kind === "video" && asset.kind === "video"))
+        throw Error(kind === "image" ? "Choose an image reference." : "Choose an image or video reference.");
+      const previous = attachedRefs.current;
+      if (previous.some((ref) => ref.id === asset.id && (ref.origin ?? "upload") === asset.origin)) {
+        toast("This asset is already attached."); return;
+      }
+      if (previous.length >= 8) throw Error("Remove a reference before adding another. Up to eight are supported.");
+      const role = asset.kind === "video" ? "reference_video" : kind === "video" && !previous.some((ref) => ref.role === "first_frame") ? "first_frame" : "reference_image";
+      const next = [...previous, inputAsReference(asset, role)];
+      attachedRefs.current = next;
+      setRefs(next);
+      toast(`${asset.name} added as a reference.`);
+    },
+    onError: toast,
+  });
+  const uploading = receiver.busy;
+  const addFiles = receiver.useFiles;
   const [useAsChoice, setUseAs] = useState<"loose" | "first">("loose");
   const useAs = batchDisplay?.useAs ?? useAsChoice;
 
@@ -691,7 +649,6 @@ function ScopedComposer({
   };
 
   /* ── the press ─────────────────────────────────────────────────────── */
-  const [busy, setBusy] = useState(false);
   const ready =
     !uploading &&
     (kind === "audio"
@@ -778,7 +735,7 @@ function ScopedComposer({
           shotId: null,
           task: "generate",
           shotSpec: applied,
-          references: refs.map((r) => ({ uploadId: r.id, role: r.role })),
+          references: refs.map((r) => ({ ...referenceIdentity(r), role: r.role })),
           useAs: kind === "image" ? useAs : undefined,
           ...(rates.unit === "cr" ? { maxCredits: perTakePrice } : {}),
         };
@@ -852,6 +809,8 @@ function ScopedComposer({
   });
 
   useImperativeHandle(controller, () => ({
+    useAsset: receiver.useAsset,
+    useFiles: receiver.useFiles,
     usePrompt(text) {
       if (busy || pendingAudio || pendingBatch) {
         toast("Recover the submitted request before replacing its prompt.");
@@ -909,7 +868,7 @@ function ScopedComposer({
       })),
     }));
   };
-  const locked = !!pendingAudio || !!pendingBatch || busy;
+  const locked = !!pendingAudio || !!pendingBatch || busy || uploading;
   const modeLabel =
     kind === "image" ? "Images" : kind === "audio" ? "Audio" : "Video";
   const audioError =
@@ -1053,12 +1012,9 @@ function ScopedComposer({
           {kind !== "audio" && (
             <div
               className={styles.references}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (!locked && e.dataTransfer.files.length)
-                  addFiles(e.dataTransfer.files);
-              }}
+              aria-label="Generation references"
+              onDragOver={receiver.onDragOver}
+              onDrop={receiver.onDrop}
             >
               <div className={styles.sectionLabel}>
                 <span>References</span>
@@ -1080,7 +1036,7 @@ function ScopedComposer({
               />
               <div className={styles.referenceRow}>
                 {refs.map((r) => (
-                  <div key={r.id} className={styles.reference}>
+                  <div key={`${r.origin ?? "upload"}:${r.id}`} className={styles.reference} data-reference-id={`${r.origin ?? "upload"}:${r.id}`}>
                     {r.kind === "image" ? (
                       <img src={r.url} alt={r.filename} />
                     ) : (
@@ -1088,11 +1044,7 @@ function ScopedComposer({
                     )}
                     <button
                       type="button"
-                      onClick={() =>
-                        setRefs((items) =>
-                          items.filter((item) => item.id !== r.id),
-                        )
-                      }
+                      onClick={() => removeReference(r)}
                       aria-label={`Remove ${r.filename}`}
                     >
                       <X size={14} />
@@ -1532,7 +1484,7 @@ function ScopedComposer({
           references: refs
             .filter((r) => r.kind === "image")
             .map((r) => ({
-              uploadId: r.id,
+              ...referenceIdentity(r),
               url: r.url,
               label: r.filename,
               kind: "image" as const,

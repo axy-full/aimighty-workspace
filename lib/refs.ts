@@ -6,6 +6,8 @@
 export type ImageRole = "first_frame" | "last_frame" | "reference_image" | "reference_video";
 
 export type RefItem = {
+  /** Missing on older persisted drafts, which contained uploads only. */
+  origin?: "upload" | "generation";
   id: string; filename: string; mime: string; kind: "image" | "video";
   bytes: number; width: number | null; height: number | null;
   durationS: number | null;
