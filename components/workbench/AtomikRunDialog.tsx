@@ -12,22 +12,24 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
 import { studioRequest } from './GenerationDialog';
+import { ModelPicker, EffortPicker, effortLabel, thinkingModelName, type ThinkingModel } from '@/components/atomik/ModelPicker';
 
-export type AtomikRunTarget = { request: string; role?: string; model: string; depth: string; refs: string[] };
-type Quote = { estimateCredits: number; model: string; key: string };
+export type AtomikRunTarget = { request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
+type Quote = { estimateCredits: number; model: string; effort?: string; key: string };
 
 export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued }: {
   target: AtomikRunTarget;
   project: Project;
   /** Authenticated workspace + user identity; never a guest/default scope. */
   scope: string;
-  models?: { id: string; name: string; vision?: boolean }[];
+  models?: ThinkingModel[];
   onClose: () => void;
   onSave: () => Promise<boolean>;
   onQueued: (id: string) => void;
 }) {
   const [request, setRequest] = useState(target.request);
   const [model, setModel] = useState(target.model || 'auto');
+  const [effort, setEffort] = useState(target.effort || 'auto');
   const [depth, setDepth] = useState(['Quick', 'Considered', 'Deep'].includes(target.depth) ? target.depth : 'Quick');
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const [role, setRole] = useState(target.role);
@@ -45,7 +47,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   const selectedAssets = [...project.assets, ...(project.sharedAssets ?? [])].filter(asset => refs.includes(asset.id));
   const referenceKey = JSON.stringify({ scope, projectId: project.id, assets: selectedAssets.map(asset => ({ id: asset.id, name: asset.name, kind: asset.kind, url: asset.url, version: asset.version, uploadId: asset.uploadId, generationId: asset.generationId })) });
   const readyFrames = frameState?.key === referenceKey && !frameState.error ? frameState.frames : null;
-  const quoteKey = JSON.stringify({ projectId: project.id, request, role, model, depth, refs, requestId, ...(readyFrames?.length ? { videoFrames: readyFrames } : {}) });
+  const quoteKey = JSON.stringify({ projectId: project.id, request, role, model, effort, depth, refs, requestId, ...(readyFrames?.length ? { videoFrames: readyFrames } : {}) });
   const shownQuote = quote?.key === quoteKey ? quote : null;
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       if (!saved) { setLoaded(true); return; }
       const input = atomikPendingInput(saved);
       setPending(saved); setRequest(input.request); setRequestId(saved.requestId); setModel(input.model);
-      setDepth(input.depth); setRole(input.role); setRefs(input.refs);
+      setDepth(input.depth); setEffort(input.effort || 'auto'); setRole(input.role); setRefs(input.refs);
       try {
         const state = await studioRequest<{ jobs: AtomikRecoveryJob[] }>('/api/workbench/atomik?' + new URLSearchParams({ projectId: project.id, requestId: saved.requestId }), { headers: { 'X-Workbench-Scope': scope } });
         if (!active) return;
@@ -111,7 +113,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   function restore(record: PendingAtomikRequest) {
     const input = atomikPendingInput(record);
     setPending(record); setRequest(input.request); setRequestId(record.requestId); setModel(input.model);
-    setDepth(input.depth); setRole(input.role); setRefs(input.refs);
+    setDepth(input.depth); setEffort(input.effort || 'auto'); setRole(input.role); setRefs(input.refs);
   }
   function accept(record: PendingAtomikRequest, job: AtomikRecoveryJob) {
     if (job.requestId !== record.requestId) throw new Error('The server returned another request. The original recovery record is preserved.');
@@ -134,7 +136,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
     try {
       if (!pending && !(await onSave())) throw new Error('Save your latest work before starting Atomik.');
       await withPendingAtomikLock(scope, project.id, async () => {
-        const body = pending?.body ?? JSON.stringify({ ...JSON.parse(quoteKey), model: shownQuote!.model, maxCredits: shownQuote!.estimateCredits });
+        const body = pending?.body ?? JSON.stringify({ ...JSON.parse(quoteKey), model: shownQuote!.model, effort: shownQuote!.effort ?? effort, maxCredits: shownQuote!.estimateCredits });
         // This synchronous durable write must succeed BEFORE the paid POST.
         const record = persistPendingAtomik(window.localStorage, scope, project.id, body);
         restore(record);
@@ -179,22 +181,21 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
           <textarea aria-label="Atomik request" value={request} onChange={event => setRequest(event.target.value)} disabled={busy || !!pending || !loaded} maxLength={12000} />
         </label>
         <div className="generation-options">
-          <label>Model
-            <select aria-label="Atomik request model" value={model} disabled={busy || !!pending || !loaded} onChange={event => setModel(event.target.value)}>
-              <option value="auto">Auto · economy</option>
-              {models.map(option => <option key={option.id} value={option.id}>{option.name}{option.vision ? ' · vision' : ''}</option>)}
-              {model !== 'auto' && !models.some(option => option.id === model) && <option value={model}>{model}</option>}
-            </select>
-          </label>
-          <label>Depth
+          <div className="atomik-option-field atomik-option-model"><label htmlFor="atomik-request-model">Thinking model</label>
+            <ModelPicker id="atomik-request-model" label="Atomik request model" value={model} models={models} disabled={busy || !!pending || !loaded} onPick={value => { setModel(value); setEffort('auto'); }} />
+          </div>
+          <div className="atomik-option-field"><label htmlFor="atomik-request-effort">Reasoning effort</label>
+            <EffortPicker id="atomik-request-effort" label="Atomik request effort" value={effort} model={models.find(option => option.id === model)} onPick={setEffort} disabled={busy || !!pending || !loaded} />
+          </div>
+          <label>Response detail
             <select aria-label="Atomik request depth" value={depth} disabled={busy || !!pending || !loaded} onChange={event => setDepth(event.target.value)}>
               {['Quick', 'Considered', 'Deep'].map(value => <option key={value}>{value}</option>)}
             </select>
           </label>
         </div>
         <p className="muted small-copy">Includes the saved brief, script, uploaded TXT and actual image references. Selected videos contribute three sampled stills. Images are read as 512px review copies; audio, PDFs and links supply descriptions only.</p>
-        {shownQuote && !pending && <p className="small-copy">{models.find(option => option.id === shownQuote.model)?.name || shownQuote.model} · up to {shownQuote.estimateCredits} cr reserved</p>}
-        {pending && <p className="small-copy">Original estimate: up to {atomikPendingInput(pending).maxCredits} cr.</p>}
+        {shownQuote && !pending && <p className="small-copy">{thinkingModelName(shownQuote.model, models)} · {effortLabel(shownQuote.effort ?? effort, models.find(option => option.id === shownQuote.model))} · up to {shownQuote.estimateCredits} cr reserved</p>}
+        {pending && <p className="small-copy">Original estimate: up to {atomikPendingInput(pending).maxCredits} cr · {effortLabel(atomikPendingInput(pending).effort, models.find(option => option.id === model))}.</p>}
         {!pending && !readyFrames && !frameState?.error && <p className="small-copy" role="status">Preparing visual references before the estimate…</p>}
         {!pending && frameState?.key === referenceKey && frameState.error && <p className="save-problem" role="alert">{frameState.error}</p>}
         {error && <p className="save-problem" role="alert">{error}</p>}

@@ -10,10 +10,11 @@ export type Idea = {
   state: IdeaState; pins: string[]; parkedBy: string | null;
   /** The reasoning model chosen on the card — a gateway id, or null for auto. */
   model: string | null;
+  effort?: string;
   createdBy: string; createdAt: number; updatedAt: number;
 };
 /** A scene; `by` says who wrote its current words — "you", or the model id — and `at` when (brief 1.8). */
-export type Scene = { n: number; title: string; secs: number; prose: string; by?: string; at?: number };
+export type Scene = { n: number; title: string; secs: number; prose: string; by?: string; effort?: string; at?: number };
 export type TreatmentVersion = { version: number; by: string; at: number };
 export type Note = { id: string; by: string; scene: number; text: string; at: number };
 export type Treatment = {
@@ -36,6 +37,7 @@ export function rowToIdea(r: any): Idea {
     logline: r.logline ?? "", tone: json<string[]>(r.tone, []), refs: json<string[]>(r.refs, []),
     state, pins: json<string[]>(r.pins, []), parkedBy: r.parked_by ?? null,
     model: typeof r.model === "string" && r.model ? r.model : null,
+    effort: typeof r.effort === "string" && r.effort ? r.effort : "auto",
     createdBy: r.created_by ?? "", createdAt: Number(r.created_at ?? 0), updatedAt: Number(r.updated_at ?? 0),
   };
 }
@@ -58,17 +60,17 @@ export async function getIdea(id: string): Promise<Idea | null> {
   const rs = await db().execute({ sql: `SELECT * FROM ideas WHERE id = ?`, args: [id] });
   return rs.rows[0] ? rowToIdea(rs.rows[0]) : null;
 }
-export async function createIdea(input: { logline: string; tone: string[]; refs: string[]; model?: string | null; createdBy: string }): Promise<Idea> {
+export async function createIdea(input: { logline: string; tone: string[]; refs: string[]; model?: string | null; effort?: string; createdBy: string }): Promise<Idea> {
   await ready();
   const max = await db().execute(`SELECT COALESCE(MAX(num), 0) AS n FROM ideas`);
   const num = Number((max.rows[0] as any)?.n ?? 0) + 1;
   const iid = newId("idea");
   const ts = now();
   await db().execute({
-    sql: `INSERT INTO ideas (id, num, project_id, logline, tone, refs, state, pins, parked_by, created_by, created_at, updated_at, model)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO ideas (id, num, project_id, logline, tone, refs, state, pins, parked_by, created_by, created_at, updated_at, model, effort)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [iid, num, null, input.logline.slice(0, 600), JSON.stringify(input.tone.slice(0, 8)), JSON.stringify(input.refs.slice(0, 3)),
-           "open", "[]", null, input.createdBy, ts, ts, input.model?.slice(0, 120) || null],
+           "open", "[]", null, input.createdBy, ts, ts, input.model?.slice(0, 120) || null, input.effort?.slice(0, 32) || null],
   });
   return (await getIdea(iid))!;
 }
@@ -90,6 +92,7 @@ export async function upsertTreatment(input: {
     n: i + 1, title: String(s.title ?? "").slice(0, 120),
     secs: Math.max(0, Math.min(600, Math.round(Number(s.secs) || 0))), prose: String(s.prose ?? "").slice(0, 8000),
     ...(typeof s.by === "string" && s.by ? { by: s.by.slice(0, 80) } : {}),
+    ...(typeof s.effort === "string" && s.effort ? { effort: s.effort.slice(0, 32) } : {}),
     ...(Number.isFinite(Number(s.at)) && Number(s.at) > 0 ? { at: Number(s.at) } : {}),
   }));
   // Saving a new draft number keeps the previous draft as it was — a versioned document, not a transcript.

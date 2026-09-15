@@ -7,7 +7,7 @@ import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
 import { db, ready } from '../../lib/db';
 import { seedProject } from '../../lib/workbench/studio';
 import { CREW } from '../../lib/workbench/crew';
-import { atomikContext, atomikModels, atomikRequestSchema, atomikSystem, listAtomikJobs, prepareAtomikJob, quoteAtomikJob, runAtomikJob, type AtomikDependencies } from '../../lib/workbench/atomik-server';
+import { atomikContext, atomikModels, atomikResponseFormat, atomikRequestSchema, atomikSystem, listAtomikJobs, prepareAtomikJob, quoteAtomikJob, runAtomikJob, type AtomikDependencies } from '../../lib/workbench/atomik-server';
 import type { MeterEvent } from '../../lib/meter';
 import type { CatalogModel } from '../../lib/catalog';
 
@@ -211,7 +211,7 @@ test('a stale queued job becomes uncertain without inventing a charge or resubmi
     const { input } = await fixture();
     const h = harness();
     const { job } = await prepareAtomikJob(input, 'owner', undefined, h.deps);
-    await db().execute({ sql: 'UPDATE workbench_atomik_jobs SET updated_at=? WHERE id=?', args: [Date.now() - 240000, job.id] });
+    await db().execute({ sql: 'UPDATE workbench_atomik_jobs SET updated_at=? WHERE id=?', args: [Date.now() - 420000, job.id] });
     const saved = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter });
     expect(saved[0].status).toBe('uncertain');
     expect(h.events.at(-1)?.status).toBe('failed');
@@ -236,5 +236,117 @@ test('request identity lookup recovers an older job outside the recent history w
     expect(found).toHaveLength(1);
     expect(found[0].id).toBe(job.id);
     expect(await listAtomikJobs('owner', input.projectId, undefined, 'missing-request')).toEqual([]);
+  });
+});
+
+test('effort is quoted, persisted and submitted exactly once with its approved model', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture();
+    const h = harness();
+    const gemini: CatalogModel = { ...model, id: 'google/gemini-3.8-flash', owner: 'google', name: 'Gemini 3.8 Flash', reasoningOptions: [{ type: 'effort', values: ['low','medium','high'] }] };
+    h.deps.models = async () => [gemini];
+    const request = { ...input, model: gemini.id, effort: 'medium', maxCredits: 100 };
+    const quote = await quoteAtomikJob(request, 'owner', h.deps);
+    expect(quote.effort).toBe('medium');
+    expect(quote.maxTokens).toBeGreaterThan(900);
+    expect(h.reservations()).toBe(0);
+    const prepared = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    const row = (await db().execute({ sql: 'SELECT provider_body,request_body FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
+    expect(JSON.parse(String(row.request_body)).effort).toBe('medium');
+    const body = JSON.parse(String(row.provider_body));
+    expect(body.providerOptions.google.thinkingConfig.thinkingLevel).toBe('medium');
+    expect(body.providerOptions.vertex.thinkingConfig.thinkingLevel).toBe('medium');
+    expect(body.max_tokens).toBe(quote.maxTokens);
+    expect(body.reasoning_effort).toBeUndefined();
+    await expect(prepareAtomikJob({ ...request, effort: 'high' }, 'owner', undefined, h.deps)).rejects.toThrow('different instructions');
+    const originalRun = h.deps.run;
+    h.deps.run = async req => { expect(req.body).toBe(row.provider_body); return originalRun(req); };
+    await runAtomikJob(prepared.job.id, 'owner', h.deps);
+    const restored = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    expect(restored.scheduled).toBe(false);
+    expect(restored.job.effort).toBe('medium');
+    expect(restored.job.plan?.effort).toBe('medium');
+    expect(h.calls()).toBe(1);
+    expect(h.reservations()).toBe(1);
+  });
+});
+
+test('unsupported model effort and effort with Auto fail before a paid claim', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture();
+    const h = harness();
+    h.deps.models = async () => [{ ...model, reasoningOptions: [{ type: 'effort', values: ['low','medium','high'] }] }];
+    await expect(prepareAtomikJob({ ...input, model: model.id, effort: 'max', maxCredits: 100 }, 'owner', undefined, h.deps)).rejects.toThrow(/effort/i);
+    await expect(quoteAtomikJob({ ...input, effort: 'high' }, 'owner', h.deps)).rejects.toThrow('Choose a model');
+    expect(h.calls()).toBe(0);
+    expect(h.reservations()).toBe(0);
+    expect(await listAtomikJobs('owner', input.projectId)).toEqual([]);
+  });
+});
+
+test('old submissions without effort retain their serialized request and fingerprint', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture();
+    const h = harness();
+    const before = JSON.stringify(input);
+    expect(Object.hasOwn(input, 'effort')).toBe(false);
+    const first = await prepareAtomikJob(input, 'owner', undefined, h.deps);
+    const replay = atomikRequestSchema.parse(JSON.parse(before));
+    expect(JSON.stringify(replay)).toBe(before);
+    expect((await prepareAtomikJob(replay, 'owner', undefined, h.deps)).scheduled).toBe(false);
+    const row = (await db().execute({ sql: 'SELECT request_body,provider_body FROM workbench_atomik_jobs WHERE id=?', args: [first.job.id] })).rows[0];
+    expect(row.request_body).toBe(before);
+    expect(JSON.parse(String(row.provider_body)).max_tokens).toBe(900);
+  });
+});
+
+test('a higher-effort worker is not expired by a history refresh while inside its execution window', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture();
+    const h = harness();
+    const { job } = await prepareAtomikJob(input, 'owner', undefined, h.deps);
+    await db().execute({ sql: "UPDATE workbench_atomik_jobs SET status='running',updated_at=? WHERE id=?", args: [Date.now() - 240000, job.id] });
+    expect((await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }))[0].status).toBe('running');
+    expect(h.events).toHaveLength(0);
+    expect(h.calls()).toBe(0);
+  });
+});
+
+test('older planners use compatible JSON controls while modern proposals use strict schemas', () => {
+  for (const id of ['anthropic/claude-3-haiku','anthropic/claude-opus-4','anthropic/claude-sonnet-4']) expect(atomikResponseFormat(id)).toEqual({});
+  for (const id of ['openai/gpt-3.5-turbo','openai/gpt-4-turbo']) expect(atomikResponseFormat(id)).toEqual({ response_format: { type: 'json_object' } });
+  expect(JSON.stringify(atomikResponseFormat('anthropic/claude-opus-5'))).not.toMatch(/minLength|maxLength|maxItems|\$schema/);
+  expect(atomikResponseFormat('openai/gpt-6-astra')).toMatchObject({ response_format: { type: 'json_schema', json_schema: { strict: true } } });
+});
+
+test('premium models can quote with effort but cannot use the larger ceiling without explicit credit approval', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture();
+    const h = harness();
+    const premium: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', name: 'GPT-6 Astra', maxTokens: 128000, pricing: { input: .00001, output: .00005 }, reasoningOptions: [{ type: 'effort', values: ['low','medium','high','xhigh','max'] }] };
+    h.deps.models = async () => [premium];
+    const request = { ...input, model: premium.id, effort: 'max' };
+    const quote = await quoteAtomikJob(request, 'owner', h.deps);
+    expect(quote.estimateUsd).toBeGreaterThan(.25);
+    expect(quote.estimateUsd).toBeLessThan(10);
+    await expect(prepareAtomikJob(request, 'owner', undefined, h.deps)).rejects.toThrow('Review the credit estimate');
+    expect(h.reservations()).toBe(0);
+    expect(h.calls()).toBe(0);
+    const approved = await prepareAtomikJob({ ...request, maxCredits: quote.estimateCredits }, 'owner', undefined, h.deps);
+    expect(approved.scheduled).toBe(true);
+    expect(h.reservations()).toBe(1);
+    expect(h.calls()).toBe(0);
+  });
+});
+
+test('unknown declared context-tier prices cannot become a free quote or reservation', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture();
+    const h = harness();
+    h.deps.models = async () => [{ ...model, pricing: { input: .00001, output: .00005, input_tiers: [{ min: 0, cost: 'unknown' }] } }];
+    await expect(quoteAtomikJob(input, 'owner', h.deps)).rejects.toThrow('no confirmed price');
+    await expect(prepareAtomikJob(input, 'owner', undefined, h.deps)).rejects.toThrow('no confirmed price');
+    expect(h.reservations()).toBe(0);
+    expect(h.calls()).toBe(0);
   });
 });

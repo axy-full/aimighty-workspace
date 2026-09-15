@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser, withTenant } from "@/lib/auth";
-import { listChats, createChat, engines, type AgentMode } from "@/lib/atomik";
+import { requireUser, requireRender, withTenant } from "@/lib/auth";
+import { listChats, createChat, engines, requestEffort, runTurn, projectContext, type AgentMode } from "@/lib/atomik";
+import { atomikEffortOptions } from "@/lib/atomik-reasoning";
+import { cleanAttachments } from "@/lib/attachments";
+import { effectiveRules } from "@/lib/rules";
+import { writerRulesByScope } from "@/lib/platformLayer";
+import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
 import { menuFor, priceLabel, type CatalogModel } from "@/lib/catalog";
 
 export const dynamic = "force-dynamic";
@@ -34,9 +39,10 @@ function band(m: CatalogModel): "Low cost" | "Medium cost" | "High cost" | "" {
 }
 
 const shape = (m: CatalogModel) => ({
-  id: m.id, name: m.name, owner: m.owner,
+  id: m.id, name: m.name, owner: m.owner, released: m.released,
   description: m.description.slice(0, 120),
-  band: band(m), price: priceLabel(m),
+  band: band(m), price: priceLabel(m), efforts: atomikEffortOptions(m),
+  vision: m.inputModalities?.includes("image") ?? false,
 });
 
 export const GET = withTenant(async function GET() {
@@ -60,11 +66,26 @@ export const POST = withTenant(async function POST(req: NextRequest) {
   const got = await requireUser();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
+  try {
+  if (body.quoteOnly === true) {
+    const auth = await requireRender();
+    if (auth.response) return auth.response;
+    const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure;
+    const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
+    if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
+    const projectId = typeof body.projectId === "string" ? body.projectId : null;
+    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,
+      model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
+      context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
+      userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
+  }
   const id = await createChat({
     userId: got.user.id,
     projectId: typeof body.projectId === "string" ? body.projectId : null,
     model: typeof body.model === "string" && body.model ? body.model : "auto",
+    effort: requestEffort(body.effort),
     agentMode: body.agentMode === "auto" ? "auto" : ("ask" as AgentMode),
   });
   return NextResponse.json({ id });
+  } catch (error) { return paidTextFailure(error); }
 });

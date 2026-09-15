@@ -8,6 +8,9 @@ import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
 import {usePaidAction} from "@/lib/usePaidAction";
 import { useMoney } from "@/lib/price";
+import { useAtomikQuote } from "@/lib/useAtomikQuote";
+import type { PaidTextQuote } from "@/lib/paidText";
+import type { ThinkingModel } from "./ModelPicker";
 
 /**
  * Atomik, at app level (design/particl-v2/README.md §5).
@@ -27,7 +30,7 @@ import { useMoney } from "@/lib/price";
  */
 
 type Loaded = { chat: Chat; messages: Message[]; steps: Step[] };
-type Index = { chats: (Chat & { needsApproval: boolean })[]; engines: Engine[] };
+type Index = { chats: (Chat & { needsApproval: boolean })[]; engines: Engine[]; models?: { featured: ThinkingModel[]; rest: ThinkingModel[] } };
 
 export type Current =
   | { kind: "idle" }
@@ -58,6 +61,16 @@ export type AtomikLive = {
   busy: boolean;
   error: string | null;
   recoveryText:string|null;
+  models: ThinkingModel[];
+  model: string;
+  effort: string;
+  draftText: string;
+  setDraftText: (text: string) => void;
+  setThinkingModel: (model: string) => void;
+  setReasoningEffort: (effort: string) => void;
+  quote: PaidTextQuote | null;
+  quoteError: string | null;
+  quoting: boolean;
   send: (text: string) => Promise<void>;
   approve: (step: Step) => Promise<void>;
   stop: (step: Step) => Promise<void>;
@@ -71,11 +84,12 @@ const usdOf = (s: Step) => s.estCostUsd ?? 0;
 const whole = (n: number) => (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0);
 
 export function AtomikProvider({ children }: { children: ReactNode }) {
-  const { signedIn } = useSession();
+  const { signedIn, workspace, email } = useSession();
   const { current: production } = useProject();
   const money = useMoney();
   const paid=usePaidAction(`/api/atomik/chat:${production?.id??"unfiled"}`);
-  const recoveryText=paid.pending?String(JSON.parse(paid.pending.body).text??""):null;
+  const recovered = paid.pending ? JSON.parse(paid.pending.body) as {text?:string;model?:string;effort?:string} : null;
+  const recoveryText = recovered ? String(recovered.text ?? "") : null;
   const { data: index, refresh: refreshIndex } = useApi<Index>(signedIn ? "/api/atomik" : null, 60_000);
   /* A conversation this browser started, and the production it started it
      for — it stands in for the index's pick only while that production is
@@ -101,6 +115,21 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     signedIn && activeId ? `/api/atomik/${encodeURIComponent(activeId)}` : null,
     thinking ? 3_000 : 15_000,
   );
+  const composerScope = JSON.stringify([workspace?.id, email, production?.id, activeId]);
+  const [selection, setSelection] = useState<{ scope: string; model: string; effort: string } | null>(null);
+  const [draft, setDraft] = useState<{ scope: string; text: string } | null>(null);
+  const selected = selection?.scope === composerScope ? selection : null;
+  const savedChat = loaded?.chat.id === activeId ? loaded.chat : null;
+  const model = recovered?.model ?? selected?.model ?? savedChat?.model ?? "auto";
+  const effort = recovered?.effort ?? selected?.effort ?? savedChat?.effort ?? "auto";
+  const draftText = recoveryText ?? (draft?.scope === composerScope ? draft.text : "");
+  const models = useMemo(() => [...(index?.models?.featured ?? []), ...(index?.models?.rest ?? [])], [index]);
+  const setDraftText = useCallback((text: string) => { if (!paid.pending && !busy) setDraft({ scope: composerScope, text }); }, [composerScope, paid.pending, busy]);
+  const setThinkingModel = useCallback((value: string) => { if (!paid.pending && !busy) setSelection({ scope: composerScope, model: value, effort: "auto" }); }, [composerScope, paid.pending, busy]);
+  const setReasoningEffort = useCallback((value: string) => { if (!paid.pending && !busy) setSelection({ scope: composerScope, model, effort: value }); }, [composerScope, model, paid.pending, busy]);
+  const { quote, error: quoteError, loading: quoting } = useAtomikQuote(activeId ? `/api/atomik/${encodeURIComponent(activeId)}` : "/api/atomik",
+    !paid.pending && draftText.trim() ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
+
   /* The latest refresh, for the flows that await it after their writes —
      bound in an effect, since a ref may not change during render. */
   const refreshRef = useRef(refreshChat);
@@ -161,18 +190,21 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const send = useCallback(async (text: string) => {
     const t = (recoveryText??text).trim();
     if (!t || busy) return;
+    if (!paid.pending && (!quote || t !== draftText.trim())) { setError("Review the current planning estimate before sending."); return; }
+    const requestBody = paid.pending ? JSON.parse(paid.pending.body) : { text: t, model: quote!.model, effort: quote!.effort, maxCredits: quote!.estimateCredits };
     setBusy(true); setError(null);
     try {
       let id = paid.pending?decodeURIComponent(paid.pending.url.split("/").at(-1)!):activeId;
       if(paid.pending)setChatFor({id:id!,projectId:production?.id??null});
       if (!id) {
-        const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: production?.id ?? null }) });
+        const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: production?.id ?? null, model: requestBody.model, effort: requestBody.effort }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Atomik couldn't start a conversation.");
         id = String(j.id); setChatFor({ id, projectId: production?.id ?? null }); setDismissed(null);
       }
       setThinking(true);
-      await paid.run(`/api/atomik/${encodeURIComponent(id)}`,{text:t});
+      await paid.run(`/api/atomik/${encodeURIComponent(id)}`, requestBody);
+      setDraft(null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -181,7 +213,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       refreshIndex();
       setBusy(false);
     }
-  }, [activeId, busy, production, refreshIndex,paid,recoveryText]);
+  }, [activeId, busy, production, refreshIndex,paid,recoveryText,quote,draftText]);
 
   /* Continue: the gate. Claim, then render through the ordinary routes. */
   const approve = useCallback(async (proposed: Step) => {
@@ -236,7 +268,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
     chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, fmt, engineLabel,
-    busy, error:paid.error??error, recoveryText, send, approve, stop, changeEngine, clear,
+    busy, error:paid.error??error, recoveryText, models, model, effort, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -244,7 +276,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
   totals: { total: 0, underCap: null, planning: 0 }, credits: () => 0, fmt: (n) => String(n), engineLabel: (id) => id,
-  busy: false, error: null, recoveryText:null, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
+  busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
 };
 
 export function useAtomik(): AtomikLive {

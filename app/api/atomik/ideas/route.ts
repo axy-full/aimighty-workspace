@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
+import { requestEffort } from "@/lib/atomik";
+import { paidTextFailure } from "@/lib/paidText";
 import { listIdeas, createIdea } from "@/lib/atomikDocs";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +39,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const tone = Array.isArray(body.tone) ? body.tone.map((t: unknown) => String(t).trim().slice(0, 30)).filter(Boolean) : [];
   const refs = Array.isArray(body.refs) ? body.refs.map(String).slice(0, 3) : [];
   const model = typeof body.model === "string" && body.model && body.model !== "auto" ? body.model.slice(0, 120) : null;
-  const idea = await createIdea({ logline, tone, refs, model, createdBy: got.user.id });
+  try {
+  const idea = await createIdea({ logline, tone, refs, model, effort: requestEffort(body.effort), createdBy: got.user.id });
   return NextResponse.json({ idea });
+  } catch (error) { return paidTextFailure(error); }
 });

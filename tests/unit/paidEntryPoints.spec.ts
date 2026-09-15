@@ -463,3 +463,95 @@ test("a training attempt and its meter count once toward the monthly cap, includ
     );
     expect(await metered("training_cap")).toHaveLength(2);
   }));
+
+test("legacy reasoning quotes are read-only and the paid request reserves the quoted reasoning ceiling", async () =>
+  scope("text_reasoning_quote", async () => {
+    const { quotePaidText, runPaidText } = await import("../../lib/paidText");
+    const { db } = await import("../../lib/db");
+    const thinking: CatalogModel = {
+      ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", maxTokens: 32768,
+      tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }],
+    };
+    const request = { ...call, id: "quoted_reasoning", model: thinking.id, effort: "high" };
+    const quote = await quotePaidText(request, thinking);
+    expect(quote.model).toBe(thinking.id);
+    expect(quote.effort).toBe("high");
+    expect(quote.estimateCredits).toBeGreaterThan(0);
+    const { paidTextQuoteResponse } = await import("../../lib/paidText");
+    expect(await paidTextQuoteResponse(quote).json()).not.toHaveProperty("estimateUsd");
+    expect(await metered("text_reasoning_quote")).toEqual([]);
+    expect((await db().execute("SELECT name FROM sqlite_master WHERE name='paid_text_jobs'")).rows).toEqual([]);
+    let calls = 0;
+    await expect(runPaidText({ ...request, maxCredits: quote.estimateCredits - 1 }, { model: thinking, submit: async () => {
+      calls++; return { ok: true, status: 200, text: "{}" };
+    } })).rejects.toThrow("estimate changed");
+    expect(calls).toBe(0);
+    expect(await metered("text_reasoning_quote")).toEqual([]);
+    const result = await runPaidText({ ...request, maxCredits: quote.estimateCredits }, { model: thinking, submit: async (input) => {
+      calls++;
+      const body = JSON.parse(input.body);
+      expect(body.reasoning_effort).toBe("high");
+      expect(body.max_tokens).toBe(900 + 16384);
+      expect((await metered("text_reasoning_quote"))[0].status).toBe("running");
+      return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: '{"logline":"A film"}' } }], usage: { cost: 0.01 } }) };
+    } });
+    expect(result.id).toBe(request.id);
+    expect(calls).toBe(1);
+    const saved = (await db().execute({ sql: "SELECT effort, request_body FROM paid_text_jobs WHERE id=?", args: [request.id] })).rows[0];
+    expect(saved.effort).toBe("high");
+    expect(JSON.parse(String(saved.request_body)).reasoning_effort).toBe("high");
+    await expect(runPaidText({ ...request, maxCredits: quote.estimateCredits }, { model: thinking })).rejects.toThrow("already has a paid claim");
+  }));
+
+test("legacy invalid efforts and incompatible image references fail before a paid claim", async () =>
+  scope("text_bad_reasoning", async () => {
+    const { runPaidText, quotePaidText } = await import("../../lib/paidText");
+    const { requestEffort } = await import("../../lib/atomik");
+    const { requestMaxCredits } = await import("../../lib/paidText");
+    expect(requestMaxCredits(undefined)).toBeUndefined();
+    expect(() => requestMaxCredits(undefined, true)).toThrow("Review a writing quote");
+    expect(requestEffort(undefined)).toBeUndefined();
+    expect(requestEffort("budget:4096")).toBe("budget:4096");
+    expect(() => requestEffort({ effort: "high" })).toThrow("supported reasoning effort");
+    let calls = 0;
+    await expect(runPaidText({ ...call, effort: "high" }, { model, submit: async () => {
+      calls++; return { ok: true, status: 200, text: "{}" };
+    } })).rejects.toThrow("effort setting is not available");
+    await expect(quotePaidText({ ...call, messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "data:image/png;base64,aA==" } }] }] }, model)).rejects.toThrow("cannot read image references");
+    expect(calls).toBe(0);
+    expect(await metered("text_bad_reasoning")).toEqual([]);
+  }));
+
+
+test("an older text request without effort keeps its original output limit and wire fields", async () =>
+  scope("text_old_effort", async () => {
+    const { runPaidText } = await import("../../lib/paidText");
+    const thinking: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", maxTokens: 32768,
+      tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }] };
+    const { createChat, getChat } = await import("../../lib/atomik");
+    const chatId = await createChat({ userId: "test_user", projectId: null, model: thinking.id, agentMode: "ask" });
+    const restored = await getChat(chatId);
+    expect(restored?.chat.effort).toBeUndefined();
+    await runPaidText({ ...call, model: thinking.id, maxTokens: 4000, effort: restored?.chat.effort }, { model: thinking, submit: async (input) => {
+      const body = JSON.parse(input.body);
+      expect(body.max_tokens).toBe(4000);
+      expect(body).not.toHaveProperty("reasoning_effort");
+      expect(body).not.toHaveProperty("providerOptions");
+      return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: '{"say":"Done"}' } }], usage: { cost: 0.01 } }) };
+    } });
+  }));
+
+
+test("premium reasoning is available within its explicit quote while old unquoted text retains its budget", async () =>
+  scope("text_premium_quote", async () => {
+    const { quotePaidText, runPaidText } = await import("../../lib/paidText");
+    const premium: CatalogModel = { ...model, id: "openai/gpt-5.5-pro", owner: "openai", maxTokens: 32768,
+      pricing: { input: "0.00003", output: "0.0003" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["high"] }] };
+    const request = { ...call, model: premium.id, effort: "high", maxTokens: 4000 };
+    const quote = await quotePaidText(request, premium);
+    expect(quote.estimateUsd).toBeGreaterThan(1);
+    expect(quote.estimateUsd).toBeLessThan(10);
+    await expect(runPaidText(request, { model: premium })).rejects.toThrow("Review a writing quote");
+    await expect(quotePaidText({ ...request, effort: undefined }, premium)).rejects.toThrow("request budget");
+    expect(await metered("text_premium_quote")).toEqual([]);
+  }));

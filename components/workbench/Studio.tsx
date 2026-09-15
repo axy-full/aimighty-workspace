@@ -144,6 +144,7 @@ import {
 import {GenerationDialog,studioRequest,StudioRequestError,type GenerationTarget} from './GenerationDialog';
 import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {useProductionJobs} from './use-production-jobs';
+import {ModelPicker,EffortPicker,thinkingModelName,effortLabel} from '@/components/atomik/ModelPicker';
 import {uploadWorkbench} from '@/lib/workbench/upload';
 import {AssetPreview} from './AssetPreview';
 import {SoundMix} from './SoundMix';
@@ -357,6 +358,7 @@ export default function Studio({
   const [atomOpen, setAtomOpen] = useState(false);
   const [atomTab, setAtomTab] = useState("genie");
   const [model, setModel] = useState("auto");
+  const [effort, setEffort] = useState("auto");
   const [depth, setDepth] = useState("Quick");
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -938,7 +940,7 @@ export default function Studio({
   async function runGenie(text = prompt, role?: string) {
     if(!text.trim()||busy||transitioningRef.current)return;setBusy(true);
     const draftId=pRef.current.id;
-    try{if(!(await ensureSaved(draftId))||transitioningRef.current||pRef.current.id!==draftId)return;setAtomikTarget({request:text,role,model,depth,refs:contextIds,draftId});}
+    try{if(!(await ensureSaved(draftId))||transitioningRef.current||pRef.current.id!==draftId)return;setAtomikTarget({request:text,role,model,effort,depth,refs:contextIds,draftId});}
     catch(e){toast.error(e instanceof Error?e.message:'Atomik could not start.')}finally{setBusy(false)}
   }
   function applyPlan(plan: Plan) {
@@ -2717,7 +2719,7 @@ export default function Studio({
                                   : "Build in my space"}
                               </Button>
                               <span className="plan-meta">
-                                {plan.model} · {plan.depth} exploration · Sample
+                                {thinkingModelName(plan.model,jobs.models)} · {plan.depth} exploration · Sample
                                 workflow
                               </span>
                             </div>
@@ -2797,7 +2799,7 @@ export default function Studio({
                       <div className="activity-tab">
                         <h3>Your creative activity</h3>
                       {jobs.error&&<p role="status">{jobs.error}</p>}
-                      {[...jobs.atomikJobs,...jobs.mediaJobs].map(job=><div className="activity-item" key={job.id}><span className="activity-icon"><Sparkles size={16}/></span><div><strong>{job.model}</strong><p>{job.status}</p>{job.error&&<p role="alert">{job.error}</p>}<small>{'credits' in job && job.credits!=null?job.credits+' cr':''}</small></div><button onClick={()=>void jobs.refresh()} aria-label="Refresh job status"><Undo2 size={14}/></button></div>)}
+                      {[...jobs.atomikJobs,...jobs.mediaJobs].map(job=><div className="activity-item" key={job.id}><span className="activity-icon"><Sparkles size={16}/></span><div><strong>{thinkingModelName(job.model,jobs.models)}</strong><p>{job.status}</p>{job.error&&<p role="alert">{job.error}</p>}<small>{'credits' in job && job.credits!=null?job.credits+' cr':''}</small></div><button onClick={()=>void jobs.refresh()} aria-label="Refresh job status"><Undo2 size={14}/></button></div>)}
                         {!p.plans.length ? (
                           <p>Your ideas and canvas actions will appear here.</p>
                         ) : (
@@ -2826,7 +2828,7 @@ export default function Studio({
                                     ? "Added to your personal canvas"
                                     : "Ready to explore"}
                                 </p>
-                                <small>{plan.model} </small>
+                                <small>{thinkingModelName(plan.model,jobs.models)}{plan.effort ? ` · ${effortLabel(plan.effort,jobs.models.find(option=>option.id===plan.model))}` : ""}</small>
                               </div>
                               <Check size={13} />
                             </div>
@@ -2868,18 +2870,8 @@ export default function Studio({
                         >
                           <Plus size={17} />
                         </IconButton>
-                        <Choice
-                          label="Reasoning model"
-                          value={model}
-                          onChange={setModel}
-                          options={["auto",...jobs.models.map(m=>m.id)]}
-                        />
-                        <Choice
-                          label="Thinking depth"
-                          value={depth}
-                          onChange={setDepth}
-                          options={["Quick", "Considered", "Deep"]}
-                        />
+                        <ModelPicker label="Reasoning model" value={model} models={jobs.models} compact
+                          onPick={value => { setModel(value); setEffort("auto"); }} />
                       </div>
                       <button
                         className="send-button"
@@ -2893,6 +2885,10 @@ export default function Studio({
                           <ArrowUp size={18} />
                         )}
                       </button>
+                    </div>
+                    <div className="atomik-reasoning-controls">
+                      <EffortPicker value={effort} model={jobs.models.find(option => option.id === model)} onPick={setEffort} compact />
+                      <Choice label="Response detail" value={depth} onChange={setDepth} options={["Quick", "Considered", "Deep"]} />
                     </div>
                   </div>
                   <button

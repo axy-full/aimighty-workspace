@@ -1,3 +1,9 @@
+import { creditsApply } from "./credits";
+import { atomikPublicResponse } from "./workbench/atomik-response";
+import { workbenchScopeProblem } from "./workbench/request-scope";
+import { billCredits } from "./creditTerms";
+import { paidByPlatform } from "./platformSpend";
+import { atomikReasoningRequest } from "./atomik-reasoning";
 import { withRecoveryActivity } from './recovery';
 import { db, ready, id as newId, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
@@ -34,7 +40,13 @@ async function paidTextReady() {
         await ready();
         await db()
           .execute(`CREATE TABLE IF NOT EXISTS paid_text_jobs(id TEXT PRIMARY KEY, model TEXT NOT NULL, kind TEXT NOT NULL,
-      status TEXT NOT NULL, estimate_usd REAL NOT NULL, cost_usd REAL, response_json TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
+      status TEXT NOT NULL, estimate_usd REAL NOT NULL, cost_usd REAL, response_json TEXT, effort TEXT, request_body TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
+        const columns = await db().execute("PRAGMA table_info(paid_text_jobs)");
+        for (const column of ["effort", "request_body"]) {
+          if (columns.rows.some((row) => row.name === column)) continue;
+          try { await db().execute(`ALTER TABLE paid_text_jobs ADD COLUMN ${column} TEXT`); }
+          catch (error) { if (!/duplicate column/i.test(String(error))) throw error; }
+        }
       })().catch((error) => {
         configured.delete(id);
         throw error;
@@ -47,6 +59,7 @@ export function textRequestEstimate(
   model: CatalogModel,
   messages: unknown[],
   maxTokens: number,
+  expandedQuote = false,
 ): number {
   // Includes wire-format overhead and UTF-8 text; base64 references also receive a conservative bound.
   const input = Buffer.byteLength(JSON.stringify(messages), "utf8") + 512;
@@ -54,7 +67,7 @@ export function textRequestEstimate(
     model.type !== "language" ||
     !Number.isInteger(maxTokens) ||
     maxTokens < 1 ||
-    maxTokens > 4000 ||
+    maxTokens > 32768 ||
     (model.maxTokens != null && maxTokens > model.maxTokens) ||
     (model.contextWindow != null && input + maxTokens > model.contextWindow)
   )
@@ -68,15 +81,80 @@ export function textRequestEstimate(
       "This model has no confirmed price. Choose a priced language model.",
       503,
     );
-  const configured = Number(process.env.ATOMIK_MAX_REQUEST_USD ?? 1);
-  const cap =
-    Number.isFinite(configured) && configured > 0 ? Math.min(configured, 5) : 1;
+  const fallback = expandedQuote ? 10 : 1;
+  const configured = Number(process.env.ATOMIK_MAX_REQUEST_USD ?? fallback);
+  const cap = Number.isFinite(configured) && configured > 0 ? Math.min(configured, expandedQuote ? 10 : 5) : fallback;
   if (estimate > cap)
     throw new PaidTextError(
-      "This request exceeds the Atomik request budget. Use fewer references, shorter context, or an economy model.",
+      "This request exceeds the Atomik request budget. Use lower effort, fewer references, shorter context, or an economy model.",
       409,
     );
   return estimate;
+}
+
+export type PaidTextQuote = { model: string; effort: string; estimateCredits: number; estimateUsd?: number };
+type QuotedTextInput = { model: string; effort?: string; maxTokens: number; messages: unknown[]; maxCredits?: number };
+async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) {
+  const model = override ?? (await findModel(input.model));
+  if (!model)
+    throw new PaidTextError(
+      "Choose a language model from the current catalog.",
+      400,
+    );
+  if (!Number.isInteger(input.maxTokens) || input.maxTokens < 1 || input.maxTokens > 4000)
+    throw new PaidTextError("Atomik visible output must be between 1 and 4000 tokens.", 400);
+  let reasoning: ReturnType<typeof atomikReasoningRequest>;
+  try { reasoning = atomikReasoningRequest(model, input.effort, input.maxTokens); }
+  catch (error) { throw new PaidTextError(error instanceof Error ? error.message : "Choose a supported reasoning effort.", 400); }
+  const usesImages = input.messages.some((message) => {
+    if (!message || typeof message !== "object") return false;
+    const content = (message as { content?: unknown }).content;
+    return Array.isArray(content) && content.some((part) => part && typeof part === "object" && ["image", "image_url", "input_image"].includes(String(part.type)));
+  });
+  if (usesImages && !model.inputModalities?.includes("image"))
+    throw new PaidTextError("This model cannot read image references. Choose a model with image input or remove the references.", 422);
+  const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens, input.effort !== undefined);
+  const estimateCredits = paidByPlatform("gateway") ? billCredits(estimate, "text") : 0;
+  if (input.maxCredits !== undefined && (!Number.isInteger(input.maxCredits) || input.maxCredits < 0 || estimateCredits > input.maxCredits))
+    throw new PaidTextError("The writing estimate changed. Review the new quote before running.", 409);
+  const requestBody = JSON.stringify({
+    model: input.model,
+    max_tokens: reasoning.maxTokens,
+    ...reasoning.requestFields,
+    messages: input.messages,
+    response_format: { type: "json_object" },
+    ...(Object.keys(reasoning.providerOptions).length ? { providerOptions: reasoning.providerOptions } : {}),
+  });
+  return { model, estimate, estimateCredits, requestBody };
+}
+/** A read-only quote: no request claim, reservation, provider call or spend row. */
+export async function quotePaidText(input: QuotedTextInput, override?: CatalogModel): Promise<PaidTextQuote> {
+  const compiled = await compilePaidText(input, override);
+  return { model: compiled.model.id, effort: input.effort ?? "auto", estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimate };
+}
+export function paidTextQuoteResponse(quote: PaidTextQuote): Response {
+  return Response.json(atomikPublicResponse(quote, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
+}
+export function paidTextQuoteScopeFailure(req: Request): Response | null {
+  const tenant = requireTenant();
+  const actor = currentTenant()?.user;
+  const scopeError = workbenchScopeProblem(req, tenant.id, actor?.id ?? "");
+  if (scopeError) return Response.json({ error: scopeError }, { status: 409 });
+  if (req.headers.get("X-Workspace-Id") && req.headers.get("X-Workspace-Id") !== tenant.id)
+    return Response.json({ error: "Return to the workspace where this quote was requested." }, { status: 409 });
+  const expected = req.headers.get("X-Actor-Email");
+  if (expected && expected.toLowerCase() !== actor?.email.toLowerCase())
+    return Response.json({ error: "Sign in with the account that requested this quote." }, { status: 409 });
+  return null;
+}
+export function requestMaxCredits(value: unknown, required = false): number | undefined {
+  if (value === undefined) {
+    if (required) throw new PaidTextError("Review a writing quote before running with reasoning effort.", 409);
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 10000)
+    throw new PaidTextError("The writing credit ceiling is invalid. Request a new quote.", 400);
+  return value;
 }
 
 /** One bounded submission. No hidden model repair, provider failover, or transport retry. */
@@ -86,6 +164,8 @@ export async function runPaidText(
     model: string;
     messages: unknown[];
     maxTokens: number;
+    effort?: string;
+    maxCredits?: number;
     kind: string;
     projectId?: string | null;
     createdBy?: string | null;
@@ -104,13 +184,8 @@ export async function runPaidText(
 ) {
 return await withRecoveryActivity('paid-text', async () => {
 
-  const model = overrides.model ?? (await findModel(input.model));
-  if (!model)
-    throw new PaidTextError(
-      "Choose a language model from the current catalog.",
-      400,
-    );
-  const estimate = textRequestEstimate(model, input.messages, input.maxTokens);
+  const { model, estimate, requestBody } = await compilePaidText(input, overrides.model);
+  requestMaxCredits(input.maxCredits, input.effort !== undefined);
   await paidTextReady();
   const id = input.id ?? newId("text");
   const prior = await db().execute({
@@ -124,8 +199,8 @@ return await withRecoveryActivity('paid-text', async () => {
     );
   const ts = now();
   await db().execute({
-    sql: `INSERT INTO paid_text_jobs(id,model,kind,status,estimate_usd,created_at,updated_at) VALUES(?,?,?,'queued',?,?,?)`,
-    args: [id, input.model, input.kind, estimate, ts, ts],
+    sql: `INSERT INTO paid_text_jobs(id,model,kind,status,estimate_usd,effort,request_body,created_at,updated_at) VALUES(?,?,?,'queued',?,?,?,?,?)`,
+    args: [id, input.model, input.kind, estimate, input.effort ?? null, requestBody, ts, ts],
   });
   const event = {
     id,
@@ -153,15 +228,10 @@ return await withRecoveryActivity('paid-text', async () => {
     const submit = overrides.submit ?? engineFor("vercel").run!;
     submitted = true;
     const response = await submit({
-      body: JSON.stringify({
-        model: input.model,
-        max_tokens: input.maxTokens,
-        messages: input.messages,
-        response_format: { type: "json_object" },
-      }),
+      body: requestBody,
       auth: input.auth,
       mock: input.mock,
-      timeoutMs: input.timeoutMs ?? 120_000,
+      timeoutMs: input.timeoutMs ?? 270_000,
     });
     if (!response.ok) {
       const rejected = [400, 401, 402, 403, 404, 422, 429].includes(

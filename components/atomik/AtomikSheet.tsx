@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAtomik } from "@/components/atomik/AtomikProvider";
 import { useAtomikRail, setAtomikRail } from "@/lib/atomikRail";
 import Ring from "@/components/atomik/Ring";
+import { ChatComposer } from "./ChatComposer";
 import { Mono, Sheet } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import type { Step } from "@/lib/atomik";
@@ -28,7 +29,6 @@ import type { Step } from "@/lib/atomik";
 export default function AtomikSheet() {
   const a = useAtomik();
   const rail = useAtomikRail();
-  const [text, setText] = useState("");
   const [engineMenu, setEngineMenu] = useState<{ x: number; y: number; step: Step } | null>(null);
   const seen = useRef<string | null>(null);
   const cur = a.current;
@@ -44,7 +44,6 @@ export default function AtomikSheet() {
   const total = a.plan.length;
   const context = total ? `${done.length} of ${total}` : a.chat?.title ?? null;
   const eyebrow = step ? "Checkpoint · stopped" : cur.kind === "question" ? "Question" : cur.kind === "planning" ? "Planning" : cur.kind === "done" ? "Done" : "Nothing needs you";
-  const ask = async () => { const t = text.trim(); if (!t || a.busy) return; setText(""); await a.send(t); };
   const secondary = "tap44 flex h-[44px] flex-1 items-center justify-center rounded-card border border-[rgba(245,246,248,.16)] text-[13.5px] font-medium leading-none";
   const action = "tap44 flex h-[34px] items-center rounded-ctl border border-border-mid px-[10px] text-[12.5px] font-medium leading-none text-ink";
 
@@ -52,11 +51,7 @@ export default function AtomikSheet() {
     <Sheet open={rail.open} onClose={close} label="Atomik" size={expanded ? "expanded" : "compact"}
       title={<span className="flex items-center gap-[8px]">{"steps" in a.ring && a.ring.steps ? <Ring steps={a.ring.steps} size={18} /> : <Ring mode={"mode" in a.ring && a.ring.mode ? a.ring.mode : "idle"} size={18} />}Atomik</span>} context={context}
       actions={expanded ? <button type="button" onClick={rail.compact} className={action}>Compact ↓</button> : <button type="button" onClick={rail.expand} className={action}>Expand ↑</button>}
-      footer={<>
-        <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} placeholder="Ask Atomik…" aria-label="Ask Atomik"
-          className="box-border h-[48px] min-w-0 flex-1 rounded-card border border-[rgba(245,246,248,.12)] bg-card px-[12px] text-[16px] text-ink outline-0 placeholder:text-ink-muted" />
-        <button type="button" onClick={ask} disabled={!text.trim() || a.busy} aria-label="Send" className="flex h-[48px] w-[48px] flex-none items-center justify-center rounded-card border border-border-mid text-[16px] font-medium leading-none text-ink disabled:opacity-60">↑</button>
-      </>} footerPad="8px 16px 26px">
+      footer={<ChatComposer />} footerPad="8px 16px 26px">
       {expanded && (
         <>
           {a.messages.map((m) => (
@@ -95,7 +90,7 @@ export default function AtomikSheet() {
         </span>
         <span className="text-[14px] leading-[1.45] text-ink-body" style={{ textWrap: "pretty" }}>
           {step ? `Next: ${step.title.toLowerCase()} on ${a.engineLabel(step.model)}.`
-            : cur.kind === "question" ? "Pick one and Atomik carries on."
+            : cur.kind === "question" ? "Pick a response, then review the planning estimate below."
             : cur.kind === "planning" ? "Atomik is working out what to render."
             : cur.kind === "done" ? `${done.length} ${done.length === 1 ? "take" : "takes"} on the grid; approve them there.`
             : "Ask below, or open a production and Atomik plans it from there."}
@@ -115,7 +110,7 @@ export default function AtomikSheet() {
         )}
         {cur.kind === "question" && (
           <span className="flex flex-col gap-[8px]">
-            {cur.ask.options.map((o) => <button key={o} type="button" onClick={() => a.send(o)} disabled={a.busy} className={`${secondary} text-ink`}>{o}</button>)}
+            {cur.ask.options.map((o) => <button key={o} type="button" onClick={() => a.setDraftText(o)} disabled={a.busy} className={`${secondary} text-ink`}>{o}</button>)}
           </span>
         )}
       </div>

@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { now } from "@/lib/db";
 import { getTreatment, sceneFromReply } from "@/lib/atomikDocs";
-import { resolveModel } from "@/lib/atomik";
+import { requestEffort, resolveModel } from "@/lib/atomik";
 import { gatewayReachable } from "@/lib/gateway";
 import { specToPhrase } from "@/lib/studio";
 
-import { runPaidText, paidTextFailure } from "@/lib/paidText";
+import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest } from "@/lib/generationRequests";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const SYSTEM = [
   "You rewrite ONE scene of a film treatment for a production studio, in the voice of the treatment around it.",
@@ -32,7 +33,9 @@ export const POST = withTenant(async function POST(req: Request) {
      these two were left behind. */
   const got = await requireRender();
   if (got.response) return got.response;
-  return withGenerationRequest(req, got.user.id, async () => {
+  const quoteOnly = (await req.clone().json().catch(() => ({}))).quoteOnly === true;
+  if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
+  const run = async () => {
   try {
   const body = await req.json().catch(() => ({}));
   const projectId = String(body.projectId ?? "");
@@ -43,6 +46,7 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!t || !scene) return NextResponse.json({ error: "No such scene." }, { status: 404 });
   if (!gatewayReachable()) return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
 
+  const effort = requestEffort(body.effort);
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
   const user = [
     `LOGLINE: ${t.logline || "(none yet)"}`,
@@ -51,13 +55,16 @@ export const POST = withTenant(async function POST(req: Request) {
     `REWRITE SCENE ${n}:`, `title: ${scene.title || "(untitled)"}`, `secs: ${scene.secs}`, `prose: ${scene.prose || "(empty)"}`,
     typeof body.note === "string" && body.note.trim() ? `THE PERSON ASKS: ${body.note.trim().slice(0, 400)}` : "",
   ].filter(Boolean).join("\n");
-  const result = await runPaidText({ model, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene", createdBy: got.user.id, projectId });
+  const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene" as const, createdBy: got.user.id, projectId };
+  if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
+  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
   const text = result.text;
   const costUsd = result.costUsd;
   const out = sceneFromReply(text);
   if (!out) return NextResponse.json({ error: `${model} answered, but not with a scene. Try once more, or another model.` }, { status: 502 });
 
-  return NextResponse.json({ scene: { ...out, n, by: model, at: now() }, model, costUsd });
+  return NextResponse.json({ scene: { ...out, n, by: model, effort: effort ?? "auto", at: now() }, model, effort: effort ?? "auto", costUsd });
   } catch (error) { return paidTextFailure(error); }
-  });
+  };
+  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);
 });

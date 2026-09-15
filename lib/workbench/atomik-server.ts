@@ -1,5 +1,6 @@
 import { withRecoveryJob } from '../recovery';
-import { isAtomikModel } from "../atomikModelPolicy";
+import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
+import { atomikEffortOptions, atomikReasoningRequest } from "../atomik-reasoning";
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, ready, now } from '../db';
@@ -26,6 +27,8 @@ export const atomikRequestSchema = z.object({
   role: z.enum(['director', 'dop', 'editor', 'design', 'costume', 'producer', 'continuity']).optional(),
   model: z.string().min(1).max(120).default('auto'),
   depth: z.enum(['Quick', 'Considered', 'Deep']).default('Quick'),
+  // Optional preserves fingerprints and exact recovery bodies created before effort controls.
+  effort: z.string().min(1).max(40).optional(),
   refs: z.array(z.string().min(1).max(100)).max(12).default([]),
   maxCredits: z.number().int().min(0).max(10000).optional(),
   videoFrames: z.array(z.object({ assetId: z.string().min(1).max(100), uploadId: z.string().regex(/^[\w-]{1,100}$/), timeSeconds: z.number().finite().min(0).max(3600) }).strict()).max(ATOMIK_MAX_VISUALS).optional(),
@@ -34,7 +37,7 @@ export type AtomikRequest = z.infer<typeof atomikRequestSchema>;
 export type AtomikStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'uncertain';
 export type AtomikJob = {
   id: string; requestId: string; projectId: string; productionProjectId: string | null; status: AtomikStatus;
-  request: string; model: string; depth: AtomikRequest['depth']; role?: string;
+  request: string; model: string; depth: AtomikRequest['depth']; effort?: string; role?: string;
   refs: string[]; plan: Plan | null; estimateUsd: number; estimateCredits: number;
   costUsd: number | null; credits: number | null; error: string | null;
   createdAt: number; updatedAt: number;
@@ -48,11 +51,11 @@ const boundedSetting = (key: string, fallback: number, ceiling: number) => {
   const value = Number(process.env[key]);
   return Number.isFinite(value) && value > 0 ? Math.min(value, ceiling) : fallback;
 };
-export function atomikBudgets() {
+export function atomikBudgets(quotedEffort = false) {
   return {
-    maxRequestUsd: boundedSetting('WORKBENCH_ATOMIK_MAX_REQUEST_USD', .25, 2),
-    maxProjectUsd: boundedSetting('WORKBENCH_ATOMIK_MAX_PROJECT_USD', 5, 100),
-    maxRunTokens: LIMITS.Deep.maxTokens,
+    maxRequestUsd: boundedSetting('WORKBENCH_ATOMIK_MAX_REQUEST_USD', quotedEffort ? 10 : .25, quotedEffort ? 10 : 2),
+    maxProjectUsd: boundedSetting('WORKBENCH_ATOMIK_MAX_PROJECT_USD', quotedEffort ? 100 : 5, 100),
+    maxRunTokens: quotedEffort ? 32768 : LIMITS.Deep.maxTokens,
   };
 }
 export class AtomikError extends Error {
@@ -105,7 +108,7 @@ function asJob(row: Row): AtomikJob {
   return {
     id: String(row.id), requestId: input.requestId, projectId: input.projectId, productionProjectId: row.production_project_id ? String(row.production_project_id) : null,
     status: String(row.status) as AtomikStatus, request: input.request, model: String(row.model),
-    depth: input.depth, role: input.role, refs: input.refs,
+    depth: input.depth, ...(input.effort == null ? {} : { effort: input.effort }), role: input.role, refs: input.refs,
     estimateUsd: Number(row.estimate_usd), estimateCredits: Number(row.estimate_credits),
     costUsd: row.cost_usd == null ? null : Number(row.cost_usd),
     credits: row.credits == null ? null : Number(row.credits),
@@ -121,9 +124,9 @@ function prices(model: CatalogModel) {
 }
 /** Only catalogued language models with both known token prices can incur spend. */
 export function atomikModels(models: CatalogModel[]) {
-  return models.filter(m => isAtomikModel(m.id) && m.type === 'language' && prices(m))
+  return models.filter(m => isAtomikModel(m.id) && m.type === 'language' && (!m.outputModalities?.length || m.outputModalities.includes('text')) && !m.tags?.some(tag => ['image-generation','video-generation'].includes(tag)) && prices(m))
     .sort((a, b) => (textCostUsd(a, 8000, 1800) ?? Infinity) - (textCostUsd(b, 8000, 1800) ?? Infinity))
-    .map(m => ({ id: m.id, name: m.name, vision: m.inputModalities?.includes('image') ?? false, inputPerMillion: prices(m)!.input * 1e6, outputPerMillion: prices(m)!.output * 1e6 }));
+    .map(m => ({ id: m.id, name: m.name, released: m.released, efforts: atomikEffortOptions(m), vision: m.inputModalities?.includes('image') ?? false, inputPerMillion: prices(m)!.input * 1e6, outputPerMillion: prices(m)!.output * 1e6 }));
 }
 export function atomikSystem(input: AtomikRequest) {
   const role = CREW.find(c => c.id === input.role);
@@ -165,6 +168,17 @@ const resultSchema = z.object({
   summary: z.string().trim().min(1).max(5000),
   steps: z.array(z.string().trim().min(1).max(10000)).min(1).max(12),
 }).strict();
+/** The wire schema uses the subset supported across providers; length constraints
+ * remain in resultSchema and are enforced after inference.
+ * Older planners can produce JSON but cannot accept a strict schema on the wire.
+ * Their responses still pass the same server-side validation, with no paid repair.
+ */
+export function atomikResponseFormat(modelId: string): Record<string, unknown> {
+  if (['anthropic/claude-3-haiku', 'anthropic/claude-opus-4', 'anthropic/claude-sonnet-4'].includes(modelId)) return {};
+  if (['openai/gpt-3.5-turbo', 'openai/gpt-4-turbo'].includes(modelId)) return { response_format: { type: 'json_object' } };
+  return { response_format: { type: 'json_schema', json_schema: { name: 'production_proposal', strict: true, schema: { type: 'object', properties: { intent: { type: 'string', enum: ['campaign','script','shots','revision','continuity'] }, summary: { type: 'string' }, steps: { type: 'array', items: { type: 'string' } } }, required: ['intent','summary','steps'], additionalProperties: false } } } };
+}
+
 export function parseAtomikResult(text: string) {
   try { return resultSchema.parse(JSON.parse(text)); }
   catch { throw new AtomikError('The model returned an incomplete or invalid proposal. This paid attempt was saved; it will not be retried automatically.', 502); }
@@ -206,7 +220,9 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const references = await loadAtomikReferences(project, input.refs, owner, input.videoFrames);
   const models = await deps.models();
   const menu = atomikModels(models).filter(model => !references.images.length || model.vision);
-  const selectedId = input.model === 'auto' ? menu[0]?.id : input.model;
+  if (input.model === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);
+  const economy = menu.find(m => (ATOMIK_AUTO_MODEL_IDS as readonly string[]).includes(m.id)) ?? menu[0];
+  const selectedId = input.model === 'auto' ? economy?.id : input.model;
   const model = models.find(m => m.id === selectedId && menu.some(c => c.id === m.id));
   if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
   if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or connect AI Gateway.', 503);
@@ -214,15 +230,19 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const user = atomikContext(project, input, references.text, references.images);
   // UTF-8 byte count is a conservative token upper bound, including non-Latin scripts.
   const inputTokens = Buffer.byteLength(system + user, 'utf8') + 512 + references.inputTokens;
-  const maxTokens = Math.min(LIMITS[input.depth].maxTokens, model.maxTokens ?? Infinity);
+  const reasoning = atomikReasoningRequest(model, input.effort, LIMITS[input.depth].maxTokens);
+  const maxTokens = reasoning.maxTokens;
   if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) {
     throw new AtomikError('This model has too little context for the production. Choose a larger-context model or fewer references.');
   }
-  const estimateUsd = textCostUsd(model, inputTokens, maxTokens)!;
-  const budgets = atomikBudgets();
-  if (estimateUsd > budgets.maxRequestUsd) throw new AtomikError('This request exceeds the Atomik spending limit. Choose an economy model, Quick depth, or fewer references.', 409);
+  const estimateUsd = textCostUsd(model, inputTokens, maxTokens);
+  if (estimateUsd == null || !Number.isFinite(estimateUsd) || estimateUsd < 0) throw new AtomikError('This model has no confirmed price for the current context. Choose another model or refresh the catalogue.', 503);
+  const budgets = atomikBudgets(input.effort !== undefined);
+  if (estimateUsd > budgets.maxRequestUsd) throw new AtomikError('This request exceeds the Atomik spending limit. Choose a less expensive model, lower effort, shorter response detail, or fewer references.', 409);
   const providerBody = JSON.stringify({
     model: model.id, max_tokens: maxTokens,
+    ...reasoning.requestFields,
+    ...(Object.keys(reasoning.providerOptions).length ? { providerOptions: reasoning.providerOptions } : {}),
     messages: [{ role: 'system', content: system }, { role: 'user', content: references.images.length ? [
       { type: 'text', text: user },
       ...references.images.flatMap(image => [
@@ -230,20 +250,20 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
         { type: 'image_url', image_url: { url: image.dataUrl, detail: 'low' } },
       ]),
     ] : user }],
-    response_format: { type: 'json_schema', json_schema: { name: 'production_proposal', strict: true, schema: z.toJSONSchema(resultSchema) } },
+    ...atomikResponseFormat(model.id),
   });
   const estimateCredits = paidByPlatform('gateway') ? billCredits(estimateUsd, 'text') : 0;
   if (input.maxCredits != null && estimateCredits > input.maxCredits) {
     throw new AtomikError('The estimate changed since it was shown. Review the new quote before starting this request.', 409);
   }
-  return { project, model, providerBody, estimateUsd, estimateCredits, budgets, visualCount: references.images.length };
+  return { project, model, providerBody, estimateUsd, estimateCredits, budgets, maxTokens, visualCount: references.images.length };
 }
 
 /** A read-only quote performs no claim, reservation, metering or provider submission. */
 export async function quoteAtomikJob(input: AtomikRequest, owner: string, overrides?: Partial<AtomikDependencies>) {
   const compiled = await compileAtomikRequest(input, owner, withDependencies(overrides));
   return { estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimateUsd, model: compiled.model.id,
-    depth: input.depth, visualCount: compiled.visualCount, maxTokens: LIMITS[input.depth].maxTokens, quoteOnly: true };
+    depth: input.depth, effort: input.effort ?? 'auto', visualCount: compiled.visualCount, maxTokens: compiled.maxTokens, quoteOnly: true };
 }
 
 /** Persist the immutable request first. Only its first claimant may schedule work. */
@@ -256,6 +276,7 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
     if (existing.fingerprint !== fingerprint) throw new AtomikError('This request ID belongs to different instructions. Start a new request.', 409);
     return { job: asJob(existing), scheduled: false };
   }
+  if (input.effort !== undefined && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
   const { project, model, providerBody, estimateUsd, estimateCredits, budgets } = await compileAtomikRequest(input, owner, deps);
   const wall = await deps.allowance('gateway', estimateUsd, model.id);
   if (!wall.ok) throw new AtomikError(wall.error, wall.status);
@@ -331,7 +352,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
   try {
     const auth = await deps.auth();
     submitted = true;
-    const response = await deps.run({ body: String(row.provider_body), auth, timeoutMs: 90000 });
+    const response = await deps.run({ body: String(row.provider_body), auth, timeoutMs: 270000 });
     providerReturned = true;
     raw = response.text;
     if (!response.ok) {
@@ -350,7 +371,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
     const content = reply.choices?.[0]?.message?.content;
     const result = parseAtomikResult(typeof content === 'string' ? content : '');
     const role = CREW.find(c => c.id === job.role);
-    const plan: Plan = { id: job.id, request: job.request, model: job.model, depth: job.depth, refs: job.refs,
+    const plan: Plan = { id: job.id, request: job.request, model: job.model, depth: job.depth, ...(job.effort == null ? {} : { effort: job.effort }), refs: job.refs,
       role: role?.name, applied: false, ...result };
     const credits = paidByPlatform('gateway') ? billCredits(cost, 'text') : 0;
     await db().batch([
@@ -379,7 +400,7 @@ export async function listAtomikJobs(owner: string, projectId: string, overrides
   await getAtomikProject(owner, projectId);
   // Queued/running leases never cause replay: a process may have died after sending.
   const interrupted = await db().execute({ sql: `UPDATE workbench_atomik_jobs SET status='uncertain',error=?,updated_at=? WHERE owner=? AND project_id=? AND status IN ('queued','running') AND updated_at<? RETURNING *`,
-    args: ['This job was interrupted before its result could be confirmed. It will not be retried automatically; any recorded estimate remains reserved for review.', now(), owner, projectId, now() - 180000] });
+    args: ['This job was interrupted before its result could be confirmed. It will not be retried automatically; any recorded estimate remains reserved for review.', now(), owner, projectId, now() - 360000] });
   for (const row of interrupted.rows) {
     const job = asJob(row);
     // Free its execution slot while retaining the conservative spend reservation.
@@ -392,5 +413,5 @@ export async function atomikState(owner: string, projectId: string) {
   const jobs = await listAtomikJobs(owner, projectId);
   const configured = gatewayReachable();
   const models = configured ? atomikModels(await catalog()) : [];
-  return { configured: configured && models.length > 0, models, defaultModel: models[0]?.id ?? null, jobs, budgets: atomikBudgets(), referenceSupport: 'Images and three sampled stills per selected video are visually inspected as 512px review copies. Up to six images/frames per request. TXT content is read; PDF, audio and links supply descriptions only.' };
+  return { configured: configured && models.length > 0, models, defaultModel: models[0]?.id ?? null, jobs, budgets: atomikBudgets(true), referenceSupport: 'Images and three sampled stills per selected video are visually inspected as 512px review copies. Up to six images/frames per request. TXT content is read; PDF, audio and links supply descriptions only.' };
 }

@@ -419,3 +419,91 @@ test("a shared publication conflict preserves private edits and requires saving 
   await page.getByRole("dialog").getByRole("button", { name: "Publish this version", exact: true }).click();
   await expect.poll(() => attempts).toEqual([1, 2]);
 });
+
+test("thinking model library groups and searches every provider, and effort survives quote and request recovery", async ({ page }, testInfo) => {
+  await signInLocally(page.request);
+  await fixture(page);
+  const efforts = [{ value: "low", label: "Low", description: "Faster planning" }, { value: "high", label: "High", description: "More time for complex planning" }];
+  const models = [
+    { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6", vision: true, efforts },
+    { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts },
+    { id: "openai/gpt-5.5", name: "GPT-5.5", vision: true, efforts },
+    { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview", vision: true, efforts },
+    ...Array.from({length:24}, (_, i) => ({ id:`openai/test-${i}`, name:`OpenAI archived model ${i}`, vision:false, efforts:[] })),
+  ];
+  const quotes: Record<string, unknown>[] = [];
+  const submissions: string[] = [];
+  await page.route("**/api/workbench/atomik**", async route => {
+    const request = route.request();
+    const body = request.method() === "POST" ? request.postDataJSON() : {};
+    const reply = (value: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (body.quoteOnly) {
+      quotes.push(body);
+      return reply({ model: body.model === "auto" ? models[0].id : body.model, effort: body.effort, estimateCredits: body.effort === "high" ? 8 : 2, estimateUsd: body.effort === "high" ? .08 : .02 });
+    }
+    if (request.method() === "POST") {
+      submissions.push(request.postData()!);
+      if (submissions.length === 1) return reply({ error: "The original request is unconfirmed. Recover this request." }, 503);
+      return reply({ job: { id: "effort-recovered", requestId: body.requestId, status: "queued" } }, 202);
+    }
+    return reply({ models, jobs: [] });
+  });
+  await page.goto("/workbench");
+  if (!(await page.getByRole("tab", {name:"Genie",exact:true}).isVisible()))
+    await page.getByRole("button", {name:"Toggle Atomik creative engine",exact:true}).click();
+  await page.getByRole("tab", {name:"Genie",exact:true}).click();
+  const modelTrigger = page.getByRole("button", {name:"Reasoning model",exact:true});
+  await modelTrigger.click();
+  const picker = page.getByRole("dialog", {name:"Choose a thinking model",exact:true});
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole("group", {name:"Claude",exact:true})).toHaveCount(1);
+  await expect(picker.getByRole("group", {name:"OpenAI",exact:true})).toHaveCount(1);
+  await expect(picker.getByRole("group", {name:"Gemini",exact:true})).toHaveCount(1);
+  await expect(picker.getByRole("option")).toHaveCount(models.length + 1);
+  await expect.poll(async () => {
+    const bounds = await picker.boundingBox(), viewport = page.viewportSize()!;
+    return !!bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width + 1 && bounds.y + bounds.height <= viewport.height + 1;
+  }).toBe(true);
+  await page.screenshot({path:testInfo.outputPath("thinking-model-library.png")});
+  await picker.getByRole("button", {name:"Gemini",exact:true}).click();
+  await expect(picker.getByRole("option")).toHaveCount(1);
+  await picker.getByRole("button", {name:"All",exact:true}).click();
+  const search = picker.getByRole("combobox", {name:"Search thinking models",exact:true});
+  await search.fill("claude");
+  await search.press("ArrowDown");
+  await search.press("Enter");
+  await expect(picker).not.toBeVisible();
+  await expect(modelTrigger).toContainText("Claude Sonnet 4.6");
+  await expect(modelTrigger).toBeFocused();
+  await modelTrigger.click();
+  await picker.getByRole("combobox", {name:"Search thinking models",exact:true}).fill("no-model-matches-this");
+  await expect(picker.getByRole("listbox", {name:"Thinking models",exact:true})).toContainText("No models found.");
+  await page.keyboard.press("Escape");
+  await expect(modelTrigger).toBeFocused();
+  await page.getByRole("combobox", {name:"Reasoning effort",exact:true}).click();
+  await page.getByRole("option", {name:/^High/}).click();
+  await page.getByLabel("Ask Atomik", {exact:true}).fill("Plan a cinematic studio sequence with the selected references");
+  await page.getByRole("button", {name:"Run Atomik",exact:true}).click();
+  const confirmation = page.getByRole("dialog", {name:"Plan with Genie",exact:true});
+  await expect(confirmation.getByRole("button", {name:"Atomik request model",exact:true})).toContainText("Claude Sonnet 4.6");
+  await expect(confirmation.getByRole("combobox", {name:"Atomik request effort",exact:true})).toContainText("High");
+  await expect(confirmation.getByRole("button", {name:"Run · 8 cr estimated",exact:true})).toBeEnabled();
+  await confirmation.getByRole("combobox", {name:"Atomik request effort",exact:true}).click();
+  await page.getByRole("option", {name:/^Low/}).click();
+  await expect(confirmation.getByRole("button", {name:"Run · 2 cr estimated",exact:true})).toBeEnabled();
+  expect(quotes.at(-1)).toMatchObject({ model: "anthropic/claude-sonnet-4.6", effort: "low" });
+  await confirmation.getByRole("combobox", {name:"Atomik request effort",exact:true}).click();
+  await page.getByRole("option", {name:/^High/}).click();
+  await confirmation.getByRole("button", {name:"Run · 8 cr estimated",exact:true}).click();
+  await expect(confirmation.getByRole("alert")).toContainText("unconfirmed");
+  expect(JSON.parse(submissions[0])).toMatchObject({ model: "anthropic/claude-sonnet-4.6", effort: "high", maxCredits: 8 });
+  await confirmation.getByRole("button", {name:"Close",exact:true}).click();
+  await page.getByRole("button", {name:"Run Atomik",exact:true}).click();
+  await expect(confirmation.getByRole("button", {name:"Atomik request model",exact:true})).toBeDisabled();
+  await expect(confirmation.getByRole("combobox", {name:"Atomik request effort",exact:true})).toBeDisabled();
+  await expect(confirmation.getByRole("combobox", {name:"Atomik request effort",exact:true})).toContainText("High");
+  await confirmation.getByRole("button", {name:"Recover this request",exact:true}).click();
+  await expect(confirmation).not.toBeVisible();
+  expect(submissions).toHaveLength(2);
+  expect(submissions[1]).toBe(submissions[0]);
+});

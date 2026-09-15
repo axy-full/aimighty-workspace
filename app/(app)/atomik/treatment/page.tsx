@@ -12,13 +12,16 @@
  * the document, and the rail (cast found, notes in the margin). Autosaves
  * as you type; "Save draft" starts a new draft number.
  */
+import ModelMenu, { type PlannerModel } from "@/components/atomik/ModelMenu";
+import { EffortPicker } from "@/components/atomik/ModelPicker";
 import {usePaidAction} from "@/lib/usePaidAction";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useProject } from "@/lib/projectContext";
 import { useSession } from "@/lib/session";
-import { writerCall } from "@/lib/rateTable";
+import QuotedAtomikAction from "@/components/atomik/QuotedAtomikAction";
+import type { PaidTextQuote } from "@/lib/paidText";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { timeAgo } from "@/lib/format";
 import { CATEGORIES } from "@/lib/studio";
@@ -32,7 +35,6 @@ import type { Treatment, Scene, Note } from "@/lib/atomikDocs";
 import type { CastMember } from "@/lib/cast";
 import type { Shot } from "@/lib/shots";
 import { useMoney } from "@/lib/price";
-import { textModelFor } from "@/lib/platformLayer";
 
 type Loaded = { versions?: { version: number; by: string; at: number }[]; snapshot?: { draft: number; title: string; logline: string; setup: Record<string, string>; scenes: Scene[]; notes: Note[]; updatedBy: string; at: number } | null; treatment: Treatment | null; cast: CastMember[]; identities: { name: string; status: string }[] };
 type Doc = { title: string; logline: string; setup: Record<string, string>; scenes: Scene[]; notes: Note[] };
@@ -54,7 +56,14 @@ export default function TreatmentPage() {
 function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: string; runtimeTarget: number | null }) {
   const router = useRouter();
   const paid=usePaidAction(`/api/atomik/treatment/scene:${projectId}`);
-  const { signedIn, name: me , models: sessionModels, rates } = useSession();
+  const { signedIn, name: me } = useSession();
+  const { data: modelIndex } = useApi<{ models: { featured: PlannerModel[]; rest: PlannerModel[] } }>(signedIn ? "/api/atomik" : null, 0);
+  const models = modelIndex?.models ?? { featured: [], rest: [] };
+  const [selectedModel, setSelectedModel] = useState("auto");
+  const [selectedEffort, setSelectedEffort] = useState("auto");
+  const pendingInput = paid.pending ? JSON.parse(paid.pending.body) : null;
+  const model = pendingInput?.model ?? (paid.pending ? "auto" : selectedModel);
+  const effort = pendingInput?.effort ?? (paid.pending ? "auto" : selectedEffort);
   const { data, refresh } = useApi<Loaded>(signedIn ? `/api/atomik/treatment?projectId=${encodeURIComponent(projectId)}` : null, 0);
   const { data: shotData } = useApi<{ shots: Shot[] }>(signedIn ? `/api/shots?projectId=${encodeURIComponent(projectId)}` : null, 30_000);
   const [doc, setDoc] = useState<Doc | null>(null);
@@ -62,8 +71,11 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   const [tab, setTab] = useState<"cast" | "notes">("cast");
   const [active, setActive] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [hasUnsaved, setHasUnsaved] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const dirty = useRef(false);
+  const docRef = useRef<Doc | null>(null);
+  useEffect(() => { docRef.current = doc; }, [doc]);
 
   // The document is the server's until someone types; then it is theirs.
   useEffect(() => {
@@ -83,7 +95,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
         body: JSON.stringify({ projectId, ...doc, bump }),
       });
       if (!res.ok) throw new Error(`The server answered ${res.status}.`);
-      dirty.current = false;
+      if (docRef.current === doc) { dirty.current = false; setHasUnsaved(false); }
       setSavedAt(Date.now());
       if (bump) refresh();
     } catch (e) { await appAlert("Not saved", (e as Error).message); }
@@ -99,8 +111,6 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
   // Leaving mid-sentence used to cancel that timer and lose the sentence.
   // The unmount now flushes instead: whatever is unsaved goes out with the
   // page, on a request that outlives it.
-  const docRef = useRef<Doc | null>(null);
-  useEffect(() => { docRef.current = doc; }, [doc]);
   useEffect(() => () => {
     if (!dirty.current || !docRef.current) return;
     void fetch("/api/atomik/treatment", {
@@ -108,20 +118,19 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
       body: JSON.stringify({ projectId, ...docRef.current, bump: false }),
     }).catch(() => { /* the next visit re-reads the server's copy */ });
   }, [projectId]);
-  const edit = (fn: (d: Doc) => Doc) => { if(paid.pending)return; dirty.current = true; setDoc((d) => (d ? fn(d) : d)); };
+  const edit = (fn: (d: Doc) => Doc) => { if(paid.pending)return; dirty.current = true; setHasUnsaved(true); setDoc((d) => (d ? fn(d) : d)); };
 
   /* Regenerate one scene: a proposal, priced before pressing, shown beside the scene; "Use this" is the only way it lands (brief 1.8). */
   const [regen, setRegen] = useState<number | null>(null);
   const [proposal, setProposal] = useState<{ n: number; scene: Scene; model: string; credits: string } | null>(null);
-  const regenCr = writerCall(rates, textModelFor(sessionModels ?? null, "idea"), 900, 500) ?? 0.1;
-  async function regenerate(idx: number) {
-    if (!doc) return;
+  async function regenerate(idx: number, quote?: PaidTextQuote) {
+    if (!doc || (!paid.pending && !quote)) return;
     const pending=paid.pending?JSON.parse(paid.pending.body):null;
     const s = pending?doc.scenes.find(scene=>scene.n===pending.n):doc.scenes[idx];if(!s)return;
     if(!pending)await save(false);
     setRegen(s.n); setProposal(null);
     try {
-      const {data:j}=await paid.run<{scene:Scene;model:string;costUsd?:number}>("/api/atomik/treatment/scene",{projectId,n:s.n});
+      const {data:j}=await paid.run<{scene:Scene;model:string;costUsd?:number}>("/api/atomik/treatment/scene",pending ?? {projectId,n:s.n,model:quote!.model,effort,maxCredits:quote!.estimateCredits});
       setProposal({ n: s.n, scene: j.scene as Scene, model: String(j.model), credits: money.price(Number(j.costUsd ?? 0), "text") });
     } catch (e) { await appAlert("Not rewritten", (e as Error).message); }
     finally { setRegen(null); }
@@ -130,7 +139,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
     if (!doc || !proposal) return;
     const cur = doc.scenes[idx];
     if (cur.by === "you" && cur.prose.trim() && !(await appConfirm("Replace your words?", "This scene was written by you. The proposal replaces it; Save draft keeps the old one as a version.", { confirmLabel: "Replace" }))) return;
-    edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, title: proposal.scene.title || x.title, secs: proposal.scene.secs || x.secs, prose: proposal.scene.prose, by: proposal.model, at: Date.now() } : x)) }));
+    edit((d) => ({ ...d, scenes: d.scenes.map((x, i) => (i === idx ? { ...x, title: proposal.scene.title || x.title, secs: proposal.scene.secs || x.secs, prose: proposal.scene.prose, by: proposal.model, effort: proposal.scene.effort, at: Date.now() } : x)) }));
     setProposal(null);
   }
   /* Earlier drafts: pick one to read it; restore it as the next draft. */
@@ -241,6 +250,11 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
               <span className="ak-tag is-line is-muted">Setup defaults → carried into every Particl shot</span>
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2 border-y border-current/10 py-3">
+            <span className="mono !text-[10px]">SCENE WRITER</span>
+            <ModelMenu value={model} models={models} onPick={(value) => { setSelectedModel(value); setSelectedEffort("auto"); }} disabled={regen !== null || !!paid.pending} />
+            <EffortPicker value={effort} model={[...models.featured, ...models.rest].find((item) => item.id === model)} onPick={setSelectedEffort} disabled={regen !== null || !!paid.pending} compact />
+          </div>
           {doc.scenes.map((s, idx) => (
             <div key={s.n} id={`scene-${s.n}`} className="ak-scene" onFocus={() => setActive(s.n)}>
               <div className="flex items-baseline gap-3">
@@ -260,7 +274,7 @@ function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: s
               {/* Who wrote this scene's words, and a way to have the model try again — as a proposal, never over your edit (brief 1.8). */}
               <div className="ak-scene-foot">
                 <span className="mono-s">{s.by ? (s.by === "you" ? "BY YOU" : `BY ${s.by.split("/").pop()}`) : ""}</span>
-                <button type="button" className="ak-act" disabled={regen != null||!!paid.error||!!paid.pending&&JSON.parse(paid.pending.body).n!==s.n} onClick={() => regenerate(idx)}>{regen === s.n ? "Rewriting…" : paid.pending ? "Recover scene rewrite" : `Regenerate · ≈ ${regenCr} cr`}</button>
+                <QuotedAtomikAction url="/api/atomik/treatment/scene" body={hasUnsaved ? null : { projectId, n: s.n, model, effort, documentVersion: savedAt ?? data?.treatment?.updatedAt }} label="Regenerate" busy={regen === s.n} pending={!!paid.pending && pendingInput.n === s.n} disabled={regen !== null || !!paid.error || (!!paid.pending && pendingInput.n !== s.n)} onRun={(quote) => regenerate(idx, quote)} />
               </div>
               {proposal && proposal.n === s.n && (
                 <div className="ak-proposal">
