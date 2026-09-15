@@ -11,7 +11,7 @@ async function scriptStage(page: Page) {
       .getByRole("button", { name: "Workflow", exact: true })
       .click();
     await page
-      .getByRole("dialog", { name: "Production workflow" })
+      .getByRole("dialog", { name: "Project workflow" })
       .locator(".mobile-workflow-list button")
       .filter({ hasText: "Script & breakdown" })
       .click();
@@ -88,7 +88,7 @@ test("complete PDF screenplay retains pages, beats, original asset and all 120 s
     .scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("screenplay-source.png") });
   await expect(
-    page.getByLabel("Production screenplay", { exact: true }),
+    page.getByLabel("Project screenplay", { exact: true }),
   ).toHaveValue(/Final source marker 120\./);
   await expect(
     page.getByRole("region", { name: "Screenplay scene breakdown" }),
@@ -229,6 +229,6 @@ test("PDF pages without text require explicit review and cannot silently replace
     .getByRole("button", { name: "Cancel import", exact: true })
     .click();
   await expect(
-    page.getByLabel("Production screenplay", { exact: true }),
+    page.getByLabel("Project screenplay", { exact: true }),
   ).toHaveValue(project.script);
 });

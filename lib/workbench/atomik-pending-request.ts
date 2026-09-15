@@ -19,7 +19,7 @@ export class AtomikPendingConflict extends Error {
 }
 
 export function atomikPendingKey(scope: string, projectId: string) {
-  if (!scope.trim() || !projectId.trim()) throw new Error('Sign in to this production before starting Atomik.');
+  if (!scope.trim() || !projectId.trim()) throw new Error('Sign in to this project before starting Atomik.');
   return 'particl:atomik-pending:v1:' + encodeURIComponent(scope) + ':' + encodeURIComponent(projectId);
 }
 export function atomikPendingInput(record: PendingAtomikRequest): AtomikSubmission {
@@ -47,7 +47,7 @@ export function readPendingAtomik(storage: AtomikPendingStorage, scope: string, 
   catch { throw new Error('The saved Atomik request is unreadable. Review Activity before starting another request.'); }
   if (!record || record.version !== 1 || record.scope !== scope || record.projectId !== projectId ||
     typeof record.requestId !== 'string' || typeof record.body !== 'string' || typeof record.createdAt !== 'number') {
-    throw new Error('The saved Atomik request does not match this account and production. Review Activity before starting another request.');
+    throw new Error('The saved Atomik request does not match this account and project. Review Activity before starting another request.');
   }
   atomikPendingInput(record);
   return record;

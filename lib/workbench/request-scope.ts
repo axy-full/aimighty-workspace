@@ -19,5 +19,5 @@ export function workbenchScopeProblem(
   if (!captured && !required) return null;
   return captured === workbenchScopeFor(workspaceId, userId)
     ? null
-    : "Your account or workspace changed. Return to the original account before saving this production, or download your current work.";
+    : "Your account or workspace changed. Return to the original account before saving this project, or download your current work.";
 }

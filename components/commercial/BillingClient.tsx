@@ -322,7 +322,7 @@ export default function BillingClient({
                 ? "Your workspace is being prepared"
                 : "Create your studio workspace"
             }
-            description="A private home for your productions. Creating a workspace does not start a subscription."
+            description="A private home for your projects. Creating a workspace does not start a subscription."
           >
             {workspace.pending?.map((pending) => (
               <div className="management-row" key={pending.requestId}>

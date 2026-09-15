@@ -386,7 +386,7 @@ function Canvas() {
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
         <RigBar tab="canvas" hrefs={hrefs}
-          chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">·</span> {b.name}</>}
+          chip={<>{production?.name ?? "Project"} <span className="text-ink-muted">·</span> {b.name}</>}
           mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
           phoneTitle={b.name} phoneMono={`${b.nodes.length} nodes · ${fmt(spent)} spent`} />
         <PhoneBoard board={b} fmt={fmt} priceOf={priceOf} running={running} selected={selected} onSelect={setSelected} onRun={runNode}
@@ -415,7 +415,7 @@ function Canvas() {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <RigBar tab="canvas" hrefs={hrefs}
-        chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">·</span> {b.name}<span className="text-[9px] text-ink-muted">▼</span></>}
+        chip={<>{production?.name ?? "Project"} <span className="text-ink-muted">·</span> {b.name}<span className="text-[9px] text-ink-muted">▼</span></>}
         mono={`${b.nodes.length} nodes · ${ran} run · ${fmt(spent)} spent · building is free`}
         right={<>
           <span className="flex pl-[6px] max-md:hidden"><Avatar name={myName} you /></span>

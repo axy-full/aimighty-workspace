@@ -167,7 +167,7 @@ node ~/particl-mcp.mjs get gen_abc123 --save ./shot.mp4` },
               ["wait_for_render", "waits, then reports the cost"],
               ["get_render", "details, and saves the file"],
               ["list_renders", "recent work, searchable"],
-              ["list_projects", "productions, counts and spend"],
+              ["list_projects", "projects, counts and spend"],
               ["create_project", "makes a new one"],
               ["usage_summary", "spend and remaining credit"],
             ].map(([n, what]) => (

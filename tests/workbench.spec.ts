@@ -8,7 +8,7 @@ import { RING_DOTS } from "../lib/ring";
 async function goStage(page: Page, label: string) {
   if (page.viewportSize()!.width < 760) {
     await page.getByRole("navigation", { name: "Mobile studio navigation" }).getByRole("button", { name: "Workflow", exact: true }).click();
-    const sheet = page.getByRole("dialog", { name: "Production workflow" });
+    const sheet = page.getByRole("dialog", { name: "Project workflow" });
     await expect(sheet).toBeVisible();
     await sheet.locator(".mobile-workflow-list button").filter({ hasText: label }).click();
     await expect(sheet).not.toBeVisible();
@@ -182,14 +182,14 @@ test("navigation waits for hydration and initial load, then accepts the first wo
     await expect(page.getByRole("button", {name: "Open movie renderer", exact: true})).toBeVisible();
     return;
   }
-  await expect(page.getByRole("dialog",{name:"Production workflow"})).toBeVisible();
+  await expect(page.getByRole("dialog",{name:"Project workflow"})).toBeVisible();
 
   // A verified workspace with no draft still completes initialization and keeps recovery/navigation available.
   await page.route("**/api/workbench/projects?*",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({projects:[],productions:[],revision:0})}));
   await page.reload();
   await expect(workflow).toBeEnabled();
   await workflow.click();
-  await expect(page.getByRole("dialog",{name:"Production workflow"})).toBeVisible();
+  await expect(page.getByRole("dialog",{name:"Project workflow"})).toBeVisible();
 });
 
 test("responsive production: save, stages, node versions, jobs, refresh and editorial export", async ({ page }, testInfo) => {
@@ -203,7 +203,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   if (mobile) await expect(page.getByRole("navigation", { name: "Mobile studio navigation" })).toBeVisible();
   await goStage(page, "Brief & ideas");
   const title = `Browser production ${testInfo.project.name}`;
-  await page.getByLabel("Production title", { exact: true }).fill(title);
+  await page.getByLabel("Project title", { exact: true }).fill(title);
   await expect.poll(() => state.current().name).toBe(title);
 
   for (const stage of STAGES) {
@@ -212,13 +212,13 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   }
   await goStage(page, "Script & breakdown");
-  await page.getByLabel("Production screenplay", { exact: true }).fill("EXT. TEST DUNES - DAY\n\nMIRA walks into the light.");
+  await page.getByLabel("Project screenplay", { exact: true }).fill("EXT. TEST DUNES - DAY\n\nMIRA walks into the light.");
   await expect(page.getByRole("region", { name: "Screenplay scene breakdown" }).getByRole("checkbox")).toHaveCount(1);
   await page.getByRole("button", { name: "Select all scenes", exact: true }).click();
   await page.getByRole("button", { name: "Build 1 scene nodes", exact: true }).click();
   await expect.poll(() => state.current().nodes.some(node => node.title.includes("TEST DUNES"))).toBeTruthy();
   await goStage(page, "Assets & takes");
-  await page.getByLabel("Upload production files", { exact: true }).setInputFiles({ name: "Uploaded reference.webp", mimeType: "image/webp", buffer: await readFile("public/campaign/hero.webp") });
+  await page.getByLabel("Upload project files", { exact: true }).setInputFiles({ name: "Uploaded reference.webp", mimeType: "image/webp", buffer: await readFile("public/campaign/hero.webp") });
   await expect.poll(() => state.current().assets.some(asset => asset.uploadId === "upload-browser")).toBeTruthy();
   await goStage(page, "Production canvas");
   if (mobile) {
@@ -282,7 +282,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
 
   await page.reload();
   await goStage(page, "Brief & ideas");
-  await expect(page.getByLabel("Production title", { exact: true })).toHaveValue(title);
+  await expect(page.getByLabel("Project title", { exact: true })).toHaveValue(title);
   await goStage(page, "Delivery");
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download package" }).click();
@@ -330,9 +330,9 @@ test("switching drains final edits, failed saves retain work, and asset publishi
   await expect(page.locator(".save-label")).toContainText("Saved");
   delayNext = true;
   await goStage(page, "Brief & ideas");
-  await page.getByLabel("Production title", { exact: true }).fill("First edit in flight");
+  await page.getByLabel("Project title", { exact: true }).fill("First edit in flight");
   await expect.poll(() => held).toBeTruthy();
-  await page.getByLabel("Production title", { exact: true }).fill("Final edit before switch");
+  await page.getByLabel("Project title", { exact: true }).fill("Final edit before switch");
   await page.locator(".project-switch").click();
   await page.getByRole("menuitem", { name: "Second production", exact: true }).click();
   release();
@@ -349,7 +349,7 @@ test("switching drains final edits, failed saves retain work, and asset publishi
 
   await goStage(page, "Brief & ideas");
   failSaves = true;
-  await page.getByLabel("Production title", { exact: true }).fill("Keep this unsaved work");
+  await page.getByLabel("Project title", { exact: true }).fill("Keep this unsaved work");
   await expect(page.locator(".save-banner")).toContainText("Test persistence unavailable");
   const readsBeforeFailedSwitch = reads.length;
   await page.locator(".project-switch").click();
@@ -358,7 +358,7 @@ test("switching drains final edits, failed saves retain work, and asset publishi
   await expect(page.locator(".project-switch")).toContainText("Keep this unsaved work");
   expect(reads).toHaveLength(readsBeforeFailedSwitch);
   await goStage(page, "Brief & ideas");
-  await expect(page.getByLabel("Production title", { exact: true })).toHaveValue("Keep this unsaved work");
+  await expect(page.getByLabel("Project title", { exact: true })).toHaveValue("Keep this unsaved work");
 });
 
 test("a shared publication conflict preserves private edits and requires saving before loading the newer context", async ({ page }, testInfo) => {
@@ -400,18 +400,18 @@ test("a shared publication conflict preserves private edits and requires saving 
   await page.screenshot({path:testInfo.outputPath('publication-conflict.png')});
   await goStage(page, "Brief & ideas");
   failSaves = true;
-  await page.getByLabel("Production title", { exact: true }).fill("My private changes survive");
+  await page.getByLabel("Project title", { exact: true }).fill("My private changes survive");
   await expect(page.locator(".save-banner").filter({ hasText: "Keep the private edit on screen" })).toBeVisible();
   const before = reads;
   await reload.click();
-  await expect(page.getByLabel("Production title", { exact: true })).toHaveValue("My private changes survive");
+  await expect(page.getByLabel("Project title", { exact: true })).toHaveValue("My private changes survive");
   expect(reads).toBe(before);
   failSaves = false;
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.locator(".save-label")).toHaveText("Saved");
   await reload.click();
   await expect(reload).not.toBeVisible();
-  await expect(page.getByLabel("Production title", { exact: true })).toHaveValue("My private changes survive");
+  await expect(page.getByLabel("Project title", { exact: true })).toHaveValue("My private changes survive");
   expect(draft.name).toBe("My private changes survive");
   expect(attempts).toEqual([1]); // Refresh never automatically republishes.
   await goStage(page, "Assets & takes");

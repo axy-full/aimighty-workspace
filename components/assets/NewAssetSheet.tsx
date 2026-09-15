@@ -236,7 +236,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
     { kind: "item", label: "Upload", onSelect: () => picker.current?.click() },
     { kind: "item", label: "A take", onSelect: () => setTakeMenu({ x: 0, y: 0 }) },
     { kind: "item", label: "Make", onSelect: () => { onClose(); router.push("/make/images"); } },
-    { kind: "item", label: "Canvas", onSelect: () => { if (!current) { toast("Pick a production first — Canvas belongs to a project."); return; } onClose(); router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}`); } },
+    { kind: "item", label: "Canvas", onSelect: () => { if (!current) { toast("Pick a project first — Canvas belongs to a project."); return; } onClose(); router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}`); } },
   ];
   const takesMenu = takeMenu && <Menu x={takeMenu.x} y={takeMenu.y} title="A take · the newest stills" items={takeItems.length ? takeItems : [{ kind: "note", text: takes ? "No finished stills yet." : "Loading…" }]} onClose={() => setTakeMenu(null)} />;
 
@@ -359,7 +359,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
                   <button type="button" className={source} onClick={() => picker.current?.click()}>Upload</button>
                   <button type="button" className={source} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setTakeMenu({ x: r.left, y: r.bottom + 6 }); }}>A take</button>
                   <button type="button" className={source} onClick={() => { onClose(); router.push("/make/images"); }}>Make</button>
-                  <button type="button" className={source} onClick={() => { if (!current) { toast("Pick a production first — Canvas belongs to a project."); return; } onClose(); router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}`); }}>Canvas</button>
+                  <button type="button" className={source} onClick={() => { if (!current) { toast("Pick a project first — Canvas belongs to a project."); return; } onClose(); router.push(`/rig/canvas/new?project=${encodeURIComponent(current.id)}`); }}>Canvas</button>
                 </span>
               </span>
             </div>

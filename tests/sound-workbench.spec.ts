@@ -32,7 +32,7 @@ async function stage(page: Page, id: string) {
       .getByRole("button", { name: "Workflow", exact: true })
       .click();
     await page
-      .getByRole("dialog", { name: "Production workflow" })
+      .getByRole("dialog", { name: "Project workflow" })
       .locator(".mobile-workflow-list button")
       .filter({ hasText: STAGES.find((s) => s.id === id)!.label })
       .click();

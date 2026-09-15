@@ -10,7 +10,7 @@ import { usePathname } from "next/navigation";
  */
 const VIEWS = [
   { href: "/usage", label: "Usage" },
-  { href: "/dashboard", label: "Production" },
+  { href: "/dashboard", label: "Project" },
 ];
 
 export default function SectionNav() {

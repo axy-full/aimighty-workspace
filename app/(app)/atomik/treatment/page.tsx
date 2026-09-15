@@ -50,7 +50,7 @@ export default function TreatmentPage() {
   const { selection, current } = useProject();
   const scoped = selection !== "all" && selection !== "unfiled";
   if (!scoped) return <div className="ak-page"><PickProduction stage="Treatment" /></div>;
-  return <Editor key={selection} projectId={selection} name={current?.name ?? "Production"} runtimeTarget={current?.runtimeTarget ?? null} />;
+  return <Editor key={selection} projectId={selection} name={current?.name ?? "Project"} runtimeTarget={current?.runtimeTarget ?? null} />;
 }
 
 function Editor({ projectId, name, runtimeTarget }: { projectId: string; name: string; runtimeTarget: number | null }) {

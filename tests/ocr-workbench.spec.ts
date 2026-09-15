@@ -61,7 +61,7 @@ async function setup(page: Page) {
       .getByRole("button", { name: "Workflow", exact: true })
       .click();
     await page
-      .getByRole("dialog", { name: "Production workflow" })
+      .getByRole("dialog", { name: "Project workflow" })
       .locator(".mobile-workflow-list button")
       .filter({ hasText: "Script & breakdown" })
       .click();

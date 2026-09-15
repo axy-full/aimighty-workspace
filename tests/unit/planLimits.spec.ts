@@ -51,8 +51,8 @@ test("the message names the plan and what changes it", () => {
   expect(m).toContain("Invite");
   expect(m).toContain("3 members");
   expect(m).toContain("larger plan");
-  expect(ceilingMessage(invite, "productions", 1)).toContain("1 production");
-  expect(ceilingMessage(invite, "productions", 1)).not.toContain("1 productions");
+  expect(ceilingMessage(invite, "productions", 1)).toContain("1 project");
+  expect(ceilingMessage(invite, "productions", 1)).not.toContain("1 projects");
   expect(ceilingMessage(studio, "members", 1)).toContain("allows 1 member.");
 });
 

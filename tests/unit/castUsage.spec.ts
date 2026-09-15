@@ -12,7 +12,7 @@ test("a name's use is summed across productions, failed takes aside, and reads a
   ];
   const s = usageSummary(rows);
   expect(s).toEqual({ takes: 3, stills: 1, shots: 1, productions: 2 });
-  expect(usageLine(s)).toBe("1 SHOT · 3 TAKES · 1 STILL · ACROSS 2 PRODUCTIONS");
+  expect(usageLine(s)).toBe("1 SHOT · 3 TAKES · 1 STILL · ACROSS 2 PROJECTS");
   expect(usageLine(usageSummary([]))).toBe("0 SHOTS · 0 TAKES");
   expect(usageLine(usageSummary([rows[0]]))).toBe("1 SHOT · 1 TAKE");
 });

@@ -27,7 +27,7 @@ export const GET = withTenant(async (req: Request) => {
     version = params.get("id");
   if (!draft.success || (version !== null && !id.safeParse(version).success))
     return Response.json(
-      { error: "Choose a production and edit version." },
+      { error: "Choose a project and edit version." },
       { status: 400, headers },
     );
   try {
@@ -82,7 +82,7 @@ export const POST = withTenant(async (req: Request) => {
     .safeParse(body.value);
   if (!parsed.success)
     return Response.json(
-      { error: "Choose a name and the saved production revision." },
+      { error: "Choose a name and the saved project revision." },
       { status: 400, headers },
     );
   try {

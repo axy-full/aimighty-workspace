@@ -40,7 +40,7 @@ export default function ShotListPage() {
   const { selection, current } = useProject();
   const scoped = selection !== "all" && selection !== "unfiled";
   if (!scoped) return <div className="ak-page"><PickProduction stage="Shot list" /></div>;
-  return <ShotList key={selection} projectId={selection} name={current?.name ?? "Production"} />;
+  return <ShotList key={selection} projectId={selection} name={current?.name ?? "Project"} />;
 }
 
 function ShotList({ projectId, name }: { projectId: string; name: string }) {

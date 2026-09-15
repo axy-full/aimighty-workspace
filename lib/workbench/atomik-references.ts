@@ -73,7 +73,7 @@ export function selectedAtomikAssets(project: Project, refs: string[]) {
     const asset = all.find((a) => a.id === id);
     if (!asset)
       throw new AtomikReferenceError(
-        "A selected reference is no longer part of this production. Refresh your references.",
+        "A selected reference is no longer part of this project. Refresh your references.",
       );
     return asset;
   });

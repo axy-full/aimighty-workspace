@@ -234,7 +234,7 @@ function UsageContent() {
     <ManagementPage
       tab="usage"
       title="Know what goes into it."
-      description="Your workspace activity, production spend and generation history."
+      description="Your workspace activity, project spend and generation history."
       workspace={session.workspace?.name}
       actions={
         <button
@@ -315,7 +315,7 @@ function UsageContent() {
               aria-pressed={tab === "production"}
               onClick={() => setTab("production")}
             >
-              Production detail
+              Project detail
             </button>
             {!money.inCredits && (
               <button
@@ -337,7 +337,7 @@ function UsageContent() {
           ) : (
             <>
               <div className="management-grid three">
-                <Breakdown title="By production" rows={data.byProject} />
+                <Breakdown title="By project" rows={data.byProject} />
                 <Breakdown title="By person" rows={data.byPerson} />
                 <Breakdown
                   title="By month"
@@ -455,7 +455,7 @@ function UsageContent() {
                       <p>
                         {search || filter !== "all"
                           ? "Try another engine or search term."
-                          : "Start a production to create your first take."}
+                          : "Start a project to create your first take."}
                       </p>
                     </div>
                   )}
@@ -911,19 +911,19 @@ function ProductionPerformance() {
       <ManagementCard>
         <div className="management-toolbar">
           <div>
-            <h2>Production performance</h2>
+            <h2>Project performance</h2>
             <p className="management-muted">
-              Follow the takes, approvals and budget behind each production.
+              Follow the takes, approvals and budget behind each project.
             </p>
           </div>
           <div className="management-actions">
             <label className="management-field">
-              <span>Production</span>
+              <span>Project</span>
               <select
                 value={projectId}
                 onChange={(event) => setProjectId(event.target.value)}
               >
-                <option value="all">All productions</option>
+                <option value="all">All projects</option>
                 {projects?.projects.map((row) => (
                   <option key={row.id} value={row.id}>
                     {row.name}
@@ -953,7 +953,7 @@ function ProductionPerformance() {
           note={`${analytics?.totals.generations ?? 0} takes`}
         />
         <ManagementStat
-          label="Production budget"
+          label="Project budget"
           value={project ? money.of(project) : "—"}
           note={
             cap
@@ -967,7 +967,7 @@ function ProductionPerformance() {
           note={
             project
               ? `${approved} of ${project.shots} shots approved`
-              : "Select a production"
+              : "Select a project"
           }
         />
         <ManagementStat
@@ -983,7 +983,7 @@ function ProductionPerformance() {
         />
       </div>
       <div className="management-grid">
-        <Breakdown title="By production" rows={analytics?.byProject ?? []} />
+        <Breakdown title="By project" rows={analytics?.byProject ?? []} />
         <Breakdown title="By person" rows={analytics?.byPerson ?? []} />
       </div>
       <ManagementCard
@@ -992,7 +992,7 @@ function ProductionPerformance() {
       >
         {!project ? (
           <p className="management-muted">
-            Select a production to see its shots.
+            Select a project to see its shots.
           </p>
         ) : !shotRows.length ? (
           <p className="management-muted">

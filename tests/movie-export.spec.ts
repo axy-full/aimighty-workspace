@@ -13,7 +13,7 @@ async function openDelivery(page: Page) {
       .getByRole("button", { name: "Workflow", exact: true })
       .click();
     await page
-      .getByRole("dialog", { name: "Production workflow" })
+      .getByRole("dialog", { name: "Project workflow" })
       .getByRole("button", { name: /10 Delivery/ })
       .click();
   } else await page.locator(".workflow-stages").getByRole("tab").last().click();

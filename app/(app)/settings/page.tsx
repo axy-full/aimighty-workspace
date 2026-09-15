@@ -421,7 +421,7 @@ function SettingsContent() {
                           />
                           <small>
                             {owner
-                              ? "Up to 80 characters. This does not change your saved productions."
+                              ? "Up to 80 characters. This does not change your saved projects."
                               : "The workspace owner can change its name."}
                           </small>
                         </label>
@@ -516,7 +516,7 @@ function SettingsContent() {
                           "Warn at",
                         )}
                       </Row>
-                      <Row label="At the production cap">
+                      <Row label="At the project cap">
                         {select(
                           "atCap",
                           [
@@ -524,7 +524,7 @@ function SettingsContent() {
                             ["stop", "Stop rendering"],
                             ["warn", "Warn only"],
                           ],
-                          "At the production cap",
+                          "At the project cap",
                         )}
                       </Row>
                     </ManagementCard>
@@ -808,7 +808,7 @@ function SettingsContent() {
                       <div>
                         <ShieldCheck size={22} />
                         <p>
-                          Productions, media and credits stay inside this
+                          Projects, media and credits stay inside this
                           workspace.
                         </p>
                       </div>

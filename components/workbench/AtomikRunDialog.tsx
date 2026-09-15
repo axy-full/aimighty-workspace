@@ -82,7 +82,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       try {
         const { assets } = JSON.parse(referenceKey);
         if (assets.reduce((count: number, asset: { kind: string }) => count + (asset.kind === 'video' ? 3 : asset.kind === 'image' ? 1 : 0), 0) > ATOMIK_MAX_VISUALS) throw new Error('Use at most six images or sampled frames. Each selected video uses three frames.');
-        if (assets.some((asset: { kind: string }) => asset.kind === 'video') && !(await callbacks.current.onSave())) throw new Error('Save this production before preparing video references.');
+        if (assets.some((asset: { kind: string }) => asset.kind === 'video') && !(await callbacks.current.onSave())) throw new Error('Save this project before preparing video references.');
         if (controller.signal.aborted) return;
         const frames = await prepareAtomikVideoFrames(assets, project.id, scope, controller.signal);
         if (!controller.signal.aborted) setFrameState({ key: referenceKey, frames });
@@ -96,7 +96,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        if (!(await callbacks.current.onSave())) throw new Error('Save this production before requesting an estimate.');
+        if (!(await callbacks.current.onSave())) throw new Error('Save this project before requesting an estimate.');
         if (controller.signal.aborted) return;
         const value = await studioRequest<Omit<Quote, 'key'>>('/api/workbench/atomik', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench-Scope': scope }, signal: controller.signal,

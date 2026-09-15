@@ -99,7 +99,7 @@ function Run() {
   if (!run) {
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-        <RigBar tab="run" hrefs={hrefs} chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">›</span> {proj?.name ?? "project"}</>} mono="no run yet" phoneTitle={proj?.name ?? "Run"} />
+        <RigBar tab="run" hrefs={hrefs} chip={<>{production?.name ?? "Project"} <span className="text-ink-muted">›</span> {proj?.name ?? "deliverable"}</>} mono="no run yet" phoneTitle={proj?.name ?? "Run"} />
         <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)] max-md:grid-cols-1"><RigStrip /><div className="p-[24px] text-[13px] leading-[1.5] text-ink-body" style={{ textWrap: "pretty" }}>Nothing has run here yet. Save a board as a recipe, then run it to the first checkpoint from Recipes.</div></div>
       </div>
     );
@@ -132,7 +132,7 @@ function Run() {
   const picked = gens.filter((g) => g.reviewState === "picked" || g.reviewState === "approved").length;
   const bar = (
     <RigBar tab="run" hrefs={hrefs}
-      chip={<>{production?.name ?? "Production"} <span className="text-ink-muted">›</span> {proj?.name ?? run.projectName} <span className="text-ink-muted">·</span> Run {two(run.num)}<span className="text-[9px] text-ink-muted">▼</span></>}
+      chip={<>{production?.name ?? "Project"} <span className="text-ink-muted">›</span> {proj?.name ?? run.projectName} <span className="text-ink-muted">·</span> Run {two(run.num)}<span className="text-[9px] text-ink-muted">▼</span></>}
       mono={`Recipe · ${recipeData?.recipe?.name ?? run.projectName} · started ${new Date(run.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${run.done} of ${run.total} steps`}
       phoneTitle={`Run ${two(run.num)}`} phoneMono={`${run.done} of ${run.total} steps · ${fmt(run.spent)} of ${fmt(run.estimate || run.spent)}`}
       right={<CapBar spent={run.spent} cap={run.estimate || run.spent || 1} placement="row" />} />

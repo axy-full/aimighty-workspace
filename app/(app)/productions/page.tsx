@@ -21,7 +21,7 @@ import { clock } from "@/components/production/ProductionHeader";
  * Page header 64px, `0 24px`, 16 apart: `Productions` at 600 20px −0.02em
  * over the mono totals (`4 PRODUCTIONS · 9 PROJECTS · 8 NEED YOU · 808 OF
  * 1,550 CR`); the `Active · Delivered · All` segmented 12px on; from the
- * right `New project in…` (38px secondary pill) and `New production` (the
+ * right `New deliverable in…` (38px secondary pill) and `New project` (the
  * one filled primary). Body `0 24px 24px`, rows 12 apart.
  *
  * A production row: `--card`, .08, radius 12, `14px 16px 16px`, 12 apart.
@@ -32,20 +32,20 @@ import { clock } from "@/components/production/ProductionHeader";
  * — a 16:7 well with the `41 MEDIA` chip and the need chip (6px dot);
  * `10px 12px 12px`, 7 apart: name 600 13.5/1.2, `format · N SHOTS` 400
  * 12/1.2 `--ink-body`, the six dots and the step's name, `228 / 400 CR ·
- * 57%` over a 3px bar. The last cell is the dashed `+ Project`.
+ * 57%` over a 3px bar. The last cell is the dashed `+ Deliverable`.
  *
  * Below 768 (design/particl-v2-mobile, board M1): `16px 16px 100px`, 14
  * apart — `Productions` at 600 24/1.05 −0.02em over `4 · 9 PROJECTS · 8
  * NEED YOU`, the segmented full width, then the rows: `--card`, .08,
  * radius 14, `14px 0`, 12 apart — name and client (`0 14px`), the need
  * pill; the spent line in mono over the 3px bar; the projects as a strip
- * of 200px snap tiles (`0 14px`, 8 apart) ending in a 96px `+ Project`.
+ * of 200px snap tiles (`0 14px`, 8 apart) ending in a 96px `+ Deliverable`.
  * No header buttons: a production starts on a desktop.
  */
 type Filter = "active" | "delivered" | "all";
 
 export default function ProductionsPage() {
-  usePageTitle("Productions");
+  usePageTitle("Projects");
   const router = useRouter();
   const { signedIn } = useSession();
   const money = useMoney();
@@ -64,14 +64,14 @@ export default function ProductionsPage() {
   }, [all, money.inCredits]);
 
   const newProduction = async () => {
-    const name = await appPrompt("New production", "", "Handbag TVC", "The client job. Projects — the deliverables — go inside it.");
+    const name = await appPrompt("New project", "", "Handbag TVC", "The client job. Add deliverables such as hero spots, cutdowns and social edits inside it.");
     if (!name?.trim()) return;
     const r = await fetch("/api/productions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
     if (!r.ok) { await appAlert("Not created", `The server answered ${r.status}.`); return; }
     refresh();
   };
   const newProject = async (production: ProductionRow) => {
-    const name = await appPrompt(`New project in ${production.name}`, "", "30s hero spot", "A deliverable: 30s hero, 15s cutdown, 9:16 socials, key visuals.");
+    const name = await appPrompt(`New deliverable in ${production.name}`, "", "30s hero spot", "A deliverable: 30s hero, 15s cutdown, 9:16 socials, key visuals.");
     if (!name?.trim()) return;
     const r = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, productionId: production.id }) });
     const j = await r.json().catch(() => ({}));
@@ -81,26 +81,26 @@ export default function ProductionsPage() {
   };
   const newProjectIn = async () => {
     if (!all.length) { await newProduction(); return; }
-    const pick = await appPrompt("New project in…", all[0].name, undefined, all.map((p) => p.name).join(" · "));
+    const pick = await appPrompt("New deliverable in…", all[0].name, undefined, all.map((p) => p.name).join(" · "));
     const production = all.find((p) => p.name.toLowerCase() === (pick ?? "").trim().toLowerCase());
     if (production) await newProject(production);
   };
 
   const fmt = (n: number) => money.inCredits ? `${creditsNumber(n)} cr` : money.price(n);
 
-  if (!data && signedIn) return <PageLoader what="Opening · Productions" />;
+  if (!data && signedIn) return <PageLoader what="Opening · Projects" />;
   if (phone) return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-auto px-[16px] pb-[100px] pt-[16px]" data-phone-body="">
         <span className="flex flex-col gap-[6px]">
-          <h1 className="text-[24px] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">Productions</h1>
-          <Mono>{totals.productions} · {totals.projects} projects · {totals.need} need you</Mono>
+          <h1 className="text-[24px] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">Projects</h1>
+          <Mono>{totals.productions} projects · {totals.projects} deliverables · {totals.need} need you</Mono>
         </span>
         <Segmented label="Show" fill value={filter} onChange={setFilter} options={[{ value: "active", label: "Active" }, { value: "delivered", label: "Delivered" }, { value: "all", label: "All" }]} />
         {shown.map((p) => <ProductionCard key={p.id} production={p} fmt={fmt} inCredits={money.inCredits} onNewProject={() => newProject(p)} phone />)}
         {!shown.length && (
           <span className="py-[24px] text-[13px] leading-[1.5] text-ink-body">
-            {signedIn ? (all.length ? "Nothing here under this filter." : "No productions yet. Start one on a desktop — the client job — and put its deliverables inside.") : "Sign in to see your productions."}
+            {signedIn ? (all.length ? "Nothing here under this filter." : "No projects yet. Start one on a desktop — the client job — and put its deliverables inside.") : "Sign in to see your projects."}
           </span>
         )}
       </div>
@@ -110,21 +110,21 @@ export default function ProductionsPage() {
     <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <div className="flex h-[64px] flex-none items-center gap-[16px] px-[24px]">
         <span className="flex flex-col gap-[5px]">
-          <h1 className="ui-page-title">Productions</h1>
-          <Mono>{totals.productions} productions · {totals.projects} projects · {totals.need} need you · {totals.cap > 0 ? `${fmt(totals.spent)} of ${fmt(totals.cap)}` : `${fmt(totals.spent)} spent`}</Mono>
+          <h1 className="ui-page-title">Projects</h1>
+          <Mono>{totals.productions} projects · {totals.projects} deliverables · {totals.need} need you · {totals.cap > 0 ? `${fmt(totals.spent)} of ${fmt(totals.cap)}` : `${fmt(totals.spent)} spent`}</Mono>
         </span>
         <Segmented label="Show" value={filter} onChange={setFilter} className="ml-[12px]"
           options={[{ value: "active", label: "Active" }, { value: "delivered", label: "Delivered" }, { value: "all", label: "All" }]} />
         <span className="ml-auto flex gap-[8px]">
-          <Button placement="header" onClick={newProjectIn}>New project in…</Button>
-          <Button variant="primary" placement="header" onClick={newProduction}>New production</Button>
+          <Button placement="header" onClick={newProjectIn}>New deliverable in…</Button>
+          <Button variant="primary" placement="header" onClick={newProduction}>New project</Button>
         </span>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px]">
         {shown.map((p) => <ProductionCard key={p.id} production={p} fmt={fmt} inCredits={money.inCredits} onNewProject={() => newProject(p)} />)}
         {!shown.length && (
           <span className="py-[24px] text-[13px] leading-[1.5] text-ink-body">
-            {signedIn ? (all.length ? "Nothing here under this filter." : "No productions yet. Start one — the client job — and put its deliverables inside.") : "Sign in to see your productions."}
+            {signedIn ? (all.length ? "Nothing here under this filter." : "No projects yet. Start one — the client job — and put its deliverables inside.") : "Sign in to see your projects."}
           </span>
         )}
       </div>
@@ -147,13 +147,13 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
       <div className="flex flex-col gap-[5px] px-[14px]">
         <span className="flex justify-between">
           <Mono cost tone="ink">{cap !== null && cap !== undefined ? `${fmt(spent)} of ${fmt(cap)}` : `${fmt(spent)} spent`}</Mono>
-          <Mono cost>{p.projects.length} {p.projects.length === 1 ? "project" : "projects"}</Mono>
+          <Mono cost>{p.projects.length} {p.projects.length === 1 ? "deliverable" : "deliverables"}</Mono>
         </span>
         <span className="block h-[3px] overflow-hidden rounded-[2px] bg-[rgba(245,246,248,.1)]"><span className="block h-full bg-ink" style={{ width: `${cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0}%` }} /></span>
       </div>
       <div className="flex gap-[8px] overflow-x-auto px-[14px]" style={{ scrollSnapType: "x mandatory" }} data-strip="">
         {p.projects.map((j) => <ProjectTile key={j.id} production={p} project={j} fmt={fmt} inCredits={inCredits} phone />)}
-        <button type="button" onClick={onNewProject} className="flex w-[96px] flex-none items-center justify-center rounded-tile border border-dashed border-[rgba(245,246,248,.18)] text-[13px] font-medium leading-none text-ink-body">+ Project</button>
+        <button type="button" onClick={onNewProject} className="flex w-[96px] flex-none items-center justify-center rounded-tile border border-dashed border-[rgba(245,246,248,.18)] text-[13px] font-medium leading-none text-ink-body">+ Deliverable</button>
       </div>
     </section>
   );
@@ -164,7 +164,7 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
           <span className="text-[16px] font-semibold leading-[1.1] text-ink">{p.name}</span>
           <span className="text-[12.5px] leading-[1.2] text-ink-body">{p.client || (p.status === "delivered" ? "delivered" : "in production")}</span>
         </span>
-        <Mono className="ml-[6px]">{p.projects.length} {p.projects.length === 1 ? "project" : "projects"}</Mono>
+        <Mono className="ml-[6px]">{p.projects.length} {p.projects.length === 1 ? "deliverable" : "deliverables"}</Mono>
         {p.needYou > 0 && <Chip variant="need">{p.needYou} need you</Chip>}
         <span className="ml-auto">
           {cap !== null && cap !== undefined ? <CapBar spent={spent} cap={cap} placement="row" /> : <Mono>{fmt(spent)} spent · no cap</Mono>}
@@ -175,7 +175,7 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
         {p.projects.map((j) => <ProjectTile key={j.id} production={p} project={j} fmt={fmt} inCredits={inCredits} />)}
         <button type="button" onClick={onNewProject}
           className="flex min-h-[120px] items-center justify-center rounded-tile border border-dashed border-[rgba(245,246,248,.18)] text-[13px] font-medium leading-none text-ink-body">
-          + Project
+          + Deliverable
         </button>
       </div>
     </section>

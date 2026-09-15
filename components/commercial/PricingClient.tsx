@@ -111,8 +111,8 @@ export default function PricingClient() {
                   </li>
                   <li>
                     {plan.maxProductions == null
-                      ? "Unlimited productions"
-                      : `Up to ${plan.maxProductions} productions`}
+                      ? "Unlimited projects"
+                      : `Up to ${plan.maxProductions} projects`}
                   </li>
                   <li>Private workspace and shared production bibles</li>
                   <li>Image and video takes with version history</li>

@@ -167,7 +167,7 @@ export default function PlatformPage() {
               written before the submit, so a failed render is visible rather
               than absent.
             </QA>
-            <QA q="Can a failed job destabilise a production?">
+            <QA q="Can a failed job destabilise a project?">
               No. Each render is an independent row; there is no shared queue
               to poison and no worker to wedge. A project that has never
               rendered and a project with a thousand renders load the same way.

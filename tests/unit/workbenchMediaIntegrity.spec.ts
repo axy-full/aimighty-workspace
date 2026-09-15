@@ -154,7 +154,7 @@ test("a draft save racing source deletion never commits a dangling reference", a
       expect(final.project.assets.length > 0).toBe(present > 0);
       // Once committed, either outcome remains protected against a later stale retry.
       if (present)
-        await expect(remove()).rejects.toThrow(/used by a production/);
+        await expect(remove()).rejects.toThrow(/used by a project/);
       else await expect(save()).rejects.toThrow(/referenced upload/);
     }
   });

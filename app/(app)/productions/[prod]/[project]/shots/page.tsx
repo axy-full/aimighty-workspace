@@ -40,7 +40,7 @@ import { useAtomikRail } from "@/lib/atomikRail";
  * `PLAN 4S · 19 CR` / `RENDERS 2 TAKES · 38 CR`.
  *
  * Right-click: the 228px menu — Copy ⌘C, Paste after ⌘V (until something
- * is copied), Rename ↵, Open in Rig ⌘R, Move to production ▸ (`TAKES GO
+ * is copied), Rename ↵, Open in Rig ⌘R, Move to project ▸ (`TAKES GO
  * TOO`), Delete ⌫, and the footnote. Paste copies planning only: a new id,
  * no takes, 0 cr. Delete offers Undo in the toast, and the row is only
  * really deleted once the toast has gone. Drag a card onto another to
@@ -53,7 +53,7 @@ import { useAtomikRail } from "@/lib/atomikRail";
  * the sub-tabs are in the header, `+` (50×50) and `Render SH08–09 · 38 CR`
  * are pinned above the dock (the primary outlines while any sheet is
  * open); two columns of the phone's card, 10 apart, `12px 16px`. A long
- * press opens the same menu as a sheet (48px rows; `Move to production`
+ * press opens the same menu as a sheet (48px rows; `Move to project`
  * as a second sheet); a sideways drag reorders, a downward one scrolls.
  */
 type ShotRow = Shot & { takes: number; ok: number; failed: number; spend: number; credits?: number; state: "approved" | "picked" | "rendering" | "draft" | "none"; master: { id: string; version: number | null; url: string | null } | null; poster?: string | null };
@@ -230,7 +230,7 @@ function Shots() {
 
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to see this project.</div>;
   if (!prods || !data) return <PageLoader what={`Opening · ${project?.name ?? "shots"}`} />;
-  if (!production || !project) return <div className="p-[24px] text-[13px] text-ink-body">No such project. <Link href="/productions" className="text-ink">← Productions</Link></div>;
+  if (!production || !project) return <div className="p-[24px] text-[13px] text-ink-body">No such project. <Link href="/productions" className="text-ink">← Projects</Link></div>;
 
   const cols = rail.state === "expanded" ? "grid-cols-3" : rail.state === "compact" ? "grid-cols-4" : "grid-cols-5";
   const menuShot = menu ? shots.find((s) => s.id === menu.id) ?? null : null;
@@ -241,7 +241,7 @@ function Shots() {
     { kind: "item", label: "Open in Rig", keys: "⌘R", onSelect: () => router.push(`/rig/canvas/new?project=${encodeURIComponent(projectId)}&shot=${encodeURIComponent(menuShot.id)}`) },
     { kind: "item", label: "Promote to asset", keys: money.price(0), disabled: !menuShot.master, onSelect: () => setAssetFor(menuShot) },
     { kind: "divider" },
-    { kind: "sub", label: "Move to production", open: menu!.sub, onToggle: () => setMenu((m) => m && { ...m, sub: !m.sub }),
+    { kind: "sub", label: "Move to project", open: menu!.sub, onToggle: () => setMenu((m) => m && { ...m, sub: !m.sub }),
       items: others.map((t) => ({ label: t.production.projects.length > 1 ? `${t.production.name} › ${t.project.name}` : t.production.name, note: "takes go too", onSelect: () => moveTo(menuShot, t) })) },
     { kind: "divider" },
     { kind: "item", label: "Delete", keys: "⌫", onSelect: () => remove(menuShot) },

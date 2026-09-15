@@ -10,17 +10,17 @@ export async function readProjectBody(
     return {
       ok: false,
       status: 400,
-      error: "Send the complete production JSON.",
+      error: "Send the complete project JSON.",
     };
   try {
     return { ok: true, value: JSON.parse(await readBoundedText(req, 3_500_000)) };
   } catch (error) {
     if (error instanceof RequestBodyError && error.status === 413)
-      return { ok: false, status: 413, error: "Production exceeds the 3.5 MB limit." };
+      return { ok: false, status: 413, error: "Project exceeds the 3.5 MB limit." };
     return {
       ok: false,
       status: 400,
-      error: "Send valid UTF-8 production JSON.",
+      error: "Send valid UTF-8 project JSON.",
     };
   }
 }

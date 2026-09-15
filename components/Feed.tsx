@@ -254,7 +254,7 @@ export default function Feed({
           </button>
           {scoped
             ? <Link href={`/projects/${encodeURIComponent(projectId)}`} className="chip">Spend &amp; cap</Link>
-            : <Link href="/productions" className="chip">Productions</Link>}
+            : <Link href="/productions" className="chip">Projects</Link>}
           <Link href="/settings#credits" className="chip">Balance</Link>
         </div>
       )}

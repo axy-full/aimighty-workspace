@@ -483,14 +483,14 @@ test("customer can choose annual plan, verify email, review billing and start a 
   expect(state.draft).toBeNull();
   await page
     .locator(".sample-preview-banner")
-    .getByRole("button", { name: "Start a production", exact: true })
+    .getByRole("button", { name: "Start a project", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await dialog
-    .getByLabel("Production name", { exact: true })
+    .getByLabel("Project name", { exact: true })
     .fill("Our first commercial");
   await dialog
-    .getByRole("button", { name: "Create production", exact: true })
+    .getByRole("button", { name: "Create project", exact: true })
     .click();
   await expect.poll(() => state.draft?.name).toBe("Our first commercial");
   await expect(page.locator(".sample-preview-banner")).toHaveCount(0);
@@ -567,23 +567,23 @@ test("workspace switch drains saves and a refused switch retains editing", async
   const state = await customerFixture(page);
   await page.goto("/workbench");
   await page
-    .getByRole("button", { name: "Start a production", exact: true })
+    .getByRole("button", { name: "Start a project", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await dialog
-    .getByLabel("Production name", { exact: true })
+    .getByLabel("Project name", { exact: true })
     .fill("First workspace production");
   await dialog
-    .getByRole("button", { name: "Create production", exact: true })
+    .getByRole("button", { name: "Create project", exact: true })
     .click();
   await expect.poll(() => state.draft?.name).toBe("First workspace production");
   state.holdSave = true;
   await page
-    .getByLabel("Production title", { exact: true })
+    .getByLabel("Project title", { exact: true })
     .fill("Save before workspace switch");
   await expect.poll(() => state.saveHeld).toBeTruthy();
   await page
-    .getByLabel("Production title", { exact: true })
+    .getByLabel("Project title", { exact: true })
     .fill("Final edit before workspace switch");
   await page
     .getByRole("button", { name: "Workspace menu", exact: true })
@@ -607,7 +607,7 @@ test("workspace switch drains saves and a refused switch retains editing", async
     }),
   ).toBeVisible();
   await page
-    .getByLabel("Production title", { exact: true })
+    .getByLabel("Project title", { exact: true })
     .fill("Still editable after refusal");
   await expect
     .poll(() => state.draft?.name)
@@ -907,23 +907,23 @@ test("opening Gen drains the latest studio edit before leaving", async ({
   const state = await customerFixture(page);
   await page.goto("/workbench");
   await page
-    .getByRole("button", { name: "Start a production", exact: true })
+    .getByRole("button", { name: "Start a project", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await dialog
-    .getByLabel("Production name", { exact: true })
+    .getByLabel("Project name", { exact: true })
     .fill("Navigation production");
   await dialog
-    .getByRole("button", { name: "Create production", exact: true })
+    .getByRole("button", { name: "Create project", exact: true })
     .click();
   await expect.poll(() => state.draft?.name).toBe("Navigation production");
   state.holdSave = true;
   await page
-    .getByLabel("Production title", { exact: true })
+    .getByLabel("Project title", { exact: true })
     .fill("First pending edit");
   await expect.poll(() => state.saveHeld).toBeTruthy();
   await page
-    .getByLabel("Production title", { exact: true })
+    .getByLabel("Project title", { exact: true })
     .fill("Latest edit before Gen");
   await page
     .getByRole("navigation", { name: "Studio sections" })

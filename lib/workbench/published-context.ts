@@ -61,7 +61,7 @@ export function publishedContext(project: Project) {
   if (project.scriptSource) includeAsset(project.scriptSource.assetId);
   if (assets.length > 500 || nodes.length > 250)
     throw new Error(
-      "The shared context exceeds the production asset or node limit.",
+      "The shared context exceeds the project asset or node limit.",
     );
   return {
     brief: project.brief,

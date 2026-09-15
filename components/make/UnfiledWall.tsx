@@ -326,7 +326,7 @@ function ScopedWall({
               <DialogPrimitive.Title>
                 {filing?.project
                   ? `File to ${filing.project.name}`
-                  : "File to a production"}
+                  : "File to a project"}
               </DialogPrimitive.Title>
               <DialogPrimitive.Close aria-label="Close filing">
                 <X size={19} />
@@ -382,7 +382,7 @@ function ScopedWall({
                   )),
                 )}
                 {prods && !prods.productions.length && (
-                  <p>No productions yet.</p>
+                  <p>No projects yet.</p>
                 )}
               </div>
             )}
@@ -425,7 +425,7 @@ function FilingShots({
           <FolderPlus size={18} />
         </button>
       ))}
-      {!data.shots.length && <p>No shots in this production yet.</p>}
+      {!data.shots.length && <p>No shots in this project yet.</p>}
     </div>
   );
 }

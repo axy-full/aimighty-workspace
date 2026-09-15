@@ -24,9 +24,9 @@ function failure(error: unknown) {
 export const GET = withTenant(async (req: Request) => {
   const auth = await requireUser();
   if (auth.response) return auth.response;
-  if (wrongScope(req, auth.user.id)) return response({ error: 'This workspace or account changed. Return to the original production.' }, 409);
+  if (wrongScope(req, auth.user.id)) return response({ error: 'This workspace or account changed. Return to the original project.' }, 409);
   const projectId = new URL(req.url).searchParams.get('projectId');
-  if (!projectId || !/^[a-zA-Z0-9-]{1,100}$/.test(projectId)) return response({ error: 'Choose a saved production.' }, 400);
+  if (!projectId || !/^[a-zA-Z0-9-]{1,100}$/.test(projectId)) return response({ error: 'Choose a saved project.' }, 400);
   const requestId = new URL(req.url).searchParams.get('requestId');
   if (requestId && !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId)) return response({ error: 'Invalid request identity.' }, 400);
   try {
@@ -38,7 +38,7 @@ export const GET = withTenant(async (req: Request) => {
 export const POST = withTenant(async (req: Request) => {
   const auth = await requireRender();
   if (auth.response) return auth.response;
-  if (wrongScope(req, auth.user.id)) return response({ error: 'This workspace or account changed. Return to the original production.' }, 409);
+  if (wrongScope(req, auth.user.id)) return response({ error: 'This workspace or account changed. Return to the original project.' }, 409);
   const origin = req.headers.get('origin');
   if (origin && origin !== new URL(req.url).origin) return response({ error: 'Invalid request origin.' }, 403);
   let value: unknown;
@@ -55,7 +55,7 @@ export const POST = withTenant(async (req: Request) => {
     const prepared = await prepareAtomikJob(input, auth.user.id, auth.token);
     if (prepared.scheduled) {
       const store = currentTenant();
-      if (!store) throw new AtomikError('This workspace session expired. Reload the production.', 401);
+      if (!store) throw new AtomikError('This workspace session expired. Reload the project.', 401);
       after(await reserveRecoveryContinuation('after-response', () => runWithStore(store, () => runAtomikJob(prepared.job.id, auth.user.id))));
     }
     return response({ job: prepared.job, ...prepared.job }, prepared.job.status === 'queued' || prepared.job.status === 'running' ? 202 : 200);

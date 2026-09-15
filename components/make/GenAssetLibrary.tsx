@@ -221,7 +221,7 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt }: 
 
 function FileTakeDialog({ take, onClose, onChanged }: { take: Generation | null; onClose: () => void; onChanged: () => void }) {
   return <Dialog.Root open={!!take} onOpenChange={open => { if (!open) onClose(); }}><Dialog.Portal><Dialog.Overlay className={styles.dialogOverlay}/><Dialog.Content className={styles.dialog} aria-describedby={undefined}>
-    <div className={styles.dialogHeader}><Dialog.Title>File to a production</Dialog.Title><Dialog.Close aria-label="Close filing"><X size={19}/></Dialog.Close></div>
+    <div className={styles.dialogHeader}><Dialog.Title>File to a project</Dialog.Title><Dialog.Close aria-label="Close filing"><X size={19}/></Dialog.Close></div>
     {take && <Filing key={take.id} take={take} onClose={onClose} onChanged={onChanged}/>}
   </Dialog.Content></Dialog.Portal></Dialog.Root>;
 }
@@ -238,9 +238,9 @@ function Filing({ take, onClose, onChanged }: { take: Generation; onClose: () =>
       onChanged(); onClose(); toast(`Filed to ${shot.code}`);
     } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
   }
-  return <div className={styles.filingForm}><label>Production<select aria-label="Production for take" value={project} onChange={e => setProject(e.target.value)} disabled={busy}><option value="">Choose a production</option>{productions.data?.productions.flatMap(p => p.projects.map(child => <option key={child.id} value={child.id}>{p.name}{p.projects.length > 1 ? ` · ${child.name}` : ""}</option>))}</select></label>
+  return <div className={styles.filingForm}><label>Project<select aria-label="Project for take" value={project} onChange={e => setProject(e.target.value)} disabled={busy}><option value="">Choose a project</option>{productions.data?.productions.flatMap(p => p.projects.map(child => <option key={child.id} value={child.id}>{p.name}{p.projects.length > 1 ? ` · ${child.name}` : ""}</option>))}</select></label>
     {(productions.error || shots.error) && <p role="alert">{productions.error || shots.error}</p>}
     <div className={styles.modelList}>{shots.data?.shots.map(shot => <button type="button" key={shot.id} disabled={busy} onClick={() => void file(shot)}><span><strong>{shot.code}</strong><small>{shot.title || shot.description}</small></span></button>)}</div>
-    {project && shots.data && !shots.data.shots.length && <p>No shots in this production yet.</p>}
+    {project && shots.data && !shots.data.shots.length && <p>No shots in this project yet.</p>}
   </div>;
 }
