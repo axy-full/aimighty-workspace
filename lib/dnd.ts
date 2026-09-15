@@ -15,6 +15,7 @@
  * rest from the row.
  */
 import type { Gen } from "@/components/GenCard";
+import type { UploadedFile } from "./uploadClient";
 
 export const DRAG_TYPE = "application/x-particl-asset";
 
@@ -22,6 +23,7 @@ export type DraggedGen = Pick<Gen, "id" | "kind" | "storedUrl" | "sourceUrl" | "
 
 export type DraggedAsset =
   | { kind: "gen"; gen: DraggedGen }
+  | { kind: "upload"; upload: UploadedFile }
   | { kind: "cast"; castId: string; name: string; uploadId: string | null };
 
 function write(e: React.DragEvent, payload: DraggedAsset): void {
@@ -41,6 +43,10 @@ export function startGenDrag(e: React.DragEvent, g: Gen): void {
   });
 }
 
+export function startUploadDrag(e: React.DragEvent, upload: UploadedFile): void {
+  write(e, { kind: "upload", upload });
+}
+
 /** A cast member leaves the Studio. */
 export function startCastDrag(e: React.DragEvent, m: { id: string; name: string; uploadId?: string | null }): void {
   write(e, { kind: "cast", castId: m.id, name: m.name, uploadId: m.uploadId ?? null });
@@ -57,6 +63,7 @@ export function readDrag(e: React.DragEvent): DraggedAsset | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DraggedAsset;
     if (parsed?.kind === "gen" && parsed.gen?.id) return parsed;
+    if (parsed?.kind === "upload" && parsed.upload?.id) return parsed;
     if (parsed?.kind === "cast" && parsed.name) return parsed;
     return null;
   } catch {

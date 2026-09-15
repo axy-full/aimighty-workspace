@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
+import { generationHref, type GenRouteSearch } from "@/lib/genRoute";
 
-/** Audio is made at /make/audio now (§10). */
-export default function Moved() {
-  redirect("/make/audio");
+export default async function Moved({ searchParams }: { searchParams: Promise<GenRouteSearch> }) {
+  redirect(generationHref("audio", await searchParams)!);
 }

@@ -3,8 +3,9 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { abandonUpload, beginDirectUpload, uploadFailure, UploadError, type FinishClaim } from "@/lib/uploadReservations";
 import { storeReferenceUpload } from "@/lib/uploadIntake";
 import { NextResponse } from "next/server";
-import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
+import { listLibraryUploads } from "@/lib/uploadLibrary";
+import { AssetQueryError } from "@/lib/assetPagination";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,22 +32,17 @@ export const maxDuration = 60;
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
-  await ready();
-  const limit = Math.max(1, Math.min(500, Number(new URL(req.url).searchParams.get("limit") ?? 200) || 200));
-  const rs = await db().execute({
-    sql: `SELECT id, filename, mime, bytes, width, height, kind, duration_s, created_at FROM uploads ORDER BY created_at DESC LIMIT ?`,
-    args: [limit],
-  });
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  const uploads = rs.rows.map((r: any) => ({
-    id: String(r.id), filename: String(r.filename ?? ""), mime: String(r.mime ?? ""), bytes: Number(r.bytes ?? 0),
-    width: r.width == null ? null : Number(r.width), height: r.height == null ? null : Number(r.height),
-    kind: r.kind === "video" ? "video" : "image", durationS: r.duration_s == null ? null : Number(r.duration_s),
-    /* Served by this app, never the blob's own address: `/api/uploads/[id]` decides what a browser may render. */
-    url: `/api/uploads/${encodeURIComponent(String(r.id))}`,
-    createdAt: Number(r.created_at ?? 0),
-  }));
-  return NextResponse.json({ uploads });
+  const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
+  if (problem) return NextResponse.json({ error: problem }, { status: 409 });
+  try {
+    return NextResponse.json(await listLibraryUploads(new URL(req.url).searchParams), {
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  } catch (error) {
+    if (error instanceof AssetQueryError)
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
 });
 
 export const POST = withTenant(async function POST(req: Request) {

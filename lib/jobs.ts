@@ -25,6 +25,7 @@ import { billedTo, getProvider } from "./providers";
 import { releaseHeldJobs } from "./held";
 import { engineFor } from "./engines";
 import { notify } from "./push";
+import type { AssetCursor } from "./assetPagination";
 
 export type Generation = {
   id: string;
@@ -180,6 +181,10 @@ export async function listGenerations(opts: {
   castName?: string | null;
   /** Cursor: return only rows OLDER than this created_at (keyset pagination). */
   before?: number | null;
+  /** Stable continuation for rows that share a created_at timestamp. */
+  cursor?: AssetCursor | null;
+  /** Read one extra row so a stable page can report whether more rows exist. */
+  includeNext?: boolean;
   /** Only takes filed against no project — Make's wall and the Library's Unfiled lens (§10, §11). */
   unfiled?: boolean;
 } = {}): Promise<Generation[]> {
@@ -224,7 +229,10 @@ export async function listGenerations(opts: {
     );
     args.push(opts.castName);
   }
-  if (opts.before) {
+  if (opts.cursor) {
+    where.push("(g.created_at, g.id) < (?, ?)");
+    args.push(opts.cursor.createdAt, opts.cursor.id);
+  } else if (opts.before) {
     where.push("g.created_at < ?");
     args.push(opts.before);
   }
@@ -232,9 +240,9 @@ export async function listGenerations(opts: {
   where.push("g.deleted = 0");
   const sql = `${SELECT}
     WHERE ${where.join(" AND ")}
-    ORDER BY g.created_at DESC
+    ORDER BY g.created_at DESC, g.id DESC
     LIMIT ?`;
-  args.push(Math.min(Math.max(opts.limit ?? 60, 1), 500));
+  args.push(Math.min(Math.max(opts.limit ?? 60, 1), 500) + (opts.includeNext ? 1 : 0));
 
   const rs = await db().execute({ sql, args });
   return rs.rows.map(rowToGeneration);

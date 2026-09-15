@@ -1,21 +1,18 @@
-import { Suspense } from "react";
-import { notFound } from "next/navigation";
-import GenWorkspace from "@/components/make/GenWorkspace";
-import GenLoading from "@/components/make/GenLoading";
+import { notFound, redirect } from "next/navigation";
+import { generationHref, type GenRouteSearch } from "@/lib/genRoute";
 
 export const metadata = { title: "Gen · Particl" };
 
-/** Existing links retain all query parameters and open the same Gen workspace. */
+/** Enter the canonical workspace before any client-side prompt or asset handoff. */
 export default async function MakePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ kind: string }>;
+  searchParams: Promise<GenRouteSearch>;
 }) {
-  const { kind } = await params;
-  if (!["video", "images", "audio"].includes(kind)) notFound();
-  return (
-    <Suspense fallback={<GenLoading />}>
-      <GenWorkspace initialKind={kind} />
-    </Suspense>
-  );
+  const [{ kind }, search] = await Promise.all([params, searchParams]);
+  const href = generationHref(kind, search);
+  if (!href) notFound();
+  redirect(href);
 }

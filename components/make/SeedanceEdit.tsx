@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useImperativeHandle, type Ref } from "react";
 import { Film, Upload, X } from "lucide-react";
+import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
 import { useSession, useSignInHref } from "@/lib/session";
 import { usePaidAction } from "@/lib/usePaidAction";
@@ -38,10 +39,12 @@ export default function SeedanceEdit({
   onBack,
   onMade,
   initialSource,
+  controller,
 }: {
   onBack: () => void;
   onMade: () => void;
   initialSource?: string | null;
+  controller?: Ref<GenAssetInputHandle>;
 }) {
   const { signedIn, requestScope } = useSession();
   const signIn = useSignInHref();
@@ -84,10 +87,15 @@ export default function SeedanceEdit({
   const [prompt, setPrompt] = useState("");
   const [resolution, setResolution] = useState("720p");
   const [audio, setAudio] = useState(true);
-  const [referenceKeys, setReferenceKeys] = useState<string[]>([]);
+  const [referenceKeys, updateReferenceKeys] = useState<string[]>([]);
+  const attachedReferences = useRef<string[]>([]);
+  function setReferenceKeys(update: (previous: string[]) => string[]) {
+    const next = update(attachedReferences.current);
+    attachedReferences.current = next;
+    updateReferenceKeys(next);
+  }
   const [reviewed, setReviewed] = useState<Reviewed | null>(null);
   const [busy, setBusy] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sourceInput = useRef<HTMLInputElement>(null),
     referenceInput = useRef<HTMLInputElement>(null);
@@ -121,47 +129,47 @@ export default function SeedanceEdit({
   };
   const bodyKey = JSON.stringify(body);
   const quote = reviewed?.body === bodyKey ? reviewed.quote : null;
-  const blocked = busy || uploading || !!paid.pending || !!paid.error;
+  const inputLocked = busy || !!paid.pending || !!paid.error;
+  const priceLabel = (value: AdmissionQuote) =>
+    value.unit === "cr" ? `${value.price} cr` : `$${value.price.toFixed(2)}`;
+
+  const receiver = useGenAssetInput({
+    scope: requestScope,
+    locked: inputLocked,
+    initialSource,
+    acceptFile(file, target) {
+      if (file.type.startsWith("image/") && attachedReferences.current.length >= 8) throw Error("Remove an image reference before adding another.");
+      if (target === "source" && !file.type.startsWith("video/")) throw Error("Choose a video source clip.");
+      if (target === "reference" && !file.type.startsWith("image/")) throw Error("Choose an image reference.");
+      if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) throw Error("Choose a video source clip or an image reference.");
+    },
+    upload: (file) => upload(file, "reference"),
+    onAsset(asset, target) {
+      if (target === "source" && asset.kind !== "video") throw Error("Choose a video source clip.");
+      if (target === "reference" && asset.kind !== "image") throw Error("Choose an image reference.");
+      if (asset.kind !== "image" && asset.kind !== "video") throw Error("Choose a video source clip or an image reference.");
+      if (asset.kind === "image" && !attachedReferences.current.includes(asset.key) && attachedReferences.current.length >= 8) throw Error("Remove an image reference before adding another.");
+      setAdded((previous) => [asset, ...previous.filter((item) => item.key !== asset.key)]);
+      if (asset.kind === "video") setSourceKey(asset.key);
+      else setReferenceKeys((previous) => [...new Set([...previous, asset.key])].slice(0, 8));
+      setReviewed(null);
+      setError(null);
+      toast(asset.kind === "video" ? `${asset.name} selected as the source clip.` : `${asset.name} added as an image reference.`);
+      void refresh();
+    },
+    onError: setError,
+  });
+  const uploading = receiver.busy;
+  const blocked = inputLocked || uploading;
   const canQuote =
     signedIn &&
     source?.kind === "video" &&
     prompt.trim().length > 0 &&
     !blocked;
-  const priceLabel = (value: AdmissionQuote) =>
-    value.unit === "cr" ? `${value.price} cr` : `$${value.price.toFixed(2)}`;
-
-  async function addFile(file: File | undefined, isSource: boolean) {
-    if (!file) return;
-    if (
-      !(isSource
-        ? file.type.startsWith("video/")
-        : file.type.startsWith("image/"))
-    ) {
-      setError(
-        isSource ? "Choose a video clip." : "Choose an image reference.",
-      );
-      return;
-    }
-    setUploading(true);
-    setError(null);
-    try {
-      const result = uploaded(await upload(file, "reference"));
-      setAdded((previous) => [
-        ...previous.filter((item) => item.key !== result.key),
-        result,
-      ]);
-      if (isSource) setSourceKey(result.key);
-      else
-        setReferenceKeys((previous) =>
-          [...new Set([...previous, result.key])].slice(0, 8),
-        );
-      void refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setUploading(false);
-    }
-  }
+  useImperativeHandle(controller, () => ({ useAsset: receiver.useAsset, useFiles: receiver.useFiles }));
+  const addFile = async (file: File | undefined, isSource: boolean) => {
+    if (file) await receiver.useFiles([file], isSource ? "source" : "reference");
+  };
   async function review() {
     if (!canQuote || !requestScope) return;
     setBusy(true);
@@ -246,7 +254,7 @@ export default function SeedanceEdit({
               <small>Edit an existing shot</small>
             </span>
           </button>
-          <div className={edit.source}>
+          <div className={edit.source} aria-label="Edit source drop area" onDragOver={receiver.onDragOver} onDrop={(event) => receiver.onDrop(event, "source")}>
             <label className={styles.sectionLabel} htmlFor="edit-source">
               Source clip
             </label>
@@ -320,7 +328,7 @@ export default function SeedanceEdit({
               placeholder="Replace the daylight with soft blue hour. Keep the actor, camera movement and composition. Preserve the dialogue."
             />
           </div>
-          <div className={edit.source}>
+          <div className={edit.source} aria-label="Edit reference drop area" onDragOver={receiver.onDragOver} onDrop={(event) => receiver.onDrop(event, "reference")}>
             <label className={styles.sectionLabel} htmlFor="edit-reference">
               Visual references · {displayedReferences.length}/8
             </label>

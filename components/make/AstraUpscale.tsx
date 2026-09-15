@@ -1,6 +1,7 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useImperativeHandle, type Ref } from "react";
 import { Film, Upload } from "lucide-react";
+import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
 import { useSession, useSignInHref } from "@/lib/session";
 import { usePaidAction } from "@/lib/usePaidAction";
@@ -31,10 +32,12 @@ export default function AstraUpscale({
   onBack,
   onMade,
   initialSource,
+  controller,
 }: {
   onBack: () => void;
   onMade: () => void;
   initialSource?: string | null;
+  controller?: Ref<GenAssetInputHandle>;
 }) {
   const { signedIn, requestScope } = useSession(),
     signIn = useSignInHref(),
@@ -63,7 +66,6 @@ export default function AstraUpscale({
       quote: AdmissionQuote;
     } | null>(null);
   const [busy, setBusy] = useState(false),
-    [uploading, setUploading] = useState(false),
     [error, setError] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const sources = useMemo(() => {
@@ -103,32 +105,33 @@ export default function AstraUpscale({
   };
   const bodyKey = JSON.stringify(body),
     quote = reviewed?.body === bodyKey ? reviewed.quote : null;
-  const blocked = busy || uploading || !!paid.pending || !!paid.error;
+  const inputLocked = busy || !!paid.pending || !!paid.error;
   const price = (value: AdmissionQuote) =>
     value.unit === "cr" ? `${value.price} cr` : `$${value.price.toFixed(2)}`;
-  async function upload(file?: File) {
-    if (!file || blocked) return;
-    setError("");
-    if (!/\.(mp4|mov)$/i.test(file.name) || file.size > 200 * 1024 * 1024) {
-      setError("Choose an MP4 or MOV original up to 200 MB.");
-      return;
-    }
-    setUploading(true);
-    try {
-      const result = asUpload(await uploader(file, "chat"));
-      setAdded((previous) => [result, ...previous]);
-      setKey(result.key);
+  const receiver = useGenAssetInput({
+    scope: requestScope,
+    locked: inputLocked,
+    initialSource,
+    acceptFile(file) {
+      if (!/\.(mp4|mov)$/i.test(file.name) || file.size > 200 * 1024 * 1024)
+        throw Error("Choose an MP4 or MOV original up to 200 MB.");
+    },
+    upload: (file) => uploader(file, "chat"),
+    onAsset(asset) {
+      if (asset.kind !== "video") throw Error("Choose a video for Astra upscale.");
+      setAdded((previous) => [asset, ...previous.filter((item) => item.key !== asset.key)]);
+      setKey(asset.key);
       setReviewed(null);
+      setError("");
+      toast(`${asset.name} selected for upscale.`);
       void refresh();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Source upload failed.",
-      );
-    } finally {
-      setUploading(false);
-      if (input.current) input.current.value = "";
-    }
-  }
+    },
+    onError: setError,
+  });
+  const uploading = receiver.busy;
+  const blocked = inputLocked || uploading;
+  useImperativeHandle(controller, () => ({ useAsset: receiver.useAsset, useFiles: receiver.useFiles }));
+  const upload = async (file?: File) => { if (file) await receiver.useFiles([file]); };
   async function review() {
     if (!source || blocked || !requestScope) return;
     setBusy(true);
@@ -213,7 +216,7 @@ export default function AstraUpscale({
               <small>Creative video upscale</small>
             </span>
           </button>
-          <div className={edit.source}>
+          <div className={edit.source} aria-label="Astra source drop area" onDragOver={receiver.onDragOver} onDrop={receiver.onDrop}>
             <label className={styles.sectionLabel} htmlFor="astra-source">
               Original source clip
             </label>
