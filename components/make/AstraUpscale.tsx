@@ -50,6 +50,7 @@ export default function AstraUpscale({
     refresh,
   } = useApi<{ uploads: UploadedFile[] }>(
     signedIn ? "/api/uploads?limit=500" : null,
+    0, requestScope,
   );
   const {
     data: takes,
@@ -57,6 +58,7 @@ export default function AstraUpscale({
     refresh: refreshTakes,
   } = useApi<{ generations: Generation[] }>(
     "/api/jobs?status=succeeded&limit=500&sync=0",
+    0, requestScope,
   );
   const [added, setAdded] = useState<Source[]>([]),
     [key, setKey] = useState(initialSource || "");

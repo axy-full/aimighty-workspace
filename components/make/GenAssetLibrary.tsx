@@ -210,6 +210,8 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt }: 
     </div>
     <Dialog.Root open={!!selected} onOpenChange={open => { if (!open) setSelected(null); }}><Dialog.Portal><Dialog.Overlay className={styles.dialogOverlay}/><Dialog.Content className={`${styles.dialog} ${styles.previewDialog}`} aria-describedby={undefined}>
       <div className={styles.dialogHeader}><Dialog.Title>{selected ? libraryName(selected) : "Asset preview"}</Dialog.Title><Dialog.Close aria-label="Close preview"><X size={19}/></Dialog.Close></div>
+      {/* Private original images require the browser's authenticated same-origin request. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       {selected && <><div className={styles.preview}>{selected.origin === "upload" && !inlineSafe(selected.value.mime) ? <p>This original format has no browser preview. Download it to open in your media, document or colour application.</p> : libraryKind(selected) === "image" ? <img src={libraryUrl(selected)} alt={libraryName(selected)}/> : libraryKind(selected) === "video" ? <video src={libraryUrl(selected)} controls playsInline/> : libraryKind(selected) === "audio" ? <audio src={libraryUrl(selected)} controls/> : <p>Download the original to open it in your document or colour application.</p>}</div>
         <a className={styles.secondary} href={libraryUrl(selected).split("?")[0] + "?download=1"} download={selected.origin === "upload" ? selected.value.filename : true}><Download size={16}/>Download original</a></>}
     </Dialog.Content></Dialog.Portal></Dialog.Root>

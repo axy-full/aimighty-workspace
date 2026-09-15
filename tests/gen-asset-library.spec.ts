@@ -103,7 +103,7 @@ async function fixture(page: Page) {
     paidRequests.push(route.request().postDataJSON());
     return route.abort("blockedbyclient");
   });
-  return { image, imageUpload, videoUpload, audioUpload, pdfUpload, otherUpload, generationImage, generationVideo, paidRequests: () => paidRequests.length, submissions: paidRequests };
+  return { image, imageUpload, videoUpload, audioUpload, pdfUpload, otherUpload, generationImage, generationVideo, scope: headers["X-Workbench-Scope"], paidRequests: () => paidRequests.length, submissions: paidRequests };
 }
 
 test("Gen lists every workspace asset by type across modes and uploads originals through the library", async ({ page }, info) => {
@@ -233,6 +233,12 @@ test("Gen drags real generated and uploaded images into reference slots with dup
 test("Gen drags workspace assets into Seedance, Topaz and Astra source panels without submitting paid work", async ({ page }) => {
   test.skip(test.info().project.name !== "customer-1440x900", "desktop source-panel regression");
   const f = await fixture(page);
+  const sourceScopes: (string | undefined)[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if ((url.pathname === "/api/uploads" && url.searchParams.get("limit") === "500") || (url.pathname === "/api/jobs" && url.searchParams.get("status") === "succeeded"))
+      sourceScopes.push(request.headers()["x-workbench-scope"]);
+  });
   await page.goto(`/make/images?ref=upload:${f.imageUpload.id}&task=upscale&source=upload:${f.imageUpload.id}`);
   await expect(page).toHaveURL(/\/generate\?/);
   const redirected = new URL(page.url());
@@ -253,6 +259,21 @@ test("Gen drags workspace assets into Seedance, Topaz and Astra source panels wi
     await assetCard(page, origin, id).dragTo(panel.getByLabel(dropLabel, { exact: true }));
     await expect(panel.getByLabel(sourceLabel, { exact: true })).toHaveValue(`${origin}:${id}`);
   }
+  const originalImage = assetCard(page, "upload", f.imageUpload.id);
+  await originalImage.getByRole("button", { name: "Edit image", exact: true }).click();
+  const removeReference = page.getByRole("button", { name: "Remove Original lighting reference.png", exact: true });
+  await expect(removeReference).toBeVisible();
+  await removeReference.click();
+  await expect(removeReference).toHaveCount(0);
+  await originalImage.getByRole("button", { name: "Edit image", exact: true }).click();
+  await expect(removeReference).toBeVisible();
+  await assetCard(page, "upload", f.videoUpload.id).getByRole("button", { name: "Edit clip", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Seedance 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
+  await originalImage.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Upscale image", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Topaz Image Upscale", exact: true }).getByLabel("Source image", { exact: true })).toHaveValue(`upload:${f.imageUpload.id}`);
+  expect(sourceScopes.length).toBeGreaterThan(0);
+  expect(sourceScopes.every((scope) => scope === f.scope)).toBe(true);
   expect(f.paidRequests()).toBe(0);
 });
 

@@ -60,13 +60,14 @@ export default function TopazImageUpscale({
     data: uploads,
     error: uploadError,
     refresh,
-  } = useApi<{ uploads: UploadedFile[] }>("/api/uploads?limit=500");
+  } = useApi<{ uploads: UploadedFile[] }>("/api/uploads?limit=500", 0, requestScope);
   const {
     data: takes,
     error: takeError,
     refresh: refreshTakes,
   } = useApi<{ generations: Generation[] }>(
     "/api/jobs?status=succeeded&limit=500&sync=0",
+    0, requestScope,
   );
   const [added, setAdded] = useState<Asset[]>([]);
   const assets = [
