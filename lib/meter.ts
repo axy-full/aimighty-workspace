@@ -41,6 +41,10 @@ export type MeterEvent = {
   createdBy?: string | null;
   /** Defaults to the current tenant's workspace. */
   workspaceId?: string;
+  /** Private outbox guard for collection of an exact historical unknown-cost timeout. */
+  recoveryFunding?: {
+    engineCostUsd: number; billedCredits: number; paidByPlatform: boolean; settledCredits: number;
+  };
 };
 
 export class FundingSourceChangedError extends Error {
@@ -103,15 +107,37 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
     try {
       await billingTransaction(async (tx) => {
         await syncBillingLedger(tx, workspaceId, ts);
-        const previous = await tx.execute({ sql: `SELECT workspace_id,status,billed_credits,paid_by_platform FROM meter_events WHERE id=?`, args: [e.id] });
+        const previous = await tx.execute({ sql: `SELECT workspace_id,status,kind,engine,model,engine_cost_usd,billed_credits,paid_by_platform FROM meter_events WHERE id=?`, args: [e.id] });
         const row = previous.rows[0];
         if (row && row.workspace_id !== workspaceId) throw new Error("Meter event belongs to another workspace.");
+        if (e.recoveryFunding) {
+          const guard = e.recoveryFunding;
+          const debit = (await tx.execute({ sql: "SELECT credits FROM billing_debits WHERE workspace_id=? AND event_id=?", args: [workspaceId, e.id] })).rows[0];
+          const intent = (await tx.execute({ sql: "SELECT state FROM recovery_intents WHERE workspace_id=? AND id=?", args: [workspaceId, e.id] })).rows[0];
+          const identityMatches = row && row.kind === e.kind && row.engine === e.engine && row.model === e.model
+            && Boolean(row.paid_by_platform) === guard.paidByPlatform;
+          const validTarget = e.status !== "running" && Number.isFinite(guard.engineCostUsd) && guard.engineCostUsd > 0
+            && Number.isInteger(guard.billedCredits) && guard.billedCredits >= 0
+            && Number.isInteger(guard.settledCredits) && guard.settledCredits >= 0 && guard.settledCredits <= guard.billedCredits
+            && (guard.paidByPlatform || guard.settledCredits === 0)
+            && (cost == null || cost <= guard.engineCostUsd + 0.000001);
+          // A crash after the platform commit may replay this exact durable bill.
+          const alreadyApplied = identityMatches && validTarget && row.status === e.status
+            && (cost == null || Number(row.engine_cost_usd) === cost)
+            && Number(row.billed_credits) === guard.settledCredits && Number(debit?.credits) === guard.settledCredits
+            && intent?.state === ((e.status === "succeeded" || cost === 0) ? "resolved" : "accepted");
+          if (alreadyApplied) return;
+          if (!identityMatches || !validTarget || row.status !== "failed"
+            || Number(row.engine_cost_usd) !== guard.engineCostUsd || Number(row.billed_credits) !== guard.billedCredits
+            || Number(debit?.credits) !== guard.billedCredits || intent?.state !== "accepted")
+            throw new Error("Recovered generation funding changed; its original outcome needs reconciliation.");
+        }
         // A late start notification cannot replace a completed bill with its old estimate.
         if (row && row.status !== "running" && e.status === "running") return;
         if (row?.status === "succeeded" && e.status === "failed") return;
         // A key added or removed while the provider runs cannot change who funded this attempt.
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
-        const billed = cost == null ? null : fundedByPlatform ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
+        const billed = e.recoveryFunding ? e.recoveryFunding.settledCredits : cost == null ? null : fundedByPlatform ? billCredits(cost, marginKeyOf(e.kind, e.model)) : 0;
         await setCreditDebitTx(tx, workspaceId, e.id, billed ?? Number(row?.billed_credits ?? 0), ts, e.status !== "running");
         await tx.execute({
         sql: `INSERT INTO meter_events

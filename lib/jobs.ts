@@ -9,6 +9,7 @@ import { billCredits, marginKeyOf } from "./creditTerms";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
+import { astraTimeoutCandidateSql, astraTimeoutReceipt } from "./astraRecovery";
 import { meter, type MeterEvent } from "./meter";
 import {
   writeGenerationOutcome,
@@ -271,7 +272,8 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
     TERMINAL.has(gen.status) &&
     (gen.status !== "succeeded" || (gen.storedUrl && savedCosts.cost != null))
   ) {
-    return gen;
+    if (gen.status !== "failed") return gen;
+    if (!(await astraTimeoutReceipt(gen.id))) return (await getGeneration(gen.id)) ?? gen;
   }
   if (gen.kind === "image" && gen.model === TOPAZ_IMAGE_MODEL && gen.params.falStillRequestId) {
     try { await reconcileTopazImage(gen.id); } catch (error) { if (options.strict) throw error; }
@@ -515,6 +517,7 @@ export async function syncPending(
   const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
+      OR ${astraTimeoutCandidateSql("g")}
       OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
         AND (g.stored_url IS NULL OR g.cost_usd IS NULL))
       ORDER BY g.updated_at,g.created_at,g.id LIMIT ?`,

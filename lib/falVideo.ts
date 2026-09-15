@@ -38,9 +38,10 @@ import { withRecoveryJob } from "./recovery";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { getProvider } from "./providers";
 import { engineFor } from "./engines";
+import { astraTimeoutCandidateSql, astraTimeoutReceipt, sameAstraTimeoutReceipt, astraRecoveryWithinReservation, astraRecoveryFunding, type AstraTimeoutReceipt } from "./astraRecovery";
 
-/** A render still "running" past this has been abandoned by the vendor. */
-const CEILING_MS = 60 * 60_000;
+/** Age is an operational warning, never proof that an accepted provider job failed. */
+const DELAY_NOTICE_MS = 60 * 60_000;
 /** Past this, a job we cannot even ask about is given up on. */
 const UNREACHABLE_CEILING_MS = 6 * 60 * 60_000;
 
@@ -168,16 +169,23 @@ async function fail(
   gen: Generation,
   message: string,
   confirmed = false,
+  historical?: AstraTimeoutReceipt,
+  leaseUntil?: number,
 ): Promise<Generation> {
+  if (historical && !(await sameAstraTimeoutReceipt(gen.id, historical))) return (await import("./jobs")).getGeneration(gen.id).then(current => current ?? gen);
   const ts = now();
-  await writeGenerationOutcome(
+  const written = await writeGenerationOutcome(
     {
-      sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+      sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?), updated_at=? WHERE id=? AND deleted=0 AND status NOT IN ('succeeded','cancelled')
+        ${historical ? `AND ${astraTimeoutCandidateSql()} AND EXISTS (SELECT 1 FROM generation_settlements ar WHERE ar.id=generations.id AND ar.event=? AND ar.settled_at=?) AND json_remove(params,'$.astraPollUntil')=?` : ""}
+        ${leaseUntil ? "AND json_extract(params,'$.astraPollUntil')=?" : ""}`,
       args: [
         message.slice(0, 600),
         Math.max(0, ts - gen.createdAt),
         ts,
         gen.id,
+        ...(historical ? [historical.event, historical.settledAt, historical.params] : []),
+        ...(leaseUntil ? [leaseUntil] : []),
       ],
     },
     {
@@ -187,12 +195,14 @@ async function fail(
       model: gen.model,
       status: "failed",
       engineCostUsd: confirmed && !getProvider("fal").billsFailures ? 0 : null,
+      ...(historical ? { recoveryFunding: astraRecoveryFunding(historical, confirmed && !getProvider("fal").billsFailures ? 0 : null) } : {}),
       durationMs: Math.max(0, ts - gen.createdAt),
       projectId: gen.projectId,
       shotId: gen.shotId,
     },
   );
   await deliverGenerationSettlement(gen.id);
+  if (!written) return (await import("./jobs")).getGeneration(gen.id).then(current => current ?? gen);
   invalidate(PROJECTS_KEY);
   return { ...gen, status: "failed", error: message, updatedAt: ts };
 }
@@ -208,15 +218,29 @@ export async function syncFalVideo(
   options: { strict?: boolean } = {},
 ): Promise<Generation> {
   if (gen.model !== ASTRA_MODEL) return collectFalVideo(gen, options);
-  return withRecoveryJob(requireTenant().id,gen.id,async()=>{
-    const until=now()+300_000;
-    const claim=await db().execute({sql:`UPDATE generations SET params=json_set(params,'$.astraPollUntil',?) WHERE id=? AND kind='video' AND model=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.falRequestId') IS NOT NULL AND COALESCE(json_extract(params,'$.astraPollUntil'),0) < ? RETURNING params`,args:[until,gen.id,ASTRA_MODEL,now()]});
-    if(!claim.rows.length) return (await import("./jobs")).getGeneration(gen.id).then(current=>current??gen);
-    try { return await collectFalVideo({...gen,params:JSON.parse(String(claim.rows[0].params))},options); }
-    finally {await db().execute({sql:"UPDATE generations SET params=json_remove(params,'$.astraPollUntil') WHERE id=? AND json_extract(params,'$.astraPollUntil')=?",args:[gen.id,until]});}
+  return withRecoveryJob(requireTenant().id, gen.id, async () => {
+    await deliverGenerationSettlement(gen.id);
+    const historical = gen.status === "failed" ? await astraTimeoutReceipt(gen.id) : null;
+    if (gen.status === "failed" && !historical) return (await import("./jobs")).getGeneration(gen.id).then(current => current ?? gen);
+    const until = now() + 300_000;
+    const claim = await db().execute({
+      sql: `UPDATE generations SET params=json_set(params,'$.astraPollUntil',?)
+        WHERE id=? AND kind='video' AND model=? AND deleted=0
+        AND (status IN ('queued','running') ${historical ? `OR ${astraTimeoutCandidateSql()}` : ""})
+        AND json_extract(params,'$.falRequestId') IS NOT NULL
+        AND COALESCE(json_extract(params,'$.astraPollUntil'),0) < ? RETURNING params,status`,
+      args: [until, gen.id, ASTRA_MODEL, now()],
+    });
+    if (!claim.rows.length) return (await import("./jobs")).getGeneration(gen.id).then(current => current ?? gen);
+    try {
+      if (historical && !(await sameAstraTimeoutReceipt(gen.id, historical))) return (await import("./jobs")).getGeneration(gen.id).then(current => current ?? gen);
+      return await collectFalVideo({ ...gen, status: String(claim.rows[0].status), params: JSON.parse(String(claim.rows[0].params)) }, options, historical ?? undefined, until);
+    } finally {
+      await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.astraPollUntil') WHERE id=? AND json_extract(params,'$.astraPollUntil')=?", args: [gen.id, until] });
+    }
   });
 }
-async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise<Generation> {
+async function collectFalVideo(gen: Generation, options: { strict?: boolean }, historical?: AstraTimeoutReceipt, leaseUntil?: number): Promise<Generation> {
   await deliverGenerationSettlement(gen.id);
   const savedCosts = await generationCosts(gen.id);
   const p = gen.params as FalVideoParams & {
@@ -236,15 +260,20 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
     });
   } catch (e) {
     const msg = (e as Error).message;
-    if (/\b404\b|not found/i.test(msg))
-      return fail(gen, "fal.ai no longer has this job. Render again.");
-    // A refusal (422) is final; anything else gets another pass, until the ceiling.
+    // Historical uncertainty remains eligible unless the original provider confirms a rejection.
     if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg))
-      return fail(gen, msg, true);
+      return fail(gen, msg, true, historical, leaseUntil);
+    if (historical) {
+      if (options.strict) throw e;
+      return gen;
+    }
+    if (/\b404\b|not found/i.test(msg))
+      return fail(gen, "fal.ai no longer has this job. Render again.", false, undefined, leaseUntil);
     if (now() - gen.createdAt > UNREACHABLE_CEILING_MS) {
       return fail(
         gen,
         `Could not reach fal.ai to find out how this render went: ${msg} If it did complete, fal will still have charged for it.`,
+        false, undefined, leaseUntil,
       );
     }
     if (options.strict) throw e;
@@ -254,13 +283,17 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
     return fail(
       gen,
       polled.error ?? "fal.ai could not finish this render.",
-      true,
+      true, historical, leaseUntil,
     );
   if (polled.status !== "succeeded") {
-    if (now() - gen.createdAt > CEILING_MS)
-      return fail(gen, "The render never came back from fal.ai. Render again.");
+    if (now() - gen.createdAt > DELAY_NOTICE_MS && !historical) {
+      const message = "fal.ai still reports this original request as active. Its credits remain reserved; no additional request has been submitted.";
+      await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running')", args: [message, now(), gen.id] });
+      return { ...gen, error: message };
+    }
     return gen;
   }
+  if (historical && !(await sameAstraTimeoutReceipt(gen.id, historical))) return (await import("./jobs")).getGeneration(gen.id).then(current => current ?? gen);
   const url = polled.videoUrl!;
 
   const storeStart = now();
@@ -295,8 +328,14 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
       return {...gen,error:message};
     }
   }
+  if (historical && (cost == null || !astraRecoveryWithinReservation(historical, cost + savedCosts.refinement))) {
+    const message = "Astra's recovered output exceeds its original reservation under the current rates. The existing result is retained for reconciliation; no additional credits were charged.";
+    if (options.strict) throw new Error(message);
+    return { ...gen, error: message };
+  }
   const deliveredParams = output ? {astraOutput:output,astraQuotedOutput:{resolution:p.resolution,duration:p.duration,fps60:p.fps60,ratio:p.ratio},resolution:`${Math.min(output.width,output.height)}p`,ratio:`${output.width}:${output.height}`,duration:output.seconds} : undefined;
   const ts = now();
+  if (historical && !(await sameAstraTimeoutReceipt(gen.id, historical))) return (await import("./jobs")).getGeneration(gen.id).then(current => current ?? gen);
   const sealed = await writeGenerationOutcome(
     {
       sql: `UPDATE generations
@@ -304,7 +343,9 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
               cost_usd=COALESCE(cost_usd, ?), duration_ms=COALESCE(duration_ms, ?),
               store_ms=?, bytes=?, error=NULL, updated_at=?
               ${output ? ",params=json_patch(params,json(?))" : ""}
-          WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
+          WHERE id=? AND deleted=0
+            AND (status IN ('queued','running') ${historical ? `OR (${astraTimeoutCandidateSql()} AND EXISTS (SELECT 1 FROM generation_settlements ar WHERE ar.id=generations.id AND ar.event=? AND ar.settled_at=?) AND json_remove(params,'$.astraPollUntil')=?)` : ""})
+            ${leaseUntil ? "AND json_extract(params,'$.astraPollUntil')=?" : ""}`,
       args: [
         url,
         stored.url,
@@ -315,6 +356,8 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
         ts,
         ...(deliveredParams ? [JSON.stringify(deliveredParams)] : []),
         gen.id,
+        ...(historical ? [historical.event, historical.settledAt, historical.params] : []),
+        ...(leaseUntil ? [leaseUntil] : []),
       ],
     },
     {
@@ -324,6 +367,7 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
       model: gen.model,
       status: "succeeded",
       engineCostUsd: cost != null ? cost + savedCosts.refinement : null,
+      ...(historical ? { recoveryFunding: astraRecoveryFunding(historical, cost != null ? cost + savedCosts.refinement : null) } : {}),
       durationMs: Math.max(0, ts - gen.createdAt),
       projectId: gen.projectId,
       shotId: gen.shotId,
