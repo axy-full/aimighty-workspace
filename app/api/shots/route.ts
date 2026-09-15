@@ -3,6 +3,8 @@ import { billedCreditsSum } from "@/lib/creditSql";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { listShots, createShot, codeProblem } from "@/lib/shots";
+import { requireTenant } from "@/lib/tenant";
+import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,8 @@ const scope = (v: string | null) =>
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
+  if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   const projectId = scope(new URL(req.url).searchParams.get("projectId"));
   const shots = await listShots(projectId);
 
@@ -77,7 +81,7 @@ export const GET = withTenant(async function GET(req: Request) {
       ...s, ...(stats.get(s.id) ?? { takes: 0, ok: 0, failed: 0, spend: 0 }),
       ...(back.get(s.id) ?? { state: s.kind === "type" ? "type" : "none", master: null, poster: null }),
     })),
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 });
 
 export const POST = withTenant(async function POST(req: Request) {

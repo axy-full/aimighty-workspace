@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useImperativeHandle, type Ref } from "react";
 import { Image as ImageIcon, Upload } from "lucide-react";
+import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
 import { useSession, useSignInHref } from "@/lib/session";
 import { usePaidAction } from "@/lib/usePaidAction";
@@ -43,10 +44,12 @@ export default function TopazImageUpscale({
   onBack,
   onMade,
   initialSource,
+  controller,
 }: {
   onBack: () => void;
   onMade: () => void;
   initialSource?: string | null;
+  controller?: Ref<GenAssetInputHandle>;
 }) {
   const { signedIn, requestScope } = useSession();
   const signIn = useSignInHref();
@@ -57,13 +60,14 @@ export default function TopazImageUpscale({
     data: uploads,
     error: uploadError,
     refresh,
-  } = useApi<{ uploads: UploadedFile[] }>("/api/uploads?limit=500");
+  } = useApi<{ uploads: UploadedFile[] }>("/api/uploads?limit=500", 0, requestScope);
   const {
     data: takes,
     error: takeError,
     refresh: refreshTakes,
   } = useApi<{ generations: Generation[] }>(
     "/api/jobs?status=succeeded&limit=500&sync=0",
+    0, requestScope,
   );
   const [added, setAdded] = useState<Asset[]>([]);
   const assets = [
@@ -90,7 +94,6 @@ export default function TopazImageUpscale({
     useState<TopazImageSettings>(DEFAULT_TOPAZ_IMAGE);
   const [reviewed, setReviewed] = useState<Reviewed | null>(null);
   const [busy, setBusy] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sourceInput = useRef<HTMLInputElement>(null);
   const source = assets.find((asset) => asset.key === sourceKey);
@@ -117,33 +120,34 @@ export default function TopazImageUpscale({
   };
   const bodyKey = JSON.stringify(body);
   const quote = reviewed?.body === bodyKey ? reviewed.quote : null;
-  const blocked = busy || uploading || !!paid.pending || !!paid.error;
-  const canQuote = signedIn && source?.kind === "image" && !blocked;
+  const inputLocked = busy || !!paid.pending || !!paid.error;
   const priceLabel = (value: AdmissionQuote) =>
     value.unit === "cr" ? `${value.price} cr` : `$${value.price.toFixed(2)}`;
 
-  async function addFile(file: File | undefined) {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setError("Choose a PNG, JPEG or WebP image.");
-      return;
-    }
-    setUploading(true);
-    setError(null);
-    try {
-      const result = uploaded(await upload(file, "reference"));
-      setAdded((previous) => [
-        ...previous.filter((item) => item.key !== result.key),
-        result,
-      ]);
-      setSourceKey(result.key);
+  const receiver = useGenAssetInput({
+    scope: requestScope,
+    locked: inputLocked,
+    initialSource,
+    acceptFile(file) {
+      if (!file.type.startsWith("image/")) throw Error("Choose a PNG, JPEG or WebP image.");
+    },
+    upload: (file) => upload(file, "chat"),
+    onAsset(asset) {
+      if (asset.kind !== "image") throw Error("Choose an image for Topaz Image Upscale.");
+      setAdded((previous) => [asset, ...previous.filter((item) => item.key !== asset.key)]);
+      setSourceKey(asset.key);
+      setReviewed(null);
+      setError(null);
+      toast(`${asset.name} selected for upscale.`);
       void refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setUploading(false);
-    }
-  }
+    },
+    onError: setError,
+  });
+  const uploading = receiver.busy;
+  const blocked = inputLocked || uploading;
+  const canQuote = signedIn && source?.kind === "image" && !blocked;
+  useImperativeHandle(controller, () => ({ useAsset: receiver.useAsset, useFiles: receiver.useFiles }));
+  const addFile = async (file?: File) => { if (file) await receiver.useFiles([file]); };
   async function review() {
     if (!canQuote || !requestScope) return;
     setBusy(true);
@@ -225,7 +229,7 @@ export default function TopazImageUpscale({
               <small>Precision enhancement from the original</small>
             </span>
           </button>
-          <div className={edit.source}>
+          <div className={edit.source} aria-label="Upscale image drop area" onDragOver={receiver.onDragOver} onDrop={receiver.onDrop}>
             <label className={styles.sectionLabel} htmlFor="upscale-source">
               Source image
             </label>

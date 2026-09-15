@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AudioLines,
@@ -11,10 +11,13 @@ import {
 } from "lucide-react";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useSession } from "@/lib/session";
-import { ToastHost } from "@/components/ui/Toast";
+import { ToastHost, useToast } from "@/components/ui/Toast";
 import type { Generation } from "@/lib/jobs";
+import { isAssetDrag, readDrag, type DraggedAsset } from "@/lib/dnd";
+import { GEN_ASSETS_CHANGED, type GenAssetInputHandle } from "@/lib/genAssetInput";
+import { libraryId, libraryInput, libraryKind, type LibraryAsset } from "@/lib/genLibrary";
 import Composer, { type ComposerHandle, type ComposerKind } from "./Composer";
-import UnfiledWall from "./UnfiledWall";
+import GenAssetLibrary from "./GenAssetLibrary";
 import SeedanceEdit from "./SeedanceEdit";
 import AstraUpscale from "./AstraUpscale";
 import TopazImageUpscale from "./TopazImageUpscale";
@@ -32,14 +35,10 @@ export default function GenWorkspace({
   initialKind?: string;
 }) {
   const { workspace, email } = useSession();
-  const search = useSearchParams();
-  const mode =
-    GEN_MODES.find((item) => item.slug === (initialKind ?? search.get("mode")))
-      ?.slug ?? "video";
   return (
     <ToastHost>
       <Workspace
-        key={JSON.stringify([workspace?.id, email, mode])}
+        key={JSON.stringify([workspace?.id, email])}
         initialKind={initialKind}
       />
     </ToastHost>
@@ -49,7 +48,8 @@ export default function GenWorkspace({
 function Workspace({ initialKind }: { initialKind?: string }) {
   const router = useRouter(),
     search = useSearchParams();
-  const { workspace, email } = useSession();
+  const { workspace, email, requestScope } = useSession();
+  const toast = useToast();
   const mode =
     GEN_MODES.find(
       (item) => item.slug === (initialKind ?? search.get("mode")),
@@ -57,11 +57,10 @@ function Workspace({ initialKind }: { initialKind?: string }) {
   usePageTitle(`Gen · ${mode.label}`);
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<"create" | "takes">("create");
-  const [tick, setTick] = useState(0);
-  const [totals, setTotals] = useState<{ takes: number; spent: string } | null>(
-    null,
-  );
+  const refreshLibrary = () => window.dispatchEvent(new CustomEvent(GEN_ASSETS_CHANGED, { detail: { scope: requestScope } }));
   const composer = useRef<ComposerHandle>(null);
+  const specialized = useRef<GenAssetInputHandle>(null);
+  const pendingPrompt = useRef<Generation | null>(null);
   const switchMode = (slug: string) => {
     if (slug === mode.slug) {
       setMobileView("create");
@@ -69,46 +68,81 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     }
     const params = new URLSearchParams(search.toString());
     params.set("mode", slug);
+    for (const key of ["task", "source", "ref"]) params.delete(key);
     router.push(`/generate?${params.toString()}`);
     setMobileView("create");
   };
   const reuse = (take: Generation) => {
-    if (
-      composer.current?.usePrompt(String(take.params.rawPrompt || take.prompt))
-    )
-      setMobileView("create");
+    if (take.kind === mode.kind && composer.current) {
+      if (composer.current.usePrompt(String(take.params.rawPrompt || take.prompt))) setMobileView("create");
+      return;
+    }
+    pendingPrompt.current = take;
+    router.push(`/generate?mode=${take.kind === "image" ? "images" : take.kind}`);
+    setMobileView("create");
   };
   const scope = JSON.stringify([workspace?.id, email, mode.kind]);
   const upscaling = mode.kind === "image" && search.get("task") === "upscale";
-  const upscaleSource = (take?: Generation) => {
+  const upscaleSource = (asset?: LibraryAsset) => {
+    if (asset && upscaling) { void specialized.current?.useAsset(libraryInput(asset)); setMobileView("create"); return; }
     const params = new URLSearchParams(search.toString());
     params.set("mode", "images");
     params.set("task", "upscale");
-    if (take) params.set("source", `generation:${take.id}`);
+    params.delete("ref");
+    if (asset) params.set("source", libraryId(asset));
     else params.delete("source");
     router.push(`/generate?${params}`);
     setMobileView("create");
   };
   const astraUpscaling = mode.kind === "video" && search.get("task") === "upscale";
-  const astraSource = (take?: Generation) => {
+  const astraSource = (asset?: LibraryAsset) => {
+    if (asset && astraUpscaling) { void specialized.current?.useAsset(libraryInput(asset)); setMobileView("create"); return; }
     const params = new URLSearchParams(search.toString());
     params.set("mode", "video");
     params.set("task", "upscale");
-    if (take) params.set("source", `generation:${take.id}`);
+    params.delete("ref");
+    if (asset) params.set("source", libraryId(asset));
     else params.delete("source");
     router.push(`/generate?${params}`);
     setMobileView("create");
   };
   const editing = mode.kind === "video" && search.get("task") === "edit";
-  const editSource = (take?: Generation) => {
+  const editSource = (asset?: LibraryAsset) => {
+    if (asset && editing) { void specialized.current?.useAsset(libraryInput(asset)); setMobileView("create"); return; }
     const params = new URLSearchParams(search.toString());
     params.set("mode", "video");
     params.set("task", "edit");
-    if (take) params.set("source", `generation:${take.id}`);
+    params.delete("ref");
+    if (asset) params.set("source", libraryId(asset));
     else params.delete("source");
     router.push(`/generate?${params}`);
     setMobileView("create");
   };
+  const toolOpen = editing || upscaling || astraUpscaling;
+  useEffect(() => {
+    const take = pendingPrompt.current;
+    if (take && take.kind === mode.kind && !toolOpen && composer.current) {
+      pendingPrompt.current = null;
+      composer.current.usePrompt(String(take.params.rawPrompt || take.prompt));
+    }
+  }, [mode.kind, toolOpen]);
+  const receiver = () => toolOpen ? specialized.current : composer.current;
+  async function addAsset(asset: DraggedAsset) {
+    const kind = asset.kind === "gen" ? asset.gen.kind : asset.kind === "upload" ? asset.upload.kind : "image";
+    if (mode.kind === "audio" && (kind === "image" || kind === "video") || mode.kind === "image" && kind === "video") {
+      const id = asset.kind === "gen" ? `generation:${asset.gen.id}` : asset.kind === "upload" ? `upload:${asset.upload.id}` : `upload:${asset.uploadId}`;
+      router.push(`/generate?mode=${kind === "image" ? "images" : "video"}&ref=${encodeURIComponent(id)}`);
+      setMobileView("create");
+    } else if (await receiver()?.useAsset(asset)) setMobileView("create");
+  }
+  function editAsset(asset: LibraryAsset) {
+    if (libraryKind(asset) === "video") editSource(asset);
+    else if (mode.kind === "image" && !toolOpen) { void addAsset(libraryInput(asset)); }
+    else {
+      router.push(`/generate?mode=images&ref=${encodeURIComponent(libraryId(asset))}`);
+      setMobileView("create");
+    }
+  }
   return (
     <div
       className={styles.workspace}
@@ -156,13 +190,22 @@ function Workspace({ initialKind }: { initialKind?: string }) {
           onClick={() => setMobileView("takes")}
         >
           <Film size={16} />
-          Takes{totals ? <span>{totals.takes}</span> : null}
+          Takes & assets
         </button>
       </div>
       <div className={styles.desk}>
-        <div className={styles.creationPane}>
+        <div className={styles.creationPane}
+          onDragOver={e => { if (isAssetDrag(e) || Array.from(e.dataTransfer.types).includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
+          onDrop={e => {
+            e.preventDefault(); e.stopPropagation();
+            const asset = readDrag(e);
+            if (asset) void receiver()?.useAsset(asset);
+            else if (e.dataTransfer.files.length) void receiver()?.useFiles(e.dataTransfer.files);
+            else toast("Drag a saved workspace asset or a file from your device.");
+          }}>
           {astraUpscaling ? (
             <AstraUpscale
+              controller={specialized}
               key={`${scope}:${search.get("source") ?? ""}`}
               initialSource={search.get("source")}
               onBack={() => {
@@ -171,13 +214,14 @@ function Workspace({ initialKind }: { initialKind?: string }) {
                 params.delete("source");
                 router.push(`/generate?${params}`);
               }}
-              onMade={() => setTick((value) => value + 1)}
+              onMade={refreshLibrary}
             />
           ) : upscaling ? (
             <TopazImageUpscale
+              controller={specialized}
               key={`${scope}:${search.get("source") ?? ""}`}
               initialSource={search.get("source")}
-              onMade={() => setTick((value) => value + 1)}
+              onMade={refreshLibrary}
               onBack={() => {
                 const params = new URLSearchParams(search.toString());
                 params.delete("task");
@@ -187,6 +231,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
             />
           ) : editing ? (
             <SeedanceEdit
+              controller={specialized}
               key={`${scope}:${search.get("source") ?? ""}`}
               initialSource={search.get("source")}
               onBack={() => {
@@ -195,7 +240,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
                 params.delete("source");
                 router.push(`/generate?${params}`);
               }}
-              onMade={() => setTick((value) => value + 1)}
+              onMade={refreshLibrary}
             />
           ) : (
             <Composer
@@ -206,42 +251,34 @@ function Workspace({ initialKind }: { initialKind?: string }) {
               onEditRequested={() => editSource()}
               onAstraRequested={() => astraSource()}
               onUpscaleRequested={() => upscaleSource()}
-              onMade={() => {
-                setTick((value) => value + 1);
-              }}
+              onMade={refreshLibrary}
             />
           )}
         </div>
-        <section className={styles.takesPane} aria-label="Generated takes">
+        <section className={styles.takesPane} aria-label="Workspace asset library">
           <div className={styles.takesHeader}>
             <div>
-              <h2>Your takes</h2>
-              <span>
-                {totals
-                  ? `${totals.takes} takes · ${totals.spent}`
-                  : "Unfiled · ready for a production"}
-              </span>
+              <h2>Takes & assets</h2>
+              <span>Shared across your workspace · drag or choose an asset</span>
             </div>
             <label className={styles.search}>
               <Search size={15} />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search takes"
-                aria-label="Search takes"
+                placeholder="Search assets"
+                aria-label="Search assets"
+                maxLength={200}
               />
             </label>
           </div>
           <div className={styles.takesScroll}>
-            <UnfiledWall
-              key={`${scope}:${tick}`}
-              kind={mode.kind}
+            <GenAssetLibrary
               search={query}
-              onTotals={setTotals}
+              onUseAsset={asset => void addAsset(asset)}
               onUsePrompt={reuse}
-              onEdit={mode.kind === "video" ? editSource : undefined}
-              onAstraUpscale={mode.kind === "video" ? astraSource : undefined}
-              onUpscale={mode.kind === "image" ? upscaleSource : undefined}
+              onEdit={editAsset}
+              onUpscale={asset => libraryKind(asset) === "video" ? astraSource(asset) : upscaleSource(asset)}
             />
           </div>
         </section>

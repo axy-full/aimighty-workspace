@@ -164,6 +164,7 @@ const SCHEMA = [
      stored_url  TEXT NOT NULL,
      created_at  INTEGER NOT NULL
    )`,
+  `CREATE INDEX IF NOT EXISTS idx_uploads_created_id ON uploads(created_at DESC, id DESC)`,
   `CREATE TABLE IF NOT EXISTS messages (
      id         TEXT PRIMARY KEY,
      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1100,6 +1101,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       }
       }
       for (const stmt of [
+        `CREATE INDEX IF NOT EXISTS idx_gen_library ON generations(deleted, created_at DESC, id DESC)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_shot ON generations(shot_id)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_kind ON generations(kind)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_billed ON generations(billed_to)`,

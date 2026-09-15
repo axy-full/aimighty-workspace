@@ -9,18 +9,28 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { notify } from "@/lib/push";
+import { requireTenant } from "@/lib/tenant";
+import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 type Ctx = { params: Promise<{ id: string }> };
 
-export const GET = withTenant(async function GET(_req: Request, { params }: Ctx) {
+export const GET = withTenant(async function GET(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
+  const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
+  if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   const { id } = await params;
   const gen = await getGeneration(id);
   if (!gen) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ generation: await syncGeneration(gen) });
+  // Drag resolution only needs persisted metadata. It must not poll a provider,
+  // copy a master or advance accounting merely because someone selected a take.
+  const generation = new URL(req.url).searchParams.get("sync") === "0"
+    ? gen : await syncGeneration(gen);
+  return NextResponse.json({ generation }, {
+    headers: { "Cache-Control": "private, no-store" },
+  });
 });
 
 export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {

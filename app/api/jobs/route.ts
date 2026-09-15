@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { listGenerations, syncActive } from "@/lib/jobs";
 import { requireUser, withTenant } from "@/lib/auth";
+import { requireTenant } from "@/lib/tenant";
+import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
+import { assetCursor, assetPageQuery, AssetQueryError } from "@/lib/assetPagination";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,11 +13,28 @@ const PAGE = 60;
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
+  if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   const url = new URL(req.url);
+  const stable = url.searchParams.get("pagination") === "stable";
+  let page: ReturnType<typeof assetPageQuery> | null = null;
+  try {
+    if (url.searchParams.has("pagination") && (!stable || url.searchParams.getAll("pagination").length > 1))
+      throw new AssetQueryError("Invalid pagination mode.");
+    if (stable && url.searchParams.has("before"))
+      throw new AssetQueryError("Use cursor instead of before for stable pagination.");
+    if (!stable && url.searchParams.has("cursor"))
+      throw new AssetQueryError("Choose stable pagination to use an asset cursor.");
+    if (stable) page = assetPageQuery(url.searchParams, PAGE);
+  } catch (error) {
+    if (error instanceof AssetQueryError)
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
   const projectId = url.searchParams.get("projectId");
-  const search = url.searchParams.get("q") ?? undefined;
+  const search = page ? page.search : url.searchParams.get("q") ?? undefined;
   const before = Number(url.searchParams.get("before") ?? 0) || null;
-  const limit = Math.min(Number(url.searchParams.get("limit") ?? PAGE), 500);
+  const limit = page ? page.limit : Math.min(Number(url.searchParams.get("limit") ?? PAGE), 500);
 
   // Reconcile anything actually in flight before answering. This is a no-op —
   // one indexed lookup — whenever nothing is rendering, which is most of the
@@ -23,7 +43,7 @@ export const GET = withTenant(async function GET(req: Request) {
     try { await syncActive(); } catch { /* listing still works */ }
   }
 
-  const generations = await listGenerations({
+  const rows = await listGenerations({
     projectId: projectId && projectId !== "all" ? projectId : undefined,
     createdBy: url.searchParams.get("mine") === "1" ? got.user.id : undefined,
     status: url.searchParams.get("status") ?? undefined,
@@ -33,13 +53,22 @@ export const GET = withTenant(async function GET(req: Request) {
     unfiled: url.searchParams.get("unfiled") === "1",
     search,
     before,
+    cursor: page?.cursor,
+    includeNext: stable,
     limit,
   });
+  const generations = stable ? rows.slice(0, limit) : rows;
 
   // Keyset cursor: the oldest row we just returned. Null once a page comes
   // back short, which is how the client knows it has reached the end.
   const nextCursor =
     generations.length === limit ? generations[generations.length - 1].createdAt : null;
 
-  return NextResponse.json({ generations, nextCursor });
+  const last = generations.at(-1);
+  const nextPageCursor = stable && rows.length > limit && last
+    ? assetCursor({ createdAt: last.createdAt, id: last.id }) : null;
+
+  return NextResponse.json({ generations, nextCursor, nextPageCursor }, {
+    headers: { "Cache-Control": "private, no-store" },
+  });
 });

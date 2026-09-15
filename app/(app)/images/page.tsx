@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
+import { generationHref, type GenRouteSearch } from "@/lib/genRoute";
 
-/** Stills are made at /make/images now (§10). */
-export default function Moved() {
-  redirect("/make/images");
+export default async function Moved({ searchParams }: { searchParams: Promise<GenRouteSearch> }) {
+  redirect(generationHref("images", await searchParams)!);
 }

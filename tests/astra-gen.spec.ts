@@ -140,8 +140,9 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     .filter({
       has: page.locator(`a[href="/api/media/${generationId}?download=1"]`),
     })
-    .getByRole("button", { name: "Upscale video", exact: true })
+    .getByRole("button", { name: /^Actions for / })
     .click();
+  await page.getByRole("menuitem", { name: "Upscale video", exact: true }).click();
   await expect(
     panel.getByLabel("Astra source clip", { exact: true }),
   ).toHaveValue(`generation:${generationId}`);

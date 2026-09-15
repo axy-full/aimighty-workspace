@@ -10,7 +10,7 @@ import { useSession } from "./session";
  * newest url — an in-flight fetch for a previous bin (or an older poll tick
  * finishing after a newer one) must never overwrite fresher data.
  */
-export function useApi<T>(url: string | null, intervalMs = 0) {
+export function useApi<T>(url: string | null, intervalMs = 0, requestScope?: string | null) {
   /* A signed-out visitor is browsing the interface, not using it. Every one
      of these endpoints would answer 401, so asking is forty pointless
      requests and forty error states for someone who has done nothing wrong.
@@ -23,6 +23,11 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
   /** The HTTP status of the last failure, when there was one. */
   const [status, setStatus] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  // Scoped selectors must hide the previous account/project's rows immediately,
+  // including the render before the replacement request effect has started.
+  const ownerKey = requestScope == null ? null : JSON.stringify([requestScope, url]);
+  const [dataOwner, setDataOwner] = useState<string | null>(null);
+  const [errorOwner, setErrorOwner] = useState<string | null>(null);
   const alive = useRef(true);
   // Monotonic request counter: only the newest request may apply its result,
   // which covers both an old poll tick finishing late and an in-flight fetch
@@ -33,7 +38,10 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
     if (!url || !signedIn) return;
     const mySeq = ++seq.current;
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url, {
+        cache: "no-store",
+        ...(requestScope != null ? { headers: { "X-Workbench-Scope": requestScope } } : {}),
+      });
       // A 502 from the edge arrives as an HTML page, and res.json() on that
       // throws a SyntaxError that would replace the real problem.
       const json = await res.json().catch(() => ({} as { error?: string }));
@@ -44,12 +52,14 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
         throw err;
       }
       setData(json as T);
+      setDataOwner(ownerKey);
       setError(null);
       setStatus(null);
     } catch (e) {
       if (alive.current && mySeq === seq.current) {
         const err = e as Error & { status?: number };
         setError(err.message);
+        setErrorOwner(ownerKey);
         setStatus(err.status ?? null);
         /* A session that has lapsed, or a member an admin has just disabled,
            answers 401 to every poll. The redirect lives in the server layout,
@@ -74,7 +84,7 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
     } finally {
       if (alive.current && mySeq === seq.current) setLoading(false);
     }
-  }, [url, signedIn]);
+  }, [url, signedIn, requestScope, ownerKey]);
 
   useEffect(() => {
     alive.current = true;
@@ -82,7 +92,10 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
     // synchronously here — the rule just can't see through the async boundary.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
-    return () => { alive.current = false; };
+    // Invalidate the counter itself, rather than a captured request number:
+    // manual refreshes may have advanced it since this effect was mounted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { alive.current = false; seq.current++; };
   }, [refresh]);
 
   /**
@@ -108,5 +121,12 @@ export function useApi<T>(url: string | null, intervalMs = 0) {
     return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
   }, [intervalMs, refresh, url, signedIn]);
 
-  return { data, error, status, loading, locked, refresh };
+  const ownsData = ownerKey === null || ownerKey === dataOwner;
+  const ownsError = ownerKey === null || ownerKey === errorOwner;
+  return {
+    data: ownsData ? data : null,
+    error: ownsError ? error : null,
+    status: ownsError ? status : null,
+    loading, locked, refresh,
+  };
 }
