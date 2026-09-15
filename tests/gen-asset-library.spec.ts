@@ -184,8 +184,11 @@ test("Gen drags real generated and uploaded images into reference slots with dup
   const generated = assetCard(page, "generation", f.generationImage);
   await expect(generated).toHaveAttribute("draggable", "true");
   const references = composer.getByLabel("Generation references", { exact: true });
-  await generated.dragTo(references);
+  // The creation pane accepts a take even when dropped over the prompt rather
+  // than exactly inside the reference well; it does not replace the prompt.
+  await generated.dragTo(composer.getByRole("textbox", { name: "Prompt", exact: true }));
   await expect(page.getByRole("button", { name: "Remove Filed lighting take", exact: true })).toBeVisible();
+  await expect(composer.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("");
   await generated.dragTo(references);
   await expect(page.getByText("This asset is already attached.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove Filed lighting take", exact: true })).toHaveCount(1);
