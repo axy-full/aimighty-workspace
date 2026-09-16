@@ -190,14 +190,14 @@ function Run() {
           checkpoint.state === "needs_you" && checkpoint.failure ? (
             checkpoint.failure.fixes.map((f, i) => (
               <button key={f.id} type="button" disabled={busy} onClick={() => applyFix(checkpoint, f)}
-                className={`flex ${i === 0 ? "h-[52px]" : "h-[44px]"} w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${i === 0 && !rail.open ? "bg-ink text-ground" : "border border-[rgba(245,246,248,.2)] text-ink-body"}`}>
+                className={`flex ${i === 0 ? "h-[52px]" : "h-[44px]"} w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${i === 0 && !rail.open ? "bg-action text-on-action hover:bg-action-hover" : "border border-[rgba(245,246,248,.2)] text-ink-body"}`}>
                 <span className="truncate">{f.label}</span><span className={`ui-mono ui-mono-cost !text-[12px] ${i === 0 && !rail.open ? "text-on-primary-cost" : "text-ink-muted"}`}>{fmt(f.credits)}</span>
               </button>
             ))
           ) : (
             <>
               <button type="button" disabled={busy} onClick={() => setState("running")} data-render=""
-                className={`flex h-[52px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${rail.open ? "border border-[rgba(245,246,248,.2)] text-ink-body" : "bg-ink text-ground"}`}>
+                className={`flex h-[52px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${rail.open ? "border border-[rgba(245,246,248,.2)] text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
                 <span className="truncate">{busy ? "Continuing…" : `Continue · ${lower(checkpoint.name)}`}</span><span className={`ui-mono ui-mono-cost !text-[12px] ${rail.open ? "text-ink-muted" : "text-on-primary-cost"}`}>{fmt(checkpoint.credits)}</span>
               </button>
               <span className="flex gap-[8px]">

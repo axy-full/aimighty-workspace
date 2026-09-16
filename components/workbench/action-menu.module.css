@@ -9,23 +9,22 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 5px;
-  border: 1px solid #393c44;
-  border-radius: 10px;
-  background: #171a21;
-  color: #e6e8ec;
+  border: 1px solid var(--graphite-edge);
+  border-radius: 8px;
+  background: var(--graphite-card);
+  color: var(--graphite-ink);
   box-shadow: 0 16px 60px #0009;
   font:
-    13px/1.4 "Particl Geist",
-    sans-serif;
+    13px/1.4 var(--graphite-font);
 }
 .label {
   padding: 7px 10px;
-  color: #969aa4;
+  color: var(--graphite-muted);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border-bottom: 1px solid #ffffff0d;
+  border-bottom: 1px solid var(--graphite-line);
   margin-bottom: 4px;
 }
 .item {
@@ -33,13 +32,13 @@
   align-items: center;
   min-height: 36px;
   padding: 8px 10px;
-  border-radius: 5px;
+  border-radius: 6px;
   cursor: default;
   outline: none;
   user-select: none;
 }
 .item[data-highlighted] {
-  background: #ffffff16;
+  background: var(--graphite-hover);
   color: #fff;
 }
 .item[data-danger] {

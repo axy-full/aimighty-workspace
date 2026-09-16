@@ -3,17 +3,18 @@
 .dialog,
 .takeGrid,
 .empty {
-  --gen-ground: #0b0d11;
-  --gen-panel: #0f1116;
-  --gen-raised: #171a21;
-  --gen-ink: #f5f6f8;
-  --gen-body: #b4b7be;
-  --gen-muted: #8a8e96;
-  --gen-line: rgba(245, 246, 248, 0.1);
-  --gen-edge: rgba(245, 246, 248, 0.18);
-  --gen-selected: rgba(245, 246, 248, 0.08);
+  --gen-ground: var(--graphite-ground);
+  --gen-panel: var(--graphite-panel);
+  --gen-raised: var(--graphite-card);
+  --gen-control: var(--graphite-control);
+  --gen-ink: var(--graphite-ink);
+  --gen-body: var(--graphite-body);
+  --gen-muted: var(--graphite-muted);
+  --gen-line: var(--graphite-line);
+  --gen-edge: var(--graphite-edge);
+  --gen-selected: var(--graphite-selected);
   color: var(--gen-ink);
-  font-family: "Particl Geist", Arial, sans-serif;
+  font-family: var(--graphite-font);
   font-size: 14px;
 }
 .workspace {
@@ -47,7 +48,7 @@
 }
 .workspace :focus-visible,
 .dialog :focus-visible {
-  outline: 2px solid var(--gen-ink);
+  outline: 2px solid var(--graphite-accent);
   outline-offset: 3px;
 }
 .header {
@@ -57,7 +58,7 @@
   align-items: center;
   gap: 32px;
   border-bottom: 1px solid var(--gen-line);
-  background: var(--gen-panel);
+  background: var(--gen-ground);
 }
 .heading {
   flex: none;
@@ -67,7 +68,7 @@
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  color: var(--gen-body);
+  color: var(--graphite-accent-text);
   font-size: 12px;
   font-weight: 500;
   text-decoration: none;
@@ -80,8 +81,7 @@
 }
 .eyebrow {
   font:
-    10px "Particl Mono",
-    monospace;
+    10px var(--graphite-mono);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--gen-muted);
@@ -89,8 +89,8 @@
 .heading h1 {
   margin: 5px 0 0;
   font-size: 21px;
-  font-weight: 480;
-  letter-spacing: -0.035em;
+  font-weight: 600;
+  letter-spacing: -0.025em;
   line-height: 1.1;
 }
 .heading h1 span {
@@ -103,17 +103,18 @@
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--gen-line);
-  border-radius: 8px;
+  border-radius: 6px;
+  background: var(--graphite-segment);
 }
 .modes button {
   display: flex;
   align-items: center;
   gap: 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   min-height: 38px;
   padding: 0 18px;
-  color: var(--gen-muted);
+  color: var(--gen-body);
   background: transparent;
   font-size: 13px;
 }
@@ -174,8 +175,7 @@
   gap: 8px;
   color: var(--gen-muted);
   font:
-    10px "Particl Mono",
-    monospace;
+    10px var(--graphite-mono);
   letter-spacing: 0.075em;
   text-transform: uppercase;
 }
@@ -186,9 +186,9 @@
 .promptStage h2 {
   margin: 15px 0 17px;
   font-size: 29px;
-  font-weight: 450;
+  font-weight: 600;
   line-height: 1.15;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.035em;
 }
 .workspace .prompt {
   display: block;
@@ -198,7 +198,7 @@
   max-height: 360px;
   padding: 16px;
   border: 1px solid var(--gen-edge);
-  background: var(--gen-ground);
+  background: var(--gen-raised);
   border-radius: 8px;
   font-size: 16px;
   line-height: 1.65;
@@ -217,8 +217,7 @@
 }
 .promptMeta kbd {
   font:
-    11px "Particl Mono",
-    monospace;
+    11px var(--graphite-mono);
   flex: none;
 }
 .references {
@@ -242,8 +241,8 @@
   gap: 9px;
   background: transparent;
   border: 1px dashed var(--gen-edge);
-  border-radius: 7px;
-  color: var(--gen-body);
+  border-radius: 6px;
+  color: var(--graphite-accent-text);
 }
 .addReference span {
   font-size: 11px;
@@ -258,7 +257,7 @@
   overflow: hidden;
   background: var(--gen-ground);
   border: 1px solid var(--gen-edge);
-  border-radius: 7px;
+  border-radius: 6px;
 }
 .reference img {
   width: 100%;
@@ -285,8 +284,7 @@
   right: 0;
   padding: 3px 7px;
   font:
-    9px "Particl Mono",
-    monospace;
+    9px var(--graphite-mono);
   background: var(--gen-ground);
   color: var(--gen-body);
 }
@@ -309,9 +307,9 @@
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--gen-edge);
-  border-radius: 7px;
+  border-radius: 8px;
   text-align: left;
-  background: var(--gen-raised);
+  background: var(--gen-control);
   color: var(--gen-ink);
 }
 .engine > span:nth-child(2) {
@@ -337,7 +335,9 @@
   height: 34px;
   flex: none;
   border: 1px solid var(--gen-edge);
-  border-radius: 5px;
+  border-radius: 6px;
+  background: var(--gen-raised);
+  color: var(--graphite-accent-text);
 }
 .settingsGrid {
   display: grid;
@@ -353,7 +353,7 @@
   padding: 12px;
   border: 1px solid var(--gen-line);
   border-radius: 6px;
-  background: var(--gen-ground);
+  background: var(--gen-control);
   text-align: left;
   color: var(--gen-ink);
 }
@@ -388,7 +388,7 @@
 .toggle input {
   width: 18px;
   height: 18px;
-  accent-color: var(--gen-ink);
+  accent-color: var(--graphite-accent);
 }
 .trackTabs {
   display: flex;
@@ -401,9 +401,9 @@
   min-height: 38px;
   padding: 6px 10px;
   border: 1px solid var(--gen-line);
-  border-radius: 5px;
-  color: var(--gen-muted);
-  background: transparent;
+  border-radius: 6px;
+  color: var(--gen-body);
+  background: var(--graphite-segment);
   font-size: 12px;
 }
 .trackTabs button[aria-pressed="true"] {
@@ -430,7 +430,7 @@
   padding: 10px 12px;
   border: 1px solid var(--gen-edge);
   border-radius: 6px;
-  background: var(--gen-ground);
+  background: var(--gen-control);
   color: var(--gen-ink);
   font-size: 14px;
 }
@@ -541,8 +541,8 @@
   min-height: 36px;
   padding: 5px 10px;
   border: 1px solid var(--gen-edge);
-  border-radius: 5px;
-  background: transparent;
+  border-radius: 6px;
+  background: var(--gen-control);
   color: var(--gen-ink);
   font-size: 11px;
 }
@@ -558,7 +558,7 @@
 .notice {
   border: 1px solid var(--gen-edge);
   background: var(--gen-raised);
-  border-radius: 7px;
+  border-radius: 8px;
   padding: 12px;
   margin: 0 0 18px;
   color: var(--gen-body);
@@ -595,11 +595,11 @@
   width: 100%;
   min-height: 50px;
   gap: 12px;
-  border: 1px solid var(--gen-ink);
+  border: 1px solid var(--graphite-primary);
   border-radius: 6px;
   padding: 12px 15px;
-  color: var(--gen-ground);
-  background: var(--gen-ink);
+  color: var(--graphite-on-primary);
+  background: var(--graphite-primary);
 }
 .generate > span {
   display: flex;
@@ -610,8 +610,7 @@
 }
 .generate > strong {
   font:
-    12px "Particl Mono",
-    monospace;
+    12px var(--graphite-mono);
   white-space: nowrap;
 }
 .generate:disabled {
@@ -641,7 +640,7 @@
 .takesHeader h2 {
   margin: 0 0 6px;
   font-size: 15px;
-  font-weight: 480;
+  font-weight: 600;
 }
 .takesHeader > div > span {
   font-size: 10px;
@@ -657,14 +656,17 @@
 .workspace .search input {
   width: 100%;
   min-width: 0;
-  border: 0;
-  border-bottom: 1px solid var(--gen-edge);
-  border-radius: 0;
+  border: 1px solid var(--gen-edge);
+  border-radius: 6px;
   padding: 8px 0;
   outline: 0;
-  background: transparent;
+  background: var(--gen-control);
   color: var(--gen-ink);
   font-size: 12px;
+}
+.workspace .search input:focus-visible {
+  outline: 2px solid var(--graphite-accent);
+  outline-offset: 3px;
 }
 .takesScroll {
   flex: 1;
@@ -693,7 +695,7 @@
   color: var(--gen-muted);
   border: 1px solid var(--gen-edge);
   background: var(--gen-panel);
-  border-radius: 7px;
+  border-radius: 8px;
 }
 .emptyFrame::before,
 .emptyFrame::after {
@@ -715,8 +717,7 @@
   right: 15px;
   bottom: 21px;
   font:
-    10px "Particl Mono",
-    monospace;
+    10px var(--graphite-mono);
   color: var(--gen-muted);
 }
 .empty h3 {
@@ -745,7 +746,7 @@
   align-content: start;
 }
 .assetLibrary { min-width: 0; }
-.assetLibrary[data-file-drop] { outline: 1px dashed var(--gen-ink); outline-offset: 8px; }
+.assetLibrary[data-file-drop] { outline: 1px dashed var(--graphite-accent); outline-offset: 8px; }
 .libraryToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
 .libraryToolbar p { margin: 0; color: var(--gen-muted); font-size: 11px; line-height: 1.6; }
 .libraryUpload, .libraryMore button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: none; min-height: 38px; padding: 8px 12px; border: 1px solid var(--gen-edge); border-radius: 6px; background: var(--gen-raised); color: var(--gen-ink); }
@@ -754,7 +755,7 @@
 .assetGroup { padding-bottom: 26px; margin-bottom: 22px; border-bottom: 1px solid var(--gen-line); }
 .assetGroupHeader { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
 .assetGroupHeader h3 { margin: 0; font-size: 14px; font-weight: 500; }
-.assetGroupHeader > span { color: var(--gen-muted); font: 10px "Particl Mono", monospace; }
+.assetGroupHeader > span { color: var(--gen-muted); font: 10px var(--graphite-mono); }
 .groupEmpty { margin: 0; padding: 12px 0; font-size: 12px; color: var(--gen-muted); }
 .assetTitle { display: flex; align-items: start; gap: 5px; }
 .assetTitle > p { min-width: 0; flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin: 0 0 8px; min-height: 36px; font-size: 12px; line-height: 1.5; }
@@ -765,7 +766,7 @@
 .takeCard[draggable="true"]:active { cursor: grabbing; }
 .filingForm { display: flex; flex-direction: column; gap: 16px; }
 .filingForm label { display: flex; flex-direction: column; gap: 8px; color: var(--gen-muted); font-size: 12px; }
-.filingForm select { min-width: 0; width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--gen-edge); border-radius: 6px; background: var(--gen-ground); color: var(--gen-ink); font: inherit; }
+.filingForm select { min-width: 0; width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--gen-edge); border-radius: 6px; background: var(--gen-control); color: var(--gen-ink); font: inherit; }
 @media (max-width: 600px) {
   .libraryToolbar { align-items: flex-start; }
   .libraryToolbar p { max-width: 54%; }
@@ -776,7 +777,7 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--gen-line);
-  background: var(--gen-panel);
+  background: var(--gen-raised);
   border-radius: 8px;
 }
 .takeMedia {
@@ -815,8 +816,7 @@
   border: 1px solid var(--gen-line);
   border-radius: 4px;
   font:
-    9px "Particl Mono",
-    monospace;
+    9px var(--graphite-mono);
 }
 .takeKind {
   left: 9px;
@@ -831,8 +831,7 @@
   right: 0;
   padding: 12px;
   font:
-    11px "Particl Mono",
-    monospace;
+    11px var(--graphite-mono);
   text-align: left;
   background: var(--gen-ground);
   color: var(--gen-body);
@@ -858,8 +857,7 @@
 }
 .takeInfo > span {
   font:
-    9px "Particl Mono",
-    monospace;
+    9px var(--graphite-mono);
   color: var(--gen-muted);
 }
 .takeInfo .takeError {
@@ -914,8 +912,9 @@
   flex-direction: column;
   overflow: auto;
   border: 1px solid var(--gen-edge);
-  border-radius: 10px;
-  background: var(--gen-panel);
+  border-radius: 8px;
+  background: var(--gen-raised);
+  box-shadow: 0 24px 72px #0009;
   padding: 20px;
 }
 .dialogHeader {
@@ -928,16 +927,16 @@
 .dialogHeader h2 {
   margin: 0;
   font-size: 18px;
-  font-weight: 450;
+  font-weight: 600;
 }
 .dialogHeader button {
   display: grid;
   place-items: center;
   min-width: 40px;
   min-height: 40px;
-  background: transparent;
+  background: var(--gen-control);
   border: 1px solid var(--gen-line);
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--gen-ink);
 }
 .modelList {
@@ -955,11 +954,12 @@
   padding: 13px;
   border: 1px solid var(--gen-line);
   border-radius: 6px;
-  background: var(--gen-ground);
+  background: var(--gen-control);
   color: var(--gen-ink);
 }
 .modelList button[aria-pressed="true"] {
-  border-color: var(--gen-ink);
+  border-color: var(--graphite-accent);
+  background: rgba(10, 132, 255, 0.12);
 }
 .modelList button > span:first-child {
   display: flex;
@@ -981,8 +981,7 @@
   align-items: center;
   gap: 8px;
   font:
-    10px "Particl Mono",
-    monospace;
+    10px var(--graphite-mono);
   white-space: nowrap;
 }
 .previewDialog {
@@ -1017,10 +1016,35 @@
   padding: 10px 14px;
   border: 1px solid var(--gen-edge);
   border-radius: 6px;
-  background: transparent;
+  background: var(--gen-control);
   color: var(--gen-ink);
   text-decoration: none;
   font-size: 12px;
+}
+.generate:hover:not(:disabled) {
+  background: var(--graphite-primary-hover);
+  border-color: var(--graphite-primary-hover);
+}
+.engine:hover:not(:disabled),
+.setting:hover:not(:disabled),
+.inlineActions button:hover:not(:disabled),
+.libraryUpload:hover:not(:disabled),
+.libraryMore button:hover:not(:disabled),
+.dialogHeader button:hover:not(:disabled),
+.secondary:hover {
+  background: var(--graphite-hover);
+}
+.modes button:hover:not(:disabled):not([aria-pressed="true"]),
+.trackTabs button:hover:not(:disabled):not([aria-pressed="true"]),
+.modelList button:hover:not(:disabled):not([aria-pressed="true"]),
+.takeActions button:hover:not(:disabled),
+.takeActions a:hover {
+  background: var(--graphite-hover);
+  color: var(--gen-ink);
+}
+.addReference:hover:not(:disabled) {
+  border-color: var(--graphite-accent);
+  background: rgba(10, 132, 255, 0.08);
 }
 @media (min-width: 1700px) {
   .desk {
@@ -1134,13 +1158,12 @@
     font-size: 12px;
   }
   .mobileViews button[aria-pressed="true"] {
-    border-bottom-color: var(--gen-ink);
+    border-bottom-color: var(--graphite-accent);
     color: var(--gen-ink);
   }
   .mobileViews button span {
     font:
-      10px "Particl Mono",
-      monospace;
+      10px var(--graphite-mono);
   }
   .desk {
     display: flex;
@@ -1346,7 +1369,7 @@
   display: grid;
   gap: 12px;
   padding: 32px;
-  font-family: "Particl Geist", Arial, sans-serif;
+  font-family: var(--graphite-font);
   color: var(--gen-ink);
   background: var(--gen-ground);
 }

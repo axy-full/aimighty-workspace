@@ -402,7 +402,7 @@ function Canvas() {
         <div className="flex flex-none flex-col gap-[8px] border-t border-border bg-ground px-[16px] pb-[6px] pt-[10px]" data-pinned="">
           <Mono className="text-center">Built on desktop · run and file from here</Mono>
           <button type="button" disabled={!target || running.has(target.id)} onClick={() => target && runNode(target)} data-render=""
-            className={`flex h-[50px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${!target || rail.open || slotSel ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-ink text-ground"}`}>
+            className={`flex h-[50px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${!target || rail.open || slotSel ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
             <span className="truncate">{target && running.has(target.id) ? "Running…" : target?.output?.genId ? "Run node again" : "Run node"}</span>
             <span className={`ui-mono ui-mono-cost !text-[12px] ${!target || rail.open || slotSel ? "text-ink-muted" : "text-on-primary-cost"}`}>{fmt(target ? priceOf(target) : 0)}</span>
           </button>
@@ -438,7 +438,7 @@ function Canvas() {
           </div>
           <div className="absolute left-[16px] top-[16px] z-[4] flex gap-[6px]">
             <button type="button" onClick={(e) => { e.stopPropagation(); setAddMenu({ x: e.clientX - 20, y: e.clientY + 24 }); }} onPointerDown={(e) => e.stopPropagation()}
-              className="flex h-[36px] items-center gap-[8px] rounded-pill bg-ink pl-[10px] pr-[12px] text-[13px] font-medium leading-none text-ground">
+              className="flex h-[36px] items-center gap-[8px] rounded-pill bg-action pl-[10px] pr-[12px] text-[13px] font-medium leading-none text-on-action hover:bg-action-hover">
               <span className="text-[16px] leading-none">+</span>Add node<span className="ui-mono ui-mono-cost text-on-primary-cost">⌘K</span>
             </button>
             <span className="flex h-[36px] items-center whitespace-nowrap rounded-pill border border-[rgba(245,246,248,.12)] bg-card px-[12px] text-[12.5px] leading-none text-ink-body max-md:hidden">

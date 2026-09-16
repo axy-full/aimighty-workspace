@@ -144,7 +144,7 @@ test("studio exposes Gen and workspace navigation with the original Atomik brand
   const mark = page.getByRole("button", { name: "Toggle Atomik creative engine", exact: true }).locator("svg.atom-mark");
   await expect(mark).toHaveAttribute("viewBox", "20 20 160 160");
   expect(await mark.locator("circle").evaluateAll(dots => dots.map(dot => ["cx", "cy", "r"].map(key => Number(dot.getAttribute(key)))))).toEqual(RING_DOTS);
-  expect(await mark.evaluate(el => ({ fill: getComputedStyle(el).fill, stroke: getComputedStyle(el).stroke }))).toEqual({ fill: "rgb(230, 232, 236)", stroke: "none" });
+  expect(await mark.evaluate(el => ({ fill: getComputedStyle(el).fill, stroke: getComputedStyle(el).stroke }))).toEqual({ fill: "rgb(245, 245, 247)", stroke: "none" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.getByRole("button", { name: "Workspace menu", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Credits & plan", exact: true })).toBeVisible();

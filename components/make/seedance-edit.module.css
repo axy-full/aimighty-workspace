@@ -9,8 +9,8 @@
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--gen-edge);
-  border-radius: 7px;
-  background: var(--gen-ground);
+  border-radius: 6px;
+  background: var(--gen-control);
   color: var(--gen-ink);
   font-size: 14px;
 }
@@ -61,7 +61,7 @@
   line-height: 1.6;
   padding: 12px;
   margin-top: 14px;
-  border-radius: 7px;
+  border-radius: 6px;
   overflow-wrap: anywhere;
 }
 .error {

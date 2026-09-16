@@ -253,7 +253,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           <span className="flex w-full flex-col gap-[8px]">
             <Mono cost className="text-center !leading-[1.4]">{paid.error??(paid.pending?"Recover the saved training request to finish this asset.":note)}</Mono>
             <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error} data-create=""
-              className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-ink px-[16px] text-[15px] font-semibold leading-none text-ground disabled:opacity-60">
+              className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-action hover:bg-action-hover px-[16px] text-[15px] font-semibold leading-none text-on-action disabled:opacity-60">
               <span className="flex items-center gap-[10px]">{busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}</span>
               <span className="ui-mono ui-mono-cost !text-[12px] text-on-primary-cost">{money.price(cost)}</span>
             </button>
@@ -402,7 +402,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           <Mono className="max-w-[380px] !leading-[1.5]">{note}</Mono>
           <span className="ml-auto flex gap-[8px]">
             <button type="button" onClick={onClose} className="h-[46px] rounded-card border border-border-mid px-[14px] text-[14px] font-medium leading-none text-ink">Cancel</button>
-            <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error} className="flex h-[46px] items-center gap-[12px] rounded-card bg-ink px-[16px] text-[14px] font-semibold leading-none text-ground disabled:opacity-60" data-create="">
+            <button type="button" onClick={create} disabled={busy || !signedIn || !!paid.error} className="flex h-[46px] items-center gap-[12px] rounded-card bg-action hover:bg-action-hover px-[16px] text-[14px] font-semibold leading-none text-on-action disabled:opacity-60" data-create="">
               {busy ? <Loader size={LOADER_SIZES.button} on="primary" /> : null}{paid.pending?"Recover training for ":"Create "}{name.trim() || "asset"}<span className="ui-mono ui-mono-cost text-on-primary-cost">{money.price(cost)}</span>
             </button>
           </span>

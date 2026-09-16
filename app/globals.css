@@ -1,189 +1,131 @@
 @import "tailwindcss";
 
-/* ── particl studio + atomik — one system ────────────────────────────
-   Monochrome, dark-primary, shadowless. Emphasis is carried by ink-on-dark
-   inversion — a white fill with near-black text — never by colour. There
-   is no accent in this system, and adding one is the fastest way to break
-   it.
-
-   Depth comes from 1px borders and background steps, not from shadow. The
-   --shadow-* tokens survive only so the components that ask for them keep
-   working; each one now paints a hairline ring, which is the same edge a
-   border would draw and costs no layout.
-
-   Dark is the primary theme, so dark is the BASE here and light is the
-   override — the reverse of the build this replaces. Light is fully
-   specified rather than dropped, because the studio has people who work in
-   it, but the app is designed on the dark ground.
-
-   The token NAMES are unchanged again, on purpose: every component already
-   speaks in desk / panel / bone / dim / mute, so the whole app changes skin
-   from this file and nothing else has to be touched.
-   ------------------------------------------------------------------ */
-
-@theme {
-  /* ── Ground ── page → panel → raised → surface, four steps of dark. */
-  --color-desk:    #1D1F24;   /* the page, outermost */
-  --color-chrome:  #0B0D11;   /* bars and rails: the app shell */
-  --color-panel:   #0B0D11;   /* cards */
-  --color-panel2:  #0F1115;   /* raised: prompt bar, modal, popover */
-  --color-panel3:  #12141A;   /* surface: wells, selected, pressed */
-  --color-thumb:   #12141A;   /* empty media wells */
-
-  /* ── Edges ── the only thing that separates surfaces. */
-  --color-hair:    rgba(255, 255, 255, 0.07);   /* chrome dividers, rules */
-  --color-line:    rgba(255, 255, 255, 0.10);   /* card and table borders */
-  --color-edge:    rgba(255, 255, 255, 0.16);   /* prompt bar, modal, callout */
-  --color-picked:  rgba(255, 255, 255, 0.28);   /* the selected card */
-  --color-edge-hover: rgba(245, 246, 248, 0.34); /* a card or button under the pointer */
-  --color-fill-on:  rgba(245, 246, 248, 0.11);   /* active segmented option, active sub-tab */
-  --color-chip:    rgba(255, 255, 255, 0.06);
-  --color-chip2:   rgba(255, 255, 255, 0.10);
-
-  /* ── Ink ── four weights, no hue. */
-  /* --color-ink is the v2 --ink; see the particl v2 block below. */
-  --color-bone:    #F5F6F8;   /* primary text */
-  --color-soft:    #E6E8EC;   /* prompt text, primary hover */
-  --color-lead:    #B4B7BE;   /* body copy, descriptions */
-  --color-dim:     #8A8E96;   /* secondary text, sub-lines */
-  --color-mute:    #666A72;   /* metadata labels, placeholders */
-  --color-faint:   #3A3D44;   /* offline, disabled, switch tracks */
-
-  /* ── The interactive colour is ink ──
-     There is no accent. A primary action inverts: --color-blue fills it and
-     --color-on-ink writes on it. The name stays `blue` because sixty-odd
-     components already say text-blue for "this is the thing to press", and
-     renaming them all would risk far more than it reads. */
-  --color-blue:       #F5F6F8;
-  --color-blue-hover: #E6E8EC;
-  --color-on-ink:     #0B0D11;   /* text on an ink fill */
-
-  /* ── Status ── the node-grid rule, applied everywhere: running is white,
-     idle is muted, offline is faint. No greens, no ambers. */
-  --color-ok:   #F5F6F8;
-  --color-run:  #F5F6F8;
-  --color-warn: #8A8E96;
-
-  /* THE ONE COLOUR. Approved — the dot on an approved take, the outline
-     on its card, its segment on the sequence bar, the "Delivered" stage.
-     Nothing else in the interface is a hue. On light ground it darkens so
-     it still reads against paper. */
-  --color-approved: oklch(75% 0.12 200);
-
-  /* The one place this system is silent and an app cannot be: failure.
-     A desaturated red for error TEXT and destructive confirmation only —
-     never a fill, never a brand surface. Everything else stays monochrome. */
-  --color-lift: #E5484D;
-  --color-red:  #E5484D;
-
-  --color-note:       #12141A;               /* a canvas sticky, unlit */
-  --color-switch-off: #3A3D44;
-  --color-scrim:      rgba(6, 7, 10, 0.72);  /* behind dialogs and sheets */
-
-  /* ── Type ── Outfit displays, Geist carries the interface, Kode Mono
-     labels it. No serif anywhere in this system. */
-  --font-sans:    var(--font-outfit), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono:    var(--font-kode-mono), ui-monospace, "SF Mono", Menlo, monospace;
-  --font-display: var(--font-outfit), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-kode:    var(--font-kode-mono), ui-monospace, "SF Mono", Menlo, monospace;
-
-  /* ── particl v2 (design/particl-v2/README.md §2) ─────────────────────
-     The theme itself is declared under `:root` below, under the handoff's
-     exact names (`--ground`, `--card`, `--ink-body` …). These entries only
-     put each one in Tailwind's `--color-` namespace so it is a utility as
-     well — `bg-ground`, `text-ink-body`, `border-border-mid` — and they
-     add nothing §2 does not list. Dark only: `.theme-light` overrides none
-     of them. The older desk / panel / bone / dim names carry the routes v2
-     has not yet replaced, and go with them. */
-  --color-ground:          var(--ground);
-  --color-card:            var(--card);
-  --color-card-raised:     var(--card-raised);
-  --color-ink:             var(--ink);
-  --color-ink-body:        var(--ink-body);
-  --color-ink-muted:       var(--ink-muted);
-  --color-hairline:        var(--hairline);
-  --color-border:          var(--border);
-  --color-border-mid:      var(--border-mid);
-  --color-border-hover:    var(--border-hover);
-  --color-selected:        var(--selected);
-  --color-accent:          var(--accent);
-  --color-on-primary-cost: var(--on-primary-cost);
-
-  /* §2 radii: 4 badges · 6 small chips · 8–10 buttons, tiles, rows · 12
-     cards, nodes, rails · 14 mobile buttons, pinned cards · 999 pills. The
-     scale has no names in the handoff; these are only so the utilities
-     exist (`rounded-card`). */
-  --radius-badge:  4px;
-  --radius-chip:   6px;
-  --radius-ctl:    8px;
-  --radius-tile:   10px;
-  --radius-card:   12px;
-  --radius-mobile: 14px;
-  --radius-pill:   999px;
-}
-
+/* Graphite presentation tokens. Existing component and semantic token names
+   remain stable so the theme does not change application behavior. */
 :root {
-  /* Safe-area aware: the PWA runs edge-to-edge under the notch and home
-     indicator (statusBarStyle black-translucent + viewport-fit cover). */
+  --graphite-ground: #000000;
+  --graphite-panel: #0d0d10;
+  --graphite-card: #17171b;
+  --graphite-control: #1b1b1f;
+  --graphite-hover: #26262b;
+  --graphite-segment: #1c1c20;
+  --graphite-selected: #3a3a40;
+  --graphite-ink: #f5f5f7;
+  --graphite-body: #b8b8c1;
+  --graphite-muted: #91919c;
+  --graphite-faint: #787883;
+  --graphite-line: rgba(255, 255, 255, .10);
+  --graphite-edge: rgba(255, 255, 255, .16);
+  --graphite-accent: #0a84ff;
+  --graphite-accent-text: #6eb4ff;
+  /* A deeper action fill keeps white labels and quoted prices legible. */
+  --graphite-primary: #0071e3;
+  --graphite-primary-hover: #0062c6;
+  --graphite-on-primary: #ffffff;
+  --graphite-success: #30d158;
+  --graphite-warning: #ffb340;
+  --graphite-font: -apple-system, BlinkMacSystemFont, "Particl Geist", "Helvetica Neue", Arial, sans-serif;
+  --graphite-mono: ui-monospace, Menlo, "Particl Mono", monospace;
+
   --topbar: calc(58px + env(safe-area-inset-top, 0px));
-  /* The floating tab bar hovers over content; this is the room left for it. */
   --tabbar: calc(96px + env(safe-area-inset-bottom, 0px));
   --refs: 300px;
-
-  /* The system's radius scale: 6 chips · 8 buttons · 9 inputs · 10 wells ·
-     12 shells · 16 modals. */
-  --r:     12px;
-  --r-lg:  16px;
-  --r-sm:  8px;
-  --r-well: 10px;
+  --r: 8px;
+  --r-lg: 12px;
+  --r-sm: 6px;
+  --r-well: 8px;
   --r-chip: 6px;
-  --r-field: 9px;
-
-  /* Shadows are hairlines now. Kept as tokens so the components that ask
-     for them keep working while painting a border instead. */
-  --shadow-card:       0 0 0 1px var(--color-line);
+  --r-field: 6px;
+  --shadow-card: 0 0 0 1px var(--color-line);
   --shadow-card-hover: 0 0 0 1px var(--color-edge);
-  --shadow-bar:        0 0 0 1px var(--color-line);
-  --shadow-pop:        0 0 0 1px var(--color-edge);
-  --shadow-media:      0 0 0 1px var(--color-line);
-
-  /* Surfaces are solid in this system — no frosting. The names survive
-     because the composer and the tab pill ask for them by name. */
-  --glass:     var(--color-panel2);
+  --shadow-bar: 0 0 0 1px var(--color-line);
+  --shadow-pop: 0 16px 48px #0008, 0 0 0 1px var(--color-edge);
+  --shadow-media: 0 0 0 1px var(--color-line);
+  --glass: var(--color-panel2);
   --glass-bar: var(--color-panel2);
-
-  --scroll-thumb:       rgba(255, 255, 255, .18);
-  --scroll-thumb-hover: rgba(255, 255, 255, .30);
+  --scroll-thumb: rgba(255, 255, 255, .20);
+  --scroll-thumb-hover: rgba(255, 255, 255, .32);
+  --ease-spring: cubic-bezier(.2, .7, .2, 1);
   color-scheme: dark;
-  --ease-spring: cubic-bezier(.2, .8, .2, 1);
 
+  --ground: var(--graphite-ground);
+  --card: var(--graphite-card);
+  --card-raised: var(--graphite-control);
+  --ink: var(--graphite-ink);
+  --ink-body: var(--graphite-body);
+  --ink-muted: var(--graphite-muted);
+  --hairline: rgba(255, 255, 255, .08);
+  --border: var(--graphite-line);
+  --border-mid: var(--graphite-edge);
+  --border-hover: rgba(255, 255, 255, .28);
+  --selected: var(--graphite-selected);
+  --accent: var(--graphite-accent);
+  --on-primary-cost: var(--graphite-on-primary);
+  --waveform: repeating-linear-gradient(90deg,rgba(110,180,255,.5) 0 2px,transparent 2px 5px);
 }
 
-/* ── particl v2 theme (design/particl-v2/README.md §2) — verbatim ──────────
-   Copied from the handoff as generated, name for name and value for value.
-   Dark only; there is no light theme. Two tokens are given as ranges in
-   the handoff — `--border-mid .12–.14` and `--border-hover .22–.30` — and
-   a variable holds one value, so each is set to what the valid boards
-   actually use: buttons, chips and the sheet edge sit at .14 (the kind
-   filter pills and the rail's left edge at .12 are the exceptions, and are
-   drawn at .12 where they occur); every hover in the boards raises to .24.
-   `--placeholder` is declared with the older wells further down, at these
-   values, so there is one declaration of it. */
-:root {
-  --ground:          #0B0D11;
-  --card:            #12141A;                    /* one step lighter than ground */
-  --card-raised:     #171A21;                    /* locked assets, hover rows */
-  --ink:             #F5F6F8;
-  --ink-body:        #B4B7BE;                    /* secondary body; never lower than this for prose */
-  --ink-muted:       #8A8E96;                    /* eyebrows, mono labels, states (labels only, not prose) */
-  --hairline:        rgba(245,246,248,.06);
-  --border:          rgba(245,246,248,.08);      /* cards */
-  --border-mid:      rgba(245,246,248,.14);      /* buttons, inputs, chips (.12–.14) */
-  --border-hover:    rgba(245,246,248,.24);      /* hover raises border alpha only (.22–.30) */
-  --selected:        rgba(245,246,248,.12);      /* segmented active, selected row fill */
-  --accent:          oklch(75% 0.12 200);        /* ONLY for approved, done, running progress, checkpoint ring */
-  --on-primary-cost: #4A4E56;                    /* the cost text inside a filled primary button */
-  --waveform:        repeating-linear-gradient(90deg,rgba(245,246,248,.32) 0 2px,transparent 2px 5px);
+@theme {
+  --color-desk: var(--graphite-ground);
+  --color-chrome: var(--graphite-ground);
+  --color-panel: var(--graphite-panel);
+  --color-panel2: var(--graphite-card);
+  --color-panel3: var(--graphite-control);
+  --color-thumb: var(--graphite-control);
+  --color-hair: rgba(255, 255, 255, .08);
+  --color-line: var(--graphite-line);
+  --color-edge: var(--graphite-edge);
+  --color-picked: var(--graphite-accent);
+  --color-edge-hover: rgba(255, 255, 255, .28);
+  --color-fill-on: var(--graphite-selected);
+  --color-chip: var(--graphite-control);
+  --color-chip2: var(--graphite-hover);
+  --color-bone: var(--graphite-ink);
+  --color-soft: #e5e5ea;
+  --color-lead: var(--graphite-body);
+  --color-dim: var(--graphite-muted);
+  --color-mute: var(--graphite-faint);
+  --color-faint: #48484f;
+  /* Links and filled actions have separate contrast requirements. */
+  --color-blue: var(--graphite-accent-text);
+  --color-blue-hover: #8cc4ff;
+  --color-action: var(--graphite-primary);
+  --color-action-hover: var(--graphite-primary-hover);
+  --color-on-action: var(--graphite-on-primary);
+  --color-on-ink: var(--graphite-ground);
+  --color-ok: var(--graphite-success);
+  --color-run: var(--graphite-accent-text);
+  --color-warn: var(--graphite-warning);
+  --color-approved: var(--graphite-success);
+  --color-lift: #e5484d;
+  --color-red: #e5484d;
+  --color-note: var(--graphite-card);
+  --color-switch-off: #48484f;
+  --color-scrim: rgba(0, 0, 0, .72);
+
+  --font-sans: var(--graphite-font);
+  --font-mono: var(--graphite-mono);
+  --font-display: var(--graphite-font);
+  --font-kode: var(--graphite-mono);
+  --color-ground: var(--ground);
+  --color-card: var(--card);
+  --color-card-raised: var(--card-raised);
+  --color-ink: var(--ink);
+  --color-ink-body: var(--ink-body);
+  --color-ink-muted: var(--ink-muted);
+  --color-hairline: var(--hairline);
+  --color-border: var(--border);
+  --color-border-mid: var(--border-mid);
+  --color-border-hover: var(--border-hover);
+  --color-selected: var(--selected);
+  --color-accent: var(--accent);
+  --color-on-primary-cost: var(--on-primary-cost);
+  --radius-badge: 4px;
+  --radius-chip: 6px;
+  --radius-ctl: 6px;
+  --radius-tile: 8px;
+  --radius-card: 8px;
+  --radius-mobile: 12px;
+  --radius-pill: 999px;
 }
 
 /* ── particl v2 primitives' CSS (design/particl-v2/README.md §2–§3) ──────
@@ -213,10 +155,10 @@
 /* §3 surfaces the theme does not name, at the handoff's literal values:
    the rail's ground, the chips over media, the sheet's scrim, and the one
    ring in the product — on a selected node (§2). */
-.ui-rail { background: #0F1116; }
+.ui-rail { background: var(--graphite-panel); }
 .ui-chip-scrim { background: rgba(11,13,17,.85); }
 .ui-sheet-scrim { background: rgba(5,6,8,.55); }
-.ui-node-selected { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(245,246,248,.12); }   /* the boards pair the ring with an ink edge (6a, 8b) */
+.ui-node-selected { border-color: var(--graphite-accent); box-shadow: 0 0 0 3px rgba(10,132,255,.22); }   /* the boards pair the ring with an ink edge (6a, 8b) */
 
 /* The ring's one motion (board 11a): opacity .22 → 1 → .22, 1.6s a lap,
    each dot 0.2s behind the one before. The dots never move and never
@@ -480,7 +422,7 @@ input, textarea {
     line-height: 1; color: inherit; white-space: nowrap;
   }
   .wordmark-word {
-    font-family: var(--font-display); font-weight: 600; letter-spacing: -0.03em;
+    font-family: var(--font-outfit), sans-serif; font-weight: 600; letter-spacing: -0.03em;
     line-height: 1; display: inline-block;
   }
   .wordmark-i { position: relative; display: inline-block; }
@@ -491,7 +433,7 @@ input, textarea {
     transform: translateX(calc(-50% + 0.015em));
   }
   .wordmark-studio {
-    font-family: var(--font-kode); font-weight: 500; text-transform: uppercase;
+    font-family: var(--font-kode-mono), monospace; font-weight: 500; text-transform: uppercase;
     font-size: 0.21em; letter-spacing: 0.36em; line-height: 1;
     margin-top: 0.55em; margin-right: -0.36em;
     color: var(--color-dim);
@@ -663,8 +605,8 @@ button.row:active, a.row:active { background: var(--color-chip2); }
 @media (hover: hover) { .chip:hover:not(:disabled) { background: var(--color-chip2); } }
 .chip:active:not(:disabled) { transform: scale(.96); }
 .chip:disabled { opacity: .4; cursor: not-allowed; }
-.chip-blue { background: var(--color-blue); color: var(--color-on-ink); }
-@media (hover: hover) { .chip-blue:hover:not(:disabled) { background: var(--color-blue-hover); } }
+.chip-blue { background: var(--color-action); color: var(--color-on-action); }
+@media (hover: hover) { .chip-blue:hover:not(:disabled) { background: var(--color-action-hover); } }
 
 /* Popover menu — floats on shadow, never a border. */
 /* The frosted surface on its own, with NO positioning. Anything that wants
@@ -842,7 +784,7 @@ button.row:active, a.row:active { background: var(--color-chip2); }
 .rail-audio.is-dead { opacity: .5; }
 .rail-audio-mark {
   flex: none; height: 12px; width: 3px; border-radius: 2px;
-  background: var(--color-blue);
+  background: var(--color-action);
   box-shadow: 5px 0 0 -1px var(--color-blue), 10px 0 0 0 var(--color-blue);
   margin-right: 8px;
 }
@@ -1020,7 +962,7 @@ button.row:active, a.row:active { background: var(--color-chip2); }
     font-family: var(--font-mono); font-size: 9px; letter-spacing: .04em; line-height: 1.2;
   }
   .ref-tag-cite { background: rgba(0, 0, 0, .62); color: #fff; }
-  .ref-tag-role { background: var(--color-blue); color: var(--color-on-ink); }
+  .ref-tag-role { background: var(--color-action); color: var(--color-on-action); }
   .ref-x {
     position: absolute; right: 3px; top: 3px; display: grid; place-items: center;
     width: 18px; height: 18px; border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff;
@@ -1158,7 +1100,7 @@ button.row:active, a.row:active { background: var(--color-chip2); }
      which is near-white on the dark ground and near-black on paper). So the
      label has to invert with it — filling the pill and leaving the text
      white gave white on white. */
-  .tbar-tog.is-on { background: var(--color-blue); color: var(--color-desk); }
+  .tbar-tog.is-on { background: var(--color-action); color: var(--color-on-action); }
   .tbar-tc { flex: none; min-width: 62px; text-align: center; opacity: .9; font-variant-numeric: tabular-nums; }
   .tbar-scrub { flex: 1; min-width: 0; accent-color: var(--color-blue); }
   /* The filmstrip (SOW §10 4.3): every take on this shot, under the player.
@@ -1334,7 +1276,7 @@ button.row:active, a.row:active { background: var(--color-chip2); }
   outline-offset: 2px;
   border-radius: inherit;
 }
-input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--graphite-accent-text); outline-offset: 2px; }
 
 /* Scrollbars, barely there. */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -1354,13 +1296,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
    button is exactly the decoration it rules out. */
 .btn-render {
   font-weight: 500;
-  color: var(--color-on-ink);
+  color: var(--color-on-action);
   border-radius: 999px;
-  background: var(--color-blue);
+  background: var(--color-action);
   transition: background .15s, transform .18s var(--ease-spring), opacity .15s;
 }
 @media (hover: hover) {
-  .btn-render:hover:not(:disabled) { background: var(--color-blue-hover); }
+  .btn-render:hover:not(:disabled) { background: var(--color-action-hover); }
 }
 .btn-render:active:not(:disabled) { transform: scale(.96); }
 .btn-render:disabled {
@@ -1661,13 +1603,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .approve-go {
   flex: none; display: flex; align-items: center; gap: 7px;
   padding: 8px 15px; border-radius: 999px;
-  font-size: 13.5px; font-weight: 500; color: var(--color-on-ink);
-  background: var(--color-blue);
+  font-size: 13.5px; font-weight: 500; color: var(--color-on-action);
+  background: var(--color-action);
   transition: background .15s, transform .12s var(--ease-spring);
 }
 .approve-go:active { transform: scale(.97); }
 .approve-go:disabled { opacity: .6; }
-@media (hover: hover) { .approve-go:not(:disabled):hover { background: var(--color-blue-hover); } }
+@media (hover: hover) { .approve-go:not(:disabled):hover { background: var(--color-action-hover); } }
 /* The price rides ON the button, not beside it: it is the thing being
    agreed to, so it belongs under the finger that agrees. */
 .approve-price { font-variant-numeric: tabular-nums; opacity: .85; }
@@ -1779,28 +1721,28 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 
 
 /* ── The atomik wordmark: at◯mık ── the ring set as the o. */
-.atomik-word { display: inline-flex; align-items: baseline; font: 500 1em/1 var(--font-display); letter-spacing: .005em; color: inherit; white-space: nowrap; }
+.atomik-word { display: inline-flex; align-items: baseline; font: 500 1em/1 var(--font-outfit), sans-serif; letter-spacing: .005em; color: inherit; white-space: nowrap; }
 .atomik-word-o { height: .61em; width: .67em; margin: 0 .03em; align-self: center; transform: translateY(.02em); }
 .atomik-word-i { position: relative; display: inline-block; }
 .atomik-word-ring {
   position: absolute; left: 50%; top: .09em; width: .17em; height: .17em; box-sizing: border-box;
   border: .035em solid currentColor; border-radius: 50%; transform: translateX(-50%);
 }
-.atomik-word-by { font: 500 10px/1 var(--font-kode); letter-spacing: .3em; margin-left: .6em; color: var(--color-dim); text-transform: uppercase; align-self: center; }
+.atomik-word-by { font: 500 10px/1 var(--font-kode-mono), monospace; letter-spacing: .3em; margin-left: .6em; color: var(--color-dim); text-transform: uppercase; align-self: center; }
 
 /* ══ Shared components ════════════════════════════════════════════════ */
 
 /* Buttons. Primary inverts; the cost rides on it in mono at a dimmed ink. */
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: space-between; gap: 12px;
-  height: 38px; padding: 0 14px; border: 0; border-radius: 7px;
-  background: var(--color-ink); color: var(--color-on-ink);
+  height: 38px; padding: 0 14px; border: 0; border-radius: 6px;
+  background: var(--color-action); color: var(--color-on-action);
   font: 600 13px/1 var(--font-display); white-space: nowrap; transition: background .15s;
 }
-@media (hover: hover) { .btn-primary:not(:disabled):hover { background: #FFFFFF; } .theme-light .btn-primary:not(:disabled):hover { background: #000000; } }
+@media (hover: hover) { .btn-primary:not(:disabled):hover { background: var(--color-action-hover); } }
 .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
-.btn-primary-cost { font: 500 12px/1 var(--font-kode); color: #3A3E46; }
-.theme-light .btn-primary-cost { color: #B4B7BE; }
+.btn-primary-cost { font: 500 12px/1 var(--font-kode); color: var(--color-on-action); }
+.theme-light .btn-primary-cost { color: var(--color-on-action); }
 .btn-secondary {
   display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px;
   background: transparent; border: 1px solid var(--color-edge); border-radius: 6px;
@@ -1821,7 +1763,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .mono-s { font: 400 11px/1 var(--font-kode); color: var(--color-dim); }
 
 /* Segmented filter: a panel track with pill options; counts in mono. */
-.seg { display: inline-flex; gap: 2px; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 7px; padding: 2px; }
+.seg { display: inline-flex; gap: 2px; background: var(--graphite-segment); border: 1px solid var(--color-line); border-radius: 7px; padding: 2px; }
 .theme-light .seg { background: var(--color-desk); }
 .seg-opt {
   border: 0; border-radius: 5px; padding: 6px 10px; background: transparent;
@@ -2431,9 +2373,9 @@ html, body { overflow-x: clip; }
   .dock-preview { flex: 1; min-width: 0; text-align: left; background: var(--color-desk); border: 1px solid var(--color-line); border-radius: 10px; padding: 9px 12px; color: var(--color-ink); display: flex; flex-direction: column; gap: 4px; }
   .dock-eyebrow { font: 500 11px/1 var(--font-kode); letter-spacing: .1em; color: var(--color-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .dock-line { font: 400 13px/1.3 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-  .dock-go { flex: none; height: 48px; min-width: 76px; border: 0; border-radius: 10px; background: var(--color-ink); color: var(--color-on-ink); padding: 0 16px; font: 600 13px/1 var(--font-display); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+  .dock-go { flex: none; height: 48px; min-width: 76px; border: 0; border-radius: 10px; background: var(--color-action); color: var(--color-on-action); padding: 0 16px; font: 600 13px/1 var(--font-display); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
   .dock-go:disabled { opacity: .55; }
-  .dock-cost { font: 500 12px/1 var(--font-kode); color: var(--color-on-ink); opacity: .85; }
+  .dock-cost { font: 500 12px/1 var(--font-kode); color: var(--color-on-action); opacity: 1; }
   .sheet-scrim { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 40; }
   .ws-rail.is-hidden { display: none; }
   .ws-rail.is-sheet { display: flex; flex-direction: column; position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; width: min(100vw, 430px); max-width: 100vw; height: calc(100dvh - 52px); max-height: calc(100dvh - 52px); z-index: 41; border-left: 0; border-top: 1px solid rgba(245, 246, 248, .12); border-radius: 18px 18px 0 0; overflow: hidden; }
@@ -2792,7 +2734,7 @@ html, body { overflow-x: clip; }
 .rv-in { border: 1px solid var(--color-line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13.5px; background: transparent; color: inherit; }
 .rv-in { flex: 1 1 140px; min-height: 40px; }
 .rv-text { flex: 1 1 100%; resize: vertical; }
-.rv-send { min-height: 40px; padding: 0 14px; border-radius: 8px; background: var(--color-blue); color: var(--color-on-ink, #fff); font-size: 13.5px; font-weight: 600; }
+.rv-send { min-height: 40px; padding: 0 14px; border-radius: 8px; background: var(--color-action); color: var(--color-on-action); font-size: 13.5px; font-weight: 600; }
 .rv-send:disabled { opacity: .5; }
 .rv-err { flex: 1 1 100%; font-size: 12.5px; color: var(--color-lift, #d9a441); }
 .rv-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--color-line); padding-top: 14px; font-size: 12.5px; color: var(--color-mute); }
@@ -2816,13 +2758,13 @@ html, body { overflow-x: clip; }
   .phone-acts { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; }
   .phone-acts::-webkit-scrollbar { display: none; }
   .phone-acts .chip { flex: none; min-height: 36px; }
-  .phone-acts .chip.is-on { background: var(--color-blue); color: var(--color-on-ink, #fff); }
+  .phone-acts .chip.is-on { background: var(--color-action); color: var(--color-on-action); }
 }
 /* The production's burn-down (brief 2.2). */
 .burn { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
 .burn-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
 .burn-bar { position: relative; height: 8px; border-radius: 999px; background: var(--color-chip); overflow: visible; }
-.burn-spent { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--color-blue); }
+.burn-spent { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--color-action); }
 .burn-mark { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--color-lift, #d9a441); }
 .burn-line { font-size: 13.5px; color: var(--color-dim); }
 .burn-line.is-over { color: var(--color-lift, #d9a441); }
@@ -2831,7 +2773,7 @@ html, body { overflow-x: clip; }
 .burn-name { color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .burn-take, .burn-list li > .mono-s:last-child { color: var(--color-mute); text-align: right; }
 .burn-share { height: 6px; border-radius: 999px; background: var(--color-chip); overflow: hidden; }
-.burn-share span { display: block; height: 100%; background: var(--color-blue); opacity: .7; }
+.burn-share span { display: block; height: 100%; background: var(--color-action); opacity: .7; }
 @media (max-width: 767px) { .burn-list li { grid-template-columns: 54px minmax(0, 1fr) 64px; } .burn-share { display: none; } }
 /* A name called out in a note (brief 2.1). */
 .note-at { color: var(--color-blue); font-weight: 500; }
@@ -2861,7 +2803,7 @@ html, body { overflow-x: clip; }
 .cmp-seam::before { content: ""; position: absolute; left: 13px; top: 0; bottom: 0; width: 2px; background: rgba(255, 255, 255, .9); }
 .cmp-seam::after { content: ""; position: absolute; left: 6px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
 .cmp-seam:focus-visible { outline: none; }
-.cmp-seam:focus-visible::before { background: var(--color-blue); }
+.cmp-seam:focus-visible::before { background: var(--color-action); }
 
 .cmp-pick { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; flex: none; }
 .cmp-pick .chip:disabled { opacity: .45; cursor: not-allowed; }
@@ -2971,7 +2913,7 @@ html, body { overflow-x: clip; }
 }
 .imp-trouble { margin: 0; font: 400 13px/1.4 var(--font-sans); color: var(--color-lift); text-wrap: pretty; }
 .imp-primary {
-  height: 52px; border: 0; border-radius: 14px; background: var(--color-blue); color: var(--color-on-ink);
+  height: 52px; border: 0; border-radius: 14px; background: var(--color-action); color: var(--color-on-action);
   display: flex; align-items: center; justify-content: space-between; padding: 0 18px;
   font: 600 16px/1 var(--font-sans);
 }
@@ -3103,7 +3045,7 @@ html, body { overflow-x: clip; }
 }
 .prv-foot { display: flex; flex-direction: column; gap: 10px; }
 .prv-primary {
-  height: 52px; border: 0; border-radius: 12px; background: var(--color-blue); color: var(--color-on-ink);
+  height: 52px; border: 0; border-radius: 12px; background: var(--color-action); color: var(--color-on-action);
   display: flex; align-items: center; justify-content: space-between; padding: 0 18px;
   font: 600 15px/1 var(--font-sans);
 }
@@ -3360,8 +3302,8 @@ html, body { overflow-x: clip; }
 }
 .bnd-revert { background: none; border: 1px solid var(--color-line); color: var(--color-dim); }
 .bnd-revert:hover:not(:disabled) { color: var(--color-bone); border-color: var(--color-edge-hover); }
-.bnd-save { background: var(--color-ink); border: 0; color: var(--color-on-ink); }
-.bnd-save:hover:not(:disabled) { background: var(--color-blue-hover); }
+.bnd-save { background: var(--color-action); border: 0; color: var(--color-on-action); }
+.bnd-save:hover:not(:disabled) { background: var(--color-action-hover); }
 /* Disabled, the primary stops being a filled button. At .4 opacity an ink
    fill is still the brightest shape on a phone screen, so "Nothing to save"
    was shouting the one thing on the surface you cannot do. */

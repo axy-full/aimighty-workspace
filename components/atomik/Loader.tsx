@@ -48,7 +48,7 @@ export default function Loader({ size = LOADER_SIZES.well, on = "dark", after = 
     return () => clearTimeout(t);
   }, [after]);
   const shown = after <= 0 || waited;
-  const fill = on === "primary" ? "var(--ground)" : "var(--ink)";
+  const fill = on === "primary" ? "var(--graphite-on-primary)" : "var(--ink)";
   return (
     <svg viewBox={RING_VIEWBOX} width={size} height={size} className={className}
       role="status" aria-label={label} aria-busy="true"

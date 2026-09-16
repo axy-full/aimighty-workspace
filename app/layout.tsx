@@ -2,14 +2,8 @@ import type { Metadata } from "next";
 import { Outfit, Kode_Mono } from "next/font/google";
 import "./globals.css";
 
-/* The brand's two faces. Outfit sets the wordmark and every big title;
-   Kode Mono sets the STUDIO tag and the small uppercase labels. latin-ext
-   carries the dotless ı the wordmark is built on. */
-/* Two faces carry the whole interface now. The pipeline handoff sets body,
-   labels and buttons in Outfit 400/500 and headings in 600; Kode Mono does
-   every all-caps label, id, cost and nav item at 400/500. There is no third
-   face — the earlier Geist body was the previous handoff's call and this
-   one supersedes it. */
+/* Keep the approved wordmark fonts. Graphite interface typography is defined
+   by the shared system-font tokens in globals.css. */
 const outfit = Outfit({
   subsets: ["latin", "latin-ext"], weight: ["400", "500", "600"],
   variable: "--font-outfit", display: "swap",
@@ -40,7 +34,7 @@ export const viewport = {
   /* particl is dark, so the browser chrome is too — one value, not a pair
      keyed on a system preference the app no longer follows (§4). atomik's
      routes override this with the paper ground in their own layout. */
-  themeColor: "#1D1F24",
+  themeColor: "#000000",
   viewportFit: "cover" as const,
   // Android: shrink the layout viewport when the keyboard opens instead of
   // covering the fixed shell.

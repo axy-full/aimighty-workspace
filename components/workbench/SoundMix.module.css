@@ -1,9 +1,9 @@
 .panel {
   min-width: 0;
   padding: 18px;
-  border-top: 1px solid var(--line, #303030);
-  background: var(--panel, #161716);
-  color: var(--text, #eceee8);
+  border-top: 1px solid var(--graphite-line);
+  background: var(--graphite-panel);
+  color: var(--graphite-ink);
 }
 .panel header {
   display: flex;
@@ -18,7 +18,7 @@
 }
 .panel p {
   font-size: 12px;
-  color: var(--muted, #a7aaa2);
+  color: var(--graphite-body);
   line-height: 1.5;
 }
 .add,
@@ -35,10 +35,10 @@
 }
 .panel select,
 .panel input[type="number"] {
-  border: 1px solid #3b3e37;
-  background: #20231f;
+  border: 1px solid var(--graphite-edge);
+  background: var(--graphite-control);
   color: inherit;
-  border-radius: 7px;
+  border-radius: 6px;
   padding: 8px;
   min-height: 36px;
   font: inherit;
@@ -58,8 +58,8 @@
   margin: 12px 0;
 }
 .clip {
-  border: 1px solid #343830;
-  border-radius: 10px;
+  border: 1px solid var(--graphite-line);
+  border-radius: 8px;
   padding: 12px;
   min-width: 0;
   margin: 0;
@@ -72,8 +72,8 @@
   padding: 0 5px;
 }
 .track span {
-  font: 11px monospace;
-  color: #a8b197;
+  font: 11px var(--graphite-mono);
+  color: var(--graphite-muted);
 }
 .track label {
   display: flex;
@@ -93,7 +93,7 @@
 .controls label {
   display: grid;
   gap: 5px;
-  color: #adb0a8;
+  color: var(--graphite-body);
   font-size: 11px;
 }
 .controls input {
@@ -105,14 +105,14 @@
   position: relative;
   height: 22px;
   border-radius: 4px;
-  background: #252a22;
+  background: var(--graphite-segment);
   margin-top: 12px;
   overflow: hidden;
 }
 .placement span {
   position: absolute;
   height: 100%;
-  background: #849b67;
+  background: var(--graphite-primary);
   border-radius: 3px;
 }
 .placement small {
@@ -135,7 +135,7 @@
 }
 .panel input:focus-visible,
 .panel select:focus-visible {
-  outline: 2px solid #a4c879;
+  outline: 2px solid var(--graphite-accent);
   outline-offset: 2px;
 }
 @media (max-width: 600px) {
@@ -162,8 +162,8 @@
 }
 
 .panel button {
-  border: 1px solid #3b3e37;
-  border-radius: 7px;
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
   padding: 8px 12px;
   min-height: 36px;
   font-size: 12px;
@@ -178,5 +178,5 @@
 .panel input[type="checkbox"] {
   width: 14px;
   height: 14px;
-  accent-color: #a4c879;
+  accent-color: var(--graphite-accent);
 }

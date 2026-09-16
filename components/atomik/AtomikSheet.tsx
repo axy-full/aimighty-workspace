@@ -98,7 +98,7 @@ export default function AtomikSheet() {
         {step && (
           <>
             <button type="button" onClick={() => a.approve(step)} disabled={a.busy} data-continue=""
-              className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-ink px-[16px] text-[15px] font-semibold leading-none text-ground disabled:opacity-60">
+              className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-action hover:bg-action-hover px-[16px] text-[15px] font-semibold leading-none text-on-action disabled:opacity-60">
               Continue<span className="ui-mono ui-mono-cost text-on-primary-cost">{a.fmt(a.credits(step))}</span>
             </button>
             <span className="flex gap-[8px]">

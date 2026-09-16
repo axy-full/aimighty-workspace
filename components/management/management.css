@@ -1,17 +1,17 @@
 .management {
-  --mg-bg: #141414;
-  --mg-card: #1c1c1c;
-  --mg-raised: #232323;
-  --mg-border: #333;
-  --mg-muted: #a2a2a2;
-  --mg-ink: #f5f5f3;
+  --mg-bg: var(--graphite-ground);
+  --mg-card: var(--graphite-card);
+  --mg-raised: var(--graphite-control);
+  --mg-border: var(--graphite-line);
+  --mg-muted: var(--graphite-muted);
+  --mg-ink: var(--graphite-ink);
   color: var(--mg-ink);
   background: var(--mg-bg);
   width: 100%;
   min-width: 0;
   min-height: 100%;
   padding: 28px clamp(20px, 3.7vw, 72px) 64px;
-  font-family: "Particl Geist", Arial, sans-serif;
+  font-family: var(--graphite-font);
   font-size: 14px;
   line-height: 1.5;
   color-scheme: dark;
@@ -41,7 +41,7 @@
   opacity: 0.42;
 }
 .management :focus-visible {
-  outline: 2px solid #eee;
+  outline: 2px solid var(--graphite-accent);
   outline-offset: 4px;
 }
 .management-topline {
@@ -76,7 +76,7 @@
   font-size: clamp(30px, 3vw, 44px);
   line-height: 1.12;
   letter-spacing: -0.045em;
-  font-weight: 500;
+  font-weight: 600;
   margin: 9px 0 10px;
 }
 .management-heading p {
@@ -106,8 +106,8 @@
   border-bottom: 2px solid transparent;
 }
 .management-nav a[aria-current="page"] {
-  color: var(--mg-ink);
-  border-color: var(--mg-ink);
+  color: var(--graphite-accent-text);
+  border-color: var(--graphite-accent);
 }
 .management-body {
   display: flex;
@@ -118,7 +118,7 @@
   min-width: 0;
   background: var(--mg-card);
   border: 1px solid var(--mg-border);
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 24px;
 }
 .management-card-heading {
@@ -131,7 +131,7 @@
 .management-card h2,
 .management-section-title {
   font-size: 17px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.025em;
   margin: 0;
 }
@@ -147,26 +147,28 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid #414141;
-  border-radius: 8px;
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
   padding: 9px 14px;
   color: var(--mg-ink);
-  background: transparent;
+  background: var(--graphite-control);
   font-weight: 500;
   font-size: 12px;
   text-align: center;
   white-space: normal;
 }
 .management-button:hover:not(:disabled) {
-  background: #2a2a2a;
+  background: var(--graphite-hover);
 }
 .management-button.primary {
-  background: #efefec;
-  color: #141414;
-  border-color: #efefec;
+  background: var(--graphite-primary);
+  color: var(--graphite-on-primary);
+  border-color: var(--graphite-primary);
+  font-weight: 600;
 }
 .management-button.primary:hover:not(:disabled) {
-  background: #fff;
+  background: var(--graphite-primary-hover);
+  border-color: var(--graphite-primary-hover);
 }
 .management-button.danger {
   color: #f2aaaa;
@@ -184,6 +186,9 @@
   font-size: 12px;
   text-decoration: underline !important;
   text-underline-offset: 4px;
+}
+.management a.management-link {
+  color: var(--graphite-accent-text);
 }
 .management-grid {
   display: grid;
@@ -213,7 +218,7 @@
   padding: 20px 22px;
   border: 1px solid var(--mg-border);
   background: var(--mg-card);
-  border-radius: 14px;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -246,7 +251,7 @@
   min-width: 0;
 }
 .management-field > span {
-  color: #cecece;
+  color: var(--graphite-body);
 }
 .management-input,
 .management-field input,
@@ -256,9 +261,9 @@
   min-width: 0;
   min-height: 42px;
   padding: 10px 12px;
-  background: #151515;
-  border: 1px solid #414141;
-  border-radius: 8px;
+  background: var(--graphite-control);
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
   color: var(--mg-ink);
   outline-offset: 2px;
 }
@@ -320,9 +325,9 @@
   min-width: 130px;
   max-width: 48%;
   padding: 9px 28px 9px 10px;
-  background: #151515;
-  border: 1px solid #414141;
-  border-radius: 8px;
+  background: var(--graphite-control);
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
   color: var(--mg-ink);
   font-size: 12px;
 }
@@ -331,7 +336,7 @@
   width: 36px;
   height: 22px;
   min-width: 36px;
-  background: #505050;
+  background: var(--graphite-selected);
   border-radius: 999px;
   padding: 3px;
   display: flex;
@@ -340,25 +345,25 @@
 }
 .management-toggle span {
   display: block;
-  background: #d4d4d4;
+  background: var(--graphite-ink);
   height: 16px;
   width: 16px;
   border-radius: 100%;
   transition: transform 0.15s;
 }
 .management-toggle[aria-checked="true"] {
-  background: #e8e8e5;
+  background: var(--graphite-accent);
 }
 .management-toggle[aria-checked="true"] span {
-  background: #1b1b1b;
+  background: var(--graphite-on-primary);
   transform: translateX(14px);
 }
 .management-notice {
   padding: 13px 16px;
-  background: #202020;
-  border: 1px solid #414141;
-  border-radius: 10px;
-  color: #cecece;
+  background: var(--graphite-panel);
+  border: 1px solid var(--graphite-edge);
+  border-radius: 8px;
+  color: var(--graphite-body);
   font-size: 12px;
   display: flex;
   align-items: center;
@@ -386,7 +391,7 @@
   max-width: 50ch;
 }
 .management-badge {
-  border: 1px solid #454545;
+  border: 1px solid var(--graphite-edge);
   padding: 3px 8px;
   border-radius: 999px;
   display: inline-flex;
@@ -394,7 +399,7 @@
   gap: 5px;
   white-space: nowrap;
   font-size: 10px;
-  color: #c8c8c8;
+  color: var(--graphite-body);
   line-height: 1.5;
 }
 .management-badge.active:before {
@@ -402,7 +407,7 @@
   height: 5px;
   width: 5px;
   border-radius: 50%;
-  background: #d1d1ce;
+  background: var(--graphite-success);
 }
 .management-avatar {
   display: flex;
@@ -410,9 +415,9 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
-  background: #303030;
-  border: 1px solid #444;
+  border-radius: 8px;
+  background: var(--graphite-selected);
+  border: 1px solid var(--graphite-edge);
   font-size: 13px;
   font-weight: 500;
   flex-shrink: 0;
@@ -442,9 +447,9 @@
   flex-wrap: wrap;
   gap: 5px;
   padding: 4px;
-  border-radius: 9px;
-  border: 1px solid #333;
-  background: #191919;
+  border-radius: 6px;
+  border: 1px solid var(--graphite-line);
+  background: var(--graphite-segment);
   width: fit-content;
   max-width: 100%;
 }
@@ -452,14 +457,14 @@
   min-height: 34px;
   border: 0;
   padding: 8px 14px;
-  border-radius: 6px;
+  border-radius: 4px;
   background: none;
   color: var(--mg-muted);
   font-size: 12px;
 }
 .management-tabs button[aria-pressed="true"] {
-  background: #383838;
-  color: #fff;
+  background: var(--graphite-selected);
+  color: var(--graphite-ink);
 }
 .management-danger {
   border-color: #513a3a;
@@ -473,14 +478,14 @@
   height: 5px;
   border-radius: 4px;
   overflow: hidden;
-  background: #383838;
+  background: var(--graphite-selected);
   width: 100%;
   margin-top: 10px;
 }
 .management-progress > span {
   display: block;
   height: 100%;
-  background: #deded9;
+  background: var(--graphite-accent);
   border-radius: 4px;
 }
 .management-amount {
@@ -500,7 +505,7 @@
   align-items: center;
   gap: 18px;
   padding: 20px 0;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--graphite-line);
 }
 .management-member:first-child {
   border-top: 0;
@@ -524,8 +529,8 @@
   justify-content: flex-end;
 }
 .management-member-actions select {
-  background: #222;
-  border: 1px solid #414141;
+  background: var(--graphite-control);
+  border: 1px solid var(--graphite-edge);
   padding: 7px;
   border-radius: 6px;
   min-height: 34px;
@@ -541,8 +546,8 @@
   position: relative;
 }
 .management-plan.is-selected {
-  border-color: #c5c5bf;
-  background: #252525;
+  border-color: var(--graphite-accent);
+  background: var(--graphite-control);
 }
 .management-plan-price {
   font-size: 32px;
@@ -587,7 +592,7 @@
   justify-content: space-between;
   gap: 14px;
   padding: 12px 0;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--graphite-line);
   font-size: 12px;
 }
 .management-definition dt {
@@ -599,7 +604,7 @@
   font-variant-numeric: tabular-nums;
 }
 .management-activity {
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--graphite-line);
 }
 .management-activity:first-child {
   border-top: 0;
@@ -619,12 +624,12 @@
 .management-activity-icon {
   height: 34px;
   width: 34px;
-  border: 1px solid #3b3b3b;
+  border: 1px solid var(--graphite-edge);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #bbb;
+  color: var(--graphite-body);
 }
 .management-activity-title {
   overflow: hidden;
@@ -639,7 +644,7 @@
 }
 .management-activity-detail {
   font-size: 12px;
-  color: #bfbfbf;
+  color: var(--graphite-body);
   padding: 0 0 20px 50px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -653,7 +658,7 @@
 }
 .management-chart-row {
   padding: 13px 0;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--graphite-line);
 }
 .management-chart-row:first-child {
   border-top: 0;
@@ -732,7 +737,7 @@
   }
   .management-card {
     padding: 18px;
-    border-radius: 12px;
+    border-radius: 8px;
   }
   .management-card-heading {
     gap: 10px;
@@ -754,7 +759,7 @@
   }
   .management-stat {
     padding: 16px 13px;
-    border-radius: 11px;
+    border-radius: 8px;
   }
   .management-stat > strong {
     font-size: 27px;

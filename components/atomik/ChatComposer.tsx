@@ -20,7 +20,7 @@ export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 
     {a.quoteError && !recovering && <p role="alert" className="text-[12px] text-ink-body">{a.quoteError}</p>}
     {recovering && <p className="text-[11px] leading-relaxed text-ink-muted">Recover the original request with its saved model, effort and price.</p>}
     <button type="submit" disabled={a.busy || !a.draftText.trim() || (!recovering && !a.quote)}
-      className="flex min-h-11 w-full items-center justify-center rounded-ctl border border-border-mid bg-ink px-3 text-[13px] font-medium text-ground disabled:opacity-50">
+      className="flex min-h-11 w-full items-center justify-center rounded-ctl border border-border-mid bg-action hover:bg-action-hover px-3 text-[13px] font-medium text-on-action disabled:opacity-50">
       {a.busy ? "Sending…" : recovering ? "Recover saved request" : a.quote ? `Send · ${a.quote.estimateCredits} cr estimated` : a.quoting ? "Estimating…" : a.quoteError ? "Estimate unavailable" : "Send"}
     </button>
   </form>;
