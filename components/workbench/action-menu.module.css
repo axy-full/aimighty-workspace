@@ -1,6 +1,6 @@
 .menu {
   z-index: 250;
-  width: min(256px, calc(100vw - 16px));
+  width: min(236px, calc(100vw - 16px));
   max-width: var(--radix-context-menu-content-available-width, calc(100vw - 16px));
   max-height: min(
     520px,
@@ -8,34 +8,37 @@
   );
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 5px;
+  padding: 6px;
   border: 1px solid var(--graphite-edge);
   border-radius: 8px;
   background: var(--graphite-card);
   color: var(--graphite-ink);
-  box-shadow: 0 16px 60px #0009;
+  box-shadow: 0 16px 40px rgba(0,0,0,.6);
   font:
-    13px/1.4 var(--graphite-font);
+    12px/1.4 var(--graphite-font);
 }
 .label {
-  padding: 7px 10px;
+  padding: 6px 10px;
   color: var(--graphite-muted);
-  font-size: 11px;
+  font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   border-bottom: 1px solid var(--graphite-line);
   margin-bottom: 4px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
 }
 .item {
   display: flex;
   align-items: center;
-  min-height: 36px;
-  padding: 8px 10px;
+  min-height: 32px;
+  padding: 7px 10px;
   border-radius: 6px;
   cursor: default;
   outline: none;
   user-select: none;
+  font-weight: 500;
 }
 .item[data-highlighted] {
   background: var(--graphite-hover);

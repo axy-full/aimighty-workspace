@@ -48,7 +48,7 @@ export default function WelcomeSignIn() {
             </div>
           </div>
           <p className="wl-tag">
-            Your production house. One workspace for the brief, the crew and
+            <span>Your production house.</span> One workspace for the brief, the crew and
             every take.
           </p>
         </div>

@@ -20,6 +20,7 @@ import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
 import UnfiledWall from "@/components/make/UnfiledWall";
 import NewAssetSheet, { type SheetRef } from "@/components/assets/NewAssetSheet";
+import "@/components/studio/legacy-graphite.css";
 
 /**
  * Library (design/particl-v2/README.md §11; board 8b): one collection,
@@ -138,8 +139,8 @@ function Library() {
       { kind: "note", text: "References are free and unversioned until promoted." },
     ] : [];
     return (
-      <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-        <div className="flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[16px] pb-[10px] pt-[16px]" data-phone-body="">
+      <div className="legacy-library flex min-h-0 flex-1 flex-col bg-ground text-ink">
+        <div className="legacy-library-phone flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[16px] pb-[10px] pt-[16px]" data-phone-body="">
           <span className="flex flex-col gap-[6px]">
             <h1 className="text-[24px] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">Library</h1>
             <Mono>{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled</Mono>
@@ -168,8 +169,8 @@ function Library() {
                 const vn = cur ? first!.versions.findIndex((v) => v.id === cur.id) + 1 : 0;
                 const prod = productionOf(a.projectId);
                 return (
-                  <article key={a.id} className={`flex flex-col overflow-hidden rounded-card border border-border ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
-                    <span className="relative block aspect-[4/3] border-b border-hairline ui-placeholder">
+                  <article key={a.id} className={`legacy-library-card flex flex-col overflow-hidden rounded-card border border-border ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
+                    <span className="legacy-library-media relative block aspect-[4/3] border-b border-hairline ui-placeholder">
                       {cur?.uploadId && <img src={`/api/uploads/${encodeURIComponent(cur.uploadId)}`} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                       <span className="ui-chip-scrim absolute left-[7px] top-[7px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{a.kind}</span></span>
                       {a.locked && <span className="ui-chip-scrim absolute right-[7px] top-[7px] flex rounded-badge px-[6px] py-[4px]" title={`Locked${a.lockedBy ? ` by ${a.lockedBy}` : ""}`}><svg viewBox="0 0 12 12" width="11" height="11" style={{ fill: "none", stroke: "var(--ink)", strokeWidth: 1.3 }} aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2" /><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4" /></svg></span>}
@@ -211,19 +212,19 @@ function Library() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-      <div className="flex h-[52px] flex-none items-center gap-[14px] border-b border-hairline px-[24px]">
-        <span className="flex flex-none flex-col gap-[4px]"><span className="text-[16px] font-semibold leading-none text-ink">Library</span><Mono className="whitespace-nowrap">{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled {counts.unfiled === 1 ? "take" : "takes"} · all projects</Mono></span>
+    <div className="legacy-library flex min-h-0 flex-1 flex-col bg-ground text-ink">
+      <div className="legacy-library-toolbar flex h-[52px] flex-none items-center gap-[14px] border-b border-hairline px-[24px]">
+        <span className="legacy-library-heading flex flex-none flex-col gap-[4px]"><span className="text-[16px] font-semibold leading-none text-ink">Library</span><Mono className="whitespace-nowrap">{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled {counts.unfiled === 1 ? "take" : "takes"} · all projects</Mono></span>
         <Segmented label="Lens" placement="toolbar" className="ml-[10px] max-md:ml-0" value={lens} onChange={(l) => { setLens(l); setFull(false); }} options={[{ value: "assets", label: "Assets" }, { value: "references", label: "References" }, { value: "unfiled", label: "Unfiled" }]} />
         {lens === "assets" && (
-          <span className="flex flex-none gap-[6px] max-md:hidden">
+          <span className="legacy-library-filters flex flex-none gap-[6px] max-md:hidden">
             <button type="button" className={filter} onClick={(e) => setMenu({ which: "kind", ...at(e) })}>Kind <span className="text-ink-muted">{kind ? KIND_WORD[kind] : "any"}</span> ▾</button>
             <button type="button" className={filter} onClick={(e) => setMenu({ which: "production", ...at(e) })}>Project <span className="text-ink-muted">{production ? prods.productions.find((p) => p.id === production)?.name ?? "any" : "any"}</span> ▾</button>
             <button type="button" className={filter} onClick={(e) => setMenu({ which: "locked", ...at(e) })}>Locked <span className="text-ink-muted">{locked == null ? "any" : locked ? "locked" : "open"}</span> ▾</button>
           </span>
         )}
-        <span className="ml-auto flex items-center gap-[10px] max-md:w-full">
-          <label className="flex h-[36px] w-[240px] items-center gap-[8px] rounded-pill border border-border bg-card px-[12px] text-[13px] text-ink-muted max-md:h-[44px] max-md:w-full">
+        <span className="legacy-library-actions ml-auto flex items-center gap-[10px] max-md:w-full">
+          <label className="legacy-library-search flex h-[36px] w-[240px] items-center gap-[8px] rounded-pill border border-border bg-card px-[12px] text-[13px] text-ink-muted max-md:h-[44px] max-md:w-full">
             <span className="ui-mono !text-[12px] tracking-normal">⌕</span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search assets, references, @names…" aria-label="Search the Library" className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-0 placeholder:text-ink-muted max-md:text-[16px]" />
           </label>
@@ -231,23 +232,23 @@ function Library() {
         </span>
       </div>
       {lens === "unfiled" ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-[22px] overflow-auto px-[24px] pb-[24px] pt-[18px] max-md:px-[16px]">
+        <div className="legacy-library-unfiled flex min-h-0 flex-1 flex-col gap-[22px] overflow-auto px-[24px] pb-[24px] pt-[18px] max-md:px-[16px]">
           <UnfiledWall kind="all" search={q} columns={rail.state === "expanded" ? "grid-cols-2" : rail.state === "compact" ? "grid-cols-3" : "grid-cols-4"} />
         </div>
       ) : (
-        <div className={`grid min-h-0 flex-1 ${lens === "references" || full ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_720px]"} max-md:grid-cols-1`}>
+        <div className={`legacy-library-layout grid min-h-0 flex-1 ${lens === "references" || full ? "grid-cols-1" : "legacy-library-split grid-cols-[minmax(0,1fr)_720px]"} max-md:grid-cols-1`}>
           {showAssets && lens === "assets" && !full && (
-            <div className="flex min-h-0 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px] pt-[18px] max-md:px-[16px]">
+            <div className="legacy-library-assets flex min-h-0 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px] pt-[18px] max-md:px-[16px]">
               <Mono>Assets · canonical still · version · ports · where used</Mono>
-              <div className="grid grid-cols-3 gap-[10px] max-md:grid-cols-2" data-assets="">
+              <div className="legacy-library-grid grid grid-cols-3 gap-[10px] max-md:grid-cols-2" data-assets="">
                 {assets.map((a) => {
                   const first = a.attributes[0];
                   const cur = first?.versions.find((v) => v.id === first.currentId) ?? first?.versions[0] ?? null;
                   const vn = cur ? first!.versions.findIndex((v) => v.id === cur.id) + 1 : 0;
                   const prod = productionOf(a.projectId);
                   return (
-                    <article key={a.id} className={`flex flex-col overflow-hidden rounded-card border border-[rgba(245,246,248,.1)] ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
-                      <span className="relative block aspect-[4/3] border-b border-hairline ui-placeholder">
+                    <article key={a.id} className={`legacy-library-card flex flex-col overflow-hidden rounded-card border border-[rgba(245,246,248,.1)] ${a.locked ? "bg-card-raised" : "bg-card"}`} aria-label={`${KIND_WORD[a.kind]} @${a.name}`}>
+                      <span className="legacy-library-media relative block aspect-[4/3] border-b border-hairline ui-placeholder">
                         {cur?.uploadId && <img src={`/api/uploads/${encodeURIComponent(cur.uploadId)}`} alt="" className="absolute inset-0 h-full w-full object-cover" />}
                         <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{a.kind}</span></span>
                         {a.locked && <span className="ui-chip-scrim absolute right-[8px] top-[8px] flex h-[24px] w-[24px] items-center justify-center rounded-[6px]" title={`Locked${a.lockedBy ? ` by ${a.lockedBy}` : ""}`}><svg viewBox="0 0 12 12" width="11" height="11" style={{ fill: "none", stroke: "var(--ink)", strokeWidth: 1.3 }} aria-hidden="true"><rect x="2" y="5.4" width="8" height="5.4" rx="1.2" /><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4" /></svg></span>}
@@ -265,7 +266,7 @@ function Library() {
             </div>
           )}
           {showRefs && (
-            <section className={`relative min-w-0 overflow-auto ${lens === "assets" && !full ? "border-l border-border max-md:border-l-0 max-md:border-t" : ""} max-md:min-h-[520px]`} aria-label="References"
+            <section className={`legacy-reference-board relative min-w-0 overflow-auto ${lens === "assets" && !full ? "border-l border-border max-md:border-l-0 max-md:border-t" : ""} max-md:min-h-[520px]`} aria-label="References"
               style={{ backgroundImage: "radial-gradient(rgba(245,246,248,.07) 1px, transparent 1px)", backgroundSize: "24px 24px" }}
               onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) drop(e.dataTransfer.files); }}
               onPointerDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}>

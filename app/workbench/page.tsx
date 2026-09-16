@@ -6,8 +6,9 @@ import {accountScopeFor,workbenchScopeFor} from '@/lib/workbench/request-scope';
 import './workbench.css';
 import './desk.css';
 import './mobile.css';
+import './graphite.css';
 export const dynamic='force-dynamic';
-export const viewport={width:'device-width',initialScale:1,viewportFit:'cover',themeColor:'#0B0D11'};
+export const viewport={width:'device-width',initialScale:1,viewportFit:'cover',themeColor:'#000000'};
 export const metadata={title:'Particl — Production Studio'};
 export default async function Workbench(){
  const ctx=await currentContext();

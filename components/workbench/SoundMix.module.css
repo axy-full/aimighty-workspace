@@ -1,31 +1,33 @@
 .panel {
   min-width: 0;
-  padding: 18px;
+  padding: 14px 16px 16px;
   border-top: 1px solid var(--graphite-line);
   background: var(--graphite-panel);
   color: var(--graphite-ink);
 }
 .panel header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 .panel h3 {
-  font-size: 17px;
-  margin: 5px 0 14px;
+  font-size: 15px;
+  margin: 2px 0 10px;
+  font-weight: 600;
+  letter-spacing: -.01em;
 }
 .panel p {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--graphite-body);
-  line-height: 1.5;
+  line-height: 1.45;
 }
 .add,
 .actions,
 .track {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -39,8 +41,8 @@
   background: var(--graphite-control);
   color: inherit;
   border-radius: 6px;
-  padding: 8px;
-  min-height: 36px;
+  padding: 6px 8px;
+  min-height: 30px;
   font: inherit;
   font-size: 12px;
   max-width: 100%;
@@ -50,19 +52,20 @@
   gap: 8px;
   align-items: center;
   font-size: 12px;
-  margin: 14px 0;
+  margin: 10px 0;
 }
 .clips {
   display: grid;
-  gap: 12px;
-  margin: 12px 0;
+  gap: 8px;
+  margin: 10px 0;
 }
 .clip {
   border: 1px solid var(--graphite-line);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: 6px;
+  padding: 10px;
   min-width: 0;
   margin: 0;
+  background: var(--graphite-card);
 }
 .clip legend {
   font-size: 12px;
@@ -87,12 +90,12 @@
 .controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 10px;
 }
 .controls label {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   color: var(--graphite-body);
   font-size: 11px;
 }
@@ -103,10 +106,10 @@
 }
 .placement {
   position: relative;
-  height: 22px;
+  height: 18px;
   border-radius: 4px;
   background: var(--graphite-segment);
-  margin-top: 12px;
+  margin-top: 10px;
   overflow: hidden;
 }
 .placement span {
@@ -128,7 +131,7 @@
   color: #f5a49a !important;
 }
 .actions {
-  margin-top: 16px;
+  margin-top: 12px;
 }
 .panel button:disabled {
   opacity: 0.45;
@@ -151,7 +154,7 @@
   }
   .actions button {
     flex: 1;
-    min-height: 40px;
+    min-height: 44px;
   }
   .track button {
     margin-left: 0;
@@ -164,9 +167,10 @@
 .panel button {
   border: 1px solid var(--graphite-edge);
   border-radius: 6px;
-  padding: 8px 12px;
-  min-height: 36px;
+  padding: 6px 10px;
+  min-height: 30px;
   font-size: 12px;
+  font-weight: 500;
 }
 .track select {
   width: auto;
@@ -179,4 +183,10 @@
   width: 14px;
   height: 14px;
   accent-color: var(--graphite-accent);
+}
+.panel :global(.eyebrow) { font-size: 10px; letter-spacing: .1em; font-weight: 500; }
+.panel button[aria-pressed="true"] { background: var(--graphite-selected); color: var(--graphite-ink); }
+@media (max-width: 759px) {
+ .panel button, .panel select, .panel input[type="number"] { min-height: 44px; }
+ .panel select, .panel input[type="number"] { font-size: 16px; }
 }

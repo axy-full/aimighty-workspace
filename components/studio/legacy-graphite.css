@@ -1,0 +1,324 @@
+/* Graphite's Projects/Library proportions, retaining the live grouped
+   deliverables, filters and reference board used by these legacy routes. */
+.legacy-projects,
+.legacy-library {
+  min-width: 0;
+  background: var(--graphite-panel);
+  color: var(--graphite-ink);
+  font: 400 13px/1.4 var(--graphite-font);
+}
+
+.legacy-projects-toolbar,
+.legacy-projects-body,
+.legacy-library-toolbar,
+.legacy-library-unfiled {
+  width: 100%;
+  max-width: 1100px;
+  margin-inline: auto;
+}
+
+.legacy-projects-toolbar {
+  height: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px 16px;
+  padding: 28px 32px 20px;
+}
+
+.legacy-projects-toolbar h1,
+.legacy-library-heading > span:first-child {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -.025em;
+}
+
+.legacy-projects-toolbar > [role="group"] {
+  grid-row: 2;
+  justify-self: start;
+  margin: 0;
+}
+
+.legacy-projects-actions {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+}
+
+.legacy-projects-body {
+  padding: 0 32px 40px;
+  gap: 24px;
+}
+
+.legacy-project-group {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  gap: 12px;
+}
+
+.legacy-project-group-heading {
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.legacy-project-group-heading > span:first-child {
+  gap: 4px;
+  margin-right: 6px;
+}
+
+.legacy-deliverable-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.legacy-deliverable,
+.legacy-library-card {
+  min-width: 0;
+  border-radius: 8px;
+  border-color: var(--graphite-line);
+  background: var(--graphite-card);
+}
+
+.legacy-deliverable:hover {
+  border-color: var(--graphite-edge);
+}
+
+.legacy-deliverable-media,
+.legacy-library-media {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background-color: var(--graphite-control);
+}
+
+.legacy-deliverable-info {
+  padding: 10px 12px 12px;
+  gap: 8px;
+}
+
+.legacy-deliverable-info .font-semibold,
+.legacy-library-card .font-semibold {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.legacy-deliverable-grid > button {
+  min-height: 156px;
+  border-radius: 8px;
+  border-color: var(--graphite-edge);
+  background: var(--graphite-card);
+  font-size: 12px;
+}
+
+.legacy-projects [role="group"],
+.legacy-library [role="group"] {
+  border: 0;
+  border-radius: 6px;
+  background: var(--graphite-segment);
+  padding: 3px;
+  gap: 2px;
+}
+
+.legacy-projects [role="group"] > button,
+.legacy-library [role="group"] > button {
+  min-height: 30px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.legacy-projects-actions > button,
+.legacy-library-actions > button,
+.legacy-library-filters > button {
+  height: 34px;
+  min-height: 34px;
+  padding: 8px 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.legacy-library-toolbar {
+  height: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 18px 16px;
+  padding: 28px 32px 20px;
+  border: 0;
+}
+
+.legacy-library-heading {
+  min-width: 0;
+  gap: 6px;
+}
+
+.legacy-library-heading > .ui-mono {
+  white-space: normal;
+}
+
+.legacy-library-toolbar > [role="group"] {
+  grid-row: 2;
+  justify-self: start;
+  margin: 0;
+}
+
+.legacy-library-filters {
+  grid-column: 2;
+  grid-row: 2;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.legacy-library-actions {
+  grid-column: 2;
+  grid-row: 1;
+  gap: 8px;
+  min-width: 0;
+}
+
+.legacy-library-search {
+  width: 220px;
+  height: 34px;
+  border-radius: 6px;
+  background: var(--graphite-control);
+  border-color: var(--graphite-line);
+}
+
+.legacy-library-search:focus-within {
+  outline: 2px solid var(--graphite-accent);
+  outline-offset: 2px;
+}
+
+.legacy-library-layout {
+  width: 100%;
+  min-width: 0;
+  border-top: 1px solid var(--graphite-line);
+}
+
+.legacy-library-split {
+  grid-template-columns: minmax(360px, 1fr) minmax(420px, .9fr);
+}
+
+.legacy-library-assets {
+  padding: 20px 32px 40px;
+  gap: 14px;
+  container-type: inline-size;
+}
+
+.legacy-library-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 12px;
+}
+
+.legacy-library-grid > span {
+  grid-column: 1 / -1;
+}
+
+.legacy-library-card > span:last-child {
+  padding: 10px 12px 12px;
+  gap: 4px;
+}
+
+.legacy-library-card.bg-card-raised {
+  background: var(--graphite-control);
+}
+
+.legacy-library-unfiled {
+  padding: 0 32px 40px;
+}
+
+.legacy-reference-board {
+  background-color: var(--graphite-panel);
+}
+
+.legacy-reference-board button.rounded-pill,
+.legacy-library-phone [data-filters] button,
+.legacy-library-phone > label {
+  border-radius: 6px;
+}
+
+@container (min-width: 640px) {
+  .legacy-library-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .legacy-library-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .legacy-library-toolbar > [role="group"],
+  .legacy-library-filters,
+  .legacy-library-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+    justify-self: start;
+    margin: 0;
+  }
+  .legacy-library-split {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+    align-content: start;
+  }
+  .legacy-library-split > .legacy-library-assets {
+    overflow: visible;
+  }
+  .legacy-library-split > .legacy-reference-board {
+    min-height: 520px;
+    border-left: 0;
+    border-top: 1px solid var(--graphite-line);
+  }
+  .legacy-projects-toolbar {
+    align-items: start;
+  }
+  .legacy-projects-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 767px) {
+  .legacy-projects-phone,
+  .legacy-library-phone {
+    padding-top: 24px;
+    gap: 16px;
+  }
+  .legacy-projects-phone h1,
+  .legacy-library-phone h1 {
+    font-size: 26px;
+    line-height: 1.2;
+    letter-spacing: -.025em;
+  }
+  .legacy-project-group-phone {
+    border: 1px solid var(--graphite-line);
+    border-radius: 8px;
+    padding-block: 14px;
+  }
+  .legacy-projects [role="group"] > button,
+  .legacy-library [role="group"] > button,
+  .legacy-library-phone [data-filters] button {
+    min-height: 44px;
+  }
+  .legacy-library-phone .legacy-library-card > span:last-child {
+    padding: 9px 10px 10px;
+  }
+  .legacy-library-phone .legacy-library-media {
+    aspect-ratio: 4 / 3;
+  }
+}
+
+@media (pointer: coarse) {
+  .legacy-projects [role="group"] > button,
+  .legacy-library [role="group"] > button,
+  .legacy-projects-actions > button,
+  .legacy-library-actions > button,
+  .legacy-library-filters > button {
+    min-height: 44px;
+  }
+}

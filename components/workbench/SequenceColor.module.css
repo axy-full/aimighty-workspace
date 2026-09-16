@@ -1,29 +1,33 @@
 .inspector {
   min-width: 0;
-  align-self: start;
+  align-self: stretch;
+  background: var(--graphite-panel);
+  padding: 10px 12px 14px;
 }
 .tabs {
   position: sticky;
   top: 0;
   z-index: 2;
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--graphite-line);
+  gap: 2px;
+  padding: 2px;
+  border: 0;
   border-radius: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   background: var(--graphite-segment);
 }
 .tabs button {
   flex: 1;
-  min-height: 38px;
+  min-height: 28px;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--graphite-body);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
+  font-weight: 500;
+  padding: 5px 2px;
 }
 .tabs button[aria-pressed="true"] {
   background: var(--graphite-selected);
@@ -34,25 +38,31 @@
   outline-offset: 2px;
 }
 .panel {
-  border: 1px solid var(--graphite-line);
-  border-radius: 8px;
-  padding: 14px;
-  background: var(--graphite-card);
+  border: 0;
+  border-radius: 0;
+  padding: 14px 0;
+  background: transparent;
 }
 .panel p {
   color: var(--graphite-body);
-  font-size: 12px;
-  line-height: 1.65;
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 10px 0;
 }
 .panel h3 {
-  margin: 4px 0 8px;
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -.01em;
 }
 .panel header {
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .panel fieldset {
-  padding: 10px;
+  padding: 0;
+  border: 0;
+  margin: 0;
 }
 .panel input[type="range"] {
   accent-color: var(--graphite-accent);
@@ -60,7 +70,7 @@
   cursor: pointer;
 }
 .panel label {
-  font-size: 12px;
+  font-size: 11px;
 }
 .sources {
   display: grid;
@@ -71,11 +81,12 @@
   width: 100%;
 }
 .panel summary {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--graphite-body);
   cursor: pointer;
-  min-height: 32px;
-  padding: 8px 0;
+  min-height: 28px;
+  padding: 6px 0;
+  font-weight: 500;
 }
 .panel a {
   color: var(--graphite-accent-text);
@@ -84,8 +95,15 @@
 }
 @media (min-width: 1100px) {
   .inspector {
-    max-height: 560px;
+    max-height: calc(100dvh - 210px);
     overflow-y: auto;
     scrollbar-width: thin;
   }
+}
+.panel :global(.eyebrow) { font-size: 10px; letter-spacing: .1em; }
+@media (max-width: 759px) {
+ .inspector { padding: 10px 12px 14px; }
+ .tabs button { min-height: 44px; font-size: 12px; }
+ .panel input, .panel select { font-size: 16px; min-height: 44px; }
+ .panel button, .panel summary { min-height: 44px; }
 }
