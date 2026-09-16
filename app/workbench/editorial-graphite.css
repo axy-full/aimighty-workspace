@@ -1,0 +1,383 @@
+/* The Edit reference places the inspector beside the complete sequence, rather
+   than letting its content determine where the timeline starts. */
+@media (min-width: 760px) {
+  .ps .studio-redesign .edit-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: auto auto auto;
+    align-content: start;
+    gap: 0;
+    padding: 0;
+    background: var(--graphite-panel);
+  }
+
+  .ps .studio-redesign .edit-topline {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 16px;
+    gap: 10px;
+    border-bottom: 1px solid var(--graphite-line);
+  }
+
+  .ps .studio-redesign .edit-topline > div {
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .ps .studio-redesign .edit-topline .small-tag {
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    line-height: 1.4;
+    letter-spacing: .1em;
+    background: var(--graphite-control);
+  }
+
+  .ps .studio-redesign .edit-topline .muted {
+    font-size: 11px;
+  }
+
+  .ps .studio-redesign .edit-topline .btn {
+    height: 30px;
+    min-height: 30px;
+    padding: 5px 11px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 6px;
+    flex: none;
+  }
+
+  .ps .studio-redesign .edit-upper {
+    display: contents;
+  }
+
+  .ps .studio-redesign .edit-player {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    padding: 16px 0 0;
+    background: var(--graphite-ground);
+  }
+
+  .ps .studio-redesign .player-screen {
+    width: calc(100% - 48px);
+    max-width: 720px;
+    margin: 0 auto;
+    border: 0;
+    border-radius: 6px;
+    background: var(--graphite-control);
+  }
+
+  .ps .studio-redesign .player-slug,
+  .ps .studio-redesign .player-tc {
+    padding: 3px 7px;
+    border: 0;
+    border-radius: 4px;
+    font-size: 10px;
+    background: rgba(0, 0, 0, .6);
+  }
+
+  .ps .studio-redesign .player-controls {
+    min-height: 44px;
+    margin-top: 16px;
+    padding: 8px 16px 0;
+    gap: 8px;
+    background: var(--graphite-panel);
+  }
+
+  .ps .studio-redesign .player-controls > div {
+    gap: 6px;
+  }
+
+  .ps .studio-redesign .player-controls .icon-btn {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+    border: 1px solid var(--graphite-line);
+    border-radius: 6px;
+    background: var(--graphite-control);
+  }
+
+  .ps .studio-redesign .player-controls span {
+    font-size: 11px;
+  }
+
+  .ps .studio-redesign .edit-upper > [aria-label="Edit inspector"] {
+    grid-column: 2;
+    grid-row: 1 / 4;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    min-width: 0;
+    max-height: calc(100dvh - 166px);
+    overflow-y: auto;
+    padding: 10px 12px 14px;
+    border: 0;
+    border-left: 1px solid var(--graphite-line);
+    border-radius: 0;
+    background: var(--graphite-panel);
+    scrollbar-width: thin;
+  }
+
+  .ps .studio-redesign .edit-workspace [aria-label="Inspector view"] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
+    margin: 0;
+    padding: 2px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--graphite-segment);
+  }
+
+  .ps .studio-redesign .edit-workspace [aria-label="Inspector view"] > button {
+    min-width: 0;
+    min-height: 28px;
+    padding: 5px 2px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    border-radius: 4px;
+  }
+
+  .ps .studio-redesign .shot-inspector {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4px 8px;
+    padding: 14px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .ps .studio-redesign .shot-inspector > .eyebrow,
+  .ps .studio-redesign .shot-inspector > h3,
+  .ps .studio-redesign .shot-inspector > p {
+    grid-column: 1 / -1;
+  }
+
+  .ps .studio-redesign .shot-inspector > .eyebrow {
+    font: 500 10px/1.4 var(--graphite-font);
+    letter-spacing: .1em;
+    margin: 0;
+  }
+
+  .ps .studio-redesign .shot-inspector h3 {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: -.01em;
+    margin: 0 0 8px;
+  }
+
+  .ps .studio-redesign .shot-inspector .field-label {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--graphite-body);
+  }
+
+  .ps .studio-redesign .shot-inspector [for="shot-duration"] {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .ps .studio-redesign .shot-inspector #shot-duration {
+    grid-column: 1;
+    grid-row: 4;
+  }
+
+  .ps .studio-redesign .shot-inspector [for="source-in"] {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .ps .studio-redesign .shot-inspector #source-in {
+    grid-column: 2;
+    grid-row: 4;
+  }
+
+  .ps .studio-redesign .shot-inspector [for="shot-note"] {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    margin-top: 8px;
+  }
+
+  .ps .studio-redesign .shot-inspector #shot-note {
+    grid-column: 1 / -1;
+    grid-row: 6;
+    min-height: 72px;
+    height: auto;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+  }
+
+  .ps .studio-redesign .shot-inspector input,
+  .ps .studio-redesign .shot-inspector textarea {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--graphite-line);
+    border-radius: 6px;
+    background: var(--graphite-control);
+  }
+
+  .ps .studio-redesign .shot-inspector input {
+    height: 32px;
+    min-height: 32px;
+    padding: 7px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    font-family: var(--graphite-mono);
+  }
+
+  .ps .studio-redesign .shot-actions {
+    grid-column: 1 / -1;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .ps .studio-redesign .shot-actions .icon-btn {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    border: 1px solid var(--graphite-line);
+    border-radius: 6px;
+    background: var(--graphite-control);
+  }
+
+  .ps .studio-redesign .shot-actions .btn {
+    flex: 1;
+    height: 32px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .ps .studio-redesign .shot-inspector .text-danger {
+    grid-column: 1 / -1;
+    min-height: 32px;
+    margin-top: 4px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 179, 64, .35);
+    border-radius: 6px;
+    color: var(--graphite-warning);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .ps .studio-redesign .edit-workspace [aria-label="Edit inspector"] .btn {
+    min-height: 32px;
+    height: auto;
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    border-radius: 6px;
+  }
+
+  .ps .studio-redesign .edit-workspace [aria-label="Edit inspector"] input:not([type="range"]):not([type="checkbox"]):not([type="file"]),
+  .ps .studio-redesign .edit-workspace [aria-label="Edit inspector"] select {
+    min-height: 32px;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 7px 10px;
+  }
+
+  .ps .studio-redesign .timeline {
+    grid-column: 1;
+    grid-row: 3;
+    min-width: 0;
+    margin: 0;
+    padding: 0 16px 16px;
+    border-radius: 0;
+    background: var(--graphite-panel);
+  }
+
+  .ps .studio-redesign .timeline-title {
+    min-height: 34px;
+    padding: 8px 0 6px;
+    border-top: 0;
+    gap: 10px;
+  }
+
+  .ps .studio-redesign .timeline-title strong {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .ps .studio-redesign .timeline-title span {
+    font-size: 11px;
+  }
+
+  /* Only surrounding spacing changes; slider dimensions and drag handlers stay. */
+  .ps .studio-redesign .scrub-slider {
+    margin-bottom: 8px;
+  }
+
+  .ps .studio-redesign .timeline-ruler {
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+
+  .ps .studio-redesign .timeline-clips {
+    gap: 2px;
+  }
+
+  .ps .studio-redesign .timeline-clip {
+    height: 64px;
+    border-radius: 5px;
+  }
+
+  .ps .studio-redesign .timeline-clip img,
+  .ps .studio-redesign .timeline-clip video {
+    opacity: .85;
+  }
+
+  .ps .studio-redesign .timeline-clip > span,
+  .ps .studio-redesign .timeline-clip > small {
+    font-size: 10px;
+  }
+
+  .ps .studio-redesign .timeline [aria-label="Sound mix"] {
+    margin-top: 14px;
+    padding: 14px 0 0;
+    border-radius: 0;
+    border-top: 1px solid var(--graphite-line);
+  }
+
+  .ps .studio-redesign .timeline [aria-label="Sound mix"] .btn {
+    min-height: 32px;
+    height: auto;
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    border-radius: 6px;
+  }
+}
+
+@media (min-width: 760px) and (pointer: coarse) {
+  .ps .studio-redesign .edit-workspace [aria-label="Edit inspector"] input:not([type="range"]):not([type="checkbox"]):not([type="file"]),
+  .ps .studio-redesign .edit-workspace [aria-label="Edit inspector"] select,
+  .ps .studio-redesign .shot-inspector #shot-note {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .ps .studio-redesign .edit-workspace .btn,
+  .ps .studio-redesign .edit-workspace [aria-label="Edit inspector"] .btn,
+  .ps .studio-redesign .timeline [aria-label="Sound mix"] .btn,
+  .ps .studio-redesign .edit-workspace .icon-btn,
+  .ps .studio-redesign .edit-workspace [aria-label="Inspector view"] > button,
+  .ps .studio-redesign .shot-inspector .text-danger {
+    min-height: 44px;
+  }
+  .ps .studio-redesign .edit-workspace .icon-btn {
+    min-width: 44px;
+  }
+}

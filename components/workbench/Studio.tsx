@@ -1141,6 +1141,7 @@ export default function Studio({
                   alt="particl"
                 />
               </button>
+              <StudioNavigation compact active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}>
               <Tabs
                 value={home ? "home" : stage}
                 onValueChange={(v) => setStage(v as Stage)}
@@ -1237,8 +1238,9 @@ export default function Studio({
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+              </StudioNavigation>
             </header>
-            <StudioNavigation compact active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/>
+
             <div className="project-bar">
               <div className="project-breadcrumb">
                 <button onClick={() => setHome(true)}>Projects</button>
@@ -1499,30 +1501,8 @@ export default function Studio({
                     )}
                     {stage === "canvas" && (
                       <>
-                        <ProductionGraph
-                          onGenerate={(node,prompt,refs)=>{if(!transitioningRef.current)setGenerationTarget({node,prompt,refs,draftId:pRef.current.id});}}
-                          generatingNodeId={generatingNodeId}
-                          project={p}
-                          onChange={change}
-                          selectedId={selectedNode}
-                          onSelect={setSelectedNode}
-                          onAsset={setSelectedAsset}
-                          onSequence={addToSequence}
-                          onUpload={() => pickUpload()}
-                          onFiles={(files) => void uploadFiles(files)}
-                          onUndo={undo}
-                          onCrew={() => {
-                            setAtomOpen(true);
-                            setAtomTab("crew");
-                          }}
-                          onDeliver={() => setStage("export")}
-                          onPublish={publishSelection}
-                          scope={scope}
-                          requestScope={storageKey}
-                          onScope={setScope}
-                          apiBase={apiBase}
-                        />
                         <div className="sequence-shelf">
+                          <div className="canvas-stage-heading"><span className="eyebrow">BRING IT ALL TOGETHER</span><h1>Production canvas</h1></div>
                           <div className="shelf-label">
                             <button
                               className="mobile-sequence-toggle"
@@ -1575,6 +1555,29 @@ export default function Studio({
                             </button>
                           </div>
                         </div>
+                        <ProductionGraph
+                          onGenerate={(node,prompt,refs)=>{if(!transitioningRef.current)setGenerationTarget({node,prompt,refs,draftId:pRef.current.id});}}
+                          generatingNodeId={generatingNodeId}
+                          project={p}
+                          onChange={change}
+                          selectedId={selectedNode}
+                          onSelect={setSelectedNode}
+                          onAsset={setSelectedAsset}
+                          onSequence={addToSequence}
+                          onUpload={() => pickUpload()}
+                          onFiles={(files) => void uploadFiles(files)}
+                          onUndo={undo}
+                          onCrew={() => {
+                            setAtomOpen(true);
+                            setAtomTab("crew");
+                          }}
+                          onDeliver={() => setStage("export")}
+                          onPublish={publishSelection}
+                          scope={scope}
+                          requestScope={storageKey}
+                          onScope={setScope}
+                          apiBase={apiBase}
+                        />
                       </>
                     )}
                     {stage === "script" && (

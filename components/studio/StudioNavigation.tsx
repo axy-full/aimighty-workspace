@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type MouseEvent } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -39,8 +39,9 @@ async function changeAccount(scopedFetch: ReturnType<typeof useScopedFetch>, act
   });
 }
 
-export default function StudioNavigation({ initialAccount, active, compact = false, onNavigate, onSwitch, onSignOut, requestScope }: {
+export default function StudioNavigation({ initialAccount, active, compact = false, onNavigate, onSwitch, onSignOut, requestScope, children }: {
   initialAccount: WorkbenchAccount | null;
+  children?: ReactNode;
   active?: Section;
   compact?: boolean;
   onNavigate?: (path: string) => Promise<void>;
@@ -71,6 +72,7 @@ export default function StudioNavigation({ initialAccount, active, compact = fal
           <Icon size={15} strokeWidth={1.6} /><span>{label}</span>
         </Link>)}
       </nav>
+      {children}
       <WorkspaceMenu initial={initialAccount} onNavigate={navigate} onSwitch={onSwitch ?? (id => changeAccount(scopedFetch, "switch", id))} onSignOut={onSignOut ?? (() => changeAccount(scopedFetch, "logout"))} />
       {error && <p className="studio-navigation-error" role="alert">{error}</p>}
     </div>

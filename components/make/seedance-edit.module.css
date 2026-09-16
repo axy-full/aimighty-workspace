@@ -1,18 +1,22 @@
 .source {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
+  padding: 14px;
+  background: var(--gen-control);
+  border: 1px solid var(--gen-line);
+  border-radius: 8px;
 }
 .select {
   width: 100%;
   min-width: 0;
-  padding: 12px;
+  padding: 8px 10px;
   border: 1px solid var(--gen-edge);
   border-radius: 6px;
-  background: var(--gen-control);
+  background: var(--gen-raised);
   color: var(--gen-ink);
-  font-size: 14px;
+  font-size: 12px;
 }
 .preview {
   width: 100%;
@@ -23,15 +27,19 @@
 .settings {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 10px;
   align-items: center;
-  font-size: 13px;
+  font-size: 12px;
+  padding: 14px;
+  background: var(--gen-control);
+  border: 1px solid var(--gen-line);
+  border-radius: 8px;
 }
 .settings label {
   min-width: 0;
 }
 .settings select {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 .audio {
   display: flex;
@@ -47,6 +55,7 @@
   border: 1px solid var(--gen-edge);
   border-radius: 6px;
   padding: 8px;
+  background: var(--gen-raised);
 }
 .reference span {
   overflow-wrap: anywhere;
@@ -57,11 +66,11 @@
 }
 .error,
 .recovery {
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 12px 14px;
   margin-top: 14px;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow-wrap: anywhere;
 }
 .error {
@@ -72,3 +81,4 @@
   color: var(--gen-body);
   background: var(--gen-raised);
 }
+@media (max-width: 899px) {.select { font-size: 16px; min-height: 44px; }}

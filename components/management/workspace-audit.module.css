@@ -1,13 +1,13 @@
 .events {
   list-style: none;
-  margin: 16px 0;
+  margin: 12px 0;
   padding: 0;
 }
 .events li {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
-  padding: 18px 0;
+  gap: 14px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--graphite-line);
 }
 .events li:first-child {
@@ -18,7 +18,7 @@
 }
 .events strong {
   display: block;
-  font-size: 14px;
+  font-size: 13px;
 }
 .events p {
   margin: 5px 0;
@@ -26,7 +26,7 @@
 .events small,
 .events time {
   color: var(--graphite-muted);
-  font-size: 12px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 .events small {
@@ -37,7 +37,7 @@
   text-align: right;
 }
 .events .details {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--graphite-muted);
 }
 @media (max-width: 600px) {

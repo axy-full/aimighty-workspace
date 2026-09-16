@@ -2,13 +2,13 @@
 
 import ParticlLockup from "./ParticlMark";
 
-/** The small centred card the first-run and invite screens use. */
+/** Shared form panel for first-run, recovery and invitation screens. */
 export function AuthCard({
   title, sub, children,
 }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="grid min-h-dvh place-items-center px-5 py-10">
-      <div className="w-full max-w-[400px] rounded-[10px] border border-line bg-panel">
+    <div className="auth-page grid min-h-dvh place-items-center px-5 py-10">
+      <div className="auth-card w-full max-w-[400px] rounded-[10px] border border-line bg-panel">
         <div className="flex items-center px-6 pt-6">
           <ParticlLockup size={22} />
         </div>

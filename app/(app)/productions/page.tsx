@@ -14,6 +14,7 @@ import { PageLoader } from "@/components/atomik/Loader";
 import LazyMedia from "@/components/LazyMedia";
 import type { ProductionRow, ProjectRow } from "@/lib/productions";
 import { clock } from "@/components/production/ProductionHeader";
+import "@/components/studio/legacy-graphite.css";
 
 /**
  * Productions (design/particl-v2/README.md §6; board 7a), value for value.
@@ -90,8 +91,8 @@ export default function ProductionsPage() {
 
   if (!data && signedIn) return <PageLoader what="Opening · Projects" />;
   if (phone) return (
-    <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-      <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-auto px-[16px] pb-[100px] pt-[16px]" data-phone-body="">
+    <div className="legacy-projects flex min-h-0 flex-1 flex-col bg-ground text-ink">
+      <div className="legacy-projects-phone flex min-h-0 flex-1 flex-col gap-[14px] overflow-auto px-[16px] pb-[100px] pt-[16px]" data-phone-body="">
         <span className="flex flex-col gap-[6px]">
           <h1 className="text-[24px] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">Projects</h1>
           <Mono>{totals.productions} projects · {totals.projects} deliverables · {totals.need} need you</Mono>
@@ -107,20 +108,20 @@ export default function ProductionsPage() {
     </div>
   );
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-ground text-ink">
-      <div className="flex h-[64px] flex-none items-center gap-[16px] px-[24px]">
+    <div className="legacy-projects flex min-h-0 flex-1 flex-col bg-ground text-ink">
+      <div className="legacy-projects-toolbar flex h-[64px] flex-none items-center gap-[16px] px-[24px]">
         <span className="flex flex-col gap-[5px]">
           <h1 className="ui-page-title">Projects</h1>
           <Mono>{totals.productions} projects · {totals.projects} deliverables · {totals.need} need you · {totals.cap > 0 ? `${fmt(totals.spent)} of ${fmt(totals.cap)}` : `${fmt(totals.spent)} spent`}</Mono>
         </span>
         <Segmented label="Show" value={filter} onChange={setFilter} className="ml-[12px]"
           options={[{ value: "active", label: "Active" }, { value: "delivered", label: "Delivered" }, { value: "all", label: "All" }]} />
-        <span className="ml-auto flex gap-[8px]">
+        <span className="legacy-projects-actions ml-auto flex gap-[8px]">
           <Button placement="header" onClick={newProjectIn}>New deliverable in…</Button>
           <Button variant="primary" placement="header" onClick={newProduction}>New project</Button>
         </span>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px]">
+      <div className="legacy-projects-body flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[24px] pb-[24px]">
         {shown.map((p) => <ProductionCard key={p.id} production={p} fmt={fmt} inCredits={money.inCredits} onNewProject={() => newProject(p)} />)}
         {!shown.length && (
           <span className="py-[24px] text-[13px] leading-[1.5] text-ink-body">
@@ -136,7 +137,7 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
   const spent = inCredits ? p.spentCredits : p.spentUsd;
   const cap = inCredits ? p.capCredits : p.capUsd;
   if (phone) return (
-    <section className="flex flex-col gap-[12px] rounded-mobile border border-border bg-card py-[14px]">
+    <section className="legacy-project-group legacy-project-group-phone flex flex-col gap-[12px] rounded-mobile border border-border bg-card py-[14px]">
       <div className="flex items-center gap-[10px] px-[14px]">
         <span className="flex min-w-0 flex-col gap-[4px]">
           <span className="text-[16px] font-semibold leading-[1.1] text-ink">{p.name}</span>
@@ -158,8 +159,8 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
     </section>
   );
   return (
-    <section className="flex flex-col gap-[12px] rounded-card border border-border bg-card px-[16px] pb-[16px] pt-[14px]">
-      <div className="flex items-center gap-[14px]">
+    <section className="legacy-project-group flex flex-col gap-[12px] rounded-card border border-border bg-card px-[16px] pb-[16px] pt-[14px]">
+      <div className="legacy-project-group-heading flex items-center gap-[14px]">
         <span className="flex min-w-0 flex-col gap-[4px]">
           <span className="text-[16px] font-semibold leading-[1.1] text-ink">{p.name}</span>
           <span className="text-[12.5px] leading-[1.2] text-ink-body">{p.client || (p.status === "delivered" ? "delivered" : "in production")}</span>
@@ -171,7 +172,7 @@ function ProductionCard({ production: p, fmt, inCredits, onNewProject, phone = f
         </span>
         <Chip variant="pill">Rig · assets</Chip>
       </div>
-      <div className="grid grid-cols-5 gap-[10px]">
+      <div className="legacy-deliverable-grid grid grid-cols-5 gap-[10px]">
         {p.projects.map((j) => <ProjectTile key={j.id} production={p} project={j} fmt={fmt} inCredits={inCredits} />)}
         <button type="button" onClick={onNewProject}
           className="flex min-h-[120px] items-center justify-center rounded-tile border border-dashed border-[rgba(245,246,248,.18)] text-[13px] font-medium leading-none text-ink-body">
@@ -188,8 +189,8 @@ function ProjectTile({ production, project: j, fmt, inCredits, phone = false }: 
   const line = [j.format || null, j.runtimeSecs ? clock(j.runtimeSecs) : null].filter(Boolean).join(" · ");
   if (phone) return (
     <Link href={`/productions/${production.id}/${j.id}/media`} style={{ scrollSnapAlign: "start" }}
-      className="flex w-[200px] flex-none flex-col overflow-hidden rounded-tile border border-border bg-ground">
-      <span className={`relative block aspect-[16/7] border-b ${j.mediaCount ? "border-hairline" : "border-dashed border-[rgba(245,246,248,.2)]"}`}>
+      className="legacy-deliverable flex w-[200px] flex-none flex-col overflow-hidden rounded-tile border border-border bg-ground">
+      <span className={`legacy-deliverable-media relative block aspect-[16/7] border-b ${j.mediaCount ? "border-hairline" : "border-dashed border-[rgba(245,246,248,.2)]"}`}>
         {j.mediaCount ? <TileWell projectId={j.id} /> : null}
         <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{j.mediaCount} media</span></span>
         {j.needYou > 0 && (
@@ -198,7 +199,7 @@ function ProjectTile({ production, project: j, fmt, inCredits, phone = false }: 
           </span>
         )}
       </span>
-      <span className="flex flex-col gap-[7px] px-[12px] pb-[12px] pt-[10px]">
+      <span className="legacy-deliverable-info flex flex-col gap-[7px] px-[12px] pb-[12px] pt-[10px]">
         <span className="truncate text-[13.5px] font-semibold leading-[1.2] text-ink">{j.name}</span>
         <Stepper current={j.step} compact dot={7} />
         <Mono cost tone="ink">{cap !== null && cap !== undefined ? `${fmt(spent)} / ${fmt(cap)}` : fmt(spent)}</Mono>
@@ -207,8 +208,8 @@ function ProjectTile({ production, project: j, fmt, inCredits, phone = false }: 
   );
   return (
     <Link href={`/productions/${production.id}/${j.id}/media`}
-      className="flex flex-col overflow-hidden rounded-tile border border-border bg-ground hover:border-border-hover">
-      <span className={`relative block aspect-[16/7] border-b ${j.mediaCount ? "border-border" : "border-dashed border-[rgba(245,246,248,.2)]"}`}>
+      className="legacy-deliverable flex flex-col overflow-hidden rounded-tile border border-border bg-ground hover:border-border-hover">
+      <span className={`legacy-deliverable-media relative block aspect-[16/7] border-b ${j.mediaCount ? "border-border" : "border-dashed border-[rgba(245,246,248,.2)]"}`}>
         {j.mediaCount ? <TileWell projectId={j.id} /> : null}
         <span className="ui-chip-scrim absolute left-[8px] top-[8px] rounded-badge px-[6px] py-[4px]"><span className="ui-mono text-ink">{j.mediaCount} media</span></span>
         {j.needYou > 0 && (
@@ -217,7 +218,7 @@ function ProjectTile({ production, project: j, fmt, inCredits, phone = false }: 
           </span>
         )}
       </span>
-      <span className="flex flex-col gap-[7px] px-[12px] pb-[12px] pt-[10px]">
+      <span className="legacy-deliverable-info flex flex-col gap-[7px] px-[12px] pb-[12px] pt-[10px]">
         <span className="flex flex-col gap-[3px]">
           <span className="truncate text-[13.5px] font-semibold leading-[1.2] text-ink">{j.name}</span>
           <span className="truncate text-[12px] leading-[1.2] text-ink-body">{line ? `${line} · ` : ""}{j.shots} shots</span>

@@ -8,13 +8,13 @@
   background: var(--graphite-card);
   border: 1px solid var(--graphite-edge);
   border-radius: 8px;
-  font: 13px/1.45 var(--graphite-font);
-  box-shadow: 0 8px 32px #0005;
+  font: 12px/1.45 var(--graphite-font);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .6);
 }
 .panel summary {
   cursor: pointer;
-  padding: 11px 14px;
-  font-weight: 600;
+  padding: 9px 12px;
+  font-weight: 500;
 }
 .panel:not([open]) {
   width: 130px;
@@ -24,7 +24,7 @@
   color: var(--graphite-body);
 }
 .body {
-  padding: 0 14px 14px;
+  padding: 0 12px 12px;
   max-height: min(50vh, 450px);
   overflow: auto;
 }
@@ -60,7 +60,7 @@
 .actions a {
   border: 1px solid var(--graphite-edge);
   border-radius: 6px;
-  padding: 7px 9px;
+  padding: 6px 9px;
   background: var(--graphite-control);
   color: inherit;
   font: inherit;
