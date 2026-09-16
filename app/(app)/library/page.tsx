@@ -92,11 +92,12 @@ function AssetsPage() {
   }
   return <div className={`collective-assets ${genStyles.workspace}`}>
     <header className="collective-assets-header">
-      <div><h1>Assets</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}One library across all projects</p></div>
+      <div><h1>Assets</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}Workspace uploads and generated takes</p></div>
       {view === "all" && <label className="collective-assets-search"><span>Search</span><input value={query} onChange={event => setQuery(event.target.value)} aria-label="Search all workspace assets" placeholder="Search takes, uploads and originals…" /></label>}
       <Segmented label="Asset library views" value={view} onChange={setView} options={[...VIEWS]} />
     </header>
     {view === "all" ? <section className="collective-assets-body" aria-label="Collective workspace assets">
+      <p className="collective-assets-note">Older project-only originals remain available in their project’s Assets &amp; takes section.</p>
       <GenAssetLibrary key={requestScope ?? "visitor"} search={query} onUseAsset={useAsset} onEdit={asset => openTool(asset, "edit")} onUpscale={asset => openTool(asset, "upscale")}
         onUsePrompt={take => router.push(`/generate?mode=${take.kind === "image" ? "images" : take.kind}&promptFrom=${encodeURIComponent(take.id)}`)} />
     </section> : <Library key={`${requestScope}:${view}`} lens={view === "elements" ? "assets" : view} setLens={next => setView(next === "assets" ? "elements" : next)} />}

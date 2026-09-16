@@ -385,3 +385,5 @@
   .collective-assets-header > [role="group"] > button,
   .collective-assets-search { min-height: 44px; }
 }
+
+.collective-assets-note { margin:0; padding:10px 16px; color:var(--graphite-muted); font-size:11px; line-height:1.5; border-bottom:1px solid var(--graphite-line); }

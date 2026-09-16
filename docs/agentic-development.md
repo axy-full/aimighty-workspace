@@ -24,7 +24,7 @@ The new tenant tables are `workbench_development_jobs` and `workbench_developmen
 
 ## Collective assets and originals
 
-The top-level Assets entry opens the complete authorized workspace library, grouped by Images, Videos, Audio, Documents and Other files. It uses the same uploads and generated takes as Gen, with pagination, reference reuse and existing edit/upscale actions. Legacy Elements, References and Unfiled views remain available.
+The top-level Assets entry opens the complete authorized workspace library, grouped by Images, Videos, Audio, Documents and Other files. It uses the same uploads and generated takes as Gen, with pagination, reference reuse and existing edit/upscale actions. Legacy Elements, References and Unfiled views remain available. Historical private `workbench_media` files stay accessible in their authorized project contexts; they are not automatically indexed into the collective workspace library or made visible to other members.
 
 Node inspector and context menus offer Download original separately from rendered PNG export. Authenticated media routes stream full stored source files with attachment filenames. Uploaded files remain byte-identical. Older non-Topaz generated stills may already have been normalized to full-resolution PNG at intake; this change does not recreate discarded vendor metadata or encoding. Rendering a canvas preview does not change the original download.
 
