@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Search, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Check, ChevronDown, X, Search, SlidersHorizontal, Sparkles } from "lucide-react";
 import { Popover, Select } from "radix-ui";
 import styles from "./ModelPicker.module.css";
 
@@ -93,7 +93,7 @@ export function ModelPicker({ value, models, onPick, disabled, label = "Thinking
       <Popover.Content className={styles.popup} aria-label="Choose a thinking model" sideOffset={8} align="end" collisionPadding={12}
         onOpenAutoFocus={event => { event.preventDefault(); search.current?.focus(); }}
         onEscapeKeyDown={event => event.stopPropagation()}>
-        <div className={styles.heading}><span>Thinking model</span><span>{uniqueModels.length} available</span></div>
+        <div className={styles.heading}><span>Thinking model</span><span>{uniqueModels.length} available</span><Popover.Close className={`hidden ${styles.mobileClose}`} aria-label="Close model picker"><X size={20}/></Popover.Close></div>
         <div className={styles.search}>
           <Search size={16} aria-hidden="true" />
           <input ref={search} value={query} type="search" autoComplete="off" placeholder="Search models…" aria-label="Search thinking models"

@@ -488,3 +488,88 @@
 }
 
 @media (max-width: 650px) {.workspace button, .heading a, .empty a, .workspace input, .workspace select { min-height: 44px; } .workspace input, .workspace select { font-size: 16px; }}
+
+/* Mobile handoff: grouped production controls and readable, touchable stages. */
+@media (max-width: 759px) {
+  .workspace {
+    --graphite-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    --graphite-ground: #000;
+    --graphite-panel: #0d0d10;
+    --graphite-card: #17171b;
+    --graphite-control: #1b1b1f;
+    --graphite-selected: #3a3a40;
+    --graphite-line: rgba(255,255,255,.1);
+    --graphite-edge: rgba(255,255,255,.16);
+    --graphite-ink: #f5f5f7;
+    --graphite-body: rgba(235,235,245,.6);
+    --graphite-muted: rgba(235,235,245,.5);
+    --graphite-accent: #0a84ff;
+    --graphite-accent-text: #6eb4ff;
+    --graphite-primary: #0073e6;
+    --graphite-primary-hover: #0a84ff;
+    --graphite-on-primary: #fff;
+    padding: 16px 20px calc(40px + env(safe-area-inset-bottom,0px));
+    background: #000;
+    min-height: 100%;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -.01em;
+  }
+  .workspace .heading { flex-direction: column; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
+  .workspace .heading h1 { font-size: 29px; line-height: 1.2; font-weight: 600; letter-spacing: -.045em; margin-top: 5px; }
+  .workspace .heading p { font-size: 15px; line-height: 1.6; margin-top: 6px; margin-bottom: 0; }
+  .workspace .eyebrow { font-family: var(--graphite-font) !important; font-size: 12px !important; letter-spacing: .08em; }
+  .workspace .heading a { min-height: 44px; padding: 0 10px; font-size: 12px; }
+  .workspace .layout { display: block; border-top-color: rgba(255,255,255,.1); }
+  .workspace .sidebar { padding: 14px 0 16px; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .workspace .sidebarHeading h2 { font-size: 14px; font-weight: 500; }
+  .workspace .sidebarHeading button { min-width: 44px; min-height: 44px; }
+  .workspace .sidebar p { font-size: 13px; line-height: 1.6; margin: 10px 0 14px; }
+  .workspace .runLink { margin: 0; padding: 12px 14px; gap: 4px; min-height: 60px; background: #17171b; border: 1px solid rgba(255,255,255,.16); border-radius: 0; }
+  .workspace .runLink + .runLink { border-top: 0; }
+  .workspace .runLink:first-of-type { border-radius: 8px 8px 0 0; }
+  .workspace .runLink:last-of-type { border-radius: 0 0 8px 8px; }
+  .workspace .runLink:only-of-type { border-radius: 8px; }
+  .workspace .runLink span { font-size: 14px; font-weight: 500; }
+  .workspace .runLink small { font-size: 12px; }
+  .workspace .runLink[aria-current="page"] { background: #1b1b1f !important; border-color: #0a84ff !important; }
+  .workspace .main { padding: 16px 0 0; }
+  .workspace .sectionHeading { gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .workspace .sectionHeading h2 { font-size: 20px; letter-spacing: -.03em; line-height: 1.3; }
+  .workspace .status { text-transform: none; font-family: var(--graphite-font); font-size: 12px; padding: 4px 10px; border-radius: 13px; white-space: normal; overflow-wrap: anywhere; }
+  .workspace .formGrid { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .workspace form > .formGrid { padding: 0 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 12px; background: #17171b; }
+  .workspace .formGrid > div { display: contents; }
+  .workspace .formGrid label { display: grid; grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr); align-items: center; gap: 12px; margin: 0; padding: 6px 0; min-height: 52px; border-bottom: 1px solid rgba(255,255,255,.1); font-size: 14px; color: #f5f5f7; }
+  .workspace .formGrid > label:last-child { border-bottom: 0; }
+  .workspace input,
+  .workspace select { min-height: 44px; font-size: 16px; padding: 8px; border-color: rgba(255,255,255,.16); border-radius: 6px; background: #1b1b1f; }
+  .workspace fieldset { margin: 18px 0; padding: 0 14px 4px; background: #17171b; border-color: rgba(255,255,255,.16); border-radius: 12px; }
+  .workspace legend { padding: 0 7px; font: 500 10px/1.4 var(--graphite-font); letter-spacing: .12em; text-transform: uppercase; color: rgba(235,235,245,.5); }
+  .workspace .contextPreview { border-left-color: #0a84ff; margin: 12px 0 16px; padding: 12px 14px; background: #0d0d10; border-radius: 0 6px 6px 0; font-size: 13px; line-height: 1.6; }
+  .workspace button,
+  .workspace .empty a { min-height: 44px; font-size: 12px; border-radius: 6px; padding: 9px 12px; }
+  .workspace .primary { border-radius: 10px; font-size: 14px; font-weight: 500; }
+  .workspace form > .primary { width: 100%; min-height: 46px; }
+  .workspace .note { margin: 14px 0; font-size: 12px; line-height: 1.6; }
+  .workspace .toolbar { flex-wrap: wrap; gap: 8px; }
+  .workspace .stageList { gap: 14px; margin-top: 16px; }
+  .workspace .stage { border-radius: 12px; padding: 14px 16px; border-color: rgba(255,255,255,.16); }
+  .workspace .stageTitle { gap: 10px; flex-wrap: wrap; }
+  .workspace .number { width: 28px; height: 28px; font-size: 12px; background: #3a3a40; border: 0; }
+  .workspace .stageTitle > div { flex: 1; min-width: 0; }
+  .workspace .stageTitle small { font-family: var(--graphite-font); font-size: 10px; letter-spacing: .12em; }
+  .workspace .stageTitle h3 { font-size: 15px; line-height: 1.4; margin: 2px 0 0; }
+  .workspace .model { display: block; max-width: 100%; padding: 4px 8px; background: #1b1b1f; border: 1px solid rgba(255,255,255,.16); border-radius: 5px; font-size: 11px; overflow-wrap: anywhere; }
+  .workspace .prompt { font-size: 13px; line-height: 1.6; }
+  .workspace .takes { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .workspace .take { padding: 8px; gap: 5px; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; }
+  .workspace .take img,
+  .workspace .take video { aspect-ratio: 1; object-fit: contain; }
+  .workspace .take a { min-height: 44px; }
+  .workspace .stageActions { gap: 8px; }
+  .workspace .stageActions button { width: auto; flex: 1 1 auto; }
+  .workspace .review { gap: 6px; margin-top: 12px; }
+  .workspace .empty { padding: 20px 16px; background: #17171b; border-color: rgba(255,255,255,.16); border-radius: 12px; }
+  .workspace .error { flex-direction: column; align-items: stretch; background: #241618; border-color: rgba(255,107,107,.45); color: #ff9c9c; }
+}

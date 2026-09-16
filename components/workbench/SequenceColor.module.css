@@ -107,3 +107,19 @@
  .panel input, .panel select { font-size: 16px; min-height: 44px; }
  .panel button, .panel summary { min-height: 44px; }
 }
+
+@media (max-width: 759px) {
+  .panel { margin-top: 12px; padding: 14px 16px 16px; border: 1px solid var(--graphite-edge); border-radius: 12px; background: var(--graphite-card); }
+  .panel h3 { font-size: 17px; letter-spacing: -.02em; }
+  .panel header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+  .panel p { font-size: 12px; line-height: 1.6; color: var(--graphite-muted); }
+  .panel label { font-size: 12px; line-height: 1.5; }
+  .panel button { min-height: 44px; height: auto; padding: 8px 12px; font-size: 12px; border-radius: 6px; }
+  .panel input[type="checkbox"] { min-height: 20px; width: 20px; height: 20px; }
+  .panel input[type="range"] { min-height: 32px; padding: 0; }
+  .panel select { width: 100%; padding: 8px 12px; border-radius: 6px; }
+  .panel summary { display: flex; align-items: center; font-size: 13px; }
+  .panel fieldset > div:has(input[type="range"]) { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .panel fieldset > div:has(input[type="range"]) label { font-size: 12px; letter-spacing: 0; }
+  .sources { gap: 10px; }
+}

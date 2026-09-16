@@ -20,17 +20,20 @@
  * only if it resolves to this origin.
  */
 import Link from "next/link";
+import Image from "next/image";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
+import { Mark } from "@/components/ui/Mark";
+import "./auth-mobile.css";
 
 export default function WelcomeSignIn() {
   return (
     <div className="wl">
       <section className="wl-left">
         <div className="flex flex-col gap-9">
-          <div className="flex items-center gap-[22px]">
+          <div className="wl-desktop-brand flex items-center gap-[22px]">
             <svg
               viewBox="30 68 140 64"
               width="112"
@@ -46,6 +49,10 @@ export default function WelcomeSignIn() {
               <span className="wl-word">partıcl</span>
               <span className="wl-studio">STUDIO</span>
             </div>
+          </div>
+          <div className="hidden auth-mobile-brand">
+            <Mark width={26} height={23} />
+            <Image src="/brand/particl-wordmark-on-dark@4x.png" alt="particl" width={103} height={31} priority />
           </div>
           <p className="wl-tag">
             <span>Your production house.</span> One workspace for the brief, the crew and
@@ -65,6 +72,10 @@ export default function WelcomeSignIn() {
           <SignIn />
         </Suspense>
       </aside>
+      <footer className="hidden auth-mobile-footer">
+        <Link href="/atomik/ideas"><AtomikMark size={20} /> Idea to shot list with Atomik</Link>
+        <Link href="/" className="auth-mobile-explore">Look around →</Link>
+      </footer>
     </div>
   );
 }

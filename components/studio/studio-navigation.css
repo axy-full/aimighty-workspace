@@ -65,3 +65,25 @@
 /* Graphite uses text-only desktop section segments and the approved small lockup. */
 @media(min-width:768px){.studio-sections>a>svg{display:none}.studio-navigation-brand>svg{width:26px;height:16px}}
 @media(max-width:767px){.studio-navigation .studio-workspace-trigger,.studio-navigation .studio-credit,.studio-navigation .studio-account-entry>a{min-height:44px}.studio-account-menu [data-slot=dropdown-menu-item]{min-height:44px}}
+
+/* Mobile handoff: workspace drawer and the four destination dock. */
+@media(max-width:759px){
+ .studio-application.shell{height:var(--app-visible-height,100dvh);overflow:hidden}
+ .studio-navigation:not(.studio-navigation-compact){height:calc(57px + env(safe-area-inset-top));min-height:calc(57px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 14px 0;gap:14px}
+ .studio-navigation-brand>svg{display:none}.studio-navigation-brand img{width:61px}
+ .studio-navigation>.studio-account .studio-workspace-trigger{display:none}
+ .studio-navigation>.studio-account .studio-credit{border:0;background:none;color:var(--graphite-muted);font-size:12px;padding:0}
+ .studio-section-dock{min-height:calc(75px + env(safe-area-inset-bottom));padding:4px 9px calc(4px + env(safe-area-inset-bottom));background:var(--graphite-panel);border-color:var(--graphite-edge)}
+ .studio-section-dock>a{min-height:60px;gap:6px;font-size:11px;font-weight:500}.studio-section-dock>a[aria-current=page]{color:var(--graphite-ink)}
+ .phone-menu-trigger{display:grid;place-items:center;height:44px;width:27px;flex:none;color:var(--graphite-ink)}
+ .phone-workspace-drawer{overflow-y:auto;overscroll-behavior:contain;width:min(320px,calc(100vw - 40px));height:var(--app-visible-height,100dvh);padding:calc(24px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));background:var(--graphite-panel);color:var(--graphite-ink);border-right:1px solid var(--graphite-edge);gap:24px;z-index:80;font-family:var(--graphite-font);animation-duration:200ms}
+ .phone-workspace-drawer [data-slot=sheet-header]{padding:0;position:relative}.phone-workspace-drawer [data-slot=sheet-title]{display:flex;gap:8px;align-items:center;font-size:22px;letter-spacing:-.03em;font-weight:500}.phone-workspace-drawer [data-slot=sheet-description]{font-size:13px;color:var(--graphite-muted)}
+ .phone-drawer-close{position:absolute;right:0;top:0;display:grid;place-items:center;width:36px;height:36px;color:var(--graphite-muted)}
+ .phone-workspace-drawer .studio-sections{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:0;border:0;background:none}
+ .phone-workspace-drawer .studio-sections>a{min-height:48px;padding:0 12px;gap:12px;border-radius:8px;font-size:15px}.phone-workspace-drawer .studio-sections>a>svg{display:block;width:19px;height:19px}
+ .phone-workspace-drawer>*,.phone-workspace-drawer .studio-sections{flex-shrink:0}
+ .phone-drawer-sections>button{display:flex;align-items:center;min-height:48px;padding:0 12px;gap:12px;border:0;border-radius:8px;background:none;color:var(--graphite-muted);font-size:15px;text-align:left}.phone-drawer-sections>button[aria-current=page]{background:var(--graphite-selected);color:var(--graphite-ink)}.phone-drawer-sections>button:hover{background:var(--graphite-hover);color:var(--graphite-ink)}.phone-drawer-sections>button:focus-visible{outline:2px solid var(--graphite-accent);outline-offset:2px}
+ .phone-drawer-account{margin-top:auto;padding-top:20px;border-top:1px solid var(--graphite-edge)}.phone-drawer-account>p{font-size:15px;font-weight:500}.phone-drawer-account>small{font:10px var(--graphite-mono);text-transform:uppercase;color:var(--graphite-muted);letter-spacing:.1em}
+ .phone-drawer-account .studio-account{margin:18px 0 0;flex-direction:column;align-items:stretch;gap:10px}.phone-drawer-account .studio-credit,.phone-drawer-account .studio-workspace-trigger{min-height:44px;max-width:none;width:100%;justify-content:flex-start;padding:0 12px;gap:10px;font-size:13px;border:1px solid var(--graphite-edge);background:var(--graphite-control)}.phone-drawer-account .studio-credit-label,.phone-drawer-account .studio-workspace-name{display:block;max-width:none}.phone-drawer-account .studio-workspace-trigger>svg{margin-left:auto}
+ html[data-mobile-keyboard=true] .studio-section-dock{display:none}
+}

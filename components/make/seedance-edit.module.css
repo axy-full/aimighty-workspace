@@ -82,3 +82,10 @@
   background: var(--gen-raised);
 }
 @media (max-width: 899px) {.select { font-size: 16px; min-height: 44px; }}
+@media (max-width: 759px) {
+  .source, .settings { padding: 16px; border-color: var(--gen-edge); border-radius: 12px; background: var(--gen-raised); }
+  .settings { gap: 16px 10px; }
+  .reference { min-height: 44px; background: var(--gen-control); }
+  .reference button { min-width: 44px; min-height: 44px; }
+  .select { min-height: 44px; font-size: 16px; background: var(--gen-control); }
+}

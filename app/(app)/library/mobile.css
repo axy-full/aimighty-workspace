@@ -1,0 +1,39 @@
+/* Phone layout only; the desktop library retains its existing markup and rules. */
+@media (max-width: 759px) {
+  .collective-assets { background: var(--graphite-ground); }
+  .collective-assets-header {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: stretch;
+    padding: 16px 20px;
+    gap: 16px 8px;
+  }
+  .collective-assets-header > div:first-child { grid-column: 1 / -1; }
+  .collective-assets-header > div:first-child > h1,
+  .collective-assets-header > div:first-child > p { display: none; }
+  .collective-assets-header [data-phone-library-heading] { display: block; }
+  .collective-assets-header [data-phone-library-heading] > span { display: block; margin-bottom: 5px; font-size: 12px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--graphite-muted); }
+  .collective-assets-header [data-phone-library-heading] h1 { margin: 0; font-size: 29px; font-weight: 600; line-height: 1.2; letter-spacing: -.045em; }
+  .collective-assets-search { min-height: 44px; border: 1px solid var(--graphite-edge); border-radius: 10px; padding: 0 12px; }
+  .collective-assets-search > span { display: none; }
+  .collective-assets-search input { font-size: 16px; }
+  .collective-assets-header [data-phone-library-upload] { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: var(--graphite-primary); color: var(--graphite-on-primary); }
+  .collective-assets-header > [role="group"] { justify-self: stretch; padding: 0; margin-right: -20px; padding-right: 20px; gap: 8px; border: 0; border-radius: 0; background: transparent; overflow-x: auto; }
+  .collective-assets-header > [role="group"] > button { flex: none; min-height: 34px; padding: 0 12px; border: 1px solid var(--graphite-edge); border-radius: 6px; background: var(--graphite-control); font-size: 12px; font-weight: 500; color: var(--graphite-body); }
+  .collective-assets-header > [role="group"] > button[aria-pressed="true"] { background: var(--graphite-selected); color: var(--graphite-ink); }
+  .collective-assets-body { display: flex; flex-direction: column; padding: 0 20px 24px; overscroll-behavior-y: contain; }
+  .collective-assets-body > :not(.collective-assets-note) { order: 0; }
+  .collective-assets-body [data-library-grid] { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .collective-assets-note { order: 1; flex: none; margin-top: 16px; padding: 12px 14px; border: 1px solid var(--graphite-edge); border-radius: 8px; background: var(--graphite-card); font-size: 12px; line-height: 1.6; color: var(--graphite-body); }
+  .collective-assets .legacy-library-phone { padding: 0 20px 24px; gap: 16px; }
+  .collective-assets .legacy-library-phone [data-assets],
+  .collective-assets .legacy-library-phone [data-references] { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .collective-assets .legacy-library-phone [data-assets] > span,
+  .collective-assets .legacy-library-phone [data-references] > span { grid-column: 1 / -1; }
+  .collective-assets .legacy-library-phone .legacy-library-card { border-radius: 6px; }
+  .collective-assets .legacy-library-phone .legacy-library-media,
+  .collective-assets .legacy-library-phone [data-references] > button { aspect-ratio: 1; border-radius: 6px; }
+  .collective-assets .legacy-library-phone .legacy-library-card > span + span { padding: 8px; }
+  .collective-assets .legacy-library-phone .legacy-library-card > span + span > span { font-size: 11px; }
+  .collective-assets .legacy-library-phone .ui-chip-scrim { padding: 3px 4px; }
+  .collective-assets .legacy-library-phone .ui-chip-scrim .ui-mono { font-size: 9px; }
+}

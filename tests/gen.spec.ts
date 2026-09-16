@@ -160,7 +160,11 @@ test("Gen Seedance Edit recovers a lost submission after returning to Studio wit
     editor.getByRole("button", { name: /Recover edit/ }),
   ).toBeEnabled();
   const savedGenUrl = page.url();
-  await page.getByRole("link", { name: "Back to Studio", exact: true }).click();
+  if (page.viewportSize()!.width <= 759) {
+    await page.getByRole("navigation", { name: "Studio sections", exact: true }).filter({ visible: true }).getByRole("link", { name: "Studio", exact: true }).click();
+  } else {
+    await page.getByRole("link", { name: "Back to Studio", exact: true }).click();
+  }
   await expect(page).toHaveURL(/\/workbench$/);
   await expect(editor).toHaveCount(0);
   expect(submissions).toHaveLength(1);
@@ -402,7 +406,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   };
   await page.goto("/generate");
   await expect(
-    page.getByRole("heading", { name: /^Gen.*Video$/ }),
+    page.getByRole("heading", { name: page.viewportSize()!.width <= 759 ? "Generation workspace" : /^Gen.*Video$/ }),
   ).toBeVisible();
   await expect(primary).toBeDisabled();
   await prompt.fill("An isolated slow tracking shot through soft light.");

@@ -1,9 +1,11 @@
 "use client";
 
-import { type ReactElement, useRef } from "react";
+import { type ReactElement, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ContextMenu, DropdownMenu } from "radix-ui";
 import { MoreHorizontal } from "lucide-react";
 import styles from "./action-menu.module.css";
+import { useMobileLayout } from "./mobile-ui";
 
 export type StudioAction = {
   label: string;
@@ -28,9 +30,13 @@ export function ActionMenu({
 }) {
   const touchPress = useRef(false);
   const swallowClick = useRef(false);
+  const mobile = useMobileLayout();
+  const [open, setOpen] = useState(false);
   return (
     <ContextMenu.Root
+      open={open}
       onOpenChange={(open) => {
+        setOpen(open);
         if (open) {
           swallowClick.current = touchPress.current;
           onOpen?.();
@@ -81,6 +87,7 @@ export function ActionMenu({
       >
         {children}
       </ContextMenu.Trigger>
+      {mobile && open && createPortal(<div className={styles.scrim} aria-hidden="true" onPointerDown={event => { event.stopPropagation(); setOpen(false); }} />, document.body)}
       <ContextMenu.Portal>
         <ContextMenu.Content
           className={styles.menu}
@@ -99,6 +106,9 @@ export function ActionMenu({
               className={styles.item}
               data-danger={action.danger || undefined}
               disabled={action.disabled}
+              // The sheet can cover the opening pointer. Require a fresh click;
+              // Radix otherwise synthesizes a selection on that pointer's release.
+              onPointerUp={event => { if (mobile) event.preventDefault(); }}
               onSelect={action.run}
             >
               {action.label}
@@ -119,13 +129,25 @@ export function ActionDropdown({
   actions: StudioAction[];
   className?: string;
 }) {
+  const mobile = useMobileLayout();
+  const [open, setOpen] = useState(false);
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button type="button" className={className} aria-label={label}>
+    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+      <DropdownMenu.Trigger
+        asChild
+        onPointerDown={event => { if (mobile) event.preventDefault(); }}
+        onKeyDown={event => {
+          if (mobile && ["Enter", " ", "ArrowDown"].includes(event.key)) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <button type="button" className={className} aria-label={label} onClick={mobile ? () => setOpen(true) : undefined}>
           <MoreHorizontal size={17} />
         </button>
       </DropdownMenu.Trigger>
+      {mobile && open && createPortal(<div className={styles.scrim} aria-hidden="true" onPointerDown={event => { event.stopPropagation(); setOpen(false); }} />, document.body)}
       <DropdownMenu.Portal>
       <DropdownMenu.Content
         className={styles.menu}
@@ -141,6 +163,7 @@ export function ActionDropdown({
               className={styles.item}
               data-danger={action.danger || undefined}
               disabled={action.disabled}
+              onPointerUp={event => { if (mobile) event.preventDefault(); }}
               onSelect={action.run}
             >
               {action.label}

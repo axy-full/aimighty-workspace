@@ -362,3 +362,47 @@
 .formats button[aria-pressed="true"] { border-color:var(--graphite-accent); background:rgba(10,132,255,.08); }
 .formats button:disabled { opacity:.5; cursor:default; }
 @media(max-width:759px) { .formats { padding:0 12px 14px; grid-template-columns:1fr; } }
+
+/* Phone handoff: screenplay, review and agent tools retain their real controls. */
+@media (max-width: 759px) {
+  :global(.ps .studio-redesign) .panel { background: var(--graphite-ground); }
+  .header { gap: 14px; padding: 0 0 16px; }
+  .header h2 { font-size: 24px; line-height: 1.4; letter-spacing: -.04em; }
+  .header p { font-size: 13px; line-height: 1.6; color: var(--graphite-body); }
+  .header > :global(.btn) { min-height: 44px; border-radius: 10px; font-size: 13px; }
+  .formats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; padding: 4px; margin: 0 0 16px; border-radius: 9px; background: var(--graphite-segment); }
+  .formats button { min-width: 0; padding: 9px 8px; gap: 4px; border: 0; border-radius: 6px; background: transparent; }
+  .formats button[aria-pressed="true"] { background: var(--graphite-selected); }
+  .formats strong { font-size: 13px; font-weight: 500; }
+  .formats span { font-size: 10px; line-height: 1.4; }
+  .grid { grid-template-columns: minmax(0, 1fr); border: 0; background: transparent; gap: 20px; }
+  .source, .breakdown { padding: 0; border: 0; background: transparent; }
+  .source > textarea { min-height: 350px; padding: 17px; border: 1px solid var(--graphite-edge); border-radius: 12px; background: var(--graphite-card); font: 16px/1.85 var(--graphite-mono); }
+  .source > :global(.section-heading), .breakdown > :global(.section-heading) { margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
+  .breakdown h3 { font-size: 24px; line-height: 1.4; letter-spacing: -.04em; }
+  .hint, .sourceLink { font-size: 12px; line-height: 1.6; }
+  .actions { gap: 8px; margin: 12px 0; }
+  .panel :global(.btn) { min-height: 44px; height: auto; border-radius: 8px; font-size: 12px; }
+  .panel :global(.btn.primary) { border-radius: 10px; font-size: 14px; font-weight: 500; }
+  .scene { padding: 16px; margin-bottom: 12px; border: 1px solid var(--graphite-edge); border-radius: 12px; }
+  .sceneTitle { font-size: 14px; line-height: 1.5; gap: 10px; }
+  .sceneTitle input { width: 22px; height: 22px; margin-top: 0; accent-color: var(--graphite-accent); }
+  .scene small { font-size: 12px; margin: 6px 0 10px; }
+  .scene > label:not(.sceneTitle) { font-size: 11px; line-height: 1.6; letter-spacing: 0; }
+  .scene textarea { min-height: 68px; padding: 10px 12px; font-size: 16px; line-height: 1.5; }
+  .scene details { font-size: 12px; }
+  .scene summary { min-height: 44px; display: flex; align-items: center; }
+  .scene pre { padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.7; }
+  .beat { grid-template-columns: 18px minmax(0, 1fr) 32px; gap: 6px; margin: 8px 0; }
+  .beat > span { font-size: 11px; }
+  .notice, .error { margin: 12px 0; padding: 12px; font-size: 12px; line-height: 1.6; border-radius: 8px; }
+  .importReview { margin-bottom: 16px; padding: 16px; font-size: 13px; line-height: 1.6; border-radius: 12px; }
+  .importReview input[type="checkbox"] { width: 20px; height: 20px; }
+  .ocrReview { margin-top: 16px; padding-top: 12px; }
+  .ocrReview h4 { font-size: 15px; font-weight: 600; }
+  .ocrReview select { width: 100%; min-height: 44px; padding: 8px 12px; font-size: 16px; }
+  .ocrColumns { grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 12px 0; }
+  .ocrOriginal { max-height: 330px; border: 1px solid var(--graphite-edge); border-radius: 8px; }
+  .ocrColumns textarea { min-height: 240px; padding: 12px; font-size: 16px; line-height: 1.7; }
+  .pagination { font-size: 12px; }
+}

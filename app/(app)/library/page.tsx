@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Upload as UploadIcon } from "lucide-react";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useProject } from "@/lib/projectContext";
@@ -20,11 +21,12 @@ import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
 import UnfiledWall from "@/components/make/UnfiledWall";
 import NewAssetSheet, { type SheetRef } from "@/components/assets/NewAssetSheet";
-import GenAssetLibrary from "@/components/make/GenAssetLibrary";
+import GenAssetLibrary, { type GenAssetLibraryHandle } from "@/components/make/GenAssetLibrary";
 import { libraryId, libraryKind, type LibraryAsset } from "@/lib/genLibrary";
 import type { DraggedAsset } from "@/lib/dnd";
 import genStyles from "@/components/make/gen.module.css";
 import "@/components/studio/legacy-graphite.css";
+import "./mobile.css";
 
 /**
  * Library (design/particl-v2/README.md §11; board 8b): one collection,
@@ -73,7 +75,8 @@ type AssetsView = (typeof VIEWS)[number]["value"];
 
 function AssetsPage() {
   const router = useRouter(), search = useSearchParams();
-  const { workspace, requestScope } = useSession();
+  const { workspace, requestScope, signedIn } = useSession();
+  const library = useRef<GenAssetLibraryHandle>(null);
   const view: AssetsView = VIEWS.find(item => item.value === search.get("view"))?.value ?? "all";
   const [query, setQuery] = useState("");
   usePageTitle("Library");
@@ -92,13 +95,14 @@ function AssetsPage() {
   }
   return <div className={`collective-assets ${genStyles.workspace}`}>
     <header className="collective-assets-header">
-      <div><h1>Library</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}Workspace uploads and generated takes</p></div>
+      <div><h1>Library</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}Workspace uploads and generated takes</p><div className="hidden" data-phone-library-heading=""><span>Library</span><h1>Workspace uploads and generated takes</h1></div></div>
       {view === "all" && <label className="collective-assets-search"><span>Search</span><input value={query} onChange={event => setQuery(event.target.value)} aria-label="Search all workspace assets" placeholder="Search takes, uploads and originals…" /></label>}
+      {view === "all" && <button type="button" className="hidden" data-phone-library-upload="" aria-label="Upload assets" disabled={!signedIn} onClick={() => library.current?.upload()}><UploadIcon size={18} /></button>}
       <Segmented label="Asset library views" value={view} onChange={setView} options={[...VIEWS]} />
     </header>
     {view === "all" ? <section className="collective-assets-body" aria-label="Collective workspace assets">
       <p className="collective-assets-note">Older project-only originals remain available in their project’s Assets &amp; takes section.</p>
-      <GenAssetLibrary key={requestScope ?? "visitor"} search={query} onUseAsset={useAsset} onEdit={asset => openTool(asset, "edit")} onUpscale={asset => openTool(asset, "upscale")}
+      <GenAssetLibrary controller={library} key={requestScope ?? "visitor"} search={query} onUseAsset={useAsset} onEdit={asset => openTool(asset, "edit")} onUpscale={asset => openTool(asset, "upscale")}
         onUsePrompt={take => router.push(`/generate?mode=${take.kind === "image" ? "images" : take.kind}&promptFrom=${encodeURIComponent(take.id)}`)} />
     </section> : <Library key={`${requestScope}:${view}`} lens={view === "elements" ? "assets" : view} setLens={next => setView(next === "assets" ? "elements" : next)} />}
   </div>;

@@ -1066,8 +1066,21 @@ function ScopedComposer({
                   aria-label="Add a reference"
                 >
                   <Plus size={20} />
+                  {!refs.length && <ImageIcon size={18} className="hidden" data-phone-reference-icon="" />}
                   <span>{uploading ? "Uploading…" : "Add reference"}</span>
+                  {!refs.length && <span className="hidden" data-phone-reference-label="">{uploading ? "Uploading…" : kind === "video" ? "Drop an image for the first frame" : "Drop a style reference"}</span>}
                 </button>
+                {!refs.length && <button
+                  type="button"
+                  className="hidden"
+                  data-phone-reference-alternate=""
+                  onClick={() => picker.current?.click()}
+                  disabled={!hydrated || uploading}
+                  aria-label={kind === "video" ? "Add a motion reference" : "Add a composition reference"}
+                >
+                  {kind === "video" ? <Film size={18} /> : <ImageIcon size={18} />}
+                  <span>{kind === "video" ? "…or a clip for motion" : "Drop a composition reference"}</span>
+                </button>}
               </div>
               <div className={styles.referenceHint}>
                 {kind === "video" ? (
@@ -1361,7 +1374,7 @@ function ScopedComposer({
               ? `${TRACKS.find((t) => t.id === track)!.label} · ~${mmss(audioLen)}`
               : `${count} ${count === 1 ? "take" : "takes"} · ${ratio} · ${kind === "video" ? `${seconds}s` : resolution}`}
           </span>
-          <span>Saved to your takes</span>
+          <span>Saved to your takes<span className="hidden" data-phone-quote-note=""> · quoted before you generate</span></span>
         </div>
         <button
           type="button"

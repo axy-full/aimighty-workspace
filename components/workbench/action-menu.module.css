@@ -56,3 +56,71 @@
     min-height: 44px;
   }
 }
+
+/* Retain Radix's modal focus, keyboard, dismissal and scroll behavior;
+   only its anchored positioning becomes a phone-width action sheet. */
+@media (max-width: 759px) {
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 249;
+    background: rgba(0, 0, 0, .55);
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  :global([data-radix-popper-content-wrapper]):has(> .menu) {
+    position: fixed !important;
+    top: auto !important;
+    right: 0 !important;
+    bottom: var(--app-keyboard-inset, 0px) !important;
+    left: 0 !important;
+    width: 100%;
+    min-width: 0 !important;
+    transform: none !important;
+    z-index: 250 !important;
+  }
+
+  .menu {
+    width: 100%;
+    max-width: none;
+    max-height: min(80dvh, calc(var(--app-visible-height, 100dvh) - 24px));
+    padding: 14px 12px calc(18px + env(safe-area-inset-bottom));
+    border: 1px solid var(--graphite-edge);
+    border-bottom: 0;
+    border-radius: 18px 18px 0 0;
+    background: var(--graphite-card);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, .25);
+    font-size: 15px;
+    transform-origin: bottom center;
+  }
+
+  .menu::before {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 5px;
+    margin: 0 auto 12px;
+    border-radius: 3px;
+    background: var(--graphite-selected);
+  }
+
+  .label {
+    padding: 6px 10px 12px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .item {
+    min-height: 48px;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.5;
+  }
+}

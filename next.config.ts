@@ -54,6 +54,8 @@ const headers = [
 ];
 
 const nextConfig: NextConfig = {
+  // Keep framework debugging chrome from covering controls in mock browser rehearsals.
+  ...(process.env.ENGINE_MOCK === "1" ? { devIndicators: false as const } : {}),
   async headers() {
     // Only the dedicated movie document can create the bundled AAC WASM worker.
     // Every other page retains the policy above; production never enables general eval.

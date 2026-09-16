@@ -170,6 +170,10 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     >
       <header className={styles.header}>
         <div className={styles.heading}>
+          <div className="hidden" data-phone-gen-heading="">
+            <span>Gen</span>
+            <h1>Generation workspace</h1>
+          </div>
           <Link className={styles.studioBack} href="/workbench">
             <ArrowLeft size={15} aria-hidden="true" />
             Back to Studio
@@ -302,6 +306,10 @@ function Workspace({ initialKind }: { initialKind?: string }) {
               onEdit={editAsset}
               onUpscale={asset => libraryKind(asset) === "video" ? astraSource(asset) : upscaleSource(asset)}
             />
+            <Link href="/library" className="hidden" data-phone-library-link="">
+              <span><strong>Your workspace library</strong><small>All uploads and generated takes</small></span>
+              <ArrowLeft size={16} aria-hidden="true" />
+            </Link>
           </div>
         </section>
       </div>
