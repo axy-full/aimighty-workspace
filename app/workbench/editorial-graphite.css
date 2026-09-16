@@ -370,6 +370,8 @@
     font-size: 16px;
   }
   .ps .studio-redesign .edit-workspace .btn,
+  .ps .studio-redesign .edit-workspace [aria-label="Edit inspector"] .btn,
+  .ps .studio-redesign .timeline [aria-label="Sound mix"] .btn,
   .ps .studio-redesign .edit-workspace .icon-btn,
   .ps .studio-redesign .edit-workspace [aria-label="Inspector view"] > button,
   .ps .studio-redesign .shot-inspector .text-danger {

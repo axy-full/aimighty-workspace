@@ -257,6 +257,7 @@
 }
 @media (min-width:760px) and (pointer:coarse) {
   .ps .studio-redesign .brief-main textarea,
+  .ps .studio-redesign .brief-main .large-textarea,
   .ps .studio-redesign .library-toolbar .search-field input,
   .ps .studio-redesign .storyboard-info input,
   .ps .studio-redesign .storyboard-info textarea { min-height:44px;font-size:16px; }
