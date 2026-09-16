@@ -76,7 +76,7 @@ function AssetsPage() {
   const { workspace, requestScope } = useSession();
   const view: AssetsView = VIEWS.find(item => item.value === search.get("view"))?.value ?? "all";
   const [query, setQuery] = useState("");
-  usePageTitle("Assets");
+  usePageTitle("Library");
   const setView = (next: AssetsView) => router.replace(next === "all" ? "/library" : `/library?view=${next}`, { scroll: false });
   function useAsset(asset: DraggedAsset) {
     const kind = asset.kind === "gen" ? asset.gen.kind : asset.kind === "upload" ? asset.upload.kind : "image";
@@ -92,7 +92,7 @@ function AssetsPage() {
   }
   return <div className={`collective-assets ${genStyles.workspace}`}>
     <header className="collective-assets-header">
-      <div><h1>Assets</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}Workspace uploads and generated takes</p></div>
+      <div><h1>Library</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}Workspace uploads and generated takes</p></div>
       {view === "all" && <label className="collective-assets-search"><span>Search</span><input value={query} onChange={event => setQuery(event.target.value)} aria-label="Search all workspace assets" placeholder="Search takes, uploads and originals…" /></label>}
       <Segmented label="Asset library views" value={view} onChange={setView} options={[...VIEWS]} />
     </header>
@@ -169,7 +169,7 @@ function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void 
   const showRefs = lens === "assets" || lens === "references";
 
   if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to open workspace assets.</div>;
-  if (!els || !ups || !prods) return <PageLoader what="Opening · Assets" />;
+  if (!els || !ups || !prods) return <PageLoader what="Opening · Library" />;
 
   if (phone) {
     const pill = (on: boolean) => `tap44 flex flex-none items-center gap-[6px] rounded-pill border border-[rgba(245,246,248,.12)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none ${on ? "bg-[rgba(245,246,248,.1)] text-ink" : "text-ink-body"}`;

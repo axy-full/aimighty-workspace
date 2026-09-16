@@ -8,8 +8,8 @@
 .studio-navigation a{text-decoration:none;color:inherit}
 .studio-navigation-brand{display:flex;align-items:center;gap:6px;flex:none;min-height:44px}
 .studio-navigation-brand img{width:62px;height:auto;max-height:26px;object-fit:contain}
-.studio-sections{display:flex;align-items:center;gap:2px;padding:3px;background:var(--graphite-segment);border-radius:6px}
-.studio-sections>a{display:flex;align-items:center;gap:5px;min-height:28px;padding:4px 11px;border:0;border-radius:4px;color:var(--graphite-muted);font-size:13px;font-weight:500;white-space:nowrap}
+.studio-sections{position:relative;display:flex;align-items:center;gap:2px;padding:3px;background:var(--graphite-segment);border-radius:6px}
+.studio-sections>a{display:flex;align-items:center;gap:5px;min-height:28px;padding:4px 11px;border:0;border-radius:4px;color:var(--graphite-muted);font-size:13px;font-weight:500;white-space:nowrap;text-decoration:none}
 .studio-sections>a[aria-current=page]{background:var(--graphite-selected);border-color:transparent;color:var(--graphite-ink)}
 .studio-sections>a:hover{color:var(--graphite-ink);background:var(--graphite-control)}
 .studio-navigation-compact{min-height:47px;padding:3px 22px;background:var(--graphite-panel);gap:12px}
@@ -39,8 +39,9 @@
 .studio-account-workspace-item small{font-size:11px;color:var(--graphite-muted);text-transform:capitalize}
 .studio-menu-error,.studio-navigation-error{color:#e5484d;font-size:12px;line-height:1.5;padding:8px 10px;max-width:280px}
 .studio-navigation-error{position:absolute;right:16px;top:100%;z-index:110;background:var(--graphite-card);border:1px solid var(--graphite-edge);border-radius:6px}
+.studio-sections-error{right:0;min-width:200px}
 .studio-section-dock{display:none}
-.studio-navigation :focus-visible,.studio-account-menu :focus-visible,.studio-section-dock :focus-visible{outline:2px solid var(--graphite-accent-text);outline-offset:3px}
+.studio-navigation :focus-visible,.studio-sections :focus-visible,.studio-account-menu :focus-visible,.studio-section-dock :focus-visible{outline:2px solid var(--graphite-accent-text);outline-offset:3px}
 @media(max-width:900px){.studio-navigation{gap:16px;padding:0 18px}.studio-workspace-name,.studio-credit-label{display:none}.studio-workspace-trigger{gap:5px}.studio-account{gap:10px}}
 @media(max-width:767px){
  .studio-navigation{min-height:calc(52px + env(safe-area-inset-top,0px));padding:env(safe-area-inset-top,0px) 16px 0;gap:10px}
