@@ -64,6 +64,7 @@ const node = z.object({
   ]),
   assetId: z.string().optional(),
   text: z.string().max(30000).optional(),
+  developmentSource: z.object({ jobId:z.string().max(100), sourceHash:z.string().regex(/^[a-f0-9]{64}$/), sceneId:z.string().max(100), sourceAssetId:z.string().max(100).optional(), sourceStart:z.number().int().min(0).max(MAX_SCRIPT_CHARS), sourceEnd:z.number().int().min(1).max(MAX_SCRIPT_CHARS) }).optional(),
   scriptScene: z
     .object({
       id: z.string().max(100),
@@ -175,6 +176,7 @@ export const projectSchema = z.object({
     .max(64)
     .optional(),
   script: z.string().max(MAX_SCRIPT_CHARS).optional(),
+  scriptFormat: z.enum(["screenplay", "adfilm"]).optional(),
   scriptSource: z
     .object({
       assetId: z.string().max(100),
@@ -207,6 +209,7 @@ export const projectSchema = z.object({
         .max(MAX_SCRIPT_PAGES),
     })
     .optional(),
+  developmentApplications: z.array(z.string().max(240)).max(1000).optional(),
   scriptReviews: z
     .record(
       z.string().max(100),
@@ -291,8 +294,8 @@ export const saveSchema = z
     }
     for (const node of project.nodes)
       if (
-        node.scriptScene?.sourceAssetId &&
-        !assets.has(node.scriptScene.sourceAssetId)
+        (node.scriptScene?.sourceAssetId && !assets.has(node.scriptScene.sourceAssetId)) ||
+        (node.developmentSource?.sourceAssetId && !assets.has(node.developmentSource.sourceAssetId))
       )
         context.addIssue({
           code: "custom",

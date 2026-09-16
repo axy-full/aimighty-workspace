@@ -180,7 +180,16 @@ test("published production â†’ individually approved image/video/audio stages â†
   await motionStage
     .getByRole("button", { name: "Quote stage", exact: true })
     .click();
+  // A click completes before its async POST. Observe the committed approval
+  // before reading the paused run and asserting its unstarted paid attempt.
+  const motionApproved = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/api/pipelines/${run.id}` &&
+    response.request().method() === "POST" &&
+    response.request().postDataJSON()?.action === "approve",
+  );
   await motionStage.getByRole("button", { name: /^Approve stage/ }).click();
+  const approvedResponse = await motionApproved;
+  expect(approvedResponse.ok(), await approvedResponse.text()).toBeTruthy();
   run = await current();
   expect(run.state).toBe("paused");
   expect(run.attempts.find((a) => a.stageId === "motion")?.state).toBe(

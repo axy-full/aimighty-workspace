@@ -56,7 +56,7 @@
  .studio-navigation-compact .studio-credit{border:0;background:none;padding:0;font-size:11px}
  .studio-navigation-compact .studio-workspace-trigger>svg{display:none}
  .studio-navigation-compact .studio-account{gap:9px}
- .studio-section-dock{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));flex:none;position:relative;z-index:30;padding:0 6px env(safe-area-inset-bottom,0px);background:var(--graphite-ground);border-top:1px solid var(--graphite-line)}
+ .studio-section-dock{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));flex:none;position:relative;z-index:30;padding:0 6px env(safe-area-inset-bottom,0px);background:var(--graphite-ground);border-top:1px solid var(--graphite-line)}
  .studio-section-dock>a{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:5px;min-height:59px;color:var(--graphite-muted);font-size:12px;text-decoration:none}
  .studio-section-dock>a[aria-current=page]{color:var(--graphite-accent-text)}
 }

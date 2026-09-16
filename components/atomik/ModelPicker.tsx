@@ -34,9 +34,9 @@ export function effortLabel(value = "auto", model?: ThinkingModel) {
 }
 
 /** The same searchable, keyboard-operated library in the studio and legacy planning tools. */
-export function ModelPicker({ value, models, onPick, disabled, label = "Thinking model", compact = false, id }: {
+export function ModelPicker({ value, models, onPick, disabled, label = "Thinking model", compact = false, id, allowAuto = true }: {
   value: string; models: ThinkingModel[]; onPick: (value: string) => void;
-  disabled?: boolean; label?: string; compact?: boolean; id?: string;
+  disabled?: boolean; label?: string; compact?: boolean; id?: string; allowAuto?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -53,7 +53,7 @@ export function ModelPicker({ value, models, onPick, disabled, label = "Thinking
     const names = [...new Set([...PROVIDERS, ...visible.map(providerOf)])];
     return names.map(name => ({ name, models: visible.filter(model => providerOf(model) === name).sort((a, b) => (b.released ?? 0) - (a.released ?? 0) || thinkingModelName(a.id, uniqueModels).localeCompare(thinkingModelName(b.id, uniqueModels), undefined, { numeric: true })) })).filter(group => group.models.length);
   }, [query, provider, uniqueModels]);
-  const autoVisible = provider === "All" && (!query.trim() || "auto automatic economy".includes(query.trim().toLowerCase()));
+  const autoVisible = allowAuto && provider === "All" && (!query.trim() || "auto automatic economy".includes(query.trim().toLowerCase()));
   const options = [...(autoVisible ? ["auto"] : []), ...groups.flatMap(group => group.models.map(model => model.id))];
   const active = options.includes(activeId) ? activeId : options[0];
   const activeIndex = options.indexOf(active);
@@ -111,7 +111,7 @@ export function ModelPicker({ value, models, onPick, disabled, label = "Thinking
           <span className={styles.escape} aria-hidden="true">esc</span>
         </div>
         <div className={styles.providers} role="group" aria-label="Filter thinking models by provider">
-          {["All", ...PROVIDERS].map(name => <button type="button" key={name} aria-pressed={provider === name}
+          {["All", ...PROVIDERS.filter(name => uniqueModels.some(model => providerOf(model) === name))].map(name => <button type="button" key={name} aria-pressed={provider === name}
             onClick={() => { setProvider(name); setActiveId(""); search.current?.focus(); }}>{name}</button>)}
         </div>
         <div className={styles.list} role="listbox" aria-label="Thinking models" id={listId}>

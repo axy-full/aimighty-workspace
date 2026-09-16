@@ -166,6 +166,7 @@ for (const variant of [
             }),
           }),
         },
+        "@/lib/contentDisposition": await import("../../lib/contentDisposition"),
         "@/lib/serveType": { servingFor },
         "@/lib/mediaRange": { byteRange },
         "@/lib/tenant": {},

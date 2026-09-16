@@ -8,7 +8,7 @@ import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { screenplayPdf } from "./helpers/screenplayPdf";
 
 type Upload = { id: string; filename: string; url: string };
-const assetCard = (page: Page, origin: "generation" | "upload", id: string) =>
+const assetCard = (page: Page | Locator, origin: "generation" | "upload", id: string) =>
   page.locator(`[data-library-id="${origin}:${id}"]`);
 const library = (page: Page) =>
   page.getByRole("region", { name: "Workspace asset library", exact: true });
@@ -337,4 +337,65 @@ test("Gen keeps take and upload pages independent and refreshes cursor boundarie
   await expect(library(page).locator('[data-library-id^="generation:"]')).toHaveCount(4);
   await expect(library(page).getByRole("button", { name: "Load more takes", exact: true })).toHaveCount(0);
   await expect(library(page).locator('[data-library-id^="upload:"]')).toHaveCount(2);
+});
+
+test("collective Assets navigation lists shared originals and all takes, with working reuse and edit handoffs", async ({ page }, info) => {
+  test.skip(!["customer-1440x900", "customer-360x640", "customer-390x844"].includes(info.project.name), "collective library on desktop and phone");
+  const f = await fixture(page);
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("/generate");
+  const sections = page.getByRole("navigation", { name: "Studio sections", exact: true }).filter({ visible: true });
+  await sections.getByRole("link", { name: "Assets", exact: true }).click();
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(page.getByRole("heading", { name: "Assets", exact: true })).toBeVisible();
+  await expect(sections.getByRole("link", { name: "Assets", exact: true })).toHaveAttribute("aria-current", "page");
+  const collective = page.getByRole("region", { name: "Collective workspace assets", exact: true });
+  await expect(collective.getByRole("heading", { level: 3 })).toHaveText(["Images", "Videos", "Audio", "Documents", "Other files"]);
+  for (const upload of [f.imageUpload, f.videoUpload, f.audioUpload, f.pdfUpload, f.otherUpload])
+    await expect(assetCard(page, "upload", upload.id)).toContainText(upload.filename);
+  for (const id of [f.generationImage, f.generationVideo]) await expect(assetCard(page, "generation", id)).toBeVisible();
+  const query = page.getByRole("textbox", { name: "Search all workspace assets", exact: true });
+  await query.fill("Original screenplay");
+  await expect(assetCard(page, "upload", f.pdfUpload.id)).toBeVisible();
+  await expect(assetCard(page, "upload", f.imageUpload.id)).toHaveCount(0);
+  await query.fill("");
+  const original = await page.request.get(`${f.imageUpload.url}?download=1`);
+  expect(original.ok()).toBe(true);
+  expect(await original.body()).toEqual(f.image);
+  expect(original.headers()["content-disposition"]).toContain("attachment");
+  const finish = page.waitForResponse(response => new URL(response.url()).pathname === "/api/uploads/finish" && response.request().method() === "POST");
+  await collective.getByLabel("Upload library assets", { exact: true }).setInputFiles({ name: "Collective lighting source.png", mimeType: "image/png", buffer: f.image });
+  const receipt = await finish;
+  expect(receipt.ok(), await receipt.text()).toBe(true);
+  const uploaded = await receipt.json() as Upload;
+  await expect(assetCard(page, "upload", uploaded.id)).toBeVisible();
+  for (const name of ["Elements", "References", "Unfiled takes"]) {
+    await page.getByRole("group", { name: "Asset library views", exact: true }).getByRole("button", { name, exact: true }).click();
+    await expect(page.getByRole("button", { name: "New asset", exact: false }).filter({ visible: true })).toBeVisible();
+  }
+  await page.getByRole("group", { name: "Asset library views", exact: true }).getByRole("button", { name: "All files", exact: true }).click();
+  await expect(assetCard(page, "upload", uploaded.id)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: info.outputPath("collective-assets.png"), fullPage: true });
+  await assetCard(page, "upload", f.imageUpload.id).getByRole("button", { name: "Use as reference", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`mode=images&ref=upload%3A${f.imageUpload.id}`));
+  await expect(page.getByRole("button", { name: "Remove Original lighting reference.png", exact: true })).toBeVisible();
+  await sections.getByRole("link", { name: "Assets", exact: true }).click();
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(collective).toBeVisible();
+  await assetCard(collective, "upload", f.videoUpload.id).getByRole("button", { name: "Edit clip", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`mode=video&task=edit&source=upload%3A${f.videoUpload.id}`));
+  await expect(page.getByRole("region", { name: "Seedance 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
+  await sections.getByRole("link", { name: "Assets", exact: true }).click();
+  // Gen also renders these take cards on desktop. Confirm the destination
+  // before opening its menu, otherwise navigation can remove Gen’s old menu.
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(collective).toBeVisible();
+  await assetCard(collective, "generation", f.generationImage).getByRole("button", { name: "Actions for Filed lighting take", exact: true }).click();
+  await page.getByRole("menu", { name: "Actions for Filed lighting take", exact: true })
+    .getByRole("menuitem", { name: "Use prompt", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Images composer", exact: true }).getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Filed lighting take prompt");
+  expect(f.paidRequests()).toBe(0);
+  expect(errors).toEqual([]);
 });

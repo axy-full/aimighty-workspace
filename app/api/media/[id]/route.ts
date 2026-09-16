@@ -5,9 +5,10 @@ import {
 import { getGeneration } from "@/lib/jobs";
 import { downloadFilename } from "@/lib/downloadName";
 import { requireUser, withTenant } from "@/lib/auth";
+import { attachmentDisposition } from "@/lib/contentDisposition";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 800;
 type Ctx = { params: Promise<{ id: string }> };
 
 /** Short handle, matching what the UI shows on the clip. */
@@ -51,9 +52,9 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
       return new Response(stream, {
         headers: {
           "Content-Type": contentType,
-          "Content-Disposition":
-            `attachment; filename="${filename.replace(/"/g, "")}"`,
+          "Content-Disposition": attachmentDisposition(filename),
           "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
         },
       });
     } catch {

@@ -52,6 +52,7 @@ export function publishedContext(project: Project) {
     for (const linked of node.linked) includeNode(linked);
     if (node.assetId) includeAsset(node.assetId);
     if (node.scriptScene?.sourceAssetId) includeAsset(node.scriptScene.sourceAssetId);
+    if (node.developmentSource?.sourceAssetId) includeAsset(node.developmentSource.sourceAssetId);
     for (const version of node.versions ?? [])
       if (version.assetId) includeAsset(version.assetId);
     nodes.push(structuredClone(node));
@@ -66,6 +67,7 @@ export function publishedContext(project: Project) {
   return {
     brief: project.brief,
     script: project.script || "",
+    scriptFormat: project.scriptFormat ?? "screenplay",
     scriptSource: project.scriptSource,
     scriptReviews: project.scriptReviews,
     direction: project.direction,

@@ -19,7 +19,9 @@ export async function signInLocally(api: APIRequestContext) {
     "requires an explicitly local server",
   );
   const health = await api
-    .get("/api/health", { timeout: 15_000 })
+    // A reused keep-alive socket can close between local browser fixtures.
+    // Retry only transport resets on this read-only readiness request.
+    .get("/api/health", { timeout: 15_000, maxRetries: 2 })
     .then((response) => response.json());
   test.skip(!health.mock, "requires a local ENGINE_MOCK=1 server");
   const code = randomBytes(18).toString("base64url");

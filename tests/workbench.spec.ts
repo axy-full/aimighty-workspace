@@ -132,7 +132,7 @@ test("studio context actions edit the right node, respect locks, support keyboar
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
 });
 
-test("studio exposes Gen and workspace navigation with the original Atomik brand", async ({ page }, testInfo) => {
+test("studio exposes Gen, collective Assets and workspace navigation with the original Atomik brand", async ({ page }, testInfo) => {
   await signInLocally(page.request);
   await fixture(page);
   await page.goto("/workbench");
@@ -140,6 +140,8 @@ test("studio exposes Gen and workspace navigation with the original Atomik brand
   await expect(sections.getByRole("link", { name: "Studio", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(sections.getByRole("link", { name: "Gen", exact: true })).toBeVisible();
   await expect(sections.getByRole("link", { name: "Gen", exact: true })).toHaveAttribute("href", "/generate");
+  await expect(sections.getByRole("link", { name: "Assets", exact: true })).toBeVisible();
+  await expect(sections.getByRole("link", { name: "Assets", exact: true })).toHaveAttribute("href", "/library");
   await expect(sections.getByRole("link", { name: "Workspace", exact: true })).toBeVisible();
   const mark = page.getByRole("button", { name: "Toggle Atomik creative engine", exact: true }).locator("svg.atom-mark");
   await expect(mark).toHaveAttribute("viewBox", "20 20 160 160");
@@ -506,4 +508,54 @@ test("thinking model library groups and searches every provider, and effort surv
   await expect(confirmation).not.toBeVisible();
   expect(submissions).toHaveLength(2);
   expect(submissions[1]).toBe(submissions[0]);
+});
+
+test("node original downloads preserve source bytes independently of rendered adjustments", async ({ page }) => {
+  await signInLocally(page.request);
+  const me = await page.request.get('/api/me').then(response => response.json());
+  const sharp = (await import('sharp')).default;
+  const originalBytes = await sharp({ create: { width: 4096, height: 2160, channels: 3, background: '#647c91' } }).png().toBuffer();
+  const upload = await page.request.post('/api/uploads', {
+    headers: { 'X-Workbench-Scope': `particl-active-${me.workspace.id}-${me.id}` },
+    multipart: { file: { name: 'Camera original.png', mimeType: 'image/png', buffer: originalBytes } },
+  });
+  expect(upload.ok(), await upload.text()).toBeTruthy();
+  const uploaded = await upload.json();
+  const state = await fixture(page);
+  // Chrome's download manager must reach the real authenticated streaming route.
+  await page.route(`**${uploaded.url}*`, route => route.continue());
+  const source = state.current().assets.find(asset => asset.id === 'hero')!;
+  source.url = uploaded.url;
+  source.uploadId = uploaded.id;
+  source.mime = uploaded.mime;
+  const node = state.current().nodes.find(item => item.id === 'generate-browser')!;
+  node.assetId = source.id;
+  node.operations = [{ id: 'bright-preview', kind: 'grade', enabled: true, values: { brightness: 150, contrast: 120, saturation: 30 } }];
+  await page.goto('/workbench');
+  await goStage(page, 'Production canvas');
+  const mobile = page.viewportSize()!.width < 760;
+  if (mobile) await page.locator('.mobile-node-viewbar').getByRole('tab', { name: 'List', exact: true }).click();
+  const target = mobile
+    ? page.locator('.mobile-node-list button').filter({ hasText: 'Browser test shot' }).first()
+    : page.getByRole('article', { name: 'Generate node: Browser test shot', exact: true });
+  await target.click();
+  const inspector = page.getByRole('complementary', { name: 'Node inspector' });
+  await expect(inspector.getByRole('button', { name: 'Download original', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('button', { name: 'Rendered PNG', exact: true })).toBeVisible();
+  const first = page.waitForEvent('download');
+  await inspector.getByRole('button', { name: 'Download original', exact: true }).click();
+  const original = await first;
+  expect(new URL(original.url()).pathname).toBe(uploaded.url);
+  expect(new URL(original.url()).search).toBe('?download=1');
+  expect(original.suggestedFilename()).toBe('Camera original.png');
+  const downloaded = await readFile((await original.path())!);
+  expect(downloaded).toEqual(originalBytes);
+  expect(await sharp(downloaded).metadata()).toMatchObject({ width: 4096, height: 2160 });
+  if (mobile) await page.getByRole('dialog', { name: 'Node controls', exact: true }).locator('.mobile-sheet-done').click();
+  await target.focus();
+  await target.press('Shift+F10');
+  const menu = page.getByRole('menu', { name: 'Browser test shot actions', exact: true });
+  const next = page.waitForEvent('download');
+  await menu.getByRole('menuitem', { name: 'Download original', exact: true }).click();
+  expect(await readFile((await (await next).path())!)).toEqual(originalBytes);
 });
