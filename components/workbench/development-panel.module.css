@@ -1,4 +1,6 @@
 .panel { min-width:0; margin:0 20px 18px; padding:16px; border:1px solid var(--graphite-edge); border-radius:10px; background:var(--graphite-card); color:var(--graphite-ink); font-size:12px; line-height:1.5; }
+/* The brief already supplies its own gutters; separate the panel from its actions. */
+:global(.brief-main) > .panel { margin:24px 0 0; }
 .heading { display:flex; gap:10px; align-items:flex-start; margin-bottom:12px; }
 .heading h3 { margin:0; font-size:15px; font-weight:600; letter-spacing:-.015em; }
 .heading p { color:var(--graphite-muted); margin:4px 0 0; }
