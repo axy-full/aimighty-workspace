@@ -92,6 +92,7 @@
   .ps .studio-redesign .atomik-reasoning-controls { margin-top:6px;padding-top:6px;gap:4px; }
   .ps .studio-redesign .atomik-reasoning-controls .choice { height:28px;font-size:11px;padding:0 6px; }
 }
+
 @media (min-width:1180px) {
   .ps .studio-redesign .workspace-body>.atomik-panel { position:relative;inset:auto;box-shadow:none;max-width:none; }
 }
@@ -272,4 +273,51 @@
   .ps .studio-redesign .export-button-row>button { min-height:44px; }
   .ps .studio-redesign .asset-actions>.icon-btn,
   .ps .studio-redesign .asset-actions>button[aria-haspopup=menu] { min-width:44px; }
+}
+
+/* Keep workspace destinations centered beside the project path. Production
+   tools use the upper row and wrap when necessary instead of scrolling. */
+.ps .studio-redesign .project-bar {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+  position:relative;
+  height:auto;
+  min-height:44px;
+}
+.ps .project-section-nav { position:relative;justify-self:center;min-width:0; }
+.ps .project-section-nav .studio-sections { width:max-content;max-width:100%; }
+.ps .project-section-nav .studio-sections>a { color:var(--graphite-muted); }
+.ps .project-section-nav .studio-sections>a[aria-current=page] { color:var(--graphite-ink); }
+.ps .studio-redesign .project-bar-actions { justify-self:end;min-width:0; }
+.ps .studio-redesign .project-breadcrumb { min-width:0; }
+.ps .studio-redesign .project-breadcrumb>.project-description { overflow:hidden;text-overflow:ellipsis; }
+.ps .studio-redesign .project-switch { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0; }
+.ps .studio-redesign.is-welcome .project-bar { display:grid; }
+.ps .studio-redesign.is-welcome .project-breadcrumb,
+.ps .studio-redesign.is-welcome .project-bar-actions { visibility:hidden;pointer-events:none; }
+@media (min-width:760px) {
+  .ps .studio-redesign .workflow-navigation { overflow:visible;min-width:0; }
+  .ps .studio-redesign .workflow-stages { min-width:0;height:auto;flex-wrap:wrap; }
+  .ps .studio-redesign .workflow-header { height:auto;min-height:52px; }
+}
+@media (min-width:760px) and (max-width:1179px) {
+  .ps .studio-redesign .workflow-header { padding-top:6px;padding-bottom:6px; }
+  .ps .studio-redesign .workflow-stages { justify-content:center; }
+}
+@media (max-width:999px) {
+  .ps .studio-redesign .project-bar { grid-template-columns:minmax(0,1fr) auto;gap:0 10px;padding-top:3px;padding-bottom:4px; }
+  .ps .studio-redesign .project-section-nav { grid-column:1/-1;grid-row:2; }
+  .ps .studio-redesign .project-bar-actions { grid-column:2;grid-row:1; }
+  .ps .project-section-nav .studio-sections>a { min-height:44px;justify-content:center; }
+}
+@media (max-width:759px) {
+  .ps .studio-redesign .workflow-header { min-height:calc(52px + env(safe-area-inset-top,0px)); }
+  .ps .studio-redesign.is-home .project-bar { display:grid; }
+  .ps .studio-redesign.is-home .project-breadcrumb,
+  .ps .studio-redesign.is-home .project-bar-actions { display:none; }
+  .ps .studio-redesign.is-home .project-section-nav { grid-row:1; }
+  .ps .project-section-nav { width:100%; }
+  .ps .project-section-nav .studio-sections { width:100%;justify-content:center; }
+  .ps .project-section-nav .studio-sections>a { flex:1;padding:4px 7px;font-size:12px; }
+  .ps .project-section-nav .studio-sections>a>svg { display:none; }
 }

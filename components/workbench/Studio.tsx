@@ -4,7 +4,7 @@ import UploadRecovery from "@/components/UploadRecovery";
 import Link from "next/link";
 import {ActionMenu,ActionDropdown,type StudioAction} from "./ActionMenu";
 import {type WorkbenchAccount} from "./WorkspaceMenu";
-import StudioNavigation from "@/components/studio/StudioNavigation";
+import StudioNavigation, { StudioSections } from "@/components/studio/StudioNavigation";
 import {AtomikMark} from "@/components/AtomikMark";
 import {clearPrivateLocal} from "@/lib/session";
 import React, {
@@ -1157,7 +1157,7 @@ export default function Studio({
                   alt="particl"
                 />
               </button>
-              <StudioNavigation compact active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}>
+              <StudioNavigation compact hideSections active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}>
               <Tabs
                 value={home ? "home" : stage}
                 onValueChange={(v) => setStage(v as Stage)}
@@ -1314,6 +1314,9 @@ export default function Studio({
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <span className="project-description">{p.description}</span>
+              </div>
+              <div className="project-section-nav">
+                <StudioSections active="studio" onNavigate={path=>leaveWorkspace(path)} />
               </div>
               <div className="project-bar-actions">
                 <span className="project-spec">

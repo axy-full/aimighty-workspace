@@ -132,7 +132,7 @@ test("studio context actions edit the right node, respect locks, support keyboar
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
 });
 
-test("studio exposes Gen, collective Assets and workspace navigation with the original Atomik brand", async ({ page }, testInfo) => {
+test("studio exposes Gen, collective Library and workspace navigation with the original Atomik brand", async ({ page }, testInfo) => {
   await signInLocally(page.request);
   await fixture(page);
   await page.goto("/workbench");
@@ -140,8 +140,8 @@ test("studio exposes Gen, collective Assets and workspace navigation with the or
   await expect(sections.getByRole("link", { name: "Studio", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(sections.getByRole("link", { name: "Gen", exact: true })).toBeVisible();
   await expect(sections.getByRole("link", { name: "Gen", exact: true })).toHaveAttribute("href", "/generate");
-  await expect(sections.getByRole("link", { name: "Assets", exact: true })).toBeVisible();
-  await expect(sections.getByRole("link", { name: "Assets", exact: true })).toHaveAttribute("href", "/library");
+  await expect(sections.getByRole("link", { name: "Library", exact: true })).toBeVisible();
+  await expect(sections.getByRole("link", { name: "Library", exact: true })).toHaveAttribute("href", "/library");
   await expect(sections.getByRole("link", { name: "Workspace", exact: true })).toBeVisible();
   const mark = page.getByRole("button", { name: "Toggle Atomik creative engine", exact: true }).locator("svg.atom-mark");
   await expect(mark).toHaveAttribute("viewBox", "20 20 160 160");

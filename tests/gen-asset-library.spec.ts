@@ -339,17 +339,17 @@ test("Gen keeps take and upload pages independent and refreshes cursor boundarie
   await expect(library(page).locator('[data-library-id^="upload:"]')).toHaveCount(2);
 });
 
-test("collective Assets navigation lists shared originals and all takes, with working reuse and edit handoffs", async ({ page }, info) => {
+test("collective Library navigation lists shared originals and all takes, with working reuse and edit handoffs", async ({ page }, info) => {
   test.skip(!["customer-1440x900", "customer-360x640", "customer-390x844"].includes(info.project.name), "collective library on desktop and phone");
   const f = await fixture(page);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/generate");
   const sections = page.getByRole("navigation", { name: "Studio sections", exact: true }).filter({ visible: true });
-  await sections.getByRole("link", { name: "Assets", exact: true }).click();
+  await sections.getByRole("link", { name: "Library", exact: true }).click();
   await expect(page).toHaveURL(/\/library$/);
-  await expect(page.getByRole("heading", { name: "Assets", exact: true })).toBeVisible();
-  await expect(sections.getByRole("link", { name: "Assets", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
+  await expect(sections.getByRole("link", { name: "Library", exact: true })).toHaveAttribute("aria-current", "page");
   const collective = page.getByRole("region", { name: "Collective workspace assets", exact: true });
   await expect(collective.getByRole("heading", { level: 3 })).toHaveText(["Images", "Videos", "Audio", "Documents", "Other files"]);
   for (const upload of [f.imageUpload, f.videoUpload, f.audioUpload, f.pdfUpload, f.otherUpload])
@@ -381,13 +381,13 @@ test("collective Assets navigation lists shared originals and all takes, with wo
   await assetCard(page, "upload", f.imageUpload.id).getByRole("button", { name: "Use as reference", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`mode=images&ref=upload%3A${f.imageUpload.id}`));
   await expect(page.getByRole("button", { name: "Remove Original lighting reference.png", exact: true })).toBeVisible();
-  await sections.getByRole("link", { name: "Assets", exact: true }).click();
+  await sections.getByRole("link", { name: "Library", exact: true }).click();
   await expect(page).toHaveURL(/\/library$/);
   await expect(collective).toBeVisible();
   await assetCard(collective, "upload", f.videoUpload.id).getByRole("button", { name: "Edit clip", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`mode=video&task=edit&source=upload%3A${f.videoUpload.id}`));
   await expect(page.getByRole("region", { name: "Seedance 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
-  await sections.getByRole("link", { name: "Assets", exact: true }).click();
+  await sections.getByRole("link", { name: "Library", exact: true }).click();
   // Gen also renders these take cards on desktop. Confirm the destination
   // before opening its menu, otherwise navigation can remove Gen’s old menu.
   await expect(page).toHaveURL(/\/library$/);
