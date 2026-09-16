@@ -306,7 +306,7 @@ export default function AstraUpscale({
               {label} · {Math.round(displayed[field] * 100)}%
               <input
                 aria-label={`Astra ${label.toLowerCase()}`}
-                style={{ width: "100%", minHeight: 32, accentColor: "#d1e58d" }}
+                style={{ width: "100%", minHeight: 32, accentColor: "var(--graphite-accent)" }}
                 type="range"
                 min={0}
                 max={100}

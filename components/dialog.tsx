@@ -151,7 +151,7 @@ export default function DialogHost() {
                this system allows and white type on it; everything else is
                the ink inversion — a white fill with near-black type. */
             className={`flex-1 rounded-full py-2.5 text-[15px] font-semibold ${
-              current.danger ? "bg-lift text-white" : "bg-blue text-on-ink"
+              current.danger ? "bg-lift text-white" : "bg-action text-on-action"
             }`}
           >
             {current.confirmLabel ?? "OK"}

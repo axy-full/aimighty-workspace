@@ -99,7 +99,7 @@ export default function Button({
   const { price } = useMoney();
   const filled = variant === "primary" && !outlined;
   const paint = filled
-    ? "bg-ink text-ground"
+    ? "bg-action text-on-action hover:bg-action-hover"
     : variant === "primary"
       ? "border border-border-mid text-ink hover:border-border-hover"
       : `${muted ? "text-ink-body" : "text-ink"} hover:border-border-hover`;

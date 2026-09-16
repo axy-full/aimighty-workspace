@@ -32,7 +32,7 @@ export function PinnedPrimary({ children, cost, outlined = false, disabled = fal
   return (
     <button type="button" onClick={onClick} disabled={disabled || busy} aria-label={label} data-render=""
       className={`flex h-[50px] flex-1 items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${
-        off ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-ink text-ground"}`}>
+        off ? "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body" : "bg-action text-on-action hover:bg-action-hover"}`}>
       <span className="truncate">{children}</span>
       {cost !== undefined && <span className={`ui-mono ui-mono-cost !text-[12px] ${off ? "text-ink-muted" : "text-on-primary-cost"}`}>{cost}</span>}
     </button>

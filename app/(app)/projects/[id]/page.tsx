@@ -126,7 +126,7 @@ export default function ProjectOverview({ params }: { params: Promise<{ id: stri
         {project && <BurnDown project={project} totals={t} byShot={data.byShot} shotCount={shots.length} />}
 
         <div className="mt-6 flex flex-wrap gap-2">
-          <Link href="/" className="chip bg-blue text-on-ink">Open in Generate</Link>
+          <Link href="/" className="chip bg-action text-on-action">Open in Generate</Link>
           <Link href={`/projects/${id}/canvas`} className="chip">Canvas</Link>
           <Link href="/all" className="chip">All takes</Link>
           <Link href="/dashboard" className="chip">Project dashboard</Link>

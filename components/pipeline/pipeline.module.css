@@ -3,8 +3,8 @@
   max-width: 1700px;
   margin: auto;
   padding: 36px 40px 100px;
-  color: #e8e8e8;
-  font-family: "Particl Geist", Arial, sans-serif;
+  color: var(--graphite-ink);
+  font-family: var(--graphite-font);
 }
 .heading {
   display: flex;
@@ -25,7 +25,7 @@
 .heading p,
 .sidebar p,
 .note {
-  color: #909090;
+  color: var(--graphite-muted);
   font-size: 13px;
   line-height: 1.65;
 }
@@ -41,11 +41,11 @@
 .workspace button,
 .heading a,
 .empty a {
-  border: 1px solid #383838;
-  border-radius: 7px;
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
   padding: 10px 13px;
-  background: #191919;
-  color: #ddd;
+  background: var(--graphite-control);
+  color: var(--graphite-ink);
   cursor: pointer;
   min-height: 40px;
 }
@@ -55,31 +55,31 @@
 }
 .workspace button:hover:not(:disabled),
 .heading a:hover {
-  background: #292929;
+  background: var(--graphite-hover);
 }
 .workspace button:focus-visible,
 .workspace a:focus-visible,
 .workspace input:focus-visible,
 .workspace select:focus-visible {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--graphite-accent);
   outline-offset: 3px;
 }
 .eyebrow {
-  font-family: "Particl Mono", monospace !important;
+  font-family: var(--graphite-mono) !important;
   font-size: 10px !important;
   letter-spacing: 1.6px;
   text-transform: uppercase;
-  color: #999;
+  color: var(--graphite-muted);
   margin: 0;
 }
 .layout {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
-  border-top: 1px solid #303030;
+  border-top: 1px solid var(--graphite-line);
 }
 .sidebar {
   padding: 22px 22px 30px 0;
-  border-right: 1px solid #303030;
+  border-right: 1px solid var(--graphite-line);
   min-width: 0;
 }
 .sidebarHeading,
@@ -115,14 +115,14 @@
   border-color: transparent;
 }
 .runLink[aria-current="page"] {
-  background: #222 !important;
-  border-color: #3a3a3a !important;
+  background: var(--graphite-selected) !important;
+  border-color: var(--graphite-edge) !important;
 }
 .runLink span {
   overflow-wrap: anywhere;
 }
 .runLink small {
-  color: #888;
+  color: var(--graphite-muted);
   font-size: 10px;
 }
 .main {
@@ -138,10 +138,10 @@
   margin: 7px 0;
 }
 .status {
-  font-family: "Particl Mono", monospace;
+  font-family: var(--graphite-mono);
   font-size: 10px;
   text-transform: uppercase;
-  border: 1px solid #444;
+  border: 1px solid var(--graphite-edge);
   border-radius: 99px;
   padding: 7px 12px;
   white-space: nowrap;
@@ -156,37 +156,38 @@
   flex-direction: column;
   gap: 8px;
   font-size: 12px;
-  color: #aaa;
+  color: var(--graphite-body);
   min-width: 0;
   margin-bottom: 6px;
 }
 .workspace input,
 .workspace select {
-  background: #1b1b1b;
-  border: 1px solid #393939;
+  background: var(--graphite-control);
+  border: 1px solid var(--graphite-edge);
   border-radius: 6px;
   padding: 11px;
-  color: #eee;
+  color: var(--graphite-ink);
   font-size: 13px;
   width: 100%;
   min-width: 0;
   min-height: 42px;
 }
 .workspace fieldset {
-  border: 1px solid #303030;
+  border: 1px solid var(--graphite-line);
   padding: 22px;
-  border-radius: 9px;
+  border-radius: 8px;
+  background: var(--graphite-panel);
   margin: 24px 0;
 }
 .workspace legend {
   font-size: 13px;
   padding: 0 8px;
-  color: #ddd;
+  color: var(--graphite-ink);
 }
 .contextPreview {
-  border-left: 2px solid #555;
+  border-left: 2px solid var(--graphite-edge);
   padding: 10px 14px;
-  color: #aaa;
+  color: var(--graphite-body);
   line-height: 1.5;
   font-size: 13px;
 }
@@ -194,13 +195,14 @@
   margin: 16px 0;
 }
 .workspace .primary {
-  background: #ececec;
-  color: #171717;
-  border-color: #ececec;
+  background: var(--graphite-primary);
+  color: var(--graphite-on-primary);
+  border-color: var(--graphite-primary);
   font-weight: 550;
 }
 .workspace .primary:hover:not(:disabled) {
-  background: #fff;
+  background: var(--graphite-primary-hover);
+  border-color: var(--graphite-primary-hover);
 }
 .toolbar {
   justify-content: flex-start;
@@ -220,8 +222,8 @@
   font-size: 13px;
 }
 .empty {
-  border: 1px solid #333;
-  border-radius: 10px;
+  border: 1px solid var(--graphite-line);
+  border-radius: 8px;
   padding: 40px;
   max-width: 700px;
 }
@@ -230,7 +232,7 @@
   margin-top: 0;
 }
 .empty p {
-  color: #999;
+  color: var(--graphite-muted);
   font-size: 14px;
   line-height: 1.7;
 }
@@ -241,18 +243,18 @@
   margin-top: 28px;
 }
 .stage {
-  border: 1px solid #343434;
-  border-radius: 10px;
+  border: 1px solid var(--graphite-line);
+  border-radius: 8px;
   padding: 24px;
-  background: #151515;
+  background: var(--graphite-card);
   min-width: 0;
 }
 .stageTitle {
   justify-content: flex-start;
 }
 .number {
-  font-family: "Particl Mono", monospace;
-  border: 1px solid #454545;
+  font-family: var(--graphite-mono);
+  border: 1px solid var(--graphite-edge);
   width: 30px;
   height: 30px;
   display: grid;
@@ -262,11 +264,11 @@
   flex-shrink: 0;
 }
 .stageTitle small {
-  font-family: "Particl Mono", monospace;
+  font-family: var(--graphite-mono);
   text-transform: uppercase;
   font-size: 9px;
   letter-spacing: 1.2px;
-  color: #888;
+  color: var(--graphite-muted);
 }
 .stageTitle h3 {
   font-size: 16px;
@@ -275,12 +277,12 @@
 }
 .model {
   margin-left: auto;
-  color: #888;
+  color: var(--graphite-muted);
   font-size: 11px;
 }
 .prompt {
   font-size: 13px;
-  color: #aaa;
+  color: var(--graphite-body);
   line-height: 1.65;
   white-space: pre-wrap;
   max-height: 140px;
@@ -294,8 +296,8 @@
   margin-top: 20px;
 }
 .take {
-  background: #1c1c1c;
-  border-radius: 7px;
+  background: var(--graphite-control);
+  border-radius: 6px;
   padding: 13px;
   display: flex;
   flex-direction: column;
@@ -307,7 +309,7 @@
 }
 .take small {
   font-size: 10px;
-  color: #999;
+  color: var(--graphite-muted);
 }
 .take p {
   font-size: 11px;
@@ -320,7 +322,7 @@
   width: 100%;
   max-height: 270px;
   object-fit: contain;
-  background: #090909;
+  background: var(--graphite-ground);
   border-radius: 4px;
 }
 .take audio {
@@ -330,7 +332,7 @@
 .take a {
   font-size: 11px;
   text-decoration: underline;
-  color: #ddd;
+  color: var(--graphite-accent-text);
 }
 .stageActions {
   margin-top: 20px;
@@ -340,7 +342,7 @@
 }
 .stageActions p {
   flex-basis: 100%;
-  color: #999;
+  color: var(--graphite-muted);
   margin: 0;
 }
 .review {
@@ -407,7 +409,7 @@
   }
   .sidebar {
     border-right: 0;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--graphite-line);
     padding: 16px 0;
   }
   .sidebar p {

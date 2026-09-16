@@ -4,14 +4,11 @@
   right: 16px;
   bottom: 18px;
   width: min(390px, calc(100vw - 32px));
-  color: #eee;
-  background: #141517;
-  border: 1px solid #383a3e;
-  border-radius: 12px;
-  font:
-    13px/1.45 "Particl Geist",
-    Arial,
-    sans-serif;
+  color: var(--graphite-ink);
+  background: var(--graphite-card);
+  border: 1px solid var(--graphite-edge);
+  border-radius: 8px;
+  font: 13px/1.45 var(--graphite-font);
   box-shadow: 0 8px 32px #0005;
 }
 .panel summary {
@@ -24,7 +21,7 @@
 }
 .panel summary span {
   float: right;
-  color: #aaa;
+  color: var(--graphite-body);
 }
 .body {
   padding: 0 14px 14px;
@@ -32,11 +29,11 @@
   overflow: auto;
 }
 .body > p {
-  color: #aaa;
+  color: var(--graphite-body);
   margin: 0 0 12px;
 }
 .row {
-  border-top: 1px solid #383a3e;
+  border-top: 1px solid var(--graphite-edge);
   padding: 12px 0 0;
   margin-top: 12px;
 }
@@ -47,7 +44,7 @@
 .row > span {
   display: block;
   font-size: 12px;
-  color: #aaa;
+  color: var(--graphite-body);
   margin: 3px 0 8px;
 }
 .row p {
@@ -61,14 +58,18 @@
 }
 .actions button,
 .actions a {
-  border: 1px solid #414348;
+  border: 1px solid var(--graphite-edge);
   border-radius: 6px;
   padding: 7px 9px;
-  background: #25272b;
+  background: var(--graphite-control);
   color: inherit;
   font: inherit;
   cursor: pointer;
   text-decoration: none;
+}
+.actions button:hover:not(:disabled),
+.actions a:hover {
+  background: var(--graphite-hover);
 }
 .actions button:disabled {
   opacity: 0.5;
@@ -77,7 +78,7 @@
 .actions button:focus-visible,
 .actions a:focus-visible,
 .panel summary:focus-visible {
-  outline: 2px solid white;
+  outline: 2px solid var(--graphite-accent);
   outline-offset: 3px;
 }
 @media (max-width: 900px) {

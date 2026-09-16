@@ -241,7 +241,7 @@ function SlotSheet({ board, slot, onClose, fmt, shots, elements, engineOf, rates
       }
       footer={
         <button type="button" disabled={!canApply || busy} onClick={apply} data-apply=""
-          className={`flex h-[52px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${canApply ? "bg-ink text-ground" : "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body"}`}>
+          className={`flex h-[52px] w-full items-center justify-between rounded-mobile px-[16px] text-[15px] font-semibold leading-none ${canApply ? "bg-action text-on-action hover:bg-action-hover" : "border border-[rgba(245,246,248,.2)] bg-transparent text-ink-body"}`}>
           <span className="truncate">{busy ? "Applying…" : canApply ? `Apply ${vNum(picked)} to ${chosen!.id}` : `Bound to ${vNum(boundId)}`}</span>
           <span className={`ui-mono ui-mono-cost !text-[12px] ${canApply ? "text-on-primary-cost" : "text-ink-muted"}`}>{canApply ? fmt(cost(chosen!.list)) : changing ? "Pick a subset" : "Pick another version"}</span>
         </button>

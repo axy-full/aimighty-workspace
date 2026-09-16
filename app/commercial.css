@@ -1,14 +1,17 @@
 .commercial {
   min-height: 100dvh;
-  background: #0b0d11;
-  color: #e8e9ed;
-  font-family: var(--font-outfit), Arial, sans-serif;
+  background: var(--graphite-ground);
+  color: var(--graphite-ink);
+  font-family: var(--graphite-font);
 }
 .commercial a,
 .commercial button,
 .commercial input,
 .commercial select {
   outline-offset: 4px;
+}
+.commercial :focus-visible {
+  outline: 2px solid var(--graphite-accent);
 }
 .commercial-header,
 .commercial-footer {
@@ -21,7 +24,7 @@
   padding: 26px 32px;
 }
 .commercial-header {
-  border-bottom: 1px solid #24272d;
+  border-bottom: 1px solid var(--graphite-line);
 }
 .commercial-header nav,
 .commercial-footer nav {
@@ -31,7 +34,7 @@
 }
 .commercial-header nav a {
   font-size: 14px;
-  color: #b5b8c2;
+  color: var(--graphite-body);
 }
 .commercial-main {
   max-width: 1176px;
@@ -43,22 +46,20 @@
   margin-bottom: 36px;
 }
 .commercial-eyebrow {
-  font:
-    12px var(--font-kode-mono),
-    monospace;
+  font: 12px var(--graphite-mono);
   letter-spacing: 0.12em;
-  color: #a5a9b4;
+  color: var(--graphite-muted);
 }
 .commercial h1 {
   font-size: clamp(34px, 4.3vw, 56px);
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 1.09;
   margin: 16px 0 20px;
 }
 .commercial-intro > p {
   font-size: 19px;
-  color: #a9aeb9;
+  color: var(--graphite-body);
   line-height: 1.7;
   max-width: 660px;
 }
@@ -67,21 +68,22 @@
   width: max-content;
   max-width: 100%;
   gap: 5px;
-  border: 1px solid #353941;
-  border-radius: 12px;
+  border: 1px solid var(--graphite-line);
+  border-radius: 6px;
   padding: 5px;
   margin: 0 0 28px;
+  background: var(--graphite-segment);
 }
 .billing-cadence button {
   min-height: 44px;
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 0 18px;
-  color: #b8bcc5;
+  color: var(--graphite-body);
   font-size: 14px;
 }
 .billing-cadence button[aria-pressed="true"] {
-  background: #e6e7eb;
-  color: #15171d;
+  background: var(--graphite-selected);
+  color: var(--graphite-ink);
 }
 .billing-cadence button span {
   font-size: 12px;
@@ -93,41 +95,41 @@
   gap: 16px;
 }
 .plan-card {
-  border: 1px solid #343840;
-  border-radius: 16px;
+  border: 1px solid var(--graphite-line);
+  border-radius: 8px;
   padding: 26px;
-  background: #14171d;
+  background: var(--graphite-card);
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
 .plan-card h2 {
   font-size: 42px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.045em;
   margin-top: 21px;
   line-height: 1.15;
 }
 .plan-card h2 small {
   font-size: 15px;
-  color: #a6aab5;
+  color: var(--graphite-muted);
   font-weight: 400;
   letter-spacing: 0;
   margin-left: 6px;
 }
 .plan-billing {
   font-size: 13px;
-  color: #a6aab5;
+  color: var(--graphite-muted);
   margin: 8px 0 22px;
 }
 .plan-credits {
   font-size: 15px;
   padding-bottom: 23px;
-  border-bottom: 1px solid #343840;
+  border-bottom: 1px solid var(--graphite-line);
 }
 .plan-credits strong {
   font-size: 21px;
-  font-weight: 500;
+  font-weight: 600;
 }
 .plan-card ul {
   list-style: none;
@@ -136,13 +138,13 @@
   gap: 16px;
   font-size: 14px;
   line-height: 1.5;
-  color: #bbc0ca;
+  color: var(--graphite-body);
   padding: 23px 0 28px;
   flex: 1;
 }
 .plan-card li:before {
   content: "✓";
-  color: #e1e3e9;
+  color: var(--graphite-success);
   margin-right: 8px;
 }
 .commercial-button {
@@ -152,17 +154,26 @@
   gap: 8px;
   min-height: 46px;
   padding: 12px 20px;
-  border: 1px solid #494e58;
-  border-radius: 9px;
-  color: #e1e3e9;
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
+  color: var(--graphite-ink);
   font-size: 15px;
   text-align: center;
   line-height: 1.3;
+  background: var(--graphite-control);
 }
 .commercial-button.primary {
-  background: #e6e7eb;
-  color: #14171d;
-  border-color: #e6e7eb;
+  background: var(--graphite-primary);
+  color: var(--graphite-on-primary);
+  border-color: var(--graphite-primary);
+  font-weight: 600;
+}
+.commercial-button:hover:not(:disabled) {
+  background: var(--graphite-hover);
+}
+.commercial-button.primary:hover:not(:disabled) {
+  background: var(--graphite-primary-hover);
+  border-color: var(--graphite-primary-hover);
 }
 .commercial-button:disabled {
   opacity: 0.5;
@@ -170,31 +181,31 @@
 }
 .commercial-notice {
   padding: 18px 20px;
-  border: 1px solid #424853;
-  border-radius: 12px;
-  background: #181c24;
+  border: 1px solid var(--graphite-edge);
+  border-radius: 8px;
+  background: var(--graphite-panel);
   font-size: 14px;
   line-height: 1.7;
   margin-bottom: 26px;
-  color: #c1c6d0;
+  color: var(--graphite-body);
 }
 .commercial-notice strong {
-  font-weight: 500;
-  color: #f0f1f4;
+  font-weight: 600;
+  color: var(--graphite-ink);
 }
 .commercial-notice button,
 .commercial-notice a {
-  color: #fff;
+  color: var(--graphite-accent-text);
   text-decoration: underline;
 }
 .commercial-details {
-  border-top: 1px solid #2d3138;
+  border-top: 1px solid var(--graphite-line);
   margin-top: 52px;
   padding-top: 34px;
 }
 .commercial-details h2 {
   font-size: 25px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.02em;
   margin-bottom: 26px;
 }
@@ -205,22 +216,22 @@
 }
 .commercial-details h3 {
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
   margin-bottom: 9px;
 }
 .commercial-details p {
   font-size: 14px;
   line-height: 1.8;
-  color: #a9aeb9;
+  color: var(--graphite-body);
 }
 .commercial-details a {
   text-decoration: underline;
 }
 .commercial-footer {
-  border-top: 1px solid #24272d;
+  border-top: 1px solid var(--graphite-line);
   padding-top: 24px;
   padding-bottom: 24px;
-  color: #9197a4;
+  color: var(--graphite-muted);
   font-size: 12px;
 }
 .billing-grid {
@@ -230,19 +241,19 @@
 }
 .billing-card {
   padding: 26px;
-  border: 1px solid #343840;
-  border-radius: 14px;
-  background: #14171d;
+  border: 1px solid var(--graphite-line);
+  border-radius: 8px;
+  background: var(--graphite-card);
   min-width: 0;
 }
 .billing-card h2 {
   font-size: 24px;
-  font-weight: 500;
+  font-weight: 600;
   margin: 12px 0;
 }
 .billing-card p {
   font-size: 15px;
-  color: #a9aeb9;
+  color: var(--graphite-body);
   line-height: 1.7;
 }
 .billing-card dl {
@@ -252,12 +263,12 @@
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  border-top: 1px solid #30343d;
+  border-top: 1px solid var(--graphite-line);
   padding: 13px 0;
   font-size: 14px;
 }
 .billing-card dt {
-  color: #a9aeb9;
+  color: var(--graphite-body);
 }
 .billing-card dd {
   text-align: right;
@@ -277,24 +288,24 @@
 .billing-pick label {
   flex: 1;
   font-size: 13px;
-  color: #a9aeb9;
+  color: var(--graphite-body);
 }
 .billing-pick select {
   display: block;
   width: 100%;
   min-height: 46px;
-  background: #0b0d11;
-  border: 1px solid #414751;
-  border-radius: 8px;
+  background: var(--graphite-control);
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
   padding: 8px 12px;
-  color: #e8e9ed;
+  color: var(--graphite-ink);
   font-size: 15px;
   margin-top: 8px;
 }
 .billing-credit-total {
   font-size: 42px !important;
   letter-spacing: -0.04em;
-  color: #eef0f4 !important;
+  color: var(--graphite-ink) !important;
 }
 .billing-empty {
   max-width: 650px;
@@ -311,17 +322,17 @@
   min-width: 0;
   flex: 1;
   min-height: 46px;
-  border: 1px solid #454b56;
-  border-radius: 9px;
-  background: #0b0d11;
-  color: #edf0f4;
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
+  background: var(--graphite-control);
+  color: var(--graphite-ink);
   padding: 10px 14px;
   font-size: 16px;
 }
 .auth-plan-choice {
   font-size: 13px;
   line-height: 1.7;
-  border: 1px solid #3a3f4a;
+  border: 1px solid var(--graphite-line);
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 18px;
@@ -333,7 +344,7 @@
   font-size: 14px;
   line-height: 1.7;
   margin: 14px 0;
-  color: #bbc0cb;
+  color: var(--graphite-body);
 }
 .auth-status a {
   text-decoration: underline;
