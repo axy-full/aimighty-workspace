@@ -154,6 +154,9 @@ test("studio exposes Gen, collective Library and workspace navigation with the o
   expect(await mark.locator("circle").evaluateAll(dots => dots.map(dot => ["cx", "cy", "r"].map(key => Number(dot.getAttribute(key)))))).toEqual(RING_DOTS);
   expect(await mark.evaluate(el => ({ fill: getComputedStyle(el).fill, stroke: getComputedStyle(el).stroke }))).toEqual({ fill: "rgb(245, 245, 247)", stroke: "none" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  if (page.viewportSize()!.width < 760) {
+    await page.getByRole("button", { name: "Open workspace navigation", exact: true }).click();
+  }
   await page.getByRole("button", { name: "Workspace menu", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Credits & plan", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("studio-sections-and-account.png") });

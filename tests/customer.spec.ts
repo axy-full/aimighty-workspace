@@ -496,6 +496,16 @@ test("customer can choose annual plan, verify email, review billing and start a 
     .click();
   await expect.poll(() => state.draft?.name).toBe("Our first commercial");
   await expect(page.locator(".sample-preview-banner")).toHaveCount(0);
+  if ((page.viewportSize()?.width ?? 1440) <= 759) {
+    await page
+      .getByRole("navigation", { name: "Mobile studio navigation" })
+      .getByRole("button", { name: "Workflow", exact: true })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Project workflow", exact: true })
+      .getByRole("button", { name: "Open workspace navigation", exact: true })
+      .click();
+  }
   await page
     .getByRole("button", { name: "Workspace menu", exact: true })
     .click();
