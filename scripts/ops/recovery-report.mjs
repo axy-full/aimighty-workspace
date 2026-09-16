@@ -112,6 +112,27 @@ export async function recoveryReport(directory) {
             action(table, row, "uncertain-provider-outcome-never-resubmit");
         }
       }
+      if (names.has("workbench_development_jobs")) {
+        for (const row of (await db.execute("SELECT * FROM workbench_development_jobs WHERE status<>'succeeded' OR settled=0")).rows) {
+          const steps = names.has("workbench_development_steps")
+            ? (await db.execute({ sql: "SELECT step_index,status,response FROM workbench_development_steps WHERE job_id=? ORDER BY step_index", args: [row.id] })).rows
+            : [];
+          const attempted = steps.find(step => ["running", "uncertain"].includes(step.status));
+          const next = steps.find(step => step.status !== "succeeded");
+          const disposition = row.status === "queued" ? "reconcile-admission-reservation-no-submit"
+            : row.status === "uncertain" || attempted ? "uncertain-provider-phase-never-resubmit"
+            : ["succeeded", "failed"].includes(row.status) ? (Number(row.settled) ? "terminal-no-provider-work" : "settle-persisted-development-cost-no-submit")
+            : row.status === "running" && next?.status === "queued" ? "resume-only-never-started-development-phase"
+            : "reconcile-saved-development-result-no-submit";
+          action("workbench_development_jobs", row, disposition);
+        }
+      }
+      if (names.has("workbench_development_steps")) {
+        for (const row of (await db.execute("SELECT job_id,step_index,status,response,cost_usd,estimate_usd FROM workbench_development_steps WHERE status IN ('running','uncertain')")).rows) {
+          action("workbench_development_steps", { ...row, id: `${row.job_id}:phase:${row.step_index}` },
+            row.response ? "recover-persisted-development-response-no-submit" : "uncertain-provider-phase-never-resubmit");
+        }
+      }
       if (names.has("identities")) {
         const tracked = names.has("identity_training_runs")
           ? new Set(

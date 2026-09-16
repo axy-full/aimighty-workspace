@@ -241,3 +241,36 @@ test("late uncertain work, expired fence or failed restore removes the unpublish
     await assert.rejects(stat(destination), { code: "ENOENT" });
   }
 });
+
+test("development admission, uncertain BYOK phases and unsettled terminal costs block backup without rewriting claims", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "particl-development-backup-gate-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const url = pathToFileURL(join(root, "fixture.db")).href, db = createClient({ url });
+  t.after(() => db.close());
+  await db.executeMultiple(`CREATE TABLE workbench_development_jobs(id TEXT,status TEXT,settled INTEGER);
+    CREATE TABLE workbench_development_steps(job_id TEXT,step_index INTEGER,status TEXT,response TEXT);`);
+  const source = { databases: [{ url }] };
+  for (const status of ["queued", "running", "uncertain"]) {
+    await db.execute({ sql: "INSERT INTO workbench_development_jobs VALUES('development',?,1)", args: [status] });
+    await assert.rejects(assertNoActiveOrUncertain(source, {}), /live or uncertain/);
+    assert.equal((await db.execute("SELECT status FROM workbench_development_jobs")).rows[0].status, status);
+    await db.execute("DELETE FROM workbench_development_jobs");
+  }
+  for (const status of ["succeeded", "failed"]) {
+    await db.execute({ sql: "INSERT INTO workbench_development_jobs VALUES('development',?,0)", args: [status] });
+    await assert.rejects(assertNoActiveOrUncertain(source, {}), /live or uncertain/);
+    await db.execute("UPDATE workbench_development_jobs SET settled=1");
+    await assertNoActiveOrUncertain(source, {});
+    await db.execute("DELETE FROM workbench_development_jobs");
+  }
+  // A parent/child discrepancy must not hide an already-started provider call.
+  await db.execute("INSERT INTO workbench_development_jobs VALUES('development','failed',1)");
+  for (const status of ["running", "uncertain"]) {
+    await db.execute({ sql: "INSERT INTO workbench_development_steps VALUES('development',0,?,'saved paid reply')", args: [status] });
+    await assert.rejects(assertNoActiveOrUncertain(source, {}), /live or uncertain/);
+    assert.equal((await db.execute("SELECT response FROM workbench_development_steps")).rows[0].response, "saved paid reply");
+    await db.execute("DELETE FROM workbench_development_steps");
+  }
+  await db.execute("INSERT INTO workbench_development_steps VALUES('development',1,'queued',NULL)");
+  await assertNoActiveOrUncertain(source, {});
+});

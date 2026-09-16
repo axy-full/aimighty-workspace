@@ -1,5 +1,5 @@
 "use client";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   FileText,
   Upload,
@@ -27,6 +27,8 @@ import {
 export function ScriptPanel({
   project,
   onScript,
+  onFormat,
+  development,
   onImport,
   onReview,
   onBuild,
@@ -35,12 +37,15 @@ export function ScriptPanel({
 }: {
   project: Project;
   onScript: (value: string) => void;
+  onFormat: (value: "screenplay" | "adfilm") => void;
+  development: ReactNode;
   onImport: (file: File, result: ScreenplayImport) => Promise<void>;
   onReview: (id: string, review: SceneReview) => void;
   onBuild: (scenes: ScriptScene[]) => void;
   onDevelop: (scene: ScriptScene) => void;
   onCrew: () => void;
 }) {
+  const adfilm = project.scriptFormat === "adfilm";
   const fileInput = useRef<HTMLInputElement>(null),
     controller = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(""),
@@ -95,7 +100,7 @@ export function ScriptPanel({
     controller.current?.abort();
     const abort = new AbortController();
     controller.current = abort;
-    setBusy("Reading screenplay…");
+    setBusy(adfilm ? "Reading ad-film script…" : "Reading screenplay…");
     setError("");
     setPending(null);
     setAcknowledged(false);
@@ -112,11 +117,11 @@ export function ScriptPanel({
         if (!/\.(txt|fountain)$/i.test(file.name))
           throw new Error("Choose PDF, TXT or Fountain.");
         if (file.size > MAX_SCRIPT_CHARS * 4)
-          throw new Error("Use a screenplay under one million characters.");
+          throw new Error("Use a script under one million characters.");
         const text = (await file.text()).replace(/\r\n?/g, "\n");
         if (text.length > MAX_SCRIPT_CHARS)
           throw new Error(
-            "This screenplay exceeds one million characters. Nothing was imported.",
+            "This script exceeds one million characters. Nothing was imported.",
           );
         const hash = await crypto.subtle.digest(
           "SHA-256",
@@ -136,7 +141,7 @@ export function ScriptPanel({
     } catch (e) {
       if (!abort.signal.aborted)
         setError(
-          e instanceof Error ? e.message : "Could not read this screenplay.",
+          e instanceof Error ? e.message : "Could not read this script.",
         );
     } finally {
       if (controller.current === abort) setBusy("");
@@ -185,10 +190,10 @@ export function ScriptPanel({
       await onImport(pending.file, pending.result);
       setPending(null);
       toast.success(
-        "Complete screenplay imported. Review the scene boundaries.",
+        adfilm ? "Complete ad-film script imported. Review the source, then develop its breakdown." : "Complete screenplay imported. Review the scene boundaries.",
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save screenplay.");
+      setError(e instanceof Error ? e.message : "Could not save script.");
     } finally {
       setBusy("");
     }
@@ -201,10 +206,9 @@ export function ScriptPanel({
       <header className={styles.header}>
         <div>
           <span className="eyebrow">SCRIPT & BREAKDOWN</span>
-          <h2>From screenplay to scenes.</h2>
+          <h2>{adfilm ? "From ad-film script to a shoot." : "From screenplay to scenes."}</h2>
           <p>
-            Import the full source, review scene boundaries, then develop beats
-            and coverage.
+            {adfilm ? "Import a commercial script or write audio and visual beats. Develop timing, product moments, coverage and a clear end frame." : "Import the full screenplay, review scene boundaries, then develop beats and coverage."}
           </p>
         </div>
         <button
@@ -213,12 +217,12 @@ export function ScriptPanel({
           disabled={!!busy}
         >
           <Upload size={15} />
-          Import screenplay
+          {adfilm ? "Import ad-film script" : "Import screenplay"}
         </button>
         <input
           hidden
           ref={fileInput}
-          aria-label="Import screenplay file"
+          aria-label={adfilm ? "Import ad-film script file" : "Import screenplay file"}
           type="file"
           accept=".pdf,.txt,.fountain,application/pdf,text/plain"
           onChange={(e) => {
@@ -228,6 +232,15 @@ export function ScriptPanel({
           }}
         />
       </header>
+      <div className={styles.formats} role="group" aria-label="Script format">
+        <button type="button" aria-pressed={!adfilm} disabled={!!busy || !!pending} onClick={() => onFormat("screenplay")}>
+          <strong>Screenplay</strong><span>Feature, short or episode · PDF, TXT, Fountain</span>
+        </button>
+        <button type="button" aria-pressed={adfilm} disabled={!!busy || !!pending} onClick={() => onFormat("adfilm")}>
+          <strong>Ad-film script</strong><span>Commercial · audio, visuals, timing and end frame</span>
+        </button>
+      </div>
+      {development}
       {busy && (
         <div className={styles.notice} role="status">
           {busy}
@@ -366,7 +379,7 @@ export function ScriptPanel({
               }
               onClick={() => void accept()}
             >
-              Import complete screenplay
+              {adfilm ? "Import complete ad-film script" : "Import complete screenplay"}
             </button>
             <button
               className="btn"
@@ -383,7 +396,7 @@ export function ScriptPanel({
           <div className="section-heading">
             <span>
               <FileText size={15} />
-              SCREENPLAY
+              {adfilm ? "AD-FILM SCRIPT" : "SCREENPLAY"}
             </span>
             <span>
               {(project.script || "").length.toLocaleString()} characters
@@ -405,14 +418,14 @@ export function ScriptPanel({
             </p>
           )}
           <textarea
-            aria-label="Project screenplay"
+            aria-label={adfilm ? "Project ad-film script" : "Project screenplay"}
             disabled={!!busy}
             value={project.script || ""}
             maxLength={MAX_SCRIPT_CHARS}
             spellCheck={false}
             onChange={(e) => onScript(e.target.value)}
             placeholder={
-              "INT. LOCATION - DAY\n\nStart with what we see.\n\nCHARACTER\nAnd what we hear."
+              adfilm ? "00–05s · OPEN\nVISUAL: A tactile product detail in morning light.\nAUDIO: A single breath.\n\n05–15s · REVEAL\nVISUAL: Show the product in use.\nVO: The promise, in one line.\n\n15–30s · RESOLVE\nVISUAL: Pack shot and end frame.\nAUDIO: Brand signature." : "INT. LOCATION - DAY\n\nStart with what we see.\n\nCHARACTER\nAnd what we hear."
             }
           />
           <p className={styles.hint}>

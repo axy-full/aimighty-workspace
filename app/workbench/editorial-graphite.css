@@ -381,3 +381,8 @@
     min-width: 44px;
   }
 }
+
+.collective-assets-link { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; padding:12px 14px; border:1px solid var(--graphite-edge); background:var(--graphite-card); border-radius:8px; }
+.collective-assets-link strong { font-size:13px; font-weight:600; }
+.collective-assets-link p { font-size:11px; color:var(--graphite-muted); margin:4px 0 0; }
+@media(max-width:759px) { .collective-assets-link { align-items:stretch; flex-direction:column; } }

@@ -63,6 +63,7 @@ export async function assertNoActiveOrUncertain(config, env) {
         "generations",
         "paid_text_jobs",
         "workbench_atomik_jobs",
+        "workbench_development_jobs",
         "identity_training_runs",
       ]) {
         if (!names.has(table)) continue;
@@ -94,6 +95,12 @@ export async function assertNoActiveOrUncertain(config, env) {
           }
         }
       }
+      if (names.has("workbench_development_jobs") &&
+          (await db.execute("SELECT 1 FROM workbench_development_jobs WHERE settled=0 LIMIT 1")).rows.length) blocked();
+      // Queued phases may remain on a terminal failed workflow. Only started
+      // or uncertain attempts require reconciliation independently of its job.
+      if (names.has("workbench_development_steps") &&
+          (await db.execute("SELECT 1 FROM workbench_development_steps WHERE status IN ('running','uncertain') LIMIT 1")).rows.length) blocked();
       if (
         names.has("generation_settlements") &&
         (await db.execute("SELECT 1 FROM generation_settlements WHERE settled_at IS NULL LIMIT 1")).rows.length

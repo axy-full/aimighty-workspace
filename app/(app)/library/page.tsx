@@ -20,6 +20,10 @@ import { ToastHost, useToast } from "@/components/ui/Toast";
 import { PageLoader } from "@/components/atomik/Loader";
 import UnfiledWall from "@/components/make/UnfiledWall";
 import NewAssetSheet, { type SheetRef } from "@/components/assets/NewAssetSheet";
+import GenAssetLibrary from "@/components/make/GenAssetLibrary";
+import { libraryId, libraryKind, type LibraryAsset } from "@/lib/genLibrary";
+import type { DraggedAsset } from "@/lib/dnd";
+import genStyles from "@/components/make/gen.module.css";
 import "@/components/studio/legacy-graphite.css";
 
 /**
@@ -56,13 +60,52 @@ type Upload = { id: string; filename: string; mime: string; bytes: number; width
 const KIND_WORD: Record<ElementKind, string> = { character: "Character", location: "Location", prop: "Prop", look: "Look", voice: "Voice" };
 
 export default function LibraryPage() {
-  return <ToastHost><Library /></ToastHost>;
+  return <ToastHost><AssetsPage /></ToastHost>;
 }
 
-function Library() {
+const VIEWS = [
+  { value: "all", label: "All files" },
+  { value: "elements", label: "Elements" },
+  { value: "references", label: "References" },
+  { value: "unfiled", label: "Unfiled takes" },
+] as const;
+type AssetsView = (typeof VIEWS)[number]["value"];
+
+function AssetsPage() {
+  const router = useRouter(), search = useSearchParams();
+  const { workspace, requestScope } = useSession();
+  const view: AssetsView = VIEWS.find(item => item.value === search.get("view"))?.value ?? "all";
+  const [query, setQuery] = useState("");
+  usePageTitle("Assets");
+  const setView = (next: AssetsView) => router.replace(next === "all" ? "/library" : `/library?view=${next}`, { scroll: false });
+  function useAsset(asset: DraggedAsset) {
+    const kind = asset.kind === "gen" ? asset.gen.kind : asset.kind === "upload" ? asset.upload.kind : "image";
+    const id = asset.kind === "gen" ? `generation:${asset.gen.id}` : asset.kind === "upload" ? `upload:${asset.upload.id}` : `upload:${asset.uploadId}`;
+    router.push(`/generate?mode=${kind === "video" ? "video" : "images"}&ref=${encodeURIComponent(id)}`);
+  }
+  function openTool(asset: LibraryAsset, task: "edit" | "upscale") {
+    const mode = libraryKind(asset) === "video" ? "video" : "images";
+    const params = new URLSearchParams({ mode });
+    if (task === "edit" && mode === "images") params.set("ref", libraryId(asset));
+    else { params.set("task", task); params.set("source", libraryId(asset)); }
+    router.push(`/generate?${params}`);
+  }
+  return <div className={`collective-assets ${genStyles.workspace}`}>
+    <header className="collective-assets-header">
+      <div><h1>Assets</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}One library across all projects</p></div>
+      {view === "all" && <label className="collective-assets-search"><span>Search</span><input value={query} onChange={event => setQuery(event.target.value)} aria-label="Search all workspace assets" placeholder="Search takes, uploads and originals…" /></label>}
+      <Segmented label="Asset library views" value={view} onChange={setView} options={[...VIEWS]} />
+    </header>
+    {view === "all" ? <section className="collective-assets-body" aria-label="Collective workspace assets">
+      <GenAssetLibrary key={requestScope ?? "visitor"} search={query} onUseAsset={useAsset} onEdit={asset => openTool(asset, "edit")} onUpscale={asset => openTool(asset, "upscale")}
+        onUsePrompt={take => router.push(`/generate?mode=${take.kind === "image" ? "images" : take.kind}&promptFrom=${encodeURIComponent(take.id)}`)} />
+    </section> : <Library key={`${requestScope}:${view}`} lens={view === "elements" ? "assets" : view} setLens={next => setView(next === "assets" ? "elements" : next)} />}
+  </div>;
+}
+
+function Library({ lens, setLens }: { lens: Lens; setLens: (lens: Lens) => void }) {
   const uploadFile = useUploadFile();
   const router = useRouter();
-  const search = useSearchParams();
   const { signedIn } = useSession();
   const { current } = useProject();
   const toast = useToast();
@@ -71,8 +114,6 @@ function Library() {
   const money = useMoney();
   const [searchOpen, setSearchOpen] = useState(false);
   const [refMenu, setRefMenu] = useState<string | null>(null);
-  usePageTitle("Library");
-  const [lens, setLens] = useState<Lens>(() => (search.get("view") === "unfiled" ? "unfiled" : search.get("view") === "references" ? "references" : "assets"));
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<ElementKind | null>(null);
   const [production, setProduction] = useState<string | null>(null);
@@ -126,8 +167,8 @@ function Library() {
   const showAssets = lens === "assets" || (lens === "references" && !full && false);
   const showRefs = lens === "assets" || lens === "references";
 
-  if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to open the Library.</div>;
-  if (!els || !ups || !prods) return <PageLoader what="Opening · Library" />;
+  if (!signedIn) return <div className="p-[24px] text-[13px] text-ink-body">Sign in to open workspace assets.</div>;
+  if (!els || !ups || !prods) return <PageLoader what="Opening · Assets" />;
 
   if (phone) {
     const pill = (on: boolean) => `tap44 flex flex-none items-center gap-[6px] rounded-pill border border-[rgba(245,246,248,.12)] px-[11px] py-[8px] text-[12.5px] font-medium leading-none ${on ? "bg-[rgba(245,246,248,.1)] text-ink" : "text-ink-body"}`;
@@ -142,10 +183,8 @@ function Library() {
       <div className="legacy-library flex min-h-0 flex-1 flex-col bg-ground text-ink">
         <div className="legacy-library-phone flex min-h-0 flex-1 flex-col gap-[12px] overflow-auto px-[16px] pb-[10px] pt-[16px]" data-phone-body="">
           <span className="flex flex-col gap-[6px]">
-            <h1 className="text-[24px] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">Library</h1>
             <Mono>{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled</Mono>
           </span>
-          <Segmented label="Lens" fill value={lens} onChange={(l) => { setLens(l); setFull(false); }} options={[{ value: "assets", label: "Assets" }, { value: "references", label: "References" }, { value: "unfiled", label: "Unfiled" }]} />
           <div className="-mx-[16px] flex gap-[6px] overflow-x-auto px-[16px]" data-filters="">
             {lens === "assets" && <>
               <button type="button" className={pill(kind != null)} onClick={(e) => setMenu({ which: "kind", ...at(e) })}>Kind{kind ? ` · ${KIND_WORD[kind]}` : ""} ▾</button>
@@ -214,8 +253,7 @@ function Library() {
   return (
     <div className="legacy-library flex min-h-0 flex-1 flex-col bg-ground text-ink">
       <div className="legacy-library-toolbar flex h-[52px] flex-none items-center gap-[14px] border-b border-hairline px-[24px]">
-        <span className="legacy-library-heading flex flex-none flex-col gap-[4px]"><span className="text-[16px] font-semibold leading-none text-ink">Library</span><Mono className="whitespace-nowrap">{counts.assets} {counts.assets === 1 ? "asset" : "assets"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled {counts.unfiled === 1 ? "take" : "takes"} · all projects</Mono></span>
-        <Segmented label="Lens" placement="toolbar" className="ml-[10px] max-md:ml-0" value={lens} onChange={(l) => { setLens(l); setFull(false); }} options={[{ value: "assets", label: "Assets" }, { value: "references", label: "References" }, { value: "unfiled", label: "Unfiled" }]} />
+        <span className="legacy-library-heading flex flex-none flex-col gap-[4px]"><Mono className="whitespace-nowrap">{counts.assets} {counts.assets === 1 ? "element" : "elements"} · {counts.refs} {counts.refs === 1 ? "reference" : "references"} · {counts.unfiled} unfiled {counts.unfiled === 1 ? "take" : "takes"} · all projects</Mono></span>
         {lens === "assets" && (
           <span className="legacy-library-filters flex flex-none gap-[6px] max-md:hidden">
             <button type="button" className={filter} onClick={(e) => setMenu({ which: "kind", ...at(e) })}>Kind <span className="text-ink-muted">{kind ? KIND_WORD[kind] : "any"}</span> ▾</button>

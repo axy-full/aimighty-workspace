@@ -28,7 +28,7 @@ export function collectExportAssets(p:Project):Asset[]{
  for(const clip of audioClips(p))visit(clip.assetId);
  if(p.colorGrade?.lutAssetId)visit(p.colorGrade.lutAssetId);
  if(p.scriptSource)visit(p.scriptSource.assetId);
- for(const node of p.nodes)if(node.scriptScene?.sourceAssetId)visit(node.scriptScene.sourceAssetId);
+ for(const node of p.nodes){if(node.scriptScene?.sourceAssetId)visit(node.scriptScene.sourceAssetId);if(node.developmentSource?.sourceAssetId)visit(node.developmentSource.sourceAssetId);}
  return result;
 }
 const EXPORT_LIMIT=200*1024*1024;

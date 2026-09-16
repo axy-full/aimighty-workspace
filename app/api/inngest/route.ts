@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { serve } from "inngest/next";
 import { inngest, inngestConfigured } from "@/lib/inngest";
 import { functions } from "@/lib/workers";
+import { developmentWorker } from "@/lib/workbench/development-worker";
 
 /**
  * The whole integration surface: one route, three verbs.
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
 // A worker gets the same ceiling as the routes whose work it will take over.
 export const maxDuration = 300;
 
-const handler = serve({ client: inngest, functions });
+const handler = serve({ client: inngest, functions: [...functions, developmentWorker] });
 
 /**
  * A missing key is a setup step, not a crash. Say which one, in the same

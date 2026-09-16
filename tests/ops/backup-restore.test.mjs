@@ -646,3 +646,39 @@ test("purged resources need no live database, while unlisted pending databases p
     p.close();
   }
 });
+
+test("encrypted restore retains development snapshots, paid phase claims and settlement outbox with safe reconciliation instructions", async (t) => {
+  const f = await fixture(t), bundle = join(f.root, "development-backup"), restored = join(f.root, "development-restored");
+  const privateSource = 'PRIVATE SCREENPLAY — unabridged source and immutable request';
+  const privateReply = 'PRIVATE PAID RESPONSE — preserve without another provider call';
+  await f.tenant.executeMultiple(`CREATE TABLE workbench_development_jobs(id TEXT PRIMARY KEY,status TEXT,settled INTEGER,estimate_usd REAL,cost_usd REAL,snapshot TEXT,request_body TEXT);
+    CREATE TABLE workbench_development_steps(job_id TEXT,step_index INTEGER,status TEXT,response TEXT,cost_usd REAL,estimate_usd REAL,PRIMARY KEY(job_id,step_index));`);
+  for (const [id, status, settled] of [['admission', 'queued', 0], ['partial', 'running', 0], ['uncertain-development', 'uncertain', 0], ['saved-response', 'running', 0], ['settlement', 'succeeded', 0]]) {
+    await f.tenant.execute({ sql: 'INSERT INTO workbench_development_jobs VALUES(?,?,?,1,NULL,?,?)', args: [id, status, settled, privateSource, '{"requestId":"immutable-request"}'] });
+  }
+  await f.tenant.executeMultiple(`INSERT INTO workbench_development_steps VALUES('partial',0,'succeeded',NULL,0.1,0.3),('partial',1,'queued',NULL,NULL,0.3),('uncertain-development',0,'uncertain',NULL,NULL,0.3);`);
+  await f.tenant.execute({ sql: "INSERT INTO workbench_development_steps VALUES('saved-response',0,'running',?,0.1,0.3)", args: [privateReply] });
+  await createBackup(f.config, bundle, { env: f.env });
+  for (const name of await readdir(bundle)) {
+    const body = await readFile(join(bundle, name));
+    assert.equal(body.includes(Buffer.from(privateSource)), false);
+    assert.equal(body.includes(Buffer.from(privateReply)), false);
+  }
+  assert.equal((await restoreBackup(bundle, restored, { env: f.env })).verified, true);
+  const restoredDb = createClient({ url: pathToFileURL(join(restored, 'databases', 'tenant.db')).href });
+  t.after(() => restoredDb.close());
+  assert.equal((await restoredDb.execute("SELECT snapshot FROM workbench_development_jobs WHERE id='admission'")).rows[0].snapshot, privateSource);
+  assert.equal((await restoredDb.execute("SELECT response FROM workbench_development_steps WHERE job_id='saved-response'")).rows[0].response, privateReply);
+  await recoveryReport(restored);
+  const rawReport = await readFile(join(restored, 'reconciliation-report.json'), 'utf8'), report = JSON.parse(rawReport);
+  const action = id => report.actions.find(item => item.id === id);
+  assert.equal(action('admission').disposition, 'reconcile-admission-reservation-no-submit');
+  assert.equal(action('partial').disposition, 'resume-only-never-started-development-phase');
+  assert.equal(action('uncertain-development').disposition, 'uncertain-provider-phase-never-resubmit');
+  assert.equal(action('saved-response:phase:0').disposition, 'recover-persisted-development-response-no-submit');
+  assert.equal(action('uncertain-development:phase:0').disposition, 'uncertain-provider-phase-never-resubmit');
+  assert.equal(action('settlement').disposition, 'settle-persisted-development-cost-no-submit');
+  assert.equal(rawReport.includes(privateSource), false);
+  assert.equal(rawReport.includes(privateReply), false);
+  assert.equal((await restoredDb.execute("SELECT status FROM workbench_development_steps WHERE job_id='saved-response'")).rows[0].status, 'running');
+});

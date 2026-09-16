@@ -4,7 +4,7 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Clapperboard, ScanLine, Building2 } from "lucide-react";
+import { Clapperboard, ScanLine, Building2, FolderOpen } from "lucide-react";
 import { Mark } from "@/components/ui/Mark";
 import WorkspaceMenu, { type WorkbenchAccount } from "@/components/workbench/WorkspaceMenu";
 import { clearPrivateLocal } from "@/lib/session";
@@ -12,14 +12,16 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { withPageLeaveGuard } from "@/lib/usePageLeaveGuard";
 import "./studio-navigation.css";
 
-type Section = "studio" | "gen" | "workspace";
+type Section = "studio" | "gen" | "assets" | "workspace";
 const SECTIONS = [
   { id: "studio", label: "Studio", href: "/workbench", icon: Clapperboard },
   { id: "gen", label: "Gen", href: "/generate", icon: ScanLine },
+  { id: "assets", label: "Assets", href: "/library", icon: FolderOpen },
   { id: "workspace", label: "Workspace", href: "/settings", icon: Building2 },
 ] as const;
 
 function sectionFor(path: string): Section {
+  if (path === "/library" || path.startsWith("/library/")) return "assets";
   if (path === "/generate" || path.startsWith("/make/")) return "gen";
   return /^\/(settings|team|billing|usage|statements)(\/|$)/.test(path) ? "workspace" : "studio";
 }

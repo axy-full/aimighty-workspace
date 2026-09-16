@@ -169,7 +169,7 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt }: 
       return <section className={styles.assetGroup} key={group.kind} aria-label={group.label}>
         <div className={styles.assetGroupHeader}><h3>{group.label}</h3><span>{items.length} loaded</span></div>
         {!items.length ? <p className={styles.groupEmpty}>{search ? `No matching ${group.label.toLowerCase()} loaded.` : `No ${group.label.toLowerCase()} loaded yet.`}</p>
-          : <div className={styles.takeGrid}>{items.map(asset => {
+          : <div className={styles.takeGrid} data-library-grid="">{items.map(asset => {
             const kind = libraryKind(asset), ready = libraryReady(asset), gen = asset.origin === "generation" ? asset.value : null;
             const name = libraryName(asset), id = libraryId(asset), visual = kind === "image" || kind === "video";
             const actions: StudioAction[] = [

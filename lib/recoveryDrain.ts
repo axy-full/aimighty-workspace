@@ -7,6 +7,7 @@ import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
 import { syncIdentity, getIdentity, reconcileFalRender } from "./identities";
 import { runAtomikJob } from "./workbench/atomik-server";
+import { runDevelopmentStep } from "./workbench/development-server";
 
 /** The maintenance cron may only continue exact intents accepted before the
  * fence. It cannot create a job, release a held row, provision or purge. A
@@ -112,6 +113,25 @@ export async function drainRecoveryJobs(
               throw new Error("Recovery training intent unavailable.");
             await syncIdentity(identity);
             return;
+          }
+          if (intent.kind === "text" && tables.has("workbench_development_jobs")) {
+            const row = (await db().execute({
+              sql: "SELECT owner,status FROM workbench_development_jobs WHERE id=?",
+              args: [jobId],
+            })).rows[0];
+            if (row) {
+              // Suspension blocks new paid phases. Releasing an interrupted
+              // admission or settling a saved terminal result is still safe.
+              if (ws.suspendedAt && row.status === "running")
+                throw new Error("Development work is paused with its workspace.");
+              // Admission recovery may only release an interrupted, never-started
+              // reservation. It must never turn a queued claim into new paid work.
+              const result = await runDevelopmentStep(jobId, String(row.owner));
+              // Exactly one saved phase fits the drain budget. A started or
+              // uncertain phase is never replayed; terminal rows only settle.
+              if (result.settlementPending) throw new Error("Development billing reconciliation is still pending.");
+              return;
+            }
           }
           if (intent.kind === "text" && tables.has("workbench_atomik_jobs")) {
             const row = (

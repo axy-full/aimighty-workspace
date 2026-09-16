@@ -14,6 +14,7 @@ import { servingFor } from "@/lib/serveType";
 import { requireUser, withTenant } from "@/lib/auth";
 import { openUploadStream } from "@/lib/storage";
 import { byteRange } from "@/lib/mediaRange";
+import { attachmentDisposition } from "@/lib/contentDisposition";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -67,9 +68,8 @@ export const GET = withTenant(async function GET(
     "X-Content-Type-Options": "nosniff",
     "Accept-Ranges": "bytes",
   };
-  if (!serve.inline) {
-    headers["Content-Disposition"] =
-      `attachment; filename="${row.filename.replace(/[^\w. -]/g, "_")}"`;
+  if (!serve.inline || new URL(req.url).searchParams.get("download") === "1") {
+    headers["Content-Disposition"] = attachmentDisposition(row.filename);
   }
 
   let range;

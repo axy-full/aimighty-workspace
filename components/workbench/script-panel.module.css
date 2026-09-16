@@ -354,3 +354,11 @@
  .panel button { min-height: 44px; }
  .source > textarea, .scene textarea, .ocrColumns textarea, .ocrReview select { font-size: 16px; }
 }
+
+.formats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:0 20px 14px; }
+.formats button { display:grid; gap:4px; text-align:left; padding:12px; border:1px solid var(--graphite-edge); border-radius:8px; background:var(--graphite-control); color:var(--graphite-ink); cursor:pointer; }
+.formats strong { font-size:12px; font-weight:600; }
+.formats span { font-size:11px; line-height:1.4; color:var(--graphite-muted); }
+.formats button[aria-pressed="true"] { border-color:var(--graphite-accent); background:rgba(10,132,255,.08); }
+.formats button:disabled { opacity:.5; cursor:default; }
+@media(max-width:759px) { .formats { padding:0 12px 14px; grid-template-columns:1fr; } }

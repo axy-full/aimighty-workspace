@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { usePageTitle } from "@/lib/usePageTitle";
 import { useSession } from "@/lib/session";
+import { useApi } from "@/lib/useApi";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import type { Generation } from "@/lib/jobs";
 import { isAssetDrag, readDrag, type DraggedAsset } from "@/lib/dnd";
@@ -63,6 +64,12 @@ function Workspace({ initialKind }: { initialKind?: string }) {
   const composer = useRef<ComposerHandle>(null);
   const specialized = useRef<GenAssetInputHandle>(null);
   const pendingPrompt = useRef<Generation | null>(null);
+  const promptFrom = search.get("promptFrom");
+  const prompted = useRef("");
+  const promptTake = useApi<{ generation: Generation }>(
+    requestScope && promptFrom && /^[A-Za-z0-9_-]{1,160}$/.test(promptFrom) ? `/api/jobs/${encodeURIComponent(promptFrom)}?sync=0` : null,
+    0, requestScope,
+  );
   const switchMode = (slug: string) => {
     if (slug === mode.slug) {
       setMobileView("create");
@@ -70,7 +77,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     }
     const params = new URLSearchParams(search.toString());
     params.set("mode", slug);
-    for (const key of ["task", "source", "ref"]) params.delete(key);
+    for (const key of ["task", "source", "ref", "promptFrom"]) params.delete(key);
     router.push(`/generate?${params.toString()}`);
     setMobileView("create");
   };
@@ -121,6 +128,16 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     setMobileView("create");
   };
   const toolOpen = editing || upscaling || astraUpscaling;
+  useEffect(() => {
+    if (!promptFrom || prompted.current === promptFrom || toolOpen) return;
+    if (promptTake.error) { prompted.current = promptFrom; toast(promptTake.error); return; }
+    const take = promptTake.data?.generation;
+    if (!take || take.id !== promptFrom || !composer.current) return;
+    prompted.current = promptFrom;
+    if (take.kind !== mode.kind) { toast("Open this take in its matching generation mode to reuse the prompt."); return; }
+    // The receiving composer refuses replacement while a paid request needs recovery.
+    composer.current.usePrompt(String(take.params.rawPrompt || take.prompt));
+  }, [promptFrom, promptTake.data, promptTake.error, toolOpen, mode.kind, toast]);
   useEffect(() => {
     const take = pendingPrompt.current;
     if (take && take.kind === mode.kind && !toolOpen && composer.current) {

@@ -160,6 +160,11 @@ import {createMovieHandoff} from '@/lib/workbench/movie-handoff';
 import DesignReview from "./design-review";
 import { CrewPanel, StoryboardPanel } from "./production-crew";
 import { ScriptPanel } from './ScriptPanel';
+import { DevelopmentPanel } from './DevelopmentPanel';
+import { applyDevelopment } from '@/lib/workbench/development-apply';
+import { developmentSourceHash } from '@/lib/workbench/development-client';
+import { sourceCanonical, type DevelopmentJob } from '@/lib/workbench/development-types';
+import { originalAssetDownload } from '@/lib/workbench/original-asset';
 import { buildScreenplayNodes, sceneCoverageRequest } from '@/lib/workbench/screenplay-nodes';
 import type {ScreenplayImport} from '@/lib/workbench/screenplay';
 import { CREW, ScriptScene } from "@/lib/workbench/crew";
@@ -1025,10 +1030,21 @@ export default function Studio({
     try {
       const uploaded=await uploadWorkbench(file,undefined,storageKey);
       if(pRef.current.id!==draftId)throw new Error('The project changed. The uploaded original remains in your workspace.');
-      const asset:Asset={id:uploaded.id,uploadId:uploaded.id,name:file.name.slice(0,200),kind:'document',category:'Screenplay',url:uploaded.url,mime:uploaded.mime||file.type,description:'Original screenplay source',prompt:'',status:'Draft',version:1,locked:false,refs:[]};
+      const asset:Asset={id:uploaded.id,uploadId:uploaded.id,name:file.name.slice(0,200),kind:'document',category:pRef.current.scriptFormat==='adfilm'?'Ad-film script':'Screenplay',url:uploaded.url,mime:uploaded.mime||file.type,description:pRef.current.scriptFormat==='adfilm'?'Original ad-film script source':'Original screenplay source',prompt:'',status:'Draft',version:1,locked:false,refs:[]};
       change(old=>({...old,script:result.text,scriptReviews:{},scriptSource:{assetId:asset.id,filename:asset.name,sha256:result.sha256,pages:result.pages,importedAt:new Date().toISOString(),edited:false,acknowledgedEmptyPages:result.emptyPages,ocr:result.ocr},assets:[...old.assets,asset]}));
       if(!(await ensureSaved(draftId)))throw new Error('The source uploaded, but the project is not saved yet. Retry this import to save it without uploading again.');
     } finally {uploadingRef.current--;setUploading(uploadingRef.current>0);}
+  }
+  async function applyDevelopmentResult(job: DevelopmentJob, choice: {idea:number}|{scenes:string[]}) {
+    const current = pRef.current;
+    if (transitioningRef.current || job.projectId !== current.id) throw new Error('Return to the project that created this result.');
+    const source = sourceCanonical(current, job.kind);
+    if (await developmentSourceHash(current, job.kind) !== job.sourceHash) throw new Error('The source changed after this development run. Review the saved result or run development again.');
+    if (transitioningRef.current || pRef.current.id !== current.id || sourceCanonical(pRef.current, job.kind) !== source) throw new Error('The project changed while checking the result. Try again.');
+    const next = applyDevelopment(pRef.current, job, choice);
+    change(() => next);
+    if (!(await ensureSaved(current.id))) throw new Error('The result was added locally, but is not saved yet. Keep this project open and retry saving.');
+    toast.success('idea' in choice ? 'Idea added to creative direction.' : 'Scene breakdown added to the canvas.');
   }
   function buildScriptCanvas(scenes: ScriptScene[]) {
     try {
@@ -1585,6 +1601,8 @@ export default function Studio({
                         key={p.id}
                         project={p}
                         onScript={(v) => change(old=>({...old,script:v,scriptSource:old.scriptSource?{...old.scriptSource,edited:true}:undefined}))}
+                        onFormat={(value) => setField('scriptFormat', value)}
+                        development={<DevelopmentPanel key={p.id + (p.scriptFormat || 'screenplay')} project={p} kind={p.scriptFormat || 'screenplay'} scope={storageKey} enabled={signedIn && ready} models={jobs.models} onSave={() => ensureSaved(p.id)} onApply={applyDevelopmentResult}/> }
                         onImport={importScreenplay}
                         onReview={(id,review)=>change(old=>({...old,scriptReviews:{...old.scriptReviews,[id]:review}}))}
                         onBuild={buildScriptCanvas}
@@ -1690,19 +1708,9 @@ export default function Studio({
                                 <Paperclip size={15} />
                                 Attach a brief
                               </button>
-                              <Button
-                                className="btn primary"
-                                onClick={() =>
-                                  void runGenie(
-                                    "Develop a campaign from this brief: " +
-                                      p.brief,
-                                  )
-                                }
-                              >
-                                <Sparkles size={15} />
-                                Explore with Atomik
-                              </Button>
+                              <button onClick={() => { setAtomOpen(true); setAtomTab('genie'); }}><Sparkles size={15}/>Open Atomik conversation</button>
                             </div>
+                            <DevelopmentPanel key={p.id + '-idea'} project={p} kind="idea" scope={storageKey} enabled={signedIn && ready} models={jobs.models} onSave={() => ensureSaved(p.id)} onApply={applyDevelopmentResult}/>
                           </div>
                           <aside className="brief-side">
                             <div className="brief-image">
@@ -1736,6 +1744,7 @@ export default function Studio({
                       stage,
                     ) && (
                       <div className="stage-scroll">
+                        {stage === 'assets' && <div className="collective-assets-link"><div><strong>Project assets & takes</strong><p>Open the collective library for originals and takes across this workspace.</p></div><button className="btn" onClick={() => void leaveWorkspace('/library')}>All workspace assets <ArrowUpRight size={14}/></button></div>}
                         <div className="library-toolbar">
                           <div className="search-field">
                             <Search size={16} />
@@ -3457,6 +3466,7 @@ function AssetEditor({
                     </button>
                   </>
                 )}
+                {originalAssetDownload(a) && <a className="download-edit" href={originalAssetDownload(a)!.url} download={originalAssetDownload(a)!.filename}><Download size={13}/>Download original · full resolution</a>}
                 <div className="asset-state-controls">
                   <span className="field-label">Your select</span>
                   <Choice

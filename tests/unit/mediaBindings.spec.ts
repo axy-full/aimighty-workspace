@@ -72,6 +72,7 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
         deleted.push(id);
       },
     },
+    "@/lib/contentDisposition": await import("../../lib/contentDisposition"),
     "@/lib/serveType": {},
     "@/lib/recovery": { reserveRecoveryContinuation: async (_kind: string, handler: unknown) => handler },
     "@/lib/jobs": {},
