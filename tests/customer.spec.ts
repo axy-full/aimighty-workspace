@@ -375,6 +375,8 @@ async function customerFixture(page: Page) {
     if (path === "/api/workbench/engines")
       return json({ models: [], credits: 0 });
     if (path === "/api/workbench/atomik") return json({ models: [], jobs: [] });
+    if (path === "/api/workbench/development" && request.method() === "GET")
+      return json({ configured: false, models: [], jobs: [] });
     if (path === "/api/jobs") return json({ generations: [] });
     throw new Error(
       `Unexpected customer browser API: ${request.method()} ${path}`,

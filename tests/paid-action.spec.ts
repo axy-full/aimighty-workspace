@@ -207,6 +207,9 @@ test("asset training retains its identity through close and retries one asset cr
     return route.fallback();
   });
   await page.goto("/library");
+  await page.getByRole("group", { name: "Asset library views", exact: true })
+    .getByRole("button", { name: "Elements", exact: true }).click();
+  await expect(page).toHaveURL(/\/library\?view=elements$/);
   await page.getByRole("button", { name: /^New asset/ }).click();
   const sheet = page.getByRole("dialog", { name: "New asset", exact: true });
   await expect(sheet).toBeVisible();

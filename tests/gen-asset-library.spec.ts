@@ -8,7 +8,7 @@ import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { screenplayPdf } from "./helpers/screenplayPdf";
 
 type Upload = { id: string; filename: string; url: string };
-const assetCard = (page: Page, origin: "generation" | "upload", id: string) =>
+const assetCard = (page: Page | Locator, origin: "generation" | "upload", id: string) =>
   page.locator(`[data-library-id="${origin}:${id}"]`);
 const library = (page: Page) =>
   page.getByRole("region", { name: "Workspace asset library", exact: true });
@@ -382,12 +382,19 @@ test("collective Assets navigation lists shared originals and all takes, with wo
   await expect(page).toHaveURL(new RegExp(`mode=images&ref=upload%3A${f.imageUpload.id}`));
   await expect(page.getByRole("button", { name: "Remove Original lighting reference.png", exact: true })).toBeVisible();
   await sections.getByRole("link", { name: "Assets", exact: true }).click();
-  await assetCard(page, "upload", f.videoUpload.id).getByRole("button", { name: "Edit clip", exact: true }).click();
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(collective).toBeVisible();
+  await assetCard(collective, "upload", f.videoUpload.id).getByRole("button", { name: "Edit clip", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`mode=video&task=edit&source=upload%3A${f.videoUpload.id}`));
   await expect(page.getByRole("region", { name: "Seedance 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
   await sections.getByRole("link", { name: "Assets", exact: true }).click();
-  await assetCard(page, "generation", f.generationImage).getByRole("button", { name: "Actions for Filed lighting take", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Use prompt", exact: true }).click();
+  // Gen also renders these take cards on desktop. Confirm the destination
+  // before opening its menu, otherwise navigation can remove Gen’s old menu.
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(collective).toBeVisible();
+  await assetCard(collective, "generation", f.generationImage).getByRole("button", { name: "Actions for Filed lighting take", exact: true }).click();
+  await page.getByRole("menu", { name: "Actions for Filed lighting take", exact: true })
+    .getByRole("menuitem", { name: "Use prompt", exact: true }).click();
   await expect(page.getByRole("region", { name: "Images composer", exact: true }).getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Filed lighting take prompt");
   expect(f.paidRequests()).toBe(0);
   expect(errors).toEqual([]);
