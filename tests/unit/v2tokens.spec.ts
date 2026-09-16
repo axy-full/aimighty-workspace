@@ -3,11 +3,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * The v2 theme (design/particl-v2/README.md §2), copied as generated: the
- * handoff's own names, the handoff's own values, byte for byte where the
- * handoff gives one value. And the two acceptance rules (§16) that can be
- * checked without a browser: the accent appears only where the spec allows
- * it, and nothing is set under 11px.
+ * Graphite restyles the existing v2 primitives through stable semantic
+ * tokens. Check the approved palette, aliases and radii while retaining
+ * the primitives' typography, motion and source-level acceptance rules:
+ * component colors come from tokens, state accents remain scoped, and
+ * nothing is set under 11px.
  */
 const css = readFileSync(join(__dirname, "../../app/globals.css"), "utf8");
 const decl = (name: string) => {
@@ -15,45 +15,55 @@ const decl = (name: string) => {
   return m?.[1].trim();
 };
 
-test("§2, under its own names, at its own values", () => {
+test("Graphite palette and stable primitive token aliases", () => {
   const want: Record<string, string> = {
-    "--ground": "#0B0D11",
-    "--card": "#12141A",
-    "--card-raised": "#171A21",
-    "--ink": "#F5F6F8",
-    "--ink-body": "#B4B7BE",
-    "--ink-muted": "#8A8E96",
-    "--hairline": "rgba(245,246,248,.06)",
-    "--border": "rgba(245,246,248,.08)",
-    "--selected": "rgba(245,246,248,.12)",
-    "--accent": "oklch(75% 0.12 200)",
-    "--on-primary-cost": "#4A4E56",
+    "--graphite-ground": "#000000",
+    "--graphite-panel": "#0d0d10",
+    "--graphite-card": "#17171b",
+    "--graphite-control": "#1b1b1f",
+    "--graphite-ink": "#f5f5f7",
+    "--graphite-body": "#b8b8c1",
+    "--graphite-muted": "#91919c",
+    "--graphite-line": "rgba(255, 255, 255, .10)",
+    "--graphite-edge": "rgba(255, 255, 255, .16)",
+    "--graphite-selected": "#3a3a40",
+    "--graphite-accent": "#0a84ff",
+    "--graphite-on-primary": "#ffffff",
+    "--ground": "var(--graphite-ground)",
+    "--card": "var(--graphite-card)",
+    "--card-raised": "var(--graphite-control)",
+    "--ink": "var(--graphite-ink)",
+    "--ink-body": "var(--graphite-body)",
+    "--ink-muted": "var(--graphite-muted)",
+    "--hairline": "rgba(255, 255, 255, .08)",
+    "--border": "var(--graphite-line)",
+    "--selected": "var(--graphite-selected)",
+    "--accent": "var(--graphite-accent)",
+    "--on-primary-cost": "var(--graphite-on-primary)",
     "--placeholder": "repeating-linear-gradient(135deg,#1A1D24 0 6px,#20242B 6px 12px)",
-    "--waveform": "repeating-linear-gradient(90deg,rgba(245,246,248,.32) 0 2px,transparent 2px 5px)",
+    "--waveform": "repeating-linear-gradient(90deg,rgba(110,180,255,.5) 0 2px,transparent 2px 5px)",
   };
   for (const [name, value] of Object.entries(want)) expect(decl(name), name).toBe(value);
-  /* The two the handoff gives as ranges. A variable holds one value; each
-     is what the valid boards use — buttons, chips and the sheet edge at
-     .14, every hover at .24 — and both sit inside the handoff's range. */
-  expect(decl("--border-mid")).toBe("rgba(245,246,248,.14)");
-  expect(decl("--border-hover")).toBe("rgba(245,246,248,.24)");
+  // Keep the existing edge token names mapped to Graphite's stronger edges.
+  expect(decl("--border-mid")).toBe("var(--graphite-edge)");
+  expect(decl("--border-hover")).toBe("rgba(255, 255, 255, .28)");
 });
 
 test("each token is a Tailwind utility too, as an alias — never a second value", () => {
   for (const t of ["ground", "card", "card-raised", "ink", "ink-body", "ink-muted", "hairline", "border", "border-mid", "border-hover", "selected", "accent", "on-primary-cost"]) {
     expect(decl(`--color-${t}`), `--color-${t}`).toBe(`var(--${t})`);
   }
-  // The theme adds nothing §2 does not list.
+  // Primitive surfaces still avoid duplicate semantic token names.
   for (const extra of ["--color-rail", "--color-chip-scrim", "--color-sheet-scrim", "--ring-selected"]) {
     expect(css.includes(`${extra}:`), `${extra} is not a token`).toBe(false);
   }
 });
 
-test("the radii, the one ring, the type, and the one motion are as specified", () => {
-  for (const [name, px] of [["badge", 4], ["chip", 6], ["ctl", 8], ["tile", 10], ["card", 12], ["mobile", 14], ["pill", 999]] as const) {
+test("Graphite radii and selection preserve primitive typography and motion", () => {
+  for (const [name, px] of [["badge", 4], ["chip", 6], ["ctl", 6], ["tile", 8], ["card", 8], ["mobile", 12], ["pill", 999]] as const) {
     expect(css, `--radius-${name}`).toMatch(new RegExp(`--radius-${name}:\\s*${px}px;`));
   }
-  expect(css).toMatch(/\.ui-node-selected\s*\{\s*border-color:\s*var\(--ink\);\s*box-shadow:\s*0 0 0 3px rgba\(245,246,248,\.12\);/);
+  expect(css).toMatch(/\.ui-node-selected\s*\{\s*border-color:\s*var\(--graphite-accent\);\s*box-shadow:\s*0 0 0 3px rgba\(10,132,255,\.22\);/);
   expect(css).toMatch(/\.ui-h1\s*\{\s*font:\s*600 32px\/1\.05 var\(--font-sans\);\s*letter-spacing:\s*-0\.025em/);
   expect(css).toMatch(/\.ui-mono\s*\{\s*font:\s*500 11px\/1 var\(--font-mono\);\s*text-transform:\s*uppercase;\s*letter-spacing:\s*\.12em/);
   expect(css).toMatch(/\.ui-mono-cost\s*\{\s*letter-spacing:\s*\.08em;/);
@@ -62,8 +72,8 @@ test("the radii, the one ring, the type, and the one motion are as specified", (
   expect(css).toMatch(/@keyframes atomikPulse\s*\{\s*0%,\s*100%\s*\{\s*opacity:\s*\.22\s*\}\s*18%\s*\{\s*opacity:\s*1\s*\}\s*55%\s*\{\s*opacity:\s*\.22\s*\}\s*\}/);
   expect(css).toMatch(/\.atomik-pulse\s*\{\s*animation:\s*atomikPulse 1\.6s cubic-bezier\(\.4,\s*0,\s*\.2,\s*1\) infinite;/);
   expect(css).toMatch(/@keyframes atomikBar\s*\{\s*0%\s*\{\s*width:\s*12%\s*\}\s*50%\s*\{\s*width:\s*64%\s*\}\s*100%\s*\{\s*width:\s*12%\s*\}\s*\}/);
-  // §3's literal surfaces, where the theme has no name for them.
-  expect(css).toMatch(/\.ui-rail\s*\{\s*background:\s*#0F1116;/);
+  // The rail uses Graphite; existing media and sheet scrims stay unchanged.
+  expect(css).toMatch(/\.ui-rail\s*\{\s*background:\s*var\(--graphite-panel\);/);
   expect(css).toMatch(/\.ui-chip-scrim\s*\{\s*background:\s*rgba\(11,13,17,\.85\);/);
   expect(css).toMatch(/\.ui-sheet-scrim\s*\{\s*background:\s*rgba\(5,6,8,\.55\);/);
 });
