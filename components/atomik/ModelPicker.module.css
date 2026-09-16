@@ -20,7 +20,7 @@
 }
 .popup *, .popup *::before, .popup *::after { box-sizing: border-box; }
 .heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; font-size: 16px; font-weight: 600; flex: none; grid-column: 1 / -1; grid-row: 1; }
-.heading > span:last-child { font-size: 11px; font-weight: 400; color: var(--graphite-muted); }
+.heading > span:last-of-type { font-size: 11px; font-weight: 400; color: var(--graphite-muted); }
 .search { display: flex; align-items: center; gap: 6px; min-height: 32px; margin: 0 18px 0 8px; padding: 0 10px; background: var(--graphite-control); border: 1px solid var(--graphite-edge); border-radius: 6px; color: var(--graphite-body); flex: none; grid-column: 2; grid-row: 2; }
 .search:focus-within { border-color: var(--graphite-accent); }
 .search input { width: 100%; min-width: 0; padding: 7px 0; border: 0; background: transparent; outline: none; color: var(--graphite-ink); font: inherit; font-size: 12px; }
@@ -79,4 +79,18 @@
 .optionText { display: flex; gap: 3px; }
 .footer { padding: 10px 14px; }
 .effortOption { min-height: 44px; }
+}
+
+/* On a phone, keep the same searchable picker in a reachable bottom sheet. */
+@media (max-width:759px) {
+ :global([data-radix-popper-content-wrapper]):has(> .popup) {position:fixed!important;inset:auto 0 var(--app-keyboard-inset,0px)!important;width:100%;min-width:0!important;transform:none!important;z-index:250!important}
+ .popup {display:flex;width:100%;max-width:none;max-height:min(82dvh,calc(var(--app-visible-height,100dvh) - 24px));border-radius:18px 18px 0 0;background:var(--graphite-card);box-shadow:0 0 0 100vmax #0009;padding-bottom:env(safe-area-inset-bottom)}
+ .popup::before {content:"";display:block;flex:none;width:36px;height:5px;margin:12px auto 0;border-radius:3px;background:var(--graphite-selected)}
+ .heading {padding:14px 20px 12px;font-size:20px;letter-spacing:-.03em;font-weight:500}.heading>span:nth-child(2){margin-left:auto;font-size:11px;color:var(--graphite-muted)}
+ .popup .mobileClose {display:grid;place-items:center;flex:none;width:32px;height:32px;color:var(--graphite-muted)}
+ .search {margin:0 20px;min-height:44px}.search input{font-size:16px}
+ .providers{margin:12px 20px 0}.providers button{min-height:36px}
+ .list{padding:12px 20px 18px}.groupHeading{background:var(--graphite-card)}
+ .option{min-height:58px;padding:10px 12px;border-radius:8px}.modelName{font-size:14px}.capabilities{font-size:12px}.optionText{align-items:flex-start}
+ .footer{padding:13px 20px;font-size:12px}.effortList{padding:0 20px 20px}.effortOption{min-height:48px;font-size:14px}
 }

@@ -1,9 +1,10 @@
+import { goWorkbenchStage as goStage } from "./helpers/workbenchNavigation";
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { signInLocally } from './helpers/workbenchLocal';
 import { screenplayPdf } from './helpers/screenplayPdf';
-import { newProject, STAGES, type Project } from '../lib/workbench/studio';
+import { newProject, type Project } from '../lib/workbench/studio';
 import { sourceCanonical, type DevelopmentJob, type DevelopmentRequest, type DevelopmentResult } from '../lib/workbench/development-types';
 import { developmentPendingKey } from '../lib/workbench/development-client';
 
@@ -14,14 +15,7 @@ const models = [
   { id: 'openai/gpt-5.5', name: 'GPT-5.5', vision: true, efforts },
 ];
 
-async function goStage(page: Page, label: string) {
-  if (page.viewportSize()!.width < 760) {
-    await page.getByRole('navigation', { name: 'Mobile studio navigation' }).getByRole('button', { name: 'Workflow', exact: true }).click();
-    const sheet = page.getByRole('dialog', { name: 'Project workflow' });
-    await sheet.locator('.mobile-workflow-list button').filter({ hasText: label }).click();
-    await expect(sheet).not.toBeVisible();
-  } else await page.locator('.workflow-stages').getByRole('tab').nth(STAGES.findIndex(stage => stage.label === label)).click();
-}
+
 function scopePanel(page: Page, kind: DevelopmentRequest['kind']) {
   return page.getByRole('region', { name: kind === 'idea' ? 'Idea development' : kind === 'adfilm' ? 'Ad-film breakdown' : 'Screenplay breakdown', exact: true });
 }

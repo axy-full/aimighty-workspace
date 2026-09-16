@@ -1,9 +1,10 @@
+import { goWorkbenchStage } from "./helpers/workbenchNavigation";
 import { test, expect, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { scannedScreenplayPdf } from "./helpers/screenplayPdf";
-import { newProject, STAGES, type Project } from "../lib/workbench/studio";
+import { newProject, type Project } from "../lib/workbench/studio";
 
 async function setup(page: Page) {
   const existingEmail = process.env.PW_OCR_EXISTING_EMAIL;
@@ -55,22 +56,7 @@ async function setup(page: Page) {
     id: project.id,
   });
   await page.reload();
-  if (page.viewportSize()!.width < 760) {
-    await page
-      .getByRole("navigation", { name: "Mobile studio navigation" })
-      .getByRole("button", { name: "Workflow", exact: true })
-      .click();
-    await page
-      .getByRole("dialog", { name: "Project workflow" })
-      .locator(".mobile-workflow-list button")
-      .filter({ hasText: "Script & breakdown" })
-      .click();
-  } else
-    await page
-      .locator(".workflow-stages")
-      .getByRole("tab")
-      .nth(STAGES.findIndex((s) => s.id === "script"))
-      .click();
+  await goWorkbenchStage(page, "script");
   const read = async () =>
     page.request
       .get(

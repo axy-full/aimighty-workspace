@@ -488,3 +488,59 @@
     width: 100%;
   }
 }
+
+/* Mobile plans and checkout use the supplied workspace palette. */
+@media (max-width: 759px) {
+  .commercial {
+    --graphite-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    --graphite-panel: #000;
+    --graphite-card: #17171b;
+    --graphite-control: #1b1b1f;
+    --graphite-line: rgba(255,255,255,.1);
+    --graphite-edge: rgba(255,255,255,.16);
+    --graphite-ink: #f5f5f7;
+    --graphite-body: rgba(235,235,245,.6);
+    --graphite-muted: rgba(235,235,245,.5);
+    --graphite-accent: #0a84ff;
+    --graphite-accent-text: #6eb4ff;
+    --graphite-primary: #0073e6;
+    --graphite-primary-hover: #0a84ff;
+    --graphite-on-primary: #fff;
+    background: #000;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -.01em;
+  }
+  .commercial .commercial-header { min-height: 57px; height: auto; padding: env(safe-area-inset-top,0px) 14px 0; border: 0; background: #000; gap: 10px; }
+  .commercial .commercial-header nav { gap: 2px; }
+  .commercial .commercial-header nav a { display: flex; min-height: 44px; align-items: center; padding: 0 8px; font-size: 12px; }
+  .commercial .commercial-header nav a:last-child { background: #1b1b1f; border: 1px solid rgba(255,255,255,.16); color: #f5f5f7; }
+  .commercial .commercial-main { padding: 16px 20px 32px; }
+  .commercial .commercial-intro { text-align: left; margin-bottom: 16px; }
+  .commercial .commercial-eyebrow { font-size: 12px; letter-spacing: .08em; }
+  .commercial h1 { font-size: 29px; line-height: 1.2; letter-spacing: -.045em; margin-top: 5px; }
+  .commercial .commercial-intro > p { font-size: 15px; line-height: 1.6; margin-top: 8px; }
+  .commercial .billing-cadence { width: 100%; margin-bottom: 16px; padding: 4px; border-radius: 9px; background: #1c1c20; }
+  .commercial .billing-cadence button { flex: 1; min-height: 44px; padding: 0 8px; border-radius: 6px; font-size: 13px; }
+  .commercial .billing-cadence button[aria-pressed="true"] { background: #3a3a40; }
+  .commercial .plan-grid { gap: 16px; }
+  .commercial .plan-card,
+  .commercial .billing-card { border-color: rgba(255,255,255,.16); border-radius: 12px; padding: 16px; }
+  .commercial .plan-card > .commercial-eyebrow { font-size: 20px; font-weight: 500; letter-spacing: -.03em; }
+  .commercial .plan-card h2 { margin-top: 6px; font: 400 28px/1.25 ui-monospace, Menlo, monospace; letter-spacing: -.03em; }
+  .commercial .plan-card h2 small { font: 400 12px/1.5 var(--graphite-font); }
+  .commercial .plan-billing,
+  .commercial .plan-credits { font-size: 12px; }
+  .commercial .plan-card ul { font-size: 13px; line-height: 1.6; }
+  .commercial .commercial-button { min-height: 44px; border-radius: 10px; font-size: 14px; font-weight: 500; }
+  .commercial .commercial-details { margin-top: 24px; padding-top: 20px; }
+  .commercial .commercial-details > div { grid-template-columns: 1fr; gap: 10px; }
+  .commercial .commercial-details > div > article { padding: 14px; background: #17171b; border-color: rgba(255,255,255,.16); border-radius: 8px; }
+  .commercial .commercial-details h3,
+  .commercial .commercial-details p { font-size: 13px; line-height: 1.6; }
+  .commercial .commercial-footer { padding: 16px 20px max(24px,env(safe-area-inset-bottom,0px)); gap: 12px; font-size: 12px; }
+  .commercial .commercial-footer nav { flex-wrap: wrap; gap: 8px 20px; }
+  .commercial .commercial-footer a { display: inline-flex; align-items: center; min-height: 44px; color: #6eb4ff; }
+  .commercial .billing-pick select,
+  .commercial .billing-provision input { min-height: 44px; font-size: 16px; }
+}

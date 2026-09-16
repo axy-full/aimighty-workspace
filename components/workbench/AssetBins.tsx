@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { ChevronDown, Folder } from "lucide-react";
 import type { Project, Asset } from "@/lib/workbench/studio";
 import { uid } from "@/lib/workbench/studio";
 import {
@@ -10,6 +11,7 @@ import {
   DialogDescription,
 } from "./ui/dialog";
 import styles from "./editorial.module.css";
+import { MobilePanel, useMobileLayout } from "./mobile-ui";
 type Change = (fn: (p: Project) => Project) => void;
 export function AssetBins({
   project,
@@ -24,6 +26,8 @@ export function AssetBins({
 }) {
   const [name, setName] = useState(""),
     [error, setError] = useState("");
+  const mobile = useMobileLayout();
+  const [binsOpen, setBinsOpen] = useState(false);
   const bins = project.bins ?? [],
     active = bins.find((b) => b.id === selected);
   function create() {
@@ -70,7 +74,7 @@ export function AssetBins({
     setName("");
     setError("");
   }
-  return (
+  const controls = (
     <section className={styles.bins} aria-label="Asset bins">
       <label>
         Bin
@@ -133,6 +137,32 @@ export function AssetBins({
       </small>
       {error && <p role="alert">{error}</p>}
     </section>
+  );
+  if (!mobile) return controls;
+  return (
+    <>
+      <button
+        type="button"
+        className={styles.binsTrigger}
+        aria-label="Open asset bins"
+        aria-expanded={binsOpen}
+        onClick={() => setBinsOpen(true)}
+      >
+        <Folder size={15} />
+        <span>{selected === "unfiled" ? "Unfiled" : active?.name || "All assets"}</span>
+        <ChevronDown size={14} />
+      </button>
+      <MobilePanel
+        mobile={mobile}
+        open={binsOpen}
+        onOpenChange={setBinsOpen}
+        title="Asset bins"
+        description="Organize your assets. Removing a bin keeps every asset."
+        kind="asset-bins"
+      >
+        <div className={styles.binsSheet}>{controls}</div>
+      </MobilePanel>
+    </>
   );
 }
 export function AssetBinPicker({

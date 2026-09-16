@@ -1,8 +1,9 @@
-import { test, expect, type Page } from "@playwright/test";
+import { goWorkbenchStage as stage, openWorkbenchInspector } from "./helpers/workbenchNavigation";
+import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { seedProject, STAGES, type Project } from "../lib/workbench/studio";
+import { seedProject, type Project } from "../lib/workbench/studio";
 function sine() {
   const frames = 96000,
     b = Buffer.alloc(44 + frames * 2);
@@ -25,24 +26,7 @@ function sine() {
     );
   return b;
 }
-async function stage(page: Page, id: string) {
-  if (page.viewportSize()!.width < 760) {
-    await page
-      .getByRole("navigation", { name: "Mobile studio navigation" })
-      .getByRole("button", { name: "Workflow", exact: true })
-      .click();
-    await page
-      .getByRole("dialog", { name: "Project workflow" })
-      .locator(".mobile-workflow-list button")
-      .filter({ hasText: STAGES.find((s) => s.id === id)!.label })
-      .click();
-  } else
-    await page
-      .locator(".workflow-stages")
-      .getByRole("tab")
-      .nth(STAGES.findIndex((s) => s.id === id))
-      .click();
-}
+
 test("sound clips persist, mix at their timeline offsets with pan and fades, and deliver valid uncompressed stereo WAV", async ({
   page,
 }, info) => {
@@ -172,6 +156,7 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
   });
   await page.reload();
   await stage(page, "edit");
+  await openWorkbenchInspector(page, "sound");
   const mix = page.getByRole("region", { name: "Sound mix" });
   await mix.getByLabel("Audio source", { exact: true }).selectOption("score");
   await mix
@@ -197,6 +182,7 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
     });
   await page.reload();
   await stage(page, "edit");
+  await openWorkbenchInspector(page, "sound");
   await expect(clip.getByLabel("Gain (dB)", { exact: true })).toHaveValue("-6");
   await mix.getByRole("button", { name: "Prepare mix", exact: true }).click();
   await expect(mix.getByRole("status")).toContainText("Mix ready", {

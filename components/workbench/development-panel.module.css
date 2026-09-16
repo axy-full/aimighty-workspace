@@ -42,3 +42,35 @@
 .scene h5 { color:var(--graphite-muted); font-size:10px; letter-spacing:.03em; text-transform:uppercase; margin:12px 0 5px; }
 .actions { display:flex; align-items:center; gap:8px; justify-content:space-between; flex-wrap:wrap; }
 @media(max-width:759px) { .panel { margin:0 12px 14px; padding:12px; } .panel button { min-height:44px; } .controls { grid-template-columns:1fr; gap:8px; } .instructions textarea { font-size:16px; } .providers button { flex-wrap:wrap; } .providers small { width:100%; } }
+
+@media (max-width: 759px) {
+  .panel { margin: 0 0 18px; padding: 16px; border-radius: 12px; font-size: 13px; line-height: 1.6; }
+  :global(.brief-main) > .panel { margin: 20px -1px 0; }
+  .heading { gap: 8px; margin-bottom: 14px; }
+  .heading h3 { font-size: 15px; line-height: 1.4; }
+  .heading p { font-size: 13px; line-height: 1.6; color: var(--graphite-body); }
+  .panel button { min-height: 44px; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+  .providers { gap: 4px; padding: 4px; border-radius: 9px; background: var(--graphite-segment); }
+  .providers button { min-width: 0; border: 0; border-radius: 6px; background: transparent; }
+  .providers button[aria-pressed="true"] { background: var(--graphite-selected); }
+  .providers small { font-size: 10px; line-height: 1.4; }
+  .controls { gap: 12px; }
+  .controls label { font-size: 10px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; }
+  .controls button { justify-content: space-between; font-size: 13px; }
+  .instructions { font-size: 12px; margin-top: 14px; }
+  .instructions textarea { min-height: 90px; margin-top: 6px; padding: 10px 12px; font-size: 16px; line-height: 1.6; border-radius: 6px; }
+  .panel .primary { width: 100%; min-height: 44px; border-radius: 10px; font-size: 13px; }
+  .quote { padding: 14px; border-radius: 10px; font-size: 12px; line-height: 1.6; }
+  .hint, .error, .notice { font-size: 12px; line-height: 1.6; }
+  .runs { margin-top: 16px; padding-top: 14px; }
+  .runs h4 { font-size: 13px; }
+  .run { padding: 12px; border-radius: 8px; }
+  .run > summary { min-height: 44px; align-items: center; font-size: 13px; }
+  .run > summary span { font-size: 11px; }
+  .scene { padding: 12px; border-radius: 8px; }
+  .scene h4 { font-size: 14px; }
+  .scene h5 { font-size: 10px; letter-spacing: .1em; }
+  .scene p { font-size: 13px; line-height: 1.6; }
+  .scene button { width: 100%; }
+  .actions { gap: 10px; }
+}

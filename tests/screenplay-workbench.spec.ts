@@ -1,27 +1,11 @@
+import { goWorkbenchStage } from "./helpers/workbenchNavigation";
 import { test, expect, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { screenplayPdf } from "./helpers/screenplayPdf";
-import { newProject, STAGES, type Project } from "../lib/workbench/studio";
+import { newProject, type Project } from "../lib/workbench/studio";
 
-async function scriptStage(page: Page) {
-  if (page.viewportSize()!.width < 760) {
-    await page
-      .getByRole("navigation", { name: "Mobile studio navigation" })
-      .getByRole("button", { name: "Workflow", exact: true })
-      .click();
-    await page
-      .getByRole("dialog", { name: "Project workflow" })
-      .locator(".mobile-workflow-list button")
-      .filter({ hasText: "Script & breakdown" })
-      .click();
-  } else
-    await page
-      .locator(".workflow-stages")
-      .getByRole("tab")
-      .nth(STAGES.findIndex((s) => s.id === "script"))
-      .click();
-}
+async function scriptStage(page: Page) { await goWorkbenchStage(page, "script"); }
 
 test("complete PDF screenplay retains pages, beats, original asset and all 120 scene nodes after reload", async ({
   page,

@@ -4,7 +4,7 @@ import UploadRecovery from "@/components/UploadRecovery";
 import Link from "next/link";
 import {ActionMenu,ActionDropdown,type StudioAction} from "./ActionMenu";
 import {type WorkbenchAccount} from "./WorkspaceMenu";
-import StudioNavigation, { StudioSections } from "@/components/studio/StudioNavigation";
+import StudioNavigation, { StudioSections, MobileStudioMenu } from "@/components/studio/StudioNavigation";
 import {AtomikMark} from "@/components/AtomikMark";
 import {clearPrivateLocal} from "@/lib/session";
 import React, {
@@ -346,9 +346,10 @@ export default function Studio({
   const mobile = useMobileLayout();
   useMobileViewport();
   const [sequenceExpanded, setSequenceExpanded] = useState(false);
-  const [editInspector,setEditInspector] = useState<"shot"|"color"|"versions">("shot");
+  const [editInspector,setEditInspector] = useState<"shot"|"color"|"versions"|"sound">("shot");
   const [p, setP] = useState<Project>(seedProject);
   const [stage, storeStage] = useState<Stage>("canvas");
+  const [mobileWorkflowOpen,setMobileWorkflowOpen] = useState(false);
   const [homeOverride, setHome] = useState<boolean|null>(null);
   const home=homeOverride??mobile;
   function setStage(value: Stage) {
@@ -1137,10 +1138,18 @@ export default function Studio({
             (home ? "is-home " : "") + (welcomeChoice ? "is-welcome " : "") +
             (sequenceExpanded ? "mobile-sequence-expanded" : "")
           }
+          data-stage={stage}
           inert={transitioning?true:undefined}
           aria-busy={transitioning}
         >
           <main className="studio-main">
+            {mobile && <header className="phone-project-header">
+              {home ? <MobileStudioMenu active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/> : <button className="phone-back" aria-label="Back to project workflow" onClick={()=>setMobileWorkflowOpen(true)}><ArrowLeft size={18}/></button>}
+              {home ? <button className="phone-brand" aria-label="Particl home" onClick={()=>setHome(true)}><img src="/brand/particl-wordmark-on-dark@4x.png" alt="particl"/></button> : <button className="phone-project-crumb" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronRight size={12}/><strong>{String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,'0')} {['Brief','Script','Look','Cast','Elements','Canvas','Boards','Takes','Edit','Deliver'][STAGES.findIndex(s=>s.id===stage)]}</strong></button>}
+              <button className={'phone-save '+(saveError?'has-error':'')} aria-label={saveState} title={saveState} onClick={()=>saveError&&toast.error(saveError)}>{saveError?<TriangleAlert size={12}/>:saveState==='Saving'?<Loader2 size={12} className="spin"/>:saveState==='Saved'?<Check size={12}/>:null}<span>{home && initialAccount?.credits ? `${Math.round(initialAccount.credits.balance).toLocaleString()} cr` : saveState.startsWith('Sample')?'Sample':saveState}</span></button>
+              <button className="phone-atomik" aria-label="Toggle Atomik creative engine" disabled={!hydrated} onClick={()=>setAtomOpen(v=>!v)}><AtomMark/><span>Atomik</span></button>
+            </header>}
+
             <header className="workflow-header">
               <button
                 className={"particl-home " + (home ? "active" : "")}
@@ -1412,16 +1421,18 @@ export default function Studio({
                     <div className="home-projects">
                       <button
                         className="home-current"
+                        disabled={mobile&&(!hydrated||(signedIn&&initializedScope!==storageKey)||transitioning)}
                         onClick={() => setStage("canvas")}
                       >
                         <div className="home-project-cover">
                           <Media
                             asset={p.assets.find((a) => a.kind === "image")}
                           />
-                          <span>
+                          <span className="home-cover-continue">
                             CONTINUE WORKING
                             <ArrowUpRight size={18} />
                           </span>
+                          {mobile&&<div className="phone-cover-chips"><span>{p.aspect} · {p.fps} FPS</span>{samplePreview&&<span>Sample</span>}</div>}
                         </div>
                         <div>
                           <span className="home-project-icon">
@@ -1429,6 +1440,7 @@ export default function Studio({
                           </span>
                           <div>
                             <h2>{p.name}</h2>
+                            {mobile&&<span className="phone-project-meta">{p.shots.length} shots · {(totalFrames/p.fps).toFixed(0)}s</span>}
                             <p>
                               {p.description} · {p.nodes.length} nodes ·{" "}
                               {p.shots.length} shots
@@ -1436,7 +1448,9 @@ export default function Studio({
                           </div>
                           <ArrowRight size={19} />
                         </div>
+                        {mobile&&<div className="phone-project-progress"><div>{STAGES.map(s=><i key={s.id} className={s.id===stage?'current':''}/>)}</div><span>{String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,'0')} · {STAGES.find(s=>s.id===stage)?.label}<b>Open →</b></span></div>}
                       </button>
+                      {mobile&&<button className="phone-new-project" onClick={()=>setDialog('project')}><Plus size={18}/>Start a project</button>}
                       {projects
                         .filter((a) => a.id !== p.id)
                         .map((a) => (
@@ -1457,6 +1471,7 @@ export default function Studio({
                           </button>
                         ))}
                     </div>
+                    {mobile&&<h3 className="phone-recent-label">PROJECT SHORTCUTS</h3>}
                     <div className="mobile-home-shortcuts">
                       <button onClick={() => setStage("canvas")}>
                         <GitBranch size={21} />
@@ -1503,7 +1518,7 @@ export default function Studio({
                       <div className="page-heading">
                         <div>
                           <div className="eyebrow">
-                            {["brief", "script"].includes(stage)
+                            {mobile ? `${String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,"0")} / ${["THE IDEA","THE STORY","THE LOOK","THE CAST","THE WORLD","PRODUCTION CANVAS","STORYBOARDS","ASSETS & TAKES","EDIT & SOUND","DELIVERY"][STAGES.findIndex(s=>s.id===stage)]}` : ["brief", "script"].includes(stage)
                               ? "DEVELOPMENT"
                               : ["edit", "export"].includes(stage)
                                 ? "POST-PRODUCTION"
@@ -2041,7 +2056,7 @@ export default function Studio({
                       </div>
                     )}
                     {stage === "edit" && (
-                      <div className="edit-workspace">
+                      <div className="edit-workspace" data-edit-tab={editInspector}>
                         <div className="edit-topline">
                           <div>
                             <span className="small-tag">ASSEMBLY 01</span>
@@ -2142,8 +2157,8 @@ export default function Studio({
                             </div>
                           </div>
                           <aside className={colorStyles.inspector} aria-label="Edit inspector">
-                            <div className={colorStyles.tabs} role="group" aria-label="Inspector view"><button aria-pressed={editInspector==='shot'} onClick={()=>setEditInspector('shot')}>Shot details</button><button aria-pressed={editInspector==='color'} onClick={()=>setEditInspector('color')}>Sequence color</button><button aria-pressed={editInspector==='versions'} onClick={()=>setEditInspector('versions')}>Edit versions</button></div>
-                            {editInspector==='versions' ? <EditVersions key={p.id+storageKey} draftId={p.id} apiBase={apiBase} requestScope={storageKey} onSave={saveNamedEdit} onRestore={restoreNamedEdit}/> : editInspector==='color' ? <SequenceColor key={p.id+storageKey} project={p} onChange={change} onImport={importSequenceLut}/> :
+                            <div className={colorStyles.tabs} role="group" aria-label="Inspector view"><button aria-pressed={editInspector==='shot'} onClick={()=>setEditInspector('shot')}>{mobile?'Shot':'Shot details'}</button><button aria-pressed={editInspector==='color'} onClick={()=>setEditInspector('color')}>{mobile?'Color':'Sequence color'}</button><button aria-pressed={editInspector==='versions'} onClick={()=>setEditInspector('versions')}>{mobile?'Versions':'Edit versions'}</button>{mobile&&<button aria-pressed={editInspector==='sound'} onClick={()=>setEditInspector('sound')}>Sound</button>}</div>
+                            {mobile&&editInspector==='sound' ? null : editInspector==='versions' ? <EditVersions key={p.id+storageKey} draftId={p.id} apiBase={apiBase} requestScope={storageKey} onSave={saveNamedEdit} onRestore={restoreNamedEdit}/> : editInspector==='color' ? <SequenceColor key={p.id+storageKey} project={p} onChange={change} onImport={importSequenceLut}/> :
                           <div className="shot-inspector">
                             <div className="eyebrow">SHOT DETAILS</div>
                             {activeShot ? (
@@ -2374,7 +2389,7 @@ export default function Studio({
                               ))}
                             </div>
                           </div>
-                          <SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/>
+                          <div data-mobile-sound-panel style={mobile?undefined:{display:"contents"}}><SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/></div>
                         </div>
                       </div>
                     )}
@@ -2590,7 +2605,7 @@ export default function Studio({
                 open={atomOpen}
                 onOpenChange={setAtomOpen}
                 title="Atomik"
-                description="Your creative crew, in reach."
+                description={mobile?`Creative engine · ${p.name} · ⌘J`:"Your creative crew, in reach."}
                 kind="atomik"
               >
                 <aside
@@ -2637,14 +2652,9 @@ export default function Studio({
                               <span className="tiny-orbit">
                                 <AtomMark />
                               </span>
-                              <h2>
-                                A little spark.
-                                <br />A whole new world.
-                              </h2>
+                              <h2>{mobile ? "Ask Atomik" : <>A little spark.<br />A whole new world.</>}</h2>
                               <p>
-                                Bring the idea. I’ll help you shape the
-                                campaign, connect the references and build the
-                                canvas.
+                                {mobile ? "Plans before it spends. Every run is priced first and lands in your space, never the shared bible." : "Bring the idea. I’ll help you shape the campaign, connect the references and build the canvas."}
                               </p>
                             </div>
                             <div className="context-summary">
@@ -2894,6 +2904,7 @@ export default function Studio({
                         disabled={!signedIn || !prompt.trim() || busy}
                         onClick={() => void runGenie()}
                       >
+                        {mobile&&<span>Run Atomik</span>}
                         {busy ? (
                           <Loader2 className="spin" size={18} />
                         ) : (
@@ -2917,7 +2928,23 @@ export default function Studio({
                 </aside>
               </MobilePanel>
             </div>
-            <MobileNavigation
+            {mobile && !home && !welcomeChoice && stage!=='canvas' && <nav className="phone-stage-pager" aria-label="Workflow stages">
+              {STAGES.findIndex(s=>s.id===stage)>0 ? <button onClick={()=>setStage(STAGES[STAGES.findIndex(s=>s.id===stage)-1].id)}><ArrowLeft size={14}/><span>{String(STAGES.findIndex(s=>s.id===stage)).padStart(2,'0')} {STAGES[STAGES.findIndex(s=>s.id===stage)-1].label}</span></button> : <button onClick={()=>setMobileWorkflowOpen(true)}><ArrowLeft size={14}/> Workflow</button>}
+              {STAGES.findIndex(s=>s.id===stage)<STAGES.length-1 && <button onClick={()=>setStage(STAGES[STAGES.findIndex(s=>s.id===stage)+1].id)}><span>{String(STAGES.findIndex(s=>s.id===stage)+2).padStart(2,'0')} {STAGES[STAGES.findIndex(s=>s.id===stage)+1].label}</span><ArrowRight size={14}/></button>}
+            </nav>}
+            {mobile&&home ? <StudioSections className="phone-home-dock" active="studio" onNavigate={path=>leaveWorkspace(path)}/> : <MobileNavigation
+              workflowOpen={mobileWorkflowOpen}
+              onWorkflowOpen={setMobileWorkflowOpen}
+              projectDescription={`${p.description} · ${p.aspect} · ${p.fps} fps`}
+              actions={<><button onClick={()=>void leaveWorkspace(`/pipelines${p.productionProjectId?`?projectId=${encodeURIComponent(p.productionProjectId)}`:""}`)}><GitBranch size={14}/>Pipelines</button><button onClick={()=>{setMobileWorkflowOpen(false);setStage('export')}}><Download size={14}/>Export</button><button onClick={()=>void publishBible()}>Publish project bible</button><button onClick={()=>{setMobileWorkflowOpen(false);setDialog('shortcuts')}}>Shortcuts</button><DropdownMenu><DropdownMenuTrigger asChild><button aria-label="Project actions"><MoreHorizontal size={17}/></button></DropdownMenuTrigger><DropdownMenuContent className="ps">
+                <DropdownMenuItem onSelect={()=>{setMobileWorkflowOpen(false);setDialog('project')}}><Plus size={14}/>New project</DropdownMenuItem>
+                {productions.map(item=><DropdownMenuItem key={'mobile-prod-'+item.id} onSelect={()=>{setMobileWorkflowOpen(false);void openProduction(item.id)}}>Open {item.name} in my space</DropdownMenuItem>)}
+                {projects.filter(item=>item.id!==p.id).map(item=><DropdownMenuItem key={'mobile-project-'+item.id} onSelect={()=>{setMobileWorkflowOpen(false);void loadProject(item.id);setStage('canvas')}}>{item.name}</DropdownMenuItem>)}
+                <DropdownMenuItem onSelect={()=>downloadFile(new Blob([JSON.stringify(p,null,2)],{type:'application/json'}),safeName(p.name)+'.json')}>Download project data</DropdownMenuItem>
+                <DropdownMenuItem onSelect={()=>{setMobileWorkflowOpen(false);setDialog('connections')}}>Connected engines</DropdownMenuItem>
+                <DropdownMenuItem onSelect={()=>{setMobileWorkflowOpen(false);setDialog('review')}}>Studio guide</DropdownMenuItem>
+                {!sourceMode&&<DropdownMenuItem asChild><a href="/particl-redesign-source.zip" download>Download redesigned repository</a></DropdownMenuItem>}
+              </DropdownMenuContent></DropdownMenu><MobileStudioMenu active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/></>}
               disabled={!hydrated||(signedIn&&initializedScope!==storageKey)||transitioning}
               home={home}
               stage={stage}
@@ -2927,7 +2954,7 @@ export default function Studio({
                 setAtomOpen(false);
               }}
               onStage={setStage}
-            />
+            />}
           </main>
         </div>
         <input

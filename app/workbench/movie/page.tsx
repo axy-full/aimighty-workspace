@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { MoviePage } from "@/components/workbench/MoviePage";
 import "../workbench.css";
 import "../desk.css";
+import "../mobile-handoff-stages.css";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Particl — Final movie" };
 export const viewport = {

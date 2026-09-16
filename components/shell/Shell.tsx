@@ -8,12 +8,14 @@ import { AtomikProvider } from "@/components/atomik/AtomikProvider";
 import AtomikRail from "@/components/atomik/AtomikRail";
 import AtomikSheet from "@/components/atomik/AtomikSheet";
 import Header from "./Header";
+import { useMobileViewport } from "@/components/workbench/mobile-ui";
 import Dock from "./Dock";
 import SuspendedBar from "./SuspendedBar";
 
 /** Shared Studio / Gen / Workspace navigation. Gen and management own their
  * entire content area; older production tools retain their contextual rail. */
 export default function Shell({ children }: { children: React.ReactNode }) {
+  useMobileViewport();
   const { email } = useSession();
   const path = usePathname();
   const focusedSection = /^\/(generate|make|pipelines|settings|team|usage|statements)(\/|$)/.test(path);

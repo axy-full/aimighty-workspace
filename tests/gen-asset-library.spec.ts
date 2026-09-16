@@ -17,6 +17,15 @@ async function showLibrary(page: Page) {
     await page.getByRole("group", { name: "Generation view" })
       .getByRole("button", { name: /^Takes/ }).click();
 }
+/** Phone thumbnails expose the same commands through their visible action menu. */
+async function chooseAssetAction(page: Page, card: Locator, action: string) {
+  if (page.viewportSize()!.width <= 759) {
+    await card.getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: action, exact: true }).click();
+  } else {
+    await card.getByRole("button", { name: action, exact: true }).click();
+  }
+}
 function wav() {
   const bytes = Buffer.alloc(44 + 4800 * 2);
   bytes.write("RIFF");
@@ -120,7 +129,12 @@ test("Gen lists every workspace asset by type across modes and uploads originals
   for (const mode of ["Video", "Images", "Audio"] as const) {
     await page.getByRole("navigation", { name: "Generation mode" }).getByRole("button", { name: mode, exact: true }).click();
     await showLibrary(page);
-    await expect(library(page).getByRole("heading", { name: "Takes & assets", exact: true })).toBeVisible();
+    if (page.viewportSize()!.width <= 759) {
+      await expect(page.getByRole("group", { name: "Generation view", exact: true }).getByRole("button", { name: "Takes & assets", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(library(page)).toBeVisible();
+    } else {
+      await expect(library(page).getByRole("heading", { name: "Takes & assets", exact: true })).toBeVisible();
+    }
     await expect(assetCard(page, "generation", f.generationImage)).toBeVisible();
     await expect(assetCard(page, "generation", f.generationVideo)).toBeVisible();
     for (const item of [f.imageUpload, f.videoUpload, f.audioUpload, f.pdfUpload, f.otherUpload])
@@ -156,7 +170,7 @@ test("Gen lists every workspace asset by type across modes and uploads originals
   await expect(preview.getByRole("link", { name: "Download original", exact: true })).toHaveAttribute("href", `${uploaded.url}?download=1`);
   await preview.getByRole("button", { name: "Close preview", exact: true }).click();
   await page.screenshot({ path: info.outputPath("gen-library-by-type.png"), fullPage: true });
-  await assetCard(page, "upload", uploaded.id).getByRole("button", { name: "Use as reference", exact: true }).click();
+  await chooseAssetAction(page, assetCard(page, "upload", uploaded.id), "Use as reference");
   await expect(page.getByRole("region", { name: "Images composer", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove New shared lighting.png", exact: true })).toBeVisible();
   expect(f.paidRequests()).toBe(0);
@@ -348,7 +362,7 @@ test("collective Library navigation lists shared originals and all takes, with w
   const sections = page.getByRole("navigation", { name: "Studio sections", exact: true }).filter({ visible: true });
   await sections.getByRole("link", { name: "Library", exact: true }).click();
   await expect(page).toHaveURL(/\/library$/);
-  await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: page.viewportSize()!.width <= 759 ? "Workspace uploads and generated takes" : "Library", exact: true })).toBeVisible();
   await expect(sections.getByRole("link", { name: "Library", exact: true })).toHaveAttribute("aria-current", "page");
   const collective = page.getByRole("region", { name: "Collective workspace assets", exact: true });
   await expect(collective.getByRole("heading", { level: 3 })).toHaveText(["Images", "Videos", "Audio", "Documents", "Other files"]);
@@ -378,13 +392,13 @@ test("collective Library navigation lists shared originals and all takes, with w
   await expect(assetCard(page, "upload", uploaded.id)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath("collective-assets.png"), fullPage: true });
-  await assetCard(page, "upload", f.imageUpload.id).getByRole("button", { name: "Use as reference", exact: true }).click();
+  await chooseAssetAction(page, assetCard(page, "upload", f.imageUpload.id), "Use as reference");
   await expect(page).toHaveURL(new RegExp(`mode=images&ref=upload%3A${f.imageUpload.id}`));
   await expect(page.getByRole("button", { name: "Remove Original lighting reference.png", exact: true })).toBeVisible();
   await sections.getByRole("link", { name: "Library", exact: true }).click();
   await expect(page).toHaveURL(/\/library$/);
   await expect(collective).toBeVisible();
-  await assetCard(collective, "upload", f.videoUpload.id).getByRole("button", { name: "Edit clip", exact: true }).click();
+  await chooseAssetAction(page, assetCard(collective, "upload", f.videoUpload.id), "Edit clip");
   await expect(page).toHaveURL(new RegExp(`mode=video&task=edit&source=upload%3A${f.videoUpload.id}`));
   await expect(page.getByRole("region", { name: "Seedance 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
   await sections.getByRole("link", { name: "Library", exact: true }).click();

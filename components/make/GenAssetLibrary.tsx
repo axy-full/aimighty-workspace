@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { AudioLines, Download, File, FileText, Film, Image as ImageIcon, Upload, X } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useSession } from "@/lib/session";
@@ -22,12 +22,14 @@ import { ActionMenu, ActionDropdown, type StudioAction } from "@/components/work
 import styles from "./gen.module.css";
 
 type Props = {
+  controller?: Ref<GenAssetLibraryHandle>;
   search: string;
   onUseAsset: (asset: DraggedAsset) => void;
   onEdit: (asset: LibraryAsset) => void;
   onUpscale: (asset: LibraryAsset) => void;
   onUsePrompt: (take: Generation) => void;
 };
+export type GenAssetLibraryHandle = { upload: () => void };
 type Page<T> = { items: T[]; next: string | null };
 
 /** Refresh the loaded range atomically: new arrivals cannot open gaps between cursors. */
@@ -111,6 +113,10 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
 export default function GenAssetLibrary(props: Props) {
   const { signedIn, workspace, requestScope } = useSession(), upload = useUploadFile(), toast = useToast();
   const picker = useRef<HTMLInputElement>(null), lock = useRef(false), live = useRef(true);
+  useImperativeHandle(props.controller, () => ({ upload: () => {
+    if (lock.current) toast("Wait for the current uploads to finish.");
+    else picker.current?.click();
+  } }), [toast]);
   const [progress, setProgress] = useState<string | null>(null), [dragOver, setDragOver] = useState(false);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, [requestScope]);
   async function files(selected: FileList | globalThis.File[]) {
@@ -140,7 +146,7 @@ export default function GenAssetLibrary(props: Props) {
     onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); e.stopPropagation(); setDragOver(false); void files(e.dataTransfer.files); } }}>
     <div className={styles.libraryToolbar}>
       <p>{workspace?.name ? `${workspace.name} · ` : ""}Uploaded originals and generated takes</p>
-      <button type="button" className={styles.libraryUpload} disabled={!signedIn || !!progress} onClick={() => picker.current?.click()}><Upload size={15}/>Upload assets</button>
+      <button type="button" className={styles.libraryUpload} aria-label="Upload assets" disabled={!signedIn || !!progress} onClick={() => picker.current?.click()}><Upload size={15}/><span data-library-upload-label="">Upload assets</span><span className="hidden" data-phone-upload-label="">Upload</span></button>
       <input ref={picker} type="file" multiple hidden aria-label="Upload library assets" disabled={!signedIn || !!progress}
         onChange={e => { if (e.target.files) void files(e.target.files); e.target.value = ""; }}/>
     </div>

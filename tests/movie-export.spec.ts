@@ -1,3 +1,4 @@
+import { goWorkbenchStage, openWorkbenchInspector } from "./helpers/workbenchNavigation";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { signInLocally } from "./helpers/workbenchLocal";
@@ -7,16 +8,7 @@ const moduleUrl = "/__movie-test__/mediabunny.js";
 async function openDelivery(page: Page) {
   if (new URL(page.url()).pathname === "/workbench/movie")
     await page.goto("/workbench");
-  if (page.viewportSize()!.width < 760) {
-    await page
-      .getByRole("navigation", { name: "Mobile studio navigation" })
-      .getByRole("button", { name: "Workflow", exact: true })
-      .click();
-    await page
-      .getByRole("dialog", { name: "Project workflow" })
-      .getByRole("button", { name: /10 Delivery/ })
-      .click();
-  } else await page.locator(".workflow-stages").getByRole("tab").last().click();
+  await goWorkbenchStage(page, "export");
   await page
     .getByRole("button", { name: "Open movie renderer", exact: true })
     .click();
@@ -344,6 +336,7 @@ test("timeline scrubbing and the final movie use the same saved multitrack stere
   });
   expect(color[0]).toBeGreaterThan(200);
   expect(color[1]).toBeGreaterThan(200);
+  await openWorkbenchInspector(page, "sound");
   const mix = page.getByRole("region", { name: "Sound mix" });
   await mix.getByRole("button", { name: "Prepare mix", exact: true }).click();
   await expect(mix.getByRole("status")).toContainText("Mix ready");

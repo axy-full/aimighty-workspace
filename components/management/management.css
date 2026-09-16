@@ -894,3 +894,95 @@
     white-space: nowrap;
   }
 }
+
+/* Mobile workspace handoff. Keep all settings, security and billing controls. */
+@media (max-width: 759px) {
+  .management {
+    --graphite-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    --graphite-ground: #000;
+    --graphite-panel: #000;
+    --graphite-card: #17171b;
+    --graphite-control: #1b1b1f;
+    --graphite-selected: #3a3a40;
+    --graphite-line: rgba(255,255,255,.1);
+    --graphite-edge: rgba(255,255,255,.16);
+    --graphite-body: rgba(235,235,245,.6);
+    --graphite-muted: rgba(235,235,245,.5);
+    --graphite-ink: #f5f5f7;
+    --graphite-accent: #0a84ff;
+    --graphite-accent-text: #6eb4ff;
+    --graphite-primary: #0073e6;
+    --graphite-primary-hover: #0a84ff;
+    --graphite-on-primary: #fff;
+    --mg-border: rgba(255,255,255,.16);
+    padding: 16px 20px calc(32px + env(safe-area-inset-bottom, 0px));
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -.01em;
+  }
+  .management .management-topline { margin-bottom: 16px; gap: 10px; font-size: 12px; }
+  .management .management-topline > span { min-width: 0; overflow-wrap: anywhere; }
+  .management .management-topline > a { min-height: 44px; padding: 0 10px; border: 1px solid var(--mg-border); border-radius: 6px; background: #1b1b1f; color: #f5f5f7; }
+  .management .management-heading { align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+  .management .management-kicker { font-size: 12px; letter-spacing: .08em; }
+  .management .management-heading h1 { margin: 5px 0 6px; font-size: 29px; line-height: 1.2; letter-spacing: -.045em; font-weight: 600; }
+  .management .management-heading p { font-size: 15px; line-height: 1.6; color: rgba(235,235,245,.6); }
+  .management .management-nav { gap: 16px; justify-content: flex-start; overflow-x: auto; margin-bottom: 16px; border-color: rgba(255,255,255,.1); scrollbar-width: none; }
+  .management .management-nav a { flex: none; padding: 10px 0; min-height: 44px; font-size: 14px; font-weight: 500; color: rgba(235,235,245,.5); }
+  .management .management-nav a[aria-current="page"] { color: #f5f5f7; border-color: #f5f5f7; }
+  .management .management-body,
+  .management .management-stack { gap: 14px; }
+  .management .management-card { padding: 16px; border-radius: 12px; border-color: rgba(255,255,255,.16); background: #17171b; }
+  .management .management-card h2 { font-size: 16px; font-weight: 500; letter-spacing: -.02em; }
+  .management .management-card-heading { margin-bottom: 14px; }
+  .management .management-card-heading p,
+  .management .management-muted { font-size: 13px; line-height: 1.6; }
+  .management .management-tabs { display: flex; max-width: 100%; width: 100%; overflow-x: auto; flex-wrap: nowrap; padding: 3px; gap: 2px; background: #1c1c20; border: 0; border-radius: 8px; }
+  .management .management-tabs button { flex: 1 0 auto; min-height: 44px; padding: 0 12px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+  .management .management-tabs button[aria-pressed="true"] { background: #3a3a40; color: #f5f5f7; }
+  .management .management-field { gap: 6px; font-size: 13px; }
+  .management .management-field > span { font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: rgba(235,235,245,.5); }
+  .management .management-input,
+  .management .management-field input,
+  .management .management-field select,
+  .management .management-field textarea,
+  .management .management-row > select,
+  .management .management-member-actions select { min-height: 44px; font-size: 16px; padding: 9px 12px; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; background: #1b1b1f; color: #f5f5f7; }
+  .management .management-field small { font-size: 12px; line-height: 1.5; }
+  .management .management-button,
+  .management .management-button.small { min-height: 44px; padding: 9px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+  .management .management-button.primary { border-radius: 10px; font-size: 14px; }
+  .management .management-row { min-height: 52px; gap: 10px; padding: 12px 0; border-color: rgba(255,255,255,.1); }
+  .management .management-row strong { font-size: 14px; font-weight: 400; }
+  .management .management-row p { font-size: 12px; line-height: 1.5; }
+  .management .management-row > div { min-width: 0; }
+  .management .management-toggle { position: relative; width: 44px; min-width: 44px; height: 26px; min-height: 26px; padding: 2px; background: #3a3a40; }
+  .management .management-toggle::before { content: ""; position: absolute; inset: -9px -2px; }
+  .management .management-toggle span { width: 22px; height: 22px; background: #fff; }
+  .management .management-toggle[aria-checked="true"] { background: #0a84ff; }
+  .management .management-toggle[aria-checked="true"] span { transform: translateX(18px); }
+  .management .management-grid,
+  .management .management-grid.three { grid-template-columns: minmax(0,1fr); gap: 14px; }
+  .management .management-grid.four { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .management .management-stat { padding: 12px; border-radius: 8px; gap: 5px; }
+  .management .management-stat > strong { font-size: 20px; font-weight: 500; }
+  .management .management-stat > small { font-size: 11px; }
+  .management .management-member { gap: 8px; padding: 14px 0; }
+  .management .management-member-meta { font-size: 12px; line-height: 1.5; }
+  .management .management-member-actions { gap: 8px; }
+  .management .management-identity strong { font-size: 14px; font-weight: 500; }
+  .management .management-avatar { width: 36px; height: 36px; border-radius: 8px; background: #3a3a40; }
+  .management .management-credit-total { font-size: 33px; letter-spacing: -.05em; }
+  .management .management-credit-total small { font-size: 16px; }
+  .management .management-progress { height: 6px; background: #3a3a40; }
+  .management .management-chart-row .management-progress { height: 4px; }
+  .management .management-chart-row > div:first-child { font-size: 13px; }
+  .management .management-activity-title { font-size: 14px; }
+  .management .management-activity-meta { font-size: 12px; }
+  .management .management-activity > button { min-height: 52px; }
+  .management .management-plan-price { font-size: 28px; font-family: ui-monospace, Menlo, monospace; font-weight: 400; }
+  .management .management-plan h3 { font-size: 20px; font-weight: 500; }
+  .management .management-plan p { font-size: 13px; line-height: 1.6; }
+  .management .management-notice { font-size: 13px; line-height: 1.6; background: #0d0d10; }
+  .management .management-notice.is-error { color: #ff9c9c; border-color: rgba(255,107,107,.45); }
+}

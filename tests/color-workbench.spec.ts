@@ -1,10 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
+import { goWorkbenchStage as stage, openWorkbenchInspector } from "./helpers/workbenchNavigation";
+import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import ts from "typescript";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { newProject, STAGES, type Project } from "../lib/workbench/studio";
+import { newProject, type Project } from "../lib/workbench/studio";
 
 test("GPU color interpolation matches the CPU reference with domains, partial mix and image orientation", async ({
   page,
@@ -90,24 +91,7 @@ test("GPU color interpolation matches the CPU reference with domains, partial mi
   );
 });
 
-async function stage(page: Page, id: string) {
-  if (page.viewportSize()!.width < 760) {
-    await page
-      .getByRole("navigation", { name: "Mobile studio navigation" })
-      .getByRole("button", { name: "Workflow", exact: true })
-      .click();
-    await page
-      .getByRole("dialog", { name: "Project workflow" })
-      .locator(".mobile-workflow-list button")
-      .filter({ hasText: STAGES.find((s) => s.id === id)!.label })
-      .click();
-  } else
-    await page
-      .locator(".workflow-stages")
-      .getByRole("tab")
-      .nth(STAGES.findIndex((s) => s.id === id))
-      .click();
-}
+
 test("imported LUTs save, grade actual preview pixels, bypass cleanly, and match the encoded movie and editorial originals", async ({
   page,
 }, info) => {
@@ -222,9 +206,7 @@ test("imported LUTs save, grade actual preview pixels, bypass cleanly, and match
   });
   await page.reload();
   await stage(page, "edit");
-  await page
-    .getByRole("button", { name: "Sequence color", exact: true })
-    .click();
+  await openWorkbenchInspector(page, "color");
   const panel = page.getByRole("region", { name: "Sequence look" });
   const input = panel.getByLabel("Import sequence LUT", { exact: true });
   let uploads = 0;
@@ -287,9 +269,7 @@ test("imported LUTs save, grade actual preview pixels, bypass cleanly, and match
     });
   await page.reload();
   await stage(page, "edit");
-  await page
-    .getByRole("button", { name: "Sequence color", exact: true })
-    .click();
+  await openWorkbenchInspector(page, "color");
   await expect(selected).toHaveValue(lutId);
   await expect.poll(pixel).toEqual([192, 128, 64]);
   await panel.scrollIntoViewIfNeeded();

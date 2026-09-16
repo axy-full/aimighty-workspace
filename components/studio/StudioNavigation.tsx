@@ -4,7 +4,9 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Clapperboard, ScanLine, Building2, FolderOpen } from "lucide-react";
+import { Clapperboard, ScanLine, Building2, FolderOpen, Menu, X } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetClose } from "@/components/workbench/ui/sheet";
+import { useMobileLayout } from "@/components/workbench/mobile-ui";
 import { Mark } from "@/components/ui/Mark";
 import WorkspaceMenu, { type WorkbenchAccount } from "@/components/workbench/WorkspaceMenu";
 import { clearPrivateLocal } from "@/lib/session";
@@ -83,8 +85,10 @@ export default function StudioNavigation({ initialAccount, active, compact = fal
   const router = useRouter();
   const { error, follow } = useSectionFollow(onNavigate);
   const navigate = onNavigate ?? (async (href: string) => { await withPageLeaveGuard(() => { router.push(href); }); });
+  const mobile = useMobileLayout();
   return (
     <div className={`studio-navigation${compact ? " studio-navigation-compact" : ""}`}>
+      {mobile && !compact && <MobileStudioMenu initialAccount={initialAccount} active={active} onNavigate={navigate} onSwitch={onSwitch ?? (id => changeAccount(scopedFetch, "switch", id))} onSignOut={onSignOut ?? (() => changeAccount(scopedFetch, "logout"))} />}
       {!compact && <Link className="studio-navigation-brand" href="/workbench" aria-label="Particl home" onClick={e => follow(e, "/workbench")}>
         <Mark width={30} height={22} />
         <Image src="/brand/particl-wordmark-on-dark@4x.png" alt="particl" width={103} height={31} priority />
@@ -95,6 +99,37 @@ export default function StudioNavigation({ initialAccount, active, compact = fal
       {error && <p className="studio-navigation-error" role="alert">{error}</p>}
     </div>
   );
+}
+
+export function MobileStudioMenu({ initialAccount, active, onNavigate, onSwitch, onSignOut }: {
+  initialAccount: WorkbenchAccount | null;
+  active?: Section;
+  onNavigate: (path: string) => Promise<void>;
+  onSwitch: (id: string) => Promise<void>;
+  onSignOut: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const path = usePathname();
+  const current = active ?? sectionFor(path);
+  const [error, setError] = useState("");
+  async function leave(action: () => Promise<void>) {
+    setOpen(false);
+    setError("");
+    // Release the drawer's modal layer before any unsaved-work confirmation.
+    try { await action(); }
+    catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change workspace.");
+      setOpen(true);
+    }
+  }
+  const follow = (href: string) => leave(() => onNavigate(href));
+  return <><button className="phone-menu-trigger" aria-label="Open workspace navigation" aria-expanded={open} onClick={() => setOpen(true)}><Menu size={20}/></button>
+    <Sheet open={open} onOpenChange={setOpen}><SheetContent side="left" showCloseButton={false} className="phone-workspace-drawer">
+      <SheetHeader><SheetTitle><Mark width={25} height={22}/><span>Particl</span></SheetTitle><SheetDescription>Your production workspace</SheetDescription><SheetClose className="phone-drawer-close" aria-label="Close workspace navigation"><X size={20}/></SheetClose></SheetHeader>
+      <nav className="studio-sections phone-drawer-sections" aria-label="Studio sections">{SECTIONS.map(({id,label,href,icon:Icon})=><button key={id} type="button" aria-current={current===id?'page':undefined} onClick={()=>void follow(href)}><Icon size={19} strokeWidth={1.6}/><span>{label}</span></button>)}</nav>{error&&<p className="studio-menu-error" role="alert">{error}</p>}
+      <div className="phone-drawer-account"><p>{initialAccount?.workspace?.name || "Your workspace"}</p><small>{initialAccount?.workspaces.find(w => w.id === initialAccount.workspace?.id)?.role || "Account"} · Workspace</small><WorkspaceMenu initial={initialAccount} onNavigate={follow} onSwitch={id=>leave(()=>onSwitch(id))} onSignOut={()=>leave(onSignOut)}/></div>
+    </SheetContent></Sheet>
+  </>;
 }
 
 export function StudioDock() {

@@ -1,3 +1,4 @@
+import { goWorkbenchStage as goStage, openWorkbenchProject } from "./helpers/workbenchNavigation";
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { readFile } from "node:fs/promises";
@@ -5,17 +6,7 @@ import { seedProject, STAGES, type Plan, type Project } from "../lib/workbench/s
 import { RING_DOTS } from "../lib/ring";
 
 
-async function goStage(page: Page, label: string) {
-  if (page.viewportSize()!.width < 760) {
-    await page.getByRole("navigation", { name: "Mobile studio navigation" }).getByRole("button", { name: "Workflow", exact: true }).click();
-    const sheet = page.getByRole("dialog", { name: "Project workflow" });
-    await expect(sheet).toBeVisible();
-    await sheet.locator(".mobile-workflow-list button").filter({ hasText: label }).click();
-    await expect(sheet).not.toBeVisible();
-  } else {
-    await page.locator(".workflow-stages").getByRole("tab").nth(STAGES.findIndex(stage => stage.label === label)).click();
-  }
-}
+
 
 async function fixture(page: Page) {
   const me=await page.request.get('/api/me').then(response=>response.json());
@@ -123,6 +114,21 @@ test("studio context actions edit the right node, respect locks, support keyboar
     return !!bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width + 1 && bounds.y + bounds.height <= viewport.height + 1;
   }).toBe(true);
   await page.screenshot({path:testInfo.outputPath('studio-context-menu.png')});
+  if (mobile) {
+    const nodesBeforeDismiss = state.current().nodes.length;
+    // A single outside tap must dismiss the sheet without running a command.
+    await page.mouse.click(8, 8);
+    await expect(assetMenu).toHaveCount(0);
+    expect(state.current().nodes).toHaveLength(nodesBeforeDismiss);
+    await target.focus();
+    await target.press('Shift+F10');
+    await expect(assetMenu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(assetMenu).toHaveCount(0);
+    await expect(target).toBeFocused();
+    await target.press('Shift+F10');
+    await expect(assetMenu).toBeVisible();
+  }
   const before=state.current().nodes.length;
   await assetMenu.getByRole('menuitem',{name:'Add to canvas',exact:true}).click();
   await expect.poll(()=>state.current().nodes.length).toBe(before+1);
@@ -148,6 +154,9 @@ test("studio exposes Gen, collective Library and workspace navigation with the o
   expect(await mark.locator("circle").evaluateAll(dots => dots.map(dot => ["cx", "cy", "r"].map(key => Number(dot.getAttribute(key)))))).toEqual(RING_DOTS);
   expect(await mark.evaluate(el => ({ fill: getComputedStyle(el).fill, stroke: getComputedStyle(el).stroke }))).toEqual({ fill: "rgb(245, 245, 247)", stroke: "none" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  if (page.viewportSize()!.width < 760) {
+    await page.getByRole("button", { name: "Open workspace navigation", exact: true }).click();
+  }
   await page.getByRole("button", { name: "Workspace menu", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Credits & plan", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("studio-sections-and-account.png") });
@@ -176,8 +185,13 @@ test("navigation waits for hydration and initial load, then accepts the first wo
   await expect(workflow).toBeDisabled();
   releaseScripts();
   await expect.poll(()=>projectRequested).toBeTruthy();
-  await expect(workflow).toBeDisabled();
+  if (mobile) {
+    // Hydration reveals the workspace dock; the project is still loading.
+    await expect(page.locator(".phone-home-dock")).toBeVisible();
+    await expect(page.locator(".home-current")).toBeDisabled();
+  } else await expect(workflow).toBeDisabled();
   releaseProject();
+  if (mobile) await openWorkbenchProject(page);
   await expect(workflow).toBeEnabled();
   await workflow.click();
   if (!mobile) {
@@ -189,6 +203,8 @@ test("navigation waits for hydration and initial load, then accepts the first wo
   // A verified workspace with no draft still completes initialization and keeps recovery/navigation available.
   await page.route("**/api/workbench/projects?*",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({projects:[],productions:[],revision:0})}));
   await page.reload();
+  await expect(page.getByRole("button", { name: "Explore sample", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Explore sample", exact: true }).click();
   await expect(workflow).toBeEnabled();
   await workflow.click();
   await expect(page.getByRole("dialog",{name:"Project workflow"})).toBeVisible();
@@ -202,6 +218,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   await page.goto("/workbench");
   await expect(page.getByRole("button", { name: "Particl home", exact: true })).toBeVisible();
   const mobile = page.viewportSize()!.width < 760;
+  if (mobile) await openWorkbenchProject(page);
   if (mobile) await expect(page.getByRole("navigation", { name: "Mobile studio navigation" })).toBeVisible();
   await goStage(page, "Brief & ideas");
   const title = `Browser production ${testInfo.project.name}`;

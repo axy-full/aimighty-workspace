@@ -496,6 +496,16 @@ test("customer can choose annual plan, verify email, review billing and start a 
     .click();
   await expect.poll(() => state.draft?.name).toBe("Our first commercial");
   await expect(page.locator(".sample-preview-banner")).toHaveCount(0);
+  if ((page.viewportSize()?.width ?? 1440) <= 759) {
+    await page
+      .getByRole("navigation", { name: "Mobile studio navigation" })
+      .getByRole("button", { name: "Workflow", exact: true })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Project workflow", exact: true })
+      .getByRole("button", { name: "Open workspace navigation", exact: true })
+      .click();
+  }
   await page
     .getByRole("button", { name: "Workspace menu", exact: true })
     .click();
@@ -811,6 +821,56 @@ test("dirty workspace settings survive cancelled navigation and discard only aft
   ).toBeVisible();
   expect(nativeDialogs).toEqual([]);
   expect(state.settingsWrites).toEqual([{ shotCapCredits: "75" }]);
+});
+
+test("mobile workspace drawer releases its modal before unsaved settings confirmation", async ({
+  page,
+}) => {
+  test.skip(page.viewportSize()!.width >= 760, "phone workspace drawer");
+  const state = await customerFixture(page);
+  await page.goto("/settings");
+  const workspaceName = page.getByLabel("Workspace name", { exact: true });
+  await workspaceName.fill("Unsaved drawer edit");
+  const drawer = page.locator(".phone-workspace-drawer");
+  const confirm = page.getByRole("dialog", {
+    name: "Discard unsaved changes?",
+    exact: true,
+  });
+  const openDrawer = () => page.getByRole("button", {
+    name: "Open workspace navigation",
+    exact: true,
+  }).click();
+
+  await openDrawer();
+  await drawer.getByRole("button", { name: "Studio", exact: true }).click();
+  await expect(confirm).toBeVisible();
+  await expect(drawer).not.toBeVisible();
+  await expect(page).toHaveURL(/\/settings$/);
+  // A normal click must work: the old drawer left this confirmation under its
+  // pointer lock and focus trap, making both safe and destructive choices inert.
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(workspaceName).toHaveValue("Unsaved drawer edit");
+  expect(state.settingsWrites).toEqual([]);
+  expect(state.events).toEqual([]);
+
+  await openDrawer();
+  await drawer.getByRole("button", { name: "Workspace menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Second Studio", exact: true }).click();
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(workspaceName).toHaveValue("Unsaved drawer edit");
+  expect(state.events).toEqual([]);
+
+  await openDrawer();
+  await drawer.getByRole("button", { name: "Studio", exact: true }).click();
+  await expect(confirm).toBeVisible();
+  await expect(page).toHaveURL(/\/settings$/);
+  await confirm.getByRole("button", { name: "Discard and leave", exact: true }).click();
+  await expect(page).toHaveURL(/\/workbench$/);
+  expect(state.settingsWrites).toEqual([]);
+  expect(state.events).toEqual([]);
+  await page.goto("/settings");
+  await expect(workspaceName).toHaveValue("Customer Pictures");
 });
 
 test("dirty settings guard account mutations before POST and recover after a refused switch", async ({

@@ -1533,3 +1533,224 @@
     margin: 0 20px 0 0;
   }
 }
+
+/* The phone handoff is deliberately isolated from the existing desktop desk. */
+@media (max-width: 759px) {
+  .workspace { background: var(--gen-ground); }
+  .header {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    padding: 16px 20px 0;
+    border: 0;
+  }
+  .heading { display: block; }
+  .heading > h1, .studioBack { display: none; }
+  .heading [data-phone-gen-heading] { display: block; }
+  .heading [data-phone-gen-heading] > span {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--gen-muted);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .heading [data-phone-gen-heading] h1 {
+    font-size: 29px;
+    line-height: 1.2;
+    letter-spacing: -.045em;
+    white-space: normal;
+  }
+  .modes { margin: 0; padding: 4px; min-height: 51px; border-radius: 9px; }
+  .modes button { min-height: 43px; padding: 4px 8px; border-radius: 6px; font-size: 13px; }
+  .modes svg { display: block; width: 14px; height: 14px; }
+  .mobileViews {
+    min-height: 41px;
+    margin: 8px 20px 0;
+    padding: 0;
+    gap: 14px;
+    border-bottom: 1px solid var(--gen-line);
+    border-radius: 0;
+    background: transparent;
+  }
+  .mobileViews button {
+    flex: none;
+    min-height: 40px;
+    justify-content: flex-start;
+    padding: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .mobileViews button[aria-pressed="true"] { background: transparent; border-bottom-color: var(--gen-ink); }
+  .mobileViews svg { display: none; }
+  .creationPane, .takesPane { background: var(--gen-ground); }
+  .composerScroll { padding: 16px 20px 24px; overscroll-behavior-y: contain; }
+  .fields { gap: 16px; }
+  .composer[data-composer] .promptStage {
+    padding: 16px;
+    border: 1px solid var(--gen-edge);
+    border-radius: 12px;
+    background: var(--gen-raised);
+  }
+  .composer[data-composer] .promptStage:focus-within { border-color: var(--gen-edge); }
+  .composer[data-composer] .promptStage > .sectionLabel,
+  .composer[data-composer] .settingsSection > .sectionLabel {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+  .composer[data-composer] .promptStage > .sectionLabel { margin-bottom: 12px; }
+  .composer[data-composer] .promptStage > .sectionLabel > span:first-child,
+  .composer[data-composer] .settingsSection > .sectionLabel > span:first-child {
+    color: var(--graphite-accent-text);
+    font: 11px/1.5 var(--graphite-mono);
+    letter-spacing: .04em;
+  }
+  .composer[data-composer] .promptStage > .sectionLabel > span + span { font-size: 11px; }
+  .workspace .composer[data-composer] .prompt {
+    min-height: 118px;
+    padding: 10px 12px;
+    border: 1px solid var(--graphite-accent);
+    border-radius: 6px;
+    background: var(--gen-control);
+    font-size: 16px;
+  }
+  .promptMeta { margin-top: 8px; font-size: 12px; gap: 6px; }
+  .promptMeta kbd { font-size: 12px; }
+  .composer[data-composer] .promptStage:has(+ .references) { border-radius: 12px 12px 0 0; border-bottom: 0; padding-bottom: 16px; }
+  .composer[data-composer] .promptStage + .references { margin-top: -16px; border-top: 0; border-radius: 0 0 12px 12px; padding-top: 0; }
+  .references { padding: 16px; gap: 8px; border-color: var(--gen-edge); border-radius: 12px; background: var(--gen-raised); }
+  .references .sectionLabel { justify-content: flex-start; gap: 4px; font-size: 10px; letter-spacing: .12em; }
+  .references .sectionLabel > span + span { text-transform: uppercase; letter-spacing: .12em; }
+  .references .sectionLabel > span + span::before { content: "· "; }
+  .referenceRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .reference { width: 100%; height: auto; aspect-ratio: 16 / 9; }
+  .reference > button { width: 44px; height: 44px; top: 0; right: 0; }
+  .reference > span { font-size: 10px; }
+  .addReference, .workspace [data-phone-reference-alternate] {
+    width: 100%;
+    min-width: 0;
+    min-height: 96px;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px;
+    border: 1px dashed var(--gen-edge);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--gen-body);
+    text-align: center;
+  }
+  .addReference:has([data-phone-reference-label]) > span:not([data-phone-reference-label]) { display: none; }
+  .addReference:has([data-phone-reference-label]) > svg:not([data-phone-reference-icon]) { display: none; }
+  .addReference [data-phone-reference-icon] { display: block; }
+  .addReference [data-phone-reference-label] { display: block; }
+  .addReference span, .workspace [data-phone-reference-alternate] span { font-size: 11px; line-height: 1.4; }
+  .referenceHint { font-size: 11px; line-height: 1.5; }
+  .composer[data-composer="video"] .referenceHint { display: none; }
+  .settingsSection { gap: 0; padding: 0; overflow: hidden; border-color: var(--gen-edge); border-radius: 12px; background: var(--gen-raised); }
+  .composer[data-composer] .settingsSection > .sectionLabel { padding: 16px 16px 6px; }
+  .settingsSection > .sectionLabel > svg { display: none; }
+  .settingsSection .engine { min-height: 64px; padding: 8px 16px; border-radius: 0; }
+  .engine strong { font-size: 14px; font-weight: 500; }
+  .engine small { font-size: 12px; line-height: 1.4; }
+  .settingsGrid { display: flex; flex-direction: column; gap: 0; padding: 0; }
+  .setting { min-height: 48px; justify-content: space-between; padding: 6px 16px; border: 0; border-bottom: 1px solid var(--gen-line); border-radius: 0; background: transparent; }
+  .setting > span, .setting > strong { font-size: 14px; color: var(--gen-ink); }
+  .setting > strong { font-weight: 400; }
+  .setting > strong > svg { color: var(--gen-muted); }
+  .toggle { min-height: 58px; padding: 8px 16px; font-size: 14px; }
+  .toggle > span { flex-direction: column; gap: 1px; }
+  .toggle small { font-size: 12px; }
+  .toggle input {
+    appearance: none;
+    position: relative;
+    flex: none;
+    width: 44px;
+    height: 26px;
+    margin: 9px 0;
+    border: 0;
+    border-radius: 13px;
+    background: var(--gen-selected);
+    cursor: pointer;
+  }
+  .toggle input::before { content: ""; position: absolute; width: 22px; height: 22px; top: 2px; left: 2px; border-radius: 50%; background: var(--graphite-on-primary); }
+  .toggle input:checked { background: var(--graphite-accent); }
+  .toggle input:checked::before { transform: translateX(18px); }
+  .settingsSection > .selectLabel { padding: 10px 16px; }
+  .workspace .selectLabel input, .workspace .selectLabel select, .inlineActions select { min-height: 44px; font-size: 16px; background: var(--gen-control); }
+  .voices { margin: 0 16px 12px; }
+  .trackTabs button { min-height: 44px; }
+  .details { padding: 16px; border-color: var(--gen-edge); border-radius: 12px; background: var(--gen-raised); }
+  .details summary { min-height: 44px; font: 11px/1.5 var(--graphite-mono); letter-spacing: .04em; color: var(--graphite-accent-text); text-transform: uppercase; }
+  .details summary > span { font: 11px/1.5 var(--graphite-font); color: var(--gen-muted); letter-spacing: 0; text-transform: none; }
+  .inlineActions button { min-height: 44px; border-radius: 8px; font-size: 12px; }
+  .composerFooter { padding: 12px 20px 10px; background: var(--gen-ground); gap: 12px; }
+  .runMeta { display: flex; flex: 1; gap: 2px; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--gen-ink); }
+  .runMeta > span + span { display: block; color: var(--gen-muted); font-size: 12px; }
+  .runMeta [data-phone-quote-note] { display: inline; }
+  .generate { min-height: 44px; padding: 10px 12px; gap: 8px; border-radius: 10px; }
+  .generate > span { font-weight: 500; }
+  .generate > span > svg { display: none; }
+  .generate > strong { padding: 0; background: transparent; font-size: 12px; }
+  .takesPane { position: relative; }
+  .takesHeader { padding: 16px 20px 0; border: 0; }
+  .takesHeader > div { padding-right: 100px; }
+  .takesHeader h2 { display: none; }
+  .takesHeader > div > span { font-size: 13px; color: var(--gen-body); line-height: 1.6; }
+  .search { min-height: 44px; padding: 8px 12px; border-color: var(--gen-edge); border-radius: 10px; }
+  .takesScroll { padding: 14px 20px 24px; }
+  .libraryToolbar { border: 0; padding: 0; margin-bottom: 16px; align-items: center; }
+  .libraryToolbar p { max-width: none; font-size: 12px; }
+  .takesPane .libraryToolbar { height: 0; margin: 0; padding: 0; }
+  .takesPane .libraryToolbar p { display: none; }
+  .takesPane .libraryUpload { position: absolute; top: 16px; right: 20px; }
+  .takesPane .libraryUpload [data-library-upload-label] { display: none; }
+  .takesPane .libraryUpload [data-phone-upload-label] { display: inline; }
+  .workspace .libraryUpload, .workspace .libraryMore button { font-size: 12px; min-height: 44px; }
+  .takeGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .takeCard { border-color: var(--gen-edge); }
+  .assetGroup { margin-bottom: 20px; padding-bottom: 0; }
+  .assetTitle > button { min-height: 44px; min-width: 44px; }
+  .takeInfo { padding: 8px 10px 10px; }
+  .assetTitle > p { font-size: 12px; }
+  .takeActions { display: none; }
+  .takesScroll [data-phone-library-link] { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--gen-edge); border-radius: 8px; background: var(--gen-raised); color: var(--gen-ink); text-decoration: none; }
+  .takesScroll [data-phone-library-link] strong { display: block; font-size: 14px; font-weight: 500; }
+  .takesScroll [data-phone-library-link] small { display: block; margin-top: 2px; color: var(--gen-muted); font-size: 12px; }
+  .takesScroll [data-phone-library-link] > svg { transform: rotate(180deg); flex: none; color: var(--gen-body); }
+  .dialog { max-width: 100%; width: 100%; max-height: calc(100dvh - 57px); left: 0; top: auto; bottom: 0; transform: none; border-radius: 18px 18px 0 0; padding: 18px 0 max(16px, env(safe-area-inset-bottom)); }
+  .dialog::before { content: ""; position: absolute; top: 8px; left: calc(50% - 18px); width: 36px; height: 5px; border-radius: 3px; background: var(--gen-selected); }
+  .dialogHeader { padding: 7px 21px 14px; align-items: center; }
+  .dialogHeader h2 { font-size: 22px; font-weight: 500; line-height: 1.3; letter-spacing: -.03em; }
+  .dialogHeader button { width: 44px; height: 44px; flex: none; }
+  .dialogHeader button svg { width: 18px; height: 18px; }
+  .filingForm select { min-height: 44px; font-size: 16px; }
+  .modelList { padding: 16px 21px; }
+  .modelList strong { font-size: 14px; }
+  .modelList small { font-size: 12px; }
+  :global(.collective-assets) .libraryToolbar { display: none; }
+  :global(.collective-assets) .takeGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  :global(.collective-assets) .takeCard { position: relative; border-radius: 6px; }
+  :global(.collective-assets) .takeMedia { aspect-ratio: 1; }
+  :global(.collective-assets) .takeInfo { position: absolute; inset: 0; padding: 0; pointer-events: none; }
+  :global(.collective-assets) .assetTitle > p,
+  :global(.collective-assets) .takeInfo > span,
+  :global(.collective-assets) .assetProduction { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  :global(.collective-assets) .assetTitle > button { position: absolute; right: 0; top: 0; width: 44px; height: 44px; margin: 0; pointer-events: auto; color: var(--gen-ink); background: rgba(0, 0, 0, .5); border-radius: 0 0 0 6px; }
+  :global(.collective-assets) .takeKind { top: auto; bottom: 5px; left: 5px; font-size: 9px; letter-spacing: .04em; }
+  :global(.collective-assets) .takeCost { top: 5px; left: 5px; right: auto; max-width: calc(100% - 48px); font-size: 8px; }
+  :global(.collective-assets) .takeError { position: absolute; bottom: 22px; left: 0; right: 0; max-height: 44px; overflow: auto; margin: 0; padding: 4px; background: var(--gen-ground); pointer-events: auto; }
+  :global(.collective-assets) .jobStatus { bottom: 23px; font-size: 10px; padding: 6px; }
+}

@@ -1,26 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
+import { goWorkbenchStage as stage, openWorkbenchInspector, openWorkbenchBins, closeWorkbenchBins } from "./helpers/workbenchNavigation";
+import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { seedProject, STAGES } from "../lib/workbench/studio";
-async function stage(page: Page, id: string) {
-  if (page.viewportSize()!.width < 760) {
-    await page
-      .getByRole("navigation", { name: "Mobile studio navigation" })
-      .getByRole("button", { name: "Workflow", exact: true })
-      .click();
-    await page
-      .getByRole("dialog", { name: "Project workflow" })
-      .locator(".mobile-workflow-list button")
-      .filter({ hasText: STAGES.find((s) => s.id === id)!.label })
-      .click();
-  } else
-    await page
-      .locator(".workflow-stages")
-      .getByRole("tab")
-      .nth(STAGES.findIndex((s) => s.id === id))
-      .click();
-}
+import { seedProject } from "../lib/workbench/studio";
+
 test("asset bins and named cuts persist, recover a lost save, restore clip audio and timing, and export an intact version", async ({
   page,
 }, info) => {
@@ -48,9 +32,11 @@ test("asset bins and named cuts persist, recover a lost save, restore clip audio
       .then((r) => r.json());
   await page.goto("/workbench");
   await stage(page, "assets");
+  await openWorkbenchBins(page);
   await page.getByLabel("Bin name", { exact: true }).fill("Director selects");
   await page.getByRole("button", { name: "New bin", exact: true }).click();
   await page.getByLabel("Asset bin", { exact: true }).selectOption("");
+  await closeWorkbenchBins(page);
   if (page.viewportSize()!.width >= 1100)
     await page
       .getByRole("article", { name: "Asset: The encounter", exact: true })
@@ -69,7 +55,9 @@ test("asset bins and named cuts persist, recover a lost save, restore clip audio
     .poll(async () => ((await read()).project.bins ?? [])[0]?.assetIds)
     .toEqual(["hero"]);
   const binId = (await read()).project.bins[0].id;
+  await openWorkbenchBins(page);
   await page.getByLabel("Asset bin", { exact: true }).selectOption(binId);
+  await closeWorkbenchBins(page);
   await expect(
     page.getByRole("article", { name: "Asset: The encounter", exact: true }),
   ).toBeVisible();
@@ -79,19 +67,21 @@ test("asset bins and named cuts persist, recover a lost save, restore clip audio
       exact: true,
     }),
   ).toHaveCount(0);
+  await openWorkbenchBins(page);
   await page.getByLabel("Asset bin", { exact: true }).selectOption("unfiled");
+  await closeWorkbenchBins(page);
   await expect(
     page.getByRole("article", { name: "Asset: The encounter", exact: true }),
   ).toHaveCount(0);
   await page.reload();
   await stage(page, "assets");
+  await openWorkbenchBins(page);
   await expect(page.getByLabel("Asset bin", { exact: true })).toContainText(
     "Director selects",
   );
+  await closeWorkbenchBins(page);
   await stage(page, "edit");
-  await page
-    .getByRole("button", { name: "Edit versions", exact: true })
-    .click();
+  await openWorkbenchInspector(page, "versions");
   if (info.project.name === "workbench-1440x900") {
     let lost = false;
     await page.route("**/api/workbench/edit-versions", async (route) => {
@@ -116,15 +106,13 @@ test("asset bins and named cuts persist, recover a lost save, restore clip audio
     "Saved “Assembly A”",
   );
   expect((await history()).versions).toHaveLength(1);
-  await page.getByRole("button", { name: "Shot details", exact: true }).click();
+  await openWorkbenchInspector(page, "shot");
   await page.locator("#shot-duration").fill("2");
   await page.locator("#shot-duration").blur();
   await expect
     .poll(async () => (await read()).project.shots[0].duration)
     .toBe(48);
-  await page
-    .getByRole("button", { name: "Edit versions", exact: true })
-    .click();
+  await openWorkbenchInspector(page, "versions");
   await versions.getByLabel("Edit version name").fill("Assembly B");
   await versions
     .getByRole("button", { name: "Save edit version", exact: true })
@@ -177,9 +165,7 @@ test("asset bins and named cuts persist, recover a lost save, restore clip audio
   ).toBe(409);
   await page.reload();
   await stage(page, "edit");
-  await page
-    .getByRole("button", { name: "Edit versions", exact: true })
-    .click();
+  await openWorkbenchInspector(page, "versions");
   await expect(
     versions.getByRole("button", { name: "Restore Assembly A", exact: true }),
   ).toBeVisible();
