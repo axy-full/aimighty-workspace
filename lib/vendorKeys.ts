@@ -10,11 +10,11 @@ import { currentTenant } from "./tenant";
  * sign-up, walled by lib/allowance.ts). A workspace on its own keys reaches
  * nothing it has not added: that vendor is simply unrouted for it.
  */
-export type VendorKeyName = "ark" | "gemini" | "gateway" | "fal" | "elevenlabs";
+export type VendorKeyName = "ark" | "gemini" | "gateway" | "fal" | "elevenlabs" | "higgsfield";
 
 const ENV: Record<VendorKeyName, string> = {
   ark: "ARK_API_KEY", gemini: "GEMINI_API_KEY", gateway: "AI_GATEWAY_API_KEY",
-  fal: "FAL_KEY", elevenlabs: "ELEVENLABS_API_KEY",
+  fal: "FAL_KEY", elevenlabs: "ELEVENLABS_API_KEY", higgsfield: "HF_CREDENTIALS",
 };
 
 export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[] = [
@@ -23,6 +23,7 @@ export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[]
   { name: "gemini", label: "Google Gemini", does: "Nano Banana stills, direct" },
   { name: "fal", label: "fal.ai", does: "Kling 3.0 video · motion control · Topaz Astra upscale · identity training" },
   { name: "elevenlabs", label: "ElevenLabs", does: "Voice · sound effects · music" },
+  { name: "higgsfield", label: "Higgsfield", does: "Soul character identities · enter API key ID:API key secret" },
 ];
 
 export function vendorKey(name: VendorKeyName): string | null {
@@ -32,6 +33,8 @@ export function vendorKey(name: VendorKeyName): string | null {
     if (own) return own;
     if (!ws.usesPlatformKeys) return null;
   }
+  if (name === "higgsfield" && !process.env.HF_CREDENTIALS && process.env.HF_API_KEY_ID && process.env.HF_API_KEY_SECRET)
+    return `${process.env.HF_API_KEY_ID}:${process.env.HF_API_KEY_SECRET}`;
   return process.env[ENV[name]] || null;
 }
 

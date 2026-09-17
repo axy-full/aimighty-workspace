@@ -7,6 +7,8 @@ import {
   videoReferenceSeconds,
 } from "@/lib/referenceDuration";
 import { billCredits } from "@/lib/creditTerms";
+import { requireReadySoulIdentity } from "@/lib/soulIdentities";
+import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 
 import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
 import { db, ready, now, id } from "@/lib/db";
@@ -246,6 +248,18 @@ export async function executeGenerationAdmission(
         { error: `Unknown model: ${modelId}` },
         { status: 400 },
       );
+    }
+    let soulBinding: Awaited<ReturnType<typeof requireReadySoulIdentity>> | undefined;
+    let soulStrength: number | undefined;
+    if (model.soulIdentity) {
+      if (!soulCharacterGenerationEnabled()) return admissionReply({ error: "Soul Character generation awaits provider access and confirmed pricing." }, { status: 503 });
+      if (typeof body.soulIdentityId !== "string" || !body.soulIdentityId) return admissionReply({ error: "Choose a ready Soul identity before generating." }, { status: 400 });
+      soulStrength = body.soulStrength ?? 1;
+      if (typeof soulStrength !== "number" || !Number.isFinite(soulStrength) || soulStrength < 0 || soulStrength > 1) return admissionReply({ error: "Soul likeness strength must be between 0 and 1." }, { status: 400 });
+      try { soulBinding = await requireReadySoulIdentity(body.soulIdentityId, body.projectId ? String(body.projectId) : undefined, body.workbenchProjectId ? String(body.workbenchProjectId) : undefined); }
+      catch (error) { return admissionReply({ error: error instanceof Error ? error.message : "That Soul identity is unavailable." }, { status: 400 }); }
+    } else if (body.soulIdentityId != null) {
+      return admissionReply({ error: "This engine cannot use a trained Soul identity. Choose Soul Character or use the reference image." }, { status: 400 });
     }
     // No key, no row: better a 400 now than a "running" render that fails later.
     const vendor = getProvider(model.provider);
@@ -951,12 +965,13 @@ export async function executeGenerationAdmission(
       /* A cited name that is a trained likeness: the still renders through Flux
        with the identity's own model (brief 1.3), priced as that render. */
       const trained =
-        !model.stillTask && castIds.length
+        !model.stillTask && !model.soulIdentity && castIds.length
           ? await identityForCast(castIds)
           : null;
       const estStillUsd = trained
         ? RENDER_USD_PER_MP
         : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0);
+      if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Soul Character has no confirmed price for this size." }, { status: 503 });
       if (
         body.maxCredits != null &&
         billCredits(estStillUsd, modelId) > body.maxCredits
@@ -1101,6 +1116,9 @@ export async function executeGenerationAdmission(
       const genId = id("gen");
       const ts = now();
       const stillParams = {
+        ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
+          soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
+          workbenchProjectId: body.workbenchProjectId ? String(body.workbenchProjectId) : undefined } : {}),
         topaz,
         topazOutput,
         ratio,

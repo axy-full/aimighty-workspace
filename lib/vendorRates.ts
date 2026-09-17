@@ -1,4 +1,19 @@
 import type { TaskId } from "./tasks";
+import { SOUL_CHARACTER_MODEL_ID } from "./models";
+
+/** No published/current Soul Character price was verified. Operators must first
+ * verify access and both rates using the authenticated estimate endpoint.
+ * Private runtime configuration stays in the server's pricing layer. */
+export function soulCharacterRates(): Record<string, number> | null {
+  const low = Number(process.env.HF_SOUL_CHARACTER_USD_720P);
+  const high = Number(process.env.HF_SOUL_CHARACTER_USD_1080P);
+  return Number.isFinite(low) && low > 0 && Number.isFinite(high) && high > 0
+    ? { "720p": low, "1080p": high } : null;
+}
+
+export function soulCharacterGenerationEnabled(): boolean {
+  return process.env.HF_SOUL_CHARACTER_ENABLED === "1" && soulCharacterRates() !== null;
+}
 
 /**
  * What the vendors charge — in dollars, and never in a browser.
@@ -39,6 +54,9 @@ export type VendorRates = {
 
 /** Keyed by model id. A model with no entry here cannot be priced. */
 export const VENDOR_RATES: Record<string, VendorRates> = {
+  get [SOUL_CHARACTER_MODEL_ID]() {
+    return { imagePricing: soulCharacterGenerationEnabled() ? soulCharacterRates()! : {}, imageRefInUsd: 0 };
+  },
   "dreamina-seedance-2-5-260628": {
     tiers: [{
       resolutions: ["480p", "720p"],

@@ -19,7 +19,8 @@ import {
   type ReconcileResult,
 } from "./generationSettlement";
 import { TOPAZ_IMAGE_MODEL } from "./topaz";
-import { loadJob, producedOutcome, seal, reconcileTopazImage } from "./renderWork";
+import { loadJob, producedOutcome, seal, reconcileTopazImage, reconcileHiggsfieldImage } from "./renderWork";
+import { restoreHiggsfieldGenerationReceipts } from "./higgsfieldGenerationReceipts";
 import { retryRenderDispatches } from "./inngest";
 import { billedTo, getProvider } from "./providers";
 import { releaseHeldJobs } from "./held";
@@ -104,6 +105,11 @@ export function rowToGeneration(r: any): Generation {
   // Queue recovery state contains vendor cost and storage internals, never UI input.
   delete params.producedOutcome;
   delete params.paidClaim;
+  delete params.soulReferenceId;
+  delete params.soulCredentialFingerprint;
+  delete params.soulVendorCostUsd;
+  delete params.higgsfieldStillHandle;
+  delete params.higgsfieldStillPollUntil;
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -271,6 +277,10 @@ export async function syncGeneration(
 return await withRecoveryJob(requireTenant().id, gen.id, async () => {
 
   await deliverGenerationSettlement(gen.id);
+  if (gen.kind === "image" && gen.provider === "higgsfield") {
+    try { await reconcileHiggsfieldImage(gen.id); } catch (error) { if (options.strict) throw error; }
+    return (await getGeneration(gen.id)) ?? gen;
+  }
   const savedCosts = await generationCosts(gen.id);
   // A succeeded row isn't final until the video is in our storage AND the
   // cost is recorded — Ark can report success a beat before usage appears,
@@ -513,6 +523,9 @@ export async function syncPending(
   const legacy = await repairLegacyGenerationSettlements(bounded);
   results.attempted += legacy.attempted;
   results.failed += legacy.failed;
+  const soulReceipts = await restoreHiggsfieldGenerationReceipts(bounded);
+  results.attempted += soulReceipts.attempted;
+  results.failed += soulReceipts.failed;
   const dispatch = await retryRenderDispatches({
     limit: 4,
     deadlineAt: options.deadlineAt,
@@ -575,6 +588,8 @@ export async function syncPending(
             !gen.arkTaskId &&
             !params.falRequestId &&
             !params.falStillRequestId &&
+            !params.higgsfieldStillHandle &&
+            !(gen.provider === "higgsfield" && params.paidClaim) &&
             (params.worker
               ? Math.max(gen.createdAt, Number(params.workerDispatchedAt) || 0)
               : gen.createdAt) <

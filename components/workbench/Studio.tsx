@@ -142,6 +142,8 @@ import {
   defaultEdits,
 } from "@/lib/workbench/studio-export";
 import {GenerationDialog,studioRequest,StudioRequestError,type GenerationTarget} from './GenerationDialog';
+import {SoulIdentityPanel} from './SoulIdentityPanel';
+import {soulIdentityAsset} from '@/lib/workbench/soul-identity';
 import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {useProductionJobs} from './use-production-jobs';
 import {ModelPicker,EffortPicker,thinkingModelName,effortLabel} from '@/components/atomik/ModelPicker';
@@ -376,6 +378,7 @@ export default function Studio({
   ]);
   const [selectedNode, setSelectedNode] = useState<string | null>("scene");
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
+  const [soulTarget, setSoulTarget] = useState<{draftId:string;subjectType:'character'|'element';assetId?:string}|null>(null);
   const [dialog, setDialog] = useState<
     | "project"
     | "node"
@@ -571,7 +574,7 @@ export default function Studio({
     const token=++loadToken.current;
     const from=pRef.current.id,wasReady=readyRef.current;
     transitioningRef.current=true;setTransitioning(true);
-    setGenerationTarget(null);setAtomikTarget(null);setSelectedAsset(null);setPlaying(false);
+    setGenerationTarget(null);setAtomikTarget(null);setSoulTarget(null);setSelectedAsset(null);setPlaying(false);
     if(wasReady&&signedIn)await drainSaves(from);else await flushSave();
     if(token!==loadToken.current)return null;
     if(failedSave.current){
@@ -782,6 +785,10 @@ export default function Studio({
       {label: 'Add to canvas', run: () => addNode(a.category === 'Character' ? 'character' : a.category === 'Environment' || a.category === 'Element' ? 'element' : 'media', a.id)},
       {label: 'Add to sequence', disabled: !['image','video'].includes(a.kind), run: () => addToSequence(a)},
       {label: 'Organize in bins', run: () => setBinAssetId(a.id)},
+      ...(a.kind === 'image' && ['Character','Element'].includes(a.category) ? [
+        {label: a.soulIdentityId ? 'Change Soul ID' : 'Attach Soul ID', disabled:a.locked, run: () => setSoulTarget({draftId:p.id,subjectType:a.category==='Character'?'character':'element',assetId:a.id})},
+        ...(a.soulIdentityId ? [{label:'Remove Soul ID binding',disabled:a.locked,run:()=>updateAsset(a.id,{soulIdentityId:undefined,version:a.version+1})}] : []),
+      ] : []),
       {label: 'Copy prompt', disabled: !a.prompt, run: () => { void navigator.clipboard.writeText(a.prompt || '').then(() => toast.success('Prompt copied')).catch(() => toast.error('Clipboard access is unavailable. Open the asset to copy its prompt.')); }},
     ];
   }
@@ -854,7 +861,7 @@ export default function Studio({
     files: FileList | File[] | null,
     category = uploadCategory.current,
   ) {
-    if (!files?.length||transitioningRef.current) return;
+    if (!files?.length||transitioningRef.current) return [];
     const draftId=pRef.current.id;
     uploadingRef.current++;
     setUploading(true);
@@ -899,6 +906,7 @@ export default function Studio({
     uploadingRef.current--;
     setUploading(uploadingRef.current>0);
     if (fileInput.current) fileInput.current.value = "";
+    return pRef.current.id===draftId ? received : [];
   }
   async function importSequenceLut(file: File) {
     if (!signedIn || !readyRef.current || transitioningRef.current) throw new Error('Open a saved project before importing a LUT.');
@@ -1794,6 +1802,7 @@ export default function Studio({
                               ]}
                             />
                           )}
+                          {(stage === 'characters' || stage === 'elements') && <Button variant="outline" className="btn" onClick={() => setSoulTarget({draftId:p.id,subjectType:stage==='characters'?'character':'element'})}><UserRound size={15}/>Soul ID</Button>}
                           <Button
                             variant="outline"
                             className="btn"
@@ -1935,7 +1944,7 @@ export default function Studio({
                                 >
                                   <Media asset={a} />
                                   <span className="asset-kind">
-                                    {a.category}
+                                    {a.category}{a.soulIdentityId ? ' · Soul ID' : ''}
                                   </span>
                                   <span className="asset-v">v{a.version}</span>
                                   {p.sharedAssetIds.includes(a.id) && (
@@ -3255,6 +3264,14 @@ export default function Studio({
             }}
           />
         )}
+        {soulTarget&&soulTarget.draftId===p.id&&<SoulIdentityPanel key={storageKey+p.id+soulTarget.subjectType+(soulTarget.assetId??'')} project={p} scope={storageKey} enabled={signedIn&&ready&&!transitioning} subjectType={soulTarget.subjectType} assetId={soulTarget.assetId} onClose={()=>setSoulTarget(null)} onSettings={()=>void leaveWorkspace('/settings#engines')} onSave={()=>ensureSaved(soulTarget.draftId)} onUpload={files=>uploadFiles(files,soulTarget.subjectType==='character'?'Character':'Element')} onAttach={async(identity,assetId)=>{
+          if(pRef.current.id!==soulTarget.draftId||transitioningRef.current)throw new Error('Return to the original project before attaching this Soul ID.');
+          const category=soulTarget.subjectType==='character'?'Character':'Element';
+          const alreadyAttached=!assetId&&pRef.current.assets.find(asset=>asset.soulIdentityId===identity.id&&asset.category===category);
+          if(!alreadyAttached){const asset=soulIdentityAsset(pRef.current,identity,category,assetId);change(previous=>({...previous,assets:assetId?previous.assets.map(existing=>existing.id===assetId?asset:existing):[...previous.assets,asset]}));}
+          if(!await ensureSaved(soulTarget.draftId))throw new Error('The Soul ID is attached on screen. Save this project before leaving to retain the binding.');
+          toast.success('Soul ID attached. Its original portrait is available on the canvas.');
+        }}/>}
         {generationTarget&&generationTarget.draftId===p.id&&<GenerationDialog scope={storageKey} target={generationTarget} project={p} onClose={()=>setGenerationTarget(null)} onSave={()=>ensureSaved(generationTarget.draftId)} onAsset={(id,fields)=>{if(pRef.current.id===generationTarget.draftId)updateAsset(id,fields);}} onQueued={()=>{if(pRef.current.id!==generationTarget.draftId)return;void ensureSaved(generationTarget.draftId,true).then(saved=>{if(saved)void jobs.refresh();});setAtomOpen(true);setAtomTab('runs');toast.success('Generation submitted. Follow its progress in Activity.');}}/>}
         {atomikTarget&&atomikTarget.draftId===p.id&&<AtomikRunDialog scope={storageKey} target={atomikTarget} project={p} models={jobs.models} onSave={()=>ensureSaved(atomikTarget.draftId)} onClose={()=>setAtomikTarget(null)} onQueued={()=>{if(pRef.current.id!==atomikTarget.draftId)return;setPrompt('');setAtomOpen(true);setAtomTab('runs');void jobs.refresh();toast.success('Atomik started. Results are saved in Genie.');}}/>}
       <Toaster theme="dark" position="bottom-center" />
@@ -3299,6 +3316,7 @@ function AssetEditor({
         id: data.id,
         uploadId:data.id,
         generationId:undefined,
+        soulIdentityId:undefined,
         url: data.url,
         name: a.name.replace(/ · edit \d+$/, "") + " · edit " + (a.version + 1),
         version: a.version + 1,

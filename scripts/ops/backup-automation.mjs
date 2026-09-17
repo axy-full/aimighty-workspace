@@ -105,6 +105,12 @@ export async function assertNoActiveOrUncertain(config, env) {
         names.has("generation_settlements") &&
         (await db.execute("SELECT 1 FROM generation_settlements WHERE settled_at IS NULL LIMIT 1")).rows.length
       ) blocked();
+      if (names.has("soul_identities") &&
+          (await db.execute("SELECT 1 FROM soul_identities WHERE purged_at IS NULL AND (settled_at IS NULL OR status NOT IN ('ready','failed')) LIMIT 1")).rows.length) blocked();
+      if (names.has("higgsfield_generation_receipts") &&
+          (await db.execute("SELECT 1 FROM higgsfield_generation_receipts WHERE settled_at IS NULL LIMIT 1")).rows.length) blocked();
+      if (names.has("soul_training_receipts") &&
+          (await db.execute("SELECT 1 FROM soul_training_receipts WHERE settled_at IS NULL OR provider_status NOT IN ('completed','failed') LIMIT 1")).rows.length) blocked();
       if (
         names.has("identities") &&
         (
@@ -118,7 +124,9 @@ export async function assertNoActiveOrUncertain(config, env) {
         names.has("meter_events") &&
         (
           await db.execute(
-            "SELECT 1 FROM meter_events WHERE status='running' OR (status='failed' AND billed_credits>0) LIMIT 1",
+            names.has("soul_training_receipts")
+              ? `SELECT 1 FROM meter_events m WHERE status='running' OR (status='failed' AND billed_credits>0 AND NOT (m.kind='training' AND m.engine='higgsfield' AND (EXISTS(SELECT 1 FROM soul_training_receipts r WHERE r.id=m.id AND r.workspace_id=m.workspace_id AND r.provider_status='failed' AND r.settled_at IS NOT NULL) ${names.has('recovery_intents') ? "OR EXISTS(SELECT 1 FROM recovery_intents i WHERE i.id=m.id AND i.workspace_id=m.workspace_id AND i.kind='training' AND i.state='resolved')" : ""}))) LIMIT 1`
+              : "SELECT 1 FROM meter_events WHERE status='running' OR (status='failed' AND billed_credits>0) LIMIT 1",
           )
         ).rows.length
       )

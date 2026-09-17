@@ -17,7 +17,7 @@
  * models.ts. Nothing else in the app should learn its name.
  */
 
-export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal" | "vercel";
+export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal" | "vercel" | "higgsfield";
 
 export type ProviderDef = {
   id: ProviderId;
@@ -31,7 +31,7 @@ export type ProviderDef = {
   baseUrlEnv: string;
   defaultBaseUrl: string;
   docs: string;
-  /** Hard limits the vendor enforces on what we send. */
+  /** Reference admission limits. Some adapters deliberately impose stricter application limits. */
   limits: {
     maxImageBytes: number;
     maxVideoBytes: number;
@@ -50,6 +50,16 @@ export type ProviderDef = {
 };
 
 export const PROVIDERS: ProviderDef[] = [
+  {
+    id: "higgsfield", label: "Higgsfield", serves: "Soul character identities",
+    envKey: "HF_CREDENTIALS", baseUrlEnv: "HF_BASE_URL", defaultBaseUrl: "https://api.higgsfield.ai",
+    docs: "https://console.higgsfield.ai/models/soul-id/api-reference",
+    // Conservative Particl admission limits, not a claim about the vendor's maximums.
+    limits: { maxImageBytes: 20 * 1024 * 1024, maxVideoBytes: 0, maxRequestBytes: 1024 * 1024,
+      minImagePx: 64, maxImagePx: 8192, minAspect: 0.25, maxAspect: 4, imageFormats: ["jpeg", "jpg", "png", "webp"] },
+    rateLimit: "Account limits are managed in Higgsfield. An uncertain paid submission is reconciled without resubmitting.",
+    billsFailures: false,
+  },
   {
     id: "byteplus",
     label: "BytePlus ModelArk",

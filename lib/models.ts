@@ -97,6 +97,8 @@ export type ModelDef = {
   kind: "video" | "image";
   /** Not offered in the composer's model menu — reached from its own screen. */
   hidden?: boolean;
+  /** Requires a tenant-owned, completed Soul identity resolved by admission. */
+  soulIdentity?: boolean;
   /** Which tasks this engine can be asked for. Absent means generate only.
    *  Editing and extension are Seedance 2.5 features: 2.0's own ceilings
    *  (three reference videos, fifteen seconds combined) show it was never
@@ -139,6 +141,8 @@ export type ModelDef = {
   /** One line on what the engine is for, next to it in the composer's menu. */
   use?: string;
 };
+
+export const SOUL_CHARACTER_MODEL_ID = "hf-soul-character";
 
 export const MODELS: ModelDef[] = [
   {
@@ -400,6 +404,16 @@ export const MODELS: ModelDef[] = [
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
     note: "Google's quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
+  },
+  {
+    id: SOUL_CHARACTER_MODEL_ID,
+    label: "Soul Character", short: "SOUL ID", family: "soul", provider: "higgsfield",
+    kind: "image", billing: "image", soulIdentity: true, hidden: true, paramStyle: "fields",
+    resolutions: ["720p", "1080p"], ratios: ["9:16", "16:9", "4:3", "3:4", "1:1", "2:3", "3:2"],
+    durations: [], supportsAudio: false, supportsCameraFixed: false,
+    maxReferenceImages: 0, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
+    use: "Generate a still with a trained Soul character.",
+    note: "Requires a completed Soul identity and a configured Soul Character connection.",
   },
   {
     // Flux with a trained identity's LoRA — what an Identity renders through.

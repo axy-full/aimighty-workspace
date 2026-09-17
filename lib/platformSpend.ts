@@ -13,7 +13,7 @@ import type { VendorKeyName } from "./vendorKeys";
  * product records with current meter reservations without counting twice.
  */
 const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
-  ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], fal: ["fal"], elevenlabs: ["elevenlabs"],
+  ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], fal: ["fal"], elevenlabs: ["elevenlabs"], higgsfield: ["higgsfield"],
 };
 
 /** Does this vendor's bill land on the platform for the current workspace? */
@@ -41,6 +41,10 @@ export async function platformSpendRecordsSince(sinceMs: number): Promise<Map<st
   });
   for (const row of rs.rows) records.set(String(row.id), Number(row.cost));
   const tables = new Set((await db().execute("SELECT name FROM sqlite_master WHERE type='table'")).rows.map((row) => String(row.name)));
+  if (!ws.keys.higgsfield && tables.has("soul_identities")) {
+    const identities = await db().execute({ sql: "SELECT id,cost_usd FROM soul_identities WHERE created_at>=?", args: [sinceMs] });
+    for (const row of identities.rows) records.set(String(row.id), Number(row.cost_usd ?? 0));
+  }
   if (!ws.keys.fal) {
     if (tables.has("identities")) {
       const identities = await db().execute({ sql: "SELECT * FROM identities WHERE created_at >= ?", args: [sinceMs] });
@@ -78,6 +82,7 @@ export function vendorKeyNameFor(provider: string): VendorKeyName {
     case "vercel": return "gateway";
     case "fal": return "fal";
     case "elevenlabs": return "elevenlabs";
+    case "higgsfield": return "higgsfield";
     default: return "ark";
   }
 }

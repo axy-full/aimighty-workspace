@@ -28,6 +28,7 @@ type Model = {
   durations: number[];
   maxReferenceImages: number;
   maxReferenceVideos: number;
+  soulIdentity?: boolean;
 };
 export type GenerationTarget = {
   node: CanvasNode;
@@ -107,6 +108,8 @@ export function GenerationDialog({
     [ratio, setRatio] = useState(saved?.ratio || project.aspect),
     [duration, setDuration] = useState(saved?.duration || 5),
     [prompt, setPrompt] = useState(saved?.prompt || target.prompt),
+    [soulIdentityId, setSoulIdentityId] = useState<string>(saved?.soulIdentityId || ""),
+    [soulStrength, setSoulStrength] = useState<number>(saved?.soulStrength ?? 1),
     [quote, setQuote] = useState<{
       key: string;
       credits: number | null;
@@ -114,11 +117,15 @@ export function GenerationDialog({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(initial.error);
   const model = models.find((m) => m.id === modelId);
-  const refs = target.refs
+  const boundRefs = target.refs
     .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
     .filter((asset): asset is Asset => !!asset && ["image", "video"].includes(asset.kind));
+  const soulAssets = boundRefs.filter((asset, index, all) => asset.soulIdentityId && all.findIndex(a => a.soulIdentityId === asset.soulIdentityId) === index);
+  const selectedSoulId = soulIdentityId || soulAssets[0]?.soulIdentityId || "";
+  // A trained likeness supplies the face; its cover is not an extra style reference.
+  const refs = model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs;
   const referenceQuery = mediaQuoteReferences(refs);
-  const quoteKey = JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery });
+  const quoteKey = JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined });
   const cost = pending?.credits ?? (quote?.key === quoteKey ? quote.credits : null);
   useEffect(() => {
     studioRequest<{ models: Model[] }>("/api/workbench/engines")
@@ -145,15 +152,16 @@ export function GenerationDialog({
           resolution,
           ratio,
           duration: String(duration),
+          ...(model.soulIdentity ? { soulIdentityId: selectedSoulId, projectId: project.id } : {}),
         }).toString() + '&' + referenceQuery,
       { signal: abort.signal },
     )
-      .then((d) => setQuote({ key: quoteKey, credits: d.credits }))
+      .then((d) => { setError(""); setQuote({ key: quoteKey, credits: d.credits }); })
       .catch((e) => {
         if (e.name !== "AbortError") setError(e.message);
       });
     return () => abort.abort();
-  }, [model, modelId, resolution, ratio, duration, referenceQuery, quoteKey, pending]);
+  }, [model, modelId, resolution, ratio, duration, referenceQuery, quoteKey, pending, selectedSoulId, project.id]);
   async function submit() {
     if (busy || initial.error || (!pending && (!model || cost == null))) return;
     setBusy(true);
@@ -217,6 +225,7 @@ export function GenerationDialog({
           refine: false,
           maxCredits: cost!,
           references,
+          ...(model!.soulIdentity ? { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id } : {}),
         });
         attempt = claimPendingGeneration(window.localStorage, storageId, {
           key: crypto.randomUUID(),
@@ -264,7 +273,7 @@ export function GenerationDialog({
   }
   return (
     <Dialog open onOpenChange={(v) => !v && !busy && onClose()}>
-      <DialogContent className="ps ps-dialog">
+      <DialogContent className="ps ps-dialog" overlayClassName={model?.soulIdentity ? "z-[100]" : undefined} style={model?.soulIdentity ? { zIndex: 101 } : undefined}>
         <DialogHeader>
           <DialogTitle>Generate a new take</DialogTitle>
           <DialogDescription>
@@ -297,6 +306,20 @@ export function GenerationDialog({
               ))}
             </select>
           </label>
+          {model?.soulIdentity && (
+            <div className="generation-options">
+              <label className="field-label">Soul identity
+                <select aria-label="Soul identity" value={selectedSoulId} disabled={busy || !!pending} onChange={event => setSoulIdentityId(event.target.value)}>
+                  {!soulAssets.length && <option value="">Connect a Soul character to this node</option>}
+                  {soulAssets.map(asset => <option key={asset.soulIdentityId} value={asset.soulIdentityId}>{asset.name}</option>)}
+                </select>
+              </label>
+              <label className="field-label">Likeness strength · {Math.round(soulStrength * 100)}%
+                <input aria-label="Soul likeness strength" type="range" min="0" max="1" step="0.05" value={soulStrength} disabled={busy || !!pending} onChange={event => setSoulStrength(Number(event.target.value))} />
+              </label>
+            </div>
+          )}
+          {soulAssets.length > 0 && !model?.soulIdentity && <p className="muted small-copy">This engine uses the character’s reference image. Choose Soul Character to use its trained likeness when that engine is available.</p>}
           <label className="field-label">
             Direction
             <textarea
@@ -370,7 +393,7 @@ export function GenerationDialog({
             disabled={
               busy ||
               !!initial.error ||
-              (!pending && (cost == null || !prompt.trim()))
+              (!pending && (cost == null || !prompt.trim() || (model?.soulIdentity && !selectedSoulId)))
             }
             onClick={() => void submit()}
           >

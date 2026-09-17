@@ -10,6 +10,7 @@ import { estimateRefineUsd } from "@/lib/refineGate";
 import { cleanRule, cleanShotCap } from "@/lib/approvalRule";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
+import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export const GET = withTenant(async function GET() {
       via: providerVia(p),
       /** Google only: where its adjustable safety thresholds sit. */
       safety: p.id === "google" ? (safetyThreshold() ?? "Google default") : undefined,
-      models: MODELS.filter((m) => m.provider === p.id)
+      models: MODELS.filter((m) => m.provider === p.id && (!m.soulIdentity || soulCharacterGenerationEnabled()))
         .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
     })),
   });
