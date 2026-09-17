@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MARKETING_BRIEF_LIMITS } from "./marketing-brief";
 import { validateBins } from "./editorial";
 import { validateColor } from "./color";
 import { validateAudio } from "./audio";
@@ -122,7 +123,16 @@ const plan = z.object({
   refs: z.array(z.string()).max(100),
   role: z.string().max(100).optional(),
 });
+export const marketingBriefSchema = z.object({
+  objective: z.string().max(MARKETING_BRIEF_LIMITS.objective),
+  offer: z.string().max(MARKETING_BRIEF_LIMITS.offer),
+  audience: z.string().max(MARKETING_BRIEF_LIMITS.audience),
+  channels: z.array(z.string().trim().min(1).max(MARKETING_BRIEF_LIMITS.channel)).max(MARKETING_BRIEF_LIMITS.channels),
+  tone: z.string().max(MARKETING_BRIEF_LIMITS.tone),
+  constraints: z.string().max(MARKETING_BRIEF_LIMITS.constraints),
+}).strict();
 export const projectSchema = z.object({
+  marketingBrief: marketingBriefSchema.optional(),
   productionProjectId: z.string().max(100).optional(),
   shotMappings: z.record(z.string().max(100), z.string().max(100)).optional(),
   bibleVersion: z.number().int().min(0).optional(),

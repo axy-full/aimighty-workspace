@@ -11,6 +11,7 @@ import Ring from "./Ring";
 import { MessageLoader } from "./Loader";
 import { useAtomik } from "./AtomikProvider";
 import { ChatComposer } from "./ChatComposer";
+import MarketingStudioEntry from "./MarketingStudioEntry";
 import { Rail, Chip, Button, Mono } from "@/components/ui";
 
 /**
@@ -186,6 +187,7 @@ function Compact({size}:{size:ReturnType<typeof useAtomikSize>}) {
   return (
     <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" header={<Head wide={false} resize={size.update}/>} footer={<ChatComposer inputHeight={44} />}>
       <ContextChip />
+      <MarketingStudioEntry />
       <CurrentCard placement="card" />
       {a.error && <span className="text-[12.5px] leading-[1.45] text-ink-body">{a.error}</span>}
     </Rail>
@@ -214,6 +216,7 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
   return (
     <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" header={<Head wide resize={size.update}/>} footer={footer}>
       <ContextChip dismiss={a.clear} />
+      <MarketingStudioEntry />
       {a.messages.map((m) => (
         <div key={m.id} className={`flex flex-col gap-[6px] ${m.role === "user" ? "items-end" : "items-start"}`}>
           <Mono>{m.role === "user" ? "You" : "Atomik"}</Mono>

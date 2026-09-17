@@ -42,8 +42,8 @@ async function fixture() {
   return { project, input };
 }
 
-test('the crew has seven requested departments and Genie is a general assistant', () => {
-  expect(CREW.map(c => c.id).sort()).toEqual(['continuity','costume','design','director','dop','editor','producer']);
+test('the crew includes marketing alongside the production departments and Genie remains a general assistant', () => {
+  expect(CREW.map(c => c.id).sort()).toEqual(['continuity','costume','design','director','dop','editor','marketing','producer']);
   const input = atomikRequestSchema.parse({ projectId: 'p', requestId: 'request-123', request: 'Create a treatment' });
   expect(atomikSystem(input)).toContain('You are Genie');
   expect(atomikSystem({ ...input, role: 'costume' })).toContain('Your sole department is Wardrobe & silhouette');
@@ -349,4 +349,33 @@ test('unknown declared context-tier prices cannot become a free quote or reserva
     expect(h.reservations()).toBe(0);
     expect(h.calls()).toBe(0);
   });
+});
+
+test('marketing quotes and jobs snapshot the saved campaign, recover once and retain the existing Plan contract', async()=>{
+ await runInTenant(workspace(),async()=>{
+  const {project,input}=await fixture(),h=harness();
+  project.marketingBrief={objective:'Trial registrations',offer:'14-day editor trial',audience:'Independent editors',channels:['Email'],tone:'Plain language',constraints:'No invented results'};
+  await db().execute({sql:'UPDATE workbench_projects SET body=? WHERE owner=? AND project_id=?',args:[JSON.stringify(project),'owner',project.id]});
+  const request=atomikRequestSchema.parse({...input,role:'marketing',request:'Draft two email variants for the saved offer'});
+  const quote=await quoteAtomikJob(request,'owner',h.deps);
+  expect(quote.quoteOnly).toBe(true);expect(h.calls()).toBe(0);expect(h.reservations()).toBe(0);
+  const prepared=await prepareAtomikJob({...request,maxCredits:quote.estimateCredits},'owner',undefined,h.deps);
+  const claimedBody=String((await db().execute({sql:'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?',args:[prepared.job.id]})).rows[0].provider_body);
+  const content=JSON.parse(claimedBody).messages[1].content;
+  expect(JSON.parse(typeof content==='string'?content:content[0].text).project.marketingBrief.offer).toBe('14-day editor trial');
+  project.marketingBrief.offer='Changed after claim';
+  await db().execute({sql:'UPDATE workbench_projects SET body=? WHERE owner=? AND project_id=?',args:[JSON.stringify(project),'owner',project.id]});
+  const original=h.deps.run;
+  h.deps.run=async call=>{
+   expect(call.body).toBe(claimedBody);
+   const response=await original(call);
+   return {...response,text:JSON.stringify({choices:[{message:{content:JSON.stringify({intent:'campaign',summary:'Email drafts for a 14-day editor trial.',steps:['Variant A — Headline: Try your next cut. CTA: Start your 14-day trial.','Variant B — Headline: Your edit, with room to explore. CTA: Start a trial.']})}}],usage:{cost:.003}})};
+  };
+  await runAtomikJob(prepared.job.id,'owner',h.deps);await runAtomikJob(prepared.job.id,'owner',h.deps);
+  const restored=await prepareAtomikJob({...request,maxCredits:quote.estimateCredits},'owner',undefined,h.deps);
+  expect(restored.scheduled).toBe(false);expect(restored.job.id).toBe(prepared.job.id);
+  expect(restored.job.plan).toMatchObject({role:'marketing',intent:'campaign',applied:false,refs:request.refs});
+  expect(restored.job.plan?.steps).toHaveLength(2);
+  expect(h.calls()).toBe(1);expect(h.reservations()).toBe(1);
+ });
 });

@@ -7,6 +7,7 @@ import { useAtomik } from "@/components/atomik/AtomikProvider";
 import { useAtomikRail, setAtomikRail } from "@/lib/atomikRail";
 import Ring from "@/components/atomik/Ring";
 import { ChatComposer } from "./ChatComposer";
+import MarketingStudioEntry from "./MarketingStudioEntry";
 import { Mono, Sheet } from "@/components/ui";
 import Menu, { type MenuItem } from "@/components/ui/Menu";
 import type { Step } from "@/lib/atomik";
@@ -57,6 +58,7 @@ export default function AtomikSheet() {
       title={<span className="flex items-center gap-[8px]">{"steps" in a.ring && a.ring.steps ? <Ring steps={a.ring.steps} size={18} /> : <Ring mode={"mode" in a.ring && a.ring.mode ? a.ring.mode : "idle"} size={18} />}Atomik</span>} context={context}
       actions={expanded ? <button type="button" onClick={()=>{size.update(58);rail.compact();}} className={action}>Compact ↓</button> : <button type="button" onClick={()=>{size.update(92);rail.expand();}} className={action}>Expand ↑</button>}
       footer={<ChatComposer />} footerPad="8px 16px 26px">
+      <MarketingStudioEntry />
       {expanded && (
         <>
           {a.messages.map((m) => (

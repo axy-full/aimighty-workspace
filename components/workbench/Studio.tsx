@@ -147,6 +147,9 @@ import {GenerationDialog,studioRequest,StudioRequestError,type GenerationTarget}
 import {SoulIdentityPanel} from './SoulIdentityPanel';
 import {soulIdentityAsset} from '@/lib/workbench/soul-identity';
 import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
+import {MarketingStudioPanel} from './MarketingStudioPanel';
+import marketingStyles from './MarketingStudioPanel.module.css';
+import {isMarketingPlan,type MarketingTask} from '@/lib/workbench/marketing-studio';
 import {useProductionJobs} from './use-production-jobs';
 import {ModelPicker,EffortPicker,thinkingModelName,effortLabel} from '@/components/atomik/ModelPicker';
 import {uploadWorkbench} from '@/lib/workbench/upload';
@@ -373,6 +376,9 @@ export default function Studio({
   const autoSaveRetries=useRef(0);
   const failedLoad=useRef<{id:string;retryable:boolean;attempts:number}|null>(null);
   const [atomTab, setAtomTab] = useState("genie");
+  const [marketingDrafts,setMarketingDrafts]=useState<Record<string,{task:MarketingTask;instructions:string}>>({});
+  const marketingDraftKey=storageKey+':'+p.id;
+  const marketingDraft=marketingDrafts[marketingDraftKey]??{task:'kit' as MarketingTask,instructions:''};
   const [model, setModel] = useState("auto");
   const [effort, setEffort] = useState("auto");
   const [depth, setDepth] = useState("Quick");
@@ -649,7 +655,8 @@ export default function Studio({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial route state is read once from the browser URL.
     if(STAGES.some(s=>s.id===requestedStage)){storeStage(requestedStage as Stage);setHome(false);}
     else if(params.get('view')==='workspace')setHome(true);
-    if(params.get('atomik')==='open')setAtomOpen(true);
+    if(['open','marketing'].includes(params.get('atomik')??''))setAtomOpen(true);
+    if(params.get('atomik')==='marketing')setAtomTab('marketing');
     if(params.get('new')==='1'){setDialog('project');const url=new URL(window.location.href);url.searchParams.delete('new');window.history.replaceState(window.history.state,'',url);}
     let active=true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the private draft from the server on mount.
@@ -729,9 +736,9 @@ export default function Studio({
     return () => cancelAnimationFrame(raf);
   }, [playing, totalFrames, p.fps]);
   useEffect(() => {
-    if (atomMessages.current)
+    if (atomMessages.current && ['genie','runs'].includes(atomTab))
       atomMessages.current.scrollTop = atomMessages.current.scrollHeight;
-  }, [p.plans.length, busy]);
+  }, [p.plans.length, busy, atomTab]);
   useEffect(() => {
     const ctx = (
       document as Document & {
@@ -987,39 +994,41 @@ export default function Studio({
       toast.error("Enter a valid https:// or http:// link");
     }
   }
-  async function runGenie(text = prompt, role?: string) {
+  async function runGenie(text = prompt, role?: string, detail = depth) {
     if(!text.trim()||busy||transitioningRef.current)return;setBusy(true);
     const draftId=pRef.current.id;
-    try{if(!(await ensureSaved(draftId))||transitioningRef.current||pRef.current.id!==draftId)return;setAtomikTarget({request:text,role,model,effort,depth,refs:contextIds,draftId});}
+    try{if(!(await ensureSaved(draftId))||transitioningRef.current||pRef.current.id!==draftId)return;setAtomikTarget({request:text,role,model,effort,depth:detail,refs:contextIds,draftId});}
     catch(e){toast.error(e instanceof Error?e.message:'Atomik could not start.')}finally{setBusy(false)}
   }
   function applyPlan(plan: Plan) {
     if (plan.applied) return;
-    const prior = p.nodes.length;
+    if(p.nodes.length+plan.steps.length>250){toast.error('The canvas supports 250 nodes. Remove some nodes before adding this plan.');return;}
+    const marketing=isMarketingPlan(plan);
     const nodes: CanvasNode[] = plan.steps.map((s, i) => ({
       id: uid("node"),
       title:
-        plan.intent === "continuity"
+        marketing ? `Campaign / ${i + 1}` : plan.intent === "continuity"
           ? `Continuity / ${i + 1}`
           : plan.intent === "shots"
             ? `Shot / ${i + 1}`
             : `${["The idea", "Visual world", "Character & elements", "Hero scene", "Editorial"][i] || "Production note"}`,
       type:
-        plan.intent === "continuity"
+        marketing || plan.intent === "continuity"
           ? "note"
           : ((["brief", "moodboard", "character", "scene", "note"][i] ||
               "note") as CanvasNode["type"]),
       text: s,
+      ...(marketing?{role:'Marketing strategist'}:{}),
       assetId:
-        plan.intent === "continuity"
+        marketing || plan.intent === "continuity"
           ? undefined
           : plan.refs[i % Math.max(plan.refs.length, 1)],
       x: 60 + (i % 3) * 350,
       y: 1030 + Math.floor(i / 3) * 320,
       width: 300,
-      linked: i > 0 ? [] : [],
+      linked: marketing ? p.nodes.filter(node=>node.assetId&&plan.refs.includes(node.assetId)).map(node=>node.id).slice(0,99) : [],
     }));
-    for (let i = 1; i < nodes.length; i++) nodes[i].linked = [nodes[i - 1].id];
+    for (let i = 1; i < nodes.length; i++) nodes[i].linked = [...nodes[i].linked,nodes[i - 1].id];
     change((old) => ({
       ...old,
       nodes: [...old.nodes, ...nodes],
@@ -1036,6 +1045,7 @@ export default function Studio({
   }
   function exploreCrew(role?:string){
     if(!role){setAtomTab('crew');toast('Choose the department needed for this task.');return;}
+    if(role==='marketing'){setAtomTab('marketing');return;}
     void runGenie('Develop the '+(CREW.find(c=>c.id===role)?.name||'department')+' plan for '+p.name,role);
   }
   async function openProduction(id:string){
@@ -2657,9 +2667,10 @@ export default function Studio({
                       <PanelRightClose size={17} />
                     </IconButton>
                   </div>
-                  <Tabs value={atomTab} onValueChange={setAtomTab}>
-                    <TabsList className="atomik-tabs">
+                  <Tabs value={atomTab} onValueChange={value=>{setAtomTab(value);atomMessages.current?.scrollTo({top:0});}}>
+                    <TabsList className={`atomik-tabs ${marketingStyles.tabs}`}>
                       <TabsTrigger value="genie">Genie</TabsTrigger>
+                      <TabsTrigger value="marketing">Marketing</TabsTrigger>
                       <TabsTrigger value="crew">Crew</TabsTrigger>
                       <TabsTrigger value="context">
                         Context
@@ -2671,6 +2682,7 @@ export default function Studio({
                     </TabsList>
                   </Tabs>
                   <div className="atomik-content" ref={atomMessages}>
+                    {atomTab === 'marketing' && <MarketingStudioPanel key={p.id} task={marketingDraft.task} instructions={marketingDraft.instructions} onTask={task=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,task}}))} onInstructions={instructions=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,instructions}}))} project={p} enabled={ready&&signedIn&&!transitioning} busy={busy} references={contextIds.length} jobs={jobs.atomikJobs} error={jobs.error} onBriefChange={brief=>change(old=>({...old,marketingBrief:brief}))} onRun={request=>void runGenie(request,'marketing','Considered')} onApply={applyPlan} onContext={()=>setAtomTab('context')} onActivity={()=>setAtomTab('runs')}/>}
                     {atomTab === "genie" && (
                       <>
                         {!p.plans.length && (
@@ -2889,7 +2901,7 @@ export default function Studio({
                       </div>
                     )}
                   </div>
-                  <div className="atomik-composer">
+                  {atomTab !== 'marketing' && <div className="atomik-composer">
                     <div className="attached-context">
                       <span>
                         <Paperclip size={12} />
@@ -2943,7 +2955,7 @@ export default function Studio({
                       <EffortPicker value={effort} model={jobs.models.find(option => option.id === model)} onPick={setEffort} compact />
                       <Choice label="Response detail" value={depth} onChange={setDepth} options={["Quick", "Considered", "Deep"]} />
                     </div>
-                  </div>
+                  </div>}
                   <button
                     className="demo-disclosure"
                     onClick={() => setDialog("connections")}
@@ -3291,7 +3303,7 @@ export default function Studio({
           toast.success('Soul ID attached. Its original portrait is available on the canvas.');
         }}/>}
         {generationTarget&&generationTarget.draftId===p.id&&<GenerationDialog scope={storageKey} target={generationTarget} project={p} onClose={()=>setGenerationTarget(null)} onSave={()=>ensureSaved(generationTarget.draftId)} onAsset={(id,fields)=>{if(pRef.current.id===generationTarget.draftId)updateAsset(id,fields);}} onQueued={(_id,kind)=>{if(pRef.current.id!==generationTarget.draftId)return;if(kind)change(old=>({...old,nodes:old.nodes.map(node=>node.id===generationTarget.node.id&&!node.locked?{...node,mode:kind==='audio'?'Audio':kind==='video'?'Video':'Image'}:node)}));void ensureSaved(generationTarget.draftId,true).then(saved=>{if(saved)void jobs.refresh();});setAtomOpen(true);setAtomTab('runs');toast.success('Generation submitted. Follow its progress in Activity.');}}/>}
-        {atomikTarget&&atomikTarget.draftId===p.id&&<AtomikRunDialog scope={storageKey} target={atomikTarget} project={p} models={jobs.models} onSave={()=>ensureSaved(atomikTarget.draftId)} onClose={()=>setAtomikTarget(null)} onQueued={()=>{if(pRef.current.id!==atomikTarget.draftId)return;setPrompt('');setAtomOpen(true);setAtomTab('runs');void jobs.refresh();toast.success('Atomik started. Results are saved in Genie.');}}/>}
+        {atomikTarget&&atomikTarget.draftId===p.id&&<AtomikRunDialog scope={storageKey} target={atomikTarget} project={p} models={jobs.models} onSave={()=>ensureSaved(atomikTarget.draftId)} onClose={()=>setAtomikTarget(null)} onQueued={()=>{if(pRef.current.id!==atomikTarget.draftId)return;setPrompt('');setAtomOpen(true);setAtomTab('runs');void jobs.refresh();toast.success(atomikTarget.role==='marketing'?'Atomik started. Campaign outputs are saved in Marketing.':'Atomik started. Results are saved in Genie.');}}/>}
       <Toaster theme="dark" position="bottom-center" />
       </div>
     </TooltipProvider>
