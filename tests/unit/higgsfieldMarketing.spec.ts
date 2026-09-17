@@ -211,6 +211,75 @@ test("the model-specific preset catalog accepts bounded category metadata withou
   );
 });
 
+test("numeric preset cursors normalize to opaque strings and roundtrip pagination including zero", async () => {
+  const { listMarketingPresets } =
+    await import("../../lib/higgsfieldMarketing");
+  const { runInTenant } = await import("../../lib/tenant");
+  await runInTenant(
+    { ...workspace("catalog_numeric_cursor"), usesPlatformKeys: true },
+    async () => {
+      for (const cursor of [0, 50, Number.MAX_SAFE_INTEGER]) {
+        const urls: string[] = [];
+        globalThis.fetch = async (url, init) => {
+          urls.push(String(url));
+          expect(init?.method).toBe("GET");
+          return Response.json({
+            total: 100,
+            cursor: urls.length === 1 ? cursor : null,
+            items: [],
+          });
+        };
+        const first = await listMarketingPresets();
+        expect(first.cursor).toBe(String(cursor));
+        const second = await listMarketingPresets(first.cursor!);
+        expect(second.cursor).toBeNull();
+        expect(urls).toEqual([
+          "https://api.higgsfield.ai/marketing-studio/image/presets?size=50",
+          `https://api.higgsfield.ai/marketing-studio/image/presets?size=50&cursor=${cursor}`,
+        ]);
+      }
+    },
+  );
+});
+
+test("fractional negative unsafe and nonfinite numeric preset cursors are refused", async () => {
+  const { listMarketingPresets } =
+    await import("../../lib/higgsfieldMarketing");
+  const { runInTenant } = await import("../../lib/tenant");
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await runInTenant(
+      {
+        ...workspace("catalog_invalid_numeric_cursor"),
+        usesPlatformKeys: true,
+      },
+      async () => {
+        // JSON exponent overflow yields nonfinite numbers without serializing them to null.
+        for (const cursorJson of [
+          "0.5",
+          "-1",
+          "9007199254740992",
+          "1e309",
+          "-1e309",
+          "NaN",
+        ]) {
+          globalThis.fetch = async () =>
+            new Response(`{"total":1,"cursor":${cursorJson},"items":[]}`, {
+              headers: { "Content-Type": "application/json" },
+            });
+          await expect(listMarketingPresets()).rejects.toMatchObject({
+            status: 503,
+            code: "invalid_response",
+          });
+        }
+      },
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test("invalid preset pages log only bounded schema diagnostics and keep rejecting the response", async () => {
   const { listMarketingPresets } =
     await import("../../lib/higgsfieldMarketing");
@@ -257,14 +326,14 @@ test("invalid preset pages log only bounded schema diagnostics and keep rejectin
     itemsType: "array",
     itemCount: 10,
     issues: [
-      { code: "invalid_type", path: ["total"] },
-      { code: "invalid_type", path: ["cursor"] },
-      { code: "invalid_format", path: ["items", 0, "id"] },
-      { code: "invalid_type", path: ["items", 0, "type"] },
-      { code: "invalid_type", path: ["items", 0, "name"] },
-      { code: "invalid_format", path: ["items", 1, "id"] },
-      { code: "invalid_type", path: ["items", 1, "type"] },
-      { code: "invalid_type", path: ["items", 1, "name"] },
+      { code: "invalid_type", path: "total" },
+      { code: "invalid_type", path: "cursor" },
+      { code: "invalid_format", path: "items.0.id" },
+      { code: "invalid_type", path: "items.0.type" },
+      { code: "invalid_type", path: "items.0.name" },
+      { code: "invalid_format", path: "items.1.id" },
+      { code: "invalid_type", path: "items.1.type" },
+      { code: "invalid_type", path: "items.1.name" },
     ],
   });
   const serialized = JSON.stringify(diagnostic);

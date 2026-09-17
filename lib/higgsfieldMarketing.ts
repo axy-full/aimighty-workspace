@@ -238,7 +238,13 @@ export async function listMarketingPresets(
   const parsed = z
     .object({
       total: z.number().int().nonnegative(),
-      cursor: z.string().max(2048).nullable().optional(),
+      cursor: z.preprocess(
+        (value) =>
+          typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+            ? String(value)
+            : value,
+        z.string().max(2048).nullable().optional(),
+      ),
       items: z
         .array(
           z.object({
@@ -265,13 +271,16 @@ export async function listMarketingPresets(
       itemCount: Array.isArray(response.items) ? response.items.length : null,
       issues: parsed.error.issues.slice(0, 8).map((issue) => ({
         code: issue.code,
-        path: issue.path.map((part) =>
-          typeof part === "number"
-            ? part
-            : fields.has(String(part))
+        path: issue.path
+          .map((part) =>
+            typeof part === "number"
               ? part
-              : "field",
-        ),
+              : fields.has(String(part))
+                ? part
+                : "field",
+          )
+          .join(".")
+          .slice(0, 160),
       })),
     });
     throw new MarketingError(
