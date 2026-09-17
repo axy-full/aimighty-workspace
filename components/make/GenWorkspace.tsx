@@ -16,6 +16,7 @@ import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
 import { ToastHost, useToast } from "@/components/ui/Toast";
 import type { Generation } from "@/lib/jobs";
+import type { Project } from "@/lib/workbench/studio";
 import { isAssetDrag, readDrag, type DraggedAsset } from "@/lib/dnd";
 import { GEN_ASSETS_CHANGED, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { libraryId, libraryInput, libraryKind, type LibraryAsset } from "@/lib/genLibrary";
@@ -52,6 +53,21 @@ function Workspace({ initialKind }: { initialKind?: string }) {
   const router = useRouter(),
     search = useSearchParams();
   const { workspace, email, requestScope } = useSession();
+  const workbenchProjectId = search.get("project");
+  const projectResult = useApi<{ project: Project | null; projects: { id: string; name: string }[] }>(requestScope
+    ? `/api/workbench/projects${workbenchProjectId ? `?id=${encodeURIComponent(workbenchProjectId)}` : ""}` : null, 0, requestScope);
+  useEffect(() => {
+    if (workbenchProjectId || !requestScope || !projectResult.data) return;
+    let remembered: string | null = null;
+    try { remembered = localStorage.getItem(requestScope); } catch {}
+    if (remembered && projectResult.data.projects.some(project => project.id === remembered)) {
+      const params = new URLSearchParams(search.toString()); params.set("project", remembered);
+      router.replace(`/generate?${params}`);
+    }
+  }, [workbenchProjectId, requestScope, projectResult.data, router, search]);
+  const project = projectResult.data?.project?.id === workbenchProjectId ? projectResult.data.project : null;
+  const generationProject = project?.productionProjectId ? { id: project.id, name: project.name, productionProjectId: project.productionProjectId } : null;
+  const projectQuery = workbenchProjectId ? `&project=${encodeURIComponent(workbenchProjectId)}` : "";
   const toast = useToast();
   const mode =
     GEN_MODES.find(
@@ -87,10 +103,10 @@ function Workspace({ initialKind }: { initialKind?: string }) {
       return;
     }
     pendingPrompt.current = take;
-    router.push(`/generate?mode=${take.kind === "image" ? "images" : take.kind}`);
+    router.push(`/generate?mode=${take.kind === "image" ? "images" : take.kind}${projectQuery}`);
     setMobileView("create");
   };
-  const scope = JSON.stringify([workspace?.id, email, mode.kind]);
+  const scope = JSON.stringify([workspace?.id, email, workbenchProjectId, mode.kind]);
   const upscaling = mode.kind === "image" && search.get("task") === "upscale";
   const upscaleSource = (asset?: LibraryAsset) => {
     if (asset && upscaling) { void specialized.current?.useAsset(libraryInput(asset)); setMobileView("create"); return; }
@@ -150,7 +166,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     const kind = asset.kind === "gen" ? asset.gen.kind : asset.kind === "upload" ? asset.upload.kind : "image";
     if (mode.kind === "audio" && (kind === "image" || kind === "video") || mode.kind === "image" && kind === "video") {
       const id = asset.kind === "gen" ? `generation:${asset.gen.id}` : asset.kind === "upload" ? `upload:${asset.upload.id}` : `upload:${asset.uploadId}`;
-      router.push(`/generate?mode=${kind === "image" ? "images" : "video"}&ref=${encodeURIComponent(id)}`);
+      router.push(`/generate?mode=${kind === "image" ? "images" : "video"}&ref=${encodeURIComponent(id)}${projectQuery}`);
       setMobileView("create");
     } else if (await receiver()?.useAsset(asset)) setMobileView("create");
   }
@@ -158,7 +174,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     if (libraryKind(asset) === "video") editSource(asset);
     else if (mode.kind === "image" && !toolOpen) { void addAsset(libraryInput(asset)); }
     else {
-      router.push(`/generate?mode=images&ref=${encodeURIComponent(libraryId(asset))}`);
+      router.push(`/generate?mode=images&ref=${encodeURIComponent(libraryId(asset))}${projectQuery}`);
       setMobileView("create");
     }
   }
@@ -174,7 +190,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
             <span>Gen</span>
             <h1>Generation workspace</h1>
           </div>
-          <Link className={styles.studioBack} href="/workbench">
+          <Link className={styles.studioBack} href={workbenchProjectId ? `/workbench?project=${encodeURIComponent(workbenchProjectId)}&view=workspace` : "/workbench"}>
             <ArrowLeft size={15} aria-hidden="true" />
             Back to Studio
           </Link>
@@ -229,8 +245,12 @@ function Workspace({ initialKind }: { initialKind?: string }) {
             else if (e.dataTransfer.files.length) void receiver()?.useFiles(e.dataTransfer.files);
             else toast("Drag a saved workspace asset or a file from your device.");
           }}>
-          {astraUpscaling ? (
+          {!generationProject ? <div className={styles.notice} role="status">
+            <p>{projectResult.error || (workbenchProjectId ? projectResult.data ? "This saved project is unavailable for generation. Open it in Studio to save its production mapping." : "Loading the saved project…" : "Choose a saved project before generating.")}</p>
+            <Link href="/workbench">Choose a project in Studio</Link>
+          </div> : astraUpscaling ? (
             <AstraUpscale
+              project={generationProject}
               controller={specialized}
               key={`${scope}:${search.get("source") ?? ""}`}
               initialSource={search.get("source")}
@@ -244,6 +264,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
             />
           ) : upscaling ? (
             <TopazImageUpscale
+              project={generationProject}
               controller={specialized}
               key={`${scope}:${search.get("source") ?? ""}`}
               initialSource={search.get("source")}
@@ -257,6 +278,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
             />
           ) : editing ? (
             <SeedanceEdit
+              project={generationProject}
               controller={specialized}
               key={`${scope}:${search.get("source") ?? ""}`}
               initialSource={search.get("source")}
@@ -270,6 +292,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
             />
           ) : (
             <Composer
+              project={generationProject}
               key={scope}
               kind={mode.kind as ComposerKind}
               controller={composer}
@@ -285,7 +308,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
           <div className={styles.takesHeader}>
             <div>
               <h2>Takes & assets</h2>
-              <span>Shared across your workspace · drag or choose an asset</span>
+              <span>{project ? `${project.name} · drag or choose an asset` : "Choose a project to see its assets"}</span>
             </div>
             <label className={styles.search}>
               <Search size={15} />
@@ -299,14 +322,18 @@ function Workspace({ initialKind }: { initialKind?: string }) {
             </label>
           </div>
           <div className={styles.takesScroll}>
-            <GenAssetLibrary
+            {generationProject && <GenAssetLibrary
+              workbenchProjectId={generationProject.id}
+              projectName={generationProject.name}
               search={query}
               onUseAsset={asset => void addAsset(asset)}
               onUsePrompt={reuse}
               onEdit={editAsset}
               onUpscale={asset => libraryKind(asset) === "video" ? astraSource(asset) : upscaleSource(asset)}
-            />
-            <Link href="/library" className="hidden" data-phone-library-link="">
+              onUseFirstFrame={mode.kind === "video" && !toolOpen ? asset => { void composer.current?.useFirstFrame(libraryInput(asset)); setMobileView("create"); } : undefined}
+              onUseReference={mode.kind === "video" && !toolOpen ? asset => { void composer.current?.useReference(libraryInput(asset)); setMobileView("create"); } : undefined}
+            />}
+            <Link href={workbenchProjectId ? `/library?project=${encodeURIComponent(workbenchProjectId)}` : "/library"} className="hidden" data-phone-library-link="">
               <span><strong>Your workspace library</strong><small>All uploads and generated takes</small></span>
               <ArrowLeft size={16} aria-hidden="true" />
             </Link>

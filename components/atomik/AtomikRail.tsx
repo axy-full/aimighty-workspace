@@ -1,5 +1,7 @@
 "use client";
 
+import {useAtomikSize,AtomikResizer} from "@/components/workbench/AtomikResizer";
+import {useSession} from "@/lib/session";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useAtomikRail } from "@/lib/atomikRail";
@@ -9,7 +11,7 @@ import Ring from "./Ring";
 import { MessageLoader } from "./Loader";
 import { useAtomik } from "./AtomikProvider";
 import { ChatComposer } from "./ChatComposer";
-import { Rail, Chip, Button, Mono, RAIL_WIDTHS } from "@/components/ui";
+import { Rail, Chip, Button, Mono } from "@/components/ui";
 
 /**
  * The Atomik rail (design/particl-v2/README.md §5; board 10a), value for
@@ -43,11 +45,13 @@ import { Rail, Chip, Button, Mono, RAIL_WIDTHS } from "@/components/ui";
  */
 export default function AtomikRail() {
   const rail = useAtomikRail();
+  const {requestScope}=useSession();
+  const size=useAtomikSize(false,requestScope??"visitor");
   if (!rail.open) return null;
-  return rail.state === "expanded" ? <Expanded /> : <Compact />;
+  return rail.state === "expanded" ? <Expanded size={size}/> : <Compact size={size}/>;
 }
 
-function Head({ wide }: { wide: boolean }) {
+function Head({ wide,resize }: { wide: boolean;resize:(width:number)=>void }) {
   const { ring } = useAtomik();
   const rail = useAtomikRail();
   const btn = "flex h-[30px] items-center gap-[6px] rounded-ctl border border-border-mid bg-transparent px-[9px] text-[12px] font-medium leading-none text-ink";
@@ -56,7 +60,7 @@ function Head({ wide }: { wide: boolean }) {
       {"steps" in ring ? <Ring steps={ring.steps} size={18} /> : <Ring mode={ring.mode} size={18} />}
       <span className="text-[14px] font-semibold leading-none text-ink">Atomik</span>
       {wide && <Mono>Production agent</Mono>}
-      <button type="button" onClick={wide ? rail.compact : rail.expand} className={`ml-auto ${btn}`}>
+      <button type="button" onClick={()=>{resize(wide?380:560);if(wide)rail.compact();else rail.expand();}} className={`ml-auto ${btn}`}>
         {wide ? "Compact" : "Expand"}<span className="ui-mono tracking-normal text-ink-muted">{wide ? "⇥" : "⇤"}</span>
       </button>
       <button type="button" onClick={rail.close} aria-label="Close Atomik"
@@ -177,10 +181,10 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
 }
 
 
-function Compact() {
+function Compact({size}:{size:ReturnType<typeof useAtomikSize>}) {
   const a = useAtomik();
   return (
-    <Rail width={RAIL_WIDTHS.compact} label="Atomik" header={<Head wide={false} />} footer={<ChatComposer inputHeight={44} />}>
+    <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" header={<Head wide={false} resize={size.update}/>} footer={<ChatComposer inputHeight={44} />}>
       <ContextChip />
       <CurrentCard placement="card" />
       {a.error && <span className="text-[12.5px] leading-[1.45] text-ink-body">{a.error}</span>}
@@ -188,7 +192,7 @@ function Compact() {
   );
 }
 
-function Expanded() {
+function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
   const a = useAtomik();
   const c = a.current;
   const checkpoint = c.kind === "checkpoint" ? c.step : null;
@@ -208,7 +212,7 @@ function Expanded() {
     </>
   );
   return (
-    <Rail width={RAIL_WIDTHS.expanded} label="Atomik" header={<Head wide />} footer={footer}>
+    <Rail width={size.value} resizeHandle={<AtomikResizer size={size}/>} label="Atomik" header={<Head wide resize={size.update}/>} footer={footer}>
       <ContextChip dismiss={a.clear} />
       {a.messages.map((m) => (
         <div key={m.id} className={`flex flex-col gap-[6px] ${m.role === "user" ? "items-end" : "items-start"}`}>

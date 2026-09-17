@@ -1,3 +1,4 @@
+import {nodeRenderSize,MAX_NODE_RENDER_WORK_PIXELS,type NodeRenderResolution} from './node-render';
 import {Asset,CanvasNode,NodeOperation,NodeType,Project,uid} from './studio';
 
 export type NodeDefinition={label:string;family:'References'|'Create'|'Finish'|'Flow';description:string;tools:string[];shape:'reference'|'scene'|'operator'|'text'|'flow';role:string};
@@ -49,21 +50,41 @@ export function generationReferenceIds(n:CanvasNode,p:Project):string[]{
 export function generationBrief(n:CanvasNode,p:Project){const upstream=n.linked.map(id=>p.nodes.find(v=>v.id===id)).filter(Boolean);return `PRODUCTION: ${p.name}\nNODE: ${n.title}\nOWNER: ${n.role||NODE_DEFS[n.type].role}\nMODE: ${n.mode||'Image'}\n\nPROJECT BRIEF\n${p.brief}\n\nDIRECTION\n${n.text||p.direction}\n\nCONNECTED REFERENCES\n${upstream.map(s=>`${s!.title}: ${s!.text||resolveAsset(s!,p.nodes,p.assets)?.prompt||'Source reference'} [${resolveAsset(s!,p.nodes,p.assets)?.url||'Text only'}]`).join('\n')}\n\nTOOL STACK\n${JSON.stringify(operationsFor(n),null,2)}`;}
 
 // Each stage renders to its own canvas, preserving the source and stack order.
-export async function renderNode(n:CanvasNode,p:Project,cache=new Map<string,HTMLCanvasElement>(),visiting=new Set<string>()):Promise<HTMLCanvasElement>{
- if(cache.has(n.id))return cache.get(n.id)!;if(visiting.has(n.id))throw new Error('Circular node connection.');visiting.add(n.id);
- const inputs=n.linked.map(id=>p.nodes.find(v=>v.id===id)).filter(Boolean) as CanvasNode[];
- const primary=n.type==='switch'?inputs.find(v=>v.id===n.activeInput)||inputs[0]:inputs[0];
- let canvas:HTMLCanvasElement;
- const asset=!n.bypassed&&n.type!=='switch'?p.assets.find(a=>a.id===n.assetId):undefined;
- if(asset){if(asset.kind!=='image')throw new Error('Raster rendering requires a still image.');const img=await new Promise<HTMLImageElement>((resolve,reject)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>resolve(i);i.onerror=()=>reject(new Error('Could not load the source image.'));i.src=asset.url;});const scale=Math.min(1,2048/Math.max(img.naturalWidth,img.naturalHeight));canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));canvas.getContext('2d')!.drawImage(img,0,0,canvas.width,canvas.height);
- }else if(primary){const source=await renderNode(primary,p,cache,new Set(visiting));canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height;canvas.getContext('2d')!.drawImage(source,0,0);}else throw new Error('Attach an image or connect an image input to preview this node.');
- if(!n.bypassed)for(const op of operationsFor(n).filter(o=>o.enabled)){
-   const next=document.createElement('canvas');next.width=canvas.width;next.height=canvas.height;const ctx=next.getContext('2d')!;const v=op.values;
+export async function renderNode(n:CanvasNode,p:Project,options:{resolution?:NodeRenderResolution}={}):Promise<HTMLCanvasElement>{
+ const cache=new Map<string,HTMLCanvasElement>();
+ let allocatedPixels=0;
+ function allocate(width:number,height:number){
+  // Include intermediate buffers, not only the final result, in this local budget.
+  allocatedPixels+=width*height;
+  if(allocatedPixels>MAX_NODE_RENDER_WORK_PIXELS)throw new Error('This image graph exceeds the local rendering memory limit. Use smaller sources or fewer image tools.');
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  if(!canvas.getContext('2d'))throw new Error('This browser cannot allocate the image canvas. Try a smaller source.');
+  return canvas;
+ }
+ async function render(current:CanvasNode,visiting=new Set<string>()):Promise<HTMLCanvasElement>{
+  if(cache.has(current.id))return cache.get(current.id)!;
+  if(visiting.has(current.id))throw new Error('Circular node connection.');visiting.add(current.id);
+  const inputs=current.linked.map(id=>p.nodes.find(v=>v.id===id)).filter(Boolean) as CanvasNode[];
+  const primary=current.type==='switch'?inputs.find(v=>v.id===current.activeInput)||inputs[0]:inputs[0];
+  let canvas:HTMLCanvasElement;
+  const asset=!current.bypassed&&current.type!=='switch'?p.assets.find(a=>a.id===current.assetId):undefined;
+  if(asset){
+   if(asset.kind!=='image')throw new Error('Raster rendering requires a still image.');
+   const img=await new Promise<HTMLImageElement>((resolve,reject)=>{const image=new Image();image.crossOrigin='anonymous';image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('Could not load the source image.'));image.src=asset.url;});
+   const size=nodeRenderSize(img.naturalWidth,img.naturalHeight,options.resolution??'preview');
+   canvas=allocate(size.width,size.height);canvas.getContext('2d')!.drawImage(img,0,0,canvas.width,canvas.height);
+  }else if(primary){const source=await render(primary,new Set(visiting));canvas=allocate(source.width,source.height);canvas.getContext('2d')!.drawImage(source,0,0);}
+  else throw new Error('Attach an image or connect an image input to render this node.');
+  if(!current.bypassed)for(const op of operationsFor(current).filter(o=>o.enabled&&o.kind!=='direction')){
+   const next=allocate(canvas.width,canvas.height),ctx=next.getContext('2d')!,v=op.values;
    if(op.kind==='grade')ctx.filter=`brightness(${v.brightness??100}%) contrast(${v.contrast??100}%) saturate(${v.saturation??100}%)`;
    if(op.kind==='transform'){ctx.translate(next.width/2,next.height/2);ctx.rotate(Number(v.rotation||0)*Math.PI/180);ctx.scale(Number(v.scale??100)/100*(v.flip?-1:1),Number(v.scale??100)/100);ctx.drawImage(canvas,-canvas.width/2,-canvas.height/2);}
    else if(op.kind==='mask'){ctx.beginPath();if(v.invert)ctx.rect(0,0,next.width,next.height);const factor=Number(v.size??80)/100;if(v.shape==='rectangle')ctx.rect(next.width*(1-factor)/2,next.height*(1-factor)/2,next.width*factor,next.height*factor);else ctx.ellipse(next.width/2,next.height/2,next.width*factor/2,next.height*factor/2,0,0,2*Math.PI);ctx.clip(v.invert?'evenodd':'nonzero');ctx.drawImage(canvas,0,0);}
-   else if(op.kind==='mix'){ctx.drawImage(canvas,0,0);if(inputs[1]){const layer=await renderNode(inputs[1],p,cache,new Set(visiting));ctx.globalAlpha=Number(v.opacity??50)/100;ctx.globalCompositeOperation=(v.blend||'source-over') as GlobalCompositeOperation;ctx.drawImage(layer,0,0,next.width,next.height);}}
-   else ctx.drawImage(canvas,0,0);canvas=next;
+   else if(op.kind==='mix'){ctx.drawImage(canvas,0,0);if(inputs[1]){const layer=await render(inputs[1],new Set(visiting));ctx.globalAlpha=Number(v.opacity??50)/100;ctx.globalCompositeOperation=(v.blend||'source-over') as GlobalCompositeOperation;ctx.drawImage(layer,0,0,next.width,next.height);}}
+   else ctx.drawImage(canvas,0,0);
+   canvas=next;
+  }
+  cache.set(current.id,canvas);return canvas;
  }
- cache.set(n.id,canvas);return canvas;
+ return render(n);
 }

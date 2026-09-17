@@ -34,6 +34,7 @@ import {
 import { tokenSpendThisMonth } from "@/lib/auth";
 import { listCast, expandCast } from "@/lib/cast";
 import { ceilingProblem } from "@/lib/refLimits";
+import { videoReferenceProblem } from "@/lib/generationReferences";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
@@ -847,11 +848,9 @@ export async function executeGenerationAdmission(
      @Mule passed the check with two and left with four, and nothing said
      so. The still path already counts them (see the identical check on the
      image branch below, and its comment); the video path never did.
-     What the engine then does with the surplus is not a refusal but a
-     silent change of meaning: fal takes images[0] as the FIRST FRAME and
-     the next as the LAST FRAME (lib/falVideo.ts:132-134) and discards the
-     rest, so a reference the person attached can quietly become a frame
-     and turn a text-to-video into an image-to-video. Some models take no
+     Explicit frame roles are then checked against the engine contract.
+     Ordinary references must never be reinterpreted as opening frames,
+     including images added by a named cast member. Some models take no
      reference images at all (`maxReferenceImages: 0`). */
     /* Only the image rules are re-checked, and deliberately: the cast adds
      `reference_image` rows and nothing else, so the video count and the
@@ -859,6 +858,10 @@ export async function executeGenerationAdmission(
      durations needed to re-test them are not carried on a Reference. */
     const afterCast = ceilingProblem(references, model, castUsed);
     if (afterCast) return admissionReply({ error: afterCast }, { status: 400 });
+    if (model.kind === "video" && task.id === "generate") {
+      const rolesProblem = videoReferenceProblem(model, references);
+      if (rolesProblem) return admissionReply({ error: rolesProblem }, { status: 400 });
+    }
 
     /* Motion control moves a character: it needs the still as well as the clip. */
     if (task.needsImage && !references.some((r) => r.kind === "image")) {

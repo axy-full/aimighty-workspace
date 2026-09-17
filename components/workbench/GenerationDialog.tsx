@@ -11,6 +11,9 @@ import {
 import { Button } from "./ui/button";
 import { mediaReferenceIdentity, mediaQuoteReferences } from '@/lib/workbench/media-reference-input';
 import { uploadWorkbench } from "@/lib/workbench/upload";
+import { nodeAudioBody, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
+import { videoReferenceProblem } from "@/lib/generationReferences";
+import type { ModelDef } from "@/lib/models";
 import {
   pendingGenerationKey,
   readPendingGeneration,
@@ -23,6 +26,7 @@ type Model = {
   id: string;
   label: string;
   kind: "image" | "video";
+  family: ModelDef["family"];
   resolutions: string[];
   ratios: string[];
   durations: number[];
@@ -77,7 +81,7 @@ export function GenerationDialog({
   project: Project;
   onClose: () => void;
   onSave: () => Promise<boolean>;
-  onQueued: (id: string) => void;
+  onQueued: (id: string, kind?: "image" | "video" | "audio") => void;
   onAsset: (id: string, fields: Partial<Asset>) => void;
 }) {
   const storageId = pendingGenerationKey(scope, project.id, target.node.id);
@@ -102,12 +106,21 @@ export function GenerationDialog({
     initial.pending,
   );
   const saved = initial.pending ? JSON.parse(initial.pending.body) : null;
+  const initialKind = initial.pending?.endpoint === "/api/audio" || (!initial.pending && target.node.mode === "Audio") ? "audio" : target.node.mode === "Video" || target.node.mode === "Image to video" ? "video" : "image";
+  const [kind, setKind] = useState<"image" | "video" | "audio">(initialKind);
+  const [audioSetup, setAudioSetup] = useState<NodeAudioSetup | null>(null);
+  const [audioTask, setAudioTask] = useState<NodeAudioTask>(saved?.task === "music" || saved?.task === "speech" ? saved.task : "sound");
+  const [voiceId, setVoiceId] = useState(saved?.voiceId || "");
+  const [speechModel, setSpeechModel] = useState(saved?.modelId || "");
+  const [audioSeconds, setAudioSeconds] = useState(saved?.lengthMs ? saved.lengthMs / 1000 : saved?.durationSeconds || 10);
+  const [instrumental, setInstrumental] = useState(saved?.instrumental ?? true);
+  const [firstFrameId, setFirstFrameId] = useState<string>(saved?.firstFrameAssetId || "");
   const [models, setModels] = useState<Model[]>([]),
     [modelId, setModelId] = useState(saved?.model || ""),
     [resolution, setResolution] = useState(saved?.resolution || ""),
     [ratio, setRatio] = useState(saved?.ratio || project.aspect),
     [duration, setDuration] = useState(saved?.duration || 5),
-    [prompt, setPrompt] = useState(saved?.prompt || target.prompt),
+    [prompt, setPrompt] = useState(saved?.text || saved?.prompt || target.prompt),
     [soulIdentityId, setSoulIdentityId] = useState<string>(saved?.soulIdentityId || ""),
     [soulStrength, setSoulStrength] = useState<number>(saved?.soulStrength ?? 1),
     [quote, setQuote] = useState<{
@@ -116,7 +129,7 @@ export function GenerationDialog({
     } | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(initial.error);
-  const model = models.find((m) => m.id === modelId);
+  const model = models.find((m) => m.id === modelId && m.kind === kind);
   const boundRefs = target.refs
     .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
     .filter((asset): asset is Asset => !!asset && ["image", "video"].includes(asset.kind));
@@ -124,31 +137,61 @@ export function GenerationDialog({
   const selectedSoulId = soulIdentityId || soulAssets[0]?.soulIdentityId || "";
   const boundSoulId = soulAssets[0]?.soulIdentityId;
   // A trained likeness supplies the face; its cover is not an extra style reference.
-  const refs = model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs;
+  const refs = kind === "audio" ? [] : model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs;
   const referenceQuery = mediaQuoteReferences(refs);
-  const quoteKey = JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined });
-  const cost = pending?.credits ?? (quote?.key === quoteKey ? quote.credits : null);
+  const roleFor = (asset: Asset) => asset.kind === "video" ? "reference_video" : kind === "video" && asset.id === firstFrameId ? "first_frame" : "reference_image";
+  const referenceProblem = kind === "video" && model ? videoReferenceProblem(model, refs.map(asset => ({ kind: asset.kind, role: roleFor(asset) }))) : null;
+  const audioBody = JSON.stringify(nodeAudioBody({ task: audioTask, text: prompt, seconds: audioSeconds, instrumental,
+    voiceId: voiceId || audioSetup?.voices[0]?.id || "", modelId: speechModel || audioSetup?.defaultSpeechModel || "" }));
+  const quoteKey = kind === "audio" ? audioBody : JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, firstFrameId, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined });
+  const cost = pending?.credits ?? (!referenceProblem && quote?.key === quoteKey ? quote.credits : null);
   useEffect(() => {
-    studioRequest<{ models: Model[] }>("/api/workbench/engines")
+    studioRequest<{ models: Model[] }>("/api/workbench/engines", { headers: { "X-Workbench-Scope": scope } })
       .then((d) => {
         setModels(d.models);
-        const first = (boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
-          || d.models.find(m => m.kind === "image" && !m.soulIdentity)
-          || d.models.find(m => !m.soulIdentity);
-        if (first && !initial.pending) {
+        const first = (initialKind === "image" && boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
+          || d.models.find(m => m.kind === initialKind && !m.soulIdentity)
+          || (initialKind === "image" ? d.models.find(m => !m.soulIdentity) : undefined);
+        if (first && !initial.pending && initialKind !== "audio") {
+          setKind(first.kind);
           setModelId(first.id);
           setResolution(first.resolutions[0]);
           setRatio(first.ratios.includes(project.aspect) ? project.aspect : first.ratios.find(r => r !== 'adaptive') || first.ratios[0]);
           setDuration(first.durations.includes(5) ? 5 : first.durations[0] || 5);
-        } else if (!first)
+        } else if (!first && initialKind !== "audio")
           setError(d.models.some(m => m.soulIdentity)
             ? "Connect a ready Soul character to this node, or connect another image engine in Workspace settings."
             : "No generation engine is configured for this workspace.");
+        if (initial.pending && initial.pending.endpoint !== "/api/audio") {
+          const restoredModel = d.models.find(m => m.id === JSON.parse(initial.pending!.body).model);
+          if (restoredModel) setKind(restoredModel.kind);
+        }
       })
       .catch((e) => setError(e.message));
-  }, [initial.pending, project.aspect, boundSoulId]);
+  }, [initial.pending, initialKind, project.aspect, boundSoulId, scope]);
   useEffect(() => {
-    if (!model || pending) return;
+    if (kind !== "audio") return;
+    const abort = new AbortController();
+    studioRequest<NodeAudioSetup>("/api/audio", { signal: abort.signal, headers: { "X-Workbench-Scope": scope } })
+      .then(data => { setAudioSetup(data); if (!data.configured) setError("Audio generation is not configured for this workspace."); })
+      .catch(error => { if (!abort.signal.aborted) setError(error.message); });
+    return () => abort.abort();
+  }, [kind, scope]);
+  useEffect(() => {
+    if (kind !== "audio" || pending || !audioSetup?.configured || !prompt.trim() || (audioTask === "speech" && !JSON.parse(audioBody).voiceId)) return;
+    const abort = new AbortController();
+    const timer = setTimeout(() => {
+      studioRequest<{ estimatedCredits: number }>("/api/audio", { method: "POST", signal: abort.signal,
+        headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+        body: JSON.stringify({ ...JSON.parse(audioBody), quoteOnly: true }) })
+        .then(data => { if (!validAudioQuote(data)) throw new Error("Audio pricing returned an invalid estimate.");
+          if (!abort.signal.aborted) { setError(""); setQuote({ key: audioBody, credits: data.estimatedCredits }); } })
+        .catch(error => { if (!abort.signal.aborted) { setQuote(null); setError(error.message); } });
+    }, 250);
+    return () => { clearTimeout(timer); abort.abort(); };
+  }, [kind, pending, audioSetup?.configured, prompt, audioTask, audioBody, scope]);
+  useEffect(() => {
+    if (kind === "audio" || !model || pending) return;
     const abort = new AbortController();
     studioRequest<{ credits: number | null }>(
       "/api/workbench/engines?" +
@@ -159,16 +202,16 @@ export function GenerationDialog({
           duration: String(duration),
           ...(model.soulIdentity ? { soulIdentityId: selectedSoulId, projectId: project.id } : {}),
         }).toString() + '&' + referenceQuery,
-      { signal: abort.signal },
+      { signal: abort.signal, headers: { "X-Workbench-Scope": scope } },
     )
       .then((d) => { setError(""); setQuote({ key: quoteKey, credits: d.credits }); })
       .catch((e) => {
         if (e.name !== "AbortError") setError(e.message);
       });
     return () => abort.abort();
-  }, [model, modelId, resolution, ratio, duration, referenceQuery, quoteKey, pending, selectedSoulId, project.id]);
+  }, [kind, model, modelId, resolution, ratio, duration, referenceQuery, quoteKey, pending, selectedSoulId, project.id, scope]);
   async function submit() {
-    if (busy || initial.error || (!pending && (!model || cost == null))) return;
+    if (busy || initial.error || (!pending && ((kind !== "audio" && !model) || cost == null))) return;
     setBusy(true);
     setError("");
     let attempt: PendingGeneration | null = null;
@@ -192,8 +235,7 @@ export function GenerationDialog({
         });
         const references = [];
         for (const a of refs) {
-          const role =
-            a.kind === "video" ? "reference_video" : "reference_image";
+          const role = roleFor(a);
           const identity = mediaReferenceIdentity(a);
           if (identity) references.push({ ...identity, role });
           else if (
@@ -219,7 +261,9 @@ export function GenerationDialog({
                 " from your device before using it as generation input.",
             );
         }
-        const body = JSON.stringify({
+        const body = JSON.stringify(kind === "audio" ? {
+          ...JSON.parse(audioBody), projectId: mapping.productionProjectId, shotId: mapping.shotId, maxCredits: cost!,
+        } : {
           prompt,
           model: model!.id,
           projectId: mapping.productionProjectId,
@@ -230,16 +274,18 @@ export function GenerationDialog({
           refine: false,
           maxCredits: cost!,
           references,
+          ...(kind === "video" ? { firstFrameAssetId: firstFrameId } : {}),
           ...(model!.soulIdentity ? { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id } : {}),
         });
         attempt = claimPendingGeneration(window.localStorage, storageId, {
           key: crypto.randomUUID(),
           body,
           credits: cost!,
+          endpoint: kind === "audio" ? "/api/audio" : "/api/generate",
         });
         setPending(attempt);
       }
-      const result = await studioRequest<{ id: string }>("/api/generate", {
+      const result = await studioRequest<{ id: string }>(attempt.endpoint ?? "/api/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -253,13 +299,13 @@ export function GenerationDialog({
           "The server has not confirmed a job yet. Retry to recover this same request.",
         );
       clearPendingGeneration(window.localStorage, storageId, attempt.key);
-      onQueued(result.id);
+      onQueued(result.id, attempt.endpoint === "/api/audio" ? "audio" : model?.kind);
       onClose();
     } catch (e) {
       if (attempt && e instanceof StudioRequestError) {
         if (typeof e.data.id === "string") {
           clearPendingGeneration(window.localStorage, storageId, attempt.key);
-          onQueued(e.data.id);
+          onQueued(e.data.id, attempt.endpoint === "/api/audio" ? "audio" : model?.kind);
           onClose();
           return;
         }
@@ -278,7 +324,7 @@ export function GenerationDialog({
   }
   return (
     <Dialog open onOpenChange={(v) => !v && !busy && onClose()}>
-      <DialogContent className="ps ps-dialog" overlayClassName={model?.soulIdentity ? "z-[100]" : undefined} style={model?.soulIdentity ? { zIndex: 101 } : undefined}>
+      <DialogContent className="ps ps-dialog" overlayClassName={kind !== "audio" && model?.soulIdentity ? "z-[100]" : undefined} style={kind !== "audio" && model?.soulIdentity ? { zIndex: 101 } : undefined}>
         <DialogHeader>
           <DialogTitle>Generate a new take</DialogTitle>
           <DialogDescription>
@@ -286,7 +332,18 @@ export function GenerationDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="dialog-fields">
-          <label className="field-label">
+          <label className="field-label">Generate
+            <select aria-label="Generation type" value={kind} disabled={busy || !!pending} onChange={event => {
+              const next = event.target.value as typeof kind; setKind(next); setQuote(null); setError("");
+              const nextModel = models.find(m => m.kind === next && (!m.soulIdentity || boundSoulId));
+              if (nextModel) { setModelId(nextModel.id); setResolution(nextModel.resolutions[0]);
+                setRatio(nextModel.ratios.includes(project.aspect) ? project.aspect : nextModel.ratios[0]); setDuration(nextModel.durations[0] || 5); }
+              else if (next !== "audio") { setModelId(""); setError(`No ${next} generation engine is configured for this workspace.`); }
+            }}>
+              <option value="image">Image</option><option value="video">Video</option><option value="audio">Audio</option>
+            </select>
+          </label>
+          {kind !== "audio" && <label className="field-label">
             Engine
             <select
               aria-label="Generation engine"
@@ -304,14 +361,29 @@ export function GenerationDialog({
                   setDuration(m.durations[0] || 5);
               }}
             >
-              {models.map((m) => (
+              {models.filter(m => m.kind === kind).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label} · {m.kind}
                 </option>
               ))}
             </select>
-          </label>
-          {model?.soulIdentity && (
+          </label>}
+          {kind === "audio" && <div className="generation-options">
+            <label className="field-label">Audio type<select aria-label="Audio type" value={audioTask} disabled={busy || !!pending} onChange={event => {
+              const task = event.target.value as NodeAudioTask; setAudioTask(task); setAudioSeconds(task === "music" ? 30 : 10);
+            }}><option value="sound">Sound effect / ambience</option><option value="music">Music</option><option value="speech">Dialogue / voice</option></select></label>
+            {audioTask === "speech" ? <>
+              <label className="field-label">Voice<select aria-label="Audio voice" value={voiceId || audioSetup?.voices[0]?.id || ""} disabled={busy || !!pending} onChange={event => setVoiceId(event.target.value)}>
+                {!audioSetup?.voices.length && <option value="">No voices available</option>}{audioSetup?.voices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+              </select></label>
+              <label className="field-label">Speech model<select aria-label="Speech model" value={speechModel || audioSetup?.defaultSpeechModel || ""} disabled={busy || !!pending} onChange={event => setSpeechModel(event.target.value)}>
+                {audioSetup?.speechModels.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}
+              </select></label>
+            </> : <label className="field-label">Seconds<input aria-label="Audio duration" type="number" min={audioTask === "music" ? 10 : 0.5} max={audioTask === "music" ? 300 : 30} step={audioTask === "music" ? 1 : 0.5}
+              value={audioSeconds} disabled={busy || !!pending} onChange={event => setAudioSeconds(Math.max(audioTask === "music" ? 10 : 0.5, Math.min(audioTask === "music" ? 300 : 30, Number(event.target.value) || 10)))} /></label>}
+            {audioTask === "music" && <label><input type="checkbox" checked={instrumental} disabled={busy || !!pending} onChange={event => setInstrumental(event.target.checked)} />Instrumental</label>}
+          </div>}
+          {kind !== "audio" && model?.soulIdentity && (
             <div className="generation-options">
               <label className="field-label">Soul identity
                 <select aria-label="Soul identity" value={selectedSoulId} disabled={busy || !!pending} onChange={event => setSoulIdentityId(event.target.value)}>
@@ -324,18 +396,22 @@ export function GenerationDialog({
               </label>
             </div>
           )}
-          {soulAssets.length > 0 && !model?.soulIdentity && <p className="muted small-copy">This engine uses the character’s reference image. Choose Soul Character to use its trained likeness when that engine is available.</p>}
+          {kind !== "audio" && soulAssets.length > 0 && !model?.soulIdentity && <p className="muted small-copy">This engine uses the character’s reference image. Choose Soul Character to use its trained likeness when that engine is available.</p>}
+          {kind === "video" && <label className="field-label">First frame<select aria-label="Node first frame" value={firstFrameId} disabled={busy || !!pending} onChange={event => setFirstFrameId(event.target.value)}>
+            <option value="">No first frame</option>{refs.filter(asset => asset.kind === "image").map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+          </select></label>}
+          {referenceProblem && <p role="alert" className="save-problem">{referenceProblem}</p>}
           <label className="field-label">
-            Direction
+            {kind === "audio" && audioTask === "speech" ? "Script" : "Direction"}
             <textarea
               aria-label="Generation direction"
               value={prompt}
               disabled={busy || !!pending}
               onChange={(e) => setPrompt(e.target.value)}
-              maxLength={10000}
+              maxLength={kind === "audio" ? 5000 : 10000}
             />
           </label>
-          <div className="generation-options">
+          {kind !== "audio" && <div className="generation-options">
             <label>
               Size
               <select
@@ -377,7 +453,8 @@ export function GenerationDialog({
                 </select>
               </label>
             )}
-          </div>
+          </div>}
+          {kind === "audio" && <p className="muted small-copy">Audio uses your written direction or script. The node’s visual references remain attached to the node.</p>}
           {pending && (
             <p role="status" className="muted small-copy">
               A previous submission is awaiting confirmation. Retry recovers the
@@ -398,7 +475,7 @@ export function GenerationDialog({
             disabled={
               busy ||
               !!initial.error ||
-              (!pending && (cost == null || !prompt.trim() || (model?.soulIdentity && !selectedSoulId)))
+              (!pending && (cost == null || !prompt.trim() || (kind !== "audio" && model?.soulIdentity && !selectedSoulId)))
             }
             onClick={() => void submit()}
           >

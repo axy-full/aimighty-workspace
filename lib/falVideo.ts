@@ -38,6 +38,7 @@ import { withRecoveryJob } from "./recovery";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { getProvider } from "./providers";
 import { engineFor } from "./engines";
+import { videoReferenceProblem } from "./generationReferences";
 
 /** A render still "running" past this has been abandoned by the vendor. */
 const CEILING_MS = 60 * 60_000;
@@ -128,11 +129,12 @@ export async function buildFalInput(opts: {
     };
   }
 
-  /* Generate: text-to-video, or image-to-video the moment a frame is
-     attached — a first frame, and a second image as the last frame. */
-  const first = images.find((r) => r.role === "first_frame") ?? images[0] ?? null;
-  const last = images.find((r) => r.role === "last_frame" && r !== first)
-    ?? (first ? images.find((r) => r !== first) ?? null : null);
+  // Frames are explicit persisted choices. Ordinary references must never
+  // silently change a text-to-video request into image-to-video.
+  const problem = videoReferenceProblem(model, references);
+  if (problem) throw new Error(problem);
+  const first = images.find((r) => r.role === "first_frame") ?? null;
+  const last = images.find((r) => r.role === "last_frame") ?? null;
   const input: Record<string, unknown> = {
     prompt: prompt.trim(),
     duration: String(params.duration),

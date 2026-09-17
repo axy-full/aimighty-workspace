@@ -10,7 +10,8 @@ import { useApi } from "@/lib/useApi";
 import { GEN_ASSETS_CHANGED } from "@/lib/genAssetInput";
 import { inlineSafe } from "@/lib/serveType";
 import { startGenDrag, startUploadDrag, type DraggedAsset } from "@/lib/dnd";
-import { ASSET_GROUPS, libraryId, libraryInput, libraryKind, libraryName, libraryReady, libraryUrl, type LibraryAsset, type LibraryUpload } from "@/lib/genLibrary";
+import { ASSET_GROUPS, libraryId, libraryInput, libraryKind, libraryName, libraryReady, libraryUrl, librarySource, type LibrarySource, type LibraryAsset, type LibraryUpload } from "@/lib/genLibrary";
+import { fileProjectUpload, unfileProjectUpload } from '@/lib/workbench/project-library-client';
 import type { Generation } from "@/lib/jobs";
 import type { ProductionRow } from "@/lib/productions";
 import type { Shot } from "@/lib/shots";
@@ -21,14 +22,23 @@ import { useToast } from "@/components/ui/Toast";
 import { ActionMenu, ActionDropdown, type StudioAction } from "@/components/workbench/ActionMenu";
 import styles from "./gen.module.css";
 
-type Props = {
+export type GenAssetLibraryProps = {
   controller?: Ref<GenAssetLibraryHandle>;
   search: string;
   onUseAsset: (asset: DraggedAsset) => void;
   onEdit: (asset: LibraryAsset) => void;
   onUpscale: (asset: LibraryAsset) => void;
   onUsePrompt: (take: Generation) => void;
+  workbenchProjectId?: string;
+  projectName?: string;
+  source?: LibrarySource;
+  onSourceChange?: (source: LibrarySource) => void;
+  initialSource?: LibrarySource;
+  onUseFirstFrame?: (asset: LibraryAsset) => void;
+  onUseReference?: (asset: LibraryAsset) => void;
+  onAddToProject?: (asset: LibraryAsset) => void;
 };
+type Props = GenAssetLibraryProps;
 export type GenAssetLibraryHandle = { upload: () => void };
 type Page<T> = { items: T[]; next: string | null };
 
@@ -111,6 +121,10 @@ function useLibraryPages<T extends { id: string }>(path: string, field: "generat
 }
 
 export default function GenAssetLibrary(props: Props) {
+  const { requestScope } = useSession();
+  return <AssetLibrary key={`${requestScope}:${props.workbenchProjectId ?? 'all'}`} {...props}/>;
+}
+function AssetLibrary(props: Props) {
   const { signedIn, workspace, requestScope } = useSession(), upload = useUploadFile(), toast = useToast();
   const picker = useRef<HTMLInputElement>(null), lock = useRef(false), live = useRef(true);
   useImperativeHandle(props.controller, () => ({ upload: () => {
@@ -118,6 +132,9 @@ export default function GenAssetLibrary(props: Props) {
     else picker.current?.click();
   } }), [toast]);
   const [progress, setProgress] = useState<string | null>(null), [dragOver, setDragOver] = useState(false);
+  const [localSource, setLocalSource] = useState<LibrarySource>(props.initialSource ?? 'uploads');
+  const source = props.source ?? localSource;
+  const changeSource = (next: LibrarySource) => { setLocalSource(next); props.onSourceChange?.(next); };
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, [requestScope]);
   async function files(selected: FileList | globalThis.File[]) {
     if (lock.current) { toast("Wait for the current uploads to finish."); return; }
@@ -130,13 +147,14 @@ export default function GenAssetLibrary(props: Props) {
       for (const file of all) {
         if (!live.current) break;
         setProgress(`Uploading ${file.name}`);
-        await upload(file, "chat", pct => {
+        const stored = await upload(file, "chat", pct => {
           if (live.current) setProgress(`${file.name} · ${pct}%`);
         });
+        if (props.workbenchProjectId && requestScope) await fileProjectUpload(props.workbenchProjectId,stored.id,requestScope);
         completed++;
         if (live.current) window.dispatchEvent(new CustomEvent(GEN_ASSETS_CHANGED, { detail: { scope: requestScope } }));
       }
-      if (live.current && completed) toast(`${completed} ${completed === 1 ? "asset" : "assets"} added to the workspace library.`);
+      if (live.current && completed) { changeSource('uploads'); toast(`${completed} ${completed === 1 ? "asset" : "assets"} added to ${props.workbenchProjectId ? 'this project' : 'All assets'}.`); }
     } catch (e) { if (live.current) toast((e as Error).message); }
     finally { lock.current = false; if (live.current) setProgress(null); }
   }
@@ -145,21 +163,26 @@ export default function GenAssetLibrary(props: Props) {
     onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }}
     onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); e.stopPropagation(); setDragOver(false); void files(e.dataTransfer.files); } }}>
     <div className={styles.libraryToolbar}>
-      <p>{workspace?.name ? `${workspace.name} · ` : ""}Uploaded originals and generated takes</p>
+      <p>{props.workbenchProjectId ? `${props.projectName || 'This project'} · ` : workspace?.name ? `${workspace.name} · ` : ""}Uploaded originals and generated takes</p>
       <button type="button" className={styles.libraryUpload} aria-label="Upload assets" disabled={!signedIn || !!progress} onClick={() => picker.current?.click()}><Upload size={15}/><span data-library-upload-label="">Upload assets</span><span className="hidden" data-phone-upload-label="">Upload</span></button>
       <input ref={picker} type="file" multiple hidden aria-label="Upload library assets" disabled={!signedIn || !!progress}
         onChange={e => { if (e.target.files) void files(e.target.files); e.target.value = ""; }}/>
     </div>
+    <div className={styles.librarySources} role="group" aria-label="Asset source">
+      {(['uploads','generations'] as const).map(value=><button key={value} type="button" aria-pressed={source===value} onClick={()=>changeSource(value)}>{value==='uploads'?'Uploads':'Generations'}</button>)}
+    </div>
     {progress && <p className={styles.libraryProgress} role="status">{progress}</p>}
     {!signedIn ? <div className={styles.empty}><h3>Your workspace library</h3><p>Sign in to upload assets and use your team’s takes.</p></div>
-      : <LibraryResults key={`${requestScope}:${props.search.trim()}`} {...props}/>}
+      : <LibraryResults key={`${requestScope}:${props.workbenchProjectId ?? 'all'}:${props.search.trim()}`} {...props} source={source}/>}
   </div>;
 }
 
-function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt }: Props) {
+function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, onUseFirstFrame, onUseReference, onAddToProject, workbenchProjectId, source }: Props) {
+  const {requestScope}=useSession(),toast=useToast(),removing=useRef(new Set<string>());
   const q = search.trim() ? `&q=${encodeURIComponent(search.trim())}` : "";
-  const gens = useLibraryPages<Generation>(`/api/jobs?limit=60&sync=0&pagination=stable${q}`, "generations");
-  const uploads = useLibraryPages<LibraryUpload>(`/api/uploads?limit=60${q}`, "uploads");
+  const projectPath = workbenchProjectId ? `/api/workbench/library?projectId=${encodeURIComponent(workbenchProjectId)}&limit=60${q}` : null;
+  const gens = useLibraryPages<Generation>(projectPath ? `${projectPath}&source=generations` : `/api/jobs?limit=60&sync=0&pagination=stable${q}`, "generations");
+  const uploads = useLibraryPages<LibraryUpload>(projectPath ? `${projectPath}&source=uploads` : `/api/uploads?limit=60${q}`, "uploads");
   const money = useMoney();
   const [selected, setSelected] = useState<LibraryAsset | null>(null), [filing, setFiling] = useState<Generation | null>(null);
   const assets = useMemo(() => [
@@ -167,11 +190,18 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt }: 
     ...uploads.items.map(value => ({ origin: "upload" as const, value })),
   ].sort((a, b) => b.value.createdAt - a.value.createdAt || libraryId(b).localeCompare(libraryId(a))), [gens.items, uploads.items]);
   const errors = [gens.error, uploads.error].filter(Boolean);
+  async function removeFiling(upload:LibraryUpload) {
+    if(!requestScope||!workbenchProjectId||removing.current.has(upload.id))return;
+    removing.current.add(upload.id);
+    try{await unfileProjectUpload(workbenchProjectId,upload.id,requestScope);await uploads.refresh();toast('Project filing removed. The original remains in All assets and wherever project content uses it.');}
+    catch(error){toast(error instanceof Error?error.message:'Could not remove this filing.');}
+    finally{removing.current.delete(upload.id);}
+  }
   return <>
     {errors.length > 0 && <div className={styles.notice} role="alert"><p>{[...new Set(errors)].join(" ")}</p><button type="button" className={styles.secondary} onClick={() => { void gens.refresh(); void uploads.refresh(); }}>Retry library</button></div>}
-    {!gens.ready && !uploads.ready && !errors.length && <p role="status">Loading workspace assets…</p>}
+    {!gens.ready && !uploads.ready && !errors.length && <p role="status">Loading {workbenchProjectId ? 'project' : 'workspace'} assets…</p>}
     {ASSET_GROUPS.map(group => {
-      const items = assets.filter(asset => libraryKind(asset) === group.kind);
+      const items = assets.filter(asset => librarySource(asset) === source && libraryKind(asset) === group.kind);
       return <section className={styles.assetGroup} key={group.kind} aria-label={group.label}>
         <div className={styles.assetGroupHeader}><h3>{group.label}</h3><span>{items.length} loaded</span></div>
         {!items.length ? <p className={styles.groupEmpty}>{search ? `No matching ${group.label.toLowerCase()} loaded.` : `No ${group.label.toLowerCase()} loaded yet.`}</p>
@@ -180,19 +210,22 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt }: 
             const name = libraryName(asset), id = libraryId(asset), visual = kind === "image" || kind === "video";
             const actions: StudioAction[] = [
               { label: "Preview", run: () => setSelected(asset), disabled: !ready },
+              ...(onAddToProject ? [{label:'Add to project',run:()=>onAddToProject(asset),disabled:!ready}]:[]),
               ...(visual ? [
-                { label: "Use as reference", run: () => onUseAsset(libraryInput(asset)), disabled: !ready },
+                ...(kind==='image'&&onUseFirstFrame?[{label:'Use as first frame',run:()=>onUseFirstFrame(asset),disabled:!ready}]:[]),
+                { label: "Use as reference", run: () => onUseReference ? onUseReference(asset) : onUseAsset(libraryInput(asset)), disabled: !ready },
                 { label: kind === "video" ? "Edit clip" : "Edit image", run: () => onEdit(asset), disabled: !ready },
                 { label: kind === "video" ? "Upscale video" : "Upscale image", run: () => onUpscale(asset), disabled: !ready },
               ] : []),
               ...(gen ? [{ label: "Use prompt", run: () => onUsePrompt(gen) }, { label: "File to shot", run: () => setFiling(gen), disabled: !ready }] : []),
+              ...(workbenchProjectId&&asset.origin==='upload'&&asset.value.projectFiled?[{label:'Remove project filing',run:()=>void removeFiling(asset.value)}]:[]),
             ];
             return <ActionMenu key={id} label={`Actions for ${name}`} actions={actions}><article className={styles.takeCard} data-library-id={id} tabIndex={0}
               draggable={!!ready} onDragStart={e => { if (!ready) { e.preventDefault(); return; } if (asset.origin === "generation") startGenDrag(e, asset.value); else startUploadDrag(e, asset.value); }}>
               <button type="button" className={styles.takeMedia} disabled={!ready} onClick={() => setSelected(asset)} aria-label={`Preview ${name}`}>
                 {ready && visual && (asset.origin === "generation" || inlineSafe(asset.value.mime)) ? <LazyMedia url={libraryUrl(asset)} kind={kind === "video" ? "video" : "image"} className={styles.thumbnail} hoverPlay={kind === "video"} alt={name}/>
                   : <span className={styles.mediaSymbol}>{kind === "audio" ? <AudioLines size={32}/> : kind === "document" ? <FileText size={32}/> : kind === "video" ? <Film size={32}/> : kind === "image" ? <ImageIcon size={32}/> : <File size={32}/>}</span>}
-                <span className={styles.takeKind}>{asset.origin === "upload" ? "Uploaded" : "Generated"}</span>
+                <span className={styles.takeKind}>{librarySource(asset) === "uploads" ? "Uploaded" : "Generated"}</span>
                 {gen && <span className={styles.takeCost}>{money.take(gen)}</span>}
                 {gen && !ready && <span className={styles.jobStatus}>{gen.status === "held" ? "Needs attention" : gen.status === "failed" ? "Failed" : gen.status === "cancelled" ? "Cancelled" : gen.status === "succeeded" ? "Output not retained" : "Generating"}</span>}
               </button>
@@ -201,8 +234,9 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt }: 
                 {gen?.projectName && <small className={styles.assetProduction}>{gen.projectName}{gen.shotCode ? ` · ${gen.shotCode}` : ""}</small>}
                 {gen?.error && <p className={styles.takeError}>{gen.error}</p>}
               </div>
-              <div className={styles.takeActions}>
-                {visual ? <><button type="button" disabled={!ready} onClick={() => onUseAsset(libraryInput(asset))}>Use as reference</button><button type="button" disabled={!ready} onClick={() => onEdit(asset)}>{kind === "video" ? "Edit clip" : "Edit image"}</button></>
+              <div className={styles.takeActions} data-expanded-actions={onAddToProject || (kind==='image'&&onUseFirstFrame) ? '' : undefined}>
+                {onAddToProject && <button type="button" disabled={!ready} onClick={()=>onAddToProject(asset)}>Add to project</button>}
+                {visual ? <>{kind==='image'&&onUseFirstFrame&&<button type="button" disabled={!ready} onClick={()=>onUseFirstFrame(asset)}>Use as first frame</button>}<button type="button" disabled={!ready} onClick={() => onUseReference ? onUseReference(asset) : onUseAsset(libraryInput(asset))}>Use as reference</button><button type="button" disabled={!ready} onClick={() => onEdit(asset)}>{kind === "video" ? "Edit clip" : "Edit image"}</button></>
                   : <button type="button" disabled={!ready} onClick={() => setSelected(asset)}>Preview</button>}
                 {ready && <a href={libraryUrl(asset).split("?")[0] + "?download=1"} download={asset.origin === "upload" ? asset.value.filename : true} aria-label={`Download ${name}`}><Download size={15}/></a>}
               </div>
@@ -211,8 +245,8 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt }: 
       </section>;
     })}
     <div className={styles.libraryMore}>
-      {gens.next && <button type="button" disabled={gens.moreBusy} onClick={() => void gens.more()}>{gens.moreBusy ? "Loading takes…" : "Load more takes"}</button>}
-      {uploads.next && <button type="button" disabled={uploads.moreBusy} onClick={() => void uploads.more()}>{uploads.moreBusy ? "Loading uploads…" : "Load more uploads"}</button>}
+      {source==='generations'&&(gens.next||(workbenchProjectId&&uploads.next))&&<button type="button" disabled={gens.moreBusy||uploads.moreBusy} onClick={()=>void Promise.all([gens.more(),...(workbenchProjectId?[uploads.more()]:[])])}>{gens.moreBusy||uploads.moreBusy?'Loading takes…':'Load more takes'}</button>}
+      {source==='uploads'&&uploads.next&&<button type="button" disabled={uploads.moreBusy} onClick={() => void uploads.more()}>{uploads.moreBusy ? "Loading uploads…" : "Load more uploads"}</button>}
     </div>
     <Dialog.Root open={!!selected} onOpenChange={open => { if (!open) setSelected(null); }}><Dialog.Portal><Dialog.Overlay className={styles.dialogOverlay}/><Dialog.Content className={`${styles.dialog} ${styles.previewDialog}`} aria-describedby={undefined}>
       <div className={styles.dialogHeader}><Dialog.Title>{selected ? libraryName(selected) : "Asset preview"}</Dialog.Title><Dialog.Close aria-label="Close preview"><X size={19}/></Dialog.Close></div>

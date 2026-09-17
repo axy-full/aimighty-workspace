@@ -35,6 +35,9 @@ type Props = {
   top?: number;
   /** An auto sheet's cap when it is not 92% (M5 = "78%"). */
   max?: string;
+  /** Optional adjustable height and accessible replacement for the grabber. */
+  height?: string;
+  grabber?: ReactNode;
   /** Pinned under the body: the one primary, or the ask field. */
   footer?: ReactNode;
   /** The footer's padding — `8px 16px 26px` for an ask field, `10px 16px 26px` for a pinned primary. */
@@ -45,7 +48,7 @@ type Props = {
 
 const MAX: Record<SheetSize, string> = { compact: "58%", expanded: "92%", full: "calc(100% - 44px)", auto: "92%" };
 
-export default function Sheet({ open, onClose, label, size = "auto", title, context, actions, header, top, max, footer, footerPad = "10px 16px 26px", children, bodyClassName = "" }: Props) {
+export default function Sheet({ open, onClose, label, size = "auto", title, context, actions, header, top, max, height, grabber, footer, footerPad = "10px 16px 26px", children, bodyClassName = "" }: Props) {
   useEffect(() => {
     if (!open) return;
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -60,8 +63,8 @@ export default function Sheet({ open, onClose, label, size = "auto", title, cont
       <button type="button" aria-label="Close" onClick={onClose} className="ui-sheet-scrim absolute inset-0" />
       <div role="dialog" aria-modal="true" aria-label={label}
         className={`ui-rail relative flex flex-col rounded-t-[24px] border-t border-border-mid text-ink ${size === "full" && top == null ? "h-[calc(100%-44px)]" : ""}`}
-        style={{ maxHeight: max ?? (top != null ? `calc(100% - ${top}px)` : MAX[size]), height: top != null ? `calc(100% - ${top}px)` : undefined, paddingBottom: footer ? 0 : "calc(26px + env(safe-area-inset-bottom, 0px))" }}>
-        <span className="mx-auto mt-[10px] block h-[4px] w-[36px] flex-none rounded-[2px] bg-[rgba(245,246,248,.25)]" aria-hidden="true" />
+        style={{ maxHeight: max ?? (top != null ? `calc(100% - ${top}px)` : MAX[size]), height: height ?? (top != null ? `calc(100% - ${top}px)` : undefined), paddingBottom: footer ? 0 : "calc(26px + env(safe-area-inset-bottom, 0px))" }}>
+        {grabber ?? <span className="mx-auto mt-[10px] block h-[4px] w-[36px] flex-none rounded-[2px] bg-[rgba(245,246,248,.25)]" aria-hidden="true" />}
         {header}
         {!header && (title || context || actions) && (
           <div className="flex h-[48px] flex-none items-center gap-[8px] px-[16px]">

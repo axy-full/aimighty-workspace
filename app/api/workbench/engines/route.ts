@@ -8,7 +8,7 @@ export const GET = withTenant(async (req: Request) => {
   if (got.response) return got.response;
   const q = new URL(req.url).searchParams;
   const configured = workbenchGenerationModels().filter(model => providerConfigured(getProvider(model.provider)));
-  const models = configured.map(model => ({ id: model.id, label: model.label, kind: model.kind,
+  const models = configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
     resolutions: model.resolutions, ratios: model.ratios, durations: model.durations,
     maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined }));
   const headers = { 'Cache-Control': 'no-store' };

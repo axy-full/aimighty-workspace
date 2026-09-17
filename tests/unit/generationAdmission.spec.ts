@@ -743,3 +743,16 @@ test("Astra reconciles measured output below its quote, leases collection and re
     await syncFalVideo(gen,{strict:true});expect(calls).toBe(3);expect((await db().execute("SELECT * FROM generation_settlements")).rows).toHaveLength(1);
   }finally{release?.();engine.poll=original;}
 }));
+
+test('Kling ordinary image references are refused before reservation while explicit frames retain their role', async () => scope('kling-explicit-frames', async service => {
+  const {db}=await import('../../lib/db');
+  await db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,width,height,created_at) VALUES('frame','frame','image/png','png',1000,'hash','original-image','image',1024,1024,0)");
+  const body={model:'fal-ai/kling-video/v3/standard',prompt:'raw: A street',resolution:'1080p',ratio:'16:9',duration:5,projectId:'project',references:[{uploadId:'frame',role:'reference_image'}]};
+  const refused=await service.gen.prepareGeneration(body,actor);
+  expect(refused.ok).toBe(false);
+  if(!refused.ok){expect(refused.status).toBe(400);expect(refused.body.error).toContain('Use as first frame');}
+  expect(await rows()).toHaveLength(0);expect(await meters()).toHaveLength(0);expect(dispatched).toHaveLength(0);
+  const prepared=value(await service.gen.prepareGeneration({...body,references:[{uploadId:'frame',role:'first_frame'}]},actor));
+  expect(prepared.request.references).toEqual([{uploadId:'frame',role:'first_frame'}]);
+  expect(prepared.quote.estimatedCredits).toBeGreaterThan(0);
+}));

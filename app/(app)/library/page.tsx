@@ -22,9 +22,10 @@ import { PageLoader } from "@/components/atomik/Loader";
 import UnfiledWall from "@/components/make/UnfiledWall";
 import NewAssetSheet, { type SheetRef } from "@/components/assets/NewAssetSheet";
 import GenAssetLibrary, { type GenAssetLibraryHandle } from "@/components/make/GenAssetLibrary";
-import { libraryId, libraryKind, type LibraryAsset } from "@/lib/genLibrary";
+import type { LibraryAsset } from "@/lib/genLibrary";
 import type { DraggedAsset } from "@/lib/dnd";
 import genStyles from "@/components/make/gen.module.css";
+import ProjectLibraryPage, { importLibraryAsset, libraryToolHref } from '@/components/workbench/ProjectLibraryPage';
 import "@/components/studio/legacy-graphite.css";
 import "./mobile.css";
 
@@ -62,7 +63,11 @@ type Upload = { id: string; filename: string; mime: string; bytes: number; width
 const KIND_WORD: Record<ElementKind, string> = { character: "Character", location: "Location", prop: "Prop", look: "Look", voice: "Voice" };
 
 export default function LibraryPage() {
-  return <ToastHost><AssetsPage /></ToastHost>;
+  return <ToastHost><LibraryRoute /></ToastHost>;
+}
+function LibraryRoute() {
+  const query=useSearchParams();
+  return query.get('all')==='1'?<AssetsPage/>:<ProjectLibraryPage/>;
 }
 
 const VIEWS = [
@@ -76,34 +81,52 @@ type AssetsView = (typeof VIEWS)[number]["value"];
 function AssetsPage() {
   const router = useRouter(), search = useSearchParams();
   const { workspace, requestScope, signedIn } = useSession();
+  const toast=useToast(), importLock=useRef(false);
+  const projectId=search.get('project');
   const library = useRef<GenAssetLibraryHandle>(null);
   const view: AssetsView = VIEWS.find(item => item.value === search.get("view"))?.value ?? "all";
   const [query, setQuery] = useState("");
-  usePageTitle("Library");
-  const setView = (next: AssetsView) => router.replace(next === "all" ? "/library" : `/library?view=${next}`, { scroll: false });
+  usePageTitle("All assets");
+  const setView = (next: AssetsView) => router.replace(`/library?${new URLSearchParams({all:'1',...(projectId?{project:projectId}:{}),...(next==='all'?{}:{view:next})})}`, { scroll: false });
   function useAsset(asset: DraggedAsset) {
     const kind = asset.kind === "gen" ? asset.gen.kind : asset.kind === "upload" ? asset.upload.kind : "image";
     const id = asset.kind === "gen" ? `generation:${asset.gen.id}` : asset.kind === "upload" ? `upload:${asset.upload.id}` : `upload:${asset.uploadId}`;
-    router.push(`/generate?mode=${kind === "video" ? "video" : "images"}&ref=${encodeURIComponent(id)}`);
+    router.push(`/generate?${new URLSearchParams({...(projectId?{project:projectId}:{}),mode:kind==='video'?'video':kind==='audio'?'audio':'images',ref:id})}`);
+  }
+  async function handoff(asset:LibraryAsset,task?:'edit'|'upscale') {
+    if(importLock.current)return;
+    if(projectId&&requestScope){
+      importLock.current=true;
+      try{await importLibraryAsset(projectId,requestScope,asset);router.push(libraryToolHref(projectId,asset,task));}
+      catch(error){toast(error instanceof Error?error.message:'Could not add this asset to the project.');}
+      finally{importLock.current=false;}
+      return;
+    }
+    toast('Choose a project before using this asset in Gen.');
   }
   function openTool(asset: LibraryAsset, task: "edit" | "upscale") {
-    const mode = libraryKind(asset) === "video" ? "video" : "images";
-    const params = new URLSearchParams({ mode });
-    if (task === "edit" && mode === "images") params.set("ref", libraryId(asset));
-    else { params.set("task", task); params.set("source", libraryId(asset)); }
-    router.push(`/generate?${params}`);
+    void handoff(asset,task);
+  }
+  async function addToProject(asset:LibraryAsset) {
+    if(!projectId||!requestScope||importLock.current)return;
+    importLock.current=true;
+    try{await importLibraryAsset(projectId,requestScope,asset);toast('Asset added to the project.');}
+    catch(error){toast(error instanceof Error?error.message:'Could not add this asset.');}
+    finally{importLock.current=false;}
   }
   return <div className={`collective-assets ${genStyles.workspace}`}>
     <header className="collective-assets-header">
-      <div><h1>Library</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}Workspace uploads and generated takes</p><div className="hidden" data-phone-library-heading=""><span>Library</span><h1>Workspace uploads and generated takes</h1></div></div>
-      {view === "all" && <label className="collective-assets-search"><span>Search</span><input value={query} onChange={event => setQuery(event.target.value)} aria-label="Search all workspace assets" placeholder="Search takes, uploads and originals…" /></label>}
+      <div><h1>All assets</h1><p>{workspace?.name ? `${workspace.name} · ` : ""}Workspace uploads and generated takes</p><div className="hidden" data-phone-library-heading=""><span>All assets</span><h1>Workspace uploads and generated takes</h1></div></div>
+      {view === "all" && <label className="collective-assets-search"><span>Search</span><input value={query} onChange={event => setQuery(event.target.value)} maxLength={200} aria-label="Search all workspace assets" placeholder="Search takes, uploads and originals…" /></label>}
       {view === "all" && <button type="button" className="hidden" data-phone-library-upload="" aria-label="Upload assets" disabled={!signedIn} onClick={() => library.current?.upload()}><UploadIcon size={18} /></button>}
       <Segmented label="Asset library views" value={view} onChange={setView} options={[...VIEWS]} />
     </header>
     {view === "all" ? <section className="collective-assets-body" aria-label="Collective workspace assets">
       <p className="collective-assets-note">Older project-only originals remain available in their project’s Assets &amp; takes section.</p>
       <GenAssetLibrary controller={library} key={requestScope ?? "visitor"} search={query} onUseAsset={useAsset} onEdit={asset => openTool(asset, "edit")} onUpscale={asset => openTool(asset, "upscale")}
-        onUsePrompt={take => router.push(`/generate?mode=${take.kind === "image" ? "images" : take.kind}&promptFrom=${encodeURIComponent(take.id)}`)} />
+        onUseReference={asset=>void handoff(asset)}
+        onAddToProject={projectId?asset=>void addToProject(asset):undefined}
+        onUsePrompt={take => router.push(`/generate?${new URLSearchParams({...(projectId?{project:projectId}:{}),mode:take.kind==='image'?'images':take.kind,promptFrom:take.id})}`)} />
     </section> : <Library key={`${requestScope}:${view}`} lens={view === "elements" ? "assets" : view} setLens={next => setView(next === "assets" ? "elements" : next)} />}
   </div>;
 }
