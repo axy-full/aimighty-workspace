@@ -105,6 +105,15 @@ export async function mediaBindingProblem(
   }
   const pipelineProblem = await pipelineMediaBindingProblem(tx, kind, id);
   if (pipelineProblem) return pipelineProblem;
+  if ((await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='soul_identities'")).rows.length) {
+    const identities = (await tx.execute("SELECT references_json FROM soul_identities")).rows;
+    for (const identity of identities) {
+      let refs: ReturnType<typeof referencedMedia>;
+      try { refs = referencedMedia(JSON.parse(String(identity.references_json))); }
+      catch { return "A Soul identity's source history could not be checked. Keep this media until its record is repaired."; }
+      if ((kind === "upload" ? refs.uploads : refs.generations).has(id)) return "This portrait is retained by a Soul identity. Keep its original reference and training history.";
+    }
+  }
   if (kind === "generation") {
     const mapped = (
       await tx.execute({

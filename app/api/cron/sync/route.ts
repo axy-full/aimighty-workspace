@@ -11,6 +11,7 @@ import { NextResponse, after as afterResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncPending } from "@/lib/jobs";
 import { syncTrainingIdentities } from "@/lib/identities";
+import { syncSoulIdentities } from "@/lib/soulIdentities";
 import { backfillSizes } from "@/lib/storageCost";
 import { setSetting } from "@/lib/settings";
 import { getWorkspace, platformDb, platformReady } from "@/lib/platform";
@@ -111,6 +112,10 @@ export async function GET(req: Request) {
               const report = await syncTrainingIdentities(2);
               if (report.failed)
                 throw new Error("TRAINING_RECONCILIATION_FAILED");
+            });
+            await stage("soul_training", async () => {
+              const report = await syncSoulIdentities(2, { deadlineAt });
+              if (report.failed) throw new Error("SOUL_RECONCILIATION_FAILED");
             });
             await stage("storage_sizes", () => backfillSizes(8));
             await stage("expired_uploads", async () => {

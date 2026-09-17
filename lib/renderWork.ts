@@ -1,7 +1,7 @@
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
-import { getModel, imageTokens } from "./models";
+import { getModel, imageTokens, SOUL_CHARACTER_MODEL_ID } from "./models";
 import { estimateImageCostUsd } from "./vendorPricing";
 import { storeImageBytes, storeAudioBytes } from "./storage";
 import { withRetry, billedTo } from "./providers";
@@ -15,8 +15,10 @@ import {
 import { TOPAZ_IMAGE_MODEL } from "./topaz";
 import { falAwait, falStatus, falResult, FalHttpError, falSubmissionRejected } from "./fal";
 import { fetchBytes } from "./mockFs";
-import type { Produced as EngineProduced } from "./engines/types";
+import type { Produced as EngineProduced, RenderHandle } from "./engines/types";
 import { engineFor } from "./engines";
+import { higgsfieldSubmissionRejected } from "./higgsfield";
+import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
 
 /**
@@ -57,6 +59,10 @@ type Row = {
 
 export type StillJob = {
   topaz?: import("./topaz").TopazImageSettings;
+  soulReferenceId?: string;
+  soulCredentialFingerprint?: string;
+  soulVendorCostUsd?: number;
+  soulStrength?: number;
   kind: "image";
   genId: string;
   modelId: string;
@@ -144,6 +150,10 @@ export async function loadJob(genId: string): Promise<Job | null> {
     ratio: String(params.ratio ?? "16:9"),
     size: String(params.resolution ?? "2K"),
     topaz: params.topaz as import("./topaz").TopazImageSettings | undefined,
+    soulReferenceId: typeof params.soulReferenceId === "string" ? params.soulReferenceId : undefined,
+    soulCredentialFingerprint: typeof params.soulCredentialFingerprint === "string" ? params.soulCredentialFingerprint : undefined,
+    soulVendorCostUsd: typeof params.soulVendorCostUsd === "number" ? params.soulVendorCostUsd : undefined,
+    soulStrength: typeof params.soulStrength === "number" ? params.soulStrength : undefined,
     references: await hydrate(refs),
     startedAt,
   };
@@ -320,12 +330,21 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     );
     return out;
   } catch (error) {
+    if (job.kind === "image" && job.modelId === SOUL_CHARACTER_MODEL_ID &&
+        !(error instanceof FundingSourceChangedError) && !higgsfieldSubmissionRejected(error)) {
+      // An unconfirmed POST or interrupted acknowledgement is not a terminal
+      // provider outcome. Keep the reservation and permanent submit-once claim.
+      // A saved independent receipt lets polling restore a lost tenant handle.
+      await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
+        args: ["The Soul request outcome is unconfirmed. Its reservation remains pending; this request will not be submitted again. Collection will resume if its accepted request receipt is available.", now(), job.genId] }).catch(() => {});
+      return null;
+    }
     // A synchronous vendor may have charged before the connection failed.
     // Leave the claim intact: automatic retries must never buy it again.
     await failJob(
       job.genId,
       (error as Error).message,
-      error instanceof FundingSourceChangedError || falSubmissionRejected(error) ||
+      error instanceof FundingSourceChangedError || falSubmissionRejected(error) || higgsfieldSubmissionRejected(error) ||
         (error instanceof ElevenLabsError && error.rejectedBeforeGeneration),
     );
     throw error;
@@ -346,9 +365,37 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
     ratio: job.ratio,
     size: job.size,
     topaz: job.topaz,
+    soulReferenceId: job.soulReferenceId,
+    soulCredentialFingerprint: job.soulCredentialFingerprint,
+    soulStrength: job.soulStrength,
     references: job.references,
   });
   if (!("produced" in out)) {
+    if (job.modelId === SOUL_CHARACTER_MODEL_ID && out.handle.provider === "higgsfield") {
+      let receiptSaved = false;
+      try {
+        await saveHiggsfieldGenerationReceipt(job.genId, out.handle, job.soulCredentialFingerprint!);
+        receiptSaved = true;
+      } catch { /* Still attempt the independent tenant write. */ }
+      try {
+        await withRetry(async () => {
+          const saved = await db().execute({
+            sql: "UPDATE generations SET params=json_set(params,'$.higgsfieldStillHandle',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
+            args: [JSON.stringify(out.handle), now(), job.genId],
+          });
+          if (!saved.rowsAffected) throw new Error("The Soul generation record could not retain its accepted request.");
+        }, { max: 3 });
+      } catch (error) {
+        if (!receiptSaved) await saveHiggsfieldGenerationReceipt(job.genId, out.handle, job.soulCredentialFingerprint!).catch(() => {});
+        throw error;
+      }
+      if (!receiptSaved) await saveHiggsfieldGenerationReceipt(job.genId, out.handle, job.soulCredentialFingerprint!).catch(() => {});
+      try { await reconcileHiggsfieldImage(job.genId); } catch {
+        // The collector stores a safe error. The saved handle and paid claim
+        // remain recoverable through ordinary polling and the pending janitor.
+      }
+      return producedOutcome(job.genId);
+    }
     if (job.modelId !== TOPAZ_IMAGE_MODEL || out.handle.provider !== "fal")
       throw new Error("The still engine returned an unsupported queue handle.");
     await withRetry(() => db().execute({
@@ -366,6 +413,63 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
     return producedOutcome(job.genId);
   }
   return finishStill(job, out.produced, queueMs, now() - engineStart);
+}
+
+/** Collect one acknowledged Soul request. This path never submits a generation. */
+export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
+  return withRecoveryJob(requireTenant().id, genId, async () => {
+    await restoreHiggsfieldGenerationReceipt(genId);
+    const until = now() + 180_000;
+    const claim = await db().execute({
+      sql: `UPDATE generations SET params=json_set(params,'$.higgsfieldStillPollUntil',?)
+        WHERE id=? AND kind='image' AND model=? AND deleted=0 AND status IN ('queued','running')
+        AND json_extract(params,'$.higgsfieldStillHandle') IS NOT NULL
+        AND COALESCE(json_extract(params,'$.higgsfieldStillPollUntil'),0) < ? RETURNING params`,
+      args: [until, genId, SOUL_CHARACTER_MODEL_ID, now()],
+    });
+    if (!claim.rows.length) return;
+    const params = JSON.parse(String(claim.rows[0].params));
+    try {
+      const job = await loadJob(genId);
+      if (!job || job.kind !== "image") return;
+      const previous = await producedOutcome(genId);
+      if (previous) { await seal(job, previous); await settleHiggsfieldGenerationReceipt(genId); return; }
+      const engine = engineFor("higgsfield");
+      const saved = params.higgsfieldStillHandle as RenderHandle;
+      const state = await engine.poll!({ ...saved, credentialFingerprint: job.soulCredentialFingerprint });
+      if (state.status === "failed" || state.status === "cancelled") {
+        // Higgsfield documents failed, NSFW and canceled requests as uncharged.
+        await failJob(genId, state.error ?? "The Higgsfield request was canceled.", true);
+        await settleHiggsfieldGenerationReceipt(genId);
+        return;
+      }
+      if (state.status !== "succeeded") {
+        await db().execute({ sql: "UPDATE generations SET status=?,error=NULL,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
+          args: [state.status, now(), genId] });
+        return;
+      }
+      if (!state.imageUrl || !Number.isFinite(job.soulVendorCostUsd) || !(job.soulVendorCostUsd! > 0))
+        throw new Error("The Soul request needs its saved image and verified price before collection can finish.");
+      const out = await finishStill(job, {
+        bytes: await engine.fetchMaster!(state.imageUrl), mime: "image/png",
+        costUsd: job.soulVendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
+      }, 0, now() - job.startedAt);
+      await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
+        args: [JSON.stringify(out), now(), genId] });
+      await seal(job, out);
+      await settleHiggsfieldGenerationReceipt(genId);
+    } catch (error) {
+      // Transport, connection rotation and storage failures never imply a refund.
+      // Preserve both the original request handle and its existing reservation.
+      const message = error instanceof Error ? error.message : "Soul collection could not complete.";
+      await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
+        args: [message.slice(0, 600), now(), genId] });
+      throw error;
+    } finally {
+      await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.higgsfieldStillPollUntil') WHERE id=? AND json_extract(params,'$.higgsfieldStillPollUntil')=?",
+        args: [genId, until] });
+    }
+  });
 }
 
 async function finishStill(job: StillJob, img: EngineProduced, queueMs: number, engineMs: number): Promise<Produced> {
@@ -522,7 +626,9 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
           t.storeMs,
           produced.bytes,
           produced.via,
-          produced.via === "fal"
+          produced.via === "higgsfield"
+            ? "higgsfield"
+            : produced.via === "fal"
             ? "fal"
             : produced.via === "google"
               ? "google"
@@ -535,7 +641,9 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
         id: job.genId,
         kind: "image",
         engine:
-          produced.via === "fal"
+          produced.via === "higgsfield"
+            ? "higgsfield"
+            : produced.via === "fal"
             ? "fal"
             : produced.via === "google"
               ? "google"
@@ -621,7 +729,7 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
     : job?.kind === "audio"
       ? usdForCredits(job.estCredits, null)
       : job?.kind === "image"
-        ? (estimateImageCostUsd(job.modelId, job.size, job.references.length)
+        ? (job.modelId === SOUL_CHARACTER_MODEL_ID ? job.soulVendorCostUsd ?? null : estimateImageCostUsd(job.modelId, job.size, job.references.length)
             ?.net ?? null)
         : null;
   const spentCredits = rejectedBeforeGeneration

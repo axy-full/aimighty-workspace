@@ -43,7 +43,7 @@ export async function recoveryReport(directory) {
       const action = (table, row, disposition, handle = null) =>
         report.actions.push({
           database: source.id,
-          workspaceIds: source.workspaceIds,
+          workspaceIds: row.workspace_id ? [row.workspace_id] : source.workspaceIds,
           table,
           id: row.id ?? row.request_id,
           status: row.status ?? row.state,
@@ -131,6 +131,28 @@ export async function recoveryReport(directory) {
         for (const row of (await db.execute("SELECT job_id,step_index,status,response,cost_usd,estimate_usd FROM workbench_development_steps WHERE status IN ('running','uncertain')")).rows) {
           action("workbench_development_steps", { ...row, id: `${row.job_id}:phase:${row.step_index}` },
             row.response ? "recover-persisted-development-response-no-submit" : "uncertain-provider-phase-never-resubmit");
+        }
+      }
+      if (names.has("soul_identities")) {
+        for (const row of (await db.execute("SELECT * FROM soul_identities WHERE purged_at IS NULL AND settled_at IS NULL")).rows) {
+          const disposition = row.settlement_status ? "settle-persisted-soul-training-cost-no-submit"
+            : row.provider_reference_id ? "poll-existing-soul-training-handle-only"
+            : row.paid_claim ? "uncertain-provider-outcome-never-resubmit"
+            : "release-unsubmitted-soul-reservation-no-submit";
+          action("soul_identities", row, disposition, row.provider_reference_id ?? null);
+        }
+      }
+      if (names.has("higgsfield_generation_receipts")) {
+        for (const row of (await db.execute("SELECT * FROM higgsfield_generation_receipts WHERE settled_at IS NULL")).rows) {
+          const handle = parse(row.handle_json);
+          action("higgsfield_generation_receipts", row, "restore-known-soul-generation-handle-and-poll-only", handle.ref ?? null);
+        }
+      }
+      if (names.has("soul_training_receipts")) {
+        for (const row of (await db.execute("SELECT * FROM soul_training_receipts WHERE settled_at IS NULL")).rows) {
+          action("soul_training_receipts", { ...row, status: row.provider_status },
+            ["completed", "failed"].includes(row.provider_status) ? "restore-known-soul-handle-and-settle-no-submit" : "restore-known-soul-handle-and-poll-only",
+            row.provider_reference_id);
         }
       }
       if (names.has("identities")) {

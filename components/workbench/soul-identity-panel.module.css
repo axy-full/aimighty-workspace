@@ -1,0 +1,55 @@
+.panel { width:720px; }
+.body { min-width:0; font-size:13px; line-height:1.5; color:var(--ps-body); }
+.body h3 { color:var(--ps-ink); font-size:14px; font-weight:600; margin:0; }
+.heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.heading span { font-size:11px; color:var(--ps-muted); }
+.body button:not(:global(.btn)) { color:var(--ps-ink); border:1px solid var(--ps-line); background:var(--ps-panel); border-radius:7px; min-height:34px; padding:6px 10px; display:inline-flex; align-items:center; justify-content:center; gap:6px; font-size:12px; cursor:pointer; }
+.body button:disabled { opacity:.45; cursor:default; }
+.body button:focus-visible,.body input:focus-visible,.body textarea:focus-visible { outline:2px solid var(--graphite-accent); outline-offset:3px; }
+.notice { padding:12px 14px; border:1px solid var(--ps-line); border-radius:8px; background:var(--ps-panel); margin:0 0 16px; }
+.notice p { margin:4px 0 0; }
+.notice a { text-decoration:underline; text-underline-offset:3px; color:var(--ps-ink); }
+.error { color:var(--ps-ink); border-color:var(--ps-hover); }
+.identities { display:grid; gap:8px; max-height:280px; overflow:auto; overscroll-behavior:contain; margin:0 0 20px; }
+.identity { border:1px solid var(--ps-line); border-radius:8px; padding:10px; display:grid; grid-template-columns:56px minmax(0,1fr) auto; gap:12px; align-items:center; }
+.identity img,.placeholder { height:64px; width:56px; object-fit:cover; border-radius:5px; background:var(--ps-panel); }
+.placeholder { display:grid; place-items:center; }
+.identity strong { color:var(--ps-ink); font-size:13px; display:block; overflow-wrap:anywhere; }
+.identity small { display:block; color:var(--ps-soft); font-size:11px; }
+.identity p { margin:4px 0 0; font-size:11px; overflow-wrap:anywhere; }
+.identity button { white-space:nowrap; }
+.create { border-top:1px solid var(--ps-line); padding-top:18px; }
+.field { display:block; margin:12px 0; font-size:12px; color:var(--ps-soft); }
+.field input,.field textarea { display:block; width:100%; background:var(--ps-panel); color:var(--ps-ink); border:1px solid var(--ps-line); border-radius:7px; padding:9px 11px; margin-top:5px; font:inherit; }
+.field textarea { min-height:64px; resize:vertical; }
+.formFields { border:0; padding:0; margin:0; min-width:0; }
+.refHeading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin:16px 0 8px; }
+.refHeading span { color:var(--ps-soft); font-size:11px; }
+.references { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; max-height:280px; overflow:auto; padding:3px; overscroll-behavior:contain; }
+.reference { position:relative; border:1px solid var(--ps-line); border-radius:7px; overflow:hidden; cursor:pointer; background:var(--ps-panel); }
+.reference:has(input:checked) { border-color:var(--graphite-accent); box-shadow:0 0 0 1px var(--graphite-accent); }
+.reference:has(input:focus-visible) { outline:2px solid var(--graphite-accent); outline-offset:2px; }
+.reference input { position:absolute; top:8px; left:8px; width:18px; height:18px; accent-color:var(--graphite-accent); z-index:1; }
+.reference img { width:100%; height:96px; object-fit:cover; }
+.reference span { display:block; padding:7px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--ps-ink); font-size:11px; }
+.help { color:var(--ps-soft); font-size:12px; margin:8px 0 12px; }
+.consent { display:flex; align-items:flex-start; gap:10px; margin:18px 0 12px; font-size:12px; }
+.consent input { flex:none; width:18px; height:18px; accent-color:var(--graphite-accent); margin-top:2px; }
+.footer { display:flex; gap:12px; justify-content:space-between; align-items:center; margin-top:14px; }
+.footer small { max-width:300px; font-size:11px; color:var(--ps-soft); }
+.footer :global(.btn) { white-space:nowrap; }
+@media(max-width:767px) {
+ .body { font-size:14px; }
+ .identity { grid-template-columns:48px minmax(0,1fr); gap:10px; }
+ .identity img,.placeholder { width:48px; height:58px; }
+ .identity button { grid-column:1/-1; width:100%; min-height:44px!important; }
+ .body button:not(:global(.btn)) { min-height:44px; font-size:13px; }
+ .references { grid-template-columns:repeat(3,minmax(0,1fr)); max-height:290px; }
+ .reference img { height:86px; }
+ .reference input { min-height:0!important; width:20px; height:20px; }
+ .reference span { padding:7px 5px; }
+ .consent input { min-height:0!important; }
+ .footer { flex-direction:column; align-items:stretch; }
+ .footer small { max-width:none; }
+ .identities { max-height:330px; }
+}

@@ -49,6 +49,11 @@ function generation(row: Row) {
   if (params && typeof params === "object") {
     delete params.paidClaim;
     delete params.producedOutcome;
+    delete params.soulReferenceId;
+    delete params.soulCredentialFingerprint;
+    delete params.soulVendorCostUsd;
+    delete params.higgsfieldStillHandle;
+    delete params.higgsfieldStillPollUntil;
   }
   return { ...row, params };
 }
@@ -82,6 +87,14 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     contents.generations = (
       await tx.execute("SELECT * FROM generations ORDER BY created_at")
     ).rows.map(generation);
+    // Export reusable local bindings and source history, never provider handles
+    // or account fingerprints. Respect the same private project boundary as the API.
+    contents.soul_identities = tables.has("soul_identities") ? (await tx.execute({
+      sql: `SELECT id,project_id,production_project_id,name,description,subject_type,references_json,status,cost_usd,error,created_at,updated_at
+        FROM soul_identities WHERE purged_at IS NULL AND (owner=? OR production_project_id IS NULL OR production_project_id IN
+          (SELECT json_extract(body,'$.productionProjectId') FROM workbench_projects WHERE owner=?))`,
+      args: [ownerId, ownerId],
+    })).rows.map(row => ({ ...row })) : [];
     if (creditWorkspace) {
       // Customer billing is in credits. Provider costs and rate cards belong
       // in the platform's books, not in a customer data download.
@@ -187,6 +200,7 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
       ...row,
       billed_credits: billed.get(row.id) ?? null,
     }));
+    contents.soul_identities = contents.soul_identities.map(row => ({ ...row, billed_credits: billed.get(row.id) ?? null }));
   }
   return {
     formatVersion: 2,

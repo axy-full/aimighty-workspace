@@ -9,6 +9,7 @@ test("every provider has an adapter, and the adapters estimate what the catalogu
   const { getModel, DEFAULT_MODEL_ID } = await import("../../lib/models");
   const { estimateCostUsd, estimateImageCostUsd } = await import("../../lib/vendorPricing");
   const { getTask } = await import("../../lib/tasks");
+  const { soulCharacterGenerationEnabled } = await import("../../lib/vendorRates");
   for (const p of PROVIDERS) {
     const e = ENGINES[p.id];
     expect(e, p.id).toBeTruthy();
@@ -16,7 +17,8 @@ test("every provider has an adapter, and the adapters estimate what the catalogu
     expect(e.kinds.length).toBeGreaterThan(0);
     expect(typeof e.estimate).toBe("function");
     expect(typeof e.render).toBe("function");
-    expect(e.configured()).toBe(true); // mocked engines are always there
+    // Soul Character also requires operator-confirmed availability and rates.
+    expect(e.configured()).toBe(p.id !== "higgsfield" || soulCharacterGenerationEnabled());
   }
   expect(enginesFor("video").map((e) => e.id).sort()).toEqual(["byteplus", "fal"]);
   expect(enginesFor("text").map((e) => e.id)).toEqual(["vercel"]);

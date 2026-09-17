@@ -8,6 +8,7 @@ import { platformDb, platformReady, now, rowToWorkspace } from "./platform";
 import { usingBlob } from "./storage";
 import { revokeGatewayKey } from "./vercelKeys";
 import { deleteTenantDatabase } from "./provision";
+import { purgeSoulIdentities } from "./soulIdentities";
 
 // Let already-running functions finish; requests and delayed events reject deleted workspaces.
 export const PURGE_GRACE_MS = 10 * 60_000;
@@ -75,6 +76,9 @@ type PurgeDependencies = {
   database: (workspace: TenantWorkspace) => Promise<void>;
 };
 async function removeFiles(ws: TenantWorkspace) {
+  // Provider identities outlive their source URLs. Retire them before removing
+  // either the originals or the database containing their recovery handles.
+  await runInTenant(ws, () => purgeSoulIdentities());
   let files = 0,
     uploads = 0;
   if (usingBlob()) {

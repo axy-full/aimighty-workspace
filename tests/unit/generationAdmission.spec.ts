@@ -119,6 +119,45 @@ async function scope(
 const noInline = () => {
   throw new Error("Durable dispatch acknowledged; inline work must not run");
 };
+
+test("Soul admission pins a scoped ready identity and confirmed price without trusting client provider handles", async () => scope("soul-admission", async service => {
+  const { db } = await import("../../lib/db");
+  const { soulIdentitiesReady } = await import("../../lib/soulIdentities");
+  const { higgsfieldCredentialFingerprint } = await import("../../lib/higgsfield");
+  const { SOUL_CHARACTER_MODEL_ID } = await import("../../lib/models");
+  const { workbenchGenerationModels } = await import("../../lib/workbench/media-quote");
+  const env = ["HF_SOUL_CHARACTER_ENABLED", "HF_SOUL_CHARACTER_USD_720P", "HF_SOUL_CHARACTER_USD_1080P"] as const;
+  const before = env.map(key => process.env[key]);
+  try {
+    delete process.env.HF_SOUL_CHARACTER_ENABLED;
+    expect(workbenchGenerationModels().some(model => model.id === SOUL_CHARACTER_MODEL_ID)).toBe(false);
+    const body = { model: SOUL_CHARACTER_MODEL_ID, prompt: "Portrait in evening light", resolution: "720p", ratio: "3:4", projectId: "project", soulIdentityId: "soul_test", soulStrength: 0.65, refine: false };
+    expect((await service.gen.prepareGeneration(body, actor)).ok).toBe(false);
+    process.env.HF_SOUL_CHARACTER_ENABLED = "1";
+    process.env.HF_SOUL_CHARACTER_USD_720P = "0.12";
+    process.env.HF_SOUL_CHARACTER_USD_1080P = "0.24";
+    expect(workbenchGenerationModels().some(model => model.id === SOUL_CHARACTER_MODEL_ID)).toBe(true);
+    await soulIdentitiesReady();
+    const providerId = "067e9e94-0bea-4acd-b82a-071a264d8e26";
+    await db().execute({ sql: `INSERT INTO soul_identities(id,owner,production_project_id,name,description,subject_type,references_json,status,provider_reference_id,credential_fingerprint,settled_at,created_at,updated_at,consent_at) VALUES('soul_test','owner','project','Mira','','character','[]','ready',?,?,1,1,1,1)`, args: [providerId, higgsfieldCredentialFingerprint()] });
+    const prepared = value(await service.gen.prepareGeneration({ ...body, soulReferenceId: "attacker-uuid", soulVendorCostUsd: 0, soulCredentialFingerprint: "attacker" }, actor));
+    expect(prepared.compiled.params).toMatchObject({ soulIdentityId: "soul_test", soulReferenceId: providerId, soulStrength: 0.65, soulVendorCostUsd: 0.12, soulCredentialFingerprint: higgsfieldCredentialFingerprint() });
+    const handler = route("generation", service);
+    const response = await handler.POST(request("generate", body, "soul-same-request"));
+    expect(response.status).toBe(200);
+    const accepted = await response.json();
+    const replay = await handler.POST(request("generate", body, "soul-same-request"));
+    expect((await replay.json()).id).toBe(accepted.id);
+    expect(dispatched).toHaveLength(1);
+    expect((await meters()).filter(row => row.id === accepted.id)).toHaveLength(1);
+    expect(JSON.parse(String((await rows())[0].params))).toMatchObject({ soulReferenceId: providerId, soulVendorCostUsd: 0.12 });
+    for (const patch of [{ soulIdentityId: "other_workspace" }, { soulStrength: 5 }, { model: "gemini-3.1-flash-image", resolution: "1K" }]) {
+      expect((await service.gen.prepareGeneration({ ...body, ...patch }, actor)).ok).toBe(false);
+    }
+    await db().execute("UPDATE soul_identities SET production_project_id='another-project' WHERE id='soul_test'");
+    expect((await service.gen.prepareGeneration(body, actor)).ok).toBe(false);
+  } finally { env.forEach((key, i) => { if (before[i] == null) delete process.env[key]; else process.env[key] = before[i]; }); }
+}));
 async function rows() {
   const { db } = await import("../../lib/db");
   return (await db().execute("SELECT * FROM generations ORDER BY id")).rows;

@@ -5,9 +5,10 @@ import { fal } from "./fal";
 import { google } from "./google";
 import { elevenlabs } from "./elevenlabs";
 import { vercel } from "./vercel";
+import { higgsfield } from "./higgsfield";
 
 /** Every engine there is. Adding a vendor is one file above and one line here. */
-export const ENGINES: Record<ProviderId, EngineAdapter> = { byteplus, fal, google, elevenlabs, vercel };
+export const ENGINES: Record<ProviderId, EngineAdapter> = { byteplus, fal, google, elevenlabs, vercel, higgsfield };
 
 export function engineFor(id: string | null | undefined): EngineAdapter {
   const e = ENGINES[(id ?? "byteplus") as ProviderId];

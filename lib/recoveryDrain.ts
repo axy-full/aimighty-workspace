@@ -6,6 +6,7 @@ import { getGeneration, syncGeneration } from "./jobs";
 import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
 import { syncIdentity, getIdentity, reconcileFalRender } from "./identities";
+import { syncSoulIdentity } from "./soulIdentities";
 import { runAtomikJob } from "./workbench/atomik-server";
 import { runDevelopmentStep } from "./workbench/development-server";
 
@@ -102,6 +103,10 @@ export async function drainRecoveryJobs(
             ).rows.map((r) => String(r.name)),
           );
           if (intent.kind === "training") {
+            if (tables.has("soul_identities") && (await db().execute({ sql: "SELECT id FROM soul_identities WHERE id=?", args: [jobId] })).rows.length) {
+              await syncSoulIdentity(jobId);
+              return;
+            }
             const row = (
               await db().execute({
                 sql: "SELECT id FROM identities WHERE training_run_id=?",

@@ -58,12 +58,15 @@ const unreadable =
   "The saved request cannot be read. Check Activity before starting another paid action.";
 
 /** Store one exact request before spending; a lost response can only replay that request. */
-export function usePaidAction(surface: string, active = true) {
+export function usePaidAction(surface: string, active = true, workbench?: { signedIn: boolean; requestScope: string }) {
   const { signedIn, workspace, email } = useSession();
-  const enabled = !!(signedIn && workspace?.id && email && active);
+  const requestScope = workbench?.requestScope;
+  const enabled = workbench
+    ? !!(workbench.signedIn && requestScope && active)
+    : !!(signedIn && workspace?.id && email && active);
   const storageKey = paidActionStorageKey(
-    workspace?.id ?? "",
-    email ?? "",
+    requestScope ?? workspace?.id ?? "",
+    requestScope ? "workbench" : email ?? "",
     surface,
   );
   const current = useRef({ key: storageKey, active: enabled });
@@ -154,8 +157,9 @@ export function usePaidAction(surface: string, active = true) {
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": request.key,
-          "X-Workspace-Id": workspace!.id,
-          "X-Actor-Email": email!,
+          ...(requestScope
+            ? { "X-Workbench-Scope": requestScope }
+            : { "X-Workspace-Id": workspace!.id, "X-Actor-Email": email! }),
         },
         body: request.body,
       });
@@ -186,7 +190,7 @@ export function usePaidAction(surface: string, active = true) {
       if (!options?.keepPending) await complete(request.key);
       return { data, request };
     },
-    [storageKey, enabled, complete, workspace, email, recoveryKey],
+    [storageKey, enabled, complete, workspace, email, recoveryKey, requestScope],
   );
   return {
     pending: state.pending ?? null,

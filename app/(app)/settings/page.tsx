@@ -23,6 +23,7 @@ import ManagementPage, {
   ManagementNotice,
 } from "@/components/management/ManagementPage";
 import WorkspaceAudit from "@/components/management/WorkspaceAudit";
+import HiggsfieldConnection from "@/components/management/HiggsfieldConnection";
 
 type Me = {
   name: string;
@@ -531,6 +532,7 @@ function SettingsContent() {
                   )}
                   {tab === "engines" && (
                     <>
+                      {owner && <HiggsfieldConnection key={session.requestScope} />}
                       <ManagementCard
                         title="Available engines"
                         description="Choose which models Atomik may recommend. Every paid request still needs your approval."

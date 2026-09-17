@@ -3,6 +3,7 @@ import { MODELS, type ModelDef } from '../models';
 import { estimateCostUsd, estimateImageCostUsd } from '../vendorPricing';
 import { generatedReferenceSeconds, videoReferenceSeconds } from '../referenceDuration';
 import { billCredits } from '../creditTerms';
+import { soulCharacterGenerationEnabled } from '../vendorRates';
 
 export class MediaQuoteError extends Error {
   constructor(message: string, public status = 400) { super(message); this.name = 'MediaQuoteError'; }
@@ -17,7 +18,7 @@ function baselineCost(model: ModelDef) {
     : estimateCostUsd(model.id, model.resolutions[0], ratio, duration, 0, false, { audio: false, task: 'generate' })?.net ?? Infinity;
 }
 export function workbenchGenerationModels(models: ModelDef[] = MODELS) {
-  return models.filter(model => !model.hidden && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))
+  return models.filter(model => (model.soulIdentity ? soulCharacterGenerationEnabled() : !model.hidden) && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))
     .sort((a, b) => baselineCost(a) - baselineCost(b));
 }
 

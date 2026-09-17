@@ -18,6 +18,10 @@ export type VideoRenderRequest = {
 };
 export type StillRenderRequest = {
   topaz?: import("../topaz").TopazImageSettings;
+  /** Server-resolved immutable Soul UUID; never copied from the request body. */
+  soulReferenceId?: string;
+  soulCredentialFingerprint?: string;
+  soulStrength?: number;
   kind: "image"; genId: string; model: ModelDef; prompt: string; ratio: string; size: string; references: Reference[];
 };
 export type AudioRenderRequest = {
@@ -26,7 +30,7 @@ export type AudioRenderRequest = {
 export type RenderRequest = VideoRenderRequest | StillRenderRequest | AudioRenderRequest;
 
 /** An asynchronous job at the vendor: what to ask after, and where. */
-export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string };
+export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; credentialFingerprint?: string };
 
 /** Bytes back from a synchronous engine, with what it charged. */
 export type Produced = {
@@ -38,6 +42,7 @@ export type RenderOutcome = { handle: RenderHandle } | { produced: Produced };
 export type PollResult = {
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   videoUrl: string | null; totalTokens: number | null; error: string | null;
+  imageUrl?: string | null;
   vendorStartedAt: number | null; vendorEndedAt: number | null; raw: unknown;
 };
 
