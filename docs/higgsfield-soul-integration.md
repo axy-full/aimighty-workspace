@@ -32,6 +32,8 @@ Review the server quote and rights consent, then create the identity. Training r
 
 Workspace owners connect their own account under **Workspace → Engines → Higgsfield**. The platform's legacy workspace uses private deployment environment variables. The new connection form saves the encrypted key pair without returning it. A saved key is configuration, not evidence of successful live training or generation.
 
+The owner-only **Verify connection** action checks the effective workspace connection on the server, including a platform connection held as a Vercel Secret. It uses the documented custom-reference list GET and, when that response contains a completed identity, the non-generating estimate endpoint for both Soul Character resolutions. It returns only verification categories and quoted USD amounts. It never exposes provider identities or credentials, starts training or generation, changes credits, or enables the model automatically. A skipped estimate is not a successful model-access check; an authenticated list response proves only custom-reference access. Editing an unsaved key clears the previous verification result.
+
 Training is quoted at the linked page's $2.50 per custom-reference request, translated through existing credit terms. Accepted training requests retain this charge even if training later fails; the UI states this before consent. The separate custom-reference API does not document a training refund policy. A definitive pre-acceptance rejection releases the reservation. An ambiguous submission retains it for reconciliation and never automatically buys another attempt.
 
 ## Recovery and billing
