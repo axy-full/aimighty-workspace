@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation";
-
-/** Atomik opens on its first stage; the agent itself is the rail (design/particl-v2 §5). */
+import AtomikSuite from "@/components/suites/AtomikSuite";
 export default function AtomikIndex() {
-  redirect("/atomik/ideas");
+  return <AtomikSuite />;
 }

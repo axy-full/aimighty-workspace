@@ -11,6 +11,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpRight, Megaphone } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { setAtomikRail } from "@/lib/atomikRail";
+import { suiteHref } from "@/lib/suites";
 import { withPageLeaveGuard } from "@/lib/usePageLeaveGuard";
 import styles from "./marketing-studio-entry.module.css";
 
@@ -46,7 +47,7 @@ function ProjectMarketingEntry() {
   );
   // The preference and query contain workbench draft IDs, not production IDs.
   const project = params.get("project") || remembered;
-  const href = `/workbench?${new URLSearchParams({ ...(project ? { project } : {}), atomik: "marketing" })}`;
+  const href = suiteHref("moleculr", project);
   function follow(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.defaultPrevented ||
@@ -71,18 +72,18 @@ function ProjectMarketingEntry() {
         prefetch={false}
         onClick={follow}
         className={styles.link}
-        aria-label="Open Marketing Studio"
+        aria-label="Open Moleculr"
       >
         <span className={styles.icon}>
           <Megaphone size={18} strokeWidth={1.6} />
         </span>
         <span className={styles.copy}>
-          <strong>Marketing Studio</strong>
+          <strong>Moleculr</strong>
           <span>Build a campaign with Atomik.</span>
         </span>
         <ArrowUpRight size={16} className={styles.arrow} aria-hidden="true" />
       </Link>
-      {error && <p role="alert">Could not open Marketing Studio. Try again.</p>}
+      {error && <p role="alert">Could not open Moleculr. Try again.</p>}
     </div>
   );
 }

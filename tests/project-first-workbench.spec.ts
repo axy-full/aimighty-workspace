@@ -26,7 +26,9 @@ async function fixture(page:Page, failure:'none'|'lost'|'offline'|'conflict'|'lo
    return json({project:draft,revision,projects:[{id:draft.id,name:draft.name}],productions:[]});
   }
   if(path==='/api/workbench/atomik')return json({models:[],jobs:[]});
+  if(path==='/api/workbench/development')return json({configured:true,models:[],jobs:[]});
   if(path==='/api/jobs')return json({generations:[],nextCursor:null});
+  if(path==='/api/uploads')return json({uploads:[],nextCursor:null});
   if(path==='/api/workbench/library')return json({uploads:[],generations:[],nextPageCursor:null,nextCursor:null});
   if(path==='/api/projects')return json({projects:[{id:'project-browser',name:draft.name}]});
   if(path==='/api/atomik/chats')return json({chats:[]});
@@ -44,13 +46,15 @@ async function fixture(page:Page, failure:'none'|'lost'|'offline'|'conflict'|'lo
 test('project selector precedes controls and All assets sits beside Atomik',async({page},info)=>{
  const f=await fixture(page);
  const mobile=(info.project.use.viewport?.width??1440)<760;
+ const bar=await page.locator('.project-bar').boundingBox(),body=await page.locator('.workspace-body').boundingBox();
+ expect(bar!.y+bar!.height).toBeLessThanOrEqual(body!.y+1);
+ await expect(page.getByRole('navigation',{name:'Rooms',exact:true}).getByRole('link',{name:'Make',exact:true})).toBeVisible();
+ const allButton=page.locator('.project-bar').getByRole('button',{name:'All assets',exact:true});
+ await expect(allButton).toBeVisible();
  if(!mobile){
-  const bar=await page.locator('.project-bar').boundingBox(),tools=await page.locator('.workflow-header').boundingBox();
-  expect(bar!.y+bar!.height).toBeLessThanOrEqual(tools!.y+1);
-  await expect(page.getByRole('navigation',{name:'Project tools'}).getByRole('button',{name:'Gen',exact:true})).toBeVisible();
-  const all=await page.locator('.project-bar').getByRole('button',{name:'All assets',exact:true}).boundingBox(),atomik=await page.locator('.project-bar').getByRole('button',{name:'Toggle Atomik creative engine'}).boundingBox();
+  const all=await allButton.boundingBox(),atomik=await page.locator('.project-bar').getByRole('button',{name:'Toggle Atomik creative engine'}).boundingBox();
   expect(all!.x+all!.width).toBeLessThan(atomik!.x);expect(Math.abs(all!.y-atomik!.y)).toBeLessThan(5);
- }else await expect(page.locator('.phone-project-header').getByRole('button',{name:'All assets',exact:true})).toBeVisible();
+ }
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  await page.screenshot({path:info.outputPath('project-first.png')});expect(f.errors).toEqual([]);
 });
@@ -80,23 +84,24 @@ for(const failure of ['lost','offline','conflict'] as const)test(`save recovery 
  expect(f.errors).toEqual([]);
 });
 
-test('Library and workspace navigation retain the selected project',async({page},info)=>{
+test('Library and Production navigation retain the selected project',async({page},info)=>{
  test.skip(info.project.name!=='workbench-1440x900','one desktop route roundtrip');
  const f=await fixture(page);
- await page.getByRole('navigation',{name:'Project tools'}).getByRole('button',{name:'Library',exact:true}).click();
- await expect(page).toHaveURL(new RegExp('/library\\?project='+f.id));
- await expect(page.getByRole('button',{name:'Select project'})).toHaveText('Project first fixture');
- await expect(page.getByRole('region',{name:'Project asset library'})).toBeVisible();
- await page.getByRole('navigation',{name:'Project workflow',exact:true}).getByRole('link',{name:'Workspace',exact:true}).click();
- await expect(page).toHaveURL(new RegExp('/workbench\\?project='+f.id+'&view=workspace'));
- await expect(page.locator('.production-home')).toBeVisible();expect(f.errors).toEqual([]);
+ await page.getByRole('navigation',{name:'Rooms',exact:true}).getByRole('link',{name:'Library',exact:true}).click();
+ await expect(page).toHaveURL(new RegExp('/library\\?all=1&project='+f.id));
+ await expect(page.getByRole('button',{name:'Select project'})).toContainText('Project first fixture');
+ await expect(page.getByRole('region',{name:'Collective workspace assets'})).toBeVisible();
+ await page.getByRole('navigation',{name:'Rooms',exact:true}).getByRole('link',{name:'Production',exact:true}).click();
+ await expect(page).toHaveURL(new RegExp('/workbench\\?project='+f.id+'&stage=brief'));
+ await expect(page.locator('#project-name')).toHaveValue('Project first fixture');
+ await expect(page.getByRole('navigation',{name:'Particl pages',exact:true}).getByRole('link',{name:'Brief',exact:true})).toHaveAttribute('aria-current','page');expect(f.errors).toEqual([]);
 });
 
 test('Atomik remains resizable inside the project library',async({page},info)=>{
  test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'one phone and one desktop project tool');
  const f=await fixture(page),mobile=(info.project.use.viewport?.width??1440)<760;
  await page.goto(`/library?project=${f.id}`);
- await expect(page.getByRole('button',{name:'Select project'})).toHaveText('Project first fixture');
+ await expect(page.getByRole('button',{name:'Select project'})).toContainText('Project first fixture');
  const toggle=page.getByRole('button',{name:'Toggle Atomik creative engine'});
  await toggle.click();
  const handle=page.getByRole('separator',{name:'Resize Atomik panel'}).filter({visible:true});

@@ -1,9 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import BillingClient from "@/components/commercial/BillingClient";
-import StudioNavigation, {
-  StudioDock,
-} from "@/components/studio/StudioNavigation";
+import SuiteAccountShell from "@/components/suites/SuiteAccountShell";
 import { currentContext } from "@/lib/auth";
 import { creditStateFor } from "@/lib/credits";
 import {
@@ -32,25 +30,13 @@ export default async function BillingPage() {
       }
     : null;
   return (
-    <div className="shell studio-application">
-      <StudioNavigation
-        initialAccount={account}
-        active="workspace"
-        requestScope={requestScope}
-      />
-      <div className="shell-body">
-        <div className="shell-page">
-          <Suspense
-            fallback={<div className="management">Loading billing…</div>}
-          >
-            <BillingClient
-              key={requestScope ?? "visitor"}
-              requestScope={requestScope}
-            />
-          </Suspense>
-        </div>
-      </div>
-      <StudioDock />
-    </div>
+    <Suspense fallback={<div className="management">Loading billing…</div>}>
+      <SuiteAccountShell initialAccount={account} requestScope={requestScope}>
+        <BillingClient
+          key={requestScope ?? "visitor"}
+          requestScope={requestScope}
+        />
+      </SuiteAccountShell>
+    </Suspense>
   );
 }

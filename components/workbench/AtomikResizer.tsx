@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState,type CSSProperties} from 'react';
 
 export function useAtomikSize(mobile:boolean,scope:string,initialHeight=80) {
-  const [size,setSize]=useState({width:380,height:initialHeight});
+  const [size,setSize]=useState({width:320,height:initialHeight});
   const [viewport,setViewport]=useState({width:1280,height:800});
   useEffect(()=>{const update=()=>setViewport({width:window.innerWidth,height:window.visualViewport?.height??window.innerHeight});update();window.addEventListener('resize',update);window.visualViewport?.addEventListener('resize',update);return()=>{window.removeEventListener('resize',update);window.visualViewport?.removeEventListener('resize',update);};},[]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the saved browser layout preference after mount.
@@ -10,7 +10,7 @@ export function useAtomikSize(mobile:boolean,scope:string,initialHeight=80) {
   function update(value:number){const next={...size,[mobile?'height':'width']:value};setSize(next);try{localStorage.setItem(scope+':atomik-size',JSON.stringify(next));}catch{/* Optional layout preference. */}}
   const min=mobile?45:300,max=mobile?96:Math.max(300,Math.min(800,viewport.width-(viewport.width>1000?440:24)));
   const value=Math.max(min,Math.min(max,mobile?size.height:size.width));
-  return {value,min,max,update,mobile,viewportHeight:viewport.height,style:{'--atomik-width':`${mobile?380:value}px`,'--atomik-height':`${mobile?value:80}dvh`} as CSSProperties};
+  return {value,min,max,update,mobile,viewportHeight:viewport.height,style:{'--atomik-width':`${mobile?320:value}px`,'--atomik-height':`${mobile?value:80}dvh`} as CSSProperties};
 }
 export function AtomikResizer({size}:{size:ReturnType<typeof useAtomikSize>}) {
   const drag=useRef<{position:number;value:number}|null>(null);
@@ -19,6 +19,6 @@ export function AtomikResizer({size}:{size:ReturnType<typeof useAtomikSize>}) {
     onPointerMove={e=>{if(!drag.current)return;const delta=drag.current.position-(size.mobile?e.clientY:e.clientX);size.update(Math.max(size.min,Math.min(size.max,drag.current.value+(size.mobile?delta/size.viewportHeight*100:delta))));}}
     onPointerUp={e=>{drag.current=null;if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}
     onPointerCancel={()=>{drag.current=null;}}
-    onDoubleClick={()=>size.update(size.mobile?80:380)}
+    onDoubleClick={()=>size.update(size.mobile?80:320)}
     onKeyDown={e=>{let next=size.value;if(e.key==='Home')next=size.min;else if(e.key==='End')next=size.max;else if(['ArrowLeft','ArrowUp'].includes(e.key))next+=size.mobile?5:24;else if(['ArrowRight','ArrowDown'].includes(e.key))next-=size.mobile?5:24;else return;e.preventDefault();size.update(Math.max(size.min,Math.min(size.max,next)));}}><span/></div>;
 }

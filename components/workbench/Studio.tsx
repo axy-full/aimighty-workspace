@@ -4,6 +4,7 @@ import {AtomikResizer,useAtomikSize} from "./AtomikResizer";
 import UploadRecovery from "@/components/UploadRecovery";
 
 import Link from "next/link";
+import Image from "next/image";
 import {ActionMenu,ActionDropdown,type StudioAction} from "./ActionMenu";
 import WorkspaceMenu, {type WorkbenchAccount} from "./WorkspaceMenu";
 import { MobileStudioMenu } from "@/components/studio/StudioNavigation";
@@ -148,6 +149,12 @@ import {SoulIdentityPanel} from './SoulIdentityPanel';
 import {soulIdentityAsset} from '@/lib/workbench/soul-identity';
 import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {MarketingStudioPanel} from './MarketingStudioPanel';
+import {SuiteSwitcher,RoomRail,SuiteDock} from '@/components/suites/SuiteNavigation';
+import {MoleculrWorkspace} from '@/components/suites/MoleculrWorkspace';
+import {EMPTY_MOLECULR,moleculrNode,moleculrPrompt,moleculrReferences} from '@/lib/workbench/moleculr';
+import {PAGES} from '@/lib/suites';
+import {bindMoleculrReferences} from '@/lib/workbench/moleculr-graph';
+import {generationReferenceIds} from '@/lib/workbench/node-graph';
 import marketingStyles from './MarketingStudioPanel.module.css';
 import {isMarketingPlan,type MarketingTask} from '@/lib/workbench/marketing-studio';
 import {useProductionJobs} from './use-production-jobs';
@@ -356,11 +363,19 @@ export default function Studio({
   const [editInspector,setEditInspector] = useState<"shot"|"color"|"versions"|"sound">("shot");
   const [p, setP] = useState<Project>(seedProject);
   const [stage, storeStage] = useState<Stage>("canvas");
+  const [suite,setSuite]=useState<'particl'|'moleculr'>('particl');
+  const [moleculrPage,storeMoleculrPage]=useState('product');
+  function setMoleculrPage(page:string){
+    if(!PAGES.moleculr.some(item=>item.id===page))return;
+    setSuite('moleculr');storeMoleculrPage(page);setHome(false);
+    const url=new URL(window.location.href);url.searchParams.set('suite','moleculr');url.searchParams.set('page',page);url.searchParams.delete('stage');url.searchParams.delete('view');window.history.replaceState(window.history.state,'',url);
+  }
   const [mobileWorkflowOpen,setMobileWorkflowOpen] = useState(false);
   const [homeOverride, setHome] = useState<boolean|null>(null);
   const home=homeOverride??mobile;
   function setStage(value: Stage) {
-    if(sourceMode&&typeof window!=='undefined'){const url=new URL(window.location.href);url.searchParams.set('stage',value);url.searchParams.delete('view');window.history.replaceState(window.history.state,'',url);}
+    if(sourceMode&&typeof window!=='undefined'){const url=new URL(window.location.href);url.searchParams.set('stage',value);url.searchParams.delete('suite');url.searchParams.delete('page');url.searchParams.delete('view');window.history.replaceState(window.history.state,'',url);}
+    setSuite('particl');
     setHome(false);
     storeStage(value);
     setSequenceExpanded(false);
@@ -646,18 +661,22 @@ export default function Studio({
     }finally{endTransition(transition.token);}
   },[apiBase,beginTransition,drainSaves,adoptProject,endTransition,signedIn,storageKey]);
   useEffect(() => {
-    if(!signedIn)return;
     // The shared async loader hydrates from the server after flushing any pending write.
     let last='dune-studies';
     try{last=new URLSearchParams(window.location.search).get('project')||localStorage.getItem(storageKey)||last;}catch{/* Hydrate the default draft when local storage is disabled. */}
     const params=new URLSearchParams(window.location.search);
     const requestedStage=params.get('stage');
+    if(params.get('suite')==='moleculr'){
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the suite from the initial browser route alongside the existing stage state.
+      setSuite('moleculr');storeMoleculrPage(PAGES.moleculr.find(item=>item.id===params.get('page'))?.id??'product');setHome(false);
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial route state is read once from the browser URL.
     if(STAGES.some(s=>s.id===requestedStage)){storeStage(requestedStage as Stage);setHome(false);}
     else if(params.get('view')==='workspace')setHome(true);
     if(['open','marketing'].includes(params.get('atomik')??''))setAtomOpen(true);
     if(params.get('atomik')==='marketing')setAtomTab('marketing');
-    if(params.get('new')==='1'){setDialog('project');const url=new URL(window.location.href);url.searchParams.delete('new');window.history.replaceState(window.history.state,'',url);}
+    if(signedIn&&params.get('new')==='1'){setDialog('project');const url=new URL(window.location.href);url.searchParams.delete('new');window.history.replaceState(window.history.state,'',url);}
+    if(!signedIn)return;
     let active=true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the private draft from the server on mount.
     void loadProject(last).finally(()=>{if(active)setInitializedScope(storageKey);});
@@ -1182,10 +1201,30 @@ export default function Studio({
       ? p.sharedNodes || p.nodes.filter((n) => p.sharedNodeIds.includes(n.id))
       : p.nodes;
   const latestPlan = p.plans.at(-1);
+  function renderMarketingPanel(){return <MarketingStudioPanel key={p.id} task={marketingDraft.task} instructions={marketingDraft.instructions} onTask={task=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,task}}))} onInstructions={instructions=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,instructions}}))} project={p} enabled={ready&&signedIn&&!transitioning} busy={busy} references={contextIds.length} jobs={jobs.atomikJobs} error={jobs.error} onBriefChange={brief=>change(old=>({...old,marketingBrief:brief}))} onRun={request=>void runGenie(request,'marketing','Considered')} onApply={applyPlan} onContext={()=>{setAtomOpen(true);setAtomTab('context')}} onActivity={()=>{setAtomOpen(true);setAtomTab('runs')}}/>;}
+  function configureMoleculr(hook:string,castId:string|undefined,kind:'image'|'video'){
+    if(transitioningRef.current||!readyRef.current||!signedIn)return;
+    const current=pRef.current,brief=current.moleculr??EMPTY_MOLECULR;
+    const existing=brief.variants.find(item=>item.hook===hook&&item.castAssetId===castId&&current.nodes.some(node=>node.id===item.nodeId));
+    if(existing&&current.nodes.find(item=>item.id===existing.nodeId)?.locked){toast.error('This variant is locked in Rig. Unlock it before changing its generation.');return;}
+    if(!existing&&(current.nodes.length>=250||brief.variants.length>=100)){toast.error('This project has reached its variant or node limit. Start another project to continue.');return;}
+    const request=moleculrPrompt(current,brief,hook,castId);
+    const nodeId=existing?.nodeId??uid('variant');
+    const planned=moleculrNode(nodeId,request,`${brief.productName||current.name} · ${hook}`,current.nodes.length,kind);
+    try{
+      const base=existing?{...current.nodes.find(item=>item.id===nodeId)!,text:request,mode:planned.mode}:planned;
+      const binding=bindMoleculrReferences(current,base,moleculrReferences(current,brief,castId),()=>uid('reference'));
+      const nextNodes=[...(existing?current.nodes.map(item=>item.id===nodeId?binding.node:item):[...current.nodes,binding.node]),...binding.sources];
+      change(old=>({...old,nodes:nextNodes,moleculr:{...brief,variants:existing?brief.variants:[...brief.variants,{id:uid('campaign'),nodeId,hook,castAssetId:castId}]}}));
+      setGenerationTarget({node:binding.node,prompt:request,refs:generationReferenceIds(binding.node,{...current,nodes:nextNodes}),draftId:current.id});
+    }catch(error){toast.error(error instanceof Error?error.message:'The variant could not be configured.');}
+
+  }
+
   return (
     <TooltipProvider delayDuration={250}>
       <UploadRecovery scope={signedIn ? storageKey : null} />
-      <div className="ps" style={atomikSize.style}>
+      <div className="ps four-suite-workbench" data-suite={suite} style={atomikSize.style}>
         <div
           className={
             "studio-shell studio-redesign " +
@@ -1206,6 +1245,8 @@ export default function Studio({
             </header>}
 
             <div className="project-bar">
+              <Link className="suite-wordmark" href="/" prefetch={false} onNavigate={e=>{e.preventDefault();void leaveWorkspace('/')}} aria-label="Particl home"><Image src="/brand/particl-wordmark-on-dark@4x.png" alt="Particl" width={68} height={22}/></Link>
+              <SuiteSwitcher suite={suite} projectId={ready?p.id:undefined} onNavigate={path=>leaveWorkspace(path)}/>
               <div className="project-breadcrumb">
                 <button onClick={() => setHome(true)}>Projects</button>
                 <ChevronRight size={12} />
@@ -1266,7 +1307,7 @@ export default function Studio({
               </div>
               <div className="project-bar-actions">
               <div className="workflow-utilities">
-                <button className="all-assets-button" onClick={()=>void leaveWorkspace("/library?all=1&project="+encodeURIComponent(p.id))}><FolderOpen size={15}/><span>All assets</span></button>
+                <button className="all-assets-button" aria-label="All assets" onClick={()=>void leaveWorkspace("/library?all=1&project="+encodeURIComponent(p.id))}><FolderOpen size={15}/><span>All assets</span></button>
                 <button
                   className={"atomik-toggle " + (atomOpen ? "on" : "")}
                   aria-label="Toggle Atomik creative engine"
@@ -1333,64 +1374,6 @@ export default function Studio({
                 </button>
               </div>
             </div>
-            <header className="workflow-header">
-              <Tabs
-                value={home ? "home" : stage}
-                onValueChange={(v) => setStage(v as Stage)}
-                className="workflow-navigation"
-              >
-                <TabsList className="workflow-stages">
-                  {STAGES.map((s, i) => {
-                    const Icon = icons[i];
-                    return (
-                      <Tooltip key={s.id}>
-                        <TooltipTrigger asChild>
-                          <TabsTrigger
-                            value={s.id}
-                            disabled={!hydrated || (signedIn && initializedScope !== storageKey) || transitioning}
-                            className={
-                              "workflow-step " +
-                              ([2, 5, 8].includes(i)
-                                ? "workflow-group-start"
-                                : "")
-                            }
-                          >
-                            <span className="workflow-step-icon">
-                              <Icon size={19} />
-                              <small>{String(i + 1).padStart(2, "0")}</small>
-                            </span>
-                            <span>
-                              {
-                                [
-                                  "Brief",
-                                  "Script",
-                                  "Look",
-                                  "Cast",
-                                  "Elements",
-                                  "Nodes",
-                                  "Boards",
-                                  "Takes",
-                                  "Edit",
-                                  "Deliver",
-                                ][i]
-                              }
-                            </span>
-                          </TabsTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {s.label} · {s.hint}
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                </TabsList>
-              </Tabs>
-              <nav className="project-tools" aria-label="Project tools">
-                <button disabled={!ready&&signedIn} onClick={()=>void leaveWorkspace('/generate?project='+encodeURIComponent(p.id))}><Scan size={15}/>Gen</button>
-                <button disabled={!ready&&signedIn} onClick={()=>void leaveWorkspace('/library?project='+encodeURIComponent(p.id))}><FolderOpen size={15}/>Library</button>
-                <button aria-current={home?'page':undefined} onClick={()=>setHome(true)}><LayoutGrid size={15}/>Workspace</button>
-              </nav>
-            </header>
             {saveError && (
               <div className="save-banner">
                 <TriangleAlert size={14} />
@@ -1428,10 +1411,11 @@ export default function Studio({
             <div
               className={"workspace-body " + (atomOpen ? "with-atomik" : "")}
             >
+              {suite==='particl'&&<RoomRail active="production" projectId={ready?p.id:undefined} onNavigate={path=>leaveWorkspace(path)}/>}
               <section
                 className={
                   "work-area " +
-                  (stage === "canvas" && !home ? "graph-area" : "")
+                  (suite==='particl' && stage === "canvas" && !home ? "graph-area" : "")
                 }
               >
                 {welcomeChoice&&<section className="production-welcome"><span className="eyebrow">YOUR WORKSPACE IS READY</span><h1>What are you making next?</h1><p>Start a project for your team, or explore how a brief becomes a sequence in the sample workspace.</p><div className="production-welcome-actions"><Button className="btn primary" onClick={()=>setDialog('project')}>Start a project<Plus size={16}/></Button><Button className="btn" onClick={exploreSample}>Explore sample<ArrowUpRight size={16}/></Button></div>{projects.length>0&&<div className="production-welcome-existing"><h2>Your saved projects</h2>{projects.map(project=><button key={project.id} onClick={()=>{void loadProject(project.id);setStage('canvas')}}>{project.name}<ArrowUpRight size={15}/></button>)}</div>}{productions.length>0&&<div className="production-welcome-existing"><h2>Workspace projects</h2>{productions.map(project=><button key={project.id} onClick={()=>void openProduction(project.id)}>{project.name}<ArrowUpRight size={15}/></button>)}</div>}<div className="production-welcome-steps"><span>01 · Name your project</span><span>02 · Bring your references</span><span>03 · Make your first take</span><span>04 · Review and deliver</span></div><button className="workbench-welcome-team" onClick={()=>void leaveWorkspace('/team')}>Invite your team</button></section>}
@@ -1546,7 +1530,8 @@ export default function Studio({
                     </div>
                   </div>
                 )}
-                {!home && !welcomeChoice && (
+                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={p.id} project={p} page={moleculrPage} enabled={ready&&signedIn&&!transitioning} marketing={renderMarketingPanel()} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
+                {!home && !welcomeChoice && suite==='particl' && (
                   <>
                     {stage !== "canvas" && (
                       <div className="page-heading">
@@ -2635,6 +2620,7 @@ export default function Studio({
                   </>
                 )}
               </section>
+              {!mobile&&!atomOpen&&<button className="suite-atomik-collapse" aria-label="Open Atomik" onClick={()=>setAtomOpen(true)}><AtomMark/><span>Atomik</span></button>}
               <MobilePanel
                 mobile={mobile}
                 open={atomOpen}
@@ -2682,7 +2668,7 @@ export default function Studio({
                     </TabsList>
                   </Tabs>
                   <div className="atomik-content" ref={atomMessages}>
-                    {atomTab === 'marketing' && <MarketingStudioPanel key={p.id} task={marketingDraft.task} instructions={marketingDraft.instructions} onTask={task=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,task}}))} onInstructions={instructions=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,instructions}}))} project={p} enabled={ready&&signedIn&&!transitioning} busy={busy} references={contextIds.length} jobs={jobs.atomikJobs} error={jobs.error} onBriefChange={brief=>change(old=>({...old,marketingBrief:brief}))} onRun={request=>void runGenie(request,'marketing','Considered')} onApply={applyPlan} onContext={()=>setAtomTab('context')} onActivity={()=>setAtomTab('runs')}/>}
+                    {atomTab === 'marketing' && renderMarketingPanel()}
                     {atomTab === "genie" && (
                       <>
                         {!p.plans.length && (
@@ -2967,7 +2953,8 @@ export default function Studio({
                 </aside>
               </MobilePanel>
             </div>
-            {mobile && !home && !welcomeChoice && stage!=='canvas' && <nav className="phone-stage-pager" aria-label="Workflow stages">
+            <SuiteDock disabled={!hydrated||(signedIn&&initializedScope!==storageKey)||transitioning} suite={suite} activePage={home?undefined:suite==='moleculr'?moleculrPage:stage} projectId={ready?p.id:undefined} onNavigate={path=>leaveWorkspace(path)} onPage={page=>{if(!hydrated||(signedIn&&initializedScope!==storageKey)||transitioning)return;if(suite==='moleculr')setMoleculrPage(page);else setStage(page as Stage)}}/>
+            {mobile && suite==='particl' && !home && !welcomeChoice && stage!=='canvas' && <nav className="phone-stage-pager" aria-label="Workflow stages">
               {STAGES.findIndex(s=>s.id===stage)>0 ? <button onClick={()=>setStage(STAGES[STAGES.findIndex(s=>s.id===stage)-1].id)}><ArrowLeft size={14}/><span>{String(STAGES.findIndex(s=>s.id===stage)).padStart(2,'0')} {STAGES[STAGES.findIndex(s=>s.id===stage)-1].label}</span></button> : <button onClick={()=>setMobileWorkflowOpen(true)}><ArrowLeft size={14}/> Workflow</button>}
               {STAGES.findIndex(s=>s.id===stage)<STAGES.length-1 && <button onClick={()=>setStage(STAGES[STAGES.findIndex(s=>s.id===stage)+1].id)}><span>{String(STAGES.findIndex(s=>s.id===stage)+2).padStart(2,'0')} {STAGES[STAGES.findIndex(s=>s.id===stage)+1].label}</span><ArrowRight size={14}/></button>}
             </nav>}

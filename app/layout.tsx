@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit, Kode_Mono } from "next/font/google";
 import "./globals.css";
+import "./four-suites.css";
 
 /* Keep the approved wordmark fonts. Graphite interface typography is defined
    by the shared system-font tokens in globals.css. */
@@ -32,8 +33,7 @@ export const metadata: Metadata = {
 
 export const viewport = {
   /* particl is dark, so the browser chrome is too — one value, not a pair
-     keyed on a system preference the app no longer follows (§4). atomik's
-     routes override this with the paper ground in their own layout. */
+     keyed on a system preference the app no longer follows (§4). all four suites share the same dark ground. */
   themeColor: "#000000",
   viewportFit: "cover" as const,
   // Android: shrink the layout viewport when the keyboard opens instead of

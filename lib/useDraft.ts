@@ -147,11 +147,20 @@ export function useDraft<T>(
   // never stamp a prior account's text into the next account's storage key.
   useEffect(() => {
     const queue = pending.current;
-    return () => {
+    const flush = () => {
       if (key && queue.has(key)) {
         writeStored(key, queue.get(key)!);
         queue.delete(key);
       }
+    };
+    // A hard reload does not unmount React. Flush this captured scope's last
+    // keystrokes before the document exits, as well as on client navigation.
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+      flush();
     };
   }, [key]);
   const clear = useCallback(() => {

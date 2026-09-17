@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createClient } from "@libsql/client";
 import { randomBytes } from "node:crypto";
 import sharp from "sharp";
+import { newProject } from "../lib/workbench/studio";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 
 test("Gen Seedance Edit recovers a lost submission after returning to Studio without buying a second edit", async ({
@@ -10,6 +11,7 @@ test("Gen Seedance Edit recovers a lost submission after returning to Studio wit
 }, testInfo) => {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
+  const draft = { ...newProject("Gen fixture"), id: "gen-draft", productionProjectId: "project-fixture" };
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const submissions: { body: string | null; key: string }[] = [];
@@ -50,6 +52,13 @@ test("Gen Seedance Edit recovers a lost submission after returning to Studio wit
         body: JSON.stringify(data),
       });
     if (pathname === "/api/me") return json(me);
+    if (pathname === "/api/workbench/projects") return json({ project: draft, revision: 1, projects: [{ id: draft.id, name: draft.name }], productions: [] });
+    if (pathname === "/api/workbench/development") return json({ configured: true, models: [], jobs: [] });
+    if (pathname === "/api/workbench/library") {
+      expect(req.headers()["x-workbench-scope"]).toBe(`particl-active-${me.workspace.id}-${me.id}`);
+      if (req.method() === "POST") { expect(req.postDataJSON()).toEqual({ projectId: draft.id, uploadId: source.id }); return json({ ok: true }); }
+      return json({ uploads: uploaded ? [reference, source] : [reference], generations: [], nextCursor: null, nextPageCursor: null });
+    }
     if (pathname === "/api/jobs") return json({ generations: [] });
     if (pathname === "/api/cast") return json({ cast: [] });
     if (pathname === "/api/productions") return json({ productions: [] });
@@ -97,7 +106,7 @@ test("Gen Seedance Edit recovers a lost submission after returning to Studio wit
     }
     return route.fallback();
   });
-  await page.goto("/generate");
+  await page.goto(`/generate?project=${draft.id}`);
   await page.getByRole("button", { name: "Engine", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Choose a model" })
@@ -160,12 +169,8 @@ test("Gen Seedance Edit recovers a lost submission after returning to Studio wit
     editor.getByRole("button", { name: /Recover edit/ }),
   ).toBeEnabled();
   const savedGenUrl = page.url();
-  if (page.viewportSize()!.width <= 759) {
-    await page.getByRole("navigation", { name: "Studio sections", exact: true }).filter({ visible: true }).getByRole("link", { name: "Studio", exact: true }).click();
-  } else {
-    await page.getByRole("link", { name: "Back to Studio", exact: true }).click();
-  }
-  await expect(page).toHaveURL(/\/workbench$/);
+  await page.getByRole("navigation", { name: "Rooms", exact: true }).getByRole("link", { name: "Production", exact: true }).click();
+  await expect(page).toHaveURL(/\/workbench\?.*stage=brief/);
   await expect(editor).toHaveCount(0);
   expect(submissions).toHaveLength(1);
   await page.goto(savedGenUrl);
@@ -207,6 +212,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
 }, testInfo) => {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
+  const draft = { ...newProject("Gen fixture"), id: "gen-draft", productionProjectId: "project-fixture" };
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const submissions: {
@@ -252,6 +258,12 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
         body: JSON.stringify(value),
       });
     if (path === "/api/me") return json(me);
+    if (path === "/api/workbench/projects") return json({ project: draft, revision: 1, projects: [{ id: draft.id, name: draft.name }], productions: [] });
+    if (path === "/api/workbench/library") {
+      expect(request.headers()["x-workbench-scope"]).toBe(`particl-active-${me.workspace.id}-${me.id}`);
+      if (request.method() === "POST") { expect(request.postDataJSON().projectId).toBe(draft.id); return json({ ok: true }); }
+      return json({ uploads: [], generations: jobs.filter(g => !url.searchParams.get("q") || g.prompt.includes(url.searchParams.get("q")!)), nextCursor: null, nextPageCursor: null });
+    }
     if (path === "/api/uploads/chunk") return json({ ok: true });
     if (path === "/api/uploads/finish" && request.method() === "POST") {
       expect(request.headers()["x-workbench-scope"]).toBe(
@@ -383,6 +395,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
         .getByRole("group", { name: "Generation view" })
         .getByRole("button", { name: /^Takes/ })
         .click();
+    await page.getByRole("group", { name: "Asset source", exact: true }).getByRole("button", { name: "Generations", exact: true }).click();
   };
   const showCreate = async () => {
     if (mobile)
@@ -404,7 +417,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
     expect(box!.x + box!.width).toBeLessThanOrEqual(size.width + 1);
     expect(box!.y + box!.height).toBeLessThanOrEqual(size.height + 1);
   };
-  await page.goto("/generate");
+  await page.goto(`/generate?project=${draft.id}`);
   await expect(
     page.getByRole("heading", { name: page.viewportSize()!.width <= 759 ? "Generation workspace" : /^Gen.*Video$/ }),
   ).toBeVisible();
@@ -446,6 +459,11 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await expect(prompt).toHaveValue(
     "An isolated slow tracking shot through soft light.",
   );
+  await expect(page.getByLabel("First frame", { exact: true })).toHaveValue("");
+  await page.getByLabel("First frame", { exact: true }).selectOption("upload:gen-reference-1");
+  await expect(primary).toBeDisabled(); // Frames cannot be combined with ordinary references.
+  expect(submissions).toHaveLength(0);
+  await page.getByLabel("First frame", { exact: true }).selectOption("");
   await expect(primary).toBeEnabled();
   await expect(primary).toContainText(/\d+ cr/);
   const beforeClip = Number((await primary.innerText()).match(/(\d+) cr/)![1]);
@@ -480,7 +498,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   expect(submissions[0].body.duration).toBe(5);
   expect(submissions[0].body.model).toBe("dreamina-seedance-2-0-260128");
   expect(submissions[0].body.references).toEqual([
-    { uploadId: "gen-reference-1", role: "first_frame" },
+    { uploadId: "gen-reference-1", role: "reference_image" },
     { uploadId: "gen-reference-2", role: "reference_image" },
     { uploadId: "gen-reference-4", role: "reference_video" },
   ]);
@@ -514,7 +532,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
     .getByRole("navigation", { name: "Generation mode" })
     .getByRole("button", { name: "Images", exact: true })
     .click();
-  await expect(page).toHaveURL(/\/generate\?mode=images/);
+  await expect(page).toHaveURL(url => url.pathname === "/generate" && url.searchParams.get("mode") === "images" && url.searchParams.get("project") === draft.id);
   await expect(prompt).toHaveValue("");
   await prompt.fill("An isolated still life with a brass key.");
   await viewport();
@@ -540,7 +558,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
     .getByRole("navigation", { name: "Generation mode" })
     .getByRole("button", { name: "Audio", exact: true })
     .click();
-  await expect(page).toHaveURL(/\/generate\?mode=audio/);
+  await expect(page).toHaveURL(url => url.pathname === "/generate" && url.searchParams.get("mode") === "audio" && url.searchParams.get("project") === draft.id);
   for (const [label, task, text] of [
     ["Dialogue", "speech", "A line spoken in a calm voice."],
     ["Music", "music", "Slow strings and quiet piano."],
@@ -586,7 +604,10 @@ test("a stale Gen tab cannot upload into another workspace or another account in
     .get("/api/me")
     .then((response) => response.json());
   const captured = `particl-active-${owner.workspace.id}-${owner.id}`;
-  await page.goto("/generate?mode=video");
+  const draft = newProject("Captured upload project");
+  const saved = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": captured }, data: { project: draft, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  await page.goto(`/generate?mode=video&project=${draft.id}`);
   const picker = page.locator('input[type="file"][accept="image/*,video/*"]');
   const bytes = await sharp({
     create: { width: 512, height: 512, channels: 3, background: "#5b7280" },

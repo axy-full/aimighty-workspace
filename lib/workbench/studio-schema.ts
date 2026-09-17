@@ -131,7 +131,15 @@ export const marketingBriefSchema = z.object({
   tone: z.string().max(MARKETING_BRIEF_LIMITS.tone),
   constraints: z.string().max(MARKETING_BRIEF_LIMITS.constraints),
 }).strict();
+export const moleculrSchema = z.object({
+  productName:z.string().max(200),productUrl:z.string().max(2000),
+  productAssetIds:z.array(z.string().max(100)).max(5),castAssetIds:z.array(z.string().max(100)).max(6),
+  format:z.enum(['ugc-review','tutorial','unboxing','try-on','cgi','cinematic-demo','poster','marketplace','motion']),
+  hooks:z.array(z.string().max(500)).max(12),notes:z.string().max(6000),
+  variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional()}).strict()).max(100),
+}).strict();
 export const projectSchema = z.object({
+  moleculr:moleculrSchema.optional(),
   marketingBrief: marketingBriefSchema.optional(),
   productionProjectId: z.string().max(100).optional(),
   shotMappings: z.record(z.string().max(100), z.string().max(100)).optional(),
