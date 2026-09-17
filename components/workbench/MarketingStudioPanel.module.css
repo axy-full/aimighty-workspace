@@ -1,0 +1,341 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  color: var(--ps-ink);
+}
+.tabs.tabs.tabs.tabs {
+  display: flex;
+  width: calc(100% - 24px);
+  margin: 0 12px;
+  padding: 3px;
+  gap: 3px;
+  justify-content: space-between;
+}
+.tabs.tabs.tabs.tabs :global([data-slot="tabs-trigger"]) {
+  min-width: 0;
+  flex: 1;
+  padding-left: 2px;
+  padding-right: 2px;
+  font-size: 11px;
+}
+.tabs.tabs.tabs.tabs :global(.count) {
+  display: none;
+}
+.intro .icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: var(--ps-panel);
+  border: 1px solid var(--ps-edge);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+.intro h2 {
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.2;
+}
+.intro p {
+  font-size: 13px;
+  color: var(--ps-soft);
+  margin: 8px 0;
+}
+.intro small,
+.hint,
+.meta {
+  font-size: 11px;
+  color: var(--ps-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.panel fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.tasks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.tasks legend,
+.channels legend {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ps-body);
+  margin-bottom: 9px;
+}
+.tasks button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 10px;
+  text-align: left;
+  background: var(--ps-panel);
+  border: 1px solid var(--ps-edge);
+  border-radius: 9px;
+  min-width: 0;
+}
+.tasks button:first-of-type {
+  grid-column: 1/-1;
+}
+.tasks strong {
+  font-size: 12px;
+  font-weight: 600;
+  padding-right: 15px;
+}
+.tasks span {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ps-body);
+}
+.tasks button[aria-pressed="true"] {
+  border-color: var(--graphite-primary);
+  background: color-mix(in srgb, var(--graphite-primary) 9%, var(--ps-panel));
+}
+.tasks svg {
+  position: absolute;
+  right: 10px;
+  top: 11px;
+  color: var(--graphite-primary);
+}
+.brief {
+  padding: 13px;
+  border: 1px solid var(--ps-edge);
+  border-radius: 10px;
+  background: var(--ps-panel);
+}
+.brief summary,
+.result summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.brief summary span {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ps-body);
+  margin: 3px 0 0 16px;
+}
+.brief > fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  margin-top: 16px;
+}
+.brief label,
+.direction {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ps-soft);
+}
+.panel textarea,
+.panel input:not([type="checkbox"]) {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  margin-top: 6px;
+  border: 1px solid var(--ps-edge);
+  border-radius: 7px;
+  background: var(--ps-ground);
+  color: var(--ps-ink);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.panel textarea {
+  min-height: 70px;
+  resize: vertical;
+  max-height: 280px;
+}
+.panel textarea::placeholder,
+.panel input::placeholder {
+  color: var(--ps-body);
+}
+.panel .channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.channels label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 1px solid var(--ps-edge);
+  border-radius: 6px;
+  font-size: 11px;
+  background: var(--ps-ground);
+}
+.channels input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--graphite-primary);
+}
+.context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-align: left;
+  flex-wrap: wrap;
+  color: var(--ps-soft);
+}
+.context > span {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  color: var(--graphite-primary);
+}
+.direction small {
+  color: var(--ps-body);
+  font-size: 11px;
+  margin-left: 4px;
+}
+.run {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 11px;
+  border-radius: 8px;
+  background: var(--graphite-primary);
+  color: var(--graphite-on-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.panel button:disabled,
+.panel fieldset:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.panel button:focus-visible,
+.panel summary:focus-visible,
+.panel textarea:focus-visible,
+.panel input:focus-visible {
+  outline: 2px solid var(--graphite-primary);
+  outline-offset: 3px;
+}
+.hint {
+  margin-top: -8px;
+}
+.status {
+  padding: 11px;
+  background: var(--ps-panel);
+  border: 1px solid var(--ps-edge);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.status button {
+  margin-top: 8px;
+  color: var(--graphite-primary);
+}
+.results {
+  border-top: 1px solid var(--ps-edge);
+  padding-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.results h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+}
+.results h3 span {
+  font-size: 11px;
+  color: var(--ps-body);
+}
+.results > p {
+  font-size: 12px;
+  color: var(--ps-body);
+  line-height: 1.7;
+}
+.result {
+  border: 1px solid var(--ps-edge);
+  background: var(--ps-panel);
+  border-radius: 9px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.result summary small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ps-body);
+  margin-top: 3px;
+}
+.result > p {
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  margin-top: 12px;
+}
+.section {
+  display: flex;
+  gap: 9px;
+  border-top: 1px solid var(--ps-edge);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.section > span {
+  font-size: 10px;
+  color: var(--ps-body);
+  flex: none;
+  padding-top: 2px;
+}
+.section p {
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  min-width: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 14px 0 10px;
+}
+.actions button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 7px 8px;
+  border: 1px solid var(--ps-edge);
+  border-radius: 6px;
+  background: var(--ps-ground);
+}
+@media (max-width: 767px) {
+  .panel input:not([type="checkbox"]),
+  .panel textarea {
+    font-size: 16px;
+  }
+  .tasks button {
+    min-height: 65px;
+  }
+  .channels label {
+    min-height: 35px;
+  }
+  .actions button {
+    min-height: 36px;
+  }
+  .run {
+    min-height: 42px;
+  }
+}
