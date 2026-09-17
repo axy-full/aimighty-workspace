@@ -1,4 +1,7 @@
 import { withRecoveryJob } from '../recovery';
+import { runSuiteAgent, checkSuiteProposal, suiteAgentInstructions, suiteAgentBounds, SUITE_AGENT_STEPS, type SuiteAgentEnvelope } from './suite-agent';
+import { suiteAgentResultSchema } from './suite-agent-plan';
+import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
 import { atomikEffortOptions, atomikReasoningRequest } from "../atomik-reasoning";
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,7 +12,7 @@ import { engineFor } from '../engines';
 import { gatewayAuth, gatewayReachable, explainGatewayFailure } from '../gateway';
 import { allowanceCheck } from '../allowance';
 import { checkLimits, limitVerdict } from '../limits';
-import { meter, type MeterEvent } from '../meter';
+import { meter, assertMeterFunding, type MeterEvent } from '../meter';
 import { billCredits } from '../creditTerms';
 import { paidByPlatform } from '../platformSpend';
 import { loadAtomikReferences, type AtomikReferenceContent } from './atomik-references';
@@ -21,6 +24,7 @@ import type { Plan, Project } from './studio';
 import { requireTenant, type TenantToken } from '../tenant';
 
 export const atomikRequestSchema = z.object({
+  suite: z.enum(['particl', 'atomik', 'moleculr']).optional(),
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
   requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
   request: z.string().trim().min(3).max(12000),
@@ -36,6 +40,7 @@ export const atomikRequestSchema = z.object({
 export type AtomikRequest = z.infer<typeof atomikRequestSchema>;
 export type AtomikStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'uncertain';
 export type AtomikJob = {
+  suite?: AtomikRequest['suite'];
   id: string; requestId: string; projectId: string; productionProjectId: string | null; status: AtomikStatus;
   request: string; model: string; depth: AtomikRequest['depth']; effort?: string; role?: string;
   refs: string[]; plan: Plan | null; estimateUsd: number; estimateCredits: number;
@@ -106,6 +111,7 @@ type Row = Record<string, unknown>;
 function asJob(row: Row): AtomikJob {
   const input = atomikRequestSchema.parse(JSON.parse(String(row.request_body)));
   return {
+    ...(input.suite ? { suite: input.suite } : {}),
     id: String(row.id), requestId: input.requestId, projectId: input.projectId, productionProjectId: row.production_project_id ? String(row.production_project_id) : null,
     status: String(row.status) as AtomikStatus, request: input.request, model: String(row.model),
     depth: input.depth, ...(input.effort == null ? {} : { effort: input.effort }), role: input.role, refs: input.refs,
@@ -157,6 +163,7 @@ export function atomikContext(project: Project, input: AtomikRequest, uploadedTe
   return JSON.stringify({
     task: input.request,
     project: { name: project.name, brief: project.brief.slice(0, cap / 4), audience: project.audience.slice(0, 1500),
+      ...(input.suite && project.moleculr ? { campaign: { productName: project.moleculr.productName, productUrl: project.moleculr.productUrl, format: project.moleculr.format, hooks: project.moleculr.hooks, notes: project.moleculr.notes.slice(0, 3000), productAssetIds: project.moleculr.productAssetIds, castAssetIds: project.moleculr.castAssetIds } } : {}),
       ...(project.marketingBrief ? { marketingBrief: project.marketingBrief } : {}),
       deliverables: project.deliverables.slice(0, 1500), direction: project.direction.slice(0, cap / 6),
       screenplay: (project.script ?? '').slice(0, cap / 2), screenplayTruncated: (project.script?.length ?? 0) > cap / 2,
@@ -198,11 +205,14 @@ export type AtomikDependencies = {
   meter: typeof meter;
   auth: typeof gatewayAuth;
   run: NonNullable<ReturnType<typeof engineFor>['run']>;
+  runSuite: typeof runSuiteAgent;
+  assertFunding: typeof assertMeterFunding;
 };
 const dependencies = (): AtomikDependencies => ({
   models: catalog, allowance: allowanceCheck, limits: checkLimits,
   reserve: reserveGenerationSpend, meter, auth: gatewayAuth,
   run: request => engineFor('vercel').run!(request),
+  runSuite: runSuiteAgent, assertFunding: assertMeterFunding,
 });
 const withDependencies = (overrides?: Partial<AtomikDependencies>) => ({ ...dependencies(), ...overrides });
 
@@ -225,14 +235,14 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   if (!project.productionProjectId) throw new AtomikError('Save this project to link its budget before starting Atomik.', 409);
   const references = await loadAtomikReferences(project, input.refs, owner, input.videoFrames);
   const models = await deps.models();
-  const menu = atomikModels(models).filter(model => !references.images.length || model.vision);
+  const menu = atomikModels(models).filter(model => (!input.suite || /^(anthropic|openai)\//.test(model.id)) && (!references.images.length || model.vision));
   if (input.model === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);
   const economy = menu.find(m => (ATOMIK_AUTO_MODEL_IDS as readonly string[]).includes(m.id)) ?? menu[0];
   const selectedId = input.model === 'auto' ? economy?.id : input.model;
   const model = models.find(m => m.id === selectedId && menu.some(c => c.id === m.id));
   if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
   if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or connect AI Gateway.', 503);
-  const system = atomikSystem(input);
+  const system = input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
   const user = atomikContext(project, input, references.text, references.images);
   // UTF-8 byte count is a conservative token upper bound, including non-Latin scripts.
   const inputTokens = Buffer.byteLength(system + user, 'utf8') + 512 + references.inputTokens;
@@ -241,11 +251,15 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) {
     throw new AtomikError('This model has too little context for the project. Choose a larger-context model or fewer references.');
   }
-  const estimateUsd = textCostUsd(model, inputTokens, maxTokens);
+  // Bound repeated context, tool schemas/results and prior generated text for all three calls.
+  const bounds = suiteAgentBounds(inputTokens, maxTokens);
+  if (input.suite && model.contextWindow && bounds.perStepInputTokens + maxTokens > model.contextWindow) throw new AtomikError('Choose a larger-context model or lower effort for this multi-step agent.', 422);
+  const perCallEstimate = textCostUsd(model, input.suite ? bounds.perStepInputTokens : inputTokens, maxTokens);
+  const estimateUsd = perCallEstimate == null ? null : perCallEstimate * (input.suite ? SUITE_AGENT_STEPS : 1);
   if (estimateUsd == null || !Number.isFinite(estimateUsd) || estimateUsd < 0) throw new AtomikError('This model has no confirmed price for the current context. Choose another model or refresh the catalogue.', 503);
   const budgets = atomikBudgets(input.effort !== undefined);
   if (estimateUsd > budgets.maxRequestUsd) throw new AtomikError('This request exceeds the Atomik spending limit. Choose a less expensive model, lower effort, shorter response detail, or fewer references.', 409);
-  const providerBody = JSON.stringify({
+  let providerBody = JSON.stringify({
     model: model.id, max_tokens: maxTokens,
     ...reasoning.requestFields,
     ...(Object.keys(reasoning.providerOptions).length ? { providerOptions: reasoning.providerOptions } : {}),
@@ -258,6 +272,20 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
     ] : user }],
     ...atomikResponseFormat(model.id),
   });
+  if (input.suite) {
+    const providerOptions = structuredClone(reasoning.providerOptions) as SharedV4ProviderOptions;
+    const fields = reasoning.requestFields ?? {};
+    if (fields.reasoning_effort) {
+      if (model.owner === 'openai') providerOptions.openai = { ...providerOptions.openai, reasoningEffort: String(fields.reasoning_effort) };
+      else providerOptions.anthropic = { ...providerOptions.anthropic, thinking: { type: 'adaptive' }, effort: String(fields.reasoning_effort) };
+    }
+    const thinking = fields.reasoning as { enabled?: boolean; max_tokens?: number } | undefined;
+    if (thinking && model.owner === 'anthropic') providerOptions.anthropic = { ...providerOptions.anthropic, thinking: thinking.enabled === false ? { type: 'disabled' } : { type: 'enabled', budgetTokens: thinking.max_tokens ?? 1024 } };
+    const envelope: SuiteAgentEnvelope = { suite: input.suite, model: model.id, context: user, maxTokens, providerOptions, inputTokenBudget: bounds.perStepInputTokens, toolResultByteBudget: bounds.toolResultBytes,
+      assetIds: [...project.assets, ...(project.sharedAssets ?? [])].filter(asset => input.refs.includes(asset.id)).map(asset => ({ id: asset.id, kind: asset.kind })),
+      images: references.images.map(image => ({ dataUrl: image.dataUrl, label: JSON.stringify({ referenceId: image.assetId, name: image.name, sampledAtSeconds: image.timeSeconds }) })) };
+    providerBody = JSON.stringify({ ...envelope, pricingModel: model });
+  }
   const estimateCredits = paidByPlatform('gateway') ? billCredits(estimateUsd, 'text') : 0;
   if (input.maxCredits != null && estimateCredits > input.maxCredits) {
     throw new AtomikError('The estimate changed since it was shown. Review the new quote before starting this request.', 409);
@@ -282,7 +310,7 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
     if (existing.fingerprint !== fingerprint) throw new AtomikError('This request ID belongs to different instructions. Start a new request.', 409);
     return { job: asJob(existing), scheduled: false };
   }
-  if (input.effort !== undefined && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
+  if ((input.effort !== undefined || input.suite) && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
   const { project, model, providerBody, estimateUsd, estimateCredits, budgets } = await compileAtomikRequest(input, owner, deps);
   const wall = await deps.allowance('gateway', estimateUsd, model.id);
   if (!wall.ok) throw new AtomikError(wall.error, wall.status);
@@ -339,6 +367,25 @@ export async function prepareAtomikJob(input: AtomikRequest, owner: string, toke
   }
 }
 
+/** Context tiers apply to each SDK call, not its aggregate usage. Only the
+ * admitted price snapshot and complete numeric counts can settle a suite job. */
+function suiteStepCost(steps: unknown, providerBody: string, modelId: string): number | null {
+  if (!Array.isArray(steps) || !steps.length || steps.length > SUITE_AGENT_STEPS) return null;
+  const snapshot = JSON.parse(providerBody) as SuiteAgentEnvelope;
+  const model = snapshot.pricingModel;
+  if (!model || model.id !== modelId) return null;
+  let total = 0;
+  for (const step of steps) {
+    if (!step || typeof step !== 'object') return null;
+    const { prompt_tokens: input, completion_tokens: output } = step;
+    if (![input, output].every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)) return null;
+    const cost = textCostUsd(model, input, output);
+    if (cost == null || !Number.isFinite(cost) || cost < 0) return null;
+    total += cost;
+  }
+  return Number.isFinite(total) ? total : null;
+}
+
 /** One provider submission. A killed or timed-out call is never automatically repeated. */
 export async function runAtomikJob(id: string, owner: string, overrides?: Partial<AtomikDependencies>) {
 return await withRecoveryJob(requireTenant().id, id, async () => {
@@ -357,8 +404,14 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
   let usage: unknown = null;
   try {
     const auth = await deps.auth();
+    await deps.assertFunding(id, "vercel");
     submitted = true;
-    const response = await deps.run({ body: String(row.provider_body), auth, timeoutMs: 270000 });
+    const input = atomikRequestSchema.parse(JSON.parse(String(row.request_body)));
+    const response = input.suite
+      ? await deps.runSuite(JSON.parse(String(row.provider_body)), auth, async trace => {
+          await db().execute({ sql: "UPDATE workbench_atomik_jobs SET provider_response=?,updated_at=? WHERE id=? AND owner=? AND status='running'", args: [trace, now(), id, owner] });
+        })
+      : await deps.run({ body: String(row.provider_body), auth, timeoutMs: 270000 });
     providerReturned = true;
     raw = response.text;
     if (!response.ok) {
@@ -367,15 +420,31 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       else providerReturned = false;
       throw new AtomikError(explainGatewayFailure(response.status, raw) ?? `The model could not complete this request (${response.status}). This attempt will not be retried automatically.`, 502);
     }
-    const reply = JSON.parse(raw) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: { cost?: number; prompt_tokens?: number; completion_tokens?: number } };
+    const reply = JSON.parse(raw) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: { cost?: number; prompt_tokens?: number; completion_tokens?: number; steps?: unknown } };
     usage = reply.usage ?? null;
     if (typeof reply.usage?.cost === 'number' && Number.isFinite(reply.usage.cost) && reply.usage.cost >= 0) cost = reply.usage.cost;
+    else if (input.suite) {
+      const actual = suiteStepCost(reply.usage?.steps, String(row.provider_body), job.model);
+      if (actual == null) {
+        providerReturned = false;
+        throw new AtomikError('The provider usage could not be priced against the approved estimate. This attempt needs billing review.', 409);
+      }
+      cost = actual;
+    }
     else if (Number.isFinite(reply.usage?.prompt_tokens) && Number.isFinite(reply.usage?.completion_tokens) && reply.usage!.prompt_tokens! >= 0 && reply.usage!.completion_tokens! >= 0) {
       const model = (await deps.models()).find(m => m.id === job.model);
       if (model) cost = textCostUsd(model, reply.usage!.prompt_tokens!, reply.usage!.completion_tokens!) ?? cost;
     }
+    if (input.suite && cost > job.estimateUsd + 0.00000001) {
+      // Provider pricing/usage outside the accepted ceiling requires reconciliation.
+      // Preserve the response, but never debit an unapproved overage automatically.
+      providerReturned = false; cost = job.estimateUsd;
+      throw new AtomikError('The provider usage exceeded the approved estimate. This attempt needs billing review.', 409);
+    }
     const content = reply.choices?.[0]?.message?.content;
-    const result = parseAtomikResult(typeof content === 'string' ? content : '');
+    const suiteResult = input.suite ? suiteAgentResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) : null;
+    if (suiteResult && !checkSuiteProposal(suiteResult, (JSON.parse(String(row.provider_body)) as SuiteAgentEnvelope).assetIds).valid) throw new AtomikError('The agent proposed unavailable references. Review this saved attempt; no media was generated.', 502);
+    const result = suiteResult ? { intent: suiteResult.intent, summary: suiteResult.summary, steps: suiteResult.steps, suiteAgent: { suite: input.suite!, projectId: input.projectId, actions: suiteResult.actions, hooks: suiteResult.hooks, assumptions: suiteResult.assumptions } } : parseAtomikResult(typeof content === 'string' ? content : '');
     const role = CREW.find(c => c.id === job.role);
     const plan: Plan = { id: job.id, request: job.request, model: job.model, depth: job.depth, ...(job.effort == null ? {} : { effort: job.effort }), refs: job.refs,
       role: job.role === 'marketing' ? 'marketing' : role?.name, applied: false, ...result };
@@ -391,6 +460,10 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
     const errorText = uncertain
       ? 'The provider result could not be confirmed. The estimate remains reserved; this request will not be submitted again automatically. Review this job before starting another.'
       : (error as Error).message.slice(0, 1000);
+    if (!raw) {
+      const partial = (await db().execute({ sql: 'SELECT provider_response FROM workbench_atomik_jobs WHERE id=? AND owner=?', args: [id, owner] })).rows[0];
+      raw = partial?.provider_response ? String(partial.provider_response) : '';
+    }
     await db().batch([
       { sql: 'UPDATE workbench_atomik_jobs SET status=?,error=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?', args: [uncertain ? 'uncertain' : 'failed', errorText, uncertain ? null : cost, uncertain ? null : paidByPlatform('gateway') ? billCredits(cost, 'text') : 0, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },

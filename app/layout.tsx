@@ -14,7 +14,7 @@ const kode = Kode_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Particl",
+  title: "Particl Studio",
   description: "particl studio — the studio's own room for making shots, and for knowing what they cost",
   manifest: "/manifest.json",
   // iOS ignores the manifest for home-screen icons — declare one explicitly.
@@ -28,12 +28,12 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png?v=3" }],
   },
-  appleWebApp: { capable: true, title: "Particl", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "Particl Studio", statusBarStyle: "black-translucent" },
 };
 
 export const viewport = {
   /* particl is dark, so the browser chrome is too — one value, not a pair
-     keyed on a system preference the app no longer follows (§4). all four suites share the same dark ground. */
+     keyed on a system preference the app no longer follows (§4). all three suites share the same dark ground. */
   themeColor: "#000000",
   viewportFit: "cover" as const,
   // Android: shrink the layout viewport when the keyboard opens instead of

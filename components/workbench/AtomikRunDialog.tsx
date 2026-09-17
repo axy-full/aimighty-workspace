@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { SuiteId } from '@/lib/suites';
+import { SUITE_AGENT_COPY } from '@/lib/workbench/suite-agent-plan';
 import type { Project } from '@/lib/workbench/studio';
 import { prepareAtomikVideoFrames } from '@/lib/workbench/atomik-video-frames';
 import { ATOMIK_MAX_VISUALS, type AtomikVideoFrame } from '@/lib/workbench/atomik-reference-types';
@@ -14,7 +16,7 @@ import { Button } from './ui/button';
 import { studioRequest } from './GenerationDialog';
 import { ModelPicker, EffortPicker, effortLabel, thinkingModelName, type ThinkingModel } from '@/components/atomik/ModelPicker';
 
-export type AtomikRunTarget = { request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
+export type AtomikRunTarget = { suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
 type Quote = { estimateCredits: number; model: string; effort?: string; key: string };
 
 export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued }: {
@@ -27,6 +29,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   onSave: () => Promise<boolean>;
   onQueued: (id: string) => void;
 }) {
+  const [suite, setSuite] = useState(target.suite);
   const [request, setRequest] = useState(target.request);
   const [model, setModel] = useState(target.model || 'auto');
   const [effort, setEffort] = useState(target.effort || 'auto');
@@ -41,13 +44,16 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<PendingAtomikRequest | null>(null);
   const [terminal, setTerminal] = useState(false);
+  const submitting = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const callbacks = useRef({ onSave, onClose, onQueued });
   useEffect(() => { callbacks.current = { onSave, onClose, onQueued }; }, [onSave, onClose, onQueued]);
   const member = CREW.find(c => c.id === role);
-  const selectedAssets = [...project.assets, ...(project.sharedAssets ?? [])].filter(asset => refs.includes(asset.id));
+  const selectedAssets = [...project.assets, ...(project.sharedAssets ?? [])].filter((asset, index, assets) => refs.includes(asset.id) && assets.findIndex(item => item.id === asset.id) === index);
   const referenceKey = JSON.stringify({ scope, projectId: project.id, assets: selectedAssets.map(asset => ({ id: asset.id, name: asset.name, kind: asset.kind, url: asset.url, version: asset.version, uploadId: asset.uploadId, generationId: asset.generationId })) });
   const readyFrames = frameState?.key === referenceKey && !frameState.error ? frameState.frames : null;
-  const quoteKey = JSON.stringify({ projectId: project.id, request, role, model, effort, depth, refs, requestId, ...(readyFrames?.length ? { videoFrames: readyFrames } : {}) });
+  const quoteKey = JSON.stringify({ ...(suite ? { suite } : {}), projectId: project.id, request, role, model, effort, depth, refs, requestId, ...(readyFrames?.length ? { videoFrames: readyFrames } : {}) });
   const shownQuote = quote?.key === quoteKey ? quote : null;
 
   useEffect(() => {
@@ -57,7 +63,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       if (!active) return;
       if (!saved) { setLoaded(true); return; }
       const input = atomikPendingInput(saved);
-      setPending(saved); setRequest(input.request); setRequestId(saved.requestId); setModel(input.model);
+      setSuite(input.suite); setPending(saved); setRequest(input.request); setRequestId(saved.requestId); setModel(input.model);
       setDepth(input.depth); setEffort(input.effort || 'auto'); setRole(input.role); setRefs(input.refs);
       try {
         const state = await studioRequest<{ jobs: AtomikRecoveryJob[] }>('/api/workbench/atomik?' + new URLSearchParams({ projectId: project.id, requestId: saved.requestId }), { headers: { 'X-Workbench-Scope': scope } });
@@ -112,7 +118,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
 
   function restore(record: PendingAtomikRequest) {
     const input = atomikPendingInput(record);
-    setPending(record); setRequest(input.request); setRequestId(record.requestId); setModel(input.model);
+    setSuite(input.suite); setPending(record); setRequest(input.request); setRequestId(record.requestId); setModel(input.model);
     setDepth(input.depth); setEffort(input.effort || 'auto'); setRole(input.role); setRefs(input.refs);
   }
   function accept(record: PendingAtomikRequest, job: AtomikRecoveryJob) {
@@ -123,7 +129,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       setError(job.error || 'This attempt ended without a usable proposal. Its status is saved in Activity.');
       return;
     }
-    onQueued(job.id); onClose();
+    if (mounted.current) { onQueued(job.id); onClose(); }
   }
   async function lookup(record: PendingAtomikRequest) {
     const state = await studioRequest<{ jobs: AtomikRecoveryJob[] }>('/api/workbench/atomik?' + new URLSearchParams({ projectId: project.id, requestId: record.requestId }), { headers: { 'X-Workbench-Scope': scope } });
@@ -131,11 +137,14 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   }
 
   async function submit() {
-    if (busy || terminal || !loaded || (!shownQuote && !pending)) return;
+    if (submitting.current || busy || terminal || !loaded || (!shownQuote && !pending)) return;
+    submitting.current = true;
     setBusy(true); setError('');
     try {
       if (!pending && !(await onSave())) throw new Error('Save your latest work before starting Atomik.');
+      if (!mounted.current) return;
       await withPendingAtomikLock(scope, project.id, async () => {
+        if (!mounted.current) return;
         const body = pending?.body ?? JSON.stringify({ ...JSON.parse(quoteKey), model: shownQuote!.model, effort: shownQuote!.effort ?? effort, maxCredits: shownQuote!.estimateCredits });
         // This synchronous durable write must succeed BEFORE the paid POST.
         const record = persistPendingAtomik(window.localStorage, scope, project.id, body);
@@ -166,23 +175,24 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
     } catch (e) {
       if (e instanceof AtomikPendingConflict) restore(e.pending);
       setError(e instanceof Error ? e.message : 'The request could not be confirmed. Recover the same request.');
-    } finally { setBusy(false); }
+    } finally { submitting.current = false; if (mounted.current) setBusy(false); }
   }
 
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
     <DialogContent className="ps ps-dialog" showCloseButton={!busy}>
       <DialogHeader>
-        <DialogTitle>{role === 'marketing' ? 'Run Marketing Studio' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
+        <DialogTitle>{suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Marketing Studio' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
         <DialogDescription>{project.name} · {refs.length} selected reference{refs.length === 1 ? '' : 's'}</DialogDescription>
       </DialogHeader>
       <div className="dialog-fields">
+        {suite && <p className="small-copy">Inspect the project, develop a proposal and check references in up to three reasoning steps. Review the resulting prompts and nodes before any media generation.</p>}
         {pending && <p className="small-copy">Recovering the previously submitted request. Its original model, instructions and price are preserved.</p>}
         <label className="field-label">Request
           <textarea aria-label="Atomik request" value={request} onChange={event => setRequest(event.target.value)} disabled={busy || !!pending || !loaded} maxLength={12000} />
         </label>
         <div className="generation-options">
           <div className="atomik-option-field atomik-option-model"><label htmlFor="atomik-request-model">Thinking model</label>
-            <ModelPicker id="atomik-request-model" label="Atomik request model" value={model} models={models} disabled={busy || !!pending || !loaded} onPick={value => { setModel(value); setEffort('auto'); }} />
+            <ModelPicker id="atomik-request-model" label="Atomik request model" value={model} models={suite ? models.filter(item => /^(anthropic|openai)\//.test(item.id)) : models} disabled={busy || !!pending || !loaded} onPick={value => { setModel(value); setEffort('auto'); }} />
           </div>
           <div className="atomik-option-field"><label htmlFor="atomik-request-effort">Reasoning effort</label>
             <EffortPicker id="atomik-request-effort" label="Atomik request effort" value={effort} model={models.find(option => option.id === model)} onPick={setEffort} disabled={busy || !!pending || !loaded} />

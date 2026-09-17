@@ -813,28 +813,22 @@ test("dirty workspace settings survive cancelled navigation and discard only aft
   expect(state.settingsWrites).toEqual([{ shotCapCredits: "75" }]);
 });
 
-test("mobile suite menu releases its modal before unsaved settings confirmation", async ({
+test("mobile suite tabs preserve unsaved settings confirmation", async ({
   page,
 }) => {
-  test.skip(page.viewportSize()!.width >= 760, "phone suite menu");
+  test.skip(page.viewportSize()!.width >= 760, "phone suite tabs");
   const state = await customerFixture(page);
   await page.goto("/settings");
   const workspaceName = page.getByLabel("Workspace name", { exact: true });
   await workspaceName.fill("Unsaved drawer edit");
-  const suiteMenu = page.getByRole("menu");
   const confirm = page.getByRole("dialog", {
     name: "Discard unsaved changes?",
     exact: true,
   });
-  const openSuite = () => page.getByRole("button", {
-    name: "Switch suite",
-    exact: true,
-  }).click();
+  const openSuite = () => page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Particl Studio", exact: true }).click();
 
   await openSuite();
-  await suiteMenu.getByRole("menuitem").filter({ hasText: "Particl" }).click();
   await expect(confirm).toBeVisible();
-  await expect(suiteMenu).not.toBeVisible();
   await expect(page).toHaveURL(/\/settings$/);
   // A normal click must work: the old drawer left this confirmation under its
   // pointer lock and focus trap, making both safe and destructive choices inert.
@@ -851,7 +845,6 @@ test("mobile suite menu releases its modal before unsaved settings confirmation"
   expect(state.events).toEqual([]);
 
   await openSuite();
-  await suiteMenu.getByRole("menuitem").filter({ hasText: "Particl" }).click();
   await expect(confirm).toBeVisible();
   await expect(page).toHaveURL(/\/settings$/);
   await confirm.getByRole("button", { name: "Discard and leave", exact: true }).click();

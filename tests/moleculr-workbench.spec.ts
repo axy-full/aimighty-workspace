@@ -52,7 +52,8 @@ async function fixture(page: Page, failSave = false) {
       url.pathname === "/api/workbench/atomik" ||
       url.pathname === "/api/workbench/development"
     )
-      return json({ models: [], jobs: [] });
+      return json({ configured: false, models: [], jobs: [] });
+    if (url.pathname === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "", music: "" } });
     if (url.pathname === "/api/jobs") return json({ generations: [] });
     if (url.pathname === "/api/workbench/engines")
       return json(
@@ -152,6 +153,7 @@ test("Moleculr saves product and cast, configures video, preserves original refe
     .fill("Keep the original chrome product shape.");
   await page.getByRole("link", { name: "Variants", exact: true }).click();
   await expect(page.getByText("2 combinations")).toBeVisible();
+  await page.getByLabel("Output", { exact: true }).selectOption("video");
   await page.getByRole("button", { name: "Configure generation" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
@@ -204,12 +206,12 @@ test("Moleculr saves product and cast, configures video, preserves original refe
     .click();
   await expect(page).toHaveURL(/stage=export/);
   await expect(
-    page.getByRole("navigation", { name: "Particl pages" }),
+    page.getByRole("navigation", { name: "Particl Studio pages" }),
   ).toBeVisible();
   await page.reload();
   await expect.poll(() => state.saves.length).toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Switch suite" }).click();
-  await page.getByRole("menuitem", { name: /Moleculr/ }).click();
+  await page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Moleculr Business Suite", exact: true }).click();
+  await page.getByRole("link", { name: "Product", exact: true }).click();
   await expect(page.getByLabel("Product name", { exact: true })).toHaveValue(
     "Mirror collection",
   );
@@ -226,10 +228,10 @@ test("suite navigation blocks leaving an unsaved project and keeps every origina
   await fixture(page, true);
   await page.goto("/workbench?project=suite-test&stage=brief");
   await expect(
-    page.getByRole("navigation", { name: "Particl pages" }),
+    page.getByRole("navigation", { name: "Particl Studio pages" }),
   ).toBeVisible();
   const links = page
-    .getByRole("navigation", { name: "Particl pages" })
+    .getByRole("navigation", { name: "Particl Studio pages" })
     .getByRole("link");
   await expect(links).toHaveCount(10);
   await expect(
@@ -238,8 +240,7 @@ test("suite navigation blocks leaving an unsaved project and keeps every origina
   await page
     .getByPlaceholder("Start with a thought, a script or a client brief…")
     .fill("An unsaved brief.");
-  await page.getByRole("button", { name: "Switch suite" }).click();
-  await page.getByRole("menuitem", { name: /Moleculr/ }).click();
+  await page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Moleculr Business Suite", exact: true }).click();
   await expect(
     page
       .getByText("Save conflict. Keep current work.", { exact: true })
@@ -252,7 +253,7 @@ test("suite navigation blocks leaving an unsaved project and keeps every origina
   await page.screenshot({ path: info.outputPath("particl-brief.png") });
 });
 
-test("new home and Subatomic research open existing approval controls without inference", async ({
+test("three-suite home and retired suite redirects preserve project without inference", async ({
   page,
 }, info) => {
   const state = await fixture(page);
@@ -260,10 +261,10 @@ test("new home and Subatomic research open existing approval controls without in
   await expect(
     page.getByRole("heading", { name: "What are we making?" }),
   ).toBeVisible();
-  await expect(page.locator(".suite-home-card")).toHaveCount(4);
+  await expect(page.locator(".suite-home-card")).toHaveCount(3);
   if (page.viewportSize()!.width < 760) {
     const header = await page.locator(".suite-header").boundingBox();
-    expect(header!.height).toBeLessThanOrEqual(96);
+    expect(header!.height).toBeLessThanOrEqual(140);
   }
   await expect(
     page.getByRole("link", { name: "Studio test Open production" }),
@@ -275,22 +276,12 @@ test("new home and Subatomic research open existing approval controls without in
   await expect(
     page.getByRole("link", { name: "Studio test Open production" }),
   ).toBeInViewport();
-  await expect(page.getByRole("button", { name: "Switch suite" })).toBeInViewport();
-  await expect(page.getByRole("navigation", { name: "Particl pages" })).toBeInViewport();
+  await expect(page.getByRole("navigation", { name: "Suites", exact: true })).toBeInViewport();
+  await expect(page.getByRole("navigation", { name: "Particl Studio pages" })).toBeInViewport();
   await page.goto("/subatomic?project=suite-test&page=trends");
-  await page
-    .getByLabel("Sources and observations")
-    .fill("A studio reference, based on our own research.");
-  await page
-    .getByLabel("Creative direction", { exact: true })
-    .fill("A repeatable fashion campaign format.");
-  await page.reload();
-  await expect(page.getByLabel("Sources and observations")).toHaveValue(
-    "A studio reference, based on our own research.",
-  );
-  await expect(
-    page.getByRole("link", { name: "Factory", exact: true }),
-  ).toHaveAttribute("href", /project=suite-test/);
-  await page.screenshot({ path: info.outputPath("subatomic-trends.png") });
+  await expect(page).toHaveURL(/\/atomik\?project=suite-test&page=runs/);
+  await expect(page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link")).toHaveCount(3);
+  await expect(page.getByRole("navigation", { name: "Atomik Agent pages", exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("atomik-redirect.png") });
   expect(state.mutations).toEqual([]);
 });

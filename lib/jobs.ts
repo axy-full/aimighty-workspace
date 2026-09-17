@@ -108,6 +108,8 @@ export function rowToGeneration(r: any): Generation {
   delete params.soulReferenceId;
   delete params.soulCredentialFingerprint;
   delete params.soulVendorCostUsd;
+  delete params.higgsfieldCredentialFingerprint;
+  delete params.higgsfieldVendorCostUsd;
   delete params.higgsfieldStillHandle;
   delete params.higgsfieldStillPollUntil;
   return {

@@ -1,5 +1,5 @@
 import type { TaskId } from "./tasks";
-import { SOUL_CHARACTER_MODEL_ID } from "./models";
+import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID } from "./models";
 
 /** No published/current Soul Character price was verified. Operators must first
  * verify access and both rates using the authenticated estimate endpoint.
@@ -54,6 +54,8 @@ export type VendorRates = {
 
 /** Keyed by model id. A model with no entry here cannot be priced. */
 export const VENDOR_RATES: Record<string, VendorRates> = {
+  // Live estimate only. An explicit empty table prevents the legacy image-price fallback.
+  [MARKETING_IMAGE_MODEL_ID]: { imagePricing: {}, imageRefInUsd: 0 },
   get [SOUL_CHARACTER_MODEL_ID]() {
     return { imagePricing: soulCharacterGenerationEnabled() ? soulCharacterRates()! : {}, imageRefInUsd: 0 };
   },

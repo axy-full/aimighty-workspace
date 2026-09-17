@@ -18,8 +18,7 @@ const descriptions = {
     "From the first brief to the final delivery. Ten connected production stages.",
   atomik: "Plan the work, choose the engines and approve each priced stage.",
   moleculr:
-    "Bring a product to market with consistent cast, formats and campaign variants.",
-  subatomic: "Reuse production recipes, run batches and review the output.",
+    "Build your brand, develop campaigns and create consistent campaign assets.",
 };
 export default function SuiteHome() {
   const session = useSession(),
@@ -53,7 +52,7 @@ export default function SuiteHome() {
             <i className="suite-dot" style={{ background: "#f0b23e" }} />
             {session.signedIn
               ? (session.workspace?.name ?? "Your workspace")
-              : "Four suites. One production workspace."}
+              : "Three suites. One connected workspace."}
           </span>
           <h1>
             {session.signedIn
@@ -184,7 +183,7 @@ export default function SuiteHome() {
             </div>
           ) : (
             <div className="suite-empty">
-              <p>Start a project to bring the four suites together.</p>
+              <p>Start a project to connect production, agents and brand building.</p>
               <Link className="suite-primary" href="/workbench?new=1">
                 Create a project
               </Link>

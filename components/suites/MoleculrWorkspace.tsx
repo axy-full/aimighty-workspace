@@ -16,12 +16,15 @@ import {
   MOLECULR_FORMATS,
   variantAssets,
   type MoleculrBrief,
+  type MoleculrGenerationOptions,
 } from "@/lib/workbench/moleculr";
 import { originalAssetDownload } from "@/lib/workbench/original-asset";
 import { AssetPreview } from "@/components/workbench/AssetPreview";
+import { MarketingPresets } from "./MarketingPresets";
 
 export function MoleculrWorkspace({
   project,
+  scope,
   page,
   enabled,
   marketing,
@@ -36,6 +39,7 @@ export function MoleculrWorkspace({
   onAgent,
 }: {
   project: Project;
+  scope: string;
   page: string;
   enabled: boolean;
   marketing: ReactNode;
@@ -49,6 +53,7 @@ export function MoleculrWorkspace({
     hook: string,
     castId: string | undefined,
     kind: "image" | "video",
+    options?: MoleculrGenerationOptions,
   ) => void;
   onSequence: (asset: Asset) => void;
   onAgent: () => void;
@@ -56,7 +61,7 @@ export function MoleculrWorkspace({
   const brief = project.moleculr ?? EMPTY_MOLECULR;
   const [hookIndex, setHookIndex] = useState(0);
   const [castId, setCastId] = useState("");
-  const [media, setMedia] = useState<"image" | "video">("video");
+  const [media, setMedia] = useState<"image" | "video">("image");
   const images = project.assets.filter((asset) => asset.kind === "image");
   const cast = images.filter(
     (asset) =>
@@ -91,6 +96,7 @@ export function MoleculrWorkspace({
   };
   const title =
     {
+      brand: "Build a brand worth knowing.",
       product: "The product, precisely.",
       cast: "Give the campaign a character.",
       format: "Find the right expression.",
@@ -103,17 +109,63 @@ export function MoleculrWorkspace({
         <div>
           <span className="suite-kicker">
             <i className="suite-dot" style={{ background: "#5CC8B4" }} />
-            Moleculr / {project.name}
+            Moleculr Business Suite / {project.name}
           </span>
           <h1>{title}</h1>
           <p>
-            Product, cast and campaign assets stay connected to this project.
+            Brand strategy, products, cast and campaign assets stay connected to
+            this project.
           </p>
         </div>
         <button className="suite-button" onClick={onAgent}>
-          Ask Atomik <ArrowUpRight size={15} />
+          Ask Atomik Agent <ArrowUpRight size={15} />
         </button>
       </header>
+      {page === "brand" && (
+        <>
+          <section className="suite-panel">
+            <div className="suite-section-heading">
+              <div>
+                <h2>Brand direction</h2>
+                <p>
+                  Define what the brand stands for, who it serves and what makes
+                  its offer distinctive. Develop positioning and campaigns with
+                  the project’s approved facts and references.
+                </p>
+              </div>
+              <span className="suite-badge">Saved with project</span>
+            </div>
+            <div className="suite-step-row">
+              {[
+                ["Position", "Audience, offer and the reason to choose you."],
+                [
+                  "Express",
+                  "Tone, visual language and consistent brand assets.",
+                ],
+                [
+                  "Produce",
+                  "Campaign images, films and reviewable variations.",
+                ],
+              ].map(([label, text]) => (
+                <div key={label}>
+                  <strong>{label}</strong>
+                  <span>{text}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <div className="suite-marketing-tools">{marketing}</div>
+          <footer className="suite-panel-footer">
+            <span>
+              Strategy and approved product claims guide the creative work.
+            </span>
+            <button className="suite-primary" onClick={() => onPage("product")}>
+              Build the product library
+              <ArrowUpRight size={15} />
+            </button>
+          </footer>
+        </>
+      )}
       {page === "product" && (
         <>
           <section className="suite-panel suite-product-profile">
@@ -366,7 +418,15 @@ export function MoleculrWorkspace({
               </button>
             </footer>
           </section>
-          <div className="suite-marketing-tools">{marketing}</div>
+          <MarketingPresets
+            project={project}
+            brief={brief}
+            scope={scope}
+            enabled={enabled}
+            hook={selectedHook}
+            onSettings={(settings) => set("marketing", settings)}
+            onConfigure={onGenerate}
+          />
         </>
       )}
       {page === "variants" && (
@@ -385,6 +445,25 @@ export function MoleculrWorkspace({
                 combinations
               </span>
             </div>
+            <div className="suite-fields">
+              <label>
+                Output
+                <select
+                  aria-label="Output"
+                  value={media}
+                  onChange={(event) =>
+                    setMedia(event.target.value as "image" | "video")
+                  }
+                >
+                  <option value="image">
+                    Campaign image · Higgsfield Marketing Studio
+                  </option>
+                  <option value="video">
+                    Campaign video · Particl engines
+                  </option>
+                </select>
+              </label>
+            </div>
             {hooks.length ? (
               <div className="suite-variant-controls">
                 <label>
@@ -400,46 +479,44 @@ export function MoleculrWorkspace({
                     ))}
                   </select>
                 </label>
-                <label>
-                  Cast
-                  <select
-                    value={selectedCast ?? ""}
-                    onChange={(e) => setCastId(e.target.value)}
-                  >
-                    {!brief.castAssetIds.length && (
-                      <option value="">Product only</option>
-                    )}
-                    {brief.castAssetIds.map((id) => (
-                      <option value={id} key={id}>
-                        {project.assets.find((asset) => asset.id === id)
-                          ?.name ?? "Missing reference"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Output
-                  <select
-                    value={media}
-                    onChange={(e) =>
-                      setMedia(e.target.value as "image" | "video")
+                {media === "video" && (
+                  <label>
+                    Cast
+                    <select
+                      value={selectedCast ?? ""}
+                      onChange={(e) => setCastId(e.target.value)}
+                    >
+                      {!brief.castAssetIds.length && (
+                        <option value="">Product only</option>
+                      )}
+                      {brief.castAssetIds.map((id) => (
+                        <option value={id} key={id}>
+                          {project.assets.find((asset) => asset.id === id)
+                            ?.name ?? "Missing reference"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {media === "video" && (
+                  <button
+                    className="suite-primary"
+                    disabled={!enabled}
+                    onClick={() =>
+                      onGenerate(selectedHook, selectedCast, media)
                     }
                   >
-                    <option value="video">Video</option>
-                    <option value="image">Image</option>
-                  </select>
-                </label>
-                <button
-                  className="suite-primary"
-                  disabled={!enabled}
-                  onClick={() => onGenerate(selectedHook, selectedCast, media)}
-                >
-                  Configure generation <ArrowUpRight size={15} />
-                </button>
+                    Configure generation <ArrowUpRight size={15} />
+                  </button>
+                )}
               </div>
             ) : (
               <div className="suite-empty">
-                <p>Add a campaign hook to start a variant.</p>
+                <p>
+                  {media === "image"
+                    ? "An image can start from your brand direction. Add hooks to develop distinct campaign variations."
+                    : "Add a campaign hook to start a video variant."}
+                </p>
                 <button
                   className="suite-button"
                   onClick={() => onPage("format")}
@@ -484,6 +561,17 @@ export function MoleculrWorkspace({
               </div>
             )}
           </section>
+          {media === "image" && (
+            <MarketingPresets
+              project={project}
+              brief={brief}
+              scope={scope}
+              enabled={enabled}
+              hook={selectedHook}
+              onSettings={(settings) => set("marketing", settings)}
+              onConfigure={onGenerate}
+            />
+          )}
           <OutputGallery assets={outputs} onSequence={onSequence} />
         </>
       )}

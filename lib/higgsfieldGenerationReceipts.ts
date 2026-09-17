@@ -1,7 +1,7 @@
 import { platformDb, platformReady } from "./platform";
 import { db, now } from "./db";
 import { requireTenant } from "./tenant";
-import { SOUL_CHARACTER_MODEL_ID } from "./models";
+import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
 import type { RenderHandle } from "./engines/types";
 import { generationSettlementReady } from "./generationSettlement";
 
@@ -17,9 +17,9 @@ async function receiptsReady() {
 
 /** An independent acknowledgement survives a tenant database write outage. */
 export async function saveHiggsfieldGenerationReceipt(id: string, handle: RenderHandle, fingerprint: string) {
-  if (handle.provider !== "higgsfield" || handle.model !== SOUL_CHARACTER_MODEL_ID ||
+  if (handle.provider !== "higgsfield" || !isHiggsfieldImageModel(handle.model) ||
       !fingerprint || handle.credentialFingerprint !== fingerprint || !handle.ref)
-    throw new Error("The accepted Soul request does not match its admitted connection.");
+    throw new Error("The accepted Higgsfield request does not match its admitted connection.");
   await receiptsReady();
   const saved = await platformDb().execute({
     sql: `INSERT INTO higgsfield_generation_receipts(id,workspace_id,handle_json,credential_fingerprint,updated_at)
@@ -28,7 +28,7 @@ export async function saveHiggsfieldGenerationReceipt(id: string, handle: Render
         AND credential_fingerprint=excluded.credential_fingerprint RETURNING id`,
     args: [id, requireTenant().id, JSON.stringify(handle), fingerprint, now()],
   });
-  if (!saved.rows.length) throw new Error("A different Soul request receipt already exists for this generation.");
+  if (!saved.rows.length) throw new Error("A different Higgsfield request receipt already exists for this generation.");
 }
 
 /** A receipt is complete only after the exact terminal bill was delivered. */
@@ -37,8 +37,8 @@ export async function settleHiggsfieldGenerationReceipt(id: string): Promise<boo
   await generationSettlementReady();
   const outcome = (await db().execute({
     sql: `SELECT g.status,s.event,s.settled_at FROM generations g JOIN generation_settlements s ON s.id=g.id
-      WHERE g.id=? AND g.provider='higgsfield' AND g.model=? AND g.status IN ('succeeded','failed','cancelled')`,
-    args: [id, SOUL_CHARACTER_MODEL_ID],
+      WHERE g.id=? AND g.provider='higgsfield' AND g.model IN (?,?) AND g.status IN ('succeeded','failed','cancelled')`,
+    args: [id, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID],
   })).rows[0];
   if (!outcome?.settled_at) return false;
   const event = JSON.parse(String(outcome.event));
@@ -55,16 +55,16 @@ export async function restoreHiggsfieldGenerationReceipt(id: string): Promise<vo
     FROM higgsfield_generation_receipts WHERE id=? AND workspace_id=? AND settled_at IS NULL`,
     args: [id, requireTenant().id] })).rows[0];
   if (!receipt) return;
-  const row = (await db().execute({ sql: `SELECT params,status FROM generations
-    WHERE id=? AND provider='higgsfield' AND model=? AND deleted=0`, args: [id, SOUL_CHARACTER_MODEL_ID] })).rows[0];
-  if (!row) throw new Error("An accepted Soul request has no recoverable generation record.");
+  const row = (await db().execute({ sql: `SELECT params,status,model FROM generations
+    WHERE id=? AND provider='higgsfield' AND model IN (?,?) AND deleted=0`, args: [id, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID] })).rows[0];
+  if (!row) throw new Error("An accepted Higgsfield request has no recoverable generation record.");
   const params = JSON.parse(String(row.params));
   const handle = JSON.parse(String(receipt.handle_json)) as RenderHandle;
-  if (!params.paidClaim || params.soulCredentialFingerprint !== receipt.credential_fingerprint ||
+  if (!params.paidClaim || (row.model === MARKETING_IMAGE_MODEL_ID ? params.higgsfieldCredentialFingerprint : params.soulCredentialFingerprint) !== receipt.credential_fingerprint ||
       handle.credentialFingerprint !== receipt.credential_fingerprint || handle.provider !== "higgsfield" ||
-      handle.model !== SOUL_CHARACTER_MODEL_ID || !handle.ref ||
+      !isHiggsfieldImageModel(handle.model) || handle.model !== row.model || !handle.ref ||
       (params.higgsfieldStillHandle && params.higgsfieldStillHandle.ref !== handle.ref))
-    throw new Error("The saved Soul acknowledgement does not match its original admission.");
+    throw new Error("The saved Higgsfield acknowledgement does not match its original admission.");
   if (await settleHiggsfieldGenerationReceipt(id)) return;
   // A prior ambiguous failure may have ended the execution slot. Only an exact
   // independent acknowledgement permits reopening it for GET-only collection.

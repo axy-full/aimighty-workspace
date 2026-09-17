@@ -1,4 +1,4 @@
-/* Four-suite handoff. Shared data and controls retain their original owners. */
+/* Shared suite workspace. Data and controls retain their original owners. */
 :root {
   --graphite-ground: #000;
   --graphite-panel: #0a0a0c;
@@ -552,7 +552,7 @@
 }
 .suite-home-cards {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin: 24px 0 34px;
 }
@@ -925,4 +925,30 @@
 @media(max-width:759px){
  .ps.four-suite-workbench .studio-redesign.is-home .project-bar-actions,
  .ps.four-suite-workbench .studio-redesign.is-welcome .project-bar-actions {display:contents;}
+}
+
+/* All suites are permanently visible in the top navigation. */
+@media(min-width:1001px){
+ .suite-header .studio-navigation.studio-navigation,.ps.four-suite-workbench .studio-redesign .project-bar{gap:12px;height:58px;min-height:58px;}
+ .suite-switcher .suite-top-tabs{min-height:57px;}
+}
+@media(max-width:1000px){
+ .suite-header .studio-navigation.studio-navigation,.suite-application .suite-header:not(.suite-account-header) .studio-navigation.studio-navigation{display:grid;grid-template-columns:auto minmax(0,1fr) 36px 36px;grid-template-rows:36px 46px 36px;gap:4px 8px;height:auto;min-height:138px;padding:6px 10px;}
+ .suite-header .suite-wordmark{grid-column:1;grid-row:1;}
+ .suite-header .studio-account{grid-column:2 / 5;grid-row:1;justify-self:end;}
+ .suite-header .suite-switcher,.suite-application .suite-header .suite-switcher{grid-column:1 / -1;grid-row:2;justify-self:stretch;min-width:0;}
+ .suite-header .suite-project-context,.suite-application .suite-header .suite-project-context{grid-column:1 / 3;grid-row:3;justify-content:flex-start;}
+ .suite-header .suite-assets-toggle,.suite-application .suite-header .suite-assets-toggle{grid-column:3;grid-row:3;}
+ .suite-header .suite-agent-toggle,.suite-application .suite-header .suite-agent-toggle{grid-column:4;grid-row:3;}
+ .suite-switcher .suite-top-tabs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.5fr);gap:2px;min-width:0;}
+ .suite-switcher .suite-top-tabs a{min-width:0;padding:5px 7px;gap:5px;white-space:normal;text-align:center;font-size:11px;line-height:1.3;}
+ .suite-switcher .suite-top-tabs .suite-dot{width:5px;height:5px;}
+ .ps.four-suite-workbench .studio-redesign .project-bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:36px 46px 36px;height:138px;min-height:138px;padding:6px 10px;gap:4px 8px;}
+ .ps.four-suite-workbench .studio-redesign .project-bar .suite-wordmark{grid-column:1;grid-row:1;}
+ .ps.four-suite-workbench .studio-redesign .project-bar .suite-switcher{grid-column:1 / -1;grid-row:2;justify-self:stretch;min-width:0;}
+ .ps.four-suite-workbench .studio-redesign .project-bar .project-breadcrumb{grid-column:1 / 3;grid-row:3;justify-content:flex-start;}
+ .ps.four-suite-workbench .studio-redesign .project-bar .project-bar-actions{display:contents;}
+ .ps.four-suite-workbench .studio-redesign .project-bar .studio-account{grid-column:2 / 4;grid-row:1;justify-self:end;}
+ .ps.four-suite-workbench .studio-redesign .project-bar .workflow-utilities{grid-column:3;grid-row:3;justify-self:end;display:flex;}
+ .ps.four-suite-workbench .studio-redesign .project-bar .save-label{display:none;}
 }

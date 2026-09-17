@@ -36,6 +36,7 @@ test('new-take engines exclude editing tools and put the economy still first', (
   expect(engines.some(item => item.id.includes('topaz'))).toBe(false);
   expect(engines.some(item => item.id.includes('reframe'))).toBe(false);
   expect(engines.some(item => item.stillTask)).toBe(false);
+  expect(engines.find(item => item.marketing)?.hidden).toBe(true);
   expect(engines.filter(item => item.kind === 'image')[0].id).toBe('gemini-3.1-flash-image');
 });
 

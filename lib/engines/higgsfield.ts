@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
 import type { EngineAdapter, PollResult, StillRenderRequest } from "./types";
-import { SOUL_CHARACTER_MODEL_ID } from "../models";
+import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "../models";
 import { estimateImageCostUsd } from "../vendorPricing";
 import { soulCharacterGenerationEnabled } from "../vendorRates";
 import { recoveryFetch } from "../recovery";
@@ -10,6 +10,8 @@ import {
   HiggsfieldHttpError, higgsfieldConfigured, higgsfieldCredentials,
   higgsfieldCredentialFingerprint,
 } from "../higgsfield";
+
+import { marketingSettings, marketingInput, marketingReferenceUrls, estimateMarketingInput, marketingPreflightError, marketingJson, MARKETING_PATH } from "../higgsfieldMarketing";
 
 const API_ORIGIN = "https://api.higgsfield.ai";
 const ENDPOINT = `${API_ORIGIN}/higgsfield-ai/soul/character`;
@@ -53,7 +55,7 @@ function sameCredentials(expected?: string): void {
   let current: string | undefined;
   try { current = higgsfieldCredentialFingerprint(); } catch { /* Missing credentials cannot submit or collect. */ }
   if (!expected || expected !== current)
-    throw new HiggsfieldHttpError(401, "The Higgsfield connection changed. Restore the original connection before collecting this Soul request.");
+    throw new HiggsfieldHttpError(401, "The Higgsfield connection changed. Restore the original connection before collecting this Higgsfield request.");
 }
 
 async function call(url: string, method: "POST" | "GET", body?: unknown): Promise<Record<string, unknown>> {
@@ -67,7 +69,7 @@ async function call(url: string, method: "POST" | "GET", body?: unknown): Promis
     await response.body?.cancel();
     throw new HiggsfieldHttpError(response.status, `Higgsfield ${method === "POST" ? "submission" : "status check"} returned ${response.status}.`);
   }
-  const data: unknown = await response.json();
+  const data: unknown = await marketingJson(response);
   if (!data || typeof data !== "object" || Array.isArray(data))
     throw new Error("Higgsfield returned an unreadable response. The submission will not be repeated.");
   return data as Record<string, unknown>;
@@ -87,33 +89,46 @@ function imageUrl(value: unknown): string {
 export const higgsfield: EngineAdapter = {
   id: "higgsfield",
   kinds: ["image"],
-  configured: () => higgsfieldConfigured() && soulCharacterGenerationEnabled(),
+  configured: () => higgsfieldConfigured(),
   estimate(req) {
+    if (req.kind === "image" && req.model.id === MARKETING_IMAGE_MODEL_ID) return req.higgsfieldVendorCostUsd ?? null;
     if (req.kind !== "image" || req.model.id !== SOUL_CHARACTER_MODEL_ID || !soulCharacterGenerationEnabled()) return null;
     return estimateImageCostUsd(req.model.id, req.size, 0)?.net ?? null;
   },
   async render(req) {
-    if (req.kind !== "image") throw new HiggsfieldHttpError(422, "Soul Character produces still images.");
-    const input = soulCharacterInput(req);
-    if (!soulCharacterGenerationEnabled())
-      throw new HiggsfieldHttpError(400, "Soul Character is awaiting verified availability and pricing.");
-    sameCredentials(req.soulCredentialFingerprint);
+    if (req.kind !== "image") throw new HiggsfieldHttpError(422, "Higgsfield produces still images.");
+    const marketing = req.model.id === MARKETING_IMAGE_MODEL_ID;
+    const fingerprint = marketing ? req.higgsfieldCredentialFingerprint : req.soulCredentialFingerprint;
+    sameCredentials(fingerprint);
+    let input: Record<string, unknown>;
+    if (marketing) {
+      // This is a read-only check before the sole paid POST. An unavailable or
+      // changed live price proves that this worker has submitted nothing.
+      try {
+        input = marketingInput(req.prompt, req.ratio, req.size, marketingSettings(req.marketing), await marketingReferenceUrls(req.references));
+        const fresh = await estimateMarketingInput(input as ReturnType<typeof marketingInput>);
+        if (!(req.higgsfieldVendorCostUsd! > 0) || fresh !== req.higgsfieldVendorCostUsd) throw new Error("changed quote");
+      } catch { throw marketingPreflightError(); }
+    } else {
+      input = soulCharacterInput(req);
+      if (!soulCharacterGenerationEnabled())
+        throw new HiggsfieldHttpError(400, "Soul Character is awaiting verified availability and pricing.");
+    }
     if (engineMock()) return { handle: {
-      provider: "higgsfield", model: SOUL_CHARACTER_MODEL_ID, ref: mockJobId("higgsfield"),
-      credentialFingerprint: req.soulCredentialFingerprint,
+      provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint,
     } };
     // Exactly one POST. Ambiguous failures retain the durable paid claim.
-    const result = await call(ENDPOINT, "POST", input);
+    const result = await call(marketing ? `${API_ORIGIN}/${MARKETING_PATH}` : ENDPOINT, "POST", input);
     const ref = typeof result.request_id === "string" ? result.request_id : "";
     if (!UUID.test(ref)) throw new Error("Higgsfield returned no usable request identifier. The submission will not be repeated.");
     // Persist an accepted UUID even if its status URL is malformed. Poll validates
     // the exact origin/path before sending credentials, leaving the id recoverable.
     const endpoint = typeof result.status_url === "string" ? result.status_url : undefined;
-    return { handle: { provider: "higgsfield", model: SOUL_CHARACTER_MODEL_ID, ref, endpoint,
-      credentialFingerprint: req.soulCredentialFingerprint } };
+    return { handle: { provider: "higgsfield", model: req.model.id, ref, endpoint,
+      credentialFingerprint: fingerprint } };
   },
   async poll(handle): Promise<PollResult> {
-    if (handle.provider !== "higgsfield" || handle.model !== SOUL_CHARACTER_MODEL_ID)
+    if (handle.provider !== "higgsfield" || !isHiggsfieldImageModel(handle.model))
       throw new Error("Unsupported Higgsfield request handle.");
     // Collection remains possible after an operator disables new submissions.
     sameCredentials(handle.credentialFingerprint);

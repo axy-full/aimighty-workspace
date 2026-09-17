@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
 import {
   Dialog,
@@ -33,8 +33,11 @@ type Model = {
   maxReferenceImages: number;
   maxReferenceVideos: number;
   soulIdentity?: boolean;
+  marketing?: boolean;
 };
+export type MarketingGenerationOptions = { quality: "low" | "medium" | "high"; enhancePrompt: boolean; presetId?: string };
 export type GenerationTarget = {
+  options?: { modelId?: string; marketing?: MarketingGenerationOptions; referenceAssetIds?: string[] };
   node: CanvasNode;
   prompt: string;
   refs: string[];
@@ -67,6 +70,11 @@ export async function studioRequest<T>(
     );
   return data as T;
 }
+function validMapping(value: unknown): value is { shotId: string; productionProjectId: string } {
+  if (!value || typeof value !== "object") return false;
+  const mapping = value as Record<string, unknown>;
+  return [mapping.shotId, mapping.productionProjectId].every(item => typeof item === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(item));
+}
 export function GenerationDialog({
   target,
   project,
@@ -84,6 +92,10 @@ export function GenerationDialog({
   onQueued: (id: string, kind?: "image" | "video" | "audio") => void;
   onAsset: (id: string, fields: Partial<Asset>) => void;
 }) {
+  const callbacks = useRef({ onSave });
+  useEffect(() => { callbacks.current = { onSave }; }, [onSave]);
+  const [preparationRevision, setPreparationRevision] = useState(0);
+  const [mapped, setMapped] = useState<{ shotId: string; productionProjectId: string } | null>(null);
   const storageId = pendingGenerationKey(scope, project.id, target.node.id);
   const [initial] = useState(() => {
     try {
@@ -106,6 +118,7 @@ export function GenerationDialog({
     initial.pending,
   );
   const saved = initial.pending ? JSON.parse(initial.pending.body) : null;
+  const [marketing, setMarketing] = useState<MarketingGenerationOptions>(saved?.marketing ?? target.options?.marketing ?? { quality: "high", enhancePrompt: false });
   const initialKind = initial.pending?.endpoint === "/api/audio" || (!initial.pending && target.node.mode === "Audio") ? "audio" : target.node.mode === "Video" || target.node.mode === "Image to video" ? "video" : "image";
   const [kind, setKind] = useState<"image" | "video" | "audio">(initialKind);
   const [audioSetup, setAudioSetup] = useState<NodeAudioSetup | null>(null);
@@ -116,7 +129,7 @@ export function GenerationDialog({
   const [instrumental, setInstrumental] = useState(saved?.instrumental ?? true);
   const [firstFrameId, setFirstFrameId] = useState<string>(saved?.firstFrameAssetId || "");
   const [models, setModels] = useState<Model[]>([]),
-    [modelId, setModelId] = useState(saved?.model || ""),
+    [modelId, setModelId] = useState(saved?.model || target.options?.modelId || ""),
     [resolution, setResolution] = useState(saved?.resolution || ""),
     [ratio, setRatio] = useState(saved?.ratio || project.aspect),
     [duration, setDuration] = useState(saved?.duration || 5),
@@ -126,32 +139,34 @@ export function GenerationDialog({
     [quote, setQuote] = useState<{
       key: string;
       credits: number | null;
+      fingerprint?: string;
     } | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(initial.error);
   const model = models.find((m) => m.id === modelId && m.kind === kind);
-  const boundRefs = target.refs
+  const boundRefs = useMemo(() => target.refs
     .map((id) => [...project.assets, ...(project.sharedAssets ?? [])].find((asset) => asset.id === id))
-    .filter((asset): asset is Asset => !!asset && ["image", "video"].includes(asset.kind));
+    .filter((asset): asset is Asset => !!asset && ["image", "video"].includes(asset.kind)), [target.refs, project.assets, project.sharedAssets]);
   const soulAssets = boundRefs.filter((asset, index, all) => asset.soulIdentityId && all.findIndex(a => a.soulIdentityId === asset.soulIdentityId) === index);
   const selectedSoulId = soulIdentityId || soulAssets[0]?.soulIdentityId || "";
   const boundSoulId = soulAssets[0]?.soulIdentityId;
   // A trained likeness supplies the face; its cover is not an extra style reference.
-  const refs = kind === "audio" ? [] : model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs;
+  const refs = useMemo(() => kind === "audio" ? [] : model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs, [kind, model?.soulIdentity, boundRefs]);
   const referenceQuery = mediaQuoteReferences(refs);
   const roleFor = (asset: Asset) => asset.kind === "video" ? "reference_video" : kind === "video" && asset.id === firstFrameId ? "first_frame" : "reference_image";
   const referenceProblem = kind === "video" && model ? videoReferenceProblem(model, refs.map(asset => ({ kind: asset.kind, role: roleFor(asset) }))) : null;
   const audioBody = JSON.stringify(nodeAudioBody({ task: audioTask, text: prompt, seconds: audioSeconds, instrumental,
     voiceId: voiceId || audioSetup?.voices[0]?.id || "", modelId: speechModel || audioSetup?.defaultSpeechModel || "" }));
-  const quoteKey = kind === "audio" ? audioBody : JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, firstFrameId, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined });
+  const quoteKey = kind === "audio" ? audioBody : JSON.stringify({ modelId, resolution, ratio, duration, references: referenceQuery, firstFrameId, soulIdentityId: model?.soulIdentity ? selectedSoulId : undefined, ...(model?.marketing ? { prompt, marketing, shotId: mapped?.shotId, projectId: mapped?.productionProjectId } : {}) });
   const cost = pending?.credits ?? (!referenceProblem && quote?.key === quoteKey ? quote.credits : null);
   useEffect(() => {
     studioRequest<{ models: Model[] }>("/api/workbench/engines", { headers: { "X-Workbench-Scope": scope } })
       .then((d) => {
         setModels(d.models);
-        const first = (initialKind === "image" && boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
+        const preferred = target.options?.modelId ? d.models.find(m => m.id === target.options?.modelId) : undefined;
+        const first = preferred || (!target.options?.modelId ? (initialKind === "image" && boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
           || d.models.find(m => m.kind === initialKind && !m.soulIdentity)
-          || (initialKind === "image" ? d.models.find(m => !m.soulIdentity) : undefined);
+          || (initialKind === "image" ? d.models.find(m => !m.soulIdentity) : undefined) : undefined);
         if (first && !initial.pending && initialKind !== "audio") {
           setKind(first.kind);
           setModelId(first.id);
@@ -168,7 +183,7 @@ export function GenerationDialog({
         }
       })
       .catch((e) => setError(e.message));
-  }, [initial.pending, initialKind, project.aspect, boundSoulId, scope]);
+  }, [initial.pending, initialKind, project.aspect, boundSoulId, scope, target.options?.modelId]);
   useEffect(() => {
     if (kind !== "audio") return;
     const abort = new AbortController();
@@ -191,25 +206,49 @@ export function GenerationDialog({
     return () => { clearTimeout(timer); abort.abort(); };
   }, [kind, pending, audioSetup?.configured, prompt, audioTask, audioBody, scope]);
   useEffect(() => {
-    if (kind === "audio" || !model || pending) return;
+    if (!model?.marketing || pending || mapped) return;
+    let active = true;
+    void (async () => {
+      if (!(await callbacks.current.onSave())) throw new Error("Save this campaign before requesting its quote.");
+      if (!active) return;
+      const value = await studioRequest<{ shotId: string; productionProjectId: string }>("/api/workbench/projects", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+        body: JSON.stringify({ action: "map-shot", projectId: project.id, nodeId: target.node.id }),
+      });
+      if (!validMapping(value)) throw new Error("The project mapping could not be verified. Refresh the quote before generating.");
+      if (active) setMapped(value);
+    })().catch(error => { if (active) setError(error.message); });
+    return () => { active = false; };
+  }, [model?.marketing, pending, mapped, project.id, target.node.id, scope, preparationRevision]);
+  useEffect(() => {
+    if (kind === "audio" || !model || pending || (model.marketing && !mapped)) return;
     const abort = new AbortController();
-    studioRequest<{ credits: number | null }>(
-      "/api/workbench/engines?" +
-        new URLSearchParams({
-          model: modelId,
-          resolution,
-          ratio,
-          duration: String(duration),
+    const timer = setTimeout(() => {
+      if (model.marketing) {
+        const references = refs.map(asset => {
+          const identity = mediaReferenceIdentity(asset);
+          if (!identity) return null;
+          return { ...identity, role: "reference_image" };
+        });
+        if (references.some(ref => !ref)) { setQuote(null); setError("Upload the product and cast images to this project before requesting a Higgsfield quote."); return; }
+        void studioRequest<{ estimatedCredits: number; fingerprint: string }>("/api/generate/quote", {
+          method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
+          body: JSON.stringify({ model: modelId, prompt, ratio, resolution, refine: false, marketing, references, projectId: mapped!.productionProjectId, shotId: mapped!.shotId }),
+        }).then(value => {
+          if (!Number.isFinite(value.estimatedCredits) || value.estimatedCredits < 0 || !value.fingerprint) throw new Error("Higgsfield did not return a valid price. Please refresh the quote.");
+          if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.estimatedCredits, fingerprint: value.fingerprint }); }
+        }).catch(error => { if (!abort.signal.aborted) { setQuote(null); setError(error.message); } });
+      } else void studioRequest<{ credits: number | null }>(
+        "/api/workbench/engines?" + new URLSearchParams({ model: modelId, resolution, ratio, duration: String(duration),
           ...(model.soulIdentity ? { soulIdentityId: selectedSoulId, projectId: project.id } : {}),
         }).toString() + '&' + referenceQuery,
-      { signal: abort.signal, headers: { "X-Workbench-Scope": scope } },
-    )
-      .then((d) => { setError(""); setQuote({ key: quoteKey, credits: d.credits }); })
-      .catch((e) => {
-        if (e.name !== "AbortError") setError(e.message);
-      });
-    return () => abort.abort();
-  }, [kind, model, modelId, resolution, ratio, duration, referenceQuery, quoteKey, pending, selectedSoulId, project.id, scope]);
+        { signal: abort.signal, headers: { "X-Workbench-Scope": scope } },
+      ).then(value => { if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.credits }); } })
+        .catch(error => { if (!abort.signal.aborted) { setQuote(null); setError(error.message); } });
+    }, model.marketing ? 450 : 0);
+    return () => { clearTimeout(timer); abort.abort(); };
+  }, [kind, model, modelId, resolution, ratio, duration, refs, referenceQuery, quoteKey, pending, selectedSoulId, project.id, scope, mapped, marketing, prompt, preparationRevision]);
+
   async function submit() {
     if (busy || initial.error || (!pending && ((kind !== "audio" && !model) || cost == null))) return;
     setBusy(true);
@@ -233,6 +272,7 @@ export function GenerationDialog({
             nodeId: target.node.id,
           }),
         });
+        if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
         const references = [];
         for (const a of refs) {
           const role = roleFor(a);
@@ -270,10 +310,11 @@ export function GenerationDialog({
           shotId: mapping.shotId,
           ratio,
           resolution,
-          duration,
+          ...(model!.marketing ? {} : { duration }),
           refine: false,
           maxCredits: cost!,
           references,
+          ...(model!.marketing ? { marketing, quoteFingerprint: quote?.fingerprint } : {}),
           ...(kind === "video" ? { firstFrameAssetId: firstFrameId } : {}),
           ...(model!.soulIdentity ? { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id } : {}),
         });
@@ -383,6 +424,12 @@ export function GenerationDialog({
               value={audioSeconds} disabled={busy || !!pending} onChange={event => setAudioSeconds(Math.max(audioTask === "music" ? 10 : 0.5, Math.min(audioTask === "music" ? 300 : 30, Number(event.target.value) || 10)))} /></label>}
             {audioTask === "music" && <label><input type="checkbox" checked={instrumental} disabled={busy || !!pending} onChange={event => setInstrumental(event.target.checked)} />Instrumental</label>}
           </div>}
+          {kind !== "audio" && model?.marketing && <div className="generation-options">
+            <label className="field-label">Image quality<select aria-label="Marketing image quality" value={marketing.quality} disabled={busy || !!pending || marketing.enhancePrompt} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingGenerationOptions['quality'] })}>
+              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+            </select></label>
+            <p className="muted small-copy">{marketing.enhancePrompt ? "Higgsfield preset enhancement · product first, optional cast second · high quality" : "Higgsfield Marketing Studio · direct creative direction"}. Price is checked live before rendering.</p>
+          </div>}
           {kind !== "audio" && model?.soulIdentity && (
             <div className="generation-options">
               <label className="field-label">Soul identity
@@ -408,7 +455,7 @@ export function GenerationDialog({
               value={prompt}
               disabled={busy || !!pending}
               onChange={(e) => setPrompt(e.target.value)}
-              maxLength={kind === "audio" ? 5000 : 10000}
+              maxLength={kind === "audio" || model?.marketing ? 5000 : 10000}
             />
           </label>
           {kind !== "audio" && <div className="generation-options">
@@ -464,6 +511,7 @@ export function GenerationDialog({
           {error && (
             <p role="alert" className="save-problem">
               {error}
+              {!pending && !initial.error && <button type="button" className="btn" disabled={busy} onClick={() => { setQuote(null); setError(""); setPreparationRevision(value => value + 1); }}>Refresh quote</button>}
             </p>
           )}
           <p className="muted small-copy">

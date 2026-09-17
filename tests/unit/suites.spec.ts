@@ -63,6 +63,7 @@ test("Particl retains persisted stage IDs and numbered docks use the brief seque
     "Deliver",
   ]);
   expect(PAGES.moleculr.map((page) => page.id)).toEqual([
+    "brand",
     "product",
     "cast",
     "format",
@@ -70,10 +71,9 @@ test("Particl retains persisted stage IDs and numbered docks use the brief seque
     "publish",
   ]);
   expect(SUITES.map((suite) => suite.name)).toEqual([
-    "Particl",
-    "Atomik",
-    "Moleculr",
-    "Subatomic",
+    "Particl Studio",
+    "Atomik Agent",
+    "Moleculr Business Suite",
   ]);
 });
 
@@ -113,7 +113,7 @@ test("suite detection respects nested routes and does not match path prefixes", 
     expect(suiteForRoute(path, marketing)).toBe("atomik");
   }
   for (const path of ["/subatomic", "/subatomic/", "/subatomic/factory"]) {
-    expect(suiteForRoute(path, marketing)).toBe("subatomic");
+    expect(suiteForRoute(path, marketing)).toBe("atomik");
   }
   expect(suiteForRoute("/workbench", marketing)).toBe("moleculr");
   for (const path of ["/", "/atomik-other", "/subatomically", "/library", "/workbench/movie"]) {

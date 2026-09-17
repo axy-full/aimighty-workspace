@@ -99,6 +99,8 @@ export type ModelDef = {
   hidden?: boolean;
   /** Requires a tenant-owned, completed Soul identity resolved by admission. */
   soulIdentity?: boolean;
+  /** Uses live Higgsfield Marketing Studio quotes and preset discovery. */
+  marketing?: boolean;
   /** Which tasks this engine can be asked for. Absent means generate only.
    *  Editing and extension are Seedance 2.5 features: 2.0's own ceilings
    *  (three reference videos, fifteen seconds combined) show it was never
@@ -141,6 +143,9 @@ export type ModelDef = {
   /** One line on what the engine is for, next to it in the composer's menu. */
   use?: string;
 };
+
+export const MARKETING_IMAGE_MODEL_ID = "higgsfield/marketing-studio-image";
+export const isHiggsfieldImageModel = (id: string) => id === SOUL_CHARACTER_MODEL_ID || id === MARKETING_IMAGE_MODEL_ID;
 
 export const SOUL_CHARACTER_MODEL_ID = "hf-soul-character";
 
@@ -404,6 +409,13 @@ export const MODELS: ModelDef[] = [
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 0,
     note: "Google's quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
+  },
+  {
+    id: MARKETING_IMAGE_MODEL_ID, label: "Marketing Studio Image", short: "Marketing", family: "higgsfield-marketing",
+    provider: "higgsfield", kind: "image", billing: "image", marketing: true, hidden: true, paramStyle: "fields",
+    resolutions: ["2k", "1k", "4k"], ratios: ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"],
+    durations: [], supportsAudio: false, supportsCameraFixed: false, maxReferenceImages: 16, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
+    use: "Product and campaign imagery with live pricing and optional marketing presets.",
   },
   {
     id: SOUL_CHARACTER_MODEL_ID,

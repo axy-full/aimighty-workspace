@@ -17,7 +17,7 @@ export async function openWorkbenchProject(page: Page) {
   ).toBeEnabled();
   await expect(
     page
-      .getByRole("navigation", { name: "Particl pages", exact: true })
+      .getByRole("navigation", { name: "Particl Studio pages", exact: true })
       .getByRole("link", { name: "Rig", exact: true }),
   ).toBeEnabled();
   if (await page.locator(".studio-redesign.is-home").isVisible()) {
@@ -50,7 +50,7 @@ export async function goWorkbenchStage(page: Page, idOrLabel: string) {
   if (page.viewportSize()!.width < 760) await openWorkbenchProject(page);
   const label = PAGES.particl.find((value) => value.id === stage.id)!.label;
   const link = page
-    .getByRole("navigation", { name: "Particl pages", exact: true })
+    .getByRole("navigation", { name: "Particl Studio pages", exact: true })
     .getByRole("link", { name: label, exact: true });
   await expect(link).toBeEnabled();
   await link.click();

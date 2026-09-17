@@ -48,7 +48,8 @@ test("Soul generation has no price or availability without both verified configu
     expect(soulCharacterGenerationEnabled()).toBe(false);
     expect(soulCharacterRates()).toBeNull();
     expect(estimateImageCostUsd(req.model.id, "720p")).toBeNull();
-    expect(higgsfield.configured()).toBe(false);
+    // The provider can still serve Marketing Studio; the Soul model stays gated.
+    expect(higgsfield.configured()).toBe(true);
     await expect(higgsfield.render(req)).rejects.toThrow(/availability and pricing/);
   }
   process.env.HF_SOUL_CHARACTER_USD_1080P = "0.24";
