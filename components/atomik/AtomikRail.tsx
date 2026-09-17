@@ -218,10 +218,9 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
       <ContextChip dismiss={a.clear} />
       <MarketingStudioEntry />
       {a.messages.map((m) => (
-        <div key={m.id} className={`flex flex-col gap-[6px] ${m.role === "user" ? "items-end" : "items-start"}`}>
+        <div key={m.id} className="suite-agent-log-entry">
           <Mono>{m.role === "user" ? "You" : "Atomik"}</Mono>
-          <span className={`max-w-[340px] rounded-card px-[12px] py-[10px] text-[13.5px] leading-[1.45] ${
-            m.role === "user" ? "bg-ink text-ground" : "border border-[rgba(245,246,248,.1)] bg-card text-ink"}`} style={{ textWrap: "pretty" }}>
+          <span className="suite-agent-log-text" style={{ textWrap: "pretty" }}>
             {m.text}
           </span>
         </div>

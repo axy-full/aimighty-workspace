@@ -142,19 +142,16 @@ test("studio exposes Gen, collective Library and workspace navigation with the o
   await signInLocally(page.request);
   await fixture(page);
   await page.goto("/workbench");
-  const sections = page.getByRole("navigation", { name: "Project tools", exact: true }).filter({visible:true});
-  await expect(sections.getByRole("button", { name: "Gen", exact: true })).toBeVisible();
-  await expect(sections.getByRole("button", { name: "Library", exact: true })).toBeVisible();
-  await expect(sections.getByRole("button", { name: "Workspace", exact: true })).toBeVisible();
+  const sections = page.getByRole("navigation", { name: "Rooms", exact: true });
+  await expect(sections.getByRole("link", { name: "Make", exact: true })).toBeVisible();
+  await expect(sections.getByRole("link", { name: "Library", exact: true })).toBeVisible();
+  await expect(sections.getByRole("link", { name: "Workspace", exact: true })).toBeVisible();
   await expect(page.getByRole("button",{name:"All assets",exact:true}).filter({visible:true})).toBeVisible();
   const mark = page.getByRole("button", { name: "Toggle Atomik creative engine", exact: true }).locator("svg.atom-mark");
   await expect(mark).toHaveAttribute("viewBox", "20 20 160 160");
   expect(await mark.locator("circle").evaluateAll(dots => dots.map(dot => ["cx", "cy", "r"].map(key => Number(dot.getAttribute(key)))))).toEqual(RING_DOTS);
-  expect(await mark.evaluate(el => ({ fill: getComputedStyle(el).fill, stroke: getComputedStyle(el).stroke }))).toEqual({ fill: "rgb(245, 245, 247)", stroke: "none" });
+  expect(await mark.evaluate(el => ({ fill: getComputedStyle(el).fill, stroke: getComputedStyle(el).stroke }))).toEqual({ fill: "rgb(237, 237, 234)", stroke: "none" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  if (page.viewportSize()!.width < 760) {
-    await page.getByRole("button", { name: "Open workspace navigation", exact: true }).click();
-  }
   await page.getByRole("button", { name: "Workspace menu", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Credits & plan", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("studio-sections-and-account.png") });
@@ -178,25 +175,21 @@ test("navigation waits for hydration and initial load, then accepts the first wo
     await route.fallback();
   });
   await page.goto("/workbench",{waitUntil:"commit"});
-  const workflow=mobile ? page.getByRole("navigation",{name:"Mobile studio navigation"}).getByRole("button",{name:"Workflow",exact:true}) : page.locator(".workflow-stages").getByRole("tab").last();
+  const workflow=page.getByRole("navigation",{name:"Particl pages",exact:true}).getByRole("link",{name:"Deliver",exact:true});
   await expect(workflow).toBeVisible();
   await expect(workflow).toBeDisabled();
+  await expect(workflow).not.toHaveAttribute("href");
   releaseScripts();
   await expect.poll(()=>projectRequested).toBeTruthy();
-  if (mobile) {
-    // Hydration reveals the workspace dock; the project is still loading.
-    await expect(page.locator(".phone-home-dock")).toBeVisible();
-    await expect(page.locator(".home-current")).toBeDisabled();
-  } else await expect(workflow).toBeDisabled();
+  await expect(workflow).toBeDisabled();
+  await expect(workflow).not.toHaveAttribute("href");
+  if (mobile) await expect(page.locator(".home-current")).toBeDisabled();
   releaseProject();
-  if (mobile) await openWorkbenchProject(page);
   await expect(workflow).toBeEnabled();
   await workflow.click();
-  if (!mobile) {
-    await expect(page.getByRole("button", {name: "Open movie renderer", exact: true})).toBeVisible();
-    return;
-  }
-  await expect(page.getByRole("dialog",{name:"Project workflow"})).toBeVisible();
+  await expect(workflow).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("button", {name: "Open movie renderer", exact: true})).toBeVisible();
+  if (!mobile) return;
 
   // A verified workspace with no draft still completes initialization and keeps recovery/navigation available.
   await page.route("**/api/workbench/projects?*",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({projects:[],productions:[],revision:0})}));
@@ -205,7 +198,8 @@ test("navigation waits for hydration and initial load, then accepts the first wo
   await page.getByRole("button", { name: "Explore sample", exact: true }).click();
   await expect(workflow).toBeEnabled();
   await workflow.click();
-  await expect(page.getByRole("dialog",{name:"Project workflow"})).toBeVisible();
+  await expect(workflow).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("button", {name: "Open movie renderer", exact: true})).toBeVisible();
 });
 
 test("responsive production: save, stages, node versions, jobs, refresh and editorial export", async ({ page }, testInfo) => {
@@ -214,10 +208,10 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/workbench");
-  await expect(page.locator(page.viewportSize()!.width<760?".phone-project-header":".project-bar")).toBeVisible();
+  await expect(page.locator(".project-bar")).toBeVisible();
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await openWorkbenchProject(page);
-  if (mobile) await expect(page.getByRole("navigation", { name: "Mobile studio navigation" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Particl pages", exact: true })).toBeVisible();
   await goStage(page, "Brief & ideas");
   const title = `Browser production ${testInfo.project.name}`;
   await page.getByLabel("Project title", { exact: true }).fill(title);

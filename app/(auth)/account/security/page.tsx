@@ -4,9 +4,7 @@ import {
   accountScopeFor,
   workbenchScopeFor,
 } from "@/lib/workbench/request-scope";
-import StudioNavigation, {
-  StudioDock,
-} from "@/components/studio/StudioNavigation";
+import SuiteAccountShell from "@/components/suites/SuiteAccountShell";
 import AccountSecurity from "@/components/management/AccountSecurity";
 export const metadata = { title: "Account security · Particl" };
 export const dynamic = "force-dynamic";
@@ -25,18 +23,18 @@ export default async function AccountSecurityPage() {
     credits: null,
   };
   return (
-    <div className="shell studio-application">
-      <StudioNavigation
-        initialAccount={account}
-        active="workspace"
-        requestScope={scope}
-      />
-      <div className="shell-body">
-        <div className="shell-page">
-          <AccountSecurity key={scope} scope={scope} name={context.user.name} requiredBy={context.mfaRequired ? context.workspace?.name : undefined} />
-        </div>
-      </div>
-      <StudioDock />
-    </div>
+    <Suspense
+      fallback={<div className="management">Loading account security…</div>}
+    >
+      <SuiteAccountShell initialAccount={account} requestScope={scope}>
+        <AccountSecurity
+          key={scope}
+          scope={scope}
+          name={context.user.name}
+          requiredBy={context.mfaRequired ? context.workspace?.name : undefined}
+        />
+      </SuiteAccountShell>
+    </Suspense>
   );
 }
+import { Suspense } from "react";

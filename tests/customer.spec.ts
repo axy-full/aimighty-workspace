@@ -496,16 +496,6 @@ test("customer can choose annual plan, verify email, review billing and start a 
     .click();
   await expect.poll(() => state.draft?.name).toBe("Our first commercial");
   await expect(page.locator(".sample-preview-banner")).toHaveCount(0);
-  if ((page.viewportSize()?.width ?? 1440) <= 759) {
-    await page
-      .getByRole("navigation", { name: "Mobile studio navigation" })
-      .getByRole("button", { name: "Workflow", exact: true })
-      .click();
-    await page
-      .getByRole("dialog", { name: "Project workflow", exact: true })
-      .getByRole("button", { name: "Open workspace navigation", exact: true })
-      .click();
-  }
   await page
     .getByRole("button", { name: "Workspace menu", exact: true })
     .click();
@@ -823,28 +813,28 @@ test("dirty workspace settings survive cancelled navigation and discard only aft
   expect(state.settingsWrites).toEqual([{ shotCapCredits: "75" }]);
 });
 
-test("mobile workspace drawer releases its modal before unsaved settings confirmation", async ({
+test("mobile suite menu releases its modal before unsaved settings confirmation", async ({
   page,
 }) => {
-  test.skip(page.viewportSize()!.width >= 760, "phone workspace drawer");
+  test.skip(page.viewportSize()!.width >= 760, "phone suite menu");
   const state = await customerFixture(page);
   await page.goto("/settings");
   const workspaceName = page.getByLabel("Workspace name", { exact: true });
   await workspaceName.fill("Unsaved drawer edit");
-  const drawer = page.locator(".phone-workspace-drawer");
+  const suiteMenu = page.getByRole("menu");
   const confirm = page.getByRole("dialog", {
     name: "Discard unsaved changes?",
     exact: true,
   });
-  const openDrawer = () => page.getByRole("button", {
-    name: "Open workspace navigation",
+  const openSuite = () => page.getByRole("button", {
+    name: "Switch suite",
     exact: true,
   }).click();
 
-  await openDrawer();
-  await drawer.getByRole("button", { name: "Studio", exact: true }).click();
+  await openSuite();
+  await suiteMenu.getByRole("menuitem").filter({ hasText: "Particl" }).click();
   await expect(confirm).toBeVisible();
-  await expect(drawer).not.toBeVisible();
+  await expect(suiteMenu).not.toBeVisible();
   await expect(page).toHaveURL(/\/settings$/);
   // A normal click must work: the old drawer left this confirmation under its
   // pointer lock and focus trap, making both safe and destructive choices inert.
@@ -853,20 +843,19 @@ test("mobile workspace drawer releases its modal before unsaved settings confirm
   expect(state.settingsWrites).toEqual([]);
   expect(state.events).toEqual([]);
 
-  await openDrawer();
-  await drawer.getByRole("button", { name: "Workspace menu", exact: true }).click();
+  await page.getByRole("button", { name: "Workspace menu", exact: true }).click();
   await page.getByRole("menuitem", { name: "Second Studio", exact: true }).click();
   await expect(confirm).toBeVisible();
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(workspaceName).toHaveValue("Unsaved drawer edit");
   expect(state.events).toEqual([]);
 
-  await openDrawer();
-  await drawer.getByRole("button", { name: "Studio", exact: true }).click();
+  await openSuite();
+  await suiteMenu.getByRole("menuitem").filter({ hasText: "Particl" }).click();
   await expect(confirm).toBeVisible();
   await expect(page).toHaveURL(/\/settings$/);
   await confirm.getByRole("button", { name: "Discard and leave", exact: true }).click();
-  await expect(page).toHaveURL(/\/workbench$/);
+  await expect(page).toHaveURL(/\/workbench(?:\?stage=brief)?$/);
   expect(state.settingsWrites).toEqual([]);
   expect(state.events).toEqual([]);
   await page.goto("/settings");
@@ -988,12 +977,12 @@ test("opening Gen drains the latest studio edit before leaving", async ({
     .getByLabel("Project title", { exact: true })
     .fill("Latest edit before Gen");
   await page
-    .getByRole("navigation", { name: "Studio sections" })
-    .getByRole("link", { name: "Gen", exact: true })
+    .getByRole("navigation", { name: "Rooms", exact: true })
+    .getByRole("link", { name: "Make", exact: true })
     .click();
   await expect(page).toHaveURL(/workbench/);
   expect(state.draft?.name).toBe("Navigation production");
-  await page.route("**/generate", (route) =>
+  await page.route("**/generate?*", (route) =>
     route.fulfill({
       contentType: "text/html",
       body: "<h1>Gen destination fixture</h1>",

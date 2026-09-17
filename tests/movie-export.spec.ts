@@ -315,7 +315,7 @@ test("timeline scrubbing and the final movie use the same saved multitrack stere
     ],
   }));
   await page.goto("/workbench");
-  await page.locator(".workflow-stages").getByRole("tab").nth(8).click();
+  await goWorkbenchStage(page, "edit");
   const playhead = page.getByRole("slider", { name: "Sequence playhead" });
   await playhead.focus();
   await playhead.press("End");

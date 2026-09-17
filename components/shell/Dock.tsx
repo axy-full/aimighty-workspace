@@ -1,3 +1,3 @@
 "use client";
 
-export { StudioDock as default } from "@/components/studio/StudioNavigation";
+export { SuiteDock as default } from "@/components/suites/SuiteNavigation";

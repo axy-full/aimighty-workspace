@@ -91,7 +91,7 @@ async function fixture(page: Page, rememberedOnly: boolean) {
 }
 
 for (const rememberedOnly of [false, true]) {
-  test(`global Atomik opens Marketing Studio with ${rememberedOnly ? "the account-scoped remembered draft" : "the URL draft before remembered or production IDs"}`, async ({
+  test(`global Atomik opens Moleculr with ${rememberedOnly ? "the account-scoped remembered draft" : "the URL draft before remembered or production IDs"}`, async ({
     page,
   }, info) => {
     test.skip(
@@ -102,9 +102,9 @@ for (const rememberedOnly of [false, true]) {
     page.on("pageerror", (error) => errors.push(error.message));
     const state = await fixture(page, rememberedOnly);
     const entry = page
-      .getByRole("link", { name: "Open Marketing Studio", exact: true })
+      .getByRole("link", { name: "Open Moleculr", exact: true })
       .filter({ visible: true });
-    const href = `/workbench?project=${state.draft.id}&atomik=marketing`;
+    const href = `/workbench?project=${state.draft.id}&suite=moleculr&page=product`;
     await expect(entry).toHaveAttribute("href", href);
     await expect(entry).toBeVisible();
     if (rememberedOnly) {
@@ -153,17 +153,13 @@ for (const rememberedOnly of [false, true]) {
     await entry.focus();
     await entry.press("Enter");
     await expect(page).toHaveURL(href);
+    await expect(page.locator('[data-suite="moleculr"]')).toBeVisible();
     await expect(
-      page.getByRole("tab", { name: "Marketing", exact: true }),
-    ).toHaveAttribute("data-state", "active");
-    const marketing = page.getByRole("region", {
-      name: "Marketing Studio",
-      exact: true,
-    });
-    await expect(marketing).toBeVisible();
-    await expect(marketing).toContainText(
-      `${state.draft.name} · Brief, script and selected references`,
-    );
+      page
+        .getByRole("navigation", { name: "Moleculr pages" })
+        .getByRole("link", { name: "Product", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(page.locator(".project-bar")).toContainText(state.draft.name);
     expect(state.paidRequests).toBe(0);
     expect(errors).toEqual([]);
     await page.screenshot({ path: info.outputPath("marketing-entry.png") });

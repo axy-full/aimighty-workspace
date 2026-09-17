@@ -1,2 +1,4 @@
-import { redirect } from "next/navigation";
-export default function Home() { redirect("/workbench"); }
+import SuiteHome from "@/components/suites/SuiteHome";
+export default function Home() {
+  return <SuiteHome />;
+}
