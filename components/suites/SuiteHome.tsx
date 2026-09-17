@@ -11,6 +11,7 @@ import { useAtomik } from "@/components/atomik/AtomikProvider";
 import { setAtomikRail } from "@/lib/atomikRail";
 import { RequestAccessButton } from "@/components/RequestAccess";
 import { SUITES, suiteHref } from "@/lib/suites";
+import { useSuiteProject } from "./SuiteProjectContext";
 
 const descriptions = {
   particl:
@@ -24,8 +25,9 @@ export default function SuiteHome() {
   const session = useSession(),
     atomik = useAtomik(),
     query = useSearchParams(),
+    suiteProject = useSuiteProject(),
     production = useProject();
-  const projectId = query.get("project") || undefined;
+  const projectId = query.get("project") || suiteProject.projectId;
   const drafts = useApi<{
     projects: { id: string; name: string; updatedAt: string }[];
     project: { id: string; productionProjectId?: string } | null;
@@ -37,10 +39,11 @@ export default function SuiteHome() {
     session.requestScope,
   );
   const readyContext =
-    !projectId ||
-    (drafts.data?.project?.id === projectId &&
-      !!drafts.data.project.productionProjectId &&
-      production.current?.id === drafts.data.project.productionProjectId);
+    suiteProject.ready &&
+    (!projectId ||
+      (drafts.data?.project?.id === projectId &&
+        !!drafts.data.project.productionProjectId &&
+        production.current?.id === drafts.data.project.productionProjectId));
   const recent = drafts.data?.projects ?? [];
   return (
     <div className="suite-workspace suite-home">

@@ -128,6 +128,20 @@ test("shared suite shell keeps draft context, account controls and guarded keybo
   await expect(
     rooms.getByRole("link", { name: "Make", exact: true }),
   ).toHaveAttribute("href", "/generate?project=" + project.id);
+  await rooms.getByRole("link", { name: "Projects", exact: true }).click();
+  await expect(page).toHaveURL("/");
+  await expect(page.getByRole("heading", { name: "What are we making?", exact: true })).toBeVisible();
+  // The home route has no project query. It must retain this tab's captured
+  // selection, even though another tab changed the persisted preference above.
+  for (const suite of SUITES)
+    await expect(page.locator(".suite-home-card").filter({ hasText: suite.name })).toHaveAttribute("href", suiteHref(suite.id, project.id));
+  await expect(page.getByRole("link", { name: "Break down a screenplay", exact: true })).toHaveAttribute("href", suiteHref("particl", project.id, "script"));
+  await expect(page.getByRole("link", { name: "Start from a saved recipe", exact: true })).toHaveAttribute("href", suiteHref("atomik", project.id, "recipes"));
+  await expect(page.getByRole("textbox", { name: "Your next production brief", exact: true })).toBeEnabled();
+  await page.locator(".suite-home-card").filter({ hasText: "Subatomic" }).click();
+  await expect(page).toHaveURL(suiteHref("subatomic", project.id));
+  await expect(page.getByRole("heading", { name: "A signal worth making.", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Sources and observations", exact: true })).toBeEnabled();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth + 1,

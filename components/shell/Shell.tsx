@@ -14,6 +14,7 @@ import AtomikRail from "@/components/atomik/AtomikRail";
 import AtomikSheet from "@/components/atomik/AtomikSheet";
 import { AtomikMark } from "@/components/AtomikMark";
 import { RoomRail } from "@/components/suites/SuiteNavigation";
+import { SuiteProjectProvider } from "@/components/suites/SuiteProjectContext";
 import { PAGES, roomForRoute, suiteForRoute } from "@/lib/suites";
 import Header from "./Header";
 import { useMobileViewport } from "@/components/workbench/mobile-ui";
@@ -59,6 +60,8 @@ function SuiteShell({ children }: { children: React.ReactNode }) {
     explicitProject ||
     (remembered.scope === requestScope ? remembered.id : "") ||
     undefined;
+  const projectReady =
+    !!explicitProject || !requestScope || remembered.scope === requestScope;
   const suite = suiteForRoute(path, query),
     room = roomForRoute(path);
   const activePage =
@@ -81,42 +84,44 @@ function SuiteShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", key);
   }, []);
   return (
-    <AtomikProvider>
-      <div
-        className="shell studio-application suite-application"
-        data-suite={suite}
-      >
-        <Header suite={suite} projectId={projectId} />
-        <SuspendedBar />
-        <div className="shell-body">
-          {suite === "particl" && (
-            <RoomRail active={room} projectId={projectId} />
-          )}
-          <div className="shell-page">{children}</div>
-          {!focusedSection && (
-            <>
-              <div className="suite-desktop-atomik">
-                {rail.open ? (
-                  <AtomikRail />
-                ) : (
-                  <button
-                    className="suite-atomik-collapse"
-                    aria-label="Open Atomik"
-                    onClick={rail.expand}
-                  >
-                    <AtomikMark size={19} />
-                    <span>Atomik</span>
-                  </button>
-                )}
-              </div>
-              <div className="suite-phone-atomik">
-                <AtomikSheet />
-              </div>
-            </>
-          )}
+    <SuiteProjectProvider projectId={projectId} ready={projectReady}>
+      <AtomikProvider>
+        <div
+          className="shell studio-application suite-application"
+          data-suite={suite}
+        >
+          <Header suite={suite} projectId={projectId} />
+          <SuspendedBar />
+          <div className="shell-body">
+            {suite === "particl" && (
+              <RoomRail active={room} projectId={projectId} />
+            )}
+            <div className="shell-page">{children}</div>
+            {!focusedSection && (
+              <>
+                <div className="suite-desktop-atomik">
+                  {rail.open ? (
+                    <AtomikRail />
+                  ) : (
+                    <button
+                      className="suite-atomik-collapse"
+                      aria-label="Open Atomik"
+                      onClick={rail.expand}
+                    >
+                      <AtomikMark size={19} />
+                      <span>Atomik</span>
+                    </button>
+                  )}
+                </div>
+                <div className="suite-phone-atomik">
+                  <AtomikSheet />
+                </div>
+              </>
+            )}
+          </div>
+          <Dock suite={suite} activePage={activePage} projectId={projectId} />
         </div>
-        <Dock suite={suite} activePage={activePage} projectId={projectId} />
-      </div>
-    </AtomikProvider>
+      </AtomikProvider>
+    </SuiteProjectProvider>
   );
 }
