@@ -122,6 +122,7 @@ export function GenerationDialog({
     .filter((asset): asset is Asset => !!asset && ["image", "video"].includes(asset.kind));
   const soulAssets = boundRefs.filter((asset, index, all) => asset.soulIdentityId && all.findIndex(a => a.soulIdentityId === asset.soulIdentityId) === index);
   const selectedSoulId = soulIdentityId || soulAssets[0]?.soulIdentityId || "";
+  const boundSoulId = soulAssets[0]?.soulIdentityId;
   // A trained likeness supplies the face; its cover is not an extra style reference.
   const refs = model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs;
   const referenceQuery = mediaQuoteReferences(refs);
@@ -131,17 +132,21 @@ export function GenerationDialog({
     studioRequest<{ models: Model[] }>("/api/workbench/engines")
       .then((d) => {
         setModels(d.models);
-        const first = d.models.find((m) => m.kind === "image") || d.models[0];
+        const first = (boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
+          || d.models.find(m => m.kind === "image" && !m.soulIdentity)
+          || d.models.find(m => !m.soulIdentity);
         if (first && !initial.pending) {
           setModelId(first.id);
           setResolution(first.resolutions[0]);
           setRatio(first.ratios.includes(project.aspect) ? project.aspect : first.ratios.find(r => r !== 'adaptive') || first.ratios[0]);
           setDuration(first.durations.includes(5) ? 5 : first.durations[0] || 5);
         } else if (!first)
-          setError("No generation engine is configured for this workspace.");
+          setError(d.models.some(m => m.soulIdentity)
+            ? "Connect a ready Soul character to this node, or connect another image engine in Workspace settings."
+            : "No generation engine is configured for this workspace.");
       })
       .catch((e) => setError(e.message));
-  }, [initial.pending, project.aspect]);
+  }, [initial.pending, project.aspect, boundSoulId]);
   useEffect(() => {
     if (!model || pending) return;
     const abort = new AbortController();

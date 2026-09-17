@@ -144,7 +144,11 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   await expect(generation.getByRole('combobox',{name:'Soul identity',exact:true})).toHaveValue('soul-local-browser');
   const strength=generation.getByRole('slider',{name:'Soul likeness strength',exact:true});await strength.focus();await strength.press('Home');for(let n=0;n<13;n++)await strength.press('ArrowRight');
   await expect(strength).toHaveValue('0.65');
-  await page.screenshot({path:info.outputPath('soul-generation.png')});
+  await expect(generation).toHaveCSS('z-index','101');
+  await generation.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>undefined)));});
+  await expect(generation).toHaveCSS('opacity','1');
+  await expect(page.locator('[data-slot="dialog-overlay"][data-state="open"]').last()).toHaveCSS('z-index','100');
+  await page.screenshot({path:info.outputPath('soul-generation.png'),animations:'disabled'});
   await generation.getByRole('button',{name:'Generate · 3 cr estimated',exact:true}).click();
   await expect(generation).toHaveCount(0);
   expect(generationBodies).toHaveLength(1);
@@ -200,4 +204,26 @@ test('Soul IDs still load when recovery storage is malformed, while training fai
   await panel.getByRole('button',{name:'New identity',exact:true}).click();
   await expect(panel.getByRole('button',{name:'Train Soul ID · 250 credits',exact:true})).toBeDisabled();
   expect(f.requests()).toBe(0);
+});
+
+test('ordinary generation keeps a regular image engine as default when Soul is also enabled',async({page},info)=>{
+  test.skip(info.project.name!=='workbench-1440x900','one default engine regression');
+  const f=await fixture(page);
+  const headers={'X-Workbench-Scope':f.scope};
+  const draft=await page.request.get(`/api/workbench/projects?id=${f.project.id}`,{headers}).then(response=>response.json());
+  draft.project.nodes=[{id:'ordinary-image-node',type:'generate',title:'Ordinary image shot',assetId:'original',text:'A close portrait.',x:40,y:40,width:344,linked:[]}];
+  const saved=await page.request.put('/api/workbench/projects',{headers,data:{project:draft.project,revision:draft.revision}});
+  expect(saved.ok(),await saved.text()).toBe(true);
+  await page.route('**/api/workbench/engines*',route=>{
+    if(new URL(route.request().url()).searchParams.has('model'))return route.fulfill({json:{credits:3}});
+    const base={kind:'image',resolutions:['1080p'],ratios:['16:9'],durations:[],maxReferenceVideos:0};
+    return route.fulfill({json:{models:[{...base,id:'hf-soul-character',label:'Higgsfield Soul Character',maxReferenceImages:0,soulIdentity:true},{...base,id:'gemini-3-pro-image',label:'Nano Banana Pro',maxReferenceImages:8}]}});
+  });
+  await page.goto('/workbench');await goWorkbenchStage(page,'Production canvas');
+  const node=page.getByRole('article',{name:'Generate node: Ordinary image shot',exact:true});await node.focus();await node.press('Enter');
+  await page.getByRole('button',{name:'Generate take',exact:true}).click();
+  const generation=page.getByRole('dialog',{name:'Generate a new take',exact:true});
+  await expect(generation.getByRole('combobox',{name:'Generation engine',exact:true})).toHaveValue('gemini-3-pro-image');
+  await expect(generation.getByRole('button',{name:'Generate · 3 cr estimated',exact:true})).toBeEnabled();
+  await expect(generation.getByRole('combobox',{name:'Soul identity',exact:true})).toHaveCount(0);
 });
