@@ -14,6 +14,7 @@ import { uploadWorkbench } from "@/lib/workbench/upload";
 import { nodeAudioBody, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import type { ModelDef } from "@/lib/models";
+import type { MoleculrGenerationOptions } from '@/lib/workbench/moleculr';
 import {
   pendingGenerationKey,
   readPendingGeneration,
@@ -37,7 +38,7 @@ type Model = {
 };
 export type MarketingGenerationOptions = { quality: "low" | "medium" | "high"; enhancePrompt: boolean; presetId?: string };
 export type GenerationTarget = {
-  options?: { modelId?: string; marketing?: MarketingGenerationOptions; referenceAssetIds?: string[] };
+  options?: MoleculrGenerationOptions;
   node: CanvasNode;
   prompt: string;
   refs: string[];
@@ -89,7 +90,7 @@ export function GenerationDialog({
   project: Project;
   onClose: () => void;
   onSave: () => Promise<boolean>;
-  onQueued: (id: string, kind?: "image" | "video" | "audio") => void;
+  onQueued: (id: string, kind?: "image" | "video" | "audio", accepted?: { prompt: string; options: MoleculrGenerationOptions }) => void;
   onAsset: (id: string, fields: Partial<Asset>) => void;
 }) {
   const callbacks = useRef({ onSave });
@@ -127,15 +128,15 @@ export function GenerationDialog({
   const [speechModel, setSpeechModel] = useState(saved?.modelId || "");
   const [audioSeconds, setAudioSeconds] = useState(saved?.lengthMs ? saved.lengthMs / 1000 : saved?.durationSeconds || 10);
   const [instrumental, setInstrumental] = useState(saved?.instrumental ?? true);
-  const [firstFrameId, setFirstFrameId] = useState<string>(saved?.firstFrameAssetId || "");
+  const [firstFrameId, setFirstFrameId] = useState<string>(saved?.firstFrameAssetId ?? target.options?.firstFrameAssetId ?? "");
   const [models, setModels] = useState<Model[]>([]),
     [modelId, setModelId] = useState(saved?.model || target.options?.modelId || ""),
-    [resolution, setResolution] = useState(saved?.resolution || ""),
-    [ratio, setRatio] = useState(saved?.ratio || project.aspect),
-    [duration, setDuration] = useState(saved?.duration || 5),
+    [resolution, setResolution] = useState(saved?.resolution || target.options?.resolution || ""),
+    [ratio, setRatio] = useState(saved?.ratio || target.options?.ratio || project.aspect),
+    [duration, setDuration] = useState(saved?.duration || target.options?.duration || 5),
     [prompt, setPrompt] = useState(saved?.text || saved?.prompt || target.prompt),
-    [soulIdentityId, setSoulIdentityId] = useState<string>(saved?.soulIdentityId || ""),
-    [soulStrength, setSoulStrength] = useState<number>(saved?.soulStrength ?? 1),
+    [soulIdentityId, setSoulIdentityId] = useState<string>(saved?.soulIdentityId || target.options?.soulIdentityId || ""),
+    [soulStrength, setSoulStrength] = useState<number>(saved?.soulStrength ?? target.options?.soulStrength ?? 1),
     [quote, setQuote] = useState<{
       key: string;
       credits: number | null;
@@ -170,9 +171,11 @@ export function GenerationDialog({
         if (first && !initial.pending && initialKind !== "audio") {
           setKind(first.kind);
           setModelId(first.id);
-          setResolution(first.resolutions[0]);
-          setRatio(first.ratios.includes(project.aspect) ? project.aspect : first.ratios.find(r => r !== 'adaptive') || first.ratios[0]);
-          setDuration(first.durations.includes(5) ? 5 : first.durations[0] || 5);
+          setResolution(target.options?.resolution && first.resolutions.includes(target.options.resolution) ? target.options.resolution : first.resolutions[0]);
+          const desiredRatio = target.options?.ratio || project.aspect;
+          setRatio(first.ratios.includes(desiredRatio) ? desiredRatio : first.ratios.find(r => r !== 'adaptive') || first.ratios[0]);
+          const desiredDuration = target.options?.duration || 5;
+          setDuration(first.durations.includes(desiredDuration) ? desiredDuration : first.durations[0] || 5);
         } else if (!first && initialKind !== "audio")
           setError(d.models.some(m => m.soulIdentity)
             ? "Connect a ready Soul character to this node, or connect another image engine in Workspace settings."
@@ -183,7 +186,7 @@ export function GenerationDialog({
         }
       })
       .catch((e) => setError(e.message));
-  }, [initial.pending, initialKind, project.aspect, boundSoulId, scope, target.options?.modelId]);
+  }, [initial.pending, initialKind, project.aspect, boundSoulId, scope, target.options?.modelId, target.options?.ratio, target.options?.duration, target.options?.resolution]);
   useEffect(() => {
     if (kind !== "audio") return;
     const abort = new AbortController();
@@ -249,6 +252,11 @@ export function GenerationDialog({
     return () => { clearTimeout(timer); abort.abort(); };
   }, [kind, model, modelId, resolution, ratio, duration, refs, referenceQuery, quoteKey, pending, selectedSoulId, project.id, scope, mapped, marketing, prompt, preparationRevision]);
 
+  function acceptedSettings(attempt: PendingGeneration) {
+    if(attempt.endpoint==='/api/audio')return undefined;
+    const body=JSON.parse(attempt.body);
+    return {prompt:String(body.prompt??target.prompt),options:{modelId:body.model,resolution:body.resolution,ratio:body.ratio,duration:body.duration,marketing:body.marketing,firstFrameAssetId:body.firstFrameAssetId,soulIdentityId:body.soulIdentityId,soulStrength:body.soulStrength}};
+  }
   async function submit() {
     if (busy || initial.error || (!pending && ((kind !== "audio" && !model) || cost == null))) return;
     setBusy(true);
@@ -340,13 +348,13 @@ export function GenerationDialog({
           "The server has not confirmed a job yet. Retry to recover this same request.",
         );
       clearPendingGeneration(window.localStorage, storageId, attempt.key);
-      onQueued(result.id, attempt.endpoint === "/api/audio" ? "audio" : model?.kind);
+      onQueued(result.id, attempt.endpoint === "/api/audio" ? "audio" : model?.kind, acceptedSettings(attempt));
       onClose();
     } catch (e) {
       if (attempt && e instanceof StudioRequestError) {
         if (typeof e.data.id === "string") {
           clearPendingGeneration(window.localStorage, storageId, attempt.key);
-          onQueued(e.data.id, attempt.endpoint === "/api/audio" ? "audio" : model?.kind);
+          onQueued(e.data.id, attempt.endpoint === "/api/audio" ? "audio" : model?.kind, acceptedSettings(attempt));
           onClose();
           return;
         }

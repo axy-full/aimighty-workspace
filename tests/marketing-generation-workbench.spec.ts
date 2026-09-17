@@ -2,9 +2,10 @@ import { test, expect, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
 
 const modelId = "higgsfield/marketing-studio-image";
-async function fixture(page: Page, brokenMapping = false) {
+async function fixture(page: Page, brokenMapping = false, campaign = false) {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
@@ -76,6 +77,8 @@ async function fixture(page: Page, brokenMapping = false) {
         linked: ["product-node", "cast-node"],
       },
     ],
+    ...(campaign ? { moleculr: { ...EMPTY_MOLECULR, productAssetIds: ['product'], castAssetIds: ['cast'], hooks: ['Campaign still'],
+      variants: [{ id: 'marketing-variant', nodeId: 'marketing-node', hook: 'Campaign still', kind: 'image' as const }] } } : {}),
   };
   let revision = 1,
     maps = 0,
@@ -153,6 +156,8 @@ async function fixture(page: Page, brokenMapping = false) {
         ],
       });
     }
+    if (endpoint === "/api/higgsfield/marketing/presets")
+      return json({ configured: true, items: [], total: 0, cursor: null });
     if (endpoint === "/api/generate/quote") {
       expect(req.headers()["x-workbench-scope"]).toBe(scope);
       const body = req.postDataJSON();
@@ -230,6 +235,7 @@ async function fixture(page: Page, brokenMapping = false) {
     submissions,
     errors,
     scope,
+    project: () => project,
     maps: () => maps,
     repair: () => {
       brokenMapping = false;
@@ -329,6 +335,65 @@ test("Marketing edits require a new mapped live quote and lost acknowledgement r
   expect(f.submissions[1]).toEqual(f.submissions[0]);
   expect(f.quotes).toHaveLength(quoteCount);
   expect(f.maps()).toBe(mapCount);
+  expect(f.errors).toEqual([]);
+});
+
+test("Moleculr restores accepted prompt and 4k marketing settings after lost acknowledgement recovery and reload without another submission", async ({ page }, info) => {
+  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone and one desktop");
+  const f = await fixture(page, false, true);
+  await page.goto("/workbench?project=marketing-generation&suite=moleculr&page=variants");
+  const openVariant = async () => {
+    await page.getByRole("button", { name: "Review generation", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Generate a new take", exact: true });
+    await expect(dialog).toBeVisible();
+    return dialog;
+  };
+  let dialog = await openVariant();
+  await expect(dialog.getByRole("button", { name: "Generate · 5 cr estimated", exact: true })).toBeEnabled();
+  await dialog.getByLabel("Generation size").selectOption("4k");
+  await dialog.getByLabel("Generation aspect").selectOption("3:4");
+  await dialog.getByLabel("Marketing image quality").selectOption("medium");
+  const acceptedPrompt = "Accepted campaign direction: sculpted light and exact original packaging.";
+  await dialog.getByLabel("Generation direction").fill(acceptedPrompt);
+  await expect(dialog.getByRole("button", { name: "Generate · 3 cr estimated", exact: true })).toBeEnabled();
+  expect(f.quotes.at(-1)?.body).toMatchObject({ prompt: acceptedPrompt, model: modelId, resolution: "4k", ratio: "3:4", marketing: { quality: "medium", enhancePrompt: false } });
+  await dialog.getByRole("button", { name: "Generate · 3 cr estimated", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Recover submitted take", exact: true })).toBeEnabled();
+  expect(f.submissions).toHaveLength(1);
+  expect(f.project().moleculr!.variants[0].generation).toBeUndefined();
+  expect(f.project().nodes.find(node => node.id === "marketing-node")!.text).toBe("Original product with cast");
+  const quoteCount = f.quotes.length;
+
+  await page.reload();
+  dialog = await openVariant();
+  await expect(dialog.getByLabel("Generation direction")).toHaveValue(acceptedPrompt);
+  await expect(dialog.getByLabel("Generation size")).toHaveValue("4k");
+  await expect(dialog.getByLabel("Marketing image quality")).toHaveValue("medium");
+  await expect(dialog.getByLabel("Marketing image quality")).toBeDisabled();
+  expect(f.submissions).toHaveLength(1);
+  await dialog.getByRole("button", { name: "Recover submitted take", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(f.submissions).toHaveLength(2);
+  expect(f.submissions[1]).toEqual(f.submissions[0]);
+  expect(f.quotes).toHaveLength(quoteCount);
+  const savedSettings = { modelId, resolution: "4k", ratio: "3:4", marketing: { quality: "medium", enhancePrompt: false } };
+  await expect.poll(() => f.project().moleculr!.variants[0].generation).toEqual(savedSettings);
+  await expect.poll(() => f.project().nodes.find(node => node.id === "marketing-node")!.text).toBe(acceptedPrompt);
+
+  await page.reload();
+  dialog = await openVariant();
+  await expect(dialog.getByLabel("Generation engine")).toHaveValue(modelId);
+  await expect(dialog.getByLabel("Generation direction")).toHaveValue(acceptedPrompt);
+  await expect(dialog.getByLabel("Generation size")).toHaveValue("4k");
+  await expect(dialog.getByLabel("Generation aspect")).toHaveValue("3:4");
+  await expect(dialog.getByLabel("Marketing image quality")).toHaveValue("medium");
+  await expect(dialog.getByLabel("Marketing image quality")).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Generate · 3 cr estimated", exact: true })).toBeEnabled();
+  expect(f.quotes.at(-1)?.body).toMatchObject({ prompt: acceptedPrompt, model: modelId, resolution: "4k", ratio: "3:4", marketing: { quality: "medium", enhancePrompt: false } });
+  expect(f.submissions).toHaveLength(2);
+  await page.screenshot({ path: info.outputPath("moleculr-accepted-generation-restored.png") });
+  await page.keyboard.press("Escape");
+  expect(f.submissions).toHaveLength(2);
   expect(f.errors).toEqual([]);
 });
 

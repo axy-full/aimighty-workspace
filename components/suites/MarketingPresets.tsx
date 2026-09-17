@@ -171,8 +171,8 @@ export function MarketingPresets({
         <div>
           <h2>Campaign images</h2>
           <p>
-            Direct your own image, or choose a live Higgsfield Marketing Studio
-            preset.
+            Render your creative direction, or use an available Higgsfield Ads
+            preset. Provider presets are separate from Moleculr creative briefs.
           </p>
         </div>
         <span className="suite-badge">Higgsfield · Image</span>
@@ -249,7 +249,7 @@ export function MarketingPresets({
                 <Sparkles size={16} />
                 <span>
                   {item.name}
-                  <small>Campaign image preset</small>
+                  <small>Higgsfield Ads preset</small>
                 </span>
                 {item.id === settings.presetId && <Check size={15} />}
               </button>
@@ -400,6 +400,7 @@ export function MarketingPresets({
               "image",
               {
                 modelId: "higgsfield/marketing-studio-image",
+                ...(brief.creative ? { ratio: brief.creative.aspect } : {}),
                 marketing: {
                   quality: settings.enhancePrompt ? "high" : settings.quality,
                   enhancePrompt: settings.enhancePrompt,

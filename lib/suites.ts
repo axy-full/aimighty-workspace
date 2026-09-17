@@ -56,6 +56,7 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
     { id: "cast", label: "Cast" },
     { id: "format", label: "Format" },
     { id: "variants", label: "Variants" },
+    { id: "design", label: "Design" },
     { id: "publish", label: "Publish" },
   ],
 

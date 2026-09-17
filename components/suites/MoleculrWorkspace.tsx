@@ -21,6 +21,14 @@ import {
 import { originalAssetDownload } from "@/lib/workbench/original-asset";
 import { AssetPreview } from "@/components/workbench/AssetPreview";
 import { MarketingPresets } from "./MarketingPresets";
+import { BrandKitEditor } from "./BrandKitEditor";
+import { ProductProfileEditor } from "./ProductProfileEditor";
+import { CreativeTemplateBrowser } from "./CreativeTemplateBrowser";
+import {
+  DEFAULT_CREATIVE,
+  creativeTemplate,
+} from "@/lib/workbench/moleculr-creative";
+import creativeStyles from "./moleculr-creative.module.css";
 
 export function MoleculrWorkspace({
   project,
@@ -37,6 +45,12 @@ export function MoleculrWorkspace({
   onGenerate,
   onSequence,
   onAgent,
+  onSave,
+  onImportRemote,
+  onCreateAvatar,
+  onBuildStoryboard,
+  onReviewVariant,
+  onPrepareVariants,
 }: {
   project: Project;
   scope: string;
@@ -57,11 +71,20 @@ export function MoleculrWorkspace({
   ) => void;
   onSequence: (asset: Asset) => void;
   onAgent: () => void;
+  onSave?: () => Promise<boolean>;
+  onImportRemote?: (url: string) => Promise<Asset>;
+  onCreateAvatar?: (prompt: string) => void;
+  onBuildStoryboard?: () => void;
+  onReviewVariant?: (nodeId: string) => void;
+  onPrepareVariants?: (kind: "image" | "video") => void;
 }) {
   const brief = project.moleculr ?? EMPTY_MOLECULR;
   const [hookIndex, setHookIndex] = useState(0);
-  const [castId, setCastId] = useState("");
-  const [media, setMedia] = useState<"image" | "video">("image");
+  const [castId, setCastId] = useState("__default");
+  const [media, setMedia] = useState<"image" | "video">(
+    () => brief.creative?.kind ?? creativeTemplate(brief)?.kind ?? "image",
+  );
+  const [avatarPrompt, setAvatarPrompt] = useState("");
   const images = project.assets.filter((asset) => asset.kind === "image");
   const cast = images.filter(
     (asset) =>
@@ -72,9 +95,15 @@ export function MoleculrWorkspace({
   const outputs = variantAssets(project, brief);
   const hooks = brief.hooks.filter((hook) => hook.trim());
   const selectedHook = hooks[hookIndex] ?? hooks[0] ?? "";
-  const selectedCast = brief.castAssetIds.includes(castId)
-    ? castId
-    : brief.castAssetIds[0];
+  const selectedCast =
+    castId === ""
+      ? undefined
+      : brief.castAssetIds.includes(castId)
+        ? castId
+        : brief.castAssetIds[0];
+  const combinations =
+    new Set(hooks.map((hook) => hook.trim())).size *
+    Math.max(1, new Set(brief.castAssetIds).size);
   const set = <K extends keyof MoleculrBrief>(
     key: K,
     value: MoleculrBrief[K],
@@ -102,9 +131,13 @@ export function MoleculrWorkspace({
       format: "Find the right expression.",
       variants: "One idea. Considered variations.",
       publish: "Ready for the next screen.",
+      design: "Every layer, considered.",
     }[page] ?? "Your marketing studio.";
   return (
-    <div className="suite-workspace moleculr-workspace" data-page={page}>
+    <div
+      className={`suite-workspace moleculr-workspace ${creativeStyles.workspace}`}
+      data-page={page}
+    >
       <header className="suite-page-intro">
         <div>
           <span className="suite-kicker">
@@ -154,6 +187,13 @@ export function MoleculrWorkspace({
               ))}
             </div>
           </section>
+          <BrandKitEditor
+            project={project}
+            brief={brief}
+            enabled={enabled}
+            onChange={onChange}
+            onUpload={() => onUpload("Brand")}
+          />
           <div className="suite-marketing-tools">{marketing}</div>
           <footer className="suite-panel-footer">
             <span>
@@ -168,43 +208,16 @@ export function MoleculrWorkspace({
       )}
       {page === "product" && (
         <>
-          <section className="suite-panel suite-product-profile">
-            <div className="suite-section-heading">
-              <div>
-                <h2>Product profile</h2>
-                <p>
-                  Use your approved product information and original
-                  photography.
-                </p>
-              </div>
-              <span className="suite-badge">Saved with project</span>
-            </div>
-            <fieldset className="suite-fields" disabled={!enabled}>
-              <label>
-                Product name
-                <input
-                  value={brief.productName}
-                  maxLength={200}
-                  placeholder="What are we making a campaign for?"
-                  onChange={(e) => set("productName", e.target.value)}
-                />
-              </label>
-              <label>
-                Product URL
-                <input
-                  type="url"
-                  value={brief.productUrl}
-                  maxLength={2000}
-                  placeholder="https://your-product.com"
-                  onChange={(e) => set("productUrl", e.target.value)}
-                />
-                <small>
-                  Saved as a reference. Add product facts in the campaign brief;
-                  this does not scrape the page.
-                </small>
-              </label>
-            </fieldset>
-          </section>
+          <ProductProfileEditor
+            key={`${scope}:${project.id}:${brief.activeProductId ?? "draft"}`}
+            project={project}
+            brief={brief}
+            scope={scope}
+            enabled={enabled}
+            onChange={onChange}
+            onSave={onSave}
+            onImportRemote={onImportRemote}
+          />
           <section className="suite-panel">
             <div className="suite-section-heading">
               <div>
@@ -337,6 +350,31 @@ export function MoleculrWorkspace({
               </button>
             </div>
           )}
+          {onCreateAvatar && (
+            <fieldset className="suite-fields" disabled={!enabled}>
+              <label>
+                New avatar direction
+                <textarea
+                  rows={3}
+                  maxLength={4000}
+                  value={avatarPrompt}
+                  onChange={(event) => setAvatarPrompt(event.target.value)}
+                  placeholder="Describe an adult campaign presenter, styling, lighting and framing…"
+                />
+                <small>
+                  Create a new portrait through generation review, then use the
+                  saved original as a cast reference.
+                </small>
+              </label>
+              <button
+                className="suite-button"
+                disabled={!avatarPrompt.trim()}
+                onClick={() => onCreateAvatar(avatarPrompt.trim())}
+              >
+                Review new avatar <ArrowUpRight size={14} />
+              </button>
+            </fieldset>
+          )}
           <footer className="suite-panel-footer">
             <span>
               {brief.castAssetIds.length
@@ -351,6 +389,14 @@ export function MoleculrWorkspace({
       )}
       {page === "format" && (
         <>
+          <CreativeTemplateBrowser
+            brief={brief}
+            enabled={enabled}
+            onChange={onChange}
+            onKind={setMedia}
+            onBuildStoryboard={onBuildStoryboard}
+            onDesign={() => onPage("design")}
+          />
           <section className="suite-panel">
             <div className="suite-section-heading">
               <div>
@@ -361,21 +407,40 @@ export function MoleculrWorkspace({
                 </p>
               </div>
             </div>
-            <div className="suite-format-grid">
-              {MOLECULR_FORMATS.map((format) => (
-                <button
-                  key={format.id}
-                  className="suite-format"
-                  aria-pressed={brief.format === format.id}
-                  disabled={!enabled}
-                  onClick={() => set("format", format.id)}
+            <fieldset className="suite-fields" disabled={!enabled}>
+              <label>
+                Production format
+                <select
+                  aria-label="Production format"
+                  value={brief.format}
+                  onChange={(event) =>
+                    onChange({
+                      ...brief,
+                      format: event.target.value as MoleculrBrief["format"],
+                      ...(brief.creative
+                        ? {
+                            creative: {
+                              ...brief.creative,
+                              path: "prompt",
+                              templateId: undefined,
+                            },
+                          }
+                        : {}),
+                    })
+                  }
                 >
-                  <strong>{format.label}</strong>
-                  <span>{format.description}</span>
-                  {brief.format === format.id && <Check size={15} />}
-                </button>
-              ))}
-            </div>
+                  {MOLECULR_FORMATS.map((format) => (
+                    <option key={format.id} value={format.id}>
+                      {format.label}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  Choosing another production format switches to your prompt
+                  direction.
+                </small>
+              </label>
+            </fieldset>
             <fieldset disabled={!enabled} className="suite-fields">
               <label>
                 Campaign hooks
@@ -440,20 +505,29 @@ export function MoleculrWorkspace({
                   credit quote before generating.
                 </p>
               </div>
-              <span className="suite-badge">
-                {hooks.length * Math.max(1, brief.castAssetIds.length)}{" "}
-                combinations
-              </span>
+              <span className="suite-badge">{combinations} combinations</span>
             </div>
             <div className="suite-fields">
               <label>
                 Output
                 <select
                   aria-label="Output"
+                  disabled={!enabled}
                   value={media}
-                  onChange={(event) =>
-                    setMedia(event.target.value as "image" | "video")
-                  }
+                  onChange={(event) => {
+                    const kind = event.target.value as "image" | "video";
+                    setMedia(kind);
+                    onChange({
+                      ...brief,
+                      creative: {
+                        ...(brief.creative ?? {
+                          ...DEFAULT_CREATIVE,
+                          path: "prompt",
+                        }),
+                        kind,
+                      },
+                    });
+                  }}
                 >
                   <option value="image">
                     Campaign image · Higgsfield Marketing Studio
@@ -483,12 +557,11 @@ export function MoleculrWorkspace({
                   <label>
                     Cast
                     <select
+                      aria-label="Video cast"
                       value={selectedCast ?? ""}
                       onChange={(e) => setCastId(e.target.value)}
                     >
-                      {!brief.castAssetIds.length && (
-                        <option value="">Product only</option>
-                      )}
+                      <option value="">Product only</option>
                       {brief.castAssetIds.map((id) => (
                         <option value={id} key={id}>
                           {project.assets.find((asset) => asset.id === id)
@@ -503,7 +576,17 @@ export function MoleculrWorkspace({
                     className="suite-primary"
                     disabled={!enabled}
                     onClick={() =>
-                      onGenerate(selectedHook, selectedCast, media)
+                      onGenerate(
+                        selectedHook,
+                        selectedCast,
+                        media,
+                        brief.creative
+                          ? {
+                              ratio: brief.creative.aspect,
+                              duration: brief.creative.seconds,
+                            }
+                          : undefined,
+                      )
                     }
                   >
                     Configure generation <ArrowUpRight size={15} />
@@ -517,12 +600,60 @@ export function MoleculrWorkspace({
                     ? "An image can start from your brand direction. Add hooks to develop distinct campaign variations."
                     : "Add a campaign hook to start a video variant."}
                 </p>
-                <button
-                  className="suite-button"
-                  onClick={() => onPage("format")}
-                >
-                  Write campaign hooks
-                </button>
+                {media === "video" &&
+                (creativeTemplate(brief) ||
+                  brief.creative?.direction.trim()) ? (
+                  <button
+                    className="suite-primary"
+                    disabled={!enabled}
+                    onClick={() =>
+                      onGenerate(
+                        creativeTemplate(brief)?.name ||
+                          "Introduce the product clearly.",
+                        selectedCast,
+                        "video",
+                        brief.creative
+                          ? {
+                              ratio: brief.creative.aspect,
+                              duration: brief.creative.seconds,
+                            }
+                          : undefined,
+                      )
+                    }
+                  >
+                    Configure generation <ArrowUpRight size={15} />
+                  </button>
+                ) : (
+                  <button
+                    className="suite-button"
+                    onClick={() => onPage("format")}
+                  >
+                    Write campaign hooks
+                  </button>
+                )}
+              </div>
+            )}
+            {onPrepareVariants && (
+              <div className="suite-panel-footer">
+                <div>
+                  <button
+                    className="suite-button"
+                    disabled={!enabled || !hooks.length || combinations > 24}
+                    onClick={() => onPrepareVariants(media)}
+                  >
+                    Prepare hook × cast variants <Plus size={14} />
+                  </button>
+                  <p className="suite-footnote">
+                    Prepare editable nodes for every hook and selected cast.
+                    Each render is quoted separately.
+                    {media === "image" && brief.marketing?.enhancePrompt
+                      ? " Preset variations use the first selected product image with each cast reference."
+                      : ""}
+                    {combinations > 24
+                      ? " Reduce the selection to 24 combinations or fewer."
+                      : ""}
+                  </p>
+                </div>
               </div>
             )}
             {!!brief.variants.length && (
@@ -547,7 +678,7 @@ export function MoleculrWorkspace({
                         <span>
                           {assets.length
                             ? `${assets.length} saved take${assets.length === 1 ? "" : "s"}`
-                            : "Configured · see Atomik activity"}
+                            : "Draft · ready to review"}
                         </span>
                         <button
                           className="suite-text-button"
@@ -555,6 +686,15 @@ export function MoleculrWorkspace({
                         >
                           Open in Rig <ArrowUpRight size={13} />
                         </button>
+                        {onReviewVariant && (
+                          <button
+                            className="suite-text-button"
+                            disabled={!enabled}
+                            onClick={() => onReviewVariant(variant.nodeId)}
+                          >
+                            Review generation <ArrowUpRight size={13} />
+                          </button>
+                        )}
                       </div>
                     );
                   })}

@@ -101,6 +101,12 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
   // ── ftyp container: HEIC/HEIF stills, otherwise MP4/MOV video ────────
   if (ascii(buf, 4, 4) === "ftyp") {
     const brand = ascii(buf, 8, 4);
+    const boxSize = buf.readUInt32BE(0);
+    const compatible = boxSize >= 16 && boxSize <= buf.length && boxSize <= 1024
+      ? Array.from({ length: Math.floor((boxSize - 16) / 4) }, (_, i) => ascii(buf, 16 + i * 4, 4)) : [];
+    if ([brand, ...compatible].some(value => value === "avif" || value === "avis")) {
+      return { kind: "image", durationS: null, mime: "image/avif", ext: "avif", width: null, height: null };
+    }
     if (["heic", "heix", "hevc", "heim", "heis", "mif1", "msf1"].includes(brand)) {
       // ispe parsing needs a full box walk; not worth it — dimensions stay unknown.
       const heif = brand === "mif1" || brand === "msf1";

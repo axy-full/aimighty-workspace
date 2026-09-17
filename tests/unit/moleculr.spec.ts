@@ -269,7 +269,7 @@ test("prompt uses the selected hook and cast, supplied offer and direction witho
   for (const content of [
     "Pocket camera",
     "Campaign hook: Carry the moment",
-    "context only, not a fetched product description",
+    "context only; use only the reviewed description above",
     selection.productUrl,
     project.marketingBrief.offer,
     project.marketingBrief.audience,
