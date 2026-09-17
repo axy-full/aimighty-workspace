@@ -1,0 +1,27 @@
+/* Project context is above its tools; keep each row in normal layout flow. */
+.ps .studio-redesign .project-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:54px;padding:7px 16px;flex-wrap:wrap;background:var(--graphite-ground)}
+.ps .studio-redesign .project-breadcrumb{flex:1;min-width:150px}
+.ps .studio-redesign .project-bar-actions{display:flex;align-items:center;gap:12px;flex:none;margin-left:auto}
+.ps .studio-redesign .project-bar .workflow-utilities{display:flex;align-items:center;gap:8px;margin:0;padding:0;border:0;background:none}
+.ps .studio-redesign .project-bar .project-spec{display:none}.ps .studio-redesign .project-bar .studio-account{margin:0}
+.ps .studio-redesign .workflow-header{display:flex;align-items:center;flex-wrap:wrap;gap:10px;min-height:48px;padding:7px 16px;background:var(--graphite-panel)}
+.ps .studio-redesign .workflow-navigation{flex:1;min-width:0;width:auto}.ps .studio-redesign .workflow-stages{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:2px;width:auto;overflow:visible}
+.ps .studio-redesign .workflow-step{flex:none;min-width:0}.ps .studio-redesign .project-tools{display:flex;align-items:center;gap:4px;margin-left:auto}
+.ps .project-tools button{display:flex;align-items:center;gap:5px;min-height:30px;padding:5px 9px;border-radius:7px;font-size:12px;color:var(--ps-soft)}
+.ps .project-tools button:hover,.ps .project-tools button[aria-current=page]{background:var(--graphite-selected);color:var(--graphite-ink)}
+.ps .studio-redesign.is-welcome .project-breadcrumb,.ps .studio-redesign.is-welcome .project-bar-actions{visibility:visible;pointer-events:auto}
+.ps .studio-redesign .atomik-panel{position:relative;width:var(--atomik-width,380px);max-width:calc(100vw - 24px)}
+.atomik-resizer{touch-action:none;z-index:15;outline:none;flex:none}.atomik-resizer.vertical{position:absolute;top:0;bottom:0;left:-5px;width:10px;cursor:col-resize}
+.atomik-resizer.vertical span{position:absolute;left:4px;top:calc(50% - 22px);width:3px;height:44px;border-radius:3px;background:var(--graphite-edge)}
+.atomik-resizer:hover span,.atomik-resizer:focus-visible span{background:var(--graphite-accent)}.atomik-resizer:focus-visible{box-shadow:0 0 0 2px var(--graphite-accent) inset}
+.atomik-resizer.horizontal{position:relative;min-height:22px;width:100%;cursor:row-resize;display:grid;place-items:center}.atomik-resizer.horizontal span{height:4px;width:46px;border-radius:3px;background:var(--graphite-edge)}
+@media(min-width:760px) and (max-width:1000px){.ps .studio-redesign .atomik-panel{position:absolute;right:0;top:0;bottom:0}}
+@media(max-width:759px){
+ .ps .studio-redesign .workflow-header{display:none}.ps .studio-redesign .project-bar{display:none}
+ .ps .phone-all-assets{display:grid;place-items:center;flex:none;width:34px;height:40px;color:var(--graphite-muted)}
+ .ps .phone-project-header{gap:8px}.ps .phone-project-crumb{min-width:0}.ps .phone-save{flex:none}.ps .phone-save span{display:none}
+ .ps.mobile-sheet-atomik{height:min(var(--atomik-height,80dvh),var(--app-visible-height,96dvh));max-height:96dvh}
+ .ps.mobile-sheet-atomik .atomik-panel{position:relative;width:100%;max-width:none;min-height:0;height:100%}
+ .ps .project-home-dock{display:grid;grid-template-columns:repeat(4,1fr);flex:none;border-top:1px solid var(--graphite-edge);background:var(--graphite-panel);padding:4px 8px calc(4px + env(safe-area-inset-bottom));min-height:75px}
+ .ps .project-home-dock button{display:flex;align-items:center;justify-content:center;gap:6px;flex-direction:column;min-height:60px;font-size:11px;color:var(--graphite-muted)}.ps .project-home-dock button[aria-current=page]{color:var(--graphite-ink)}
+}

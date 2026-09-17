@@ -87,3 +87,7 @@
  .phone-drawer-account .studio-account{margin:18px 0 0;flex-direction:column;align-items:stretch;gap:10px}.phone-drawer-account .studio-credit,.phone-drawer-account .studio-workspace-trigger{min-height:44px;max-width:none;width:100%;justify-content:flex-start;padding:0 12px;gap:10px;font-size:13px;border:1px solid var(--graphite-edge);background:var(--graphite-control)}.phone-drawer-account .studio-credit-label,.phone-drawer-account .studio-workspace-name{display:block;max-width:none}.phone-drawer-account .studio-workspace-trigger>svg{margin-left:auto}
  html[data-mobile-keyboard=true] .studio-section-dock{display:none}
 }
+
+/* The engine can be resized in every project tool. */
+.atomik-resizer{touch-action:none;z-index:15;outline:none;flex:none}.atomik-resizer.vertical{position:absolute;top:0;bottom:0;left:-5px;width:10px;cursor:col-resize}.atomik-resizer.vertical span{position:absolute;left:4px;top:calc(50% - 22px);width:3px;height:44px;border-radius:3px;background:var(--graphite-edge)}.atomik-resizer:hover span,.atomik-resizer:focus-visible span{background:var(--graphite-accent)}.atomik-resizer:focus-visible{box-shadow:0 0 0 2px var(--graphite-accent) inset}
+.atomik-resizer.horizontal{position:relative;min-height:22px;width:100%;cursor:row-resize;display:grid;place-items:center}.atomik-resizer.horizontal span{height:4px;width:46px;border-radius:3px;background:var(--graphite-edge)}

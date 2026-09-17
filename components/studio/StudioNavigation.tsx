@@ -3,7 +3,8 @@
 import { useState, type MouseEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {Suspense} from "react";
 import { Clapperboard, ScanLine, Building2, FolderOpen, Menu, X } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetClose } from "@/components/workbench/ui/sheet";
 import { useMobileLayout } from "@/components/workbench/mobile-ui";
@@ -101,14 +102,16 @@ export default function StudioNavigation({ initialAccount, active, compact = fal
   );
 }
 
-export function MobileStudioMenu({ initialAccount, active, onNavigate, onSwitch, onSignOut }: {
+export function MobileStudioMenu({ initialAccount, active, onNavigate, onSwitch, onSignOut, projectId }: {
   initialAccount: WorkbenchAccount | null;
+  projectId?: string;
   active?: Section;
   onNavigate: (path: string) => Promise<void>;
   onSwitch: (id: string) => Promise<void>;
   onSignOut: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const menuSections=projectId?[{id:"studio",label:"Workflow",href:`/workbench?project=${encodeURIComponent(projectId)}`,icon:Clapperboard},{id:"gen",label:"Gen",href:`/generate?project=${encodeURIComponent(projectId)}`,icon:ScanLine},{id:"assets",label:"Library",href:`/library?project=${encodeURIComponent(projectId)}`,icon:FolderOpen},{id:"workspace",label:"Project workspace",href:`/workbench?project=${encodeURIComponent(projectId)}&view=workspace`,icon:Building2}]:[{id:"studio",label:"Projects",href:"/workbench",icon:Clapperboard},{id:"assets",label:"All assets",href:"/library?all=1",icon:FolderOpen},{id:"workspace",label:"Account & workspace",href:"/settings",icon:Building2}];
   const path = usePathname();
   const current = active ?? sectionFor(path);
   const [error, setError] = useState("");
@@ -126,15 +129,22 @@ export function MobileStudioMenu({ initialAccount, active, onNavigate, onSwitch,
   return <><button className="phone-menu-trigger" aria-label="Open workspace navigation" aria-expanded={open} onClick={() => setOpen(true)}><Menu size={20}/></button>
     <Sheet open={open} onOpenChange={setOpen}><SheetContent side="left" showCloseButton={false} className="phone-workspace-drawer">
       <SheetHeader><SheetTitle><Mark width={25} height={22}/><span>Particl</span></SheetTitle><SheetDescription>Your production workspace</SheetDescription><SheetClose className="phone-drawer-close" aria-label="Close workspace navigation"><X size={20}/></SheetClose></SheetHeader>
-      <nav className="studio-sections phone-drawer-sections" aria-label="Studio sections">{SECTIONS.map(({id,label,href,icon:Icon})=><button key={id} type="button" aria-current={current===id?'page':undefined} onClick={()=>void follow(href)}><Icon size={19} strokeWidth={1.6}/><span>{label}</span></button>)}</nav>{error&&<p className="studio-menu-error" role="alert">{error}</p>}
+      <nav className="studio-sections phone-drawer-sections" aria-label="Studio sections">{menuSections.map(({id,label,href,icon:Icon})=><button key={id} type="button" aria-current={current===id?'page':undefined} onClick={()=>void follow(href)}><Icon size={19} strokeWidth={1.6}/><span>{label}</span></button>)}</nav>{error&&<p className="studio-menu-error" role="alert">{error}</p>}
       <div className="phone-drawer-account"><p>{initialAccount?.workspace?.name || "Your workspace"}</p><small>{initialAccount?.workspaces.find(w => w.id === initialAccount.workspace?.id)?.role || "Account"} · Workspace</small><WorkspaceMenu initial={initialAccount} onNavigate={follow} onSwitch={id=>leave(()=>onSwitch(id))} onSignOut={()=>leave(onSignOut)}/></div>
     </SheetContent></Sheet>
   </>;
 }
 
-export function StudioDock() {
-  const current = sectionFor(usePathname());
-  return <nav className="studio-section-dock" aria-label="Studio sections">
-    {SECTIONS.map(({ id, label, href, icon: Icon }) => <Link key={id} href={href} aria-current={current === id ? "page" : undefined}><Icon size={21} strokeWidth={1.6} /><span>{label}</span></Link>)}
-  </nav>;
+export function StudioDock() {return <Suspense><ProjectDock/></Suspense>;}
+function ProjectDock() {
+ const path=usePathname(),params=useSearchParams();
+ const project=params.get('project');
+ const projectRoute=(url:string,view?:string)=>url+'?'+new URLSearchParams({...project?{project}:{},...view?{view}:{}});
+ const entries=[
+  {label:'Workflow',href:projectRoute('/workbench'),icon:Clapperboard,active:false},
+  {label:'Gen',href:projectRoute('/generate'),icon:ScanLine,active:path.startsWith('/generate')||path.startsWith('/make')},
+  {label:'Library',href:projectRoute('/library'),icon:FolderOpen,active:path==='/library'&&params.get('all')!=='1'},
+  {label:'Workspace',href:projectRoute('/workbench','workspace'),icon:Building2,active:false},
+ ];
+ return <nav className="studio-section-dock" aria-label="Project tools">{entries.map(({label,href,icon:Icon,active})=><Link key={label} href={href} onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();void withPageLeaveGuard(()=>window.location.assign(href));}} aria-current={active?'page':undefined}><Icon size={21}/><span>{label}</span></Link>)}</nav>;
 }

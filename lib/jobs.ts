@@ -176,6 +176,8 @@ const SELECT = `
 
 export async function listGenerations(opts: {
   projectId?: string | null;
+  /** Server-resolved project library: filed takes plus explicitly linked draft references. */
+  projectLibrary?: { productionProjectId: string; generationIds: string[] };
   createdBy?: string | null;
   limit?: number;
   search?: string;
@@ -197,6 +199,12 @@ export async function listGenerations(opts: {
   await ready();
   const where: string[] = [];
   const args: any[] = [];
+
+  if (opts.projectLibrary) {
+    where.push(`(g.project_id = ? OR g.id IN (SELECT value FROM json_each(?))
+      OR g.id IN (SELECT j.atom FROM generations linked,json_tree(linked.params) j WHERE linked.project_id=? AND linked.deleted=0 AND j.key IN ('genId','generationId','sourceGenId','coverGenId')))`);
+    args.push(opts.projectLibrary.productionProjectId, JSON.stringify(opts.projectLibrary.generationIds), opts.projectLibrary.productionProjectId);
+  }
 
   if (opts.projectId !== undefined && opts.projectId !== null) {
     where.push("g.project_id = ?");

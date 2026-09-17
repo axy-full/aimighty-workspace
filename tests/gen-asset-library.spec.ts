@@ -6,12 +6,16 @@ import path from "node:path";
 import sharp from "sharp";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { screenplayPdf } from "./helpers/screenplayPdf";
+import {newProject,type Asset} from '../lib/workbench/studio';
 
 type Upload = { id: string; filename: string; url: string };
 const assetCard = (page: Page | Locator, origin: "generation" | "upload", id: string) =>
   page.locator(`[data-library-id="${origin}:${id}"]`);
 const library = (page: Page) =>
   page.getByRole("region", { name: "Workspace asset library", exact: true });
+async function selectSource(root:Page|Locator,name:'Uploads'|'Generations') {
+  await root.getByRole('group',{name:'Asset source',exact:true}).getByRole('button',{name,exact:true}).click();
+}
 async function showLibrary(page: Page) {
   if (page.viewportSize()!.width < 900)
     await page.getByRole("group", { name: "Generation view" })
@@ -106,16 +110,23 @@ async function fixture(page: Page) {
       });
     }
   } finally { tenant.close(); }
+  const draft={...newProject('Library fixture Studio project'),productionProjectId:projectId,assets:[
+    ...[imageUpload,videoUpload,audioUpload,pdfUpload,otherUpload].map(item=>({id:item.id,uploadId:item.id,url:item.url})),
+    ...[generationImage,generationVideo].map(id=>({id,generationId:id,url:`/api/media/${id}`})),
+  ].map(item=>({name:item.id,kind:'image',category:'Reference',description:'',prompt:'',status:'Draft',locked:false,version:1,refs:[],...item} as Asset))};
+  const draftSave=await page.request.put('/api/workbench/projects',{headers,data:{project:draft,revision:0}});
+  expect(draftSave.ok(),await draftSave.text()).toBe(true);
+  await page.addInitScript(({scope,id})=>localStorage.setItem(scope,id),{scope:headers['X-Workbench-Scope'],id:draft.id});
   const paidRequests: Record<string, unknown>[] = [];
   await page.route(/\/api\/(generate|audio)$/, async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     paidRequests.push(route.request().postDataJSON());
     return route.abort("blockedbyclient");
   });
-  return { image, imageUpload, videoUpload, audioUpload, pdfUpload, otherUpload, generationImage, generationVideo, scope: headers["X-Workbench-Scope"], paidRequests: () => paidRequests.length, submissions: paidRequests };
+  return { image, imageUpload, videoUpload, audioUpload, pdfUpload, otherUpload, generationImage, generationVideo, draftId:draft.id, scope: headers["X-Workbench-Scope"], paidRequests: () => paidRequests.length, submissions: paidRequests };
 }
 
-test("Gen lists every workspace asset by type across modes and uploads originals through the library", async ({ page }, info) => {
+test("Gen lists linked project assets by source and type across modes and uploads originals through the library", async ({ page }, info) => {
   test.skip(!["customer-1440x900", "customer-390x844"].includes(info.project.name), "bounded desktop and phone asset-library coverage");
   const f = await fixture(page);
   const errors: string[] = [];
@@ -123,7 +134,7 @@ test("Gen lists every workspace asset by type across modes and uploads originals
   const jobsQueries: URL[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.pathname === "/api/jobs" && url.searchParams.get("limit") === "60") jobsQueries.push(url);
+    if (url.pathname === "/api/workbench/library" && url.searchParams.get("source") === "generations") jobsQueries.push(url);
   });
   await page.goto("/generate?mode=video");
   for (const mode of ["Video", "Images", "Audio"] as const) {
@@ -135,8 +146,10 @@ test("Gen lists every workspace asset by type across modes and uploads originals
     } else {
       await expect(library(page).getByRole("heading", { name: "Takes & assets", exact: true })).toBeVisible();
     }
+    await selectSource(library(page),'Generations');
     await expect(assetCard(page, "generation", f.generationImage)).toBeVisible();
     await expect(assetCard(page, "generation", f.generationVideo)).toBeVisible();
+    await selectSource(library(page),'Uploads');
     for (const item of [f.imageUpload, f.videoUpload, f.audioUpload, f.pdfUpload, f.otherUpload])
       await expect(assetCard(page, "upload", item.id)).toContainText(item.filename);
     const headings = library(page).getByRole("heading", { level: 3 });
@@ -145,7 +158,7 @@ test("Gen lists every workspace asset by type across modes and uploads originals
     expect(order.every((top, index) => !index || top > order[index - 1])).toBe(true);
   }
   expect(jobsQueries.length).toBeGreaterThan(0);
-  expect(jobsQueries.every((url) => url.searchParams.get("sync") === "0" && !url.searchParams.has("kind") && !url.searchParams.has("unfiled"))).toBe(true);
+  expect(jobsQueries.every((url) => url.searchParams.get("projectId") === f.draftId && !url.searchParams.has("kind") && !url.searchParams.has("unfiled"))).toBe(true);
   const search = page.getByRole("textbox", { name: "Search assets", exact: true });
   await search.fill("Original screenplay");
   await expect(assetCard(page, "upload", f.pdfUpload.id)).toBeVisible();
@@ -195,6 +208,7 @@ test("Gen drags real generated and uploaded images into reference slots with dup
   const f = await fixture(page);
   await page.goto("/generate?mode=images");
   const composer = page.getByRole("region", { name: "Images composer", exact: true });
+  await selectSource(library(page),'Generations');
   const generated = assetCard(page, "generation", f.generationImage);
   await expect(generated).toHaveAttribute("draggable", "true");
   const references = composer.getByLabel("Generation references", { exact: true });
@@ -206,6 +220,7 @@ test("Gen drags real generated and uploaded images into reference slots with dup
   await generated.dragTo(references);
   await expect(page.getByText("This asset is already attached.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove Filed lighting take", exact: true })).toHaveCount(1);
+  await selectSource(library(page),'Uploads');
   await assetCard(page, "upload", f.imageUpload.id).dragTo(references);
   await expect(page.getByRole("button", { name: "Remove Original lighting reference.png", exact: true })).toBeVisible();
   await assetCard(page, "upload", f.videoUpload.id).dragTo(references);
@@ -253,7 +268,7 @@ test("Gen drags workspace assets into Seedance, Topaz and Astra source panels wi
   const sourceScopes: (string | undefined)[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if ((url.pathname === "/api/uploads" && url.searchParams.get("limit") === "500") || (url.pathname === "/api/jobs" && url.searchParams.get("status") === "succeeded"))
+    if (url.pathname === '/api/workbench/library' && url.searchParams.get('projectId')===f.draftId && url.searchParams.get('limit')==='500')
       sourceScopes.push(request.headers()["x-workbench-scope"]);
   });
   await page.goto(`/make/images?ref=upload:${f.imageUpload.id}&task=upscale&source=upload:${f.imageUpload.id}`);
@@ -273,6 +288,7 @@ test("Gen drags workspace assets into Seedance, Topaz and Astra source panels wi
     await page.goto(`/generate?mode=${mode}&task=${task}`);
     const panel = page.getByRole("region", { name: panelName, exact: true });
     await expect(panel).toBeVisible();
+    await selectSource(library(page),origin==='generation'?'Generations':'Uploads');
     await assetCard(page, origin, id).dragTo(panel.getByLabel(dropLabel, { exact: true }));
     await expect(panel.getByLabel(sourceLabel, { exact: true })).toHaveValue(`${origin}:${id}`);
   }
@@ -299,13 +315,18 @@ test("Gen keeps take and upload pages independent and refreshes cursor boundarie
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((response) => response.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
+  const draft=newProject('Pagination Studio project');
+  const saved=await page.request.put('/api/workbench/projects',{headers:{'X-Workbench-Scope':scope},data:{project:draft,revision:0}});
+  expect(saved.ok(),await saved.text()).toBe(true);
+  await page.addInitScript(({scope,id})=>localStorage.setItem(scope,id),{scope,id:draft.id});
   let phase = 0;
   const cursors: string[] = [];
   // The APIs' real tuple cursors are covered separately. This controlled list
   // boundary makes insertion between two loaded pages reproducible in the UI.
-  await page.route("**/api/jobs?*", async (route) => {
+  await page.route("**/api/workbench/library?*", async (route) => {
     const url = new URL(route.request().url());
-    if (!url.searchParams.has("pagination")) return route.continue();
+    if (url.searchParams.get('source')!=='generations') return route.fallback();
+    expect(url.searchParams.get('projectId')).toBe(draft.id);
     const order = phase === 0 ? ["a", "b", "c", "d"] : phase === 1 ? ["new", "a", "b", "c", "d"] : ["new", "a", "b", "d"];
     const cursor = url.searchParams.get("cursor");
     cursors.push(cursor ?? "first");
@@ -320,20 +341,28 @@ test("Gen keeps take and upload pages independent and refreshes cursor boundarie
       nextPageCursor: offset + ids.length < order.length ? ids.at(-1) : null,
     } });
   });
-  await page.route("**/api/uploads?*", async (route) => {
-    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+  await page.route("**/api/workbench/library?*", async (route) => {
+    const url=new URL(route.request().url());
+    if(url.searchParams.get('source')!=='uploads')return route.fallback();
+    expect(url.searchParams.get('projectId')).toBe(draft.id);
+    const cursor = url.searchParams.get("cursor");
     const id = cursor ? "upload_page_b" : "upload_page_a";
     await route.fulfill({ json: { uploads: [{ id, filename: `${id}.txt`, kind: "file", mime: "application/octet-stream", bytes: 10, createdAt: 1, url: `/api/uploads/${id}` }], nextCursor: cursor ? null : "upload_page_a" } });
   });
   await page.route("**/api/media/page_*", (route) => route.fulfill({ path: "public/fixtures/still.png", contentType: "image/png" }));
   await page.goto("/generate?mode=images");
+  await selectSource(library(page),'Generations');
   await expect(assetCard(page, "generation", "page_a")).toHaveAttribute("draggable", "false");
+  await selectSource(library(page),'Uploads');
   await library(page).getByRole("button", { name: "Load more uploads", exact: true }).click();
   await expect(library(page).locator('[data-library-id^="upload:"]')).toHaveCount(2);
+  await selectSource(library(page),'Generations');
   await expect(library(page).locator('[data-library-id^="generation:"]')).toHaveCount(2);
   await library(page).getByRole("button", { name: "Load more takes", exact: true }).click();
   await expect(library(page).locator('[data-library-id^="generation:"]')).toHaveCount(4);
+  await selectSource(library(page),'Uploads');
   await expect(library(page).locator('[data-library-id^="upload:"]')).toHaveCount(2);
+  await selectSource(library(page),'Generations');
   const changed = () => page.evaluate((currentScope) => window.dispatchEvent(new CustomEvent("particl:assets-changed", { detail: { scope: currentScope } })), scope);
   phase = 1;
   await changed();
@@ -350,6 +379,7 @@ test("Gen keeps take and upload pages independent and refreshes cursor boundarie
   await expect(assetCard(page, "generation", "page_c")).toHaveCount(0);
   await expect(library(page).locator('[data-library-id^="generation:"]')).toHaveCount(4);
   await expect(library(page).getByRole("button", { name: "Load more takes", exact: true })).toHaveCount(0);
+  await selectSource(library(page),'Uploads');
   await expect(library(page).locator('[data-library-id^="upload:"]')).toHaveCount(2);
 });
 
@@ -359,16 +389,19 @@ test("collective Library navigation lists shared originals and all takes, with w
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/generate");
-  const sections = page.getByRole("navigation", { name: "Studio sections", exact: true }).filter({ visible: true });
-  await sections.getByRole("link", { name: "Library", exact: true }).click();
-  await expect(page).toHaveURL(/\/library$/);
-  await expect(page.getByRole("heading", { name: page.viewportSize()!.width <= 759 ? "Workspace uploads and generated takes" : "Library", exact: true })).toBeVisible();
-  await expect(sections.getByRole("link", { name: "Library", exact: true })).toHaveAttribute("aria-current", "page");
+  const allAssets=page.getByRole('link',{name:'All assets',exact:true});
+  await expect(page.getByRole('button',{name:'Select project',exact:true})).toContainText('Library fixture Studio project');
+  await allAssets.click();
+  await expect(page).toHaveURL(/\/library\?.*all=1/);
+  await expect(page.getByRole("heading", { name: page.viewportSize()!.width <= 759 ? "Workspace uploads and generated takes" : "All assets", exact: true })).toBeVisible();
+  await expect(allAssets).toHaveAttribute("aria-current", "page");
   const collective = page.getByRole("region", { name: "Collective workspace assets", exact: true });
   await expect(collective.getByRole("heading", { level: 3 })).toHaveText(["Images", "Videos", "Audio", "Documents", "Other files"]);
   for (const upload of [f.imageUpload, f.videoUpload, f.audioUpload, f.pdfUpload, f.otherUpload])
     await expect(assetCard(page, "upload", upload.id)).toContainText(upload.filename);
+  await selectSource(collective,'Generations');
   for (const id of [f.generationImage, f.generationVideo]) await expect(assetCard(page, "generation", id)).toBeVisible();
+  await selectSource(collective,'Uploads');
   const query = page.getByRole("textbox", { name: "Search all workspace assets", exact: true });
   await query.fill("Original screenplay");
   await expect(assetCard(page, "upload", f.pdfUpload.id)).toBeVisible();
@@ -395,17 +428,18 @@ test("collective Library navigation lists shared originals and all takes, with w
   await chooseAssetAction(page, assetCard(page, "upload", f.imageUpload.id), "Use as reference");
   await expect(page).toHaveURL(new RegExp(`mode=images&ref=upload%3A${f.imageUpload.id}`));
   await expect(page.getByRole("button", { name: "Remove Original lighting reference.png", exact: true })).toBeVisible();
-  await sections.getByRole("link", { name: "Library", exact: true }).click();
-  await expect(page).toHaveURL(/\/library$/);
+  await allAssets.click();
+  await expect(page).toHaveURL(/\/library\?.*all=1/);
   await expect(collective).toBeVisible();
   await chooseAssetAction(page, assetCard(collective, "upload", f.videoUpload.id), "Edit clip");
   await expect(page).toHaveURL(new RegExp(`mode=video&task=edit&source=upload%3A${f.videoUpload.id}`));
   await expect(page.getByRole("region", { name: "Seedance 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
-  await sections.getByRole("link", { name: "Library", exact: true }).click();
+  await allAssets.click();
   // Gen also renders these take cards on desktop. Confirm the destination
   // before opening its menu, otherwise navigation can remove Gen’s old menu.
-  await expect(page).toHaveURL(/\/library$/);
+  await expect(page).toHaveURL(/\/library\?.*all=1/);
   await expect(collective).toBeVisible();
+  await selectSource(collective,'Generations');
   await assetCard(collective, "generation", f.generationImage).getByRole("button", { name: "Actions for Filed lighting take", exact: true }).click();
   await page.getByRole("menu", { name: "Actions for Filed lighting take", exact: true })
     .getByRole("menuitem", { name: "Use prompt", exact: true }).click();

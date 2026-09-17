@@ -1,10 +1,12 @@
 "use client";
+import {draftRequest,writeDraft,reconcileDraftWrite,DraftRequestError,type DraftWrite} from "@/lib/workbench/draft-request";
+import {AtomikResizer,useAtomikSize} from "./AtomikResizer";
 import UploadRecovery from "@/components/UploadRecovery";
 
 import Link from "next/link";
 import {ActionMenu,ActionDropdown,type StudioAction} from "./ActionMenu";
-import {type WorkbenchAccount} from "./WorkspaceMenu";
-import StudioNavigation, { StudioSections, MobileStudioMenu } from "@/components/studio/StudioNavigation";
+import WorkspaceMenu, {type WorkbenchAccount} from "./WorkspaceMenu";
+import { MobileStudioMenu } from "@/components/studio/StudioNavigation";
 import {AtomikMark} from "@/components/AtomikMark";
 import {clearPrivateLocal} from "@/lib/session";
 import React, {
@@ -355,6 +357,7 @@ export default function Studio({
   const [homeOverride, setHome] = useState<boolean|null>(null);
   const home=homeOverride??mobile;
   function setStage(value: Stage) {
+    if(sourceMode&&typeof window!=='undefined'){const url=new URL(window.location.href);url.searchParams.set('stage',value);url.searchParams.delete('view');window.history.replaceState(window.history.state,'',url);}
     setHome(false);
     storeStage(value);
     setSequenceExpanded(false);
@@ -364,6 +367,11 @@ export default function Studio({
   const [welcomeChoice,setWelcomeChoice]=useState(false);
   const [samplePreview,setSamplePreview]=useState(false);
   const [atomOpen, setAtomOpen] = useState(false);
+  const atomikSize=useAtomikSize(mobile,storageKey);
+  const uncertainSave=useRef<DraftWrite|null>(null);
+  const retryableSave=useRef(false);
+  const autoSaveRetries=useRef(0);
+  const failedLoad=useRef<{id:string;retryable:boolean;attempts:number}|null>(null);
   const [atomTab, setAtomTab] = useState("genie");
   const [model, setModel] = useState("auto");
   const [effort, setEffort] = useState("auto");
@@ -490,18 +498,21 @@ export default function Studio({
   const jobs=useProductionJobs(p,ready&&signedIn&&!transitioning,change);
   const generatingNodeId=selectedNode&&jobs.mediaJobs.some(job=>['held','queued','running'].includes(job.status)&&job.shotId===p.shotMappings?.[selectedNode])?selectedNode:null;
   const flushSave = useCallback(() => {
-    const captured=pendingSave.current;
+    const captured=uncertainSave.current?.project??pendingSave.current;
     if(!captured)return saveChain.current;
-    pendingSave.current=null;
+    if(pendingSave.current===captured)pendingSave.current=null;
     savingWrites.current++;
     saveChain.current=saveChain.current.then(async()=>{
       if(failedSave.current)return;
       const snapshot=JSON.stringify(captured);
       if(savedSnapshots.current.get(captured.id)===snapshot)return;
       try{
-        const res=await fetch(apiBase+"/projects",{method:"PUT",headers:{"Content-Type":"application/json","X-Workbench-Scope":storageKey},body:JSON.stringify({project:captured,revision:revisions.current.get(captured.id)??0})});
-        const data=await res.json() as {error?:string;revision:number;productionProjectId?:string;shotMappings?:Record<string,string>};
-        if(!res.ok)throw new Error(data.error||"Save failed");
+        const uncertain=uncertainSave.current;
+        const write=uncertain??{project:captured,revision:revisions.current.get(captured.id)??0};
+        const reconciled=uncertain?await reconcileDraftWrite(apiBase,storageKey,uncertain):null;
+        uncertainSave.current=write;
+        const data=reconciled??await writeDraft(apiBase,storageKey,write);
+        uncertainSave.current=null;retryableSave.current=false;autoSaveRetries.current=0;
         revisions.current.set(captured.id,data.revision);
         const stored={...captured,productionProjectId:data.productionProjectId,shotMappings:data.shotMappings};
         savedSnapshots.current.set(captured.id,JSON.stringify(stored));
@@ -517,7 +528,9 @@ export default function Studio({
         setProjects(prev=>[{id:captured.id,name:captured.name},...prev.filter(item=>item.id!==captured.id)]);
       }catch(error){
         failedSave.current=true;
-        if(pRef.current.id===captured.id){setSaveState("Not saved");setSaveError(error instanceof Error?error.message:"Save failed.");}
+        retryableSave.current=error instanceof DraftRequestError&&error.retryable;
+        if(error instanceof DraftRequestError&&!error.uncertain)uncertainSave.current=null;
+        if(pRef.current.id===captured.id){setSaveState(error instanceof DraftRequestError&&error.uncertain?"Save unconfirmed":"Not saved");setSaveError(error instanceof Error?error.message:"Save failed. Your current work is preserved.");}
       }
     }).finally(()=>{savingWrites.current--;});
     return saveChain.current;
@@ -588,32 +601,33 @@ export default function Studio({
   const adoptProject=useCallback((next:Project,version:number,saved:boolean,persisted=next)=>{
     revisions.current.set(next.id,version);
     if(saved)savedSnapshots.current.set(next.id,JSON.stringify(persisted));else savedSnapshots.current.delete(next.id);
-    pendingSave.current=null;failedSave.current=false;
+    pendingSave.current=null;failedSave.current=false;uncertainSave.current=null;retryableSave.current=false;autoSaveRetries.current=0;
     setBibleConflict(null);
     history.current=[];future.current=[];
     pRef.current=next;setP(next);readyRef.current=true;setReady(true);
     setContextIds(next.assets.filter(asset=>asset.locked||asset.category==='Character').map(asset=>asset.id));
     setSelectedNode(next.nodes[0]?.id??null);setSelectedAsset(null);setFrame(0);
     setSaveState(saved&&JSON.stringify(next)===JSON.stringify(persisted)?'Saved':'Saving');setSaveError('');
+    if(sourceMode){const url=new URL(window.location.href);url.searchParams.set('project',next.id);window.history.replaceState(window.history.state,'',url);}
     try{localStorage.setItem(storageKey,next.id);}catch{/* Server persistence remains available when browser storage is disabled. */}
-  },[storageKey]);
+  },[storageKey,sourceMode]);
   const endTransition=useCallback((token:number)=>{
     if(token===loadToken.current){transitioningRef.current=false;setTransitioning(false);}
   },[]);
   const loadProject = useCallback(async(id:string)=>{
     const transition=await beginTransition();if(!transition)return;
     try{
-      const res=await fetch(apiBase+"/projects?id="+encodeURIComponent(id),{headers:{"X-Workbench-Scope":storageKey}});
-      const data=await res.json() as {error?:string;revision:number;project?:Project;projects?:{id:string;name:string}[];productions?:{id:string;name:string}[];shared?:{assets:Asset[];nodes:CanvasNode[];version:number}};
-      if(!res.ok)throw new Error(data.error||'Unable to load your work.');
+      const data=await draftRequest<{revision:number;project?:Project;projects?:{id:string;name:string}[];productions?:{id:string;name:string}[];shared?:{assets:Asset[];nodes:CanvasNode[];version:number}}>(apiBase+"/projects?id="+encodeURIComponent(id),storageKey);
       if(transition.token!==loadToken.current)return;
       // Recheck the outgoing draft before accepting the next server response.
       if(transition.wasReady&&signedIn&&!(await drainSaves(transition.from)))throw new Error('Your latest changes could not be saved. The current project remains open.');
       if(transition.token!==loadToken.current)return;
       const persisted=data.project;
       if(!persisted){
+        failedLoad.current=null;
         setProjects(data.projects??[]);setProductions(data.productions??[]);setWelcomeChoice(true);setSamplePreview(false);setHome(true);readyRef.current=false;setReady(false);setSaveState('Choose a project');return;
       }
+      failedLoad.current=null;
       setWelcomeChoice(false);setSamplePreview(false);
       const next={...persisted};
       if(data.shared){next.sharedAssets=data.shared.assets;next.sharedNodes=data.shared.nodes;next.bibleVersion=data.shared.version;next.sharedAssetIds=data.shared.assets.map(a=>a.id);next.sharedNodeIds=data.shared.nodes.map(n=>n.id);}
@@ -621,14 +635,22 @@ export default function Studio({
       setProductions(data.productions??[]);setProjects(data.projects??[]);
     }catch(error){
       if(transition.token!==loadToken.current)return;
-      readyRef.current=transition.wasReady;setReady(transition.wasReady);setSaveState('Not saved');setSaveError(error instanceof Error?error.message:'Unable to load your work.');
+      failedLoad.current={id,retryable:error instanceof DraftRequestError&&error.retryable,attempts:failedLoad.current?.id===id?failedLoad.current.attempts:0};
+      readyRef.current=transition.wasReady;setReady(transition.wasReady);setSaveState(transition.wasReady?'Project kept open':'Could not connect');setSaveError(error instanceof Error?error.message:'Unable to load your work.');
     }finally{endTransition(transition.token);}
   },[apiBase,beginTransition,drainSaves,adoptProject,endTransition,signedIn,storageKey]);
   useEffect(() => {
     if(!signedIn)return;
     // The shared async loader hydrates from the server after flushing any pending write.
     let last='dune-studies';
-    try{last=localStorage.getItem(storageKey)||last;}catch{/* Hydrate the default draft when local storage is disabled. */}
+    try{last=new URLSearchParams(window.location.search).get('project')||localStorage.getItem(storageKey)||last;}catch{/* Hydrate the default draft when local storage is disabled. */}
+    const params=new URLSearchParams(window.location.search);
+    const requestedStage=params.get('stage');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial route state is read once from the browser URL.
+    if(STAGES.some(s=>s.id===requestedStage)){storeStage(requestedStage as Stage);setHome(false);}
+    else if(params.get('view')==='workspace')setHome(true);
+    if(params.get('atomik')==='open')setAtomOpen(true);
+    if(params.get('new')==='1'){setDialog('project');const url=new URL(window.location.href);url.searchParams.delete('new');window.history.replaceState(window.history.state,'',url);}
     let active=true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the private draft from the server on mount.
     void loadProject(last).finally(()=>{if(active)setInitializedScope(storageKey);});
@@ -642,6 +664,20 @@ export default function Studio({
     const timer = setTimeout(() => void flushSave(), 650);
     return () => clearTimeout(timer);
   }, [p, ready, signedIn, transitioning, flushSave]);
+  useEffect(()=>{
+    if(!saveError||!retryableSave.current||!signedIn)return;
+    const reconnect=()=>{if(!failedSave.current||!retryableSave.current||!navigator.onLine)return;failedSave.current=false;pendingSave.current=pRef.current;setSaveState('Reconnecting');setSaveError('');void flushSave();};
+    const timer=autoSaveRetries.current<2?setTimeout(()=>{autoSaveRetries.current++;reconnect();},2000*(autoSaveRetries.current+1)):undefined;
+    window.addEventListener('online',reconnect);
+    return()=>{clearTimeout(timer);window.removeEventListener('online',reconnect);};
+  },[saveError,flushSave,signedIn]);
+  useEffect(()=>{
+    if(!saveError||ready||failedSave.current||!failedLoad.current?.retryable)return;
+    const reconnect=()=>{const failure=failedLoad.current;if(!failure||!failure.retryable||!navigator.onLine||readyRef.current||transitioningRef.current)return;failure.attempts++;void loadProject(failure.id);};
+    const timer=failedLoad.current.attempts<2?setTimeout(reconnect,2500):undefined;
+    window.addEventListener('online',reconnect);
+    return()=>{clearTimeout(timer);window.removeEventListener('online',reconnect);};
+  },[saveError,ready,loadProject]);
   useEffect(() => {
     const cb = (e: BeforeUnloadEvent) => {
       if (pendingSave.current || failedSave.current || savingWrites.current>0 || (signedIn&&readyRef.current&&savedSnapshots.current.get(pRef.current.id)!==JSON.stringify(pRef.current))) {
@@ -663,7 +699,7 @@ export default function Studio({
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "z" && !editing) {
         e.preventDefault();
-        e.shiftKey ? redo() : undo();
+        if(!(stage==='canvas'&&scope==='Shared production')){e.shiftKey ? redo() : undo();}
       }
       if (e.key === "?" && !editing) setDialog("shortcuts");
       if (e.code === "Space" && !editing && !(e.target as HTMLElement)?.closest('button,a,select,[role="slider"]') && stage === "edit") {
@@ -673,7 +709,7 @@ export default function Studio({
     };
     window.addEventListener("keydown", cb);
     return () => window.removeEventListener("keydown", cb);
-  }, [stage, undo, redo]);
+  }, [stage, scope, undo, redo]);
   useEffect(() => {
     if (!playing || !totalFrames) return;
     const start = performance.now(),
@@ -1139,7 +1175,7 @@ export default function Studio({
   return (
     <TooltipProvider delayDuration={250}>
       <UploadRecovery scope={signedIn ? storageKey : null} />
-      <div className="ps">
+      <div className="ps" style={atomikSize.style}>
         <div
           className={
             "studio-shell studio-redesign " +
@@ -1152,29 +1188,142 @@ export default function Studio({
         >
           <main className="studio-main">
             {mobile && <header className="phone-project-header">
-              {home ? <MobileStudioMenu active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/> : <button className="phone-back" aria-label="Back to project workflow" onClick={()=>setMobileWorkflowOpen(true)}><ArrowLeft size={18}/></button>}
-              {home ? <button className="phone-brand" aria-label="Particl home" onClick={()=>setHome(true)}><img src="/brand/particl-wordmark-on-dark@4x.png" alt="particl"/></button> : <button className="phone-project-crumb" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronRight size={12}/><strong>{String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,'0')} {['Brief','Script','Look','Cast','Elements','Canvas','Boards','Takes','Edit','Deliver'][STAGES.findIndex(s=>s.id===stage)]}</strong></button>}
+              {home ? <MobileStudioMenu projectId={ready?p.id:undefined} active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/> : <button className="phone-back" aria-label="Back to project workflow" onClick={()=>setMobileWorkflowOpen(true)}><ArrowLeft size={18}/></button>}
+              {home ? <button className="phone-project-crumb" aria-label="Select project" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronDown size={12}/><strong>Workspace</strong></button> : <button className="phone-project-crumb" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronRight size={12}/><strong>{String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,'0')} {['Brief','Script','Look','Cast','Elements','Canvas','Boards','Takes','Edit','Deliver'][STAGES.findIndex(s=>s.id===stage)]}</strong></button>}
               <button className={'phone-save '+(saveError?'has-error':'')} aria-label={saveState} title={saveState} onClick={()=>saveError&&toast.error(saveError)}>{saveError?<TriangleAlert size={12}/>:saveState==='Saving'?<Loader2 size={12} className="spin"/>:saveState==='Saved'?<Check size={12}/>:null}<span>{home && initialAccount?.credits ? `${Math.round(initialAccount.credits.balance).toLocaleString()} cr` : saveState.startsWith('Sample')?'Sample':saveState}</span></button>
+              <button className="phone-all-assets" aria-label="All assets" onClick={()=>void leaveWorkspace("/library?all=1&project="+encodeURIComponent(p.id))}><FolderOpen size={18}/></button>
               <button className="phone-atomik" aria-label="Toggle Atomik creative engine" disabled={!hydrated} onClick={()=>setAtomOpen(v=>!v)}><AtomMark/><span>Atomik</span></button>
             </header>}
 
+            <div className="project-bar">
+              <div className="project-breadcrumb">
+                <button onClick={() => setHome(true)}>Projects</button>
+                <ChevronRight size={12} />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="project-switch">
+                      <span className="project-monogram">
+                        {p.name
+                          .split(/\s+/)
+                          .map((w) => w[0])
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </span>
+                      {p.name}
+                      <ChevronDown size={13} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="ps">
+                    <DropdownMenuItem onClick={() => setDialog("project")}>
+                      <Plus size={14} />
+                      New project
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={()=>void leaveWorkspace(`/pipelines${p.productionProjectId?`?projectId=${encodeURIComponent(p.productionProjectId)}`:""}`)}>Pipelines</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setStage("brief")}>
+                      Edit project brief
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={()=>void publishBible()}>Publish project bible</DropdownMenuItem>
+                    {productions.map(item=><DropdownMenuItem key={'prod-'+item.id} onClick={()=>void openProduction(item.id)}>Open {item.name} in my space</DropdownMenuItem>)}
+                    {projects
+                      .filter((a) => a.id !== p.id)
+                      .map((a) => (
+                        <DropdownMenuItem
+                          key={a.id}
+                          onClick={() => {
+                            void loadProject(a.id);
+                            setStage("canvas");
+                          }}
+                        >
+                          {a.name}
+                        </DropdownMenuItem>
+                      ))}
+                    <DropdownMenuItem
+                      onClick={() =>
+                        downloadFile(
+                          new Blob([JSON.stringify(p, null, 2)], {
+                            type: "application/json",
+                          }),
+                          safeName(p.name) + ".json",
+                        )
+                      }
+                    >
+                      Download project data
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <span className="project-description">{p.description}</span>
+              </div>
+              <div className="project-bar-actions">
+              <div className="workflow-utilities">
+                <button className="all-assets-button" onClick={()=>void leaveWorkspace("/library?all=1&project="+encodeURIComponent(p.id))}><FolderOpen size={15}/><span>All assets</span></button>
+                <button
+                  className={"atomik-toggle " + (atomOpen ? "on" : "")}
+                  aria-label="Toggle Atomik creative engine"
+                  aria-expanded={atomOpen}
+                  aria-controls="atomik-panel"
+                  disabled={!hydrated}
+                  onClick={() => setAtomOpen((v) => !v)}
+                >
+                  <AtomMark />
+                  <span>Atomik</span>
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="studio-settings"
+                      aria-label="Studio settings"
+                    >
+                      <Settings2 size={17} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="ps">
+                    <DropdownMenuItem onClick={() => setDialog("shortcuts")}>
+                      Keyboard shortcuts
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={()=>void leaveWorkspace(signedIn?'/settings':'/login')}>{signedIn?'Account & workspace':'Sign in'}</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setDialog("connections")}>
+                      Connected engines
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setDialog("review")}>
+                      Studio guide
+                    </DropdownMenuItem>
+                    {!sourceMode && (
+                      <DropdownMenuItem asChild>
+                        <a href="/particl-redesign-source.zip" download>
+                          Download redesigned repository
+                        </a>
+                      </DropdownMenuItem>
+                    )}
+                    {sourceMode && (
+                      <DropdownMenuItem onSelect={()=>void leaveWorkspace("/generate?project="+encodeURIComponent(p.id))}>Open Gen</DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+                <WorkspaceMenu initial={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace("/workbench",{kind:"switch",id})} onSignOut={()=>leaveWorkspace("/login",{kind:"logout"})}/>
+                <span className="project-spec">
+                  {p.aspect}
+                  <i />
+                  {p.fps} fps
+                </span>
+                <button
+                  className={"save-label " + (saveError ? "save-problem" : "")}
+                  onClick={() =>
+                    saveError ? toast.error(saveError) : undefined
+                  }
+                >
+                  {saveState === "Saved" ? (
+                    <Check size={12} />
+                  ) : saveState === "Saving" ? (
+                    <Loader2 size={12} className="spin" />
+                  ) : null}
+                  {saveState}
+                </button>
+              </div>
+            </div>
             <header className="workflow-header">
-              <button
-                className={"particl-home " + (home ? "active" : "")}
-                aria-label="Particl home"
-                disabled={!hydrated || (signedIn && initializedScope !== storageKey)}
-                onClick={() => {
-                  setHome(true);
-                  setAtomOpen(false);
-                }}
-              >
-                <Mark />
-                <img
-                  src="/brand/particl-wordmark-on-dark@4x.png"
-                  alt="particl"
-                />
-              </button>
-              <StudioNavigation compact hideSections active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}>
               <Tabs
                 value={home ? "home" : stage}
                 onValueChange={(v) => setStage(v as Stage)}
@@ -1226,145 +1375,12 @@ export default function Studio({
                   })}
                 </TabsList>
               </Tabs>
-              <div className="workflow-utilities">
-                <button
-                  className={"atomik-toggle " + (atomOpen ? "on" : "")}
-                  aria-label="Toggle Atomik creative engine"
-                  aria-expanded={atomOpen}
-                  aria-controls="atomik-panel"
-                  disabled={!hydrated}
-                  onClick={() => setAtomOpen((v) => !v)}
-                >
-                  <AtomMark />
-                  <span>Atomik</span>
-                </button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="studio-settings"
-                      aria-label="Studio settings"
-                    >
-                      <Settings2 size={17} />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="ps">
-                    <DropdownMenuItem onClick={() => setDialog("shortcuts")}>
-                      Keyboard shortcuts
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={()=>void leaveWorkspace(signedIn?'/settings':'/login')}>{signedIn?'Account & workspace':'Sign in'}</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDialog("connections")}>
-                      Connected engines
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDialog("review")}>
-                      Studio guide
-                    </DropdownMenuItem>
-                    {!sourceMode && (
-                      <DropdownMenuItem asChild>
-                        <a href="/particl-redesign-source.zip" download>
-                          Download redesigned repository
-                        </a>
-                      </DropdownMenuItem>
-                    )}
-                    {sourceMode && (
-                      <DropdownMenuItem onSelect={()=>void leaveWorkspace("/generate")}>Open Gen</DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              </StudioNavigation>
+              <nav className="project-tools" aria-label="Project tools">
+                <button disabled={!ready&&signedIn} onClick={()=>void leaveWorkspace('/generate?project='+encodeURIComponent(p.id))}><Scan size={15}/>Gen</button>
+                <button disabled={!ready&&signedIn} onClick={()=>void leaveWorkspace('/library?project='+encodeURIComponent(p.id))}><FolderOpen size={15}/>Library</button>
+                <button aria-current={home?'page':undefined} onClick={()=>setHome(true)}><LayoutGrid size={15}/>Workspace</button>
+              </nav>
             </header>
-
-            <div className="project-bar">
-              <div className="project-breadcrumb">
-                <button onClick={() => setHome(true)}>Projects</button>
-                <ChevronRight size={12} />
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="project-switch">
-                      <span className="project-monogram">
-                        {p.name
-                          .split(/\s+/)
-                          .map((w) => w[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase()}
-                      </span>
-                      {p.name}
-                      <ChevronDown size={13} />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="ps">
-                    <DropdownMenuItem onClick={() => setDialog("project")}>
-                      <Plus size={14} />
-                      New project
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setStage("brief")}>
-                      Edit project brief
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={()=>void publishBible()}>Publish project bible</DropdownMenuItem>
-                    {productions.map(item=><DropdownMenuItem key={'prod-'+item.id} onClick={()=>void openProduction(item.id)}>Open {item.name} in my space</DropdownMenuItem>)}
-                    {projects
-                      .filter((a) => a.id !== p.id)
-                      .map((a) => (
-                        <DropdownMenuItem
-                          key={a.id}
-                          onClick={() => {
-                            void loadProject(a.id);
-                            setStage("canvas");
-                          }}
-                        >
-                          {a.name}
-                        </DropdownMenuItem>
-                      ))}
-                    <DropdownMenuItem
-                      onClick={() =>
-                        downloadFile(
-                          new Blob([JSON.stringify(p, null, 2)], {
-                            type: "application/json",
-                          }),
-                          safeName(p.name) + ".json",
-                        )
-                      }
-                    >
-                      Download project data
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <span className="project-description">{p.description}</span>
-              </div>
-              <div className="project-section-nav">
-                <StudioSections active="studio" onNavigate={path=>leaveWorkspace(path)} />
-              </div>
-              <div className="project-bar-actions">
-                <span className="project-spec">
-                  {p.aspect}
-                  <i />
-                  {p.fps} fps
-                </span>
-                <button
-                  className={"save-label " + (saveError ? "save-problem" : "")}
-                  onClick={() =>
-                    saveError ? toast.error(saveError) : undefined
-                  }
-                >
-                  {saveState === "Saved" ? (
-                    <Check size={12} />
-                  ) : saveState === "Saving" ? (
-                    <Loader2 size={12} className="spin" />
-                  ) : null}
-                  {saveState}
-                </button>
-                <button className="sample-label" disabled={transitioning} onClick={()=>void leaveWorkspace(`/pipelines${p.productionProjectId?`?projectId=${encodeURIComponent(p.productionProjectId)}`:""}`)}>Pipelines</button>
-                <Button
-                  variant="outline"
-                  className="btn project-export"
-                  onClick={() => setStage("export")}
-                >
-                  <Download size={14} />
-                  Export
-                </Button>
-              </div>
-            </div>
             {saveError && (
               <div className="save-banner">
                 <TriangleAlert size={14} />
@@ -1375,7 +1391,7 @@ export default function Studio({
                       failedSave.current = false;
                       pendingSave.current = pRef.current;
                       void flushSave();
-                    } else void loadProject(p.id);
+                    } else void loadProject(failedLoad.current?.id??p.id);
                   }}
                 >
                   Retry
@@ -2616,12 +2632,14 @@ export default function Studio({
                 title="Atomik"
                 description={mobile?`Creative engine · ${p.name} · ⌘J`:"Your creative crew, in reach."}
                 kind="atomik"
+                style={atomikSize.style}
               >
                 <aside
                   className="atomik-panel"
                   id="atomik-panel"
                   aria-label="Atomik creative engine"
                 >
+                  <AtomikResizer size={atomikSize}/>
                   <div className="atomik-heading">
                     <div>
                       <span className="atomik-symbol">
@@ -2941,11 +2959,11 @@ export default function Studio({
               {STAGES.findIndex(s=>s.id===stage)>0 ? <button onClick={()=>setStage(STAGES[STAGES.findIndex(s=>s.id===stage)-1].id)}><ArrowLeft size={14}/><span>{String(STAGES.findIndex(s=>s.id===stage)).padStart(2,'0')} {STAGES[STAGES.findIndex(s=>s.id===stage)-1].label}</span></button> : <button onClick={()=>setMobileWorkflowOpen(true)}><ArrowLeft size={14}/> Workflow</button>}
               {STAGES.findIndex(s=>s.id===stage)<STAGES.length-1 && <button onClick={()=>setStage(STAGES[STAGES.findIndex(s=>s.id===stage)+1].id)}><span>{String(STAGES.findIndex(s=>s.id===stage)+2).padStart(2,'0')} {STAGES[STAGES.findIndex(s=>s.id===stage)+1].label}</span><ArrowRight size={14}/></button>}
             </nav>}
-            {mobile&&home ? <StudioSections className="phone-home-dock" active="studio" onNavigate={path=>leaveWorkspace(path)}/> : <MobileNavigation
+            {mobile&&home ? <nav className="phone-home-dock project-home-dock" aria-label="Project tools"><button disabled={!hydrated||(signedIn&&initializedScope!==storageKey)} onClick={()=>setStage("canvas")}><GitBranch size={20}/>Workflow</button><button disabled={signedIn&&!ready} onClick={()=>void leaveWorkspace("/generate?project="+encodeURIComponent(p.id))}><Scan size={20}/>Gen</button><button disabled={signedIn&&!ready} onClick={()=>void leaveWorkspace("/library?project="+encodeURIComponent(p.id))}><FolderOpen size={20}/>Library</button><button aria-current="page" onClick={()=>setHome(true)}><LayoutGrid size={20}/>Workspace</button></nav> : <MobileNavigation
               workflowOpen={mobileWorkflowOpen}
               onWorkflowOpen={setMobileWorkflowOpen}
               projectDescription={`${p.description} · ${p.aspect} · ${p.fps} fps`}
-              actions={<><button onClick={()=>void leaveWorkspace(`/pipelines${p.productionProjectId?`?projectId=${encodeURIComponent(p.productionProjectId)}`:""}`)}><GitBranch size={14}/>Pipelines</button><button onClick={()=>{setMobileWorkflowOpen(false);setStage('export')}}><Download size={14}/>Export</button><button onClick={()=>void publishBible()}>Publish project bible</button><button onClick={()=>{setMobileWorkflowOpen(false);setDialog('shortcuts')}}>Shortcuts</button><DropdownMenu><DropdownMenuTrigger asChild><button aria-label="Project actions"><MoreHorizontal size={17}/></button></DropdownMenuTrigger><DropdownMenuContent className="ps">
+              actions={<><button onClick={()=>void leaveWorkspace("/generate?project="+encodeURIComponent(p.id))}><Scan size={14}/>Gen</button><button onClick={()=>void leaveWorkspace("/library?project="+encodeURIComponent(p.id))}><FolderOpen size={14}/>Project library</button><button onClick={()=>{setMobileWorkflowOpen(false);setHome(true)}}><LayoutGrid size={14}/>Project workspace</button><button onClick={()=>void leaveWorkspace(`/pipelines${p.productionProjectId?`?projectId=${encodeURIComponent(p.productionProjectId)}`:""}`)}><GitBranch size={14}/>Pipelines</button><button onClick={()=>{setMobileWorkflowOpen(false);setStage('export')}}><Download size={14}/>Export</button><button onClick={()=>void publishBible()}>Publish project bible</button><button onClick={()=>{setMobileWorkflowOpen(false);setDialog('shortcuts')}}>Shortcuts</button><DropdownMenu><DropdownMenuTrigger asChild><button aria-label="Project actions"><MoreHorizontal size={17}/></button></DropdownMenuTrigger><DropdownMenuContent className="ps">
                 <DropdownMenuItem onSelect={()=>{setMobileWorkflowOpen(false);setDialog('project')}}><Plus size={14}/>New project</DropdownMenuItem>
                 {productions.map(item=><DropdownMenuItem key={'mobile-prod-'+item.id} onSelect={()=>{setMobileWorkflowOpen(false);void openProduction(item.id)}}>Open {item.name} in my space</DropdownMenuItem>)}
                 {projects.filter(item=>item.id!==p.id).map(item=><DropdownMenuItem key={'mobile-project-'+item.id} onSelect={()=>{setMobileWorkflowOpen(false);void loadProject(item.id);setStage('canvas')}}>{item.name}</DropdownMenuItem>)}
@@ -2953,7 +2971,7 @@ export default function Studio({
                 <DropdownMenuItem onSelect={()=>{setMobileWorkflowOpen(false);setDialog('connections')}}>Connected engines</DropdownMenuItem>
                 <DropdownMenuItem onSelect={()=>{setMobileWorkflowOpen(false);setDialog('review')}}>Studio guide</DropdownMenuItem>
                 {!sourceMode&&<DropdownMenuItem asChild><a href="/particl-redesign-source.zip" download>Download redesigned repository</a></DropdownMenuItem>}
-              </DropdownMenuContent></DropdownMenu><MobileStudioMenu active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/></>}
+              </DropdownMenuContent></DropdownMenu><MobileStudioMenu projectId={ready?p.id:undefined} active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/></>}
               disabled={!hydrated||(signedIn&&initializedScope!==storageKey)||transitioning}
               home={home}
               stage={stage}
@@ -3272,7 +3290,7 @@ export default function Studio({
           if(!await ensureSaved(soulTarget.draftId))throw new Error('The Soul ID is attached on screen. Save this project before leaving to retain the binding.');
           toast.success('Soul ID attached. Its original portrait is available on the canvas.');
         }}/>}
-        {generationTarget&&generationTarget.draftId===p.id&&<GenerationDialog scope={storageKey} target={generationTarget} project={p} onClose={()=>setGenerationTarget(null)} onSave={()=>ensureSaved(generationTarget.draftId)} onAsset={(id,fields)=>{if(pRef.current.id===generationTarget.draftId)updateAsset(id,fields);}} onQueued={()=>{if(pRef.current.id!==generationTarget.draftId)return;void ensureSaved(generationTarget.draftId,true).then(saved=>{if(saved)void jobs.refresh();});setAtomOpen(true);setAtomTab('runs');toast.success('Generation submitted. Follow its progress in Activity.');}}/>}
+        {generationTarget&&generationTarget.draftId===p.id&&<GenerationDialog scope={storageKey} target={generationTarget} project={p} onClose={()=>setGenerationTarget(null)} onSave={()=>ensureSaved(generationTarget.draftId)} onAsset={(id,fields)=>{if(pRef.current.id===generationTarget.draftId)updateAsset(id,fields);}} onQueued={(_id,kind)=>{if(pRef.current.id!==generationTarget.draftId)return;if(kind)change(old=>({...old,nodes:old.nodes.map(node=>node.id===generationTarget.node.id&&!node.locked?{...node,mode:kind==='audio'?'Audio':kind==='video'?'Video':'Image'}:node)}));void ensureSaved(generationTarget.draftId,true).then(saved=>{if(saved)void jobs.refresh();});setAtomOpen(true);setAtomTab('runs');toast.success('Generation submitted. Follow its progress in Activity.');}}/>}
         {atomikTarget&&atomikTarget.draftId===p.id&&<AtomikRunDialog scope={storageKey} target={atomikTarget} project={p} models={jobs.models} onSave={()=>ensureSaved(atomikTarget.draftId)} onClose={()=>setAtomikTarget(null)} onQueued={()=>{if(pRef.current.id!==atomikTarget.draftId)return;setPrompt('');setAtomOpen(true);setAtomTab('runs');void jobs.refresh();toast.success('Atomik started. Results are saved in Genie.');}}/>}
       <Toaster theme="dark" position="bottom-center" />
       </div>

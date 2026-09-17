@@ -1,0 +1,118 @@
+.canvas.canvas.canvas {
+  /* Pan belongs to the graph transform; focus must not scroll a second viewport. */
+  overflow: clip;
+}
+
+@media (min-width: 760px) and (max-height: 599px) {
+  :global(.studio-redesign):has(.workbench.workbench) :global(.sequence-shelf) {
+    height: 42px;
+    min-height: 42px;
+    padding: 5px 16px;
+  }
+  :global(.studio-redesign):has(.workbench.workbench) :global(.canvas-stage-heading .eyebrow) {
+    display: none;
+  }
+  :global(.studio-redesign):has(.workbench.workbench) :global(.canvas-stage-heading h1) {
+    margin: 0;
+    font-size: 16px;
+  }
+  .workbench.workbench :global(.ng-commandbar) {
+    min-height: 36px;
+    padding: 4px 12px;
+  }
+  .workbench.workbench .hint {
+    display: none;
+  }
+}
+
+.marquee {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--ps-ink);
+  background: color-mix(in srgb, var(--ps-ink) 12%, transparent);
+  z-index: 6;
+}
+.selectionBar {
+  position: absolute;
+  bottom: 62px;
+  left: 12px;
+  right: 12px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  border: 1px solid var(--ps-edge);
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: var(--ps-panel);
+  color: var(--ps-ink);
+  box-shadow: 0 4px 14px #0003;
+  font-size: 12px;
+}
+.selectionBar span {
+  min-width: 0;
+}
+.selectionBar button {
+  padding: 5px;
+  border-radius: 4px;
+}
+.selectionBar button:hover {
+  background: var(--ps-line);
+}
+.selectionBar button:disabled {
+  opacity: 0.4;
+}
+.live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.hint {
+  position: absolute;
+  right: 12px;
+  top: 44px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+  color: var(--ps-faint);
+  font-size: 11px;
+}
+@media (max-width: 759px) {
+  .hint {
+    display: none;
+  }
+  .selectionBar {
+    gap: 4px;
+    padding: 5px 7px;
+  }
+}
+
+/* Phone controls occupy one row so fitting leaves every selected node reachable. */
+@media (max-width: 759px) {
+  .canvas.canvas :global(.ng-canvas-bottom) {
+    inset: 12px 12px auto;
+    align-items: center;
+    gap: 6px;
+  }
+  .canvas.canvas :global(.ng-canvas-bottom .ng-zoom) {
+    position: static;
+    flex-direction: row;
+    order: 2;
+  }
+  .canvas.canvas :global(.ng-canvas-bottom .ng-zoom > span) {
+    width: 1px;
+    height: 20px;
+    margin: 0 2px;
+  }
+  .canvas.canvas
+    :global(.ng-canvas-bottom .ng-zoom > .ng-tool[aria-label="Zoom in"]) {
+    order: 0;
+  }
+  .canvas.canvas :global(.ng-canvas-bottom .ng-canvas-tools) {
+    max-width: none;
+    flex-wrap: nowrap;
+  }
+}

@@ -4,7 +4,9 @@ import { Film, Upload } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
 import { useSession, useSignInHref } from "@/lib/session";
-import { usePaidAction } from "@/lib/usePaidAction";
+import { usePaidAction, paidActionStorageKey } from "@/lib/usePaidAction";
+import { useLegacyRecovery } from "@/lib/useRecoverySurface";
+import { fileProjectUpload } from "@/lib/workbench/project-library-client";
 import { useUploadFile } from "@/lib/useUploadFile";
 import { useToast } from "@/components/ui/Toast";
 import { ASTRA_MODEL, DEFAULT_ASTRA, type AstraSettings } from "@/lib/astra";
@@ -29,27 +31,30 @@ const asUpload = (file: UploadedFile): Source => ({
   origin: "upload",
 });
 export default function AstraUpscale({
+  project,
   onBack,
   onMade,
   initialSource,
   controller,
 }: {
+  project?: import("@/lib/generationProject").GenerationProject;
   onBack: () => void;
   onMade: () => void;
   initialSource?: string | null;
   controller?: Ref<GenAssetInputHandle>;
 }) {
-  const { signedIn, requestScope } = useSession(),
+  const { signedIn, requestScope, workspace, email } = useSession(),
     signIn = useSignInHref(),
     toast = useToast(),
     uploader = useUploadFile();
-  const paid = usePaidAction("gen:astra-2-upscale");
+  const legacyRecovery = useLegacyRecovery([paidActionStorageKey(workspace?.id ?? "", email ?? "", "gen:astra-2-upscale")], signedIn);
+  const paid = usePaidAction(`gen:astra-2-upscale${project && !legacyRecovery ? `:${project.id}` : ""}`);
   const {
     data: uploads,
     error: uploadError,
     refresh,
   } = useApi<{ uploads: UploadedFile[] }>(
-    signedIn ? "/api/uploads?limit=500" : null,
+    signedIn ? (project ? `/api/workbench/library?projectId=${encodeURIComponent(project.id)}&source=uploads&limit=500` : "/api/uploads?limit=500") : null,
     0, requestScope,
   );
   const {
@@ -57,7 +62,7 @@ export default function AstraUpscale({
     error: takeError,
     refresh: refreshTakes,
   } = useApi<{ generations: Generation[] }>(
-    "/api/jobs?status=succeeded&limit=500&sync=0",
+    (project ? `/api/workbench/library?projectId=${encodeURIComponent(project.id)}&source=generations&limit=500` : "/api/jobs?status=succeeded&limit=500&sync=0"),
     0, requestScope,
   );
   const [added, setAdded] = useState<Source[]>([]),
@@ -94,6 +99,7 @@ export default function AstraUpscale({
       : null;
   const displayed = (saved?.astra as AstraSettings | undefined) || settings;
   const body = {
+    projectId: project?.productionProjectId ?? null,
     model: ASTRA_MODEL,
     task: "upscale",
     prompt: "",
@@ -118,7 +124,11 @@ export default function AstraUpscale({
       if (!/\.(mp4|mov)$/i.test(file.name) || file.size > 200 * 1024 * 1024)
         throw Error("Choose an MP4 or MOV original up to 200 MB.");
     },
-    upload: (file) => uploader(file, "chat"),
+    upload: async file => {
+      const original = await uploader(file, "chat");
+      if (project && requestScope) await fileProjectUpload(project.id, original.id, requestScope);
+      return original;
+    },
     onAsset(asset) {
       if (asset.kind !== "video") throw Error("Choose a video for Astra upscale.");
       setAdded((previous) => [asset, ...previous.filter((item) => item.key !== asset.key)]);

@@ -25,3 +25,12 @@ test('unavailable or corrupt storage never silently creates a fresh paid request
   expect(()=>claimPendingGeneration(local,'key',{key:'new',body:'{}',credits:2})).toThrow();
   expect(()=>claimPendingGeneration({...local,getItem:()=>null,setItem:()=>{throw new Error('storage blocked')}},'key',{key:'new',body:'{}',credits:2})).toThrow('storage blocked');
 });
+test('an uncertain node audio request retains its endpoint and original exact body', () => {
+ const local=storage(),key=pendingGenerationKey('workspace:alice','draft','node');
+ const audio={key:'original-audio',endpoint:'/api/audio' as const,body:JSON.stringify({task:'sound',text:'Rain',durationSeconds:5,projectId:'production',shotId:'shot',maxCredits:3}),credits:3};
+ claimPendingGeneration(local,key,audio);
+ expect(claimPendingGeneration(local,key,{key:'visual-attempt',body:'{}',credits:100,endpoint:'/api/generate'})).toEqual(audio);
+ expect(readPendingGeneration(local,key)?.endpoint).toBe('/api/audio');
+ local.setItem(key,JSON.stringify({...audio,endpoint:'https://invalid.example/paid'}));
+ expect(()=>readPendingGeneration(local,key)).toThrow('cannot be read');
+});

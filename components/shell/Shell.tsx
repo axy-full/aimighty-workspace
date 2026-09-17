@@ -18,7 +18,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   useMobileViewport();
   const { email } = useSession();
   const path = usePathname();
-  const focusedSection = /^\/(generate|make|pipelines|settings|team|usage|statements)(\/|$)/.test(path);
+  const focusedSection = /^\/(pipelines|settings|team|usage|statements)(\/|$)/.test(path);
   useEffect(() => { bindAtomikRail(email ?? "visitor"); }, [email]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {

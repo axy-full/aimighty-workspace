@@ -16,6 +16,7 @@ export const RAIL_WIDTHS = { compact: 300, expanded: 420 } as const;
 
 type Props = {
   width: number;
+  resizeHandle?: ReactNode;
   header: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
@@ -23,11 +24,12 @@ type Props = {
   className?: string;
 };
 
-export default function Rail({ width, header, footer, children, label, className = "" }: Props) {
+export default function Rail({ width, resizeHandle, header, footer, children, label, className = "" }: Props) {
   const wide = width >= RAIL_WIDTHS.expanded;
   return (
-    <aside aria-label={label} style={{ width }}
+    <aside aria-label={label} style={{ width,position:"relative" }}
       className={`ui-rail flex h-full flex-none flex-col border-l border-border-mid text-ink ${className}`}>
+      {resizeHandle}
       <header className={`flex h-[52px] flex-none items-center gap-[8px] border-b border-border ${wide ? "px-[16px]" : "px-[14px]"}`}>{header}</header>
       <div className={`flex min-h-0 flex-1 flex-col gap-[12px] overflow-y-auto ${wide ? "px-[16px] pb-[12px] pt-[14px]" : "p-[14px]"}`}>{children}</div>
       {footer && (

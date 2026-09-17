@@ -10,7 +10,8 @@ export const ASSET_GROUPS = [
   { kind: "file", label: "Other files" },
 ] as const;
 export type LibraryKind = (typeof ASSET_GROUPS)[number]["kind"];
-export type LibraryUpload = UploadedFile & { createdAt: number };
+export type LibraryUpload = UploadedFile & { createdAt: number; librarySource?: 'generation'; projectFiled?: boolean };
+export type LibrarySource = 'uploads' | 'generations';
 export type LibraryAsset =
   | { origin: "generation"; value: Generation }
   | { origin: "upload"; value: LibraryUpload };
@@ -25,6 +26,7 @@ export function libraryKind(asset: LibraryAsset): LibraryKind {
   return "file";
 }
 export const libraryId = (asset: LibraryAsset) => `${asset.origin}:${asset.value.id}`;
+export const librarySource = (asset: LibraryAsset): LibrarySource => asset.origin === 'generation' || asset.value.librarySource === 'generation' ? 'generations' : 'uploads';
 export function libraryName(asset: LibraryAsset) {
   return asset.origin === "upload"
     ? asset.value.filename

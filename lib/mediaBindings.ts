@@ -62,6 +62,9 @@ export async function mediaBindingProblem(
           "SELECT 1 FROM shot_presets WHERE cover_gen_id=?",
           "SELECT 1 FROM generations WHERE source_gen_id=? AND deleted=0",
         ];
+  if (kind === 'upload' && (await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_library_uploads'")).rows.length &&
+    (await tx.execute({sql:'SELECT 1 FROM project_library_uploads WHERE upload_id=? LIMIT 1',args:[id]})).rows.length)
+    return 'This original is filed in a project library. Remove its project filing before deleting it.';
   if ((await tx.execute({sql:'SELECT 1 FROM workbench_edit_sources WHERE kind=? AND source_id=? LIMIT 1',args:[kind,id]})).rows.length)
     return 'This media is retained by an edit version. Keep its original source so earlier cuts remain recoverable.';
   if (

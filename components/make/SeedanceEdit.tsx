@@ -5,7 +5,9 @@ import { Film, Upload, X } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import { useApi } from "@/lib/useApi";
 import { useSession, useSignInHref } from "@/lib/session";
-import { usePaidAction } from "@/lib/usePaidAction";
+import { usePaidAction, paidActionStorageKey } from "@/lib/usePaidAction";
+import { useLegacyRecovery } from "@/lib/useRecoverySurface";
+import { fileProjectUpload } from "@/lib/workbench/project-library-client";
 import { useUploadFile } from "@/lib/useUploadFile";
 import { useToast } from "@/components/ui/Toast";
 import type { Generation } from "@/lib/jobs";
@@ -36,32 +38,35 @@ const uploaded = (u: UploadedFile): Asset => ({
 });
 
 export default function SeedanceEdit({
+  project,
   onBack,
   onMade,
   initialSource,
   controller,
 }: {
+  project?: import("@/lib/generationProject").GenerationProject;
   onBack: () => void;
   onMade: () => void;
   initialSource?: string | null;
   controller?: Ref<GenAssetInputHandle>;
 }) {
-  const { signedIn, requestScope } = useSession();
+  const { signedIn, requestScope, workspace, email } = useSession();
   const signIn = useSignInHref();
   const toast = useToast();
   const upload = useUploadFile();
-  const paid = usePaidAction("gen:seedance-2.5-edit");
+  const legacyRecovery = useLegacyRecovery([paidActionStorageKey(workspace?.id ?? "", email ?? "", "gen:seedance-2.5-edit")], signedIn);
+  const paid = usePaidAction(`gen:seedance-2.5-edit${project && !legacyRecovery ? `:${project.id}` : ""}`);
   const {
     data: uploads,
     error: uploadError,
     refresh,
-  } = useApi<{ uploads: UploadedFile[] }>("/api/uploads?limit=500", 0, requestScope);
+  } = useApi<{ uploads: UploadedFile[] }>((project ? `/api/workbench/library?projectId=${encodeURIComponent(project.id)}&source=uploads&limit=500` : "/api/uploads?limit=500"), 0, requestScope);
   const {
     data: takes,
     error: takeError,
     refresh: refreshTakes,
   } = useApi<{ generations: Generation[] }>(
-    "/api/jobs?status=succeeded&limit=500&sync=0",
+    (project ? `/api/workbench/library?projectId=${encodeURIComponent(project.id)}&source=generations&limit=500` : "/api/jobs?status=succeeded&limit=500&sync=0"),
     0, requestScope,
   );
   const [added, setAdded] = useState<Asset[]>([]);
@@ -113,6 +118,7 @@ export default function SeedanceEdit({
       ? (savedContext.references as Asset[])
       : references;
   const body = {
+    projectId: project?.productionProjectId ?? null,
     model: MODEL,
     task: "edit",
     prompt: `Edit @Video1: ${prompt.trim()}`,
@@ -144,7 +150,11 @@ export default function SeedanceEdit({
       if (target === "reference" && !file.type.startsWith("image/")) throw Error("Choose an image reference.");
       if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) throw Error("Choose a video source clip or an image reference.");
     },
-    upload: (file) => upload(file, "reference"),
+    upload: async file => {
+      const original = await upload(file, "reference");
+      if (project && requestScope) await fileProjectUpload(project.id, original.id, requestScope);
+      return original;
+    },
     onAsset(asset, target) {
       if (target === "source" && asset.kind !== "video") throw Error("Choose a video source clip.");
       if (target === "reference" && asset.kind !== "image") throw Error("Choose an image reference.");

@@ -29,6 +29,10 @@ import {
 import { saveDraft, clearDraft } from "@/lib/draft";
 import { useUploadFile } from "@/lib/useUploadFile";
 import type { RefItem } from "@/lib/refs";
+import { referenceKey, selectFirstFrame, videoReferenceProblem } from "@/lib/generationReferences";
+import type { DraggedAsset } from "@/lib/dnd";
+import type { GenerationProject } from "@/lib/generationProject";
+import { fileProjectUpload } from "@/lib/workbench/project-library-client";
 import { useGenAssetInput, inputAsReference, referenceIdentity, type GenAssetInputHandle } from "@/lib/genAssetInput";
 import type { CastMember } from "@/lib/cast";
 import { appPrompt } from "@/components/dialog";
@@ -54,6 +58,7 @@ import {
   type GenerationBatch,
 } from "@/lib/useGenerationBatch";
 import { lockedClaim } from "@/lib/usePaidAction";
+import { useLegacyRecovery } from "@/lib/useRecoverySurface";
 import {
   pendingGenerationKey,
   readPendingGeneration,
@@ -125,8 +130,13 @@ const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 /** `@Name` tokens in a prompt, the way the composer highlights and the engine reads them. */
 const NAME_RE = /@([A-Za-z][\w'-]*(?: (?=[A-Z])[A-Z][\w'-]*)*)/g;
 
-export type ComposerHandle = GenAssetInputHandle & { usePrompt: (text: string) => boolean };
+export type ComposerHandle = GenAssetInputHandle & {
+  usePrompt: (text: string) => boolean;
+  useFirstFrame: (asset: DraggedAsset) => Promise<boolean>;
+  useReference: (asset: DraggedAsset) => Promise<boolean>;
+};
 type ComposerProps = {
+  project: GenerationProject;
   kind: ComposerKind;
   onMade?: () => void;
   initialRef?: string | null;
@@ -138,15 +148,19 @@ type ComposerProps = {
 };
 export default function Composer(props: ComposerProps) {
   const { workspace, email, signedIn } = useSession();
-  const scope = JSON.stringify([
-    signedIn ? workspace?.id : null,
-    signedIn ? email : null,
-    props.kind,
-  ]);
-  return <ScopedComposer key={scope} {...props} scope={scope} />;
+  const legacyScope = JSON.stringify([signedIn ? workspace?.id : null, signedIn ? email : null, props.kind]);
+  const legacySurface = `make:${legacyScope}`;
+  const legacyRecovery = useLegacyRecovery([
+    pendingGenerationKey(legacyScope, "unfiled", legacySurface),
+    `particl:generation-batch:${JSON.stringify([workspace?.id, email, legacySurface])}`,
+  ], signedIn);
+  const scope = legacyRecovery ? legacyScope : JSON.stringify([workspace?.id, email, props.kind, props.project.id]);
+  return <ScopedComposer key={scope} {...props} scope={scope} legacyRecovery={legacyRecovery} />;
 }
 function ScopedComposer({
   kind,
+  project,
+  legacyRecovery,
   onMade,
   initialRef = null,
   className = "",
@@ -155,7 +169,7 @@ function ScopedComposer({
   onEditRequested,
   onAstraRequested,
   onUpscaleRequested,
-}: ComposerProps & { scope: string }) {
+}: ComposerProps & { scope: string; legacyRecovery: boolean }) {
   const router = useRouter();
   const hydrated = useSyncExternalStore(
     subscribeHydration,
@@ -168,7 +182,7 @@ function ScopedComposer({
   const money = useMoney();
   const toast = useToast();
   const surface = `make:${scope}`;
-  const recoveryKey = pendingGenerationKey(scope, "unfiled", surface);
+  const recoveryKey = pendingGenerationKey(scope, legacyRecovery ? "unfiled" : project.id, surface);
   const persisted = useComposerPersistence(
     surface,
     recoveryKey,
@@ -216,6 +230,7 @@ function ScopedComposer({
   /* ── references ────────────────────────────────────────────────────── */
   const [refsChoice, setRefs] = useState<RefItem[]>([]);
   const attachedRefs = useRef<RefItem[]>([]);
+  const [referenceMenu, setReferenceMenu] = useState<{ key: string; x: number; y: number } | null>(null);
   const removeReference = (reference: RefItem) => {
     const next = attachedRefs.current.filter((item) => item.id !== reference.id || (item.origin ?? "upload") !== (reference.origin ?? "upload"));
     attachedRefs.current = next;
@@ -234,21 +249,33 @@ function ScopedComposer({
       if (!file.type.startsWith("image/") && !(kind === "video" && file.type.startsWith("video/")))
         throw Error(kind === "image" ? "Choose an image reference." : "Choose an image or video reference.");
     },
-    upload: (file) => uploadFile(file, "reference"),
-    onAsset(asset) {
+    upload: async file => {
+      const upload = await uploadFile(file, "reference");
+      await fileProjectUpload(project.id, upload.id, requestScope!);
+      return upload;
+    },
+    onAsset(asset, target) {
       if (kind === "audio") throw Error("Use the production sound suite to edit existing audio.");
       if (asset.kind !== "image" && !(kind === "video" && asset.kind === "video"))
         throw Error(kind === "image" ? "Choose an image reference." : "Choose an image or video reference.");
       const previous = attachedRefs.current;
-      if (previous.some((ref) => ref.id === asset.id && (ref.origin ?? "upload") === asset.origin)) {
+      const existing = previous.find(ref => ref.id === asset.id && (ref.origin ?? "upload") === asset.origin);
+      if (existing) {
+        if (kind === "video" && asset.kind === "image" && target) {
+          const next = target === "source" ? selectFirstFrame(previous, asset.key)
+            : previous.map(ref => referenceKey(ref) === asset.key ? { ...ref, role: "reference_image" as const } : ref);
+          attachedRefs.current = next; setRefs(next); return;
+        }
         toast("This asset is already attached."); return;
       }
       if (previous.length >= 8) throw Error("Remove a reference before adding another. Up to eight are supported.");
-      const role = asset.kind === "video" ? "reference_video" : kind === "video" && !previous.some((ref) => ref.role === "first_frame") ? "first_frame" : "reference_image";
-      const next = [...previous, inputAsReference(asset, role)];
+      if (target === "source" && asset.kind !== "image") throw Error("Choose an image as the first frame.");
+      const role = asset.kind === "video" ? "reference_video" : "reference_image";
+      let next = [...previous, inputAsReference(asset, role)];
+      if (kind === "video" && target === "source") next = selectFirstFrame(next, asset.key);
       attachedRefs.current = next;
       setRefs(next);
-      toast(`${asset.name} added as a reference.`);
+      toast(`${asset.name} added as ${target === "source" ? "the first frame" : "a reference"}.`);
     },
     onError: toast,
   });
@@ -276,6 +303,17 @@ function ScopedComposer({
   );
   const modelId = batchDisplay?.modelId ?? modelChoice;
   const model = getModel(modelId);
+  const referenceProblem = kind === "video" ? videoReferenceProblem(model, refs) : null;
+  const chooseFirstFrame = (key: string | null) => {
+    if (busy || pendingAudio || pendingBatch || uploading) return;
+    const next = selectFirstFrame(attachedRefs.current, key);
+    attachedRefs.current = next; setRefs(next); setReferenceMenu(null);
+  };
+  const chooseReference = (key: string) => {
+    if (busy || pendingAudio || pendingBatch || uploading) return;
+    const next = attachedRefs.current.map(ref => referenceKey(ref) === key ? { ...ref, role: "reference_image" as const } : ref);
+    attachedRefs.current = next; setRefs(next); setReferenceMenu(null);
+  };
   const [listOpen, setListOpen] = useState(false);
   const [ratioChoice, setRatio] = useState<string>(() =>
     model.ratios.includes("16:9") ? "16:9" : model.ratios[0],
@@ -518,7 +556,7 @@ function ScopedComposer({
     const body: Record<string, unknown> = {
       task: track,
       text: prompt,
-      projectId: null,
+      projectId: project.productionProjectId,
       shotId: null,
       title:
         track === "speech"
@@ -544,6 +582,7 @@ function ScopedComposer({
     sfxS,
     lengthS,
     instrumental,
+    project.productionProjectId,
   ]);
   const [quote, setQuote] = useState<{
     body: string;
@@ -654,7 +693,7 @@ function ScopedComposer({
     (kind === "audio"
       ? !persisted.error && (!!pendingAudio || !!currentQuote)
       : !generationBatch.error &&
-        (!!pendingBatch || (prompt.trim().length > 0 && price !== null)));
+        (!!pendingBatch || (prompt.trim().length > 0 && price !== null && !referenceProblem)));
   const render = async () => {
     if (!signedIn) {
       router.push(signIn);
@@ -731,7 +770,7 @@ function ScopedComposer({
           resolution,
           duration: seconds,
           generateAudio: audio && model.supportsAudio,
-          projectId: null,
+          projectId: project.productionProjectId,
           shotId: null,
           task: "generate",
           shotSpec: applied,
@@ -779,11 +818,13 @@ function ScopedComposer({
         if (!finished) return;
         clearDraft(surface);
         setPromptState("");
+        attachedRefs.current = [];
         setRefs([]);
         await generationBatch.complete(proposed.id);
       }
       clearDraft(surface);
       setPromptState("");
+      attachedRefs.current = [];
       setRefs([]);
       toast(`Rendering · ${costLabel} · saved to your takes`);
       onMade?.();
@@ -810,6 +851,8 @@ function ScopedComposer({
 
   useImperativeHandle(controller, () => ({
     useAsset: receiver.useAsset,
+    useFirstFrame: asset => receiver.useAsset(asset, "source"),
+    useReference: asset => receiver.useAsset(asset, "reference"),
     useFiles: receiver.useFiles,
     usePrompt(text) {
       if (busy || pendingAudio || pendingBatch) {
@@ -923,6 +966,7 @@ function ScopedComposer({
             {error || recovery}
           </p>
         )}
+        {legacyRecovery && <p className={styles.notice} role="status">Recover the previous request before starting work in this project. Its original destination and settings are preserved.</p>}
         <fieldset disabled={locked} className={styles.fields}>
           <div className={styles.promptStage}>
             <div className={styles.sectionLabel}>
@@ -1036,7 +1080,8 @@ function ScopedComposer({
               />
               <div className={styles.referenceRow}>
                 {refs.map((r) => (
-                  <div key={`${r.origin ?? "upload"}:${r.id}`} className={styles.reference} data-reference-id={`${r.origin ?? "upload"}:${r.id}`}>
+                  <div key={`${r.origin ?? "upload"}:${r.id}`} className={styles.reference} data-reference-id={`${r.origin ?? "upload"}:${r.id}`} data-owns-menu={kind === "video" && r.kind === "image" ? "" : undefined}
+                    onContextMenu={event => { if (kind === "video" && r.kind === "image" && !locked) { event.preventDefault(); event.stopPropagation(); setReferenceMenu({ key: referenceKey(r), x: event.clientX, y: event.clientY }); } }}>
                     {r.kind === "image" ? (
                       <img src={r.url} alt={r.filename} />
                     ) : (
@@ -1046,6 +1091,7 @@ function ScopedComposer({
                       type="button"
                       onClick={() => removeReference(r)}
                       aria-label={`Remove ${r.filename}`}
+                      disabled={locked}
                     >
                       <X size={14} />
                     </button>
@@ -1068,7 +1114,7 @@ function ScopedComposer({
                   <Plus size={20} />
                   {!refs.length && <ImageIcon size={18} className="hidden" data-phone-reference-icon="" />}
                   <span>{uploading ? "Uploading…" : "Add reference"}</span>
-                  {!refs.length && <span className="hidden" data-phone-reference-label="">{uploading ? "Uploading…" : kind === "video" ? "Drop an image for the first frame" : "Drop a style reference"}</span>}
+                  {!refs.length && <span className="hidden" data-phone-reference-label="">{uploading ? "Uploading…" : kind === "video" ? "Drop an image reference" : "Drop a style reference"}</span>}
                 </button>
                 {!refs.length && <button
                   type="button"
@@ -1084,7 +1130,14 @@ function ScopedComposer({
               </div>
               <div className={styles.referenceHint}>
                 {kind === "video" ? (
-                  "Drop an image for the first frame, or a clip for motion."
+                  <label>First frame
+                    <select aria-label="First frame" value={refs.find(ref => ref.role === "first_frame") ? referenceKey(refs.find(ref => ref.role === "first_frame")!) : ""}
+                      disabled={locked} onChange={event => chooseFirstFrame(event.target.value || null)}>
+                      <option value="">No first frame</option>
+                      {refs.filter(ref => ref.kind === "image").map(ref => <option key={referenceKey(ref)} value={referenceKey(ref)}>{ref.filename}</option>)}
+                    </select>
+                    <span> Right-click an image to choose its role. Reference images do not set the opening frame.</span>
+                  </label>
                 ) : (
                   <div
                     className={styles.trackTabs}
@@ -1109,6 +1162,7 @@ function ScopedComposer({
                   </div>
                 )}
               </div>
+              {referenceProblem && <p className={styles.notice} role="alert">{referenceProblem}</p>}
             </div>
           )}
           <div className={styles.settingsSection}>
@@ -1448,6 +1502,11 @@ function ScopedComposer({
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
+      {referenceMenu && <Menu x={referenceMenu.x} y={referenceMenu.y} title="Image role" onClose={() => setReferenceMenu(null)} items={[
+        { kind: "item", label: "Use as first frame", disabled: locked, onSelect: () => chooseFirstFrame(referenceMenu.key) },
+        { kind: "item", label: "Use as reference", disabled: locked, onSelect: () => chooseReference(referenceMenu.key) },
+        { kind: "item", label: "No first frame", disabled: locked, onSelect: () => chooseFirstFrame(null) },
+      ]} />}
       {menu && (
         <Menu
           x={menu.x}

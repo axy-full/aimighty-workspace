@@ -142,13 +142,11 @@ test("studio exposes Gen, collective Library and workspace navigation with the o
   await signInLocally(page.request);
   await fixture(page);
   await page.goto("/workbench");
-  const sections = page.getByRole("navigation", { name: "Studio sections", exact: true });
-  await expect(sections.getByRole("link", { name: "Studio", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(sections.getByRole("link", { name: "Gen", exact: true })).toBeVisible();
-  await expect(sections.getByRole("link", { name: "Gen", exact: true })).toHaveAttribute("href", "/generate");
-  await expect(sections.getByRole("link", { name: "Library", exact: true })).toBeVisible();
-  await expect(sections.getByRole("link", { name: "Library", exact: true })).toHaveAttribute("href", "/library");
-  await expect(sections.getByRole("link", { name: "Workspace", exact: true })).toBeVisible();
+  const sections = page.getByRole("navigation", { name: "Project tools", exact: true }).filter({visible:true});
+  await expect(sections.getByRole("button", { name: "Gen", exact: true })).toBeVisible();
+  await expect(sections.getByRole("button", { name: "Library", exact: true })).toBeVisible();
+  await expect(sections.getByRole("button", { name: "Workspace", exact: true })).toBeVisible();
+  await expect(page.getByRole("button",{name:"All assets",exact:true}).filter({visible:true})).toBeVisible();
   const mark = page.getByRole("button", { name: "Toggle Atomik creative engine", exact: true }).locator("svg.atom-mark");
   await expect(mark).toHaveAttribute("viewBox", "20 20 160 160");
   expect(await mark.locator("circle").evaluateAll(dots => dots.map(dot => ["cx", "cy", "r"].map(key => Number(dot.getAttribute(key)))))).toEqual(RING_DOTS);
@@ -216,7 +214,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/workbench");
-  await expect(page.getByRole("button", { name: "Particl home", exact: true })).toBeVisible();
+  await expect(page.locator(page.viewportSize()!.width<760?".phone-project-header":".project-bar")).toBeVisible();
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await openWorkbenchProject(page);
   if (mobile) await expect(page.getByRole("navigation", { name: "Mobile studio navigation" })).toBeVisible();
@@ -557,8 +555,10 @@ test("node original downloads preserve source bytes independently of rendered ad
     : page.getByRole('article', { name: 'Generate node: Browser test shot', exact: true });
   await target.click();
   const inspector = page.getByRole('complementary', { name: 'Node inspector' });
+  // Short landscape starts with more canvas space; Enter opens the selected node.
+  if (!(await inspector.isVisible())) await target.press('Enter');
   await expect(inspector.getByRole('button', { name: 'Download original', exact: true })).toBeVisible();
-  await expect(inspector.getByRole('button', { name: 'Rendered PNG', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('button', { name: 'Source-size PNG', exact: true })).toBeVisible();
   const first = page.waitForEvent('download');
   await inspector.getByRole('button', { name: 'Download original', exact: true }).click();
   const original = await first;
