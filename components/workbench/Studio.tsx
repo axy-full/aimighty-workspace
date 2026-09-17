@@ -153,6 +153,9 @@ import {SuiteSwitcher,RoomRail,SuiteDock} from '@/components/suites/SuiteNavigat
 import { SuiteAgentPanel } from '@/components/suites/SuiteAgentPanel';
 import { applySuiteAgentPlan } from '@/lib/workbench/suite-agent-plan';
 import {MoleculrWorkspace} from '@/components/suites/MoleculrWorkspace';
+import {PosterDesigner} from '@/components/suites/PosterDesigner';
+import {buildMoleculrStoryboard,prepareMoleculrVariants} from '@/lib/workbench/moleculr-storyboard';
+import {creativeTemplate} from '@/lib/workbench/moleculr-creative';
 import {EMPTY_MOLECULR,moleculrNode,moleculrPrompt,moleculrReferences} from '@/lib/workbench/moleculr';
 import {PAGES} from '@/lib/suites';
 import {bindMoleculrReferences} from '@/lib/workbench/moleculr-graph';
@@ -370,13 +373,13 @@ export default function Studio({
   function setMoleculrPage(page:string){
     if(!PAGES.moleculr.some(item=>item.id===page))return;
     setSuite('moleculr');storeMoleculrPage(page);setHome(false);
-    const url=new URL(window.location.href);url.searchParams.set('suite','moleculr');url.searchParams.set('page',page);url.searchParams.delete('stage');url.searchParams.delete('view');window.history.replaceState(window.history.state,'',url);
+    const url=new URL(window.location.href);url.searchParams.set('suite','moleculr');url.searchParams.set('page',page);url.searchParams.delete('stage');url.searchParams.delete('view');window.history.replaceState(null,'',url);
   }
   const [mobileWorkflowOpen,setMobileWorkflowOpen] = useState(false);
   const [homeOverride, setHome] = useState<boolean|null>(null);
   const home=homeOverride??mobile;
   function setStage(value: Stage) {
-    if(sourceMode&&typeof window!=='undefined'){const url=new URL(window.location.href);url.searchParams.set('stage',value);url.searchParams.delete('suite');url.searchParams.delete('page');url.searchParams.delete('view');window.history.replaceState(window.history.state,'',url);}
+    if(sourceMode&&typeof window!=='undefined'){const url=new URL(window.location.href);url.searchParams.set('stage',value);url.searchParams.delete('suite');url.searchParams.delete('page');url.searchParams.delete('view');window.history.replaceState(null,'',url);}
     setSuite('particl');
     setHome(false);
     storeStage(value);
@@ -518,6 +521,8 @@ export default function Studio({
     const next=future.current.pop();
     if(next&&next.id===pRef.current.id){history.current.push(pRef.current);pRef.current=next;setP(next);}
   }, []);
+  const activeStorageKey=useRef(storageKey);
+  useLayoutEffect(()=>{activeStorageKey.current=storageKey;},[storageKey]);
   const jobs=useProductionJobs(p,ready&&signedIn&&!transitioning,change,storageKey);
   const generatingNodeId=selectedNode&&jobs.mediaJobs.some(job=>['held','queued','running'].includes(job.status)&&job.shotId===p.shotMappings?.[selectedNode])?selectedNode:null;
   const flushSave = useCallback(() => {
@@ -631,7 +636,7 @@ export default function Studio({
     setContextIds(next.assets.filter(asset=>asset.locked||asset.category==='Character').map(asset=>asset.id));
     setSelectedNode(next.nodes[0]?.id??null);setSelectedAsset(null);setFrame(0);
     setSaveState(saved&&JSON.stringify(next)===JSON.stringify(persisted)?'Saved':'Saving');setSaveError('');
-    if(sourceMode){const url=new URL(window.location.href);url.searchParams.set('project',next.id);window.history.replaceState(window.history.state,'',url);}
+    if(sourceMode){const url=new URL(window.location.href);url.searchParams.set('project',next.id);window.history.replaceState(null,'',url);}
     try{localStorage.setItem(storageKey,next.id);}catch{/* Server persistence remains available when browser storage is disabled. */}
   },[storageKey,sourceMode]);
   const endTransition=useCallback((token:number)=>{
@@ -677,7 +682,7 @@ export default function Studio({
     else if(params.get('view')==='workspace')setHome(true);
     if(['open','marketing'].includes(params.get('atomik')??''))setAtomOpen(true);
     if(params.get('atomik')==='marketing')setAtomTab('marketing');
-    if(signedIn&&params.get('new')==='1'){setDialog('project');const url=new URL(window.location.href);url.searchParams.delete('new');window.history.replaceState(window.history.state,'',url);}
+    if(signedIn&&params.get('new')==='1'){setDialog('project');const url=new URL(window.location.href);url.searchParams.delete('new');window.history.replaceState(null,'',url);}
     if(!signedIn)return;
     let active=true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the private draft from the server on mount.
@@ -1209,26 +1214,87 @@ export default function Studio({
       : p.nodes;
   const latestPlan = p.plans.at(-1);
   function renderMarketingPanel(){return <MarketingStudioPanel key={p.id} task={marketingDraft.task} instructions={marketingDraft.instructions} onTask={task=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,task}}))} onInstructions={instructions=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,instructions}}))} project={p} enabled={ready&&signedIn&&!transitioning} busy={busy} references={contextIds.length} jobs={jobs.atomikJobs} error={jobs.error} onBriefChange={brief=>change(old=>({...old,marketingBrief:brief}))} onRun={request=>void runGenie(request,'marketing','Considered')} onApply={applyPlan} onContext={()=>{setAtomOpen(true);setAtomTab('context')}} onActivity={()=>{setAtomOpen(true);setAtomTab('runs')}}/>;}
+  async function importMoleculrImage(url:string):Promise<Asset>{
+    if(transitioningRef.current||!readyRef.current||!signedIn)throw new Error('Open a saved project first.');
+    const draftId=pRef.current.id;
+    if(pRef.current.assets.length>=500)throw new Error('This project has reached its 500-asset limit.');
+    if(!(await ensureSaved(draftId)))throw new Error('Save this project before importing a product image.');
+    if(pRef.current.id!==draftId||transitioningRef.current||activeStorageKey.current!==storageKey)throw new Error('The workspace changed. Return to this project before importing.');
+    uploadingRef.current++;setUploading(true);
+    try{
+      const response=await fetch('/api/workbench/moleculr/import-image',{method:'POST',headers:{'Content-Type':'application/json','X-Workbench-Scope':storageKey},body:JSON.stringify({projectId:draftId,url}),signal:AbortSignal.timeout(30000)});
+      if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'The product image could not be imported.');}
+      const mime=response.headers.get('content-type')?.split(';')[0]||'';
+      const ext:Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/avif':'avif'};
+      if(!ext[mime]||Number(response.headers.get('content-length')||0)>10*1024*1024)throw new Error('The product image has an unsupported format or size.');
+      const blob=await response.blob();if(blob.size>10*1024*1024)throw new Error('Product images must be 10 MB or smaller.');
+      if(pRef.current.id!==draftId||transitioningRef.current||activeStorageKey.current!==storageKey)throw new Error('The project changed. Return to it before importing.');
+      const file=new File([blob],`product-reference.${ext[mime]}`,{type:mime});
+      const data=await uploadWorkbench(file,undefined,storageKey);
+      if(pRef.current.id!==draftId||transitioningRef.current||activeStorageKey.current!==storageKey)throw new Error('The original is in workspace uploads. Return to the original project to attach it.');
+      const asset:Asset={id:data.id,uploadId:data.id,url:data.url,name:file.name,kind:'image',category:'Product',mime,description:'Original product reference imported from '+new URL(url).hostname,prompt:'',status:'Draft',version:1,locked:false,refs:[]};
+      change(old=>({...old,assets:[...old.assets,asset]}));return asset;
+    }finally{uploadingRef.current--;setUploading(uploadingRef.current>0);}
+  }
+  async function saveMoleculrPoster(file:File,sourceIds:string[]){
+    if(transitioningRef.current||!readyRef.current||!signedIn)throw new Error('Open a saved project first.');
+    const draftId=pRef.current.id;
+    if(pRef.current.assets.length>=500)throw new Error('This project has reached its 500-asset limit.');
+    if(sourceIds.some(id=>!pRef.current.assets.some(asset=>asset.id===id&&asset.kind==='image')))throw new Error('A poster original is missing. Review its layers.');
+    uploadingRef.current++;setUploading(true);
+    try{
+      const uploaded=await uploadWorkbench(file,undefined,storageKey);
+      if(pRef.current.id!==draftId||transitioningRef.current||activeStorageKey.current!==storageKey)throw new Error('The original is in workspace uploads. Return to the original project to attach it.');
+      const asset:Asset={id:uploaded.id,uploadId:uploaded.id,url:uploaded.url,name:file.name.slice(0,200),kind:'image',category:'Campaign design',mime:'image/png',description:'Rendered poster · editable layers retained in Moleculr Design',prompt:'',status:'Draft',version:1,locked:false,refs:sourceIds};
+      change(old=>({...old,assets:[...old.assets,asset]}));
+      if(!(await ensureSaved(draftId)))throw new Error('The poster is in your local library, but the project is not saved yet. Keep it open and retry saving.');
+    }finally{uploadingRef.current--;setUploading(uploadingRef.current>0);}
+  }
+  function buildCampaignStoryboard(){
+    if(transitioningRef.current||!readyRef.current||!signedIn)return;
+    try{const next=buildMoleculrStoryboard(pRef.current,()=>uid('campaign'));change(()=>next);setMoleculrPage('variants');toast.success('Editable storyboard shots prepared. Review each generation before rendering.');}
+    catch(error){toast.error(error instanceof Error?error.message:'The storyboard could not be built.');}
+  }
+  function prepareCampaignVariants(kind:'image'|'video'){
+    if(transitioningRef.current||!readyRef.current||!signedIn)return;
+    try{const next=prepareMoleculrVariants(pRef.current,kind,()=>uid('campaign'));change(()=>next);toast.success('Variations prepared. Review each engine and credit quote before rendering.');}
+    catch(error){toast.error(error instanceof Error?error.message:'The variations could not be prepared.');}
+  }
+  function reviewCampaignVariant(nodeId:string){
+    if(transitioningRef.current||!readyRef.current||!signedIn)return;
+    const current=pRef.current,node=current.nodes.find(item=>item.id===nodeId);if(!node)return;
+    if(node.locked){toast.error('Unlock this shot in Rig before generating.');return;}
+    const variant=current.moleculr?.variants.find(item=>item.nodeId===nodeId);
+    setGenerationTarget({node,prompt:node.text||node.title,refs:generationReferenceIds(node,current),draftId:current.id,options:variant?.generation});
+  }
+  function createCampaignAvatar(prompt:string){
+    if(transitioningRef.current||!readyRef.current||!signedIn)return;
+    const current=pRef.current;if(current.nodes.length>=250){toast.error('This project has reached its node limit.');return;}
+    const request=`Create an original adult campaign presenter portrait. ${prompt.slice(0,4000)}. Photorealistic identity reference, natural skin texture, clean neutral background, no product or typography. This portrait will be reusable as a cast reference.`;
+    const node={...moleculrNode(uid('avatar'),request,'Campaign presenter',current.nodes.length,'image'),type:'character' as const};
+    change(old=>({...old,nodes:[...old.nodes,node]}));
+    setGenerationTarget({node,prompt:request,refs:[],draftId:current.id,options:{modelId:'higgsfield/marketing-studio-image',marketing:{quality:'high',enhancePrompt:false},ratio:'3:4'}});
+  }
   function configureMoleculr(hook:string,castId:string|undefined,kind:'image'|'video',options?:GenerationTarget['options']){
     if(transitioningRef.current||!readyRef.current||!signedIn)return;
     const current=pRef.current,brief=current.moleculr??EMPTY_MOLECULR;
-    const existing=brief.variants.find(item=>item.hook===hook&&item.castAssetId===castId&&current.nodes.some(node=>node.id===item.nodeId));
+    const rawRequest=moleculrPrompt(current,brief,hook,castId),request=options?.marketing?rawRequest.slice(0,5000):rawRequest;
+    const template=creativeTemplate(brief);
+    const generation={modelId:options?.modelId,marketing:options?.marketing,ratio:options?.ratio??brief.creative?.aspect,duration:options?.duration??brief.creative?.seconds};
+    const existing=brief.variants.find(item=>item.hook===hook&&item.castAssetId===castId&&item.kind===kind&&item.productId===brief.activeProductId&&item.templateId===template?.id&&JSON.stringify(item.generation)===JSON.stringify(generation)&&current.nodes.some(node=>node.id===item.nodeId&&node.text===request));
     if(existing&&current.nodes.find(item=>item.id===existing.nodeId)?.locked){toast.error('This variant is locked in Rig. Unlock it before changing its generation.');return;}
     if(!existing&&(current.nodes.length>=250||brief.variants.length>=100)){toast.error('This project has reached its variant or node limit. Start another project to continue.');return;}
-    const rawRequest=moleculrPrompt(current,brief,hook,castId);
-    const request=options?.marketing?rawRequest.slice(0,5000):rawRequest;
     const nodeId=existing?.nodeId??uid('variant');
     const planned=moleculrNode(nodeId,request,`${brief.productName||current.name} · ${hook}`,current.nodes.length,kind);
     try{
       const base=existing?{...current.nodes.find(item=>item.id===nodeId)!,text:request,mode:planned.mode}:planned;
-      const chosenRefs=options?.referenceAssetIds ? options.referenceAssetIds.map(id=>current.assets.find(asset=>asset.id===id&&asset.kind==='image')).filter((asset):asset is Asset=>!!asset) : moleculrReferences(current,brief,castId);
+      const chosenRefs=options?.referenceAssetIds ? options.referenceAssetIds.map(id=>current.assets.find(asset=>asset.id===id&&asset.kind==='image')).filter((asset):asset is Asset=>!!asset) : moleculrReferences(current,{...brief,castAssetIds:castId?[castId]:[]},castId);
       if(options?.referenceAssetIds&&chosenRefs.length!==options.referenceAssetIds.length)throw new Error('A selected product or cast reference is no longer available.');
       const binding=bindMoleculrReferences(current,base,chosenRefs,()=>uid('reference'));
       const nextNodes=[...(existing?current.nodes.map(item=>item.id===nodeId?binding.node:item):[...current.nodes,binding.node]),...binding.sources];
-      change(old=>({...old,nodes:nextNodes,moleculr:{...brief,variants:existing?brief.variants:[...brief.variants,{id:uid('campaign'),nodeId,hook,castAssetId:castId}]}}));
-      setGenerationTarget({node:binding.node,prompt:request,refs:generationReferenceIds(binding.node,{...current,nodes:nextNodes}),draftId:current.id,options});
+      change(old=>({...old,nodes:nextNodes,moleculr:{...brief,variants:existing?brief.variants:[...brief.variants,{id:uid('campaign'),nodeId,hook,castAssetId:castId,kind,productId:brief.activeProductId,templateId:template?.id,createdAt:new Date().toISOString(),generation}]}}));
+      setGenerationTarget({node:binding.node,prompt:request,refs:generationReferenceIds(binding.node,{...current,nodes:nextNodes}),draftId:current.id,options:{ratio:brief.creative?.aspect,duration:brief.creative?.seconds,...options}});
     }catch(error){toast.error(error instanceof Error?error.message:'The variant could not be configured.');}
-
   }
 
   return (
@@ -1540,7 +1606,8 @@ export default function Studio({
                     </div>
                   </div>
                 )}
-                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={p.id} scope={storageKey} project={p} page={moleculrPage} enabled={ready&&signedIn&&!transitioning} marketing={<><SuiteAgentPanel key={`${p.id}:moleculr`} scope={storageKey} suite="moleculr" project={p} enabled={ready&&signedIn&&!transitioning} onSave={()=>ensureSaved(p.id)} onApply={applyPlan} onQueued={()=>void jobs.refresh()}/>{renderMarketingPanel()}</>} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
+                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={`moleculr:${p.id}`} scope={storageKey} project={p} page={moleculrPage} enabled={ready&&signedIn&&!transitioning} marketing={<><SuiteAgentPanel key={`${p.id}:moleculr`} scope={storageKey} suite="moleculr" project={p} enabled={ready&&signedIn&&!transitioning} onSave={()=>ensureSaved(p.id)} onApply={applyPlan} onQueued={()=>void jobs.refresh()}/>{renderMarketingPanel()}</>} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onSave={()=>ensureSaved(p.id)} onImportRemote={importMoleculrImage} onCreateAvatar={createCampaignAvatar} onBuildStoryboard={buildCampaignStoryboard} onReviewVariant={reviewCampaignVariant} onPrepareVariants={prepareCampaignVariants} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
+                {!home && !welcomeChoice && suite==='moleculr' && moleculrPage==='design' && <PosterDesigner key={`poster:${p.id}`} project={p} scope={storageKey} enabled={ready&&signedIn&&!transitioning} onChange={poster=>change(old=>({...old,moleculr:{...(old.moleculr??EMPTY_MOLECULR),poster}}))} onSaveAsset={saveMoleculrPoster}/>}
                 {!home && !welcomeChoice && suite==='particl' && (
                   <>
                     {stage !== "canvas" && (
@@ -2998,7 +3065,7 @@ export default function Studio({
           ref={fileInput}
           type="file"
           multiple
-          accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/*,application/pdf,text/plain"
+          accept="image/png,image/jpeg,image/webp,image/avif,image/gif,video/mp4,video/webm,video/quicktime,audio/*,application/pdf,text/plain"
           className="hidden"
           aria-label="Upload project files"
           onChange={(e) => void uploadFiles(e.target.files)}
@@ -3300,7 +3367,7 @@ export default function Studio({
           if(!await ensureSaved(soulTarget.draftId))throw new Error('The Soul ID is attached on screen. Save this project before leaving to retain the binding.');
           toast.success('Soul ID attached. Its original portrait is available on the canvas.');
         }}/>}
-        {generationTarget&&generationTarget.draftId===p.id&&<GenerationDialog scope={storageKey} target={generationTarget} project={p} onClose={()=>setGenerationTarget(null)} onSave={()=>ensureSaved(generationTarget.draftId)} onAsset={(id,fields)=>{if(pRef.current.id===generationTarget.draftId)updateAsset(id,fields);}} onQueued={(_id,kind)=>{if(pRef.current.id!==generationTarget.draftId)return;if(kind)change(old=>({...old,nodes:old.nodes.map(node=>node.id===generationTarget.node.id&&!node.locked?{...node,mode:kind==='audio'?'Audio':kind==='video'?'Video':'Image'}:node)}));void ensureSaved(generationTarget.draftId,true).then(saved=>{if(saved)void jobs.refresh();});setAtomOpen(true);setAtomTab('runs');toast.success('Generation submitted. Follow its progress in Activity.');}}/>}
+        {generationTarget&&generationTarget.draftId===p.id&&<GenerationDialog scope={storageKey} target={generationTarget} project={p} onClose={()=>setGenerationTarget(null)} onSave={()=>ensureSaved(generationTarget.draftId)} onAsset={(id,fields)=>{if(pRef.current.id===generationTarget.draftId)updateAsset(id,fields);}} onQueued={(_id,kind,accepted)=>{if(pRef.current.id!==generationTarget.draftId||activeStorageKey.current!==storageKey)return;change(old=>({...old,nodes:old.nodes.map(node=>node.id===generationTarget.node.id&&!node.locked?{...node,...(kind?{mode:kind==='audio'?'Audio':kind==='video'?'Video':'Image'}:{}),...(accepted?{text:accepted.prompt}:{})}:node),...(accepted&&old.moleculr?{moleculr:{...old.moleculr,variants:old.moleculr.variants.map(variant=>variant.nodeId===generationTarget.node.id?{...variant,...(kind==='image'||kind==='video'?{kind}:{}),generation:accepted.options}:variant)}}:{})}));void ensureSaved(generationTarget.draftId,true).then(saved=>{if(saved)void jobs.refresh();});setAtomOpen(true);setAtomTab('runs');toast.success('Generation submitted. Follow its progress in Activity.');}}/>}
         {atomikTarget&&atomikTarget.draftId===p.id&&<AtomikRunDialog scope={storageKey} target={atomikTarget} project={p} models={jobs.models} onSave={()=>ensureSaved(atomikTarget.draftId)} onClose={()=>setAtomikTarget(null)} onQueued={()=>{if(pRef.current.id!==atomikTarget.draftId)return;setPrompt('');setAtomOpen(true);setAtomTab('runs');void jobs.refresh();toast.success(atomikTarget.role==='marketing'?'Atomik started. Campaign outputs are saved in Marketing.':'Atomik started. Results are saved in Genie.');}}/>}
       <Toaster theme="dark" position="bottom-center" />
       </div>

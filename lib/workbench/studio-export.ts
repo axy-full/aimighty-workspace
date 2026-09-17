@@ -1,6 +1,8 @@
 import {audioClips} from './audio';
 import {zipSync,strToU8} from 'fflate';
 import {Asset,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} from './studio';
+import {moleculrAssetDependencies,validateMoleculrBindings} from './moleculr-bindings';
+import {originalAssetDownload} from './original-asset';
 
 export type EditSettings={exposure:number;contrast:number;saturation:number;ratio:string;flip:boolean};
 export const defaultEdits:EditSettings={exposure:100,contrast:100,saturation:100,ratio:'Original',flip:false};
@@ -14,6 +16,7 @@ export async function renderImage(url:string,settings:EditSettings=defaultEdits)
 function csv(value:unknown){let s=String(value??'');if(/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}
 /** Include the selected sources and their original/reference lineage in the handoff. */
 export function collectExportAssets(p:Project):Asset[]{
+ validateMoleculrBindings(p);
  validateSequence(p);
  const assets=new Map(p.assets.map(asset=>[asset.id,asset]));
  const seen=new Set<string>(),result:Asset[]=[];
@@ -29,10 +32,11 @@ export function collectExportAssets(p:Project):Asset[]{
  if(p.colorGrade?.lutAssetId)visit(p.colorGrade.lutAssetId);
  if(p.scriptSource)visit(p.scriptSource.assetId);
  for(const node of p.nodes){if(node.scriptScene?.sourceAssetId)visit(node.scriptScene.sourceAssetId);if(node.developmentSource?.sourceAssetId)visit(node.developmentSource.sourceAssetId);}
+ for(const binding of moleculrAssetDependencies(p))visit(binding.assetId);
  return result;
 }
 const EXPORT_LIMIT=200*1024*1024;
-const mediaTypes=new Set(['image/png','image/jpeg','image/webp','image/gif','video/mp4','video/webm','video/quicktime','audio/mpeg','audio/wav','audio/x-wav','audio/mp4','audio/ogg','application/pdf','text/plain']);
+const mediaTypes=new Set(['image/png','image/jpeg','image/webp','image/avif','image/gif','video/mp4','video/webm','video/quicktime','audio/mpeg','audio/wav','audio/x-wav','audio/mp4','audio/ogg','application/pdf','text/plain']);
 
 /** Build separately from download so source recovery and package integrity can be tested with mocks. */
 export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Promise<Response>=(url)=>fetch(url)){
@@ -44,7 +48,7 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
  let bytes=0;
  for(const original of sources){
   if(original.kind==='link'){links.push({assetId:original.id,name:original.name,url:original.url});continue;}
-  const response=await fetchAsset(original.url);
+  const response=await fetchAsset(originalAssetDownload(original)?.url ?? original.url);
   if(!response.ok)throw new Error('Cannot export '+original.name+'. Try opening the asset first.');
   const length=Number(response.headers.get('content-length')||0);
   if(length>EXPORT_LIMIT-bytes)throw new Error('This browser package is limited to 200 MB. Export the EDL and collect large sources separately.');
@@ -79,7 +83,7 @@ ${p.fps} fps, non-drop frame. Record starts at 01:00:00:00.
 sequence.edl: CMX3600, one video track, straight cuts only.
 shotlist.csv: inclusive in / exclusive out timecodes and creative notes.
 production.json: project snapshot, production record mappings, reference bindings, take lineage and crew plans.
-media/: original bytes of assets used in the sequence, scratch audio, and their bound source/reference lineage.
+media/: original bytes of assets used in the sequence, scratch audio, saved product profiles, brand logo, poster image layers (including hidden layers), and their bound source/reference lineage.
 reference-links.json (when present): saved website references. Web pages are not downloaded as media.
 
 Import the EDL at the stated frame rate and relink using FROM CLIP NAME comments. Image sources are still-frame holds, not rendered video; configure still duration manually if your editor does not conform them. Some editors need WebP/GIF stills converted to PNG before relinking. Export a PNG from the Particl asset editor if needed. Video must already match the sequence frame rate and have zero-based source timecode; embedded timecodes and source frame rates have not been probed.

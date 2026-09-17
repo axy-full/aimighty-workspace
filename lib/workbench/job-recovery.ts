@@ -20,7 +20,7 @@ export function recoverMediaAssets(project:Project,jobs:MediaJob[]):Project {
     have.add(job.id);
     const nodeId=byShot.get(job.shotId!);const node=project.nodes.find(n=>n.id===nodeId);
     const refs=(job.params?.references??[]).flatMap(ref=>project.assets.filter(a=>ref.genId?a.generationId===ref.genId:!!ref.uploadId&&a.uploadId===ref.uploadId).map(a=>a.id));
-    assets.push({id:job.id,generationId:job.id,productionShotId:job.shotId,nodeId,name:(node?.title??'Generated take')+' · v'+(job.version??1),kind:job.kind,category:'Shot',url:'/api/media/'+job.id,description:job.model,prompt:job.prompt,status:'Draft',locked:false,version:job.version??1,refs});
+    assets.push({id:job.id,generationId:job.id,productionShotId:job.shotId,nodeId,name:(node?.title??'Generated take')+' · v'+(job.version??1),kind:job.kind,category:node?.type==='character'?'Character':'Shot',url:'/api/media/'+job.id,description:job.model,prompt:job.prompt,status:'Draft',locked:false,version:job.version??1,refs});
   }
   const completed=new Map(jobs.filter(job=>job.status==='succeeded'&&byShot.has(job.shotId??'')).map(job=>[job.id,{nodeId:byShot.get(job.shotId!)!,shotId:job.shotId!,kind:job.kind}]));
   const attached=new Set(project.nodes.map(node=>node.assetId).filter(Boolean));

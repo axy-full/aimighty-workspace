@@ -68,6 +68,7 @@ test("Particl retains persisted stage IDs and numbered docks use the brief seque
     "cast",
     "format",
     "variants",
+    "design",
     "publish",
   ]);
   expect(SUITES.map((suite) => suite.name)).toEqual([
