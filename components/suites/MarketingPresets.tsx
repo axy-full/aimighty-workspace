@@ -13,7 +13,7 @@ import {
 import { AssetPreview } from "@/components/workbench/AssetPreview";
 import styles from "./marketing-presets.module.css";
 
-type Preset = { id: string; name: string; type: "ads" };
+type Preset = { id: string; name: string; type: string };
 type Catalog = {
   scope: string;
   items: Preset[];

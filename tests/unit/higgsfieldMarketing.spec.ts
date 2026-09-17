@@ -177,6 +177,103 @@ test("live catalog is bounded, cursor encoded, safe metadata only, credential an
   expect(calls).toBe(1);
 });
 
+test("the model-specific preset catalog accepts bounded category metadata without inventing an enum", async () => {
+  const { listMarketingPresets, requireMarketingPreset, marketingSettings } =
+    await import("../../lib/higgsfieldMarketing");
+  const { runInTenant } = await import("../../lib/tenant");
+  globalThis.fetch = async () =>
+    Response.json({
+      total: 1,
+      cursor: null,
+      items: [
+        {
+          id: presetId,
+          type: "fixture-category",
+          name: "Fixture preset",
+          private_data: "PRIVATE",
+        },
+      ],
+    });
+  await runInTenant(
+    { ...workspace("catalog_category"), usesPlatformKeys: true },
+    async () => {
+      expect(await listMarketingPresets()).toEqual({
+        total: 1,
+        cursor: null,
+        items: [
+          { id: presetId, type: "fixture-category", name: "Fixture preset" },
+        ],
+      });
+      await requireMarketingPreset(
+        marketingSettings({ enhancePrompt: true, presetId }),
+      );
+    },
+  );
+});
+
+test("invalid preset pages log only bounded schema diagnostics and keep rejecting the response", async () => {
+  const { listMarketingPresets } =
+    await import("../../lib/higgsfieldMarketing");
+  const { runInTenant } = await import("../../lib/tenant");
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+  globalThis.fetch = async () =>
+    Response.json({
+      total: "PRIVATE_TOTAL",
+      cursor: { url: "https://private.example/cursor", token: "PRIVATE_TOKEN" },
+      items: Array.from({ length: 10 }, () => ({
+        id: "PRIVATE_ID",
+        type: { secret: "PRIVATE_TYPE" },
+        name: null,
+        image_url: "https://private.example/image",
+        secret: "PRIVATE_SECRET",
+      })),
+      account: "PRIVATE_ACCOUNT",
+    });
+  try {
+    await runInTenant(
+      { ...workspace("catalog_invalid"), usesPlatformKeys: true },
+      async () => {
+        await expect(listMarketingPresets()).rejects.toMatchObject({
+          message: "Higgsfield returned an unusable preset page.",
+          status: 503,
+          code: "invalid_response",
+        });
+      },
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+  expect(warnings).toHaveLength(1);
+  expect(warnings[0]).toHaveLength(1);
+  const diagnostic = warnings[0][0] as Record<string, unknown>;
+  expect(diagnostic).toMatchObject({
+    event: "higgsfield_marketing_preset_schema_mismatch",
+    totalType: "string",
+    cursorType: "object",
+    itemsType: "array",
+    itemCount: 10,
+    issues: [
+      { code: "invalid_type", path: ["total"] },
+      { code: "invalid_type", path: ["cursor"] },
+      { code: "invalid_format", path: ["items", 0, "id"] },
+      { code: "invalid_type", path: ["items", 0, "type"] },
+      { code: "invalid_type", path: ["items", 0, "name"] },
+      { code: "invalid_format", path: ["items", 1, "id"] },
+      { code: "invalid_type", path: ["items", 1, "type"] },
+      { code: "invalid_type", path: ["items", 1, "name"] },
+    ],
+  });
+  const serialized = JSON.stringify(diagnostic);
+  expect(serialized).not.toMatch(
+    /PRIVATE|https:|marketing-test|secret-test|account|image_url|token/,
+  );
+  expect(serialized.length).toBeLessThan(1500);
+});
+
 test("estimate trusts only positive USD, bounds JSON, and redacts vendor/transport errors", async () => {
   const {
     estimateMarketingInput,

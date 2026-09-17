@@ -22,7 +22,7 @@ const settingsSchema = z
   })
   .strict();
 export type MarketingSettings = z.infer<typeof settingsSchema>;
-export type MarketingPreset = { id: string; type: "ads"; name: string };
+export type MarketingPreset = { id: string; type: string; name: string };
 export class MarketingError extends Error {
   constructor(
     message: string,
@@ -243,19 +243,43 @@ export async function listMarketingPresets(
         .array(
           z.object({
             id: z.string().uuid(),
-            type: z.literal("ads"),
+            // The model-specific catalog determines usability. The documented
+            // `ads` value is an example, not a published category enum.
+            type: z.string().trim().min(1).max(100),
             name: z.string().min(1).max(300),
           }),
         )
         .max(50),
     })
     .safeParse(response);
-  if (!parsed.success)
+  if (!parsed.success) {
+    // Diagnose provider schema drift without logging provider records or values.
+    const kind = (value: unknown) =>
+      value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+    const fields = new Set(["total", "cursor", "items", "id", "type", "name"]);
+    console.warn({
+      event: "higgsfield_marketing_preset_schema_mismatch",
+      totalType: kind(response.total),
+      cursorType: kind(response.cursor),
+      itemsType: kind(response.items),
+      itemCount: Array.isArray(response.items) ? response.items.length : null,
+      issues: parsed.error.issues.slice(0, 8).map((issue) => ({
+        code: issue.code,
+        path: issue.path.map((part) =>
+          typeof part === "number"
+            ? part
+            : fields.has(String(part))
+              ? part
+              : "field",
+        ),
+      })),
+    });
     throw new MarketingError(
       "Higgsfield returned an unusable preset page.",
       503,
       "invalid_response",
     );
+  }
   await catalogReady();
   if (parsed.data.items.length)
     await db().batch(
