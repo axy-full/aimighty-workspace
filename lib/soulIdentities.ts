@@ -501,11 +501,26 @@ async function finishKnown(row: Row, result: SoulReference): Promise<void> {
   const fresh = await rawIdentity(String(row.id));
   if (fresh) await settle(fresh);
 }
-async function failUnsent(row: Row, message: string): Promise<void> {
-  await db().execute({
-    sql: "UPDATE soul_identities SET status='failed',cost_usd=0,settlement_status='failed',error=?,updated_at=? WHERE id=? AND status='submitting'",
-    args: [message, now(), String(row.id)],
+async function failUnsent(
+  row: Row,
+  message: string,
+  rejectedClaim?: string,
+): Promise<void> {
+  // A status poll may label an in-flight POST uncertain before its definitive
+  // rejection arrives. Only that exact submitter may release its reservation.
+  // Crash cleanup has no such proof and must lose to any acquired paid claim.
+  const changed = await db().execute({
+    sql: `UPDATE soul_identities SET status='failed',cost_usd=0,settlement_status='failed',error=?,updated_at=?
+      WHERE id=? AND provider_reference_id IS NULL AND settlement_status IS NULL AND settled_at IS NULL
+      AND ${rejectedClaim ? "paid_claim=? AND status IN ('submitting','uncertain')" : "paid_claim IS NULL AND status='submitting'"}`,
+    args: [
+      message,
+      now(),
+      String(row.id),
+      ...(rejectedClaim ? [rejectedClaim] : []),
+    ],
   });
+  if (!changed.rowsAffected) return;
   const fresh = await rawIdentity(String(row.id));
   if (fresh) await settle(fresh);
 }
@@ -601,7 +616,7 @@ export async function createSoulIdentity(
     throw error;
   }
   await withRecoveryJob(requireTenant().id, id, async () => {
-    let claimed = false;
+    let paidClaim: string | undefined;
     let accepted: SoulReference | null = null;
     try {
       const urls: string[] = [];
@@ -618,12 +633,13 @@ export async function createSoulIdentity(
         throw new Error(
           "The Higgsfield account changed before this training started.",
         );
+      const claimToken = randomUUID();
       const won = await db().execute({
         sql: "UPDATE soul_identities SET paid_claim=?,cost_usd=?,updated_at=? WHERE id=? AND status='submitting' AND paid_claim IS NULL",
-        args: [randomUUID(), SOUL_TRAINING_USD, now(), id],
+        args: [claimToken, SOUL_TRAINING_USD, now(), id],
       });
       if (!won.rowsAffected) return;
-      claimed = true;
+      paidClaim = claimToken;
       accepted = await (deps.submit ?? createSoulReference)(value.name, urls);
       // Independent databases provide two recovery locations for a known remote UUID.
       await saveReceipt(row, accepted).catch(() => {});
@@ -634,12 +650,13 @@ export async function createSoulIdentity(
         // Retry persistence only, never the paid POST, if the first database write failed.
         await saveReceipt(row, accepted).catch(() => {});
         await finishKnown(row, accepted).catch(() => {});
-      } else if (!claimed || higgsfieldSubmissionRejected(error)) {
+      } else if (!paidClaim || higgsfieldSubmissionRejected(error)) {
         await failUnsent(
           row,
-          claimed
+          paidClaim
             ? "Higgsfield rejected this training request. No training charge was recorded."
             : "Training did not start. Check the workspace configuration and prepare a new request.",
+          paidClaim,
         );
       } else {
         await db().execute({

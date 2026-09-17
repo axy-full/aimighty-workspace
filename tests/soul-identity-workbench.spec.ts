@@ -227,3 +227,25 @@ test('ordinary generation keeps a regular image engine as default when Soul is a
   await expect(generation.getByRole('button',{name:'Generate · 3 cr estimated',exact:true})).toBeEnabled();
   await expect(generation.getByRole('combobox',{name:'Soul identity',exact:true})).toHaveCount(0);
 });
+
+test('Soul training limits copied metadata without changing the original asset',async({page},info)=>{
+  test.skip(info.project.name!=='workbench-1440x900','one copied metadata regression');
+  const f=await fixture(page);
+  const headers={'X-Workbench-Scope':f.scope};
+  const draft=await page.request.get(`/api/workbench/projects?id=${f.project.id}`,{headers}).then(response=>response.json());
+  const name='Mira '+ 'character study '.repeat(8).trim(),description='Keep the original detailed continuity notes. '.repeat(60);
+  draft.project.assets[0].name=name;draft.project.assets[0].description=description;
+  const saved=await page.request.put('/api/workbench/projects',{headers,data:{project:draft.project,revision:draft.revision}});
+  expect(saved.ok(),await saved.text()).toBe(true);
+  await page.goto('/workbench');await goWorkbenchStage(page,'Characters');
+  await page.getByRole('button',{name:`Actions for ${name}`,exact:true}).click();
+  await page.getByRole('menuitem',{name:'Attach Soul ID',exact:true}).click();
+  const panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
+  await expect(panel.getByRole('textbox',{name:'Soul ID name',exact:true})).toHaveValue(name.slice(0,100));
+  await expect(panel.getByRole('textbox',{name:'Soul ID continuity notes',exact:true})).toHaveValue(description.slice(0,1000));
+  await expect(panel.getByRole('textbox',{name:'Soul ID name',exact:true})).toHaveAttribute('maxlength','100');
+  await expect(panel.getByRole('textbox',{name:'Soul ID continuity notes',exact:true})).toHaveAttribute('maxlength','1000');
+  await panel.getByRole('button',{name:'Close',exact:true}).click();
+  expect((await f.current()).assets[0]).toMatchObject({name,description});
+  expect(f.requests()).toBe(0);
+});

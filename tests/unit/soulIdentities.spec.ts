@@ -572,3 +572,120 @@ test("unresolved submissions rotate so bounded cron reaches later accepted train
     for (const id of pending)
       expect((await getSoulIdentity(id))?.status).toBe("uncertain");
   }));
+
+test("definitive rejection releases the exact paid claim after a recovery poll labels it uncertain", async () =>
+  scope("rejection_race", async (_ws, project) => {
+    const { db } = await import("../../lib/db");
+    const { syncSoulIdentity } = await import("../../lib/soulIdentities");
+    const { HiggsfieldHttpError } = await import("../../lib/higgsfield");
+    let rejectSubmit!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      rejectSubmit = resolve;
+    });
+    let calls = 0;
+    const running = submit(input(project), "rejection-poll-race", {
+      submit: async () => {
+        calls++;
+        await pending;
+        throw new HiggsfieldHttpError(422);
+      },
+    });
+    await expect.poll(() => calls).toBe(1);
+    const recovered = await read(
+      await submit(input(project), "rejection-poll-race"),
+    );
+    expect((await syncSoulIdentity(recovered.id))?.status).toBe("uncertain");
+    expect(Number((await meterFor(recovered.id)).billed_credits)).toBe(38);
+    rejectSubmit();
+    const finished = await read(await running);
+    expect(finished.status).toBe("failed");
+    expect(finished.creditsBilled).toBe(0);
+    expect((await meterFor(finished.id)).status).toBe("failed");
+    expect(Number((await meterFor(finished.id)).engine_cost_usd)).toBe(0);
+    expect(
+      (
+        await db().execute({
+          sql: "SELECT settled_at,paid_claim FROM soul_identities WHERE id=?",
+          args: [finished.id],
+        })
+      ).rows[0].settled_at,
+    ).not.toBeNull();
+    await submit(input(project), "rejection-poll-race");
+    expect(calls).toBe(1);
+  }));
+
+test("stale never-submitted cleanup loses to an acquired paid claim and cannot refund an in-flight accepted request", async () =>
+  scope("cleanup_race", async (_ws, project) => {
+    const { db } = await import("../../lib/db");
+    const { syncSoulIdentity } = await import("../../lib/soulIdentities");
+    const client = db();
+    let releaseSign!: () => void,
+      releaseProvider!: () => void,
+      releaseSnapshot!: () => void;
+    const signGate = new Promise<void>((resolve) => {
+      releaseSign = resolve;
+    });
+    const providerGate = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const snapshotGate = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    let signing = false,
+      submitted = 0,
+      snapshotBlocked = false;
+    const running = submit(input(project), "cleanup-submit-race", {
+      sign: async () => {
+        signing = true;
+        await signGate;
+        return "https://fixture.invalid/signed";
+      },
+      submit: async () => {
+        submitted++;
+        await providerGate;
+        return { id: providerId, status: "completed" };
+      },
+    });
+    await expect.poll(() => signing).toBe(true);
+    const identity = await read(
+      await submit(input(project), "cleanup-submit-race"),
+    );
+    await client.execute({
+      sql: "UPDATE soul_identities SET created_at=0 WHERE id=?",
+      args: [identity.id],
+    });
+    const original = client.execute;
+    let snapshots = 0;
+    client.execute = (async (...args: unknown[]) => {
+      const result = await Reflect.apply(original, client, args);
+      const statement = args[0] as { sql?: string };
+      if (
+        statement?.sql ===
+          "SELECT * FROM soul_identities WHERE id=? AND purged_at IS NULL" &&
+        ++snapshots === 2
+      ) {
+        snapshotBlocked = true;
+        await snapshotGate;
+      }
+      return result;
+    }) as typeof client.execute;
+    try {
+      const cleanup = syncSoulIdentity(identity.id);
+      await expect.poll(() => snapshotBlocked).toBe(true);
+      releaseSign();
+      await expect.poll(() => submitted).toBe(1);
+      releaseSnapshot();
+      expect((await cleanup)?.status).toBe("submitting");
+      expect((await meterFor(identity.id)).status).toBe("running");
+      expect(Number((await meterFor(identity.id)).billed_credits)).toBe(38);
+    } finally {
+      client.execute = original;
+      releaseSnapshot();
+      releaseSign();
+      releaseProvider();
+    }
+    const finished = await read(await running);
+    expect(finished.status).toBe("ready");
+    expect(finished.creditsBilled).toBe(38);
+    expect(submitted).toBe(1);
+  }));

@@ -26,8 +26,8 @@ export function SoulIdentityPanel({ project, subjectType, assetId, scope, enable
   const paid = usePaidAction(`soul-identity:${project.id}`, enabled, { signedIn: enabled, requestScope: scope });
   const target = project.assets.find(asset => asset.id === assetId);
   const [state, setState] = useState<SoulIdentityState | null>(null);
-  const [name, setName] = useState(target?.name ?? '');
-  const [description, setDescription] = useState(target?.description ?? '');
+  const [name, setName] = useState(target?.name.slice(0, 100) ?? '');
+  const [description, setDescription] = useState(target?.description.slice(0, 1000) ?? '');
   const [selected, setSelected] = useState<string[]>(target && soulReferenceAssets([target]).length ? [target.id] : []);
   const [consent, setConsent] = useState(false);
   const [creating, setCreating] = useState(false);
