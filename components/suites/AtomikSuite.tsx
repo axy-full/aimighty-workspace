@@ -43,6 +43,7 @@ import {
   type RecordedTake,
 } from "./atomik-suite-data";
 import styles from "./atomik-suite.module.css";
+import { SuiteAgentPanel } from "./SuiteAgentPanel";
 
 type Drafts = {
   project: Project | null;
@@ -99,7 +100,7 @@ const amount = (value: number | null, unit: string = "cr") =>
 /** Content only: the common shell owns suite navigation, project context and the rail. */
 export default function AtomikSuite({
   pageOverride,
-  heading = "Atomik",
+  heading = "Atomik Agent",
   pageTitle,
 }: Props) {
   const session = useSession(),
@@ -413,6 +414,7 @@ function MappedAtomik({
           )}
         </div>
       </header>
+      {page === "runs" && <SuiteAgentPanel key={`${project.id}:${heading}`} suite="atomik" project={project} />}
       {(error || catalogResult.error || liveRun.error) && (
         <div className={styles.error} role="alert">
           <p>{error || catalogResult.error || liveRun.error}</p>
@@ -491,7 +493,7 @@ function MappedAtomik({
                 params.set("run", result.run.id);
                 params.set(
                   "page",
-                  pathname.startsWith("/subatomic") ? "factory" : "runs",
+                  "runs",
                 );
                 router.push(`${pathname}?${params}`);
               }

@@ -48,7 +48,19 @@ export const MOLECULR_FORMATS = [
   },
 ] as const;
 export type MoleculrFormat = (typeof MOLECULR_FORMATS)[number]["id"];
+export type MoleculrMarketing = {
+  quality: "low" | "medium" | "high";
+  enhancePrompt: boolean;
+  presetId?: string;
+  presetName?: string;
+};
+export type MoleculrGenerationOptions = {
+  modelId?: string;
+  marketing?: Omit<MoleculrMarketing, "presetName">;
+  referenceAssetIds?: string[];
+};
 export type MoleculrBrief = {
+  marketing?: MoleculrMarketing;
   productName: string;
   productUrl: string;
   productAssetIds: string[];
@@ -78,13 +90,49 @@ export function moleculrReferences(
   brief: MoleculrBrief,
   castId?: string,
 ): Asset[] {
-  const ids = new Set([
-    ...brief.productAssetIds,
-    ...(castId ? [castId] : brief.castAssetIds),
-  ]);
-  return project.assets.filter(
-    (asset) => ids.has(asset.id) && asset.kind === "image",
+  const ids = [
+    ...new Set([
+      ...brief.productAssetIds,
+      ...(castId ? [castId] : brief.castAssetIds),
+    ]),
+  ];
+  const assets = new Map(
+    project.assets
+      .filter((asset) => asset.kind === "image")
+      .map((asset) => [asset.id, asset]),
   );
+  return ids
+    .map((id) => assets.get(id))
+    .filter((asset): asset is Asset => !!asset);
+}
+/** Provider enhancement assigns meaning by position: product, then optional cast. */
+export function marketingReferenceIds(
+  project: Project,
+  brief: MoleculrBrief,
+  productId?: string,
+  castId?: string,
+): string[] {
+  const images = new Set(
+    project.assets
+      .filter((asset) => asset.kind === "image")
+      .map((asset) => asset.id),
+  );
+  const product =
+    productId ?? brief.productAssetIds.find((id) => images.has(id));
+  if (
+    !product ||
+    !brief.productAssetIds.includes(product) ||
+    !images.has(product)
+  )
+    return [];
+  return [
+    ...new Set([
+      product,
+      ...(castId && brief.castAssetIds.includes(castId) && images.has(castId)
+        ? [castId]
+        : []),
+    ]),
+  ];
 }
 export function moleculrPrompt(
   project: Project,

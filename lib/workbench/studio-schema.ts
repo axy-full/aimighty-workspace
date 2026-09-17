@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { suiteAgentPlanSchema } from "./suite-agent-plan";
 import { MARKETING_BRIEF_LIMITS } from "./marketing-brief";
 import { validateBins } from "./editorial";
 import { validateColor } from "./color";
@@ -111,6 +112,7 @@ const shot = z.object({
   note: z.string().max(10000),
 });
 const plan = z.object({
+  suiteAgent: suiteAgentPlanSchema.optional(),
   id: z.string(),
   request: z.string().max(20000),
   model: z.string().max(100),
@@ -132,6 +134,7 @@ export const marketingBriefSchema = z.object({
   constraints: z.string().max(MARKETING_BRIEF_LIMITS.constraints),
 }).strict();
 export const moleculrSchema = z.object({
+  marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional(),presetName:z.string().max(300).optional()}).strict().optional(),
   productName:z.string().max(200),productUrl:z.string().max(2000),
   productAssetIds:z.array(z.string().max(100)).max(5),castAssetIds:z.array(z.string().max(100)).max(6),
   format:z.enum(['ugc-review','tutorial','unboxing','try-on','cgi','cinematic-demo','poster','marketplace','motion']),

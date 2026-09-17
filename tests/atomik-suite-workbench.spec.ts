@@ -190,6 +190,7 @@ async function fixture(page: Page) {
           },
         },
       });
+    if (path === "/api/workbench/atomik") return route.fulfill({ json: { configured: false, models: [], jobs: [] } });
     if (path === "/api/settings")
       return route.fulfill({
         json: {
@@ -219,7 +220,7 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
     errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`/atomik?project=${f.project.id}&page=runs`);
-  const suite = page.getByRole("region", { name: "Atomik suite", exact: true });
+  const suite = page.getByRole("region", { name: "Atomik Agent suite", exact: true });
   await expect(
     suite.getByRole("heading", { name: "Runs", exact: true }),
   ).toBeVisible();
@@ -278,39 +279,12 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
   await expect(
     suite.getByRole("combobox", { name: "Reasoning effort", exact: true }),
   ).toBeEnabled();
-  for (const [subpage, title] of [
-    ["presets", "Presets"],
-    ["factory", "Factory"],
-    ["score", "Review queue"],
-  ]) {
-    await page.goto(`/subatomic?project=${f.project.id}&page=${subpage}`);
-    await expect(
-      page
-        .getByRole("region", { name: "Subatomic suite", exact: true })
-        .getByRole("heading", { name: title, exact: true }),
-    ).toBeVisible();
-  }
-  await page.screenshot({
-    path: info.outputPath("subatomic-review.png"),
-    animations: "disabled",
-  });
+  await page.goto(`/subatomic?project=${f.project.id}&page=factory`);
+  await expect(page).toHaveURL(`/atomik?project=${f.project.id}&page=runs`);
+  await expect(suite.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
   await page.goto("/subatomic?project=unavailable&page=trends");
-  await expect(
-    page.getByLabel("Sources and observations", { exact: true }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Review with Atomik", exact: true }),
-  ).toBeDisabled();
-  await page.goto(`/subatomic?project=${f.project.id}&page=trends`);
-  await expect(
-    page.getByLabel("Sources and observations", { exact: true }),
-  ).toBeEditable();
-  await page
-    .getByLabel("Sources and observations", { exact: true })
-    .fill("A supplied research note.");
-  await expect(
-    page.getByRole("button", { name: "Review with Atomik", exact: true }),
-  ).toBeEnabled();
+  await expect(page).toHaveURL("/atomik?project=unavailable&page=runs");
+  await expect(suite.getByRole("heading", { name: "Choose a saved project", exact: true })).toBeVisible();
   await page.goto(`/?project=${f.project.id}`);
   await expect(
     page.locator(".suite-home-card").filter({ hasText: "Atomik" }),

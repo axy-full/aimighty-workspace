@@ -10,6 +10,11 @@ import { CREW } from '../../lib/workbench/crew';
 import { atomikContext, atomikModels, atomikResponseFormat, atomikRequestSchema, atomikSystem, listAtomikJobs, prepareAtomikJob, quoteAtomikJob, runAtomikJob, type AtomikDependencies } from '../../lib/workbench/atomik-server';
 import type { MeterEvent } from '../../lib/meter';
 import type { CatalogModel } from '../../lib/catalog';
+import { textCostUsd } from '../../lib/catalog';
+import { billCredits } from '../../lib/creditTerms';
+import { MockLanguageModelV4 } from 'ai/test';
+import type { LanguageModelV4GenerateResult } from '@ai-sdk/provider';
+import { createSuiteAgent, suiteAgentMessages } from '../../lib/workbench/suite-agent';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-workbench-atomik-'));
 const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
@@ -25,6 +30,8 @@ function harness() {
   const events: MeterEvent[] = [];
   let calls = 0, reservations = 0;
   const deps: AtomikDependencies = {
+    assertFunding: async () => {},
+    runSuite: async () => { throw new Error("Unexpected suite agent call"); },
     models: async () => [model], allowance: async () => ({ ok: true }),
     limits: async () => ({ allow: true, limits: { concurrency: 3, rendersPerHour: 30, storageBytes: 1000000 }, standing: { running: 0, startedLastHour: 0, usedBytes: 0 } }),
     reserve: async () => { reservations++; }, meter: async e => { events.push(e); },
@@ -378,4 +385,166 @@ test('marketing quotes and jobs snapshot the saved campaign, recover once and re
   expect(restored.job.plan?.steps).toHaveLength(2);
   expect(h.calls()).toBe(1);expect(h.reservations()).toBe(1);
  });
+});
+
+test('suite agent quote reserves its bounded loop once and persists actionable results without rendering', async () => {
+  await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
+    const { input } = await fixture(), h = harness();
+    const request = { ...input, suite: 'moleculr' as const, refs: [], effort: 'auto' };
+    const onePass = await quoteAtomikJob({ ...input, refs: [], effort: 'auto' }, 'owner', h.deps);
+    const quote = await quoteAtomikJob(request, 'owner', h.deps);
+    expect(quote.estimateUsd).toBeGreaterThan(onePass.estimateUsd);
+    expect(h.calls()).toBe(0); expect(h.reservations()).toBe(0);
+    await expect(prepareAtomikJob(request, 'owner', undefined, h.deps)).rejects.toThrow('Review the credit estimate');
+    let loops = 0;
+    h.deps.runSuite = async (envelope, _auth, checkpoint) => {
+      loops++; expect(envelope.suite).toBe('moleculr'); expect(envelope.context).toContain(input.request);
+      await checkpoint?.(JSON.stringify({ agentTrace: [{ tools: ['inspect_project'] }] }));
+      return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'A motivated morning key light.', referenceIds: [] }], hooks: ['A new angle.'], assumptions: [] }) } }], usage: { cost: .01 } }) };
+    };
+    const approved = { ...request, maxCredits: quote.estimateCredits };
+    const first = await prepareAtomikJob(approved, 'owner', undefined, h.deps);
+    await runAtomikJob(first.job.id, 'owner', h.deps);
+    await runAtomikJob(first.job.id, 'owner', h.deps);
+    const duplicate = await prepareAtomikJob(approved, 'owner', undefined, h.deps);
+    expect(duplicate.scheduled).toBe(false); expect(loops).toBe(1); expect(h.calls()).toBe(0); expect(h.reservations()).toBe(1);
+    const saved = (await listAtomikJobs('owner', input.projectId))[0];
+    expect(saved.status).toBe('succeeded'); expect(saved.costUsd).toBe(.01);
+    expect(saved.plan?.suiteAgent).toMatchObject({ suite: 'moleculr', projectId: input.projectId, actions: [{ kind: 'image' }] });
+    expect(saved.plan?.applied).toBe(false);
+  });
+});
+
+test('suite agent interruption after a completed step retains one reservation without replay', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture(), h = harness();
+    const request = { ...input, suite: 'atomik' as const, refs: [], effort: 'auto', maxCredits: 10000 };
+    let loops = 0;
+    h.deps.runSuite = async (_body, _auth, checkpoint) => { loops++; await checkpoint?.('{"agentTrace":[{"tools":["inspect_project"]}]}'); throw new Error('Network lost during second step'); };
+    const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    await runAtomikJob(job.id, 'owner', h.deps); await runAtomikJob(job.id, 'owner', h.deps);
+    const saved = (await listAtomikJobs('owner', input.projectId))[0];
+    expect(saved.status).toBe('uncertain'); expect(saved.costUsd).toBeNull(); expect(loops).toBe(1);
+    expect(h.events.at(-1)?.engineCostUsd).toBe(job.estimateUsd);
+  });
+});
+
+test('suite agent refuses unselected references and cannot silently switch to Gemini', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture(), h = harness();
+    const request = { ...input, suite: 'particl' as const, refs: [], effort: 'auto', maxCredits: 10000 };
+    h.deps.models = async () => [model, { ...model, id: 'google/gemini-3.1-pro-preview' }];
+    await expect(quoteAtomikJob({ ...request, model: 'google/gemini-3.1-pro-preview' }, 'owner', h.deps)).rejects.toThrow('No priced language model');
+    h.deps.runSuite = async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'Cinematic image.', referenceIds: ['another-project-secret'] }], hooks: [], assumptions: [] }) } }], usage: { cost: .01 } }) });
+    const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    await runAtomikJob(job.id, 'owner', h.deps);
+    const saved = (await listAtomikJobs('owner', input.projectId))[0];
+    expect(saved.status).toBe('failed'); expect(saved.plan).toBeNull(); expect(saved.costUsd).toBe(.01);
+  });
+});
+
+const suiteProposal = { ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'A motivated morning key light.', referenceIds: [] }], hooks: [], assumptions: [] };
+const suiteResponse = (usage: unknown) => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(suiteProposal) } }], usage }) });
+
+test('SDK suite steps settle using their own context tiers and the saved price, not aggregate tokens or a changed catalog', async () => {
+  await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
+    const { input } = await fixture(), h = harness();
+    const priced: CatalogModel = { ...model, pricing: {
+      input: .0000001, output: .0000003,
+      input_tiers: [{ min: 0, max: 150, cost: .0000001 }, { min: 150, cost: .0000004 }],
+      output_tiers: [{ min: 0, max: 150, cost: .0000003 }, { min: 150, cost: .0000006 }],
+    } };
+    h.deps.models = async () => [priced];
+    const request = { ...input, suite: 'moleculr' as const, refs: [], effort: 'auto', maxCredits: 10000 };
+    const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    const sdkReply = (inputTokens: number, outputTokens: number, final = false): LanguageModelV4GenerateResult => ({
+      content: final ? [{ type: 'text', text: JSON.stringify(suiteProposal) }] : [{ type: 'tool-call', toolCallId: randomUUID(), toolName: 'inspect_project', input: '{}' }],
+      finishReason: { unified: final ? 'stop' : 'tool-calls', raw: undefined }, warnings: [],
+      usage: { inputTokens: { total: inputTokens, noCache: inputTokens, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: outputTokens, text: outputTokens, reasoning: undefined } },
+    });
+    const sdkModel = new MockLanguageModelV4({ doGenerate: [sdkReply(100, 50), sdkReply(100, 50), sdkReply(120, 30, true)] });
+    // Completion must not fetch a later catalog or reprice a durable admission.
+    h.deps.models = async () => { throw new Error('Do not read current catalog during suite settlement'); };
+    h.deps.runSuite = async (envelope, _auth, checkpoint) => {
+      expect(envelope.pricingModel).toEqual(priced);
+      const result = await createSuiteAgent(envelope, sdkModel, async step => { await checkpoint?.(JSON.stringify({ agentTrace: [step] })); }).generate({ messages: suiteAgentMessages(envelope) });
+      expect(result.output).toEqual(suiteProposal);
+      return suiteResponse({ prompt_tokens: result.totalUsage.inputTokens, completion_tokens: result.totalUsage.outputTokens,
+        steps: result.steps.map(step => ({ prompt_tokens: step.usage.inputTokens, completion_tokens: step.usage.outputTokens })) });
+    };
+    await runAtomikJob(job.id, 'owner', h.deps);
+    await runAtomikJob(job.id, 'owner', h.deps);
+    const expectedCost = textCostUsd(priced, 100, 50)! * 2 + textCostUsd(priced, 120, 30)!;
+    expect(expectedCost).not.toBe(textCostUsd(priced, 320, 130));
+    const saved = (await listAtomikJobs('owner', input.projectId))[0];
+    expect(saved.status).toBe('succeeded');
+    expect(saved.costUsd).toBeCloseTo(expectedCost, 12);
+    expect(saved.credits).toBe(billCredits(expectedCost, 'text'));
+    expect(sdkModel.doGenerateCalls).toHaveLength(3);
+    expect(h.calls()).toBe(0); expect(h.reservations()).toBe(1);
+    expect(h.events).toHaveLength(1);
+    expect(h.events[0]).toMatchObject({ id: job.id, status: 'succeeded', engineCostUsd: expectedCost });
+    expect(Number((await db().execute({ sql: 'SELECT cost_usd FROM atomik_spend WHERE id=?', args: [job.id] })).rows[0].cost_usd)).toBeCloseTo(expectedCost, 12);
+  });
+});
+
+test('suite usage above the approved quote remains held without charging the overage or replaying the loop', async () => {
+  await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
+    const { input } = await fixture(), h = harness();
+    const request = { ...input, suite: 'atomik' as const, refs: [], effort: 'auto', maxCredits: 10000 };
+    const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    let loops = 0;
+    const reply = suiteResponse({ cost: job.estimateUsd + 1 });
+    h.deps.runSuite = async () => { loops++; return reply; };
+    await runAtomikJob(job.id, 'owner', h.deps);
+    await runAtomikJob(job.id, 'owner', h.deps);
+    const restored = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    expect(restored.scheduled).toBe(false);
+    expect(restored.job).toMatchObject({ status: 'uncertain', costUsd: null, credits: null, plan: null, estimateUsd: job.estimateUsd });
+    expect(loops).toBe(1); expect(h.reservations()).toBe(1);
+    expect(h.events).toHaveLength(1);
+    expect(h.events[0]).toMatchObject({ status: 'failed', engineCostUsd: job.estimateUsd });
+    const persisted = (await db().execute({ sql: 'SELECT provider_response,usage FROM workbench_atomik_jobs WHERE id=?', args: [job.id] })).rows[0];
+    expect(persisted.provider_response).toBe(reply.text);
+    expect(JSON.parse(String(persisted.usage)).cost).toBe(job.estimateUsd + 1);
+    expect(Number((await db().execute({ sql: 'SELECT cost_usd FROM atomik_spend WHERE id=?', args: [job.id] })).rows[0].cost_usd)).toBe(job.estimateUsd);
+  });
+});
+
+test('unknown or malformed suite step usage retains its reservation instead of coercing a final debit', async () => {
+  await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
+    const { input } = await fixture(), h = harness();
+    const cases = [undefined, [], [{ prompt_tokens: null, completion_tokens: null }], [{ prompt_tokens: '0', completion_tokens: '0' }],
+      [{ prompt_tokens: 100 }], [{ prompt_tokens: -1, completion_tokens: 10 }], [{ prompt_tokens: .5, completion_tokens: 10 }],
+      Array.from({ length: 4 }, () => ({ prompt_tokens: 1, completion_tokens: 1 }))];
+    for (const steps of cases) {
+      const request = { ...input, requestId: randomUUID(), suite: 'particl' as const, refs: [], effort: 'auto', maxCredits: 10000 };
+      const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+      // Aggregate zeroes are not sufficient to price a tiered multi-step call.
+      h.deps.runSuite = async () => suiteResponse({ prompt_tokens: 0, completion_tokens: 0, steps });
+      await runAtomikJob(job.id, 'owner', h.deps);
+      const [saved] = await listAtomikJobs('owner', input.projectId, undefined, request.requestId);
+      expect(saved).toMatchObject({ status: 'uncertain', costUsd: null, credits: null, plan: null });
+      expect(h.events.at(-1)?.engineCostUsd).toBe(job.estimateUsd);
+    }
+  });
+});
+
+test('a failed funding recheck releases the unsent suite reservation and prevents all model steps', async () => {
+  await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
+    const { input } = await fixture(), h = harness();
+    const request = { ...input, suite: 'moleculr' as const, refs: [], effort: 'auto', maxCredits: 10000 };
+    const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    let checks = 0, loops = 0;
+    h.deps.assertFunding = async (id, engine) => { checks++; expect(id).toBe(job.id); expect(engine).toBe('vercel'); throw new Error('Funding source changed before execution.'); };
+    h.deps.runSuite = async () => { loops++; return suiteResponse({ cost: 1 }); };
+    await runAtomikJob(job.id, 'owner', h.deps);
+    await runAtomikJob(job.id, 'owner', h.deps);
+    const restored = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    expect(restored.scheduled).toBe(false);
+    expect(restored.job).toMatchObject({ status: 'failed', costUsd: 0, credits: 0, plan: null });
+    expect(checks).toBe(1); expect(loops).toBe(0); expect(h.calls()).toBe(0); expect(h.reservations()).toBe(1);
+    expect(h.events).toHaveLength(1); expect(h.events[0]).toMatchObject({ status: 'failed', engineCostUsd: 0 });
+    expect(Number((await db().execute({ sql: 'SELECT cost_usd FROM atomik_spend WHERE id=?', args: [job.id] })).rows[0].cost_usd)).toBe(0);
+  });
 });

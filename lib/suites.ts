@@ -1,4 +1,4 @@
-export type SuiteId = "particl" | "atomik" | "moleculr" | "subatomic";
+export type SuiteId = "particl" | "atomik" | "moleculr";
 export type RoomId =
   "projects" | "production" | "make" | "library" | "workspace";
 export type SuitePage = { id: string; label: string };
@@ -11,28 +11,23 @@ export const SUITES: {
 }[] = [
   {
     id: "particl",
-    name: "Particl",
+    name: "Particl Studio",
     description: "The production studio",
     color: "#D7D9DE",
   },
   {
     id: "atomik",
-    name: "Atomik",
+    name: "Atomik Agent",
     description: "The production agent",
     color: "#F0B23E",
   },
   {
     id: "moleculr",
-    name: "Moleculr",
-    description: "The marketing studio",
+    name: "Moleculr Business Suite",
+    description: "Build and grow your brand",
     color: "#5CC8B4",
   },
-  {
-    id: "subatomic",
-    name: "Subatomic",
-    description: "The content factory",
-    color: "#D48CF5",
-  },
+
 ];
 
 export const PAGES: Record<SuiteId, SuitePage[]> = {
@@ -56,19 +51,14 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
     { id: "models", label: "Models" },
   ],
   moleculr: [
+    { id: "brand", label: "Brand" },
     { id: "product", label: "Product" },
     { id: "cast", label: "Cast" },
     { id: "format", label: "Format" },
     { id: "variants", label: "Variants" },
     { id: "publish", label: "Publish" },
   ],
-  subatomic: [
-    { id: "trends", label: "Trends" },
-    { id: "presets", label: "Presets" },
-    { id: "factory", label: "Factory" },
-    { id: "score", label: "Score" },
-    { id: "schedule", label: "Schedule" },
-  ],
+
 };
 
 /** Project always identifies the workbench draft, never its production mapping. */
@@ -105,7 +95,7 @@ export function suiteForRoute(
 ): SuiteId {
   if (path === "/atomik" || path.startsWith("/atomik/")) return "atomik";
   if (path === "/subatomic" || path.startsWith("/subatomic/"))
-    return "subatomic";
+    return "atomik";
   if (path === "/workbench" && query.get("suite") === "moleculr")
     return "moleculr";
   return "particl";

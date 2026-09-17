@@ -8,6 +8,8 @@ import {
 } from "@/lib/referenceDuration";
 import { billCredits } from "@/lib/creditTerms";
 import { requireReadySoulIdentity } from "@/lib/soulIdentities";
+import { higgsfieldCredentialFingerprint } from "@/lib/higgsfield";
+import { MarketingError, marketingSettings, marketingInput, marketingReferenceUrls, requireMarketingPreset, estimateMarketingInput } from "@/lib/higgsfieldMarketing";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 
 import { allowanceCheck, vendorKeyNameFor } from "@/lib/allowance";
@@ -250,6 +252,18 @@ export async function executeGenerationAdmission(
         { status: 400 },
       );
     }
+    if (model.marketing && !options.checkpoint)
+      return admissionReply({ error: "Review a live Marketing Studio quote before submitting this take." }, { status: 400 });
+    if (!model.marketing && body.marketing != null)
+      return admissionReply({ error: "Marketing settings require the Marketing Studio Image engine." }, { status: 400 });
+    const marketing = model.marketing ? marketingSettings(body.marketing) : undefined;
+    if (marketing && body.references != null && (!Array.isArray(body.references) || body.references.length > 16 || body.references.some((ref: unknown) => {
+      if (!ref || typeof ref !== "object" || Array.isArray(ref)) return true;
+      const value = ref as Record<string, unknown>;
+      return Boolean(value.genId) === Boolean(value.uploadId) ||
+        !/^[A-Za-z0-9_-]{1,160}$/.test(String(value.genId || value.uploadId)) ||
+        Object.keys(value).some(key => !["genId", "uploadId", "role", "kind"].includes(key));
+    }))) return admissionReply({ error: "Choose up to 16 saved image uploads or generations; external URLs are not accepted." }, { status: 400 });
     let soulBinding: Awaited<ReturnType<typeof requireReadySoulIdentity>> | undefined;
     let soulStrength: number | undefined;
     if (model.soulIdentity) {
@@ -762,6 +776,13 @@ export async function executeGenerationAdmission(
     // Our own renders join the list after the uploads, so a person's own
     // @Image1 stays their first attached file.
     references.push(...ownRefs);
+    if (marketing && Array.isArray(body.references)) {
+      // Presets distinguish product (first) from optional cast (second). Mixing
+      // uploads and generated stills must not silently reverse those roles.
+      const ordered = new Map(references.map(ref => [`${ref.fromGeneration ? "generation" : "upload"}:${ref.id}`, ref]));
+      references = body.references.map((ref: { genId?: string; uploadId?: string }) =>
+        ordered.get(ref.genId ? `generation:${ref.genId}` : `upload:${ref.uploadId}`)!);
+    }
     const knownInputSeconds = videoReferenceSeconds(referenceDurations);
     if (knownInputSeconds == null)
       return admissionReply(
@@ -886,6 +907,8 @@ export async function executeGenerationAdmission(
     // The rules in force HERE: the platform's, less what this workspace switched off, plus its own.
     const rules = await effectiveRules().catch(() => layer.rules);
     if (model.kind === "image") {
+      if (model.marketing && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
+        return admissionReply({ error: "Choose a supported Marketing Studio size and aspect." }, { status: 400 });
       const ratio = model.ratios.includes(body.ratio)
         ? String(body.ratio)
         : model.ratios[0];
@@ -968,12 +991,19 @@ export async function executeGenerationAdmission(
       /* A cited name that is a trained likeness: the still renders through Flux
        with the identity's own model (brief 1.3), priced as that render. */
       const trained =
-        !model.stillTask && !model.soulIdentity && castIds.length
+        !model.stillTask && !model.soulIdentity && !model.marketing && castIds.length
           ? await identityForCast(castIds)
           : null;
-      const estStillUsd = trained
+      let marketingUsd: number | undefined;
+      let marketingFingerprint: string | undefined;
+      if (marketing) {
+        await requireMarketingPreset(marketing);
+        marketingFingerprint = higgsfieldCredentialFingerprint();
+        marketingUsd = await estimateMarketingInput(marketingInput(stillPrompt, ratio, size, marketing, await marketingReferenceUrls(stillRefs)));
+      }
+      const estStillUsd = marketingUsd ?? (trained
         ? RENDER_USD_PER_MP
-        : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0);
+        : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0));
       if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Soul Character has no confirmed price for this size." }, { status: 503 });
       if (
         body.maxCredits != null &&
@@ -1035,7 +1065,7 @@ export async function executeGenerationAdmission(
             },
             { status: 400 },
           );
-        if (!estimateImageCostUsd(modelId, size, stillRefs.length))
+        if (!model.marketing && !estimateImageCostUsd(modelId, size, stillRefs.length))
           return admissionReply(
             { error: "This model has no confirmed price." },
             { status: 400 },
@@ -1119,6 +1149,7 @@ export async function executeGenerationAdmission(
       const genId = id("gen");
       const ts = now();
       const stillParams = {
+        ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
           workbenchProjectId: body.workbenchProjectId ? String(body.workbenchProjectId) : undefined } : {}),
@@ -1177,6 +1208,8 @@ export async function executeGenerationAdmission(
         },
       );
       if (stopped) return stopped;
+      if (model.marketing && body.maxCredits == null)
+        return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
 
       await withMediaSources(stillParams, (tx) =>
         tx.execute({
@@ -1867,6 +1900,7 @@ export async function executeGenerationAdmission(
       { status: 202 },
     );
   } catch (error) {
+    if (error instanceof MarketingError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof MediaSourceError)
       return admissionReply({ error: error.message }, { status: 409 });
     throw error;

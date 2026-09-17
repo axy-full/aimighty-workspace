@@ -175,7 +175,7 @@ test("navigation waits for hydration and initial load, then accepts the first wo
     await route.fallback();
   });
   await page.goto("/workbench",{waitUntil:"commit"});
-  const workflow=page.getByRole("navigation",{name:"Particl pages",exact:true}).getByRole("link",{name:"Deliver",exact:true});
+  const workflow=page.getByRole("navigation",{name:"Particl Studio pages",exact:true}).getByRole("link",{name:"Deliver",exact:true});
   await expect(workflow).toBeVisible();
   await expect(workflow).toBeDisabled();
   await expect(workflow).not.toHaveAttribute("href");
@@ -211,7 +211,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   await expect(page.locator(".project-bar")).toBeVisible();
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await openWorkbenchProject(page);
-  await expect(page.getByRole("navigation", { name: "Particl pages", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Particl Studio pages", exact: true })).toBeVisible();
   await goStage(page, "Brief & ideas");
   const title = `Browser production ${testInfo.project.name}`;
   await page.getByLabel("Project title", { exact: true }).fill(title);

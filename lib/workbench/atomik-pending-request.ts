@@ -2,6 +2,7 @@ import type { AtomikVideoFrame } from './atomik-reference-types';
 /** Browser-side write-ahead record: a lost HTTP response must never mint another paid request ID. */
 export type AtomikPendingStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export type AtomikSubmission = {
+  suite?: 'particl' | 'atomik' | 'moleculr';
   projectId: string; requestId: string; request: string; model: string; effort?: string; depth: string;
   refs: string[]; role?: string; maxCredits: number; videoFrames?: AtomikVideoFrame[];
 };
@@ -27,6 +28,7 @@ export function atomikPendingInput(record: PendingAtomikRequest): AtomikSubmissi
   try { data = JSON.parse(record.body); } catch { throw new Error('The saved Atomik request is unreadable. Review Activity before starting another request.'); }
   const value = data as Partial<AtomikSubmission> & { quoteOnly?: unknown };
   if (!value || typeof value !== 'object' || value.projectId !== record.projectId || value.requestId !== record.requestId ||
+    (value.suite != null && !['particl', 'atomik', 'moleculr'].includes(value.suite)) ||
     typeof value.request !== 'string' || typeof value.model !== 'string' ||
     (value.effort != null && (typeof value.effort !== 'string' || value.effort.length < 1 || value.effort.length > 40)) || !['Quick', 'Considered', 'Deep'].includes(value.depth ?? '') ||
     !Array.isArray(value.refs) || !value.refs.every(ref => typeof ref === 'string') ||

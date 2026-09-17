@@ -2,6 +2,11 @@
   position: relative;
   flex: none;
 }
+.suite-top-tabs {display:flex;align-items:stretch;gap:5px;min-height:46px;}
+.suite-top-tabs a {display:flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;color:#93959f;text-decoration:none;font-size:12px;font-weight:500;white-space:nowrap;border-bottom:2px solid transparent;transition:background .15s,color .15s;}
+.suite-top-tabs a:hover {background:#141519;color:#ededea;}
+.suite-top-tabs a[aria-current="page"] {color:#ededea;border-bottom-color:var(--suite-tab-color);background:#131418;}
+.suite-top-tabs a:focus-visible {outline:2px solid #ededea;outline-offset:-3px;}
 .suite-switcher-trigger {
   display: flex;
   align-items: center;

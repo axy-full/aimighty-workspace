@@ -10,12 +10,13 @@ export const GET = withTenant(async (req: Request) => {
   const configured = workbenchGenerationModels().filter(model => providerConfigured(getProvider(model.provider)));
   const models = configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
     resolutions: model.resolutions, ratios: model.ratios, durations: model.durations,
-    maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined }));
+    maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined, marketing: model.marketing || undefined }));
   const headers = { 'Cache-Control': 'no-store' };
   if (!q.has('model')) return Response.json({ models, credits: null }, { headers });
   try {
     const model = configured.find(item => item.id === q.get('model'));
     if (!model) throw new MediaQuoteError('This generation engine is unavailable. Choose a configured engine.');
+    if (model.marketing) throw new MediaQuoteError("Marketing Studio needs a live quote for the complete prompt and settings. Request POST /api/generate/quote.", 409);
     if (model.soulIdentity) {
       const identityId = q.get('soulIdentityId');
       if (!identityId) throw new MediaQuoteError('Connect a ready Soul identity from Characters or Elements to this node.');

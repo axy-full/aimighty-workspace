@@ -1,7 +1,7 @@
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
-import { getModel, imageTokens, SOUL_CHARACTER_MODEL_ID } from "./models";
+import { getModel, imageTokens, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "./models";
 import { estimateImageCostUsd } from "./vendorPricing";
 import { storeImageBytes, storeAudioBytes } from "./storage";
 import { withRetry, billedTo } from "./providers";
@@ -58,6 +58,9 @@ type Row = {
 };
 
 export type StillJob = {
+  marketing?: import("./higgsfieldMarketing").MarketingSettings;
+  higgsfieldCredentialFingerprint?: string;
+  higgsfieldVendorCostUsd?: number;
   topaz?: import("./topaz").TopazImageSettings;
   soulReferenceId?: string;
   soulCredentialFingerprint?: string;
@@ -142,6 +145,9 @@ export async function loadJob(genId: string): Promise<Job | null> {
         kind: string;
       }[])
     : [];
+  const hydrated = await hydrate(refs);
+  if (row.model === MARKETING_IMAGE_MODEL_ID && hydrated.length !== refs.length)
+    throw new Error("A Marketing Studio source is no longer available. Restore the original source before resuming this request.");
   return {
     kind: "image",
     genId: row.id,
@@ -150,11 +156,14 @@ export async function loadJob(genId: string): Promise<Job | null> {
     ratio: String(params.ratio ?? "16:9"),
     size: String(params.resolution ?? "2K"),
     topaz: params.topaz as import("./topaz").TopazImageSettings | undefined,
+    marketing: params.marketing as StillJob["marketing"],
+    higgsfieldCredentialFingerprint: typeof params.higgsfieldCredentialFingerprint === "string" ? params.higgsfieldCredentialFingerprint : undefined,
+    higgsfieldVendorCostUsd: typeof params.higgsfieldVendorCostUsd === "number" ? params.higgsfieldVendorCostUsd : undefined,
     soulReferenceId: typeof params.soulReferenceId === "string" ? params.soulReferenceId : undefined,
     soulCredentialFingerprint: typeof params.soulCredentialFingerprint === "string" ? params.soulCredentialFingerprint : undefined,
     soulVendorCostUsd: typeof params.soulVendorCostUsd === "number" ? params.soulVendorCostUsd : undefined,
     soulStrength: typeof params.soulStrength === "number" ? params.soulStrength : undefined,
-    references: await hydrate(refs),
+    references: hydrated,
     startedAt,
   };
 }
@@ -330,13 +339,13 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     );
     return out;
   } catch (error) {
-    if (job.kind === "image" && job.modelId === SOUL_CHARACTER_MODEL_ID &&
+    if (job.kind === "image" && isHiggsfieldImageModel(job.modelId) &&
         !(error instanceof FundingSourceChangedError) && !higgsfieldSubmissionRejected(error)) {
       // An unconfirmed POST or interrupted acknowledgement is not a terminal
       // provider outcome. Keep the reservation and permanent submit-once claim.
       // A saved independent receipt lets polling restore a lost tenant handle.
       await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
-        args: ["The Soul request outcome is unconfirmed. Its reservation remains pending; this request will not be submitted again. Collection will resume if its accepted request receipt is available.", now(), job.genId] }).catch(() => {});
+        args: ["The Higgsfield request outcome is unconfirmed. Its reservation remains pending; this request will not be submitted again. Collection will resume if its accepted request receipt is available.", now(), job.genId] }).catch(() => {});
       return null;
     }
     // A synchronous vendor may have charged before the connection failed.
@@ -365,16 +374,19 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
     ratio: job.ratio,
     size: job.size,
     topaz: job.topaz,
+    marketing: job.marketing,
+    higgsfieldCredentialFingerprint: job.higgsfieldCredentialFingerprint,
+    higgsfieldVendorCostUsd: job.higgsfieldVendorCostUsd,
     soulReferenceId: job.soulReferenceId,
     soulCredentialFingerprint: job.soulCredentialFingerprint,
     soulStrength: job.soulStrength,
     references: job.references,
   });
   if (!("produced" in out)) {
-    if (job.modelId === SOUL_CHARACTER_MODEL_ID && out.handle.provider === "higgsfield") {
+    if (isHiggsfieldImageModel(job.modelId) && out.handle.provider === "higgsfield") {
       let receiptSaved = false;
       try {
-        await saveHiggsfieldGenerationReceipt(job.genId, out.handle, job.soulCredentialFingerprint!);
+        await saveHiggsfieldGenerationReceipt(job.genId, out.handle, (job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldCredentialFingerprint : job.soulCredentialFingerprint)!);
         receiptSaved = true;
       } catch { /* Still attempt the independent tenant write. */ }
       try {
@@ -383,13 +395,13 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
             sql: "UPDATE generations SET params=json_set(params,'$.higgsfieldStillHandle',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
             args: [JSON.stringify(out.handle), now(), job.genId],
           });
-          if (!saved.rowsAffected) throw new Error("The Soul generation record could not retain its accepted request.");
+          if (!saved.rowsAffected) throw new Error("The Higgsfield generation record could not retain its accepted request.");
         }, { max: 3 });
       } catch (error) {
-        if (!receiptSaved) await saveHiggsfieldGenerationReceipt(job.genId, out.handle, job.soulCredentialFingerprint!).catch(() => {});
+        if (!receiptSaved) await saveHiggsfieldGenerationReceipt(job.genId, out.handle, (job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldCredentialFingerprint : job.soulCredentialFingerprint)!).catch(() => {});
         throw error;
       }
-      if (!receiptSaved) await saveHiggsfieldGenerationReceipt(job.genId, out.handle, job.soulCredentialFingerprint!).catch(() => {});
+      if (!receiptSaved) await saveHiggsfieldGenerationReceipt(job.genId, out.handle, (job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldCredentialFingerprint : job.soulCredentialFingerprint)!).catch(() => {});
       try { await reconcileHiggsfieldImage(job.genId); } catch {
         // The collector stores a safe error. The saved handle and paid claim
         // remain recoverable through ordinary polling and the pending janitor.
@@ -422,10 +434,10 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
     const until = now() + 180_000;
     const claim = await db().execute({
       sql: `UPDATE generations SET params=json_set(params,'$.higgsfieldStillPollUntil',?)
-        WHERE id=? AND kind='image' AND model=? AND deleted=0 AND status IN ('queued','running')
+        WHERE id=? AND kind='image' AND model IN (?,?) AND provider='higgsfield' AND deleted=0 AND status IN ('queued','running')
         AND json_extract(params,'$.higgsfieldStillHandle') IS NOT NULL
         AND COALESCE(json_extract(params,'$.higgsfieldStillPollUntil'),0) < ? RETURNING params`,
-      args: [until, genId, SOUL_CHARACTER_MODEL_ID, now()],
+      args: [until, genId, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, now()],
     });
     if (!claim.rows.length) return;
     const params = JSON.parse(String(claim.rows[0].params));
@@ -436,7 +448,10 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       if (previous) { await seal(job, previous); await settleHiggsfieldGenerationReceipt(genId); return; }
       const engine = engineFor("higgsfield");
       const saved = params.higgsfieldStillHandle as RenderHandle;
-      const state = await engine.poll!({ ...saved, credentialFingerprint: job.soulCredentialFingerprint });
+      if (saved.model !== job.modelId) throw new Error("The accepted request model does not match its original admission.");
+      const credentialFingerprint = job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldCredentialFingerprint : job.soulCredentialFingerprint;
+      const vendorCostUsd = job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd;
+      const state = await engine.poll!({ ...saved, credentialFingerprint });
       if (state.status === "failed" || state.status === "cancelled") {
         // Higgsfield documents failed, NSFW and canceled requests as uncharged.
         await failJob(genId, state.error ?? "The Higgsfield request was canceled.", true);
@@ -448,11 +463,11 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
           args: [state.status, now(), genId] });
         return;
       }
-      if (!state.imageUrl || !Number.isFinite(job.soulVendorCostUsd) || !(job.soulVendorCostUsd! > 0))
-        throw new Error("The Soul request needs its saved image and verified price before collection can finish.");
+      if (!state.imageUrl || !Number.isFinite(vendorCostUsd) || !(vendorCostUsd! > 0))
+        throw new Error("The Higgsfield request needs its saved image and verified price before collection can finish.");
       const out = await finishStill(job, {
         bytes: await engine.fetchMaster!(state.imageUrl), mime: "image/png",
-        costUsd: job.soulVendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
+        costUsd: vendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
       }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
         args: [JSON.stringify(out), now(), genId] });
@@ -729,7 +744,7 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
     : job?.kind === "audio"
       ? usdForCredits(job.estCredits, null)
       : job?.kind === "image"
-        ? (job.modelId === SOUL_CHARACTER_MODEL_ID ? job.soulVendorCostUsd ?? null : estimateImageCostUsd(job.modelId, job.size, job.references.length)
+        ? (isHiggsfieldImageModel(job.modelId) ? (job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd) ?? null : estimateImageCostUsd(job.modelId, job.size, job.references.length)
             ?.net ?? null)
         : null;
   const spentCredits = rejectedBeforeGeneration

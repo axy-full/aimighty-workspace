@@ -8,30 +8,31 @@ import {activeMediaJob,recoverMediaAssets,type MediaJob} from '@/lib/workbench/j
 export type AtomikJob={id:string;status:string;model:string;effort?:string;request:string;role?:string;plan?:Plan|null;error?:string|null;credits?:number|null;estimateUsd?:number};
 type MediaPage={generations:MediaJob[];nextCursor:number|null};
 type Recovery={jobs:Map<string,MediaJob>;cursor:number|null;started:boolean};
-const scopeOf=(p:Project)=>p.id+':'+(p.productionProjectId??'');
-export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:Project)=>Project,remember?:boolean)=>void){
+const scopeOf=(p:Project,requestScope?:string)=>(requestScope?requestScope+':':'')+p.id+':'+(p.productionProjectId??'');
+export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:Project)=>Project,remember?:boolean)=>void,requestScope?:string){
  const [media,setMedia]=useState<{scope:string;jobs:MediaJob[]}>({scope:'',jobs:[]});
  const [atomik,setAtomik]=useState<{scope:string;jobs:AtomikJob[]}>({scope:'',jobs:[]});
- const [models,setModels]=useState<ThinkingModel[]>([]);
+ const [models,setModels]=useState<{scope:string;items:ThinkingModel[]}>({scope:'',items:[]});
  const [errors,setErrors]=useState<{scope:string;atomik?:string;media?:string}>({scope:''});
- const ref=useRef(project);useLayoutEffect(()=>{ref.current=project},[project]);
+ const ref=useRef(project),identity=useRef(requestScope);useLayoutEffect(()=>{ref.current=project;identity.current=requestScope},[project,requestScope]);
  const epoch=useRef(0),inFlight=useRef<{scope:string;abort:AbortController;promise:Promise<void>}|null>(null);
  const recovery=useRef(new Map<string,Recovery>());
  const refresh=useCallback(()=>{
   if(!enabled)return Promise.resolve();
-  const p=ref.current,scope=scopeOf(p);
+  const p=ref.current,scope=scopeOf(p,requestScope);
   if(inFlight.current?.scope===scope)return inFlight.current.promise;
   inFlight.current?.abort.abort();
   const abort=new AbortController(),ticket=++epoch.current;
-  const current=()=>ticket===epoch.current&&!abort.signal.aborted&&scopeOf(ref.current)===scope;
+  const requestOptions={signal:abort.signal,...(requestScope?{headers:{'X-Workbench-Scope':requestScope}}:{})};
+  const current=()=>ticket===epoch.current&&!abort.signal.aborted&&identity.current===requestScope&&scopeOf(ref.current,requestScope)===scope;
   const report=(channel:'media'|'atomik',error?:unknown)=>{if(current())setErrors(old=>({...((old.scope===scope)?old:{scope}),[channel]:error?(error instanceof Error?error.message:'Could not refresh '+channel+' activity.'):undefined}));};
   const atomTask=async()=>{
    try{
-    const result=await studioRequest<{models:ThinkingModel[];jobs:AtomikJob[]}>('/api/workbench/atomik?projectId='+encodeURIComponent(p.id),{signal:abort.signal});
+    const result=await studioRequest<{models:ThinkingModel[];jobs:AtomikJob[]}>('/api/workbench/atomik?projectId='+encodeURIComponent(p.id),requestOptions);
     if(!current())return;
-    setModels(result.models??[]);setAtomik({scope,jobs:result.jobs??[]});
+    setModels({scope,items:result.models??[]});setAtomik({scope,jobs:result.jobs??[]});
     const plans=(result.jobs??[]).filter(j=>j.status==='succeeded'&&j.plan).map(j=>j.plan!);
-    if(plans.some(plan=>!ref.current.plans.some(a=>a.id===plan.id)))change(old=>scopeOf(old)===scope?{...old,plans:[...old.plans,...plans.filter(plan=>!old.plans.some(a=>a.id===plan.id))].slice(-100)}:old,false);
+    if(plans.some(plan=>!ref.current.plans.some(a=>a.id===plan.id)))change(old=>scopeOf(old,requestScope)===scope?{...old,plans:[...old.plans,...plans.filter(plan=>!old.plans.some(a=>a.id===plan.id))].slice(-100)}:old,false);
     report('atomik');
    }catch(error){report('atomik',error);}
   };
@@ -39,7 +40,7 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
    if(!p.productionProjectId){if(current())setMedia({scope,jobs:[]});return;}
    const prior=recovery.current.get(scope)??{jobs:new Map<string,MediaJob>(),cursor:null,started:false};
    const state:Recovery={jobs:new Map(prior.jobs),cursor:prior.cursor,started:prior.started};
-   const page=async(before?:number)=>studioRequest<MediaPage>('/api/jobs?'+new URLSearchParams({projectId:p.productionProjectId!,mine:'1',sync:before==null?'1':'0',limit:'250',...(before==null?{}:{before:String(before)})}),{signal:abort.signal});
+   const page=async(before?:number)=>studioRequest<MediaPage>('/api/jobs?'+new URLSearchParams({projectId:p.productionProjectId!,mine:'1',sync:before==null?'1':'0',limit:'250',...(before==null?{}:{before:String(before)})}),requestOptions);
    try{
     const latest=await page();if(!current())return;
     const seen=new Set(latest.generations.map(j=>j.id));
@@ -51,7 +52,7 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
     // bounded in batches, while the ordinary list reconciles providers once.
     const active=[...state.jobs.values()].filter(j=>activeMediaJob(j)&&!seen.has(j.id));
     for(let i=0;i<active.length;i+=4){
-     const results=await Promise.allSettled(active.slice(i,i+4).map(job=>studioRequest<{generation:MediaJob}>('/api/jobs/'+encodeURIComponent(job.id),{signal:abort.signal})));
+     const results=await Promise.allSettled(active.slice(i,i+4).map(job=>studioRequest<{generation:MediaJob}>('/api/jobs/'+encodeURIComponent(job.id),requestOptions)));
      if(!current())return;
      for(const result of results)if(result.status==='fulfilled')state.jobs.set(result.value.generation.id,result.value.generation);
     }
@@ -60,20 +61,20 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
     const mapping=new Set(Object.values(ref.current.shotMappings??{}));
     const jobs=[...state.jobs.values()].filter(j=>mapping.has(j.shotId??'')).sort((a,b)=>(b.createdAt??0)-(a.createdAt??0));
     setMedia({scope,jobs});
-    change(old=>scopeOf(old)===scope?recoverMediaAssets(old,jobs):old,false);
+    change(old=>scopeOf(old,requestScope)===scope?recoverMediaAssets(old,jobs):old,false);
     const missing=jobs.filter(j=>j.status==='succeeded'&&!ref.current.assets.some(a=>a.generationId===j.id)).length;
     report('media',ref.current.assets.length+missing>500?new Error('This working space has reached 500 assets. Additional completed takes remain in Activity and the project library.'):undefined);
    }catch(error){report('media',error);}
   };
   const promise=Promise.allSettled([atomTask(),mediaTask()]).then(()=>{}).finally(()=>{if(inFlight.current?.abort===abort)inFlight.current=null;});
   inFlight.current={scope,abort,promise};return promise;
- },[enabled,change]);
+ },[enabled,change,requestScope]);
  const mappingKey=JSON.stringify(project.shotMappings??{});
  useEffect(()=>{
   if(!enabled)return;
   void refresh();const timer=setInterval(()=>void refresh(),6000);
   return()=>{clearInterval(timer);inFlight.current?.abort.abort();inFlight.current=null;};
  },[project.id,project.productionProjectId,mappingKey,enabled,refresh]);
- const scope=scopeOf(project);
- return {mediaJobs:media.scope===scope?media.jobs:[],atomikJobs:atomik.scope===scope?atomik.jobs:[],models,error:errors.scope===scope?[errors.atomik,errors.media].filter(Boolean).join(' '):'',refresh};
+ const scope=scopeOf(project,requestScope);
+ return {mediaJobs:media.scope===scope?media.jobs:[],atomikJobs:atomik.scope===scope?atomik.jobs:[],models:models.scope===scope?models.items:[],error:errors.scope===scope?[errors.atomik,errors.media].filter(Boolean).join(' '):'',refresh};
 }

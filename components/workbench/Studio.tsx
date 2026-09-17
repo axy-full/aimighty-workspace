@@ -150,6 +150,8 @@ import {soulIdentityAsset} from '@/lib/workbench/soul-identity';
 import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {MarketingStudioPanel} from './MarketingStudioPanel';
 import {SuiteSwitcher,RoomRail,SuiteDock} from '@/components/suites/SuiteNavigation';
+import { SuiteAgentPanel } from '@/components/suites/SuiteAgentPanel';
+import { applySuiteAgentPlan } from '@/lib/workbench/suite-agent-plan';
 import {MoleculrWorkspace} from '@/components/suites/MoleculrWorkspace';
 import {EMPTY_MOLECULR,moleculrNode,moleculrPrompt,moleculrReferences} from '@/lib/workbench/moleculr';
 import {PAGES} from '@/lib/suites';
@@ -364,7 +366,7 @@ export default function Studio({
   const [p, setP] = useState<Project>(seedProject);
   const [stage, storeStage] = useState<Stage>("canvas");
   const [suite,setSuite]=useState<'particl'|'moleculr'>('particl');
-  const [moleculrPage,storeMoleculrPage]=useState('product');
+  const [moleculrPage,storeMoleculrPage]=useState('brand');
   function setMoleculrPage(page:string){
     if(!PAGES.moleculr.some(item=>item.id===page))return;
     setSuite('moleculr');storeMoleculrPage(page);setHome(false);
@@ -516,7 +518,7 @@ export default function Studio({
     const next=future.current.pop();
     if(next&&next.id===pRef.current.id){history.current.push(pRef.current);pRef.current=next;setP(next);}
   }, []);
-  const jobs=useProductionJobs(p,ready&&signedIn&&!transitioning,change);
+  const jobs=useProductionJobs(p,ready&&signedIn&&!transitioning,change,storageKey);
   const generatingNodeId=selectedNode&&jobs.mediaJobs.some(job=>['held','queued','running'].includes(job.status)&&job.shotId===p.shotMappings?.[selectedNode])?selectedNode:null;
   const flushSave = useCallback(() => {
     const captured=uncertainSave.current?.project??pendingSave.current;
@@ -668,7 +670,7 @@ export default function Studio({
     const requestedStage=params.get('stage');
     if(params.get('suite')==='moleculr'){
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the suite from the initial browser route alongside the existing stage state.
-      setSuite('moleculr');storeMoleculrPage(PAGES.moleculr.find(item=>item.id===params.get('page'))?.id??'product');setHome(false);
+      setSuite('moleculr');storeMoleculrPage(PAGES.moleculr.find(item=>item.id===params.get('page'))?.id??'brand');setHome(false);
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial route state is read once from the browser URL.
     if(STAGES.some(s=>s.id===requestedStage)){storeStage(requestedStage as Stage);setHome(false);}
@@ -1021,6 +1023,11 @@ export default function Studio({
   }
   function applyPlan(plan: Plan) {
     if (plan.applied) return;
+    if (plan.suiteAgent) {
+      try { const next=applySuiteAgentPlan(pRef.current,plan,()=>uid('agent')); change(()=>next);setStage('canvas');setScope('My space');toast.success('Production actions added to Rig. Review each generation before rendering.'); }
+      catch(error){toast.error(error instanceof Error?error.message:'This proposal could not be applied.');}
+      return;
+    }
     if(p.nodes.length+plan.steps.length>250){toast.error('The canvas supports 250 nodes. Remove some nodes before adding this plan.');return;}
     const marketing=isMarketingPlan(plan);
     const nodes: CanvasNode[] = plan.steps.map((s, i) => ({
@@ -1202,21 +1209,24 @@ export default function Studio({
       : p.nodes;
   const latestPlan = p.plans.at(-1);
   function renderMarketingPanel(){return <MarketingStudioPanel key={p.id} task={marketingDraft.task} instructions={marketingDraft.instructions} onTask={task=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,task}}))} onInstructions={instructions=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,instructions}}))} project={p} enabled={ready&&signedIn&&!transitioning} busy={busy} references={contextIds.length} jobs={jobs.atomikJobs} error={jobs.error} onBriefChange={brief=>change(old=>({...old,marketingBrief:brief}))} onRun={request=>void runGenie(request,'marketing','Considered')} onApply={applyPlan} onContext={()=>{setAtomOpen(true);setAtomTab('context')}} onActivity={()=>{setAtomOpen(true);setAtomTab('runs')}}/>;}
-  function configureMoleculr(hook:string,castId:string|undefined,kind:'image'|'video'){
+  function configureMoleculr(hook:string,castId:string|undefined,kind:'image'|'video',options?:GenerationTarget['options']){
     if(transitioningRef.current||!readyRef.current||!signedIn)return;
     const current=pRef.current,brief=current.moleculr??EMPTY_MOLECULR;
     const existing=brief.variants.find(item=>item.hook===hook&&item.castAssetId===castId&&current.nodes.some(node=>node.id===item.nodeId));
     if(existing&&current.nodes.find(item=>item.id===existing.nodeId)?.locked){toast.error('This variant is locked in Rig. Unlock it before changing its generation.');return;}
     if(!existing&&(current.nodes.length>=250||brief.variants.length>=100)){toast.error('This project has reached its variant or node limit. Start another project to continue.');return;}
-    const request=moleculrPrompt(current,brief,hook,castId);
+    const rawRequest=moleculrPrompt(current,brief,hook,castId);
+    const request=options?.marketing?rawRequest.slice(0,5000):rawRequest;
     const nodeId=existing?.nodeId??uid('variant');
     const planned=moleculrNode(nodeId,request,`${brief.productName||current.name} · ${hook}`,current.nodes.length,kind);
     try{
       const base=existing?{...current.nodes.find(item=>item.id===nodeId)!,text:request,mode:planned.mode}:planned;
-      const binding=bindMoleculrReferences(current,base,moleculrReferences(current,brief,castId),()=>uid('reference'));
+      const chosenRefs=options?.referenceAssetIds ? options.referenceAssetIds.map(id=>current.assets.find(asset=>asset.id===id&&asset.kind==='image')).filter((asset):asset is Asset=>!!asset) : moleculrReferences(current,brief,castId);
+      if(options?.referenceAssetIds&&chosenRefs.length!==options.referenceAssetIds.length)throw new Error('A selected product or cast reference is no longer available.');
+      const binding=bindMoleculrReferences(current,base,chosenRefs,()=>uid('reference'));
       const nextNodes=[...(existing?current.nodes.map(item=>item.id===nodeId?binding.node:item):[...current.nodes,binding.node]),...binding.sources];
       change(old=>({...old,nodes:nextNodes,moleculr:{...brief,variants:existing?brief.variants:[...brief.variants,{id:uid('campaign'),nodeId,hook,castAssetId:castId}]}}));
-      setGenerationTarget({node:binding.node,prompt:request,refs:generationReferenceIds(binding.node,{...current,nodes:nextNodes}),draftId:current.id});
+      setGenerationTarget({node:binding.node,prompt:request,refs:generationReferenceIds(binding.node,{...current,nodes:nextNodes}),draftId:current.id,options});
     }catch(error){toast.error(error instanceof Error?error.message:'The variant could not be configured.');}
 
   }
@@ -1530,7 +1540,7 @@ export default function Studio({
                     </div>
                   </div>
                 )}
-                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={p.id} project={p} page={moleculrPage} enabled={ready&&signedIn&&!transitioning} marketing={renderMarketingPanel()} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
+                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={p.id} scope={storageKey} project={p} page={moleculrPage} enabled={ready&&signedIn&&!transitioning} marketing={<><SuiteAgentPanel key={`${p.id}:moleculr`} scope={storageKey} suite="moleculr" project={p} enabled={ready&&signedIn&&!transitioning} onSave={()=>ensureSaved(p.id)} onApply={applyPlan} onQueued={()=>void jobs.refresh()}/>{renderMarketingPanel()}</>} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
                 {!home && !welcomeChoice && suite==='particl' && (
                   <>
                     {stage !== "canvas" && (
@@ -2671,6 +2681,7 @@ export default function Studio({
                     {atomTab === 'marketing' && renderMarketingPanel()}
                     {atomTab === "genie" && (
                       <>
+                        <SuiteAgentPanel key={`${p.id}:${suite}`} scope={storageKey} suite={suite==='moleculr'?'moleculr':'particl'} project={p} enabled={ready&&signedIn&&!transitioning} onSave={()=>ensureSaved(p.id)} onApply={applyPlan} onQueued={()=>void jobs.refresh()} />
                         {!p.plans.length && (
                           <>
                             <div className="genie-intro">

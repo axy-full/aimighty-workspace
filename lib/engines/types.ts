@@ -17,6 +17,9 @@ export type VideoRenderRequest = {
   params: VideoParams; references: Reference[]; source: Reference | null;
 };
 export type StillRenderRequest = {
+  marketing?: import("../higgsfieldMarketing").MarketingSettings;
+  higgsfieldCredentialFingerprint?: string;
+  higgsfieldVendorCostUsd?: number;
   topaz?: import("../topaz").TopazImageSettings;
   /** Server-resolved immutable Soul UUID; never copied from the request body. */
   soulReferenceId?: string;

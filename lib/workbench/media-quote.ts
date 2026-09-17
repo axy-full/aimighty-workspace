@@ -18,7 +18,7 @@ function baselineCost(model: ModelDef) {
     : estimateCostUsd(model.id, model.resolutions[0], ratio, duration, 0, false, { audio: false, task: 'generate' })?.net ?? Infinity;
 }
 export function workbenchGenerationModels(models: ModelDef[] = MODELS) {
-  return models.filter(model => (model.soulIdentity ? soulCharacterGenerationEnabled() : !model.hidden) && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))
+  return models.filter(model => (model.soulIdentity ? soulCharacterGenerationEnabled() : model.marketing || !model.hidden) && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))
     .sort((a, b) => baselineCost(a) - baselineCost(b));
 }
 

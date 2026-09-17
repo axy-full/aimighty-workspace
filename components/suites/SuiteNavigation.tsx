@@ -1,23 +1,15 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Building2,
-  Check,
-  ChevronDown,
   Clapperboard,
   FolderOpen,
   PanelsTopLeft,
   ScanLine,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/workbench/ui/dropdown-menu";
 import { withPageLeaveGuard } from "@/lib/usePageLeaveGuard";
 import {
   PAGES,
@@ -73,68 +65,19 @@ export function SuiteSwitcher({
   projectId?: string;
   onNavigate?: SuiteNavigate;
 }) {
-  const current = SUITES.find((item) => item.id === suite)!;
   const { follow, error } = useFollow(onNavigate);
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    // Dirty-page guards may intercept links during document capture, before
-    // Radix receives the selection. Release this modal before confirmation.
-    const close = () => setOpen(false);
-    window.addEventListener("particl:before-page-leave", close);
-    return () => window.removeEventListener("particl:before-page-leave", close);
-  }, [open]);
-  return (
-    <div className="suite-switcher">
-      <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger asChild>
-          <button
-            className="suite-switcher-trigger"
-            type="button"
-            aria-label="Switch suite"
-          >
-            <span
-              className="suite-dot"
-              style={{ backgroundColor: current.color }}
-              aria-hidden="true"
-            />
-            {current.name}
-            <ChevronDown size={13} />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="suite-switcher-menu" align="start">
-          {SUITES.map((item) => (
-            <DropdownMenuItem asChild key={item.id}>
-              <Link
-                href={suiteHref(item.id, projectId)}
-                prefetch={false}
-                onClick={(event) =>
-                  follow(event, suiteHref(item.id, projectId))
-                }
-                aria-current={suite === item.id ? "page" : undefined}
-              >
-                <span
-                  className="suite-dot"
-                  style={{ backgroundColor: item.color }}
-                  aria-hidden="true"
-                />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>{item.description}</small>
-                </span>
-                {suite === item.id && <Check size={14} />}
-              </Link>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {error && (
-        <p className="suite-navigation-error" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
-  );
+  return <div className="suite-switcher">
+    <nav className="suite-top-tabs" aria-label="Suites">
+      {SUITES.map(item => <Link key={item.id} href={suiteHref(item.id, projectId)} prefetch={false}
+        onClick={event => follow(event, suiteHref(item.id, projectId))}
+        aria-current={suite === item.id ? "page" : undefined}
+        style={{ '--suite-tab-color': item.color } as import('react').CSSProperties}>
+        <span className="suite-dot" style={{ backgroundColor: item.color }} aria-hidden="true" />
+        <span>{item.name}</span>
+      </Link>)}
+    </nav>
+    {error && <p className="suite-navigation-error" role="alert">{error}</p>}
+  </div>;
 }
 
 const ROOMS = [

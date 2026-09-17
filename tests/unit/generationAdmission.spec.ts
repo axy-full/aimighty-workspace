@@ -756,3 +756,83 @@ test('Kling ordinary image references are refused before reservation while expli
   expect(prepared.request.references).toEqual([{uploadId:'frame',role:'first_frame'}]);
   expect(prepared.quote.estimatedCredits).toBeGreaterThan(0);
 }));
+
+test("Marketing live quote is mandatory, immutable and ceiling-approved; replay dispatches one paid job", async () => scope("marketing_admission", async service => {
+  const { MARKETING_IMAGE_MODEL_ID } = await import("../../lib/models");
+  const { workbenchGenerationModels } = await import("../../lib/workbench/media-quote");
+  const { higgsfieldCredentialFingerprint } = await import("../../lib/higgsfield");
+  expect(workbenchGenerationModels().find(model => model.id === MARKETING_IMAGE_MODEL_ID)?.marketing).toBe(true);
+  const body = { model: MARKETING_IMAGE_MODEL_ID, prompt: "Product on a plinth", projectId: "project", ratio: "3:4", resolution: "2k",
+    marketing: { quality: "high", enhancePrompt: false }, refine: false };
+  const handler = route("generation", service);
+  const missing = await handler.POST(request("generate", body, "marketing-no-quote"));
+  expect(missing.status).toBe(400);
+  expect(await rows()).toHaveLength(0);
+  const prepared = value(await service.gen.prepareGeneration({ ...body, higgsfieldVendorCostUsd: 0, higgsfieldCredentialFingerprint: "attacker" }, actor));
+  expect(prepared.compiled.params).toMatchObject({ marketing: body.marketing, higgsfieldVendorCostUsd: 0.25, higgsfieldCredentialFingerprint: higgsfieldCredentialFingerprint() });
+  expect((await handler.POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint }, "marketing-no-ceiling"))).status).toBe(400);
+  expect((await handler.POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: 0 }, "marketing-low-ceiling"))).status).toBe(409);
+  const payload = { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: prepared.quote.estimatedCredits };
+  const first = await handler.POST(request("generate", payload, "marketing-accepted"));
+  expect(first.status).toBe(200);
+  const accepted = await first.json();
+  const replay = await handler.POST(request("generate", payload, "marketing-accepted"));
+  expect((await replay.json()).id).toBe(accepted.id);
+  expect(dispatched).toEqual([{ genId: accepted.id, kind: "image" }]);
+  expect(await rows()).toHaveLength(1);
+  expect(await meters()).toHaveLength(1);
+  expect((await meters())[0].engine_cost_usd).toBe(0.25);
+  const changed = await handler.POST(request("generate", { ...payload, marketing: { quality: "medium", enhancePrompt: false } }, "marketing-stale-quote"));
+  expect(changed.status).toBe(409);
+  expect(dispatched).toHaveLength(1);
+}));
+
+test("Marketing estimate failures and live price changes stop before reservation; tenant source validation precedes provider reads", async () => scope("marketing_sources", async service => {
+  const { MARKETING_IMAGE_MODEL_ID } = await import("../../lib/models");
+  const body = { model: MARKETING_IMAGE_MODEL_ID, prompt: "Product on a plinth", projectId: "project", ratio: "3:4", resolution: "2k", marketing: { quality: "high", enhancePrompt: false } };
+  const before = process.env.HF_CREDENTIALS;
+  process.env.ENGINE_MOCK = "0";
+  process.env.HF_CREDENTIALS = "test-marketing:secret";
+  let calls = 0, usd: string | undefined = "0.31";
+  globalThis.fetch = async (url, init) => {
+    calls++;
+    expect(String(url)).toBe("https://api.higgsfield.ai/estimate/marketing-studio/image");
+    expect(init?.method).toBe("POST");
+    return Response.json({ usd, credits: "1234" });
+  };
+  try {
+    for (const references of [[{ uploadId: "not-in-tenant" }], [{ genId: "other-tenant" }], [{ image_url: "https://attacker.invalid/a" }], [{ uploadId: "one", genId: "two" }]]) {
+      expect((await service.gen.prepareGeneration({ ...body, references }, actor)).ok).toBe(false);
+    }
+    expect(calls).toBe(0);
+    const prepared = value(await service.gen.prepareGeneration(body, actor));
+    expect(prepared.compiled.params).toMatchObject({ higgsfieldVendorCostUsd: 0.31 });
+    usd = "0.30"; // Even a lower vendor price needs a fresh immutable quote.
+    const handler = route("generation", service);
+    const stale = await handler.POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: prepared.quote.estimatedCredits }, "marketing-price-changed"));
+    expect(stale.status).toBe(409);
+    usd = undefined;
+    const unavailable = await service.gen.prepareGeneration(body, actor);
+    expect(unavailable).toMatchObject({ ok: false, status: 503, body: { code: "price_unavailable" } });
+    expect(await rows()).toHaveLength(0);
+    expect(await meters()).toHaveLength(0);
+    expect(dispatched).toHaveLength(0);
+  } finally { process.env.ENGINE_MOCK = "1"; if (before == null) delete process.env.HF_CREDENTIALS; else process.env.HF_CREDENTIALS = before; }
+}));
+
+test("Marketing preserves product-first mixed generated/uploaded source order through immutable quote and persisted admission", async () => scope("marketing_ref_order", async service => {
+  const { db } = await import("../../lib/db");
+  const { MARKETING_IMAGE_MODEL_ID } = await import("../../lib/models");
+  await db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind) VALUES('cast_upload','cast.png','image/png','png',1000,'cast-hash','/api/uploads/cast_upload',0,'image')");
+  await db().execute("INSERT INTO generations(id,kind,model,prompt,params,status,stored_url,created_at,updated_at) VALUES('product_generation','image','gemini-3.1-flash-image','Product','{}','succeeded','/api/media/product_generation',0,0)");
+  const body = { model: MARKETING_IMAGE_MODEL_ID, prompt: "Product first, cast second", projectId: "project", ratio: "3:4", resolution: "2k",
+    references: [{ genId: "product_generation", role: "reference_image" }, { uploadId: "cast_upload", role: "reference_image" }] };
+  const prepared = value(await service.gen.prepareGeneration(body, actor));
+  expect((prepared.compiled.references as { id: string }[]).map(ref => ref.id)).toEqual(["product_generation", "cast_upload"]);
+  const response = await route("generation", service).POST(request("generate", { ...body, quoteFingerprint: prepared.quote.fingerprint, maxCredits: prepared.quote.estimatedCredits }, "marketing-mixed-references"));
+  expect(response.status).toBe(200);
+  const accepted = await response.json();
+  const stored = (await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [accepted.id] })).rows[0];
+  expect(JSON.parse(String(stored.params)).references).toEqual([{ genId: "product_generation", role: "reference_image", kind: "image" }, { uploadId: "cast_upload", role: "reference_image", kind: "image" }]);
+  expect(dispatched).toHaveLength(1);
+}));

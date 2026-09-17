@@ -1,0 +1,146 @@
+.panel {
+  min-width: 0;
+}
+.modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 20px 0;
+}
+.modes button,
+.presets button {
+  text-align: left;
+  border: 1px solid #ffffff18;
+  background: #ffffff03;
+  border-radius: 12px;
+  padding: 16px;
+  color: #edeff2;
+  font-size: 13px;
+  cursor: pointer;
+}
+.modes button[aria-pressed="true"],
+.presets button[aria-pressed="true"] {
+  border-color: #5cc8b475;
+  background: #5cc8b40a;
+}
+.modes span,
+.presets small {
+  display: block;
+  color: #969aa3;
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 6px;
+}
+.modes button:disabled,
+.presets button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.catalog {
+  padding: 18px 0;
+  border-top: 1px solid #ffffff12;
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff05;
+  border: 1px solid #ffffff14;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #969aa3;
+}
+.panel .search input {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+  min-width: 0;
+  flex: 1;
+  color: #edeff2;
+  font-size: 13px;
+  outline: 0;
+}
+.search:focus-within {
+  border-color: #5cc8b4;
+}
+.presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 12px 0;
+}
+.presets button {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.presets button svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #5cc8b4;
+}
+.presets button span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.catalogFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  color: #969aa3;
+  font-size: 11px;
+}
+.catalogFooter > span {
+  margin-right: auto;
+}
+.detail {
+  border-left: 2px solid #5cc8b4;
+  padding: 3px 15px;
+  margin-top: 20px;
+}
+.detail strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.detail p {
+  font-size: 12px;
+  color: #969aa3;
+  line-height: 1.7;
+  margin-top: 7px;
+}
+.references {
+  margin: 18px 0;
+}
+.references strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.preview {
+  height: 112px;
+  max-width: 168px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #ffffff05;
+}
+.preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+@media (max-width: 700px) {
+  .presets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 440px) {
+  .modes,
+  .presets {
+    grid-template-columns: 1fr;
+  }
+}
