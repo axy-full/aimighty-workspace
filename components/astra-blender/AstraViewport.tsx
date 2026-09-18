@@ -180,6 +180,7 @@ export default function AstraViewport(props: Props) {
     let needsRender = true;
     let updatingOrbit = false;
     let dampingFrames = 0;
+    let dampingStartedAt: number | null = null;
     let contextLost = false;
     const canRender = () => !disposed && visible && !document.hidden && !contextLost;
     const cancelFrame = () => {
@@ -197,8 +198,11 @@ export default function AstraViewport(props: Props) {
       needsRender = false;
       updatingOrbit = true;
       let moving = orbit.update();
-      if ((moving && ++dampingFrames >= 180) || (!moving && dampingFrames > 0)) {
+      if (moving && dampingStartedAt === null) dampingStartedAt = performance.now();
+      if ((moving && (++dampingFrames >= 180 || performance.now() - dampingStartedAt! >= 1500)) || (!moving && dampingFrames > 0)) {
         // Finish any residual inertia without leaving an unbounded RAF loop.
+        // A wall-time limit also bounds the tail on a slow software renderer;
+        // a frame limit alone can keep drawing for tens of seconds there.
         // Clear sub-pixel residuals at rest too, so later scene invalidations
         // cannot make the camera drift after the orbit gesture has settled.
         orbit.enableDamping = false;
@@ -208,12 +212,12 @@ export default function AstraViewport(props: Props) {
       }
       updatingOrbit = false;
       if (requested || moving) renderer.render(stage, camera);
-      if (moving) invalidate(); else dampingFrames = 0;
+      if (moving) invalidate(); else { dampingFrames = 0; dampingStartedAt = null; }
     };
     const onOrbitChange = () => {
       // update() dispatches change synchronously. Schedule its next damping
       // frame above, so that event cannot keep an otherwise idle loop alive.
-      if (!updatingOrbit) { dampingFrames = 0; invalidate(); }
+      if (!updatingOrbit) { dampingFrames = 0; dampingStartedAt = performance.now(); invalidate(); }
     };
     orbit.addEventListener('change', onOrbitChange);
 

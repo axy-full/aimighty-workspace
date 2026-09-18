@@ -79,9 +79,9 @@ async function setNumber(workspace: Locator, label: string, value: string) {
   await input.press('Enter');
 }
 
-async function observeViewportDraws(page: Page) {
-  await page.addInitScript(() => {
-    const metrics = { calls: 0 };
+async function observeViewportDraws(page: Page, renderDelayMs = 0) {
+  await page.addInitScript((delay) => {
+    const metrics = { calls: 0, delayedFrames: 0 };
     Object.defineProperty(window, '__astraDraws', { value: metrics });
     for (const prototype of [WebGLRenderingContext.prototype, WebGL2RenderingContext.prototype]) {
       for (const name of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced']) {
@@ -93,8 +93,21 @@ async function observeViewportDraws(page: Page) {
           return Reflect.apply(original, this, args);
         } });
       }
+      const clear = Object.getOwnPropertyDescriptor(prototype, 'clear');
+      if (delay && typeof clear?.value === 'function') {
+        const original = clear.value;
+        Object.defineProperty(prototype, 'clear', { ...clear, value: function (this: WebGLRenderingContext, ...args: unknown[]) {
+          // Simulate a slow GPU once per visible frame, not per shadow pass.
+          if (this.canvas instanceof HTMLCanvasElement && this.canvas.getAttribute('aria-label') === 'Interactive 3D viewport' && this.getParameter(this.FRAMEBUFFER_BINDING) === null) {
+            metrics.delayedFrames++;
+            const until = performance.now() + delay;
+            while (performance.now() < until) { /* deterministic slow-render fixture */ }
+          }
+          return Reflect.apply(original, this, args);
+        } });
+      }
     }
-  });
+  }, renderDelayMs);
   const count = () => page.evaluate(() => (window as unknown as { __astraDraws: { calls: number } }).__astraDraws.calls);
   const idle = async () => {
     await expect.poll(() => page.evaluate(async () => {
@@ -108,6 +121,30 @@ async function observeViewportDraws(page: Page) {
   return { count, idle };
 }
 
+async function dragViewport(page: Page, canvas: Locator, draws: Awaited<ReturnType<typeof observeViewportDraws>>) {
+  // In short landscape layouts the canvas extends below the fixed stage dock.
+  // Scroll it into view, then use a drag path that actually hits the canvas.
+  await canvas.hover();
+  const drag = await canvas.evaluate(node => {
+    const bounds = node.getBoundingClientRect();
+    const left = Math.max(bounds.left, 0), right = Math.min(bounds.right, innerWidth);
+    const top = Math.max(bounds.top, 0), bottom = Math.min(bounds.bottom, innerHeight);
+    const dx = Math.min(30, (right - left) / 10), dy = Math.min(20, (bottom - top) / 10);
+    for (const fraction of [.3, .5, .7]) {
+      const x = left + (right - left) * .3, y = top + (bottom - top) * fraction;
+      if ([0, .5, 1].every(t => document.elementFromPoint(x + dx * t, y + dy * t) === node)) return { x, y, dx, dy };
+    }
+    return null;
+  });
+  expect(drag, 'The viewport must have an unobstructed visible orbit-drag path').not.toBeNull();
+  await page.mouse.move(drag!.x, drag!.y);
+  const before = await draws.idle();
+  await page.mouse.down();
+  await page.mouse.move(drag!.x + drag!.dx, drag!.y + drag!.dy, { steps: 3 });
+  await page.mouse.up();
+  await expect.poll(draws.count).toBeGreaterThan(before);
+}
+
 test('viewport draws only for changes, finishes orbit damping and restores overlays after PNG capture', async ({ page }) => {
   const draws = await observeViewportDraws(page);
   const { workspace } = await fixture(page);
@@ -117,13 +154,7 @@ test('viewport draws only for changes, finishes orbit damping and restores overl
   let before = await draws.idle();
   await workspace.getByRole('button', { name: 'Toggle grid', exact: true }).click();
   await expect.poll(draws.count).toBeGreaterThan(before);
-  before = await draws.idle();
-  const bounds = (await canvas.boundingBox())!;
-  await page.mouse.move(bounds.x + bounds.width * .2, bounds.y + bounds.height * .2);
-  await page.mouse.down();
-  await page.mouse.move(bounds.x + bounds.width * .25, bounds.y + bounds.height * .25, { steps: 3 });
-  await page.mouse.up();
-  await expect.poll(draws.count).toBeGreaterThan(before);
+  await dragViewport(page, canvas, draws);
   await draws.idle();
   await workspace.getByRole('button', { name: 'Play animation', exact: true }).click();
   before = await draws.count();
@@ -152,6 +183,19 @@ test('viewport draws only for changes, finishes orbit damping and restores overl
   await page.getByRole('navigation', { name: 'Particl Studio pages', exact: true }).getByRole('link', { name: 'Brief', exact: true }).click();
   await expect(canvas).toHaveCount(0);
   await draws.idle();
+});
+
+test('orbit damping settles promptly when each viewport frame takes 180 milliseconds', async ({ page }) => {
+  const draws = await observeViewportDraws(page, 180);
+  const { workspace } = await fixture(page);
+  const canvas = workspace.getByRole('img', { name: 'Interactive 3D viewport' });
+  await expect(canvas).toBeVisible();
+  await expect.poll(draws.count).toBeGreaterThan(0);
+  await dragViewport(page, canvas, draws);
+  const started = Date.now();
+  await draws.idle();
+  expect(Date.now() - started, 'Slow rendering must not extend the orbit tail into a long frame-count loop').toBeLessThan(6000);
+  expect(await page.evaluate(() => (window as unknown as { __astraDraws: { delayedFrames: number } }).__astraDraws.delayedFrames)).toBeGreaterThan(3);
 });
 
 test('editable 3D scene persists transforms, material, keyframes, locks and scene export without paid calls', async ({ page }, info) => {
