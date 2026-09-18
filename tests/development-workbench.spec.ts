@@ -245,3 +245,53 @@ test('idea development recovers the exact request after a lost response and relo
   await expect(panel.getByRole('button', { name: 'Review development estimate', exact: true })).toBeDisabled();
   expect(f.submissions).toHaveLength(2);
 });
+
+test('notifications remain interactive and model options stay above a live import toast', async ({ page }, info) => {
+  test.skip(info.project.name !== 'workbench-360x640', 'phone popup and notification overlap regression');
+  const f = await fixture(page);
+  await page.goto('/workbench');
+  await goStage(page, 'Script & breakdown');
+  await page.getByRole('group', { name: 'Script format', exact: true }).getByRole('button', { name: /^Ad-film script/ }).click();
+  const panel = scopePanel(page, 'adfilm');
+  await panel.getByRole('group', { name: /provider$/ }).getByRole('button', { name: /^ChatGPT/ }).click();
+  await page.getByLabel('Import ad-film script file', { exact: true }).setInputFiles({ name: 'Popup layering.txt', mimeType: 'text/plain', buffer: Buffer.from('00–05s · OPEN\nVISUAL: The lamp turns on.\nAUDIO: Room tone.') });
+  await page.getByRole('region', { name: 'Review screenplay import', exact: true }).getByRole('button', { name: 'Import complete ad-film script', exact: true }).click();
+  const notice = page.locator('[data-sonner-toast][data-visible="true"]').filter({ hasText: 'Complete ad-film script imported.' });
+  await expect(notice).toBeVisible();
+  // Verify notification pointers before opening the picker. Hover also pauses
+  // its dismissal while this assertion runs on slower hosted browsers.
+  await notice.hover();
+  await expect(notice).toHaveAttribute('data-expanded', 'true');
+  expect(await notice.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+  })).toBe(true);
+  await panel.getByRole('button', { name: /model$/ }).click();
+  const picker = page.getByRole('dialog', { name: 'Choose a thinking model', exact: true });
+  const option = picker.getByRole('option', { name: 'GPT-5.5', exact: true });
+  await expect(option).toBeVisible();
+  await expect(notice).toBeVisible();
+  const hit = await option.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const toast = [...document.querySelectorAll('[data-sonner-toast][data-visible="true"]')].find(node => node.textContent?.includes('Complete ad-film script imported.'))!.getBoundingClientRect();
+    const left = Math.max(box.left, toast.left), right = Math.min(box.right, toast.right);
+    const top = Math.max(box.top, toast.top), bottom = Math.min(box.bottom, toast.bottom);
+    const overlap = right > left && bottom > top;
+    const target = document.elementFromPoint(overlap ? (left + right) / 2 : box.left + box.width / 2, overlap ? (top + bottom) / 2 : box.top + box.height / 2);
+    return { overlap, receivesPointer: element.contains(target) };
+  });
+  expect(hit).toEqual({ overlap: true, receivesPointer: true });
+  await option.click();
+  await expect(picker).toHaveCount(0);
+  await panel.getByRole('combobox', { name: /effort$/ }).click();
+  const effort = page.getByRole('option', { name: /^High/ });
+  await expect(effort).toBeVisible();
+  expect(await effort.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+  })).toBe(true);
+  await effort.click();
+  await expect(panel.getByRole('combobox', { name: /effort$/ })).toContainText('High');
+  expect(f.submissions).toEqual([]);
+  expect(f.paid()).toBe(0);
+});
