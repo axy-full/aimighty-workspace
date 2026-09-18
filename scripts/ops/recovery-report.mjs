@@ -175,6 +175,25 @@ export async function recoveryReport(directory) {
           });
         }
       }
+      if (names.has("consumer_video_originals")) {
+        for (const row of (await db.execute({
+          sql: "SELECT job_id,generation_id,provider_job_id,state,bytes,sha256 FROM consumer_video_originals WHERE COALESCE(state,'preparing')<>'stored' AND (COALESCE(bytes,0)>0 OR COALESCE(lease_until,0)>?)",
+          args: [Date.now()],
+        })).rows) {
+          report.actions.push({
+            database: source.id,
+            workspaceIds: source.workspaceIds,
+            table: "consumer_video_originals",
+            id: row.job_id,
+            generationId: row.generation_id,
+            handle: row.provider_job_id,
+            status: row.state,
+            bytes: row.bytes,
+            sha256: row.sha256 ?? null,
+            disposition: "verify-private-consumer-original-digest-before-recovery-never-resubmit",
+          });
+        }
+      }
       if (names.has("soul_training_receipts")) {
         for (const row of (await db.execute("SELECT * FROM soul_training_receipts WHERE settled_at IS NULL")).rows) {
           action("soul_training_receipts", { ...row, status: row.provider_status },

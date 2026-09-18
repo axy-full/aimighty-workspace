@@ -1,6 +1,7 @@
 import { withRecoveryJob } from '../recovery';
 import { runSuiteAgent, checkSuiteProposal, suiteAgentInstructions, suiteAgentBounds, SUITE_AGENT_STEPS, type SuiteAgentEnvelope } from './suite-agent';
 import { suiteAgentResultSchema } from './suite-agent-plan';
+import { REFERENCE_AD_FRAMES, referenceAnalysisWireSchema, referenceAnalysisSourceSchema, referenceAnalysisResultSchema, referenceAnalysisEvidenceSchema, referenceAnalysisInstructions, referenceAdAnalysisSchema } from './reference-ad-analysis';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
 import { atomikEffortOptions, atomikReasoningRequest } from "../atomik-reasoning";
@@ -16,7 +17,7 @@ import { meter, assertMeterFunding, type MeterEvent } from '../meter';
 import { billCredits } from '../creditTerms';
 import { paidByPlatform } from '../platformSpend';
 import { loadAtomikReferences, type AtomikReferenceContent } from './atomik-references';
-import { ATOMIK_MAX_VISUALS } from './atomik-reference-types';
+import { engineMock } from '../mock';
 import { reserveGenerationSpend } from '../generationRequests';
 import { CREW } from './crew';
 import { projectSchema } from './studio-schema';
@@ -24,6 +25,7 @@ import type { Plan, Project } from './studio';
 import { requireTenant, type TenantToken } from '../tenant';
 
 export const atomikRequestSchema = z.object({
+  referenceAd: referenceAnalysisSourceSchema.optional(),
   suite: z.enum(['particl', 'atomik', 'moleculr']).optional(),
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
   requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
@@ -35,7 +37,7 @@ export const atomikRequestSchema = z.object({
   effort: z.string().min(1).max(40).optional(),
   refs: z.array(z.string().min(1).max(100)).max(12).default([]),
   maxCredits: z.number().int().min(0).max(10000).optional(),
-  videoFrames: z.array(z.object({ assetId: z.string().min(1).max(100), uploadId: z.string().regex(/^[\w-]{1,100}$/), timeSeconds: z.number().finite().min(0).max(3600) }).strict()).max(ATOMIK_MAX_VISUALS).optional(),
+  videoFrames: z.array(z.object({ assetId: z.string().min(1).max(100), uploadId: z.string().regex(/^[\w-]{1,100}$/), timeSeconds: z.number().finite().min(0).max(3600), durationSeconds: z.number().finite().min(0.1).max(60).optional() }).strict()).max(REFERENCE_AD_FRAMES).optional(),
 }).strict();
 export type AtomikRequest = z.infer<typeof atomikRequestSchema>;
 export type AtomikStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'uncertain';
@@ -224,7 +226,9 @@ export type AtomikDependencies = {
 const dependencies = (): AtomikDependencies => ({
   models: catalog, allowance: allowanceCheck, limits: checkLimits,
   reserve: reserveGenerationSpend, meter, auth: gatewayAuth,
-  run: request => engineFor('vercel').run!(request),
+  run: request => engineMock() && JSON.parse(request.body).response_format?.json_schema?.name === 'reference_ad_analysis'
+    ? Promise.resolve({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Mock visual analysis; no provider was called.', beats: [{ sampleIndex: 0, observation: 'Mock opening sample.', adaptation: 'Introduce the supplied product with clear framing.' }], camera: 'Mock composition review.', pacing: 'Mock comparison between sampled stills; cut timing is unknown.', colors: ['Mock neutral palette'], direction: 'Create an original product introduction using the reviewed brand and product facts.', uncertainties: ['Mock result. No real reference analysis was performed.'] }) } }], usage: { cost: 0, prompt_tokens: 0, completion_tokens: 0 } }) })
+    : engineFor('vercel').run!(request),
   runSuite: runSuiteAgent, assertFunding: assertMeterFunding,
 });
 const withDependencies = (overrides?: Partial<AtomikDependencies>) => ({ ...dependencies(), ...overrides });
@@ -243,10 +247,11 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 });
 
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
+  if (input.referenceAd && input.suite) throw new AtomikError('Reference-ad analysis is a separate bounded review, not a suite-agent run.', 422);
   if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new AtomikError('Save this project to link its budget before starting Atomik.', 409);
-  const references = await loadAtomikReferences(project, input.refs, owner, input.videoFrames);
+  const references = await loadAtomikReferences(project, input.refs, owner, input.videoFrames, {}, input.referenceAd);
   const models = await deps.models();
   const menu = atomikModels(models).filter(model => (!input.suite || /^(anthropic|openai)\//.test(model.id)) && (!references.images.length || model.vision));
   if (input.model === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);
@@ -255,7 +260,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const model = models.find(m => m.id === selectedId && menu.some(c => c.id === m.id));
   if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
   if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or connect AI Gateway.', 503);
-  const system = input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
+  const system = input.referenceAd ? referenceAnalysisInstructions() : input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
   const user = atomikContext(project, input, references.text, references.images);
   // UTF-8 byte count is a conservative token upper bound, including non-Latin scripts.
   const inputTokens = Buffer.byteLength(system + user, 'utf8') + 512 + references.inputTokens;
@@ -283,8 +288,14 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
         { type: 'image_url', image_url: { url: image.dataUrl, detail: 'low' } },
       ]),
     ] : user }],
-    ...atomikResponseFormat(model.id),
+    ...(input.referenceAd && (atomikResponseFormat(model.id).response_format as {type?:string}|undefined)?.type === 'json_schema' ? { response_format: { type: 'json_schema', json_schema: { name: 'reference_ad_analysis', strict: true, schema: referenceAnalysisWireSchema } } } : atomikResponseFormat(model.id)),
   });
+  if (input.referenceAd) {
+    const frames = [...(input.videoFrames ?? [])].sort((a,b) => a.timeSeconds-b.timeSeconds);
+    const evidence = referenceAnalysisEvidenceSchema.parse({ source: input.referenceAd, durationSeconds: references.durationSeconds,
+      samples: references.images.map((image,index) => ({ uploadId: frames[index].uploadId, timeSeconds: image.timeSeconds, sha256: image.sha256 })) });
+    providerBody = JSON.stringify({ ...JSON.parse(providerBody), referenceAnalysisEvidence: evidence });
+  }
   if (input.suite) {
     const providerOptions = structuredClone(reasoning.providerOptions) as SharedV4ProviderOptions;
     const fields = reasoning.requestFields ?? {};
@@ -323,7 +334,7 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
     if (existing.fingerprint !== fingerprint) throw new AtomikError('This request ID belongs to different instructions. Start a new request.', 409);
     return { job: asJob(existing), scheduled: false };
   }
-  if ((input.effort !== undefined || input.suite) && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
+  if ((input.effort !== undefined || input.suite || input.referenceAd) && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
   const { project, model, providerBody, estimateUsd, estimateCredits, budgets } = await compileAtomikRequest(input, owner, deps);
   const wall = await deps.allowance('gateway', estimateUsd, model.id);
   if (!wall.ok) throw new AtomikError(wall.error, wall.status);
@@ -424,7 +435,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       ? await deps.runSuite(JSON.parse(String(row.provider_body)), auth, async trace => {
           await db().execute({ sql: "UPDATE workbench_atomik_jobs SET provider_response=?,updated_at=? WHERE id=? AND owner=? AND status='running'", args: [trace, now(), id, owner] });
         })
-      : await deps.run({ body: String(row.provider_body), auth, timeoutMs: 270000 });
+      : await deps.run({ body: input.referenceAd ? JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(String(row.provider_body))).filter(([key]) => key !== 'referenceAnalysisEvidence'))) : String(row.provider_body), auth, timeoutMs: 270000 });
     providerReturned = true;
     raw = response.text;
     if (!response.ok) {
@@ -448,16 +459,17 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       const model = (await deps.models()).find(m => m.id === job.model);
       if (model) cost = textCostUsd(model, reply.usage!.prompt_tokens!, reply.usage!.completion_tokens!) ?? cost;
     }
-    if (input.suite && cost > job.estimateUsd + 0.00000001) {
+    if ((input.suite || input.referenceAd) && cost > job.estimateUsd + 0.00000001) {
       // Provider pricing/usage outside the accepted ceiling requires reconciliation.
       // Preserve the response, but never debit an unapproved overage automatically.
       providerReturned = false; cost = job.estimateUsd;
       throw new AtomikError('The provider usage exceeded the approved estimate. This attempt needs billing review.', 409);
     }
     const content = reply.choices?.[0]?.message?.content;
+    const referenceAnalysis = input.referenceAd ? referenceAdAnalysisSchema.parse({ projectId: input.projectId, jobId: job.id, model: job.model, createdAt: new Date().toISOString(), evidence: JSON.parse(String(row.provider_body)).referenceAnalysisEvidence, result: referenceAnalysisResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) }) : null;
     const suiteResult = input.suite ? suiteAgentResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) : null;
     if (suiteResult && !checkSuiteProposal(suiteResult, (JSON.parse(String(row.provider_body)) as SuiteAgentEnvelope).assetIds).valid) throw new AtomikError('The agent proposed unavailable references. Review this saved attempt; no media was generated.', 502);
-    const result = suiteResult ? { intent: suiteResult.intent, summary: suiteResult.summary, steps: suiteResult.steps, suiteAgent: { suite: input.suite!, projectId: input.projectId, actions: suiteResult.actions, hooks: suiteResult.hooks, assumptions: suiteResult.assumptions } } : parseAtomikResult(typeof content === 'string' ? content : '');
+    const result = referenceAnalysis ? { intent: 'campaign', summary: referenceAnalysis.result.summary, steps: [referenceAnalysis.result.direction], referenceAdAnalysis: referenceAnalysis } : suiteResult ? { intent: suiteResult.intent, summary: suiteResult.summary, steps: suiteResult.steps, suiteAgent: { suite: input.suite!, projectId: input.projectId, actions: suiteResult.actions, hooks: suiteResult.hooks, assumptions: suiteResult.assumptions } } : parseAtomikResult(typeof content === 'string' ? content : '');
     const role = CREW.find(c => c.id === job.role);
     const plan: Plan = { id: job.id, request: job.request, model: job.model, depth: job.depth, ...(job.effort == null ? {} : { effort: job.effort }), refs: job.refs,
       role: job.role === 'marketing' ? 'marketing' : role?.name, applied: false, ...result };

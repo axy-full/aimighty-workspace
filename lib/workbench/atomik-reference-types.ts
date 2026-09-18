@@ -3,6 +3,7 @@ export type AtomikVideoFrame = {
   assetId: string;
   uploadId: string;
   timeSeconds: number;
+  durationSeconds?: number;
 };
 export const ATOMIK_MAX_VISUALS = 6;
 export const ATOMIK_IMAGE_EDGE = 512;

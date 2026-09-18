@@ -9,6 +9,9 @@ import {
   consumerVideoAcknowledgement,
   ConsumerVideoError,
   parseConsumerVideoInput,
+  consumerVideoOriginalResult,
+  consumerVideoParams,
+  CONSUMER_VIDEO_MODES,
   type ConsumerVideoInput,
 } from "../../lib/higgsfield-consumer/video-contract";
 
@@ -33,6 +36,44 @@ test("qualified single-result receipt accepts only this video model and one cons
   expect(consumerVideoAcknowledgement({ results: [{ ...result, model: "other" }] })).toBeNull();
   expect(consumerVideoAcknowledgement({ results: [result], id: otherId })).toBeNull();
   expect(consumerVideoAcknowledgement({ results: [{ ...result, id: "not-a-job" }] })).toBeNull();
+});
+
+test("only the qualified completed original URL with exact immutable settings permits collection", () => {
+  const params = { prompt: input.prompt, duration: 15, resolution: "720p", aspect_ratio: "16:9", generate_audio: true,
+    mode: "ugc", width: 1344, height: 768, medias: [], enhanced_prompt: "Untrusted provider-generated creative direction" };
+  const raw = { id: jobId, status: "completed", job_set_type: "marketing_studio_video", result_url: "https://media.example.com/original.mp4", params };
+  expect(consumerVideoOriginalResult({ raw_data: raw }, jobId, input)).toEqual({ url: raw.result_url });
+  for (const patch of [{ id: otherId }, { id: "invalid" }, { job_id: otherId }, { job_ids: [otherId] },
+    { results: [{ id: otherId, model: "marketing_studio_video", type: "video" }] }, { status: "failed" }, { status: "in_progress" },
+    { job_set_type: "other" }, { result_url: null, h264_url: raw.result_url }, { result_url: "http://media.example.com/file.mp4" },
+    { result_url: "https://name:secret@media.example.com/file.mp4" }, { result_url: "https://media.example.com/file.mp4#thumbnail" },
+    { params: null }, ...[{ prompt: "Changed" }, { duration: 14 }, { duration: "15" }, { resolution: "1080p" }, { aspect_ratio: "9:16" },
+      { generate_audio: false }, { mode: "product_showcase" }, { mode: undefined }, { medias: ["unexpected-source"] }, { products: ["unexpected-product"] },
+      ...["product_ids", "avatar_ids", "web_products", "web_product_ids", "reference_elements"].map(key => ({ [key]: ["unexpected-reference"] })),
+      ...["ad_reference_id", "storyboard_id", "hook", "setting"].map(key => ({ [key]: "unexpected-reference" }))]
+      .map(value => ({ params: { ...params, ...value } }))])
+    expect(consumerVideoOriginalResult({ raw_data: { ...raw, ...patch } }, jobId, input)).toBeNull();
+  for (const value of [null, { result: raw }, raw, { raw_data: [raw] }, { id: otherId, raw_data: raw }, { status: "failed", raw_data: raw }])
+    expect(consumerVideoOriginalResult(value, jobId, input)).toBeNull();
+  expect(consumerVideoOriginalResult({ raw_data: { ...raw, params: { ...params, product_ids: [], avatar_ids: null, web_products: [], web_product_ids: null, reference_elements: [], ad_reference_id: null, storyboard_id: null, hook: null, setting: null } } }, jobId, input)).not.toBeNull();
+  // Provider parameter dimensions are advisory; the actual MP4 inspector owns dimensions.
+  expect(consumerVideoOriginalResult({ raw_data: { ...raw, params: { ...params, width: 999, height: 111 } } }, jobId, input)).not.toBeNull();
+});
+
+test("documented optional modes preserve legacy parameters and pass explicitly through cost-only quotes", async () => {
+  expect(parseConsumerVideoInput(input)).not.toHaveProperty("mode");
+  expect(consumerVideoParams(input, false)).not.toHaveProperty("mode");
+  for (const mode of CONSUMER_VIDEO_MODES) {
+    const value = parseConsumerVideoInput({ ...input, mode });
+    expect(consumerVideoParams(value, false)).toMatchObject({ mode, count: 1, get_cost: false, use_unlim: false });
+    const f = fixture();
+    const quote = await getConsumerVideoQuote(token, value, { fetch: f.fetch });
+    expect(quote.input.mode).toBe(mode);
+    expect(f.calls.find(call => call.params?.name === "generate_video")?.params.arguments).toMatchObject({ params: { mode, get_cost: true } });
+    expect(f.paidCalls()).toHaveLength(0);
+  }
+  for (const mode of ["unknown", "", null, 1])
+    expect(() => parseConsumerVideoInput({ ...input, mode })).toThrow(ConsumerVideoError);
 });
 type Packet = {
   id: string;

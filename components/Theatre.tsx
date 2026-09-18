@@ -464,7 +464,7 @@ export default function Theatre({
             {/* Whichever unit this row carries — a credit workspace is sent
                 creditsBilled and no dollars, and one on its own keys the
                 reverse, so "is it priced" is the two together. */}
-            {(gen.creditsBilled != null || gen.costUsd != null) && (
+            {(gen.providerCreditQuote || gen.creditsBilled != null || gen.costUsd != null) && (
               <span className="font-semibold text-bone" title="Render plus prompt">
                 {money.take(gen)}
               </span>

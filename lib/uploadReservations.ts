@@ -53,6 +53,13 @@ export async function uploadReservationsReady() {
         state TEXT NOT NULL, lease TEXT, lease_until INTEGER, PRIMARY KEY(session_id,chunk_index)
       )`,
           `CREATE INDEX IF NOT EXISTS upload_sessions_expiry ON upload_sessions(state,expires_at)`,
+          `CREATE TABLE IF NOT EXISTS consumer_video_originals (
+            job_id TEXT PRIMARY KEY, generation_id TEXT NOT NULL UNIQUE,
+            owner_id TEXT NOT NULL, draft_id TEXT NOT NULL, provider_job_id TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'preparing', sha256 TEXT, bytes INTEGER NOT NULL DEFAULT 0,
+            metadata_json TEXT, lease TEXT, lease_until INTEGER, receipt_json TEXT,
+            updated_at INTEGER NOT NULL
+          )`,
         ],
         "write",
       )
@@ -130,7 +137,7 @@ export async function reservedUploadBytes(): Promise<number> {
   return Number(
     (
       await db().execute(
-        "SELECT COALESCE(SUM(reserved_bytes),0) AS n FROM upload_sessions",
+        "SELECT (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) + (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') AS n",
       )
     ).rows[0].n,
   );
@@ -139,7 +146,8 @@ async function admit(tx: Transaction, incoming: number, quota: number) {
   const result = await tx.execute(`SELECT
     (SELECT COALESCE(SUM(bytes),0) FROM generations) +
     (SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads) +
-    (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) AS used`);
+    (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) +
+    (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') AS used`);
   const verdict = quotaVerdict({
     usedBytes: Number(result.rows[0].used),
     incomingBytes: incoming,

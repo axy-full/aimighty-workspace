@@ -10,6 +10,7 @@ import * as ipaddr from "next/dist/compiled/ipaddr.js";
 
 export const PRODUCT_PAGE_BYTES = 2 * 1024 * 1024;
 export const PRODUCT_IMAGE_BYTES = 10 * 1024 * 1024;
+export const CONSUMER_VIDEO_BYTES = 100 * 1024 * 1024;
 const DEADLINE_MS = 15_000;
 const MAX_REDIRECTS = 3;
 type Address = { address: string; family: number };
@@ -20,6 +21,9 @@ type PageResponse = {
   mime?: string;
 };
 type FetchPolicy = {
+  deadlineMs?: number;
+  httpsOnly?: boolean;
+  completeLength?: boolean;
   limit: number;
   accept: string;
   mimes: string[];
@@ -44,6 +48,17 @@ const imagePolicy: FetchPolicy = {
     "Choose a JPEG, PNG, WebP or AVIF original. Compressed responses and other file types cannot be imported.",
   sizeError: "Choose an original image no larger than 10 MB.",
   sizeCode: "image_too_large",
+};
+const videoPolicy: FetchPolicy = {
+  limit: CONSUMER_VIDEO_BYTES,
+  deadlineMs: 60_000,
+  httpsOnly: true,
+  completeLength: true,
+  accept: "video/mp4,application/octet-stream;q=0.5",
+  mimes: ["video/mp4", "application/octet-stream"],
+  contentError: "The original video must be an uncompressed MP4 response.",
+  sizeError: "The original video exceeds the 100 MB collection limit.",
+  sizeCode: "video_too_large",
 };
 export class ProductExtractionError extends Error {
   constructor(
@@ -274,9 +289,15 @@ function getPinned(
           }
           chunks.push(chunk);
         });
-        response.on("end", () =>
-          resolve({ status, bytes: Buffer.concat(chunks), mime: contentType }),
-        );
+        response.on("end", () => {
+          if (policy.completeLength && response.headers["content-length"] !== undefined &&
+              (!/^\d+$/.test(String(response.headers["content-length"])) ||
+                Number(response.headers["content-length"]) !== bytes)) {
+            fail(new ProductExtractionError("The original video response was incomplete.", 422, "unsupported_content"));
+            return;
+          }
+          resolve({ status, bytes: Buffer.concat(chunks), mime: contentType });
+        });
       },
     );
     request.on("error", (error: Error) =>
@@ -303,9 +324,16 @@ async function fetchPublicProductResource(
   const deps = { ...defaultDependencies, ...overrides };
   const requested = publicProductUrl(value);
   let current = requested;
-  const deadline = Date.now() + DEADLINE_MS;
+  const deadline = Date.now() + (policy.deadlineMs ?? DEADLINE_MS);
   const seen = new Set<string>();
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+    if (policy.httpsOnly && current.protocol !== "https:")
+      throw new ProductExtractionError(
+        "Use a public HTTPS original video URL.",
+        400,
+        "unsafe_url",
+      );
+    if (Date.now() >= deadline) throw timeoutError();
     if (seen.has(current.href))
       throw new ProductExtractionError(
         "The product page redirects repeatedly. Use its final public address.",
@@ -397,4 +425,13 @@ export function fetchPublicProductImageBytes(
   overrides?: Partial<ProductFetchDependencies>,
 ) {
   return fetchPublicProductResource(value, imagePolicy, overrides);
+}
+
+/** A verified provider result URL only; no credentials or cookies are forwarded.
+ * Container/track validation must follow before these bytes are retained. */
+export function fetchPublicConsumerVideoBytes(
+  value: string,
+  overrides?: Partial<ProductFetchDependencies>,
+) {
+  return fetchPublicProductResource(value, videoPolicy, overrides);
 }

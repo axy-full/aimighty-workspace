@@ -2,6 +2,7 @@ import { z } from "zod";
 import {brandKitSchema, productProfileSchema, productSourceSchema, creativeSchema} from "./moleculr-creative";
 import {posterDocumentSchema} from "./moleculr-poster";
 import {referenceAdSchema, referenceAdBindingSchema} from "./reference-ad";
+import {referenceAdAnalysisSchema} from "./reference-ad-analysis";
 import { suiteAgentPlanSchema } from "./suite-agent-plan";
 import { MARKETING_BRIEF_LIMITS } from "./marketing-brief";
 import { validateBins } from "./editorial";
@@ -116,6 +117,7 @@ const shot = z.object({
   note: z.string().max(10000),
 });
 const plan = z.object({
+  referenceAdAnalysis: referenceAdAnalysisSchema.optional(),
   suiteAgent: suiteAgentPlanSchema.optional(),
   id: z.string(),
   request: z.string().max(20000),

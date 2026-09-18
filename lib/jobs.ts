@@ -26,7 +26,10 @@ import { billedTo, getProvider } from "./providers";
 import { releaseHeldJobs } from "./held";
 import { engineFor } from "./engines";
 import { notify } from "./push";
+import { hasRetainedConsumerOriginal, RETAINED_CONSUMER_ORIGINAL_SQL } from "./higgsfield-consumer/video-original";
+import { uploadReservationsReady } from "./uploadReservations";
 import type { AssetCursor } from "./assetPagination";
+import type { ProviderCreditQuote } from "./providerCreditQuote";
 
 export type Generation = {
   id: string;
@@ -53,6 +56,7 @@ export type Generation = {
   costUsd: number | null;
   /** Credits — only for a workspace that pays in them. Never both. */
   creditsBilled: number | null;
+  providerCreditQuote?: ProviderCreditQuote | null;
   /** What the prompt writer charged for this render, and who it was. */
   refineCostUsd: number | null;
   refineModel: string | null;
@@ -102,6 +106,13 @@ export function rowToGeneration(r: any): Generation {
      in decides what the row is allowed to carry. */
   const inCredits = creditsApply(currentTenant()?.workspace);
   const params = JSON.parse(r.params || "{}");
+  const providerCreditQuote: ProviderCreditQuote | null =
+    /^gen_hfc_[a-f0-9]{40}$/.test(r.id) && r.provider === "higgsfield" &&
+    r.model === "marketing_studio_video" && r.status === "succeeded" &&
+    params.consumerCreditUnit === "higgsfield_credits" &&
+    typeof params.consumerCredits === "number" && Number.isFinite(params.consumerCredits) && params.consumerCredits >= 0
+      ? { provider: "higgsfield", unit: "higgsfield_credits", credits: params.consumerCredits, basis: "approved_quote" }
+      : null;
   // Queue recovery state contains vendor cost and storage internals, never UI input.
   delete params.producedOutcome;
   delete params.paidClaim;
@@ -141,9 +152,10 @@ export function rowToGeneration(r: any): Generation {
        was how the markup came to be a subtraction away on any take card. A
        workspace on its own keys gets the dollars, because those are the
        dollars that left its account. */
-    costUsd: inCredits ? null : (r.cost_usd ?? null),
-    refineCostUsd: inCredits ? null : (r.refine_cost_usd ?? null),
-    creditsBilled: inCredits
+    costUsd: inCredits || providerCreditQuote ? null : (r.cost_usd ?? null),
+    refineCostUsd: inCredits || providerCreditQuote ? null : (r.refine_cost_usd ?? null),
+    providerCreditQuote,
+    creditsBilled: inCredits && !providerCreditQuote
       ? billCredits(Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0), marginKeyOf(r.kind, r.model))
       : null,
     refineModel: r.refine_model ?? null,
@@ -284,6 +296,7 @@ export async function syncGeneration(
   gen: Generation,
   options: { strict?: boolean } = {},
 ): Promise<Generation> {
+  if (gen.status === "succeeded" && gen.provider === "higgsfield" && gen.model === "marketing_studio_video" && gen.storedUrl && await hasRetainedConsumerOriginal(gen.id)) return gen;
 return await withRecoveryJob(requireTenant().id, gen.id, async () => {
 
   await deliverGenerationSettlement(gen.id);
@@ -525,6 +538,7 @@ export async function syncPending(
   options: { deadlineAt?: number } = {},
 ): Promise<ReconcileResult & { deferred: number }> {
   await ready();
+  await uploadReservationsReady();
   const bounded = Math.max(1, Math.min(50, limit));
   const results = {
     ...(await flushGenerationSettlements(bounded)),
@@ -547,7 +561,7 @@ export async function syncPending(
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
       OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
-        AND (g.stored_url IS NULL OR g.cost_usd IS NULL))
+        AND (g.stored_url IS NULL OR g.cost_usd IS NULL) AND NOT (${RETAINED_CONSUMER_ORIGINAL_SQL}))
       ORDER BY g.updated_at,g.created_at,g.id LIMIT ?`,
     args: [horizon, bounded],
   });

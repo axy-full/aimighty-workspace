@@ -1,5 +1,6 @@
 import { withRecoveryActivity } from './recovery';
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, stat, link, unlink } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { currentTenant } from "./tenant";
@@ -126,6 +127,63 @@ export async function readVideoBytes(genId: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
   if (usingBlob()) return readBlob(videoPath(genId));
   return readFile(path.join(LOCAL_DIR, `${genId}.mp4`));
+}
+
+/** Bounded private read for immutable consumer-original recovery. */
+export async function readVideoBytesLimited(genId: string, maximum: number): Promise<Buffer | null> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId) || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 100 * 1024 * 1024) throw new Error("Invalid original video read.");
+  if (!usingBlob()) {
+    const file = path.join(LOCAL_DIR, `${genId}.mp4`);
+    try {
+      if ((await stat(file)).size > maximum) throw new Error("Stored original exceeds its recorded length.");
+      const bytes = await readFile(file);
+      if (bytes.length > maximum) throw new Error("Stored original exceeds its recorded length.");
+      return bytes;
+    } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
+  }
+  const { get } = await import("@vercel/blob");
+  const found = await get(videoPath(genId), { access: "private", abortSignal: AbortSignal.timeout(20_000) });
+  if (!found?.stream) return null;
+  const reader = found.stream.getReader(), chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      if ((length += part.value.byteLength) > maximum) throw new Error("Stored original exceeds its recorded length.");
+      chunks.push(part.value);
+    }
+    return Buffer.concat(chunks, length);
+  } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
+
+/** Store an already validated MP4 without changing a byte. Unlike mutable render
+ * storage, this never overwrites a prior original: repeats must match its hash. */
+export async function storeVideoBytes(genId: string, bytes: Buffer): Promise<{url: string; bytes: number; sha256: string}> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId) || !bytes.length || bytes.length > 100 * 1024 * 1024) throw new Error("Invalid original video.");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const verifyExisting = async () => {
+    const existing = await readVideoBytesLimited(genId, bytes.length);
+    if (!existing || existing.length !== bytes.length || createHash("sha256").update(existing).digest("hex") !== sha256) throw new Error("The stored original could not be verified; it was not overwritten.");
+  };
+  await withRecoveryActivity("storage", async () => {
+    if (usingBlob()) {
+      const { put } = await import("@vercel/blob");
+      await withRecoveryActivity("blob-put", async () => {
+        try { await put(videoPath(genId), bytes, { access: "private", contentType: "video/mp4", addRandomSuffix: false, allowOverwrite: false, abortSignal: AbortSignal.timeout(30_000) }); }
+        catch { await verifyExisting(); }
+      }, { uncertainOnError: true });
+      return;
+    }
+    await mkdir(LOCAL_DIR, { recursive: true });
+    const destination = path.join(LOCAL_DIR, `${genId}.mp4`), temporary = path.join(LOCAL_DIR, `.${genId}.${randomUUID()}.tmp`);
+    try {
+      await writeFile(temporary, bytes, { flag: "wx" });
+      try { await link(temporary, destination); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; await verifyExisting(); }
+    } finally { await unlink(temporary).catch(() => {}); }
+  });
+  return { url: `/api/media/${genId}`, bytes: bytes.length, sha256 };
 }
 
 /* ── Image renders (Nano Banana) — bytes arrive in the API response, not at

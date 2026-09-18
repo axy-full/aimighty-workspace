@@ -150,3 +150,74 @@ test("offline consumer report preserves separate credit units and recovery ident
     1,
   );
 });
+
+test("original collection independently blocks backup and appears in reconciliation without private payloads", async (t) => {
+  const { root, db, config } = await fixture(t);
+  await db.execute(
+    "INSERT INTO higgsfield_consumer_jobs(id,status) VALUES('job','failed')",
+  );
+  await db.execute(`CREATE TABLE consumer_video_originals (
+    job_id TEXT,generation_id TEXT,provider_job_id TEXT,state TEXT,bytes INTEGER,
+    sha256 TEXT,lease TEXT,lease_until INTEGER,metadata_json TEXT,receipt_json TEXT)`);
+  await db.execute({
+    sql: "INSERT INTO consumer_video_originals VALUES('job','generation','provider','preparing',99,?,'PRIVATE-LEASE',0,'PRIVATE-METADATA','PRIVATE-RESULT')",
+    args: ["a".repeat(64)],
+  });
+  for (const pending of [
+    { bytes: 99, lease: 0 },
+    { bytes: 0, lease: Date.now() + 60_000 },
+  ]) {
+    await db.execute({
+      sql: "UPDATE consumer_video_originals SET bytes=?,lease_until=?",
+      args: [pending.bytes, pending.lease],
+    });
+    await assert.rejects(
+      assertNoActiveOrUncertain(config, {}),
+      /requires reconciliation/,
+    );
+    assert.deepEqual(
+      (
+        await db.execute(
+          "SELECT bytes,lease_until FROM consumer_video_originals",
+        )
+      ).rows[0],
+      { bytes: pending.bytes, lease_until: pending.lease },
+    );
+    await rm(join(root, "reconciliation-report.json"), { force: true });
+    await recoveryReport(root);
+    const serialized = await readFile(
+      join(root, "reconciliation-report.json"),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      serialized,
+      /PRIVATE-|metadata_json|receipt_json|lease_until/,
+    );
+    const action = JSON.parse(serialized).actions.find(
+      (item) => item.table === "consumer_video_originals",
+    );
+    assert.equal(action.id, "job");
+    assert.equal(action.generationId, "generation");
+    assert.equal(action.handle, "provider");
+    assert.equal(action.sha256, "a".repeat(64));
+    assert.equal(
+      action.disposition,
+      "verify-private-consumer-original-digest-before-recovery-never-resubmit",
+    );
+  }
+  await db.execute("UPDATE consumer_video_originals SET bytes=0,lease_until=0");
+  await assertNoActiveOrUncertain(config, {});
+  await rm(join(root, "reconciliation-report.json"), { force: true });
+  await recoveryReport(root);
+  assert.equal(
+    JSON.parse(
+      await readFile(join(root, "reconciliation-report.json"), "utf8"),
+    ).actions.filter((item) => item.table === "consumer_video_originals")
+      .length,
+    0,
+  );
+  await db.execute(
+    "UPDATE consumer_video_originals SET state='stored',bytes=99,lease_until=0",
+  );
+  await assertNoActiveOrUncertain(config, {});
+});

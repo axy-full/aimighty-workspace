@@ -17,8 +17,8 @@ test("purge retains credentials and unfinished stages on failure, retries exactl
   await (await import("../../lib/accountDb")).accountDbReady();
   const p = platformDb();
   await p.execute({
-    sql: `INSERT INTO workspaces(id,slug,name,db_url,db_token_enc,keys_enc,gateway_key_id,owner_id,created_at,updated_at) VALUES('purge','purge','Customer','file:unused',?,?,'key-id','owner',0,0)`,
-    args: [seal("db-token"), seal(JSON.stringify({ gateway: "secret" }))],
+    sql: `INSERT INTO workspaces(id,slug,name,db_url,db_token_enc,keys_enc,gateway_key_id,owner_id,created_at,updated_at) VALUES('purge','purge','Customer',?,?,?,'key-id','owner',0,0)`,
+    args: [`file:${path.join(dir, "purge.db")}`, seal("db-token"), seal(JSON.stringify({ gateway: "secret" }))],
   });
   await p.execute(
     `INSERT INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES('purge','owner','owner',0,0)`,
@@ -102,7 +102,10 @@ test("workspace purge removes only its consumer grants and pending states, fenci
   const consumer = await import("../../lib/higgsfield-consumer/store");
   await platformReady();
   const p = platformDb();
-  await p.execute(`INSERT INTO workspaces(id,slug,name,db_url,owner_id,created_at,updated_at) VALUES('consumer-purge','consumer-purge','Customer','file:unused','owner',0,0)`);
+  await p.execute({
+    sql: `INSERT INTO workspaces(id,slug,name,db_url,owner_id,created_at,updated_at) VALUES('consumer-purge','consumer-purge','Customer',?,'owner',0,0)`,
+    args: [`file:${path.join(dir, "consumer-purge.db")}`],
+  });
   const states = [];
   for (const [index, workspaceId] of ["consumer-purge", "other-customer"].entries()) {
     const identity = { workspaceId, userId: "owner" };

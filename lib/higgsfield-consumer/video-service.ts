@@ -7,11 +7,12 @@ import {
   createConsumerJob, getConsumerJob, getConsumerJobByKey, listConsumerJobs,
   claimConsumerDispatch, markConsumerAccepted, markConsumerUncertain,
   claimConsumerPoll, releaseConsumerPoll, ConsumerJobError,
-  reconcileConsumerReceipt,
+  reconcileConsumerReceipt, completeConsumerJob,
   type ConsumerJob, type ConsumerJobScope, type ConsumerJson,
 } from "./jobs";
 import { getConsumerVideoQuote, submitConsumerVideo, readConsumerVideoJob } from "./mcp";
-import { parseConsumerVideoInput, consumerVideoAcknowledgement, type ConsumerVideoInput } from "./video-contract";
+import { parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoOriginalResult, consumerVideoProviderResult, type ConsumerVideoInput } from "./video-contract";
+import { collectConsumerVideoOriginal } from "./video-original";
 
 export const MARKETING_VIDEO_REHEARSAL: ConsumerVideoInput = {
   prompt: "A plain reusable bottle on a clean studio background. A short product demo with no people, logos or text.",
@@ -152,9 +153,20 @@ export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
   let pollAfterSeconds = 15;
   try {
     const response = await readConsumerVideoJob(access.accessToken, claim.job.providerJobId!, claim.job.higgsfieldWorkspaceId!);
-    // A provider acknowledgement is not yet a collected original. The collector
-    // must verify its actual result contract before marking this job complete.
     pollAfterSeconds = Math.max(15, response.pollAfterSeconds ?? 30);
+    const input = parseConsumerVideoInput(JSON.parse(claim.job.payloadJson).input);
+    const terminal = consumerVideoOriginalResult(response.raw, claim.job.providerJobId!, input);
+    if (terminal) {
+      // A refresh is the same grant; reconnect/disconnect during the read cannot
+      // authorize collection under a replacement connection.
+      await connected(scope.userId, claim.job.connectionGeneration);
+      const original = await collectConsumerVideoOriginal(claim.job, terminal.url);
+      const providerResult = consumerVideoProviderResult(response.raw, input);
+      const completed = await completeConsumerJob({ ...scope, leaseToken: claim.leaseToken, resultManifest: { original, providerResult } });
+      // An expired/stolen lease cannot publish stale completion. The committed
+      // original remains recoverable by the next admitted poll.
+      return { job: consumerVideoView(completed ?? await ownedVideo(scope)), pollAfterSeconds };
+    }
     return { job: consumerVideoView(await ownedVideo(scope)), providerStatus: response.raw, pollAfterSeconds };
   } finally { await releaseConsumerPoll({ ...scope, leaseToken: claim.leaseToken, nextPollAt: Date.now() + pollAfterSeconds * 1000 }); }
 }

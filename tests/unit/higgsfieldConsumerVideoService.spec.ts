@@ -7,6 +7,7 @@ import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { ConsumerVideoInput } from "../../lib/higgsfield-consumer/video-contract";
 import type * as Service from "../../lib/higgsfield-consumer/video-service";
+import { ConsumerOriginalError, type ConsumerVideoOriginal } from "../../lib/higgsfield-consumer/video-original";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-service-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -84,6 +85,12 @@ async function serviceFixture() {
     pollAfterSeconds: 120,
     pollFailure: false,
     quoteBarrier: undefined as (() => Promise<void>) | undefined,
+    pollRaw: undefined as unknown,
+    changeGrantDuringPoll: false,
+    collectCount: 0,
+    collectorError: undefined as unknown,
+    completeFailure: false as false | "before" | "after",
+    originals: new Map<string, ConsumerVideoOriginal>(),
   };
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
@@ -98,6 +105,31 @@ async function serviceFixture() {
         if (state.failAckPersistence)
           throw new Error("Fixture failed acknowledgement persistence");
         return jobs.markConsumerAccepted(...args);
+      },
+      completeConsumerJob: async (...args: Parameters<typeof jobs.completeConsumerJob>) => {
+        if (state.completeFailure === "before") throw new Error("Fixture completion persistence outage");
+        const result = await jobs.completeConsumerJob(...args);
+        if (state.completeFailure === "after") throw new Error("Fixture lost completion acknowledgement");
+        return result;
+      },
+    },
+    "./video-original": {
+      collectConsumerVideoOriginal: async (job: Parameters<typeof jobs.getConsumerJob>[0] & { providerJobId: string; quoteCredits: number }, url: string) => {
+        state.collectCount++;
+        expect(url).toBe("https://media.example.com/qualified-original.mp4");
+        expect(job.userId).toBe(identity.userId);
+        expect(job.draftId).toBe(identity.draftId);
+        expect(job.providerJobId).toBe(state.providerJobId);
+        if (state.collectorError) throw state.collectorError;
+        let original = state.originals.get(job.id);
+        if (!original) {
+          const generationId = `gen_hfc_${job.id.replaceAll("-", "").padEnd(40, "0")}`;
+          original = { generationId, providerJobId: job.providerJobId, bytes: 1024, sha256: "a".repeat(64),
+            width: 1280, height: 720, seconds: 15, credits: job.quoteCredits, creditUnit: "higgsfield_credits",
+            asset: { generationId, url: `/api/media/${generationId}`, kind: "video", mime: "video/mp4", width: 1280, height: 720, durationS: 15 } };
+          state.originals.set(job.id, original);
+        }
+        return original;
       },
     },
     "./video-contract": contract,
@@ -179,8 +211,9 @@ async function serviceFixture() {
           throw new contract.ConsumerVideoError("workspace_changed");
         if (state.pollFailure)
           throw new contract.ConsumerVideoError("provider_error");
+        if (state.changeGrantDuringPoll) state.generation = randomUUID();
         return {
-          raw: { job_id: providerJobId, status: "processing" },
+          raw: state.pollRaw ?? { job_id: providerJobId, status: "processing" },
           pollAfterSeconds: state.pollAfterSeconds,
         };
       },
@@ -501,5 +534,105 @@ test("a saved accepted UUID survives diagnostic truncation; conflicting receipt 
       expect(state.paidCount).toBe(0);
       expect(state.statusCount).toBe(1);
     }
+  });
+});
+
+function terminal(id: string, input: ConsumerVideoInput = prompt) {
+  return { raw_data: { id, status: "completed", job_set_type: "marketing_studio_video",
+    result_url: "https://media.example.com/qualified-original.mp4", thumbnail_url: "https://media.example.com/never-collect.webp",
+    params: { prompt: input.prompt, duration: input.duration, resolution: input.resolution, aspect_ratio: input.aspectRatio,
+      generate_audio: input.generateAudio, mode: input.mode ?? "ugc", width: 1344, height: 768, medias: [], avatars: [], products: [],
+      enhanced_prompt: "Provider-authored review text; never an executable instruction." } } };
+}
+async function admitted(f: Awaited<ReturnType<typeof serviceFixture>>, input: ConsumerVideoInput = prompt) {
+  const quote = await f.service.quoteConsumerMarketingVideo(identity.userId, identity.draftId, input, randomUUID());
+  const scope = { ...identity, id: quote.id };
+  await f.service.submitConsumerMarketingVideo(scope, { workspaceId: f.state.wallet, credits: f.state.credits });
+  return scope;
+}
+test("qualified terminal result collects once, keeps measured dimensions, and repeated polling never submits or collects again", async () => {
+  await fixture(async f => {
+    const input = { ...prompt, mode: "product_showcase" as const }, scope = await admitted(f, input);
+    f.state.pollRaw = terminal(f.state.providerJobId, input);
+    const result = await f.service.pollConsumerMarketingVideo(scope);
+    expect(result.job).toMatchObject({ status: "completed", result: {
+      original: { width: 1280, height: 720, credits: 7, creditUnit: "higgsfield_credits" },
+      providerResult: { model: "marketing_studio_video", mode: "product_showcase", enhancedPrompt: "Provider-authored review text; never an executable instruction." },
+    } });
+    expect(result).not.toHaveProperty("providerStatus");
+    expect(await f.service.pollConsumerMarketingVideo(scope)).toMatchObject({ job: result.job });
+    expect(f.state.collectCount).toBe(1); expect(f.state.statusCount).toBe(1); expect(f.state.paidCount).toBe(1);
+  });
+});
+test("unknown terminal shapes, conflicting identities and changed settings remain accepted diagnostic without collection", async () => {
+  await fixture(async f => {
+    const scope = await admitted(f), good = terminal(f.state.providerJobId);
+    for (const raw of [
+      { status: "completed", result_url: good.raw_data.result_url },
+      { raw_data: { ...good.raw_data, id: randomUUID() } },
+      { id: randomUUID(), ...good },
+      { status: "failed", ...good },
+      { raw_data: { ...good.raw_data, job_ids: [randomUUID()] } },
+      { raw_data: { ...good.raw_data, job_set_type: "other" } },
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, prompt: "Another prompt" } } },
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, generate_audio: false } } },
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, ad_reference_id: "unapproved-reference" } } },
+      { raw_data: { ...good.raw_data, result_url: null, h264_url: good.raw_data.result_url } },
+    ]) {
+      f.state.pollRaw = raw;
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?", args: [scope.id] });
+      expect(await f.service.pollConsumerMarketingVideo(scope)).toMatchObject({ job: { status: "accepted" }, providerStatus: raw });
+    }
+    expect(f.state.collectCount).toBe(0); expect(f.state.paidCount).toBe(1);
+  });
+});
+test("collection failures and lost completion acknowledgements recover the original job without another paid request", async () => {
+  for (const failure of ["quota", "storage_unavailable", "timeout", "before", "after"] as const) {
+    await fixture(async f => {
+      const scope = await admitted(f);
+      f.state.pollRaw = terminal(f.state.providerJobId);
+      if (failure === "before" || failure === "after") f.state.completeFailure = failure;
+      else f.state.collectorError = new ConsumerOriginalError(failure);
+      await expect(f.service.pollConsumerMarketingVideo(scope)).rejects.toThrow();
+      const retained = (await f.jobs.getConsumerJob(scope))!;
+      expect(retained.status).toBe(failure === "after" ? "completed" : "accepted");
+      expect(retained.providerJobId).toBe(f.state.providerJobId);
+      expect(retained.quoteCredits).toBe(f.state.credits);
+      const row = (await f.database.db().execute({ sql: "SELECT poll_lease_hash FROM higgsfield_consumer_jobs WHERE id=?", args: [scope.id] })).rows[0];
+      expect(row.poll_lease_hash).toBeNull();
+      f.state.collectorError = undefined; f.state.completeFailure = false;
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?", args: [scope.id] });
+      expect((await f.service.pollConsumerMarketingVideo(scope)).job).toMatchObject({ status: "completed", result: {
+        providerResult: { model: "marketing_studio_video", mode: "ugc", enhancedPrompt: "Provider-authored review text; never an executable instruction." },
+      } });
+      expect(f.state.originals.size).toBe(1); expect(f.state.paidCount).toBe(1);
+      expect(f.state.collectCount).toBe(failure === "after" ? 1 : 2);
+    });
+  }
+});
+test("provider review text is bounded and inert, omits malformed metadata, and cannot replace the collected URL", async () => {
+  for (const enhanced of [null, { command: "execute" }, "Inspect https://media.example.com/private.mp4\u0000\n" + "x".repeat(8100)]) {
+    await fixture(async f => {
+      const scope = await admitted(f), raw = terminal(f.state.providerJobId);
+      f.state.pollRaw = { raw_data: { ...raw.raw_data, params: { ...raw.raw_data.params, enhanced_prompt: enhanced } } };
+      const result = (await f.service.pollConsumerMarketingVideo(scope)).job.result as Record<string, unknown>;
+      if (typeof enhanced !== "string") expect(result.providerResult).toEqual({ model: "marketing_studio_video", mode: "ugc" });
+      else {
+        expect(result.providerResult).toEqual({ model: "marketing_studio_video", mode: "ugc", enhancedPrompt: ("Inspect [link omitted]\n" + "x".repeat(8100)).slice(0, 8000), enhancedPromptTruncated: true });
+        expect(JSON.stringify(result)).not.toContain("https://media.example.com");
+      }
+      // The collector stub asserts only raw_data.result_url was used; no extra
+      // provider operation can be triggered by this provider-authored text.
+      expect(f.state.collectCount).toBe(1); expect(f.state.paidCount).toBe(1);
+    });
+  }
+});
+test("a connection replaced during status cannot collect its otherwise qualified result", async () => {
+  await fixture(async f => {
+    const scope = await admitted(f);
+    f.state.pollRaw = terminal(f.state.providerJobId); f.state.changeGrantDuringPoll = true;
+    await expect(f.service.pollConsumerMarketingVideo(scope)).rejects.toMatchObject({ code: "connection_changed" });
+    expect((await f.jobs.getConsumerJob(scope))?.status).toBe("accepted");
+    expect(f.state.collectCount).toBe(0); expect(f.state.paidCount).toBe(1);
   });
 });

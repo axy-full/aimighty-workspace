@@ -3,6 +3,13 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
 type Connection = { connected: boolean; requiresReconnect: boolean };
+const originalProviderId = "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061";
+const originalGenerationId = `gen_hfc_${"a".repeat(40)}`;
+const verifiedOriginal = {
+  generationId: originalGenerationId, providerJobId: originalProviderId, sha256: "b".repeat(64), bytes: 1234,
+  width: 1280, height: 720, seconds: 15, credits: 75, creditUnit: "higgsfield_credits",
+  asset: { generationId: originalGenerationId, kind: "video", mime: "video/mp4", url: `/api/media/${originalGenerationId}` },
+};
 async function fixture(page: Page, options: { owner?: boolean; initialError?: boolean; reconnect?: boolean } = {}) {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((response) => response.json());
@@ -14,8 +21,10 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
   let connectResult: { status: number; json: unknown } = { status: 503, json: { error: "Higgsfield authorization is not configured on this deployment." } };
   let discoveryRelease: (() => void) | undefined;
   let discoveryGate: Promise<void> | undefined;
-  const verificationJob = { id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", status: "quoted", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", workspaceName: "Test studio", quoteCredits: 75, quoteExpiresAt: Date.now() + 300000, providerJobId: null as string | null, providerReceipt: null as Record<string, unknown> | null };
+  const verificationJob = { id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", status: "quoted", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", workspaceName: "Test studio", quoteCredits: 75, quoteExpiresAt: Date.now() + 300000, providerJobId: null as string | null, providerReceipt: null as Record<string, unknown> | null, result: null as unknown };
   let videoJob: typeof verificationJob | null = null;
+  let completedResult: unknown;
+  const mediaRequests: string[] = [];
   let uncertain = false;
   let recoverableReceipt = false;
   const videoActions: Record<string, unknown>[] = [];
@@ -37,6 +46,11 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
   await page.route("**/api/**", async (route) => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const json = (value: unknown, status = 200) => route.fulfill({ status, json: value });
+    if (path === `/api/media/${originalGenerationId}`) {
+      mediaRequests.push(`${path}${url.search}`);
+      return route.fulfill({ path: "public/fixtures/clip.mp4", contentType: "video/mp4",
+        ...(url.searchParams.get("download") === "1" ? { headers: { "Content-Disposition": 'attachment; filename="verified-marketing-original.mp4"' } } : {}) });
+    }
     if (path.startsWith("/api/higgsfield/consumer/")) {
       const call = { path, method: request.method(), scope: request.headers()["x-workbench-scope"] };
       calls.push(call);
@@ -59,6 +73,10 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
         if (body.action === "quote-rehearsal") { videoJob = { ...verificationJob }; return json({ job: videoJob }); }
         if (body.action === "submit") { videoJob = { ...verificationJob, status: uncertain ? "uncertain" : "accepted", providerJobId: uncertain ? null : "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061", providerReceipt: recoverableReceipt ? { response: { results: [{ id: "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061", model: "marketing_studio_video", type: "video", status: "pending" }] } } : null }; return json({ job: videoJob }); }
         if (body.action === "status") {
+          if (completedResult !== undefined && videoJob) {
+            videoJob = { ...videoJob, status: "completed", result: completedResult };
+            return json({ job: videoJob, pollAfterSeconds: 30 });
+          }
           if (recoverableReceipt && videoJob?.status === "uncertain") videoJob = { ...videoJob, status: "accepted", providerJobId: "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061" };
           return json({ job: videoJob, providerStatus: { status: "running", note: '<img src="https://untrusted.example.com/result.png">' }, pollAfterSeconds: 30 });
         }
@@ -80,7 +98,12 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
     return json({});
   });
   return {
-    calls, unexpected, external, errors, videoActions,
+    calls, unexpected, external, errors, videoActions, mediaRequests,
+    seedAcceptedOriginal: (original: unknown) => {
+      videoJob = { ...verificationJob, status: "accepted", providerJobId: originalProviderId,
+        providerReceipt: { response: { results: [{ id: originalProviderId, model: "marketing_studio_video", type: "video", status: "pending" }] } } };
+      completedResult = { original };
+    },
     setUncertain: () => { uncertain = true; },
     setRecoverableReceipt: () => { uncertain = true; recoverableReceipt = true; },
     setStatusError: (value: boolean) => { statusError = value; },
@@ -261,5 +284,68 @@ test("saved uncertain submission recovers its provider receipt after reload thro
   await expect(panel.locator("img")).toHaveCount(0);
   await panel.getByRole("status").scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("higgsfield-saved-submission-recovered.png") });
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test("completed verification retains its verified local original and download after reload without new submission", async ({ page }, info) => {
+  const state = await fixture(page);
+  state.seedAcceptedOriginal(verifiedOriginal);
+  await page.goto("/settings#engines");
+  const panel = page.getByRole("region", { name: "Marketing Video verification", exact: true });
+  const preview = panel.getByLabel("Verified Marketing Video original", { exact: true });
+  const download = panel.getByRole("link", { name: "Download original video", exact: true });
+  await expect(panel.getByRole("button", { name: "Check verification result", exact: true })).toBeEnabled();
+  await expect(preview).toHaveCount(0);
+  expect(state.videoActions).toEqual([]);
+  await panel.getByText("Verification result details", { exact: true }).click();
+  const details = panel.getByLabel("Higgsfield verification result", { exact: true });
+  await expect(details).toContainText('"status": "pending"');
+  await panel.getByRole("button", { name: "Check verification result", exact: true }).click();
+  await expect(panel.getByRole("status")).toHaveText("Verification: completed");
+  await expect(details).toContainText(verifiedOriginal.sha256);
+  expect(JSON.parse((await details.textContent())!)).toEqual({ original: verifiedOriginal });
+  await expect(details).not.toContainText('"status": "pending"');
+  await expect(preview).toHaveAttribute("src", `/api/media/${originalGenerationId}`);
+  await expect(preview).toHaveAttribute("controls", "");
+  await expect(download).toHaveAttribute("href", `/api/media/${originalGenerationId}?download=1`);
+  await expect(panel.getByText(/Original retained.*SHA-256 recorded/)).toBeVisible();
+  await expect.poll(() => state.mediaRequests.length).toBeGreaterThan(0);
+  await page.reload();
+  await expect(preview).toHaveAttribute("src", `/api/media/${originalGenerationId}`);
+  await expect(download).toHaveAttribute("href", `/api/media/${originalGenerationId}?download=1`);
+  await panel.getByText("Verification result details", { exact: true }).click();
+  await expect(details).toContainText(verifiedOriginal.sha256);
+  expect(JSON.parse((await details.textContent())!)).toEqual({ original: verifiedOriginal });
+  await expect(details).not.toContainText('"status": "pending"');
+  await preview.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("higgsfield-verification-local-original.png") });
+  const [file] = await Promise.all([page.waitForEvent("download"), download.click()]);
+  expect(file.suggestedFilename()).toBe("verified-marketing-original.mp4");
+  expect(state.videoActions).toEqual([{ action: "status", id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test" }]);
+  expect(state.mediaRequests).toContain(`/api/media/${originalGenerationId}?download=1`);
+  expect(state.mediaRequests.every(path => path === `/api/media/${originalGenerationId}` || path === `/api/media/${originalGenerationId}?download=1`)).toBe(true);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+for (const invalid of [
+  { name: "provider job mismatch", original: { ...verifiedOriginal, providerJobId: "ffffffff-ffff-4fff-8fff-ffffffffffff" } },
+  { name: "approved credits mismatch", original: { ...verifiedOriginal, credits: 76 } },
+  { name: "external media URL", original: { ...verifiedOriginal, asset: { ...verifiedOriginal.asset, url: "https://untrusted.example.com/original.mp4" } } },
+]) test(`completed verification rejects ${invalid.name} instead of showing a verified preview`, async ({ page }) => {
+  const state = await fixture(page);
+  state.seedAcceptedOriginal(invalid.original);
+  await page.goto("/settings#engines");
+  const panel = page.getByRole("region", { name: "Marketing Video verification", exact: true });
+  await panel.getByRole("button", { name: "Check verification result", exact: true }).click();
+  await expect(panel.getByRole("status")).toHaveText("Verification: completed");
+  await expect(panel.getByLabel("Verified Marketing Video original", { exact: true })).toHaveCount(0);
+  await expect(panel.getByRole("link", { name: "Download original video", exact: true })).toHaveCount(0);
+  await expect(panel.locator("video, img")).toHaveCount(0);
+  await page.reload();
+  await expect(panel.getByRole("status")).toHaveText("Verification: completed");
+  await expect(panel.getByLabel("Verified Marketing Video original", { exact: true })).toHaveCount(0);
+  await expect(panel.getByRole("link", { name: "Download original video", exact: true })).toHaveCount(0);
+  expect(state.videoActions).toEqual([{ action: "status", id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test" }]);
+  expect(state.mediaRequests).toEqual([]);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });

@@ -2,10 +2,13 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { inspectOriginalVideo } from "../videoMetadata.server";
+import { REFERENCE_AD_FRAMES, REFERENCE_AD_SECONDS, referenceAdFrameTimes, assertReferenceAnalysisSource, type ReferenceAnalysisSource } from "./reference-ad-analysis";
 import { db } from "../db";
 import { readImageBytes, readUploadBytes } from "../storage";
 import { findWorkbenchMedia } from "./media-records";
 import type { Asset, Project } from "./studio";
+import { mediaReferenceIdentity } from "./media-reference-input";
 import {
   ATOMIK_IMAGE_EDGE,
   ATOMIK_IMAGE_TOKENS,
@@ -53,16 +56,19 @@ export type AtomikReferenceContent = {
   text: Record<string, string>;
   images: AtomikVisual[];
   inputTokens: number;
+  durationSeconds?: number;
 };
 export type AtomikReferenceReaders = {
   image: typeof readImageBytes;
   upload: typeof readUploadBytes;
   sample: (url: string) => Promise<Buffer>;
+  inspectVideo: typeof inspectOriginalVideo;
 };
 const defaultReaders: AtomikReferenceReaders = {
   image: readImageBytes,
   upload: readUploadBytes,
   sample: (url) => readFile(path.join(process.cwd(), "public", url.slice(1))),
+  inspectVideo: inspectOriginalVideo,
 };
 
 export function selectedAtomikAssets(project: Project, refs: string[]) {
@@ -81,11 +87,10 @@ export function selectedAtomikAssets(project: Project, refs: string[]) {
 
 /** IDs are looked up in the active tenant before any storage read. Private legacy
  * media additionally requires its uploader or an uploader-published bible. */
-async function sourceFor(asset: Asset, owner: string) {
-  const uploadId =
-    asset.uploadId || asset.url.match(/^\/api\/uploads\/([\w-]+)$/)?.[1];
-  const generationId =
-    asset.generationId || asset.url.match(/^\/api\/media\/([\w-]+)$/)?.[1];
+async function sourceFor(asset: Asset, owner: string, canonical = false) {
+  const identity = canonical ? mediaReferenceIdentity(asset) : null;
+  const uploadId = identity ? ("uploadId" in identity ? identity.uploadId : undefined) : asset.uploadId || asset.url.match(/^\/api\/uploads\/([\w-]+)$/)?.[1];
+  const generationId = identity ? ("genId" in identity ? identity.genId : undefined) : asset.generationId || asset.url.match(/^\/api\/media\/([\w-]+)$/)?.[1];
   const legacyId = asset.url.match(/^\/api\/workbench\/media\/([\w-]+)$/)?.[1];
   if (uploadId) {
     const row = (
@@ -116,8 +121,9 @@ async function sourceFor(asset: Asset, owner: string) {
     return {
       type: "generation" as const,
       mime: row.kind === "image" ? "image/png" : "video/mp4",
-      ext: "png",
+      ext: row.kind === "image" ? "png" : "mp4",
       ...row,
+      kind: String(row.kind),
     };
   }
   if (legacyId) {
@@ -163,7 +169,7 @@ export async function assertAtomikVideoSource(
   owner: string,
 ) {
   const asset = selectedAtomikAssets(project, [assetId])[0];
-  const source = await sourceFor(asset, owner);
+  const source = await sourceFor(asset, owner, true);
   if (asset.kind !== "video" || !source || source.kind !== "video")
     throw new AtomikReferenceError("Choose a saved video from this workspace.");
   return { asset, source };
@@ -221,12 +227,18 @@ export async function loadAtomikReferences(
   owner: string,
   videoFrames: AtomikVideoFrame[] = [],
   overrides: Partial<AtomikReferenceReaders> = {},
+  referenceAd?: ReferenceAnalysisSource,
 ): Promise<AtomikReferenceContent> {
   const readers = { ...defaultReaders, ...overrides };
   const assets = selectedAtomikAssets(project, refs);
   const imageCount =
     assets.filter((a) => a.kind === "image").length + videoFrames.length;
-  if (imageCount > ATOMIK_MAX_VISUALS)
+  if (referenceAd) {
+    assertReferenceAnalysisSource(project, referenceAd);
+    if (assets.length !== 1 || assets[0].id !== referenceAd.assetId || assets[0].kind !== "video")
+      throw new AtomikReferenceError("Reference-ad analysis uses exactly one original project video.");
+  }
+  if (imageCount > (referenceAd ? REFERENCE_AD_FRAMES : ATOMIK_MAX_VISUALS))
     throw new AtomikReferenceError(
       "Use at most six images or sampled video frames per request. Each video uses three frames.",
     );
@@ -249,7 +261,7 @@ export async function loadAtomikReferences(
     inputTokens: 0,
   };
   for (const asset of assets) {
-    const source = await sourceFor(asset, owner);
+    const source = await sourceFor(asset, owner, !!referenceAd);
     if (!source) continue;
     if (asset.kind === "video") {
       if (source.kind !== "video")
@@ -259,10 +271,18 @@ export async function loadAtomikReferences(
       const frames = videoFrames
         .filter((frame) => frame.assetId === asset.id)
         .sort((a, b) => a.timeSeconds - b.timeSeconds);
-      if (frames.length !== 3)
+      if (frames.length !== (referenceAd ? REFERENCE_AD_FRAMES : 3))
         throw new AtomikReferenceError(
-          "Prepare three representative frames for each selected video before requesting an estimate.",
+          referenceAd ? "Prepare twelve stills from the original reference ad before requesting an estimate." : "Prepare three representative frames for each selected video before requesting an estimate.",
         );
+      if (referenceAd) {
+        const metadata = await readers.inspectVideo({ id: String(source.id), mime: String(source.mime), ext: String(source.ext), storedUrl: String(source.stored_url), kind: "video", role: "reference_video", fromGeneration: source.type === "generation" }, Number(source.size));
+        if (metadata.seconds > REFERENCE_AD_SECONDS) throw new AtomikReferenceError("Reference-ad analysis supports videos up to 60 seconds.");
+        const expected = referenceAdFrameTimes(metadata.seconds);
+        if (frames.some((frame, index) => !Number.isFinite(frame.durationSeconds) || Math.abs(frame.durationSeconds! - metadata.seconds) > 0.15 || Math.abs(frame.timeSeconds - expected[index]) > 0.15))
+          throw new AtomikReferenceError("The sampled times do not match this original. Prepare its review frames again.");
+        result.durationSeconds = metadata.seconds;
+      }
       for (const frame of frames) {
         if (
           !Number.isFinite(frame.timeSeconds) ||
