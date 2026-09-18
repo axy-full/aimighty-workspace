@@ -19,6 +19,7 @@ const descriptions = {
   atomik: "Plan the work, choose the engines and approve each priced stage.",
   moleculr:
     "Build your brand, develop campaigns and create consistent campaign assets.",
+  subatomik: "Subatomik viral studio. Transfer movement and rework subjects with Higgsfield Genjutsu.",
 };
 export default function SuiteHome() {
   const session = useSession(),
@@ -52,7 +53,7 @@ export default function SuiteHome() {
             <i className="suite-dot" style={{ background: "#f0b23e" }} />
             {session.signedIn
               ? (session.workspace?.name ?? "Your workspace")
-              : "Three suites. One connected workspace."}
+              : "Four suites. One connected workspace."}
           </span>
           <h1>
             {session.signedIn

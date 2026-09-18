@@ -2,7 +2,7 @@
 
 import { useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Building2,
   Clapperboard,
@@ -153,6 +153,9 @@ export function SuiteDock({
   disabled?: boolean;
 }) {
   const { follow, error } = useFollow(onNavigate);
+  const query = useSearchParams();
+  const pageHref = (page: string) => suiteHref(suite, projectId, page) +
+    (suite === "subatomik" && query.get("account") === "higgsfield" ? "&account=higgsfield" : "");
   const numbered = suite === "particl" || suite === "moleculr";
   return (
     <nav
@@ -184,14 +187,14 @@ export function SuiteDock({
         ) : (
           <Link
             key={page.id}
-            href={suiteHref(suite, projectId, page.id)}
+            href={pageHref(page.id)}
             prefetch={false}
             aria-label={page.label}
             aria-current={activePage === page.id ? "page" : undefined}
             onClick={(event) =>
               follow(
                 event,
-                suiteHref(suite, projectId, page.id),
+                pageHref(page.id),
                 onPage ? () => onPage(page.id) : undefined,
               )
             }

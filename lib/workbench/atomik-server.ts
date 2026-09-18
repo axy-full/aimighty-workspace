@@ -26,7 +26,7 @@ import { requireTenant, type TenantToken } from '../tenant';
 
 export const atomikRequestSchema = z.object({
   referenceAd: referenceAnalysisSourceSchema.optional(),
-  suite: z.enum(['particl', 'atomik', 'moleculr']).optional(),
+  suite: z.enum(['particl', 'atomik', 'moleculr', 'subatomik']).optional(),
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
   requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
   request: z.string().trim().min(3).max(12000),

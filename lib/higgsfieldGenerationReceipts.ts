@@ -1,3 +1,4 @@
+import { GENJUTSU_MODELS, isGenjutsuModel } from "./genjutsuTypes";
 import { platformDb, platformReady } from "./platform";
 import { db, now } from "./db";
 import { requireTenant } from "./tenant";
@@ -5,6 +6,8 @@ import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageMod
 import type { RenderHandle } from "./engines/types";
 import { generationSettlementReady } from "./generationSettlement";
 
+const receiptModels = [SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, ...Object.values(GENJUTSU_MODELS)];
+const supported = (model: string) => isHiggsfieldImageModel(model) || isGenjutsuModel(model);
 let boot: Promise<void> | undefined;
 async function receiptsReady() {
   await platformReady();
@@ -17,7 +20,7 @@ async function receiptsReady() {
 
 /** An independent acknowledgement survives a tenant database write outage. */
 export async function saveHiggsfieldGenerationReceipt(id: string, handle: RenderHandle, fingerprint: string) {
-  if (handle.provider !== "higgsfield" || !isHiggsfieldImageModel(handle.model) ||
+  if (handle.provider !== "higgsfield" || !supported(handle.model) ||
       !fingerprint || handle.credentialFingerprint !== fingerprint || !handle.ref)
     throw new Error("The accepted Higgsfield request does not match its admitted connection.");
   await receiptsReady();
@@ -37,8 +40,8 @@ export async function settleHiggsfieldGenerationReceipt(id: string): Promise<boo
   await generationSettlementReady();
   const outcome = (await db().execute({
     sql: `SELECT g.status,s.event,s.settled_at FROM generations g JOIN generation_settlements s ON s.id=g.id
-      WHERE g.id=? AND g.provider='higgsfield' AND g.model IN (?,?) AND g.status IN ('succeeded','failed','cancelled')`,
-    args: [id, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID],
+      WHERE g.id=? AND g.provider='higgsfield' AND g.model IN (?,?,?,?) AND g.status IN ('succeeded','failed','cancelled')`,
+    args: [id, ...receiptModels],
   })).rows[0];
   if (!outcome?.settled_at) return false;
   const event = JSON.parse(String(outcome.event));
@@ -56,22 +59,23 @@ export async function restoreHiggsfieldGenerationReceipt(id: string): Promise<vo
     args: [id, requireTenant().id] })).rows[0];
   if (!receipt) return;
   const row = (await db().execute({ sql: `SELECT params,status,model FROM generations
-    WHERE id=? AND provider='higgsfield' AND model IN (?,?) AND deleted=0`, args: [id, SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID] })).rows[0];
+    WHERE id=? AND provider='higgsfield' AND model IN (?,?,?,?) AND deleted=0`, args: [id, ...receiptModels] })).rows[0];
   if (!row) throw new Error("An accepted Higgsfield request has no recoverable generation record.");
   const params = JSON.parse(String(row.params));
   const handle = JSON.parse(String(receipt.handle_json)) as RenderHandle;
-  if (!params.paidClaim || (row.model === MARKETING_IMAGE_MODEL_ID ? params.higgsfieldCredentialFingerprint : params.soulCredentialFingerprint) !== receipt.credential_fingerprint ||
+  const key = isGenjutsuModel(String(row.model)) ? "higgsfieldVideoHandle" : "higgsfieldStillHandle";
+  if (!params.paidClaim || (row.model === SOUL_CHARACTER_MODEL_ID ? params.soulCredentialFingerprint : params.higgsfieldCredentialFingerprint) !== receipt.credential_fingerprint ||
       handle.credentialFingerprint !== receipt.credential_fingerprint || handle.provider !== "higgsfield" ||
-      !isHiggsfieldImageModel(handle.model) || handle.model !== row.model || !handle.ref ||
-      (params.higgsfieldStillHandle && params.higgsfieldStillHandle.ref !== handle.ref))
+      !supported(handle.model) || handle.model !== row.model || !handle.ref ||
+      (params[key] && params[key].ref !== handle.ref))
     throw new Error("The saved Higgsfield acknowledgement does not match its original admission.");
   if (await settleHiggsfieldGenerationReceipt(id)) return;
   // A prior ambiguous failure may have ended the execution slot. Only an exact
   // independent acknowledgement permits reopening it for GET-only collection.
-  await db().execute({ sql: `UPDATE generations SET params=json_set(params,'$.higgsfieldStillHandle',json(?)),
+  await db().execute({ sql: `UPDATE generations SET params=json_set(params,?,json(?)),
     status=CASE WHEN status='failed' THEN 'running' ELSE status END,updated_at=?
     WHERE id=? AND deleted=0 AND params=? AND status IN ('queued','running','failed')`,
-    args: [JSON.stringify(handle), now(), id, row.params] });
+    args: [`$.${key}`, JSON.stringify(handle), now(), id, row.params] });
 }
 
 /** Run before the ordinary pending scan so lost tenant handles become visible. */

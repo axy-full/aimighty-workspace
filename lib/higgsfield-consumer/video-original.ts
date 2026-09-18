@@ -13,7 +13,7 @@ import {
   type ProductFetchDependencies,
 } from "../workbench/product-fetch";
 import { consumerJobsReady, type ConsumerJob } from "./jobs";
-import { parseConsumerVideoInput } from "./video-contract";
+import { consumerVideoIdentity } from "./original-identity";
 
 export const CONSUMER_ORIGINAL_LEASE_MS = 180_000;
 export const CONSUMER_ORIGINAL_DEADLINE_MS = 90_000;
@@ -156,7 +156,7 @@ async function currentJob(tx: Transaction, job: ConsumerJob) {
     row.payload_json !== job.payloadJson ||
     Number(row.quote_credits) !== job.quoteCredits ||
     row.connection_generation !== job.connectionGeneration ||
-    row.workflow !== "marketing-video"
+    row.workflow !== job.workflow || !["marketing-video", "genjutsu"].includes(job.workflow)
   )
     throw new ConsumerOriginalError("not_found");
   return row;
@@ -190,7 +190,7 @@ function ownedGeneration(row: Row | undefined, job: ConsumerJob) {
     params.consumerJobId !== job.id ||
     params.consumerProviderJobId !== job.providerJobId ||
     row.provider !== "higgsfield" ||
-    row.model !== "marketing_studio_video" ||
+    row.model !== consumerVideoIdentity(job).model ||
     row.kind !== "video" ||
     row.status !== "succeeded"
   )
@@ -198,7 +198,7 @@ function ownedGeneration(row: Row | undefined, job: ConsumerJob) {
 }
 
 /** Uses a server-written receipt, not merely user-controllable generation params. */
-export const RETAINED_CONSUMER_ORIGINAL_SQL = `g.status='succeeded' AND g.provider='higgsfield' AND g.model='marketing_studio_video' AND g.kind='video' AND g.stored_url IS NOT NULL
+export const RETAINED_CONSUMER_ORIGINAL_SQL = `g.status='succeeded' AND g.provider='higgsfield' AND g.model IN ('marketing_studio_video','hf_mult_motion_control','hf_mult_replace_object') AND g.kind='video' AND g.stored_url IS NOT NULL
   AND json_extract(g.params,'$.consumerCreditUnit')='higgsfield_credits'
   AND EXISTS(SELECT 1 FROM consumer_video_originals o WHERE o.generation_id=g.id AND o.state='stored' AND o.receipt_json IS NOT NULL
     AND o.owner_id=g.created_by AND o.bytes=g.bytes AND o.job_id=json_extract(g.params,'$.consumerJobId')
@@ -259,6 +259,7 @@ export async function collectConsumerVideoOriginal(
   )
     throw new ConsumerOriginalError("not_found");
   await consumerJobsReady();
+  const identity = consumerVideoIdentity(job);
   await workbenchReady();
   await uploadReservationsReady();
   const generationId = consumerOriginalGenerationId(workspace.id, job.id),
@@ -449,15 +450,10 @@ export async function collectConsumerVideoOriginal(
             )
               projectId = body.productionProjectId;
           }
-          const input = parseConsumerVideoInput(
-            JSON.parse(job.payloadJson).input,
-          );
           const params = {
+            ...identity.params,
             duration: metadata!.seconds,
-            resolution: input.resolution,
-            aspectRatio: input.aspectRatio,
-            ratio: input.aspectRatio,
-            generateAudio: input.generateAudio,
+            ...(job.workflow === "genjutsu" ? { ratio: `${metadata!.width}:${metadata!.height}` } : {}),
             consumerJobId: job.id,
             consumerProviderJobId: job.providerJobId,
             consumerCredits: job.quoteCredits,
@@ -467,11 +463,12 @@ export async function collectConsumerVideoOriginal(
             height: metadata!.height,
           };
           await tx.execute({
-            sql: `INSERT INTO generations(id,project_id,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,kind,provider,bytes,billed_to) VALUES(?,?, 'marketing_studio_video',?,?,'succeeded',?,NULL,?,?,?,'video','higgsfield',?,'higgsfield')`,
+            sql: `INSERT INTO generations(id,project_id,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,kind,provider,bytes,billed_to) VALUES(?,?,?,?,?,'succeeded',?,NULL,?,?,?,'video','higgsfield',?,'higgsfield')`,
             args: [
               generationId,
               projectId,
-              input.prompt,
+              identity.model,
+              identity.prompt,
               JSON.stringify(params),
               stored.url,
               job.userId,

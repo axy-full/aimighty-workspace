@@ -1,3 +1,5 @@
+import { isGenjutsuModel } from "../genjutsuTypes";
+import { genjutsuInput, estimateGenjutsuInput, genjutsuPath, genjutsuPreflightError, genjutsuSourceProblem } from "../genjutsu";
 import { isIP } from "node:net";
 import type { EngineAdapter, PollResult, StillRenderRequest } from "./types";
 import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID, isHiggsfieldImageModel } from "../models";
@@ -88,15 +90,34 @@ function imageUrl(value: unknown): string {
 
 export const higgsfield: EngineAdapter = {
   id: "higgsfield",
-  kinds: ["image"],
+  kinds: ["image", "video"],
   configured: () => higgsfieldConfigured(),
   estimate(req) {
+    if (req.kind === "video" && isGenjutsuModel(req.model.id)) return req.params.higgsfieldVendorCostUsd ?? null;
     if (req.kind === "image" && req.model.id === MARKETING_IMAGE_MODEL_ID) return req.higgsfieldVendorCostUsd ?? null;
     if (req.kind !== "image" || req.model.id !== SOUL_CHARACTER_MODEL_ID || !soulCharacterGenerationEnabled()) return null;
     return estimateImageCostUsd(req.model.id, req.size, 0)?.net ?? null;
   },
   async render(req) {
-    if (req.kind !== "image") throw new HiggsfieldHttpError(422, "Higgsfield produces still images.");
+    if (req.kind === "video" && isGenjutsuModel(req.model.id)) {
+      const fingerprint = req.params.higgsfieldCredentialFingerprint;
+      let input: Awaited<ReturnType<typeof genjutsuInput>>;
+      try {
+        sameCredentials(fingerprint);
+        if (req.task.id !== "genjutsu" || !req.params.genjutsuSource || genjutsuSourceProblem(req.params.genjutsuSource.seconds)) throw new Error("source");
+        const images = req.references.filter(r => r.kind === "image");
+        if (req.references.filter(r => r.kind === "video").length !== 1 || !req.source || !req.references.some(r => r.kind === "video" && r.id === req.source!.id && r.fromGeneration === req.source!.fromGeneration)) throw new Error("source");
+        input = await genjutsuInput(req.model.id, req.prompt, req.params.resolution, req.source, images);
+        const fresh = await estimateGenjutsuInput(req.model.id, input);
+        if (!(req.params.higgsfieldVendorCostUsd! > 0) || fresh !== req.params.higgsfieldVendorCostUsd) throw new Error("price");
+      } catch { throw genjutsuPreflightError(); }
+      if (engineMock()) return { handle: { provider: "higgsfield", model: req.model.id, ref: mockJobId("higgsfield"), credentialFingerprint: fingerprint } };
+      const result = await call(`${API_ORIGIN}/${genjutsuPath(req.model.id)}`, "POST", input);
+      const ref = typeof result.request_id === "string" ? result.request_id : "";
+      if (!UUID.test(ref)) throw new Error("Higgsfield returned no usable request identifier. The submission will not be repeated.");
+      return { handle: { provider: "higgsfield", model: req.model.id, ref, endpoint: typeof result.status_url === "string" ? result.status_url : undefined, cancelUrl: typeof result.cancel_url === "string" ? result.cancel_url : undefined, credentialFingerprint: fingerprint } };
+    }
+    if (req.kind !== "image") throw new HiggsfieldHttpError(422, "Choose a supported Higgsfield model.");
     const marketing = req.model.id === MARKETING_IMAGE_MODEL_ID;
     const fingerprint = marketing ? req.higgsfieldCredentialFingerprint : req.soulCredentialFingerprint;
     sameCredentials(fingerprint);
@@ -128,13 +149,13 @@ export const higgsfield: EngineAdapter = {
       credentialFingerprint: fingerprint } };
   },
   async poll(handle): Promise<PollResult> {
-    if (handle.provider !== "higgsfield" || !isHiggsfieldImageModel(handle.model))
+    if (handle.provider !== "higgsfield" || (!isHiggsfieldImageModel(handle.model) && !isGenjutsuModel(handle.model)))
       throw new Error("Unsupported Higgsfield request handle.");
     // Collection remains possible after an operator disables new submissions.
     sameCredentials(handle.credentialFingerprint);
     let raw: Record<string, unknown>;
     if (engineMock() && isMockJob(handle.ref)) {
-      raw = { request_id: handle.ref, status: mockDone(handle.ref) ? "completed" : "queued", images: [{ url: fixtureUrl("still.png") }] };
+      raw = { request_id: handle.ref, status: mockDone(handle.ref) ? "completed" : "queued", images: [{ url: fixtureUrl("still.png") }], video: { url: fixtureUrl("clip.mp4") } };
     } else {
       raw = await call(soulStatusUrl(handle.endpoint, handle.ref), "GET");
       if (raw.request_id !== handle.ref) throw new Error("Higgsfield returned a different request identifier.");
@@ -145,16 +166,35 @@ export const higgsfield: EngineAdapter = {
     const status = statuses[String(raw.status)];
     if (!status) throw new Error("Higgsfield returned an unknown request status.");
     let master: string | null = null;
-    if (status === "succeeded") {
+    let video: string | null = null;
+    if (status === "succeeded" && isGenjutsuModel(handle.model)) {
+      const output = raw.video;
+      if (!output || typeof output !== "object" || Array.isArray(output) || typeof (output as Record<string, unknown>).url !== "string")
+        throw new Error("Higgsfield returned no recognized original video. The accepted request remains available for collection.");
+      video = engineMock() && isMockJob(handle.ref) ? fixtureUrl("clip.mp4") : imageUrl((output as Record<string, unknown>).url);
+    }
+    if (status === "succeeded" && !isGenjutsuModel(handle.model)) {
       const images = raw.images;
       if (!Array.isArray(images) || images.length !== 1)
         throw new Error("Higgsfield returned an unexpected image count. The request remains available for collection.");
       master = engineMock() && isMockJob(handle.ref) ? fixtureUrl("still.png") : imageUrl(images[0]?.url);
     }
-    return { status, imageUrl: master, videoUrl: null, totalTokens: null,
+    return { status, imageUrl: master, videoUrl: video, totalTokens: null,
       error: raw.status === "nsfw" ? "Higgsfield rejected this generation during moderation." :
         status === "failed" ? "Higgsfield could not complete this generation." : null,
       vendorStartedAt: null, vendorEndedAt: null, raw };
+  },
+  async cancel(handle) {
+    if (handle.provider !== "higgsfield" || !isGenjutsuModel(handle.model)) throw new HiggsfieldHttpError(422, "Choose a Genjutsu request.");
+    sameCredentials(handle.credentialFingerprint);
+    if (!UUID.test(handle.ref) || handle.cancelUrl !== `${API_ORIGIN}/requests/${handle.ref}/cancel`)
+      throw new HiggsfieldHttpError(409, "This request has no verified cancellation URL.");
+    const { keyId, keySecret } = higgsfieldCredentials();
+    const response = await recoveryFetch(handle.cancelUrl, { method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(30_000),
+      headers: { Authorization: `Key ${keyId}:${keySecret}` } });
+    await response.body?.cancel();
+    if (response.status !== 202) throw new HiggsfieldHttpError(response.status === 400 ? 409 : 503,
+      "Higgsfield did not confirm cancellation. The request may have started; refresh its status.");
   },
   async fetchMaster(value) {
     if (engineMock() && value === fixtureUrl("still.png")) return fixtureBytes("still.png");

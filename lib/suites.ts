@@ -1,4 +1,4 @@
-export type SuiteId = "particl" | "atomik" | "moleculr";
+export type SuiteId = "particl" | "atomik" | "moleculr" | "subatomik";
 export type RoomId =
   "projects" | "production" | "make" | "library" | "workspace";
 export type SuitePage = { id: string; label: string };
@@ -27,7 +27,7 @@ export const SUITES: {
     description: "Build and grow your brand",
     color: "#5CC8B4",
   },
-
+  { id: "subatomik", name: "Subatomik", description: "Subatomik viral studio", color: "#D48CF5" },
 ];
 
 export const PAGES: Record<SuiteId, SuitePage[]> = {
@@ -59,7 +59,10 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
     { id: "design", label: "Design" },
     { id: "publish", label: "Publish" },
   ],
-
+  subatomik: [
+    { id: "motion-transfer", label: "Motion Transfer" },
+    { id: "object-swap", label: "Object Swap" },
+  ],
 };
 
 /** Project always identifies the workbench draft, never its production mapping. */
@@ -95,8 +98,8 @@ export function suiteForRoute(
   query: Pick<URLSearchParams, "get">,
 ): SuiteId {
   if (path === "/atomik" || path.startsWith("/atomik/")) return "atomik";
-  if (path === "/subatomic" || path.startsWith("/subatomic/"))
-    return "atomik";
+  if (path === "/subatomik" || path.startsWith("/subatomik/") || path === "/subatomic" || path.startsWith("/subatomic/"))
+    return "subatomik";
   if (path === "/workbench" && query.get("suite") === "moleculr")
     return "moleculr";
   return "particl";

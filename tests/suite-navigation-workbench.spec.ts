@@ -142,7 +142,7 @@ test("shared suite shell keeps draft context, account controls and guarded keybo
   await page.locator(".suite-home-card").filter({ hasText: "Atomik Agent" }).click();
   await expect(page).toHaveURL(suiteHref("atomik", project.id));
   await expect(page.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link")).toHaveCount(3);
+  await expect(page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link")).toHaveCount(4);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth + 1,

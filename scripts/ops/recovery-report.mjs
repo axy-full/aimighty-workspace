@@ -175,6 +175,20 @@ export async function recoveryReport(directory) {
           });
         }
       }
+      if (names.has("higgsfield_consumer_media_imports")) {
+        for (const row of (await db.execute("SELECT user_id,draft_id,quote_key,source_index,state FROM higgsfield_consumer_media_imports WHERE state IS NULL OR state<>'ready' OR media_id IS NULL")).rows) {
+          report.actions.push({
+            database: source.id,
+            workspaceIds: source.workspaceIds,
+            table: "higgsfield_consumer_media_imports",
+            id: `${row.quote_key}:${row.source_index}`,
+            userId: row.user_id,
+            draftId: row.draft_id,
+            status: row.state,
+            disposition: "reconcile-consumer-media-import-never-replay-claim",
+          });
+        }
+      }
       if (names.has("consumer_video_originals")) {
         for (const row of (await db.execute({
           sql: "SELECT job_id,generation_id,provider_job_id,state,bytes,sha256 FROM consumer_video_originals WHERE COALESCE(state,'preparing')<>'stored' AND (COALESCE(bytes,0)>0 OR COALESCE(lease_until,0)>?)",

@@ -175,10 +175,10 @@ test("workspace export includes shared production records and owner drafts but e
     );
     const { soulIdentitiesReady } = await import("../../lib/soulIdentities");
     await soulIdentitiesReady();
-    await db().execute({ sql: "UPDATE generations SET params=? WHERE id='export-take'", args: [JSON.stringify({ paidClaim: "INTERNAL-CLAIM", soulReferenceId: "PRIVATE-SOUL-UUID", soulCredentialFingerprint: "PRIVATE-CONNECTION", soulVendorCostUsd: 9.87, higgsfieldCredentialFingerprint: "PRIVATE-MARKETING-CONNECTION", higgsfieldVendorCostUsd: 99.1, higgsfieldStillHandle: { ref: "PRIVATE-REQUEST" }, soulIdentityId: "soul-local" })] });
+    await db().execute({ sql: "UPDATE generations SET params=? WHERE id='export-take'", args: [JSON.stringify({ paidClaim: "INTERNAL-CLAIM", soulReferenceId: "PRIVATE-SOUL-UUID", soulCredentialFingerprint: "PRIVATE-CONNECTION", soulVendorCostUsd: 9.87, higgsfieldCredentialFingerprint: "PRIVATE-MARKETING-CONNECTION", higgsfieldVendorCostUsd: 99.1, higgsfieldStillHandle: { ref: "PRIVATE-REQUEST" }, higgsfieldVideoHandle: { ref: "PRIVATE-VIDEO-REQUEST", cancelUrl: "PRIVATE-CANCEL-URL" }, higgsfieldVideoPollUntil: 123, higgsfieldVideoPollToken: "PRIVATE-POLL-TOKEN", genjutsuOriginal: {sha256:"PRIVATE-DIGEST"}, soulIdentityId: "soul-local" })] });
     await db().execute(`INSERT INTO soul_identities(id,owner,name,description,subject_type,references_json,status,provider_reference_id,credential_fingerprint,created_at,updated_at,consent_at) VALUES('soul-local','owner','Mira','','character','[]','ready','PRIVATE-SOUL-UUID','PRIVATE-CONNECTION',0,0,0)`);
     const soulExport = await workspaceExport("owner", "owner@example.test") as unknown as { soul_identities: unknown[]; generations: { params: Record<string, unknown> }[] };
-    expect(JSON.stringify(soulExport)).not.toMatch(/PRIVATE-SOUL-UUID|PRIVATE-CONNECTION|PRIVATE-REQUEST|soulVendorCostUsd|PRIVATE-MARKETING-CONNECTION|higgsfieldVendorCostUsd/);
+    expect(JSON.stringify(soulExport)).not.toMatch(/PRIVATE-SOUL-UUID|PRIVATE-CONNECTION|PRIVATE-REQUEST|soulVendorCostUsd|PRIVATE-MARKETING-CONNECTION|higgsfieldVendorCostUsd|PRIVATE-VIDEO-REQUEST|PRIVATE-CANCEL-URL|PRIVATE-POLL-TOKEN|PRIVATE-DIGEST|higgsfieldVideoPollUntil/);
     expect(soulExport.soul_identities).toHaveLength(1);
     expect(soulExport.generations[0].params).toMatchObject({ soulIdentityId: "soul-local" });
     await platformDb().execute(

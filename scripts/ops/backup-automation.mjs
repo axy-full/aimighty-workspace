@@ -100,6 +100,10 @@ export async function assertNoActiveOrUncertain(config, env) {
       // disappear behind a successful scheduled checkpoint.
       if (names.has("higgsfield_consumer_jobs") &&
           (await db.execute("SELECT 1 FROM higgsfield_consumer_jobs WHERE status IS NULL OR status NOT IN ('quoted','failed','completed') LIMIT 1")).rows.length) blocked();
+      // Media import happens before a quote exists. Its permanent claim must
+      // remain visible even when no generation could yet have been admitted.
+      if (names.has("higgsfield_consumer_media_imports") &&
+          (await db.execute("SELECT 1 FROM higgsfield_consumer_media_imports WHERE state IS NULL OR state<>'ready' OR media_id IS NULL LIMIT 1")).rows.length) blocked();
       // Collection has an independent lease and reserved-byte receipt. A
       // terminal provider job does not prove its private storage write settled.
       if (names.has("consumer_video_originals") && (await db.execute({

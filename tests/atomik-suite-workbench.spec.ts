@@ -279,11 +279,9 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
   await expect(
     suite.getByRole("combobox", { name: "Reasoning effort", exact: true }),
   ).toBeEnabled();
-  await page.goto(`/subatomic?project=${f.project.id}&page=factory`);
-  await expect(page).toHaveURL(`/atomik?project=${f.project.id}&page=runs`);
+  await page.goto(`/atomik?project=${f.project.id}&page=runs`);
   await expect(suite.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
-  await page.goto("/subatomic?project=unavailable&page=trends");
-  await expect(page).toHaveURL("/atomik?project=unavailable&page=runs");
+  await page.goto("/atomik?project=unavailable&page=runs");
   await expect(suite.getByRole("heading", { name: "Choose a saved project", exact: true })).toBeVisible();
   await page.goto(`/?project=${f.project.id}`);
   await expect(

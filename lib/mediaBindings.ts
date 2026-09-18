@@ -46,6 +46,16 @@ export async function mediaBindingProblem(
   kind: "upload" | "generation",
   id: string,
 ): Promise<string | null> {
+  if ((await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='higgsfield_consumer_jobs'")).rows.length) {
+    const jobs=(await tx.execute({sql:"SELECT payload_json FROM higgsfield_consumer_jobs WHERE workflow='genjutsu' AND (status IN ('dispatching','accepted','uncertain') OR (status='quoted' AND quote_expires_at>?))",args:[Date.now()]})).rows;
+    for(const job of jobs){
+      try{const refs=referencedMedia(JSON.parse(String(job.payload_json)));if((kind==="upload"?refs.uploads:refs.generations).has(id))return "This original is retained by an active Higgsfield quote or job. Finish or let the quote expire before deleting it.";}
+      catch{return "An active Higgsfield source record could not be checked. Keep this original until recovery completes.";}
+    }
+  }
+  if ((await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='higgsfield_consumer_media_imports'")).rows.length &&
+      (await tx.execute({sql:"SELECT 1 FROM higgsfield_consumer_media_imports WHERE source_identity=? AND created_at>? LIMIT 1",args:[`${kind}:${id}`,Date.now()-180_000]})).rows.length)
+    return "This original is being transferred for a Higgsfield quote. Try again after the transfer finishes.";
   const directSql =
     kind === "upload"
       ? [

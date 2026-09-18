@@ -20,7 +20,7 @@
  * decoration; a prompt without them is a different request.
  */
 
-export type TaskId = "generate" | "edit" | "extend" | "motion" | "upscale" | "reframe";
+export type TaskId = "generate" | "edit" | "extend" | "motion" | "upscale" | "reframe" | "genjutsu";
 /** The tasks that work on an existing clip. */
 export type LockedTaskId = Exclude<TaskId, "generate">;
 
@@ -60,6 +60,8 @@ export const TASKS: TaskDef[] = [
     triggers: [],
     defaultTrigger: "",
   },
+  { id: "genjutsu", label: "Genjutsu", blurb: "Transfer motion or swap subjects in an original video.", locked: true,
+    forceRatio: "adaptive", forceDuration: "source", promptOptional: true, preferMov: false, triggers: [], defaultTrigger: "" },
   {
     id: "edit",
     label: "Edit",
@@ -235,6 +237,7 @@ export function sourceProblem(
   if (!task.locked || !source) return null;
   const res = String(source.resolution ?? "").toLowerCase();
   const seconds = typeof source.duration === "number" ? source.duration : null;
+  if (task.id === "genjutsu") return seconds != null && (seconds < 1 || seconds > 30) ? "Genjutsu requires an original video between 1 and 30 seconds." : null;
   if (task.id === "upscale") {
     if (seconds != null && seconds > 300) return `Topaz takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
     return null;

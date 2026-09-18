@@ -75,6 +75,7 @@ test("Particl retains persisted stage IDs and numbered docks use the brief seque
     "Particl Studio",
     "Atomik Agent",
     "Moleculr Business Suite",
+    "Subatomik",
   ]);
 });
 
@@ -113,8 +114,8 @@ test("suite detection respects nested routes and does not match path prefixes", 
   for (const path of ["/atomik", "/atomik/", "/atomik/ideas", "/atomik/treatment"]) {
     expect(suiteForRoute(path, marketing)).toBe("atomik");
   }
-  for (const path of ["/subatomic", "/subatomic/", "/subatomic/factory"]) {
-    expect(suiteForRoute(path, marketing)).toBe("atomik");
+  for (const path of ["/subatomik", "/subatomik/", "/subatomik/motion-transfer", "/subatomic", "/subatomic/", "/subatomic/factory"]) {
+    expect(suiteForRoute(path, marketing)).toBe("subatomik");
   }
   expect(suiteForRoute("/workbench", marketing)).toBe("moleculr");
   for (const path of ["/", "/atomik-other", "/subatomically", "/library", "/workbench/movie"]) {

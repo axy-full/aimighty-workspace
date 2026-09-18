@@ -18,7 +18,7 @@ export const suiteAgentResultSchema = z.object({
   assumptions: z.array(z.string().trim().min(1).max(600)).max(8),
 }).strict();
 export const suiteAgentPlanSchema = suiteAgentResultSchema.omit({ intent: true, summary: true, steps: true }).extend({
-  suite: z.enum(['particl', 'atomik', 'moleculr']),
+  suite: z.enum(['particl', 'atomik', 'moleculr', 'subatomik']),
   projectId: z.string().min(1).max(100),
 });
 export type SuiteAgentResult = z.infer<typeof suiteAgentResultSchema>;
@@ -28,6 +28,7 @@ export const SUITE_AGENT_COPY: Record<SuiteId, { title: string; placeholder: str
   particl: { title: 'Production agent', placeholder: 'Plan this scene, develop its visual language and prepare the shots…', mission: 'Develop cinematic production: story, shot coverage, continuity, cast, environments, lighting, camera and sound.' },
   atomik: { title: 'Production orchestrator', placeholder: 'Turn the brief into a staged production plan with review checkpoints…', mission: 'Break the production into concrete image, video and audio tasks, with dependencies, asset reuse and review checkpoints.' },
   moleculr: { title: 'Campaign agent', placeholder: 'Develop product angles, campaign hooks, cast and image or video variants…', mission: 'Develop a campaign with distinct hooks, product-accurate creative directions and executable image/video briefs. Use supplied product and cast references. Never invent endorsements, product claims or performance.' },
+  subatomik: { title: 'Viral studio agent', placeholder: 'Develop a visual hook, plan a transformation and prepare variations for review…', mission: 'Develop original short-form creative hooks, motion-transfer and object-replacement directions from the supplied project references. Propose concrete editable production actions and review criteria. Do not invent trend research, virality scores, performance guarantees, provider presets or unsupported engine controls. Generation remains a separately quoted action.' },
 };
 
 /** Pure, atomic handoff. Planning never invokes a rendering provider. */
