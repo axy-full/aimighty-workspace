@@ -1,6 +1,7 @@
 import { withRecoveryActivity } from './recovery';
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import type { Transaction } from "@libsql/client";
 import { rm } from "node:fs/promises";
 import { db, ready } from "./db";
 import { runInTenant, type TenantWorkspace } from "./tenant";
@@ -9,6 +10,7 @@ import { usingBlob } from "./storage";
 import { revokeGatewayKey } from "./vercelKeys";
 import { deleteTenantDatabase } from "./provision";
 import { purgeSoulIdentities } from "./soulIdentities";
+import { consumerOriginalPending, consumerOriginalRetentionQuery } from "./higgsfield-consumer/original-retention";
 
 // Let already-running functions finish; requests and delayed events reject deleted workspaces.
 export const PURGE_GRACE_MS = 10 * 60_000;
@@ -136,6 +138,47 @@ async function removeDatabase(ws: TenantWorkspace) {
     await rm(path.resolve(file + suffix), { force: true });
 }
 
+/** Explicit workspace deletion is the disposition, not provider failure or a
+ * refund. Preserve the immutable original receipt until physical purge succeeds.
+ * Called only under purge's write transaction and fresh deleted-workspace row. */
+async function disposeCollectedConsumerOriginals(tx: Transaction, ws: TenantWorkspace, at: number) {
+  if (!await consumerOriginalPending(tx)) return;
+  if (ws.deletedAt == null || at < ws.deletedAt + PURGE_GRACE_MS)
+    throw new Error("Consumer original disposal is waiting for the deletion grace period.");
+  const query = (await consumerOriginalRetentionQuery(tx))!;
+  const rows = (await tx.execute(`SELECT j.id,j.user_id,j.draft_id,j.provider_job_id,j.quote_credits,j.poll_lease_until,
+    o.generation_id,o.bytes,o.sha256,o.receipt_json FROM consumer_video_originals o
+    JOIN higgsfield_consumer_jobs j ON j.id=o.job_id WHERE o.generation_id IN (${query}) LIMIT 101`)).rows;
+  if (rows.length > 100) throw new Error("Consumer original disposal exceeds its bounded batch.");
+  for (const row of rows) {
+    if (Number(row.poll_lease_until ?? 0) > at)
+      throw new Error("Consumer original collection still has an active poll lease.");
+    let receipt: Record<string, unknown>;
+    try {
+      if (typeof row.receipt_json !== "string" || row.receipt_json.length > 16_384) throw new Error();
+      receipt = JSON.parse(row.receipt_json);
+      if (!receipt || typeof receipt !== "object" || Array.isArray(receipt) ||
+        receipt.generationId !== row.generation_id || receipt.providerJobId !== row.provider_job_id ||
+        receipt.sha256 !== row.sha256 || !/^[a-f0-9]{64}$/.test(String(receipt.sha256)) ||
+        receipt.bytes !== Number(row.bytes) || Number(row.bytes) <= 0 || Number(row.bytes) > 100 * 1024 * 1024 ||
+        receipt.creditUnit !== "higgsfield_credits" || receipt.credits !== Number(row.quote_credits)) throw new Error();
+    } catch { throw new Error("Consumer original disposal requires its verified immutable receipt."); }
+    // Deliberately no top-level original/asset: this is a non-attachable disposal
+    // request, and bytes may remain while the independently retryable purge runs.
+    const manifest = { disposal: { reason: "workspace_deleted", state: "purge_pending", attachable: false,
+      workspaceId: ws.id, requestedAt: ws.deletedAt, recordedAt: at,
+      originalReceipt: { generationId: row.generation_id, providerJobId: row.provider_job_id,
+        sha256: row.sha256, bytes: Number(row.bytes), credits: Number(row.quote_credits), creditUnit: "higgsfield_credits" } } };
+    const changed = await tx.execute({
+      sql: `UPDATE higgsfield_consumer_jobs SET status='completed',result_manifest=?,failure_code=NULL,
+        poll_lease_hash=NULL,poll_lease_until=NULL,updated_at=?
+        WHERE id=? AND user_id=? AND draft_id=? AND provider_job_id=? AND status='accepted' AND COALESCE(poll_lease_until,0)<=?`,
+      args: [JSON.stringify(manifest), at, row.id, row.user_id, row.draft_id, row.provider_job_id, at],
+    });
+    if (changed.rowsAffected !== 1) throw new Error("Consumer original disposal changed; retry required.");
+  }
+}
+
 /** Each stage is recorded before the next; failures retain every recovery identifier. */
 export async function purgeWorkspace(
   workspace: TenantWorkspace,
@@ -205,6 +248,33 @@ return await withRecoveryActivity('purge', async () => {
       if (!saved.rowsAffected)
         throw new Error("Cleanup lease changed; retry required.");
     };
+    // A collector can outlive a terminal job update. Its own durable receipt
+    // protects ambiguous private writes independently of the provider status.
+    if (state.database_at == null) {
+      await runInTenant(ws, async () => {
+        const tx = await db().transaction("write");
+        try {
+          // A preparing -> stored transition must not fall between two reads.
+          await disposeCollectedConsumerOriginals(tx, ws, now());
+          const exists = await tx.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='consumer_video_originals'",
+          );
+          if (exists.rows.length && (await tx.execute({
+            sql: `SELECT 1 FROM consumer_video_originals
+                  WHERE COALESCE(state,'preparing')<>'stored'
+                    AND (COALESCE(bytes,0)>0 OR COALESCE(lease_until,0)>?) LIMIT 1`,
+            args: [now()],
+          })).rows.length)
+            throw new Error("Consumer original storage is still being reconciled.");
+          await tx.commit();
+        } catch (error) {
+          await tx.rollback().catch(() => {});
+          throw error;
+        } finally {
+          tx.close();
+        }
+      });
+    }
     if (state.files_at == null) {
       Object.assign(report, await dependencies.files(ws));
       await completeStage("files_at");

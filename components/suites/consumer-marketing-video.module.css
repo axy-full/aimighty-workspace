@@ -1,0 +1,23 @@
+.panel { min-width: 0; }
+.panel fieldset { border: 0; padding: 0; margin: 20px 0; }
+.prompt { width: 100%; }
+.prompt textarea { resize: vertical; min-height: 150px; }
+.prompt small, .quote small, .job small { display: block; color: #9298a0; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.settings label { min-width: 0; }
+.panel .checkbox { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; font-size: 12px; line-height: 1.6; color: #cbd0d8; }
+.panel .checkbox input { width: 15px; height: 15px; margin-top: 2px; flex: 0 0 auto; accent-color: #5cc8b4; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.quote { border: 1px solid #5cc8b448; background: #5cc8b408; border-radius: 14px; padding: 20px; display: grid; gap: 14px; margin-top: 20px; min-width: 0; }
+.quote strong { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.quote p { margin: 0; font-size: 12px; line-height: 1.7; }
+.quote button { justify-self: start; }
+.jobs { display: grid; gap: 14px; margin-top: 24px; }
+.job { padding: 18px; border: 1px solid #ffffff18; border-radius: 12px; display: grid; gap: 12px; min-width: 0; }
+.job > div:first-child { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+.job > div:first-child strong { font-weight: 500; }
+.job > div:first-child span { color: #9298a0; }
+.job p { margin: 0; font-size: 12px; color: #cbd0d8; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 150px; overflow-y: auto; }
+.job > button { justify-self: start; }
+.error { font-size: 12px; color: #ed9292; line-height: 1.7; }
+@media (max-width: 600px) { .settings { grid-template-columns: 1fr; gap: 12px; } .quote { padding: 16px; } .quote button { width: 100%; white-space: normal; } .actions > button { white-space: normal; } }

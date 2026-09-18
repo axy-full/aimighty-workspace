@@ -13,6 +13,7 @@
 import { useMemo } from "react";
 import { useSession } from "@/lib/session";
 import { usd } from "@/lib/format";
+import { providerCreditQuote, formatProviderCreditQuote, sumWithProviderCreditQuotes, type ProviderCreditQuote } from "./providerCreditQuote";
 
 
 /** A finished take: what the engine charged, plus the prompt writer's share. */
@@ -24,6 +25,7 @@ export type Priced = {
   /** What the ledger billed, in credits. The server's figure, not a
    *  conversion done here — the browser has no margin to convert with. */
   creditsBilled?: number | null;
+  providerCreditQuote?: ProviderCreditQuote | null;
 };
 /** A server aggregate that carries both units. */
 export type Amount = { spend?: number | null; credits?: number | null };
@@ -78,9 +80,9 @@ export function useMoney(): Money {
         inCredits: false,
         price: (n) => (n > 0 && n < 0.005 ? "<1¢" : usd(n, 2)),
         rate: (n) => usd(n, 3),
-        take: (g) => usd(all(g), 2),
+        take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : usd(all(g), 2); },
         takeCredits: () => 0,
-        sum: (list) => usd(list.reduce((a, g) => a + all(g), 0), 2),
+        sum: (list) => sumWithProviderCreditQuotes(list, standard => usd(standard.reduce((a, g) => a + all(g), 0), 2)),
         of: (v) => usd(v.spend ?? 0, 2),
         each: (v, n) => (n > 0 ? usd((v.spend ?? 0) / n, 2) : "—"),
         approx: (n) => usd(n, 0),
@@ -95,15 +97,15 @@ export function useMoney(): Money {
        — which meant the browser held both the vendor's dollars and the margin,
        and `credits × 0.10 ÷ margin` gave up the markup exactly. */
     const whole = (n: number) => (n > 0 ? Math.max(1, Math.ceil(n - 1e-9)) : 0);
-    const takeCredits = (g: Priced) => Math.round(g.creditsBilled ?? 0);
+    const takeCredits = (g: Priced) => providerCreditQuote(g.providerCreditQuote) ? 0 : Math.round(g.creditsBilled ?? 0);
     const ofCredits = (v: Amount) => v.credits ?? 0;
     return {
       inCredits: true,
       price: (n) => cr(whole(n)),
       rate: (n) => `${n.toFixed(1)} cr`,
-      take: (g) => cr(takeCredits(g)),
+      take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : cr(takeCredits(g)); },
       takeCredits,
-      sum: (list) => cr(list.reduce((a, g) => a + takeCredits(g), 0)),
+      sum: (list) => sumWithProviderCreditQuotes(list, standard => cr(standard.reduce((a, g) => a + takeCredits(g), 0))),
       of: (v) => cr(ofCredits(v)),
       each: (v, n) => (n > 0 ? cr(ofCredits(v) / n) : "—"),
       approx: (n) => `≈ ${cr(whole(n))}`,

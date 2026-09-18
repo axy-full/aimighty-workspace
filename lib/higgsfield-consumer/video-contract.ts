@@ -11,6 +11,10 @@ export const CONSUMER_VIDEO_RATIOS = [
   "9:16",
 ] as const;
 export const CONSUMER_VIDEO_RESOLUTIONS = ["480p", "720p", "1080p"] as const;
+export const CONSUMER_VIDEO_MODES = [
+  "ugc", "ugc_how_to", "ugc_unboxing", "product_showcase", "product_review",
+  "tv_spot", "wild_card", "ugc_virtual_try_on", "virtual_try_on",
+] as const;
 export const consumerVideoInputSchema = z
   .object({
     prompt: z
@@ -22,6 +26,8 @@ export const consumerVideoInputSchema = z
     resolution: z.enum(CONSUMER_VIDEO_RESOLUTIONS),
     aspectRatio: z.enum(CONSUMER_VIDEO_RATIOS),
     generateAudio: z.boolean(),
+    // Omission preserves previously admitted quotes and their provider UGC default.
+    mode: z.enum(CONSUMER_VIDEO_MODES).optional(),
   })
   .strict();
 export type ConsumerVideoInput = z.infer<typeof consumerVideoInputSchema>;
@@ -91,6 +97,7 @@ export function consumerVideoParams(
     resolution: input.resolution,
     aspect_ratio: input.aspectRatio,
     generate_audio: input.generateAudio,
+    ...(input.mode === undefined ? {} : { mode: input.mode }),
     count: 1,
     get_cost: getCost,
     use_unlim: false,
@@ -244,5 +251,58 @@ export function validateConsumerVideoStatus(
     ...(typeof wait === "number"
       ? { pollAfterSeconds: Math.max(1, Math.ceil(wait)) }
       : {}),
+  };
+}
+
+/** Qualified owner status response, 2026-09-18. Unknown structures are diagnostic
+ * only: never scrape alternate URLs or interpret provider text as instructions. */
+export function consumerVideoOriginalResult(
+  value: unknown,
+  expectedJobId: string,
+  input: ConsumerVideoInput,
+): { url: string } | null {
+  if (!record(value) || !record(value.raw_data)) return null;
+  if ("status" in value && value.status !== "completed") return null;
+  if (["job_id", "id", "jobs", "job_ids", "results"].some(key => key in value) &&
+      consumerVideoAcknowledgement(value) !== expectedJobId.toLowerCase()) return null;
+  const raw = value.raw_data;
+  if (!uuid(raw.id) || consumerVideoAcknowledgement(raw) !== expectedJobId.toLowerCase() ||
+      raw.status !== "completed" || raw.job_set_type !== "marketing_studio_video" || !record(raw.params)) return null;
+  const params = raw.params;
+  if (params.prompt !== input.prompt || params.duration !== input.duration ||
+      params.resolution !== input.resolution || params.aspect_ratio !== input.aspectRatio ||
+      params.generate_audio !== input.generateAudio || params.mode !== (input.mode ?? "ugc")) return null;
+  for (const key of ["medias", "avatars", "products"])
+    if (key in params && (!Array.isArray(params[key]) || params[key].length !== 0)) return null;
+  for (const key of ["product_ids", "avatar_ids", "web_products", "web_product_ids", "reference_elements"])
+    if (key in params && params[key] !== null && (!Array.isArray(params[key]) || params[key].length !== 0)) return null;
+  for (const key of ["ad_reference_id", "storyboard_id", "hook", "setting"])
+    if (params[key] != null) return null;
+  if (("count" in params && params.count !== 1) || ("use_unlim" in params && params.use_unlim !== false)) return null;
+  if (typeof raw.result_url !== "string" || raw.result_url.length > 8192) return null;
+  try {
+    const url = new URL(raw.result_url);
+    if (url.protocol !== "https:" || url.username || url.password || url.hash || (url.port && url.port !== "443")) return null;
+    return { url: url.href };
+  } catch { return null; }
+}
+
+/** Inert provenance only, called after the terminal identity/settings validation.
+ * Do not use provider-authored text as an instruction or persist delivery URLs. */
+export function consumerVideoProviderResult(value: unknown, input: ConsumerVideoInput) {
+  const raw = record(value) && record(value.raw_data) ? value.raw_data : null;
+  const params = raw && record(raw.params) ? raw.params : null;
+  const text = typeof params?.enhanced_prompt === "string"
+    ? params.enhanced_prompt
+      .replace(/\p{Cc}/gu, character => character === "\n" || character === "\t" ? character : "")
+      .replace(/https?:\/\/[^\s<>"']+/giu, "[link omitted]")
+    : undefined;
+  return {
+    model: "marketing_studio_video" as const,
+    mode: input.mode ?? "ugc",
+    ...(text === undefined ? {} : {
+      enhancedPrompt: text.slice(0, 8000),
+      ...(text.length > 8000 ? { enhancedPromptTruncated: true as const } : {}),
+    }),
   };
 }

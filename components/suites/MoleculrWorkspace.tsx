@@ -25,6 +25,7 @@ import { BrandKitEditor } from "./BrandKitEditor";
 import { ProductProfileEditor } from "./ProductProfileEditor";
 import { CreativeTemplateBrowser } from "./CreativeTemplateBrowser";
 import { ReferenceAd } from "./ReferenceAd";
+import { ConsumerMarketingVideo } from "./ConsumerMarketingVideo";
 import { EMPTY_REFERENCE_AD } from "@/lib/workbench/reference-ad";
 import {
   DEFAULT_CREATIVE,
@@ -53,6 +54,7 @@ export function MoleculrWorkspace({
   onBuildStoryboard,
   onReviewVariant,
   onPrepareVariants,
+  onConsumerVideoAsset,
 }: {
   project: Project;
   scope: string;
@@ -79,6 +81,7 @@ export function MoleculrWorkspace({
   onBuildStoryboard?: () => void;
   onReviewVariant?: (nodeId: string) => void;
   onPrepareVariants?: (kind: "image" | "video") => void;
+  onConsumerVideoAsset?: (asset: Asset, draftId: string) => Promise<void>;
 }) {
   const brief = project.moleculr ?? EMPTY_MOLECULR;
   const [hookIndex, setHookIndex] = useState(0);
@@ -94,7 +97,7 @@ export function MoleculrWorkspace({
       !!asset.soulIdentityId ||
       brief.castAssetIds.includes(asset.id),
   );
-  const outputs = variantAssets(project, brief);
+  const outputs = [...new Map([...variantAssets(project, brief), ...project.assets.filter(asset => asset.category === "Campaign video")].map(asset => [asset.id, asset])).values()];
   const hooks = brief.hooks.filter((hook) => hook.trim());
   const selectedHook = hooks[hookIndex] ?? hooks[0] ?? "";
   const selectedCast =
@@ -402,7 +405,7 @@ export function MoleculrWorkspace({
             onBuildStoryboard={onBuildStoryboard}
             onDesign={() => onPage("design")}
           />
-          {media === "video" && <ReferenceAd project={project} enabled={enabled} value={brief.referenceAd ?? EMPTY_REFERENCE_AD} onChange={referenceAd => onChange({ ...brief, referenceAd })}/>}
+          {media === "video" && <ReferenceAd project={project} scope={scope} onSave={onSave} enabled={enabled} value={brief.referenceAd ?? EMPTY_REFERENCE_AD} onChange={referenceAd => onChange({ ...brief, referenceAd })}/>}
           <section className="suite-panel">
             <div className="suite-section-heading">
               <div>
@@ -502,7 +505,7 @@ export function MoleculrWorkspace({
       )}
       {page === "variants" && (
         <>
-          {media === "video" && <ReferenceAd project={project} enabled={enabled} value={brief.referenceAd ?? EMPTY_REFERENCE_AD} onChange={referenceAd => onChange({ ...brief, referenceAd })}/>}
+          {media === "video" && <ReferenceAd project={project} scope={scope} onSave={onSave} enabled={enabled} value={brief.referenceAd ?? EMPTY_REFERENCE_AD} onChange={referenceAd => onChange({ ...brief, referenceAd })}/>}
           <section className="suite-panel">
             <div className="suite-section-heading">
               <div>
@@ -719,6 +722,7 @@ export function MoleculrWorkspace({
               onConfigure={onGenerate}
             />
           )}
+          {media === "video" && <ConsumerMarketingVideo key={`${scope}:${project.id}`} project={project} scope={scope} enabled={enabled} onSave={onSave} onAsset={onConsumerVideoAsset}/>}
           <OutputGallery assets={outputs} onSequence={onSequence} />
         </>
       )}

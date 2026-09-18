@@ -21,7 +21,12 @@ for (const mediaUrl of ["/api/uploads/clip", "/api/media/clip"]) {
             },
           },
         )
-        .outputText.replace('"./atomik-reference-types"', '"/types.js"');
+        .outputText.replace('"./atomik-reference-types"', '"/types.js"')
+        .replace('"./media-reference-input"', '"/media-reference.js"');
+      const mediaReference = ts.transpileModule(
+        await readFile("lib/workbench/media-reference-input.ts", "utf8"),
+        { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
+      ).outputText;
       const types = ts.transpileModule(
         await readFile("lib/workbench/atomik-reference-types.ts", "utf8"),
         {
@@ -41,6 +46,8 @@ for (const mediaUrl of ["/api/uploads/clip", "/api/media/clip"]) {
           });
         if (url.pathname === "/types.js")
           return route.fulfill({ contentType: "text/javascript", body: types });
+        if (url.pathname === "/media-reference.js")
+          return route.fulfill({ contentType: "text/javascript", body: mediaReference });
         if (
           url.pathname === "/api/uploads/clip" ||
           url.pathname === "/api/media/clip"

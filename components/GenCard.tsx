@@ -9,6 +9,7 @@ import { ParticlSpinner } from "./ParticlMark";
 import { IconDown, IconTrash, IconAudio } from "./Icons";
 import { useMoney } from "@/lib/price";
 import { failureKind, failureCopy } from "@/lib/jobState";
+import type { ProviderCreditQuote } from "@/lib/providerCreditQuote";
 
 export type Gen = {
   id: string;
@@ -36,6 +37,7 @@ export type Gen = {
    *  never both set: a row carries the unit its workspace spends, and the
    *  vendor's dollars are not that unit. */
   creditsBilled?: number | null;
+  providerCreditQuote?: ProviderCreditQuote | null;
   /** The prompt writer's share, and who wrote it. */
   refineCostUsd?: number | null;
   refineModel?: string | null;
@@ -169,7 +171,7 @@ export default function GenCard({
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-mute">
         <span>{shortLabel(gen.model)}</span>
         {p.resolution && <span>· {String(p.resolution).toUpperCase()}</span>}
-        {gen.costUsd != null && (
+        {(gen.providerCreditQuote || gen.costUsd != null || gen.creditsBilled != null) && (
           <span className="font-medium text-dim"
             title={gen.refineModel
               ? `${money.take(gen)} all-in, prompt writing included`

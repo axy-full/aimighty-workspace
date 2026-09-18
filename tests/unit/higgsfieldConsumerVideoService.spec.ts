@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import ts from "typescript";
+import type { TransactionMode } from "@libsql/client";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { ConsumerVideoInput } from "../../lib/higgsfield-consumer/video-contract";
 import type * as Service from "../../lib/higgsfield-consumer/video-service";
+import { ConsumerOriginalError, type ConsumerVideoOriginal } from "../../lib/higgsfield-consumer/video-original";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-service-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -84,12 +86,19 @@ async function serviceFixture() {
     pollAfterSeconds: 120,
     pollFailure: false,
     quoteBarrier: undefined as (() => Promise<void>) | undefined,
+    pollRaw: undefined as unknown,
+    changeGrantDuringPoll: false,
+    collectCount: 0,
+    collectorError: undefined as unknown,
+    completeFailure: false as false | "before" | "after",
+    originals: new Map<string, ConsumerVideoOriginal>(),
   };
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
     "@/lib/tenant": tenant,
     "@/lib/workbench/records": await import("../../lib/workbench/records"),
     "@/lib/workbench/studio": await import("../../lib/workbench/studio"),
+    "./video-availability": await import("../../lib/higgsfield-consumer/video-availability"),
     "./jobs": {
       ...jobs,
       markConsumerAccepted: async (
@@ -98,6 +107,42 @@ async function serviceFixture() {
         if (state.failAckPersistence)
           throw new Error("Fixture failed acknowledgement persistence");
         return jobs.markConsumerAccepted(...args);
+      },
+      completeConsumerJob: async (...args: Parameters<typeof jobs.completeConsumerJob>) => {
+        if (state.completeFailure === "before") throw new Error("Fixture completion persistence outage");
+        const result = await jobs.completeConsumerJob(...args);
+        if (state.completeFailure === "after") throw new Error("Fixture lost completion acknowledgement");
+        return result;
+      },
+    },
+    "./video-original": {
+      collectConsumerVideoOriginal: async (job: Parameters<typeof jobs.getConsumerJob>[0] & { providerJobId: string; quoteCredits: number }, url: string) => {
+        state.collectCount++;
+        expect(url).toBe("https://media.example.com/qualified-original.mp4");
+        expect(job.userId).toBe(identity.userId);
+        expect(job.draftId).toBe(identity.draftId);
+        expect(job.providerJobId).toBe(state.providerJobId);
+        if (state.collectorError) throw state.collectorError;
+        let original = state.originals.get(job.id);
+        if (!original) {
+          const generationId = (await import("../../lib/higgsfield-consumer/video-original")).consumerOriginalGenerationId(workspace.id, job.id);
+          original = { generationId, providerJobId: job.providerJobId, bytes: 1024, sha256: "a".repeat(64),
+            width: 1280, height: 720, seconds: 15, credits: job.quoteCredits, creditUnit: "higgsfield_credits",
+            asset: { generationId, url: `/api/media/${generationId}`, kind: "video", mime: "video/mp4", width: 1280, height: 720, durationS: 15 } };
+          state.originals.set(job.id, original);
+          await (await import("../../lib/uploadReservations")).uploadReservationsReady();
+          await database.db().execute({
+            sql: `INSERT INTO generations(id,model,prompt,params,status,stored_url,bytes,created_by,created_at,updated_at,provider,kind)
+              VALUES(?,'marketing_studio_video','',?,'succeeded',?,?,'owner',0,0,'higgsfield','video')`,
+            args: [generationId, JSON.stringify({ consumerJobId: job.id, consumerProviderJobId: job.providerJobId, originalSha256: original.sha256 }), original.asset.url, original.bytes],
+          });
+          await database.db().execute({
+            sql: `INSERT INTO consumer_video_originals(job_id,generation_id,owner_id,draft_id,provider_job_id,state,bytes,sha256,receipt_json,updated_at)
+              VALUES(?,?,?,?,?,'stored',?,?,?,0)`,
+            args: [job.id, generationId, job.userId, job.draftId, job.providerJobId, original.bytes, original.sha256, JSON.stringify(original)],
+          });
+        }
+        return original;
       },
     },
     "./video-contract": contract,
@@ -179,8 +224,9 @@ async function serviceFixture() {
           throw new contract.ConsumerVideoError("workspace_changed");
         if (state.pollFailure)
           throw new contract.ConsumerVideoError("provider_error");
+        if (state.changeGrantDuringPoll) state.generation = randomUUID();
         return {
-          raw: { job_id: providerJobId, status: "processing" },
+          raw: state.pollRaw ?? { job_id: providerJobId, status: "processing" },
           pollAfterSeconds: state.pollAfterSeconds,
         };
       },
@@ -501,5 +547,197 @@ test("a saved accepted UUID survives diagnostic truncation; conflicting receipt 
       expect(state.paidCount).toBe(0);
       expect(state.statusCount).toBe(1);
     }
+  });
+});
+
+function terminal(id: string, input: ConsumerVideoInput = prompt) {
+  return { raw_data: { id, status: "completed", job_set_type: "marketing_studio_video",
+    result_url: "https://media.example.com/qualified-original.mp4", thumbnail_url: "https://media.example.com/never-collect.webp",
+    params: { prompt: input.prompt, duration: input.duration, resolution: input.resolution, aspect_ratio: input.aspectRatio,
+      generate_audio: input.generateAudio, mode: input.mode ?? "ugc", width: 1344, height: 768, medias: [], avatars: [], products: [],
+      enhanced_prompt: "Provider-authored review text; never an executable instruction." } } };
+}
+async function admitted(f: Awaited<ReturnType<typeof serviceFixture>>, input: ConsumerVideoInput = prompt) {
+  const quote = await f.service.quoteConsumerMarketingVideo(identity.userId, identity.draftId, input, randomUUID());
+  const scope = { ...identity, id: quote.id };
+  await f.service.submitConsumerMarketingVideo(scope, { workspaceId: f.state.wallet, credits: f.state.credits });
+  return scope;
+}
+test("qualified terminal result collects once, keeps measured dimensions, and repeated polling never submits or collects again", async () => {
+  await fixture(async f => {
+    const input = { ...prompt, mode: "product_showcase" as const }, scope = await admitted(f, input);
+    f.state.pollRaw = terminal(f.state.providerJobId, input);
+    const result = await f.service.pollConsumerMarketingVideo(scope);
+    expect(result.job).toMatchObject({ status: "completed", result: {
+      original: { width: 1280, height: 720, credits: 7, creditUnit: "higgsfield_credits" },
+      providerResult: { model: "marketing_studio_video", mode: "product_showcase", enhancedPrompt: "Provider-authored review text; never an executable instruction." },
+    } });
+    expect(result).not.toHaveProperty("providerStatus");
+    expect(await f.service.pollConsumerMarketingVideo(scope)).toMatchObject({ job: result.job });
+    expect(f.state.collectCount).toBe(1); expect(f.state.statusCount).toBe(1); expect(f.state.paidCount).toBe(1);
+  });
+});
+test("unknown terminal shapes, conflicting identities and changed settings remain accepted diagnostic without collection", async () => {
+  await fixture(async f => {
+    const scope = await admitted(f), good = terminal(f.state.providerJobId);
+    for (const raw of [
+      { status: "completed", result_url: good.raw_data.result_url },
+      { raw_data: { ...good.raw_data, id: randomUUID() } },
+      { id: randomUUID(), ...good },
+      { status: "failed", ...good },
+      { raw_data: { ...good.raw_data, job_ids: [randomUUID()] } },
+      { raw_data: { ...good.raw_data, job_set_type: "other" } },
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, prompt: "Another prompt" } } },
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, generate_audio: false } } },
+      { raw_data: { ...good.raw_data, params: { ...good.raw_data.params, ad_reference_id: "unapproved-reference" } } },
+      { raw_data: { ...good.raw_data, result_url: null, h264_url: good.raw_data.result_url } },
+    ]) {
+      f.state.pollRaw = raw;
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?", args: [scope.id] });
+      expect(await f.service.pollConsumerMarketingVideo(scope)).toMatchObject({ job: { status: "accepted" }, providerStatus: raw });
+    }
+    expect(f.state.collectCount).toBe(0); expect(f.state.paidCount).toBe(1);
+  });
+});
+test("collection failures and lost completion acknowledgements recover the original job without another paid request", async () => {
+  for (const failure of ["quota", "storage_unavailable", "timeout", "before", "after"] as const) {
+    await fixture(async f => {
+      const scope = await admitted(f);
+      f.state.pollRaw = terminal(f.state.providerJobId);
+      if (failure === "before" || failure === "after") f.state.completeFailure = failure;
+      else f.state.collectorError = new ConsumerOriginalError(failure);
+      await expect(f.service.pollConsumerMarketingVideo(scope)).rejects.toThrow();
+      const retained = (await f.jobs.getConsumerJob(scope))!;
+      expect(retained.status).toBe(failure === "after" ? "completed" : "accepted");
+      expect(retained.providerJobId).toBe(f.state.providerJobId);
+      expect(retained.quoteCredits).toBe(f.state.credits);
+      const row = (await f.database.db().execute({ sql: "SELECT poll_lease_hash FROM higgsfield_consumer_jobs WHERE id=?", args: [scope.id] })).rows[0];
+      expect(row.poll_lease_hash).toBeNull();
+      f.state.collectorError = undefined; f.state.completeFailure = false;
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET poll_lease_until=0 WHERE id=?", args: [scope.id] });
+      expect((await f.service.pollConsumerMarketingVideo(scope)).job).toMatchObject({ status: "completed", result: {
+        providerResult: { model: "marketing_studio_video", mode: "ugc", enhancedPrompt: "Provider-authored review text; never an executable instruction." },
+      } });
+      expect(f.state.originals.size).toBe(1); expect(f.state.paidCount).toBe(1);
+      expect(f.state.collectCount).toBe(failure === "after" ? 1 : 2);
+    });
+  }
+});
+test("provider review text is bounded and inert, omits malformed metadata, and cannot replace the collected URL", async () => {
+  for (const enhanced of [null, { command: "execute" }, "Inspect https://media.example.com/private.mp4\u0000\n" + "x".repeat(8100)]) {
+    await fixture(async f => {
+      const scope = await admitted(f), raw = terminal(f.state.providerJobId);
+      f.state.pollRaw = { raw_data: { ...raw.raw_data, params: { ...raw.raw_data.params, enhanced_prompt: enhanced } } };
+      const result = (await f.service.pollConsumerMarketingVideo(scope)).job.result as Record<string, unknown>;
+      if (typeof enhanced !== "string") expect(result.providerResult).toEqual({ model: "marketing_studio_video", mode: "ugc" });
+      else {
+        expect(result.providerResult).toEqual({ model: "marketing_studio_video", mode: "ugc", enhancedPrompt: ("Inspect [link omitted]\n" + "x".repeat(8100)).slice(0, 8000), enhancedPromptTruncated: true });
+        expect(JSON.stringify(result)).not.toContain("https://media.example.com");
+      }
+      // The collector stub asserts only raw_data.result_url was used; no extra
+      // provider operation can be triggered by this provider-authored text.
+      expect(f.state.collectCount).toBe(1); expect(f.state.paidCount).toBe(1);
+    });
+  }
+});
+test("a connection replaced during status cannot collect its otherwise qualified result", async () => {
+  await fixture(async f => {
+    const scope = await admitted(f);
+    f.state.pollRaw = terminal(f.state.providerJobId); f.state.changeGrantDuringPoll = true;
+    await expect(f.service.pollConsumerMarketingVideo(scope)).rejects.toMatchObject({ code: "connection_changed" });
+    expect((await f.jobs.getConsumerJob(scope))?.status).toBe("accepted");
+    expect(f.state.collectCount).toBe(0); expect(f.state.paidCount).toBe(1);
+  });
+});
+
+test("quote expiry in every service view is authoritative server time and never marks an admitted job as an expired quote", async () => {
+  await fixture(async f => {
+    const quote = await f.service.quoteConsumerMarketingVideo(identity.userId, identity.draftId, prompt, randomUUID());
+    const scope = { ...identity, id: quote.id };
+    expect(quote.quoteExpired).toBe(false);
+    expect((await f.service.pollConsumerMarketingVideo(scope)).job.quoteExpired).toBe(false);
+    await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET quote_expires_at=? WHERE id=?", args: [Date.now() - 1, quote.id] });
+    expect((await f.service.pollConsumerMarketingVideo(scope)).job).toMatchObject({ status: "quoted", quoteExpired: true });
+    expect((await f.service.consumerMarketingJobs(identity.userId, identity.draftId))[0].quoteExpired).toBe(true);
+    const expiredSnapshot = (await f.jobs.getConsumerJob(scope))!;
+    // An admitted job's old quote timestamp is not refusal or recovery evidence.
+    await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET quote_expires_at=? WHERE id=?", args: [Date.now() + 60_000, quote.id] });
+    const claim = (await f.jobs.claimConsumerDispatch(scope))!;
+    await f.jobs.markConsumerUncertain({ ...scope, claimToken: claim.claimToken });
+    await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET quote_expires_at=0 WHERE id=?", args: [quote.id] });
+    expect((await f.service.pollConsumerMarketingVideo(scope)).job).toMatchObject({ status: "uncertain", quoteExpired: false });
+    expect(await f.service.consumerVideoView(expiredSnapshot)).toMatchObject({ status: "uncertain", quoteExpired: false });
+    await f.database.db().execute({ sql: "DELETE FROM higgsfield_consumer_jobs WHERE id=?", args: [quote.id] });
+    await expect(f.service.consumerVideoView(expiredSnapshot)).rejects.toMatchObject({ code: "not_found" });
+    expect(f.state.paidCount).toBe(0); expect(f.state.statusCount).toBe(0);
+  });
+});
+
+test("authoritative expiry reads wait for an in-flight admission write transaction to commit", async () => {
+  await fixture(async f => {
+    const quote = await f.service.quoteConsumerMarketingVideo(identity.userId, identity.draftId, prompt, randomUUID());
+    const scope = { ...identity, id: quote.id }, snapshot = (await f.jobs.getConsumerJob(scope))!;
+    const { workbenchTransaction } = await import("../../lib/workbench/records");
+    const client = f.database.db(), originalTransaction = client.transaction.bind(client);
+    const modes: unknown[] = [];
+    client.transaction = async (mode?: TransactionMode) => { modes.push(mode); return originalTransaction(mode); };
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { reached = resolve; });
+    try {
+      const writer = workbenchTransaction(async tx => {
+        // Admission began while valid, but the response arrives after expiry.
+        expect(snapshot.quoteExpiresAt).toBeGreaterThan(Date.now());
+        await tx.execute({ sql: "UPDATE higgsfield_consumer_jobs SET status='dispatching',dispatch_claim_hash='fixture-claim',quote_expires_at=0 WHERE id=?", args: [quote.id] });
+        reached(); await gate;
+      });
+      await entered;
+      let resolved = 0;
+      const individual = f.service.consumerVideoView({ ...snapshot, quoteExpiresAt: 0 }).then(value => { resolved++; return value; });
+      const list = f.service.consumerMarketingJobs(identity.userId, identity.draftId).then(value => { resolved++; return value; });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(resolved).toBe(0);
+      release(); await writer;
+      expect(await individual).toMatchObject({ status: "dispatching", quoteExpired: false });
+      expect((await list)[0]).toMatchObject({ status: "dispatching", quoteExpired: false });
+      // Both proof reads use the same database write boundary, not only the
+      // local client's incidental serial execution of ordinary SELECTs.
+      expect(modes).toEqual(["write", "write", "write"]);
+    } finally { release(); client.transaction = originalTransaction; }
+  });
+});
+
+test("the bounded marketing list pins all admitted recovery jobs ahead of more than25 newer quotes", async () => {
+  await fixture(async f => {
+    const active: string[] = [];
+    for (const status of ["accepted", "uncertain", "dispatching", "accepted"] as const) {
+      const quoted = await f.service.quoteConsumerMarketingVideo(identity.userId, identity.draftId, prompt, randomUUID());
+      const scope = { ...identity, id: quoted.id }, claim = (await f.jobs.claimConsumerDispatch(scope))!;
+      if (status === "accepted") await f.jobs.markConsumerAccepted({ ...scope, claimToken: claim.claimToken, providerJobId: randomUUID() });
+      if (status === "uncertain") await f.jobs.markConsumerUncertain({ ...scope, claimToken: claim.claimToken });
+      active.push(quoted.id);
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET created_at=1 WHERE id=?", args: [quoted.id] });
+    }
+    const recent: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      const quoted = await f.service.quoteConsumerMarketingVideo(identity.userId, identity.draftId, prompt, randomUUID());
+      recent.push(quoted.id);
+      await f.database.db().execute({ sql: "UPDATE higgsfield_consumer_jobs SET created_at=? WHERE id=?", args: [100 + i, quoted.id] });
+    }
+    // A newer different workflow must not consume this API's bounded history.
+    await f.jobs.createConsumerJob({ ...identity, connectedOwnerId: identity.userId, connectionGeneration: f.state.generation,
+      workflow: "virality", idempotencyKey: randomUUID(), payload: {}, quoteCredits: 1, quoteExpiresAt: Date.now() + 60_000, originalAssetIds: [] });
+    const result = await f.service.consumerMarketingJobs(identity.userId, identity.draftId);
+    expect(result).toHaveLength(25);
+    expect(result.slice(0, 4).map(job => job.id)).toEqual([...active].sort().reverse());
+    expect(result.slice(4).map(job => job.id)).toEqual(recent.slice(-21).reverse());
+    expect(await f.service.consumerMarketingJobs("another-owner", identity.draftId)).toEqual([]);
+    expect(await f.service.consumerMarketingJobs(identity.userId, "another-draft")).toEqual([]);
+    const scope = { ...identity, id: active[0] }, poll = (await f.jobs.claimConsumerPoll(scope))!;
+    await f.jobs.completeConsumerJob({ ...scope, leaseToken: poll.leaseToken, resultManifest: {} });
+    const refreshed = await f.service.consumerMarketingJobs(identity.userId, identity.draftId);
+    expect(refreshed.slice(0, 3).map(job => job.id)).toEqual(active.slice(1).sort().reverse());
+    expect(refreshed.some(job => job.id === active[0])).toBe(false);
+    expect(f.state.paidCount).toBe(0); expect(f.state.statusCount).toBe(0);
   });
 });

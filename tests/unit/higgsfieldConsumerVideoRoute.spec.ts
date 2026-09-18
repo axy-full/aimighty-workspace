@@ -11,6 +11,7 @@ import { ConsumerOAuthError } from '../../lib/higgsfield-consumer/oauth';
 import { ConsumerDiscoveryError } from '../../lib/higgsfield-consumer/mcp';
 import { ConsumerJobError } from '../../lib/higgsfield-consumer/jobs';
 import * as contract from '../../lib/higgsfield-consumer/video-contract';
+import { ConsumerOriginalError } from '../../lib/higgsfield-consumer/video-original';
 
 const key = '11111111-1111-4111-8111-111111111111';
 const wallet = '22222222-2222-4222-8222-222222222222';
@@ -55,6 +56,7 @@ async function fixture() {
     '@/lib/higgsfield-consumer/mcp': { ConsumerDiscoveryError },
     '@/lib/higgsfield-consumer/jobs': { ConsumerJobError },
     '@/lib/higgsfield-consumer/video-contract': contract,
+    '@/lib/higgsfield-consumer/video-original': { ConsumerOriginalError },
     '@/lib/higgsfield-consumer/video-service': {
       ConsumerVideoServiceError: ServiceError, MARKETING_VIDEO_REHEARSAL: input,
       ensureConsumerRehearsal: service('rehearsal', 'rehearsal-draft'),
@@ -194,5 +196,18 @@ test('known failures preserve actionable status while unknown service details re
     expect(response.status).toBe(status);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(await response.text()).not.toContain('private provider token');
+  }
+});
+
+test('original collection errors remain recoverable and expose only fixed safe categories', async () => {
+  const f = await fixture();
+  for (const [code, http] of [['quota',507],['busy',409],['conflict',409],['deleted',409],['invalid_video',422],['timeout',504],['storage_unavailable',503],['not_found',404]] as const) {
+    const error = new ConsumerOriginalError(code);
+    Object.assign(error, { cause: new Error('PRIVATE_URL_AND_TOKEN') });
+    f.fail(error);
+    const response = await f.request('POST', status);
+    expect(response.status).toBe(http);
+    expect(await response.json()).toEqual({ code: `original_${code}`, error: error.message });
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   }
 });

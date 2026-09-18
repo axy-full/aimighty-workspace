@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import ConsumerCreditActivity from "@/components/management/ConsumerCreditActivity";
 import Link from "next/link";
 import {
   Activity,
@@ -239,7 +240,7 @@ function UsageContent() {
       actions={
         <button
           className="management-button"
-          disabled={!data}
+          disabled={!data || tab === "higgsfield"}
           onClick={exportCsv}
         >
           <Download size={14} />
@@ -247,7 +248,7 @@ function UsageContent() {
         </button>
       }
     >
-      {error && (
+      {tab !== "higgsfield" && error && (
         <ManagementNotice error>
           {error}
           <button
@@ -258,14 +259,43 @@ function UsageContent() {
           </button>
         </ManagementNotice>
       )}
-      {!data && !error && (
+      {tab !== "higgsfield" && !data && !error && (
         <ManagementNotice>
           {session.signedIn
             ? "Reading workspace usage…"
             : "Sign in to see your workspace activity."}
         </ManagementNotice>
       )}
-      {data && (
+      <div className="management-tabs" aria-label="Usage views">
+        <button
+          aria-pressed={tab === "overview"}
+          onClick={() => setTab("overview")}
+        >
+          Overview
+        </button>
+        <button
+          aria-pressed={tab === "production"}
+          onClick={() => setTab("production")}
+        >
+          Project detail
+        </button>
+        {!money.inCredits && (
+          <button
+            aria-pressed={tab === "engines"}
+            onClick={() => setTab("engines")}
+          >
+            Engine balances
+          </button>
+        )}
+        <button
+          aria-pressed={tab === "higgsfield"}
+          onClick={() => setTab("higgsfield")}
+        >
+          My Higgsfield activity
+        </button>
+      </div>
+      {tab === "higgsfield" && <ConsumerCreditActivity />}
+      {tab !== "higgsfield" && data && (
         <>
           <div className="management-grid four">
             <ManagementStat
@@ -303,28 +333,6 @@ function UsageContent() {
                   : "Billed through connected providers"
               }
             />
-          </div>
-          <div className="management-tabs" aria-label="Usage views">
-            <button
-              aria-pressed={tab === "overview"}
-              onClick={() => setTab("overview")}
-            >
-              Overview
-            </button>
-            <button
-              aria-pressed={tab === "production"}
-              onClick={() => setTab("production")}
-            >
-              Project detail
-            </button>
-            {!money.inCredits && (
-              <button
-                aria-pressed={tab === "engines"}
-                onClick={() => setTab("engines")}
-              >
-                Engine balances
-              </button>
-            )}
           </div>
           {tab === "production" ? (
             <ProductionPerformance />
@@ -991,9 +999,7 @@ function ProductionPerformance() {
         description="The most repeated shots appear first."
       >
         {!project ? (
-          <p className="management-muted">
-            Select a project to see its shots.
-          </p>
+          <p className="management-muted">Select a project to see its shots.</p>
         ) : !shotRows.length ? (
           <p className="management-muted">
             No video takes filed against a shot yet.

@@ -475,11 +475,13 @@ export const AUDIO_LABELS: Record<string, { label: string; short: string }> = {
 
 /** A readable name for any model id, catalogue or not. */
 export function modelLabel(modelId: string): string {
+  if (modelId === "marketing_studio_video") return "Higgsfield Marketing Video";
   return MODELS.find((m) => m.id === modelId)?.label ?? AUDIO_LABELS[modelId]?.label ?? modelId;
 }
 
 /** Short badge label for any model id — safe on retired/unknown ids. */
 export function shortLabel(modelId: string): string {
+  if (modelId === "marketing_studio_video") return "Marketing Video";
   return MODELS.find((m) => m.id === modelId)?.short
     ?? AUDIO_LABELS[modelId]?.short
     ?? (modelId.includes("2-5") ? "SD 2.5" : modelId.includes("2-0") ? "SD 2.0"

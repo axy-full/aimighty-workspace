@@ -6,6 +6,7 @@ import { SUITE_AGENT_COPY } from '@/lib/workbench/suite-agent-plan';
 import type { Project } from '@/lib/workbench/studio';
 import { prepareAtomikVideoFrames } from '@/lib/workbench/atomik-video-frames';
 import { ATOMIK_MAX_VISUALS, type AtomikVideoFrame } from '@/lib/workbench/atomik-reference-types';
+import { REFERENCE_AD_FRAMES, REFERENCE_AD_LIMITATION, type ReferenceAnalysisSource } from '@/lib/workbench/reference-ad-analysis';
 import { CREW } from '@/lib/workbench/crew';
 import {
   AtomikPendingConflict, atomikPendingInput, persistPendingAtomik, readPendingAtomik,
@@ -16,7 +17,7 @@ import { Button } from './ui/button';
 import { studioRequest } from './GenerationDialog';
 import { ModelPicker, EffortPicker, effortLabel, thinkingModelName, type ThinkingModel } from '@/components/atomik/ModelPicker';
 
-export type AtomikRunTarget = { suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
+export type AtomikRunTarget = { referenceAd?:ReferenceAnalysisSource; suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
 type Quote = { estimateCredits: number; model: string; effort?: string; key: string };
 
 export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued }: {
@@ -30,6 +31,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   onQueued: (id: string) => void;
 }) {
   const [suite, setSuite] = useState(target.suite);
+  const [referenceAd, setReferenceAd] = useState(target.referenceAd);
   const [request, setRequest] = useState(target.request);
   const [model, setModel] = useState(target.model || 'auto');
   const [effort, setEffort] = useState(target.effort || 'auto');
@@ -51,9 +53,9 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   useEffect(() => { callbacks.current = { onSave, onClose, onQueued }; }, [onSave, onClose, onQueued]);
   const member = CREW.find(c => c.id === role);
   const selectedAssets = [...project.assets, ...(project.sharedAssets ?? [])].filter((asset, index, assets) => refs.includes(asset.id) && assets.findIndex(item => item.id === asset.id) === index);
-  const referenceKey = JSON.stringify({ scope, projectId: project.id, assets: selectedAssets.map(asset => ({ id: asset.id, name: asset.name, kind: asset.kind, url: asset.url, version: asset.version, uploadId: asset.uploadId, generationId: asset.generationId })) });
+  const referenceKey = JSON.stringify({ scope, projectId: project.id, referenceAd, assets: selectedAssets.map(asset => ({ id: asset.id, name: asset.name, kind: asset.kind, url: asset.url, version: asset.version, uploadId: asset.uploadId, generationId: asset.generationId })) });
   const readyFrames = frameState?.key === referenceKey && !frameState.error ? frameState.frames : null;
-  const quoteKey = JSON.stringify({ ...(suite ? { suite } : {}), projectId: project.id, request, role, model, effort, depth, refs, requestId, ...(readyFrames?.length ? { videoFrames: readyFrames } : {}) });
+  const quoteKey = JSON.stringify({ ...(referenceAd ? { referenceAd } : {}), ...(suite ? { suite } : {}), projectId: project.id, request, role, model, effort, depth, refs, requestId, ...(readyFrames?.length ? { videoFrames: readyFrames } : {}) });
   const shownQuote = quote?.key === quoteKey ? quote : null;
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       if (!active) return;
       if (!saved) { setLoaded(true); return; }
       const input = atomikPendingInput(saved);
-      setSuite(input.suite); setPending(saved); setRequest(input.request); setRequestId(saved.requestId); setModel(input.model);
+      setSuite(input.suite); setReferenceAd(input.referenceAd); setPending(saved); setRequest(input.request); setRequestId(saved.requestId); setModel(input.model);
       setDepth(input.depth); setEffort(input.effort || 'auto'); setRole(input.role); setRefs(input.refs);
       try {
         const state = await studioRequest<{ jobs: AtomikRecoveryJob[] }>('/api/workbench/atomik?' + new URLSearchParams({ projectId: project.id, requestId: saved.requestId }), { headers: { 'X-Workbench-Scope': scope } });
@@ -86,11 +88,12 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
     const controller = new AbortController();
     void (async () => {
       try {
-        const { assets } = JSON.parse(referenceKey);
-        if (assets.reduce((count: number, asset: { kind: string }) => count + (asset.kind === 'video' ? 3 : asset.kind === 'image' ? 1 : 0), 0) > ATOMIK_MAX_VISUALS) throw new Error('Use at most six images or sampled frames. Each selected video uses three frames.');
+        const { assets, referenceAd: analysis } = JSON.parse(referenceKey);
+        if (analysis && (assets.length !== 1 || assets[0].kind !== 'video' || assets[0].id !== analysis.assetId)) throw new Error('Choose one original video for reference-ad analysis.');
+        if (assets.reduce((count: number, asset: { kind: string }) => count + (asset.kind === 'video' ? analysis ? REFERENCE_AD_FRAMES : 3 : asset.kind === 'image' ? 1 : 0), 0) > (analysis ? REFERENCE_AD_FRAMES : ATOMIK_MAX_VISUALS)) throw new Error('Use at most six images or sampled frames. Each selected video uses three frames.');
         if (assets.some((asset: { kind: string }) => asset.kind === 'video') && !(await callbacks.current.onSave())) throw new Error('Save this project before preparing video references.');
         if (controller.signal.aborted) return;
-        const frames = await prepareAtomikVideoFrames(assets, project.id, scope, controller.signal);
+        const frames = await prepareAtomikVideoFrames(assets, project.id, scope, controller.signal, !!analysis);
         if (!controller.signal.aborted) setFrameState({ key: referenceKey, frames });
       } catch (e) { if (!controller.signal.aborted) setFrameState({ key: referenceKey, frames: [], error: e instanceof Error ? e.message : 'The video references could not be prepared.' }); }
     })();
@@ -118,7 +121,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
 
   function restore(record: PendingAtomikRequest) {
     const input = atomikPendingInput(record);
-    setSuite(input.suite); setPending(record); setRequest(input.request); setRequestId(record.requestId); setModel(input.model);
+    setSuite(input.suite); setReferenceAd(input.referenceAd); setPending(record); setRequest(input.request); setRequestId(record.requestId); setModel(input.model);
     setDepth(input.depth); setEffort(input.effort || 'auto'); setRole(input.role); setRefs(input.refs);
   }
   function accept(record: PendingAtomikRequest, job: AtomikRecoveryJob) {
@@ -181,7 +184,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
     <DialogContent className="ps ps-dialog" showCloseButton={!busy}>
       <DialogHeader>
-        <DialogTitle>{suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Marketing Studio' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
+        <DialogTitle>{referenceAd ? 'Analyze reference ad' : suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Marketing Studio' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
         <DialogDescription>{project.name} · {refs.length} selected reference{refs.length === 1 ? '' : 's'}</DialogDescription>
       </DialogHeader>
       <div className="dialog-fields">
@@ -203,7 +206,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
             </select>
           </label>
         </div>
-        <p className="muted small-copy">Includes the saved {role === 'marketing' ? 'campaign brief, project brief, ' : 'brief, '}script, uploaded TXT and actual image references. Selected videos contribute three sampled stills. Images are read as 512px review copies; audio, PDFs and links supply descriptions only.</p>
+        <p className="muted small-copy">{referenceAd ? REFERENCE_AD_LIMITATION + ' Includes the saved campaign brief. Each sampled frame is priced in the estimate.' : <>Includes the saved {role === 'marketing' ? 'campaign brief, project brief, ' : 'brief, '}script, uploaded TXT and actual image references. Selected videos contribute three sampled stills. Images are read as 512px review copies; audio, PDFs and links supply descriptions only.</>}</p>
         {shownQuote && !pending && <p className="small-copy">{thinkingModelName(shownQuote.model, models)} · {effortLabel(shownQuote.effort ?? effort, models.find(option => option.id === shownQuote.model))} · up to {shownQuote.estimateCredits} cr reserved</p>}
         {pending && <p className="small-copy">Original estimate: up to {atomikPendingInput(pending).maxCredits} cr · {effortLabel(atomikPendingInput(pending).effort, models.find(option => option.id === model))}.</p>}
         {!pending && !readyFrames && !frameState?.error && <p className="small-copy" role="status">Preparing visual references before the estimate…</p>}

@@ -1,8 +1,10 @@
 "use client";
 import type { Asset } from "./studio";
+import { mediaReferenceIdentity } from "./media-reference-input";
 import {
   ATOMIK_IMAGE_EDGE,
   atomikFrameTimes,
+  referenceAdFrameTimes,
   type AtomikVideoFrame,
 } from "./atomik-reference-types";
 
@@ -47,8 +49,11 @@ function mediaEvent(
 export async function sampleAtomikVideo(
   asset: Asset,
   signal: AbortSignal,
-): Promise<{ blob: Blob; timeSeconds: number }[]> {
-  if (!/^\/api\/(?:media|uploads|workbench\/media)\/[\w-]+$/.test(asset.url))
+  referenceAd = false,
+): Promise<{ blob: Blob; timeSeconds: number; durationSeconds?: number }[]> {
+  const identity = referenceAd ? mediaReferenceIdentity(asset) : null;
+  const sourceUrl = identity ? 'genId' in identity ? `/api/media/${identity.genId}` : `/api/uploads/${identity.uploadId}` : asset.url;
+  if (!/^\/api\/(?:media|uploads|workbench\/media)\/[\w-]+$/.test(sourceUrl))
     throw new Error(
       "Upload " +
         asset.name +
@@ -67,14 +72,14 @@ export async function sampleAtomikVideo(
         // Private generated media normally redirects to Blob's CDN. Canvas
         // extraction must keep the response on our authenticated origin.
         // Upload and legacy-upload handlers already return their bytes here.
-        video.src = asset.url.startsWith("/api/media/")
-          ? asset.url + "?stream=1"
-          : asset.url;
+        video.src = sourceUrl.startsWith("/api/media/")
+          ? sourceUrl + "?stream=1"
+          : sourceUrl;
         video.load();
       },
       signal,
     );
-    const times = atomikFrameTimes(video.duration);
+    const times = referenceAd ? referenceAdFrameTimes(video.duration) : atomikFrameTimes(video.duration);
     if (!video.videoWidth || !video.videoHeight)
       throw new Error("This video has no decodable picture track.");
     const scale = Math.min(
@@ -107,7 +112,7 @@ export async function sampleAtomikVideo(
         ),
       );
       if (signal.aborted) throw new Error("Video preparation was cancelled.");
-      frames.push({ blob, timeSeconds });
+      frames.push({ blob, timeSeconds, ...(referenceAd ? { durationSeconds: video.duration } : {}) });
     }
     return frames;
   } finally {
@@ -124,10 +129,11 @@ export async function prepareAtomikVideoFrames(
   projectId: string,
   scope: string,
   signal: AbortSignal,
+  referenceAd = false,
 ): Promise<AtomikVideoFrame[]> {
   const frames: AtomikVideoFrame[] = [];
   for (const asset of assets.filter((a) => a.kind === "video")) {
-    const sampled = await sampleAtomikVideo(asset, signal);
+    const sampled = await sampleAtomikVideo(asset, signal, referenceAd);
     for (const frame of sampled) {
       if (signal.aborted) throw new Error("Video preparation was cancelled.");
       const response = await fetch(
@@ -147,6 +153,7 @@ export async function prepareAtomikVideoFrames(
         assetId: asset.id,
         uploadId: data.id,
         timeSeconds: frame.timeSeconds,
+        ...(frame.durationSeconds === undefined ? {} : { durationSeconds: frame.durationSeconds }),
       });
     }
   }

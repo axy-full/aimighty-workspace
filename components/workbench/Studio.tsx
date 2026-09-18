@@ -1029,6 +1029,10 @@ export default function Studio({
   }
   function applyPlan(plan: Plan) {
     if (plan.applied) return;
+    if (plan.referenceAdAnalysis) {
+      toast.error('Review and apply this analysis in Moleculr’s Reference ad panel so its selected original can be verified.');
+      return;
+    }
     if (plan.suiteAgent) {
       try { const next=applySuiteAgentPlan(pRef.current,plan,()=>uid('agent')); change(()=>next);setStage('canvas');setScope('My space');toast.success('Production actions added to Rig. Review each generation before rendering.'); }
       catch(error){toast.error(error instanceof Error?error.message:'This proposal could not be applied.');}
@@ -1250,6 +1254,17 @@ export default function Studio({
       change(old=>({...old,assets:[...old.assets,asset]}));
       if(!(await ensureSaved(draftId)))throw new Error('The poster is in your local library, but the project is not saved yet. Keep it open and retry saving.');
     }finally{uploadingRef.current--;setUploading(uploadingRef.current>0);}
+  }
+  async function attachConsumerVideo(asset:Asset,draftId:string){
+    if(transitioningRef.current||!readyRef.current||!signedIn||pRef.current.id!==draftId||activeStorageKey.current!==storageKey)throw new Error('Return to the original project and workspace before adding this video.');
+    if(asset.kind!=='video'||!asset.generationId||!/^gen_hfc_[a-f0-9]{40}$/.test(asset.generationId)||asset.url!==`/api/media/${asset.generationId}`)throw new Error('A verified stored video original is required.');
+    const existing=pRef.current.assets.find(item=>item.generationId===asset.generationId);
+    if(!existing){
+      if(pRef.current.assets.length>=500)throw new Error('This project has reached its 500-asset limit.');
+      if(pRef.current.assets.some(item=>item.id===asset.id))throw new Error('This original conflicts with an existing project asset.');
+      change(old=>({...old,assets:[...old.assets,asset]}));
+    }
+    if(!(await ensureSaved(draftId)))throw new Error('The original is in your local library, but the project is not saved yet. Keep it open and retry saving.');
   }
   function buildCampaignStoryboard(){
     if(transitioningRef.current||!readyRef.current||!signedIn)return;
@@ -1617,7 +1632,7 @@ export default function Studio({
                     </div>
                   </div>
                 )}
-                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={`moleculr:${p.id}`} scope={storageKey} project={p} page={moleculrPage} enabled={ready&&signedIn&&!transitioning} marketing={<><SuiteAgentPanel key={`${p.id}:moleculr`} scope={storageKey} suite="moleculr" project={p} enabled={ready&&signedIn&&!transitioning} onSave={()=>ensureSaved(p.id)} onApply={applyPlan} onQueued={()=>void jobs.refresh()}/>{renderMarketingPanel()}</>} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onSave={()=>ensureSaved(p.id)} onImportRemote={importMoleculrImage} onCreateAvatar={createCampaignAvatar} onBuildStoryboard={buildCampaignStoryboard} onReviewVariant={reviewCampaignVariant} onPrepareVariants={prepareCampaignVariants} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
+                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={`moleculr:${p.id}`} scope={storageKey} project={p} page={moleculrPage} enabled={ready&&signedIn&&!transitioning} marketing={<><SuiteAgentPanel key={`${p.id}:moleculr`} scope={storageKey} suite="moleculr" project={p} enabled={ready&&signedIn&&!transitioning} onSave={()=>ensureSaved(p.id)} onApply={applyPlan} onQueued={()=>void jobs.refresh()}/>{renderMarketingPanel()}</>} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onSave={()=>ensureSaved(p.id)} onImportRemote={importMoleculrImage} onCreateAvatar={createCampaignAvatar} onBuildStoryboard={buildCampaignStoryboard} onReviewVariant={reviewCampaignVariant} onPrepareVariants={prepareCampaignVariants} onConsumerVideoAsset={attachConsumerVideo} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
                 {!home && !welcomeChoice && suite==='moleculr' && moleculrPage==='design' && <PosterDesigner key={`poster:${p.id}`} project={p} scope={storageKey} enabled={ready&&signedIn&&!transitioning} onChange={poster=>change(old=>({...old,moleculr:{...(old.moleculr??EMPTY_MOLECULR),poster}}))} onSaveAsset={saveMoleculrPoster}/>}
                 {!home && !welcomeChoice && suite==='particl' && (
                   <>

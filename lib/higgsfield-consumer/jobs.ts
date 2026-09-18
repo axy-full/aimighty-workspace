@@ -352,6 +352,16 @@ export async function getConsumerJob(
   const row = await rowFor(db(), input);
   return row ? asJob(row) : null;
 }
+/** Expiry is actionable only after any earlier dispatch transaction has
+ * committed. A plain remote/WAL read can still observe its old quoted row. */
+export async function readConsumerJobAfterAdmissions(input: ConsumerJobScope): Promise<ConsumerJob | null> {
+  jobScope(input);
+  await consumerJobsReady();
+  return workbenchTransaction(async tx => {
+    const row = await rowFor(tx, input);
+    return row ? asJob(row) : null;
+  });
+}
 /** Look up a prior quote before making another provider pricing request. */
 export async function getConsumerJobByKey(
   input: ConsumerScope & { idempotencyKey: string },
@@ -368,6 +378,24 @@ export async function getConsumerJobByKey(
   return row ? asJob(row) : null;
 }
 export type ConsumerJobCursor = { createdAt: number; id: string };
+/** Pin every admitted recoverable job (workspace capacity is four), so quote
+ * history cannot hide a paid operation that still needs reconciliation. */
+export async function listConsumerRecoveryJobs(
+  input: ConsumerScope & { workflow: ConsumerWorkflow; limit?: number },
+): Promise<ConsumerJob[]> {
+  scope(input);
+  const limit = input.limit ?? 25;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 ||
+      !["marketing-video", "reference-match", "virality"].includes(input.workflow)) invalid();
+  await consumerJobsReady();
+  const rows = await workbenchTransaction(tx => tx.execute({
+    sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=?
+      ORDER BY CASE WHEN status IN ('dispatching','accepted','uncertain') AND dispatch_claim_hash IS NOT NULL THEN 0
+        WHEN status IN ('dispatching','accepted','uncertain') THEN 1 ELSE 2 END,created_at DESC,id DESC LIMIT ?`,
+    args: [input.userId, input.draftId, input.workflow, limit],
+  }));
+  return rows.rows.map(asJob);
+}
 export async function listConsumerJobs(
   input: ConsumerScope & { limit?: number; before?: ConsumerJobCursor },
 ): Promise<{ items: ConsumerJob[]; nextCursor: ConsumerJobCursor | null }> {

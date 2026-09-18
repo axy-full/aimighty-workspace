@@ -4,12 +4,14 @@ import { originalAssetDownload } from "./original-asset";
 import { mediaReferenceIdentity } from "./media-reference-input";
 import { videoReferenceProblem } from "../generationReferences";
 import type { ModelDef } from "../models";
+import { referenceAdAnalysisSchema } from "./reference-ad-analysis";
 
 /** A user's reference and direction, not provider analysis or permission to execute. */
 export const referenceAdSchema = z.object({
   assetId: z.string().min(1).max(100).optional(),
   notes: z.string().max(2000),
   direction: z.string().max(6000),
+  analysis: referenceAdAnalysisSchema.optional(),
 }).strict();
 export type ReferenceAdConfig = z.infer<typeof referenceAdSchema>;
 export const EMPTY_REFERENCE_AD: ReferenceAdConfig = { notes: "", direction: "" };
@@ -48,7 +50,7 @@ export function resolveReferenceAd(
 export function normalizeReferenceAd(project: Pick<Project, "assets">, value: ReferenceAdConfig): ReferenceAdConfig {
   const parsed = referenceAdSchema.parse(value);
   if (!parsed.assetId || resolveReferenceAd(project, parsed)) return parsed;
-  return { notes: parsed.notes, direction: parsed.direction };
+  return { notes: parsed.notes, direction: parsed.direction, ...(parsed.analysis ? { analysis: parsed.analysis } : {}) };
 }
 
 /** No array or URL input can select extra or foreign project records. */

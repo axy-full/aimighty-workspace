@@ -37,6 +37,8 @@ async function load(
     "./db": await import("../../lib/db"),
     "node:crypto": await import("node:crypto"),
     "./storage": { deleteVideo: remove },
+    "./mediaBindings": await import("../../lib/mediaBindings"),
+    "./higgsfield-consumer/original-retention": await import("../../lib/higgsfield-consumer/original-retention"),
   };
   const mod = { exports: {} as typeof import("../../lib/mediaDeletion") };
   new Function("require", "module", "exports", compiled)(

@@ -6,6 +6,7 @@ import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { ConsumerOAuthError } from "@/lib/higgsfield-consumer/oauth";
 import { ConsumerDiscoveryError } from "@/lib/higgsfield-consumer/mcp";
 import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
+import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError, consumerVideoInputSchema } from "@/lib/higgsfield-consumer/video-contract";
 import {
   MARKETING_VIDEO_REHEARSAL, ConsumerVideoServiceError, ensureConsumerRehearsal,
@@ -24,6 +25,11 @@ const submit = z.object({ action: z.literal("submit"), draftId: id, id: z.uuid()
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, poll]);
 function problem(error: unknown) {
+  if (error instanceof ConsumerOriginalError)
+    return Response.json({ code: `original_${error.code}`, error: error.message }, {
+      status: error.code === "quota" ? 507 : error.code === "timeout" ? 504 : error.code === "storage_unavailable" ? 503 : error.code === "invalid_video" ? 422 : error.code === "not_found" ? 404 : 409,
+      headers,
+    });
   if (error instanceof ConsumerOAuthError || error instanceof ConsumerDiscoveryError || error instanceof ConsumerVideoServiceError)
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerJobError)

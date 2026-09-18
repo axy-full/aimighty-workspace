@@ -1,7 +1,9 @@
 import type { AtomikVideoFrame } from './atomik-reference-types';
+import { referenceAnalysisSourceSchema, REFERENCE_AD_FRAMES, type ReferenceAnalysisSource } from './reference-ad-analysis';
 /** Browser-side write-ahead record: a lost HTTP response must never mint another paid request ID. */
 export type AtomikPendingStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export type AtomikSubmission = {
+  referenceAd?: ReferenceAnalysisSource;
   suite?: 'particl' | 'atomik' | 'moleculr';
   projectId: string; requestId: string; request: string; model: string; effort?: string; depth: string;
   refs: string[]; role?: string; maxCredits: number; videoFrames?: AtomikVideoFrame[];
@@ -29,10 +31,11 @@ export function atomikPendingInput(record: PendingAtomikRequest): AtomikSubmissi
   const value = data as Partial<AtomikSubmission> & { quoteOnly?: unknown };
   if (!value || typeof value !== 'object' || value.projectId !== record.projectId || value.requestId !== record.requestId ||
     (value.suite != null && !['particl', 'atomik', 'moleculr'].includes(value.suite)) ||
+    (value.referenceAd != null && (!referenceAnalysisSourceSchema.safeParse(value.referenceAd).success || value.suite != null)) ||
     typeof value.request !== 'string' || typeof value.model !== 'string' ||
     (value.effort != null && (typeof value.effort !== 'string' || value.effort.length < 1 || value.effort.length > 40)) || !['Quick', 'Considered', 'Deep'].includes(value.depth ?? '') ||
     !Array.isArray(value.refs) || !value.refs.every(ref => typeof ref === 'string') ||
-    (value.videoFrames != null && (!Array.isArray(value.videoFrames) || value.videoFrames.length > 6 || !value.videoFrames.every(frame => frame && typeof frame.assetId === 'string' && typeof frame.uploadId === 'string' && typeof frame.timeSeconds === 'number' && Number.isFinite(frame.timeSeconds) && frame.timeSeconds >= 0 && frame.timeSeconds <= 3600))) ||
+    (value.videoFrames != null && (!Array.isArray(value.videoFrames) || value.videoFrames.length > (value.referenceAd ? REFERENCE_AD_FRAMES : 6) || !value.videoFrames.every(frame => frame && typeof frame.assetId === 'string' && typeof frame.uploadId === 'string' && typeof frame.timeSeconds === 'number' && Number.isFinite(frame.timeSeconds) && frame.timeSeconds >= 0 && frame.timeSeconds <= 3600 && (frame.durationSeconds == null || Number.isFinite(frame.durationSeconds) && frame.durationSeconds >= 0.1 && frame.durationSeconds <= 60)))) ||
     (value.role != null && typeof value.role !== 'string') || value.quoteOnly != null ||
     typeof value.maxCredits !== 'number' || !Number.isInteger(value.maxCredits) || value.maxCredits < 0) {
     throw new Error('The saved Atomik request cannot be verified. Review Activity before starting another request.');
