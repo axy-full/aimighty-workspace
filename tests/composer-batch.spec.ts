@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import type { GenerationBatch } from "../lib/useGenerationBatch";
+import { newProject } from "../lib/workbench/studio";
+import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
 test("an interrupted batch replays only the pending variant after reload and finishes the original ordered requests", async ({
   page,
@@ -13,6 +15,14 @@ test("an interrupted batch replays only the pending variant after reload and fin
   const me = await page.request
     .get("/api/me")
     .then((response) => response.json());
+  const draft = newProject("Batch recovery project");
+  const saved = await page.request.put("/api/workbench/projects", {
+    headers: { "X-Workbench-Scope": workbenchScopeFor(me.workspace.id, me.id) },
+    data: { project: draft, revision: 0 },
+  });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const { productionProjectId } = await saved.json();
+  expect(productionProjectId).toBeTruthy();
   const submissions: {
     key?: string;
     body: string;
@@ -75,8 +85,9 @@ test("an interrupted batch replays only the pending variant after reload and fin
     if (path === "/api/me") return json(me);
     return route.fallback();
   });
-  await page.goto("/make/images");
+  await page.goto(`/make/images?project=${draft.id}`);
   const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
+  await expect(prompt).toBeVisible();
   await prompt.fill(
     "A brass key in a pool of warm light. Four isolated test variations.",
   );
@@ -101,6 +112,7 @@ test("an interrupted batch replays only the pending variant after reload and fin
   const batch = JSON.parse(raw) as GenerationBatch;
   expect(storageKey).toContain(account.workspace.id);
   expect(storageKey).toContain(me.email);
+  expect(storageKey).toContain(draft.id);
   expect(batch.cursor).toBe(1);
   expect(batch.variants).toHaveLength(4);
   expect(batch.variants[0].resultId).toBe("mock-image-1");
@@ -149,6 +161,7 @@ test("an interrupted batch replays only the pending variant after reload and fin
     expect(request.body).toBe(variant.body);
     expect(request.workspace).toBe(account.workspace.id);
     expect(request.actor).toBe(me.email);
+    expect(JSON.parse(request.body).projectId).toBe(productionProjectId);
   }
   expect(
     await page.evaluate((key) => localStorage.getItem(key), storageKey),

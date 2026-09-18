@@ -1762,3 +1762,14 @@
   :global(.collective-assets) .takeError { position: absolute; bottom: 22px; left: 0; right: 0; max-height: 44px; overflow: auto; margin: 0; padding: 4px; background: var(--gen-ground); pointer-events: auto; }
   :global(.collective-assets) .jobStatus { bottom: 23px; font-size: 10px; padding: 6px; }
 }
+
+/* Keep the scroll area and paid action above the suite navigation on a short landscape phone. */
+@media (min-width: 760px) and (max-width: 899px) and (max-height: 500px) {
+  .header { flex-wrap: nowrap; min-height: 48px; padding: 0 16px; gap: 12px; }
+  .heading { width: auto; gap: 12px; }
+  .modes { width: auto; flex: 1; margin: 0; padding: 0; }
+  .mobileViews { min-height: 44px; padding: 0; margin: 0 16px 4px; }
+  .mobileViews button { min-height: 44px; }
+  .composerScroll { padding: 0 16px; }
+  .composerFooter { padding: 4px 16px; }
+}

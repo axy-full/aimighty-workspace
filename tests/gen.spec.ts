@@ -416,6 +416,11 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(size.width + 1);
     expect(box!.y + box!.height).toBeLessThanOrEqual(size.height + 1);
+    const suitePages = page.getByRole("navigation", { name: "Particl Studio pages", exact: true });
+    if (await suitePages.isVisible()) {
+      const navigation = await suitePages.boundingBox();
+      expect(box!.y + box!.height).toBeLessThanOrEqual(navigation!.y + 1);
+    }
   };
   await page.goto(`/generate?project=${draft.id}`);
   await expect(
