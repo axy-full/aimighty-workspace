@@ -46,6 +46,7 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
         await discoveryGate;
         return json(catalog);
       }
+      if (path.endsWith("/qualification") && call.method === "POST") return json({readOnly:true,results:[{tool:"marketing_studio_v2_costs",arguments:{},result:{cost_units_per_credit:100,note:'<img src="https://untrusted.example.com/cost.png">'}},{tool:"list_workspaces",arguments:{},error:{code:"unavailable"}}]});
       if (path.endsWith("/connect") && call.method === "POST") return json(connectResult.json, connectResult.status);
       unexpected.push(`${call.method} ${path}`);
       return json({ error: "No operation allowed in fixture." }, 409);
@@ -93,18 +94,25 @@ test("owner checks scoped consumer definitions explicitly, then disconnects with
   expect(JSON.parse((await definitions.textContent())!).tools[1].description).toBe('<img src="https://untrusted.example.com/tracker.png">');
   await expect(card.locator("img")).toHaveCount(0);
   await expect(card.getByText("No matching tool name found", { exact: true })).toHaveCount(6);
+  await card.getByRole("button",{name:"Check account options and pricing",exact:true}).click();
+  await expect(card.getByRole("status")).toHaveText("Account options and available pricing checked. No workspace was switched and no paid job was started.");
+  await card.getByText("Account capability diagnostics",{exact:true}).click();
+  const qualification = card.getByLabel("Higgsfield account capabilities");
+  expect(JSON.parse((await qualification.textContent())!).results[0].result.note).toBe('<img src="https://untrusted.example.com/cost.png">');
+  await expect(card.locator("img")).toHaveCount(0);
   await card.screenshot({ path: info.outputPath("higgsfield-consumer-discovery.png") });
   await card.getByRole("button", { name: "Disconnect marketing account", exact: true }).click();
   await expect(card.getByRole("status")).toHaveText("Higgsfield consumer connection removed from this Particl workspace.");
   await expect(card.getByRole("button", { name: "Connect Higgsfield account", exact: true })).toBeEnabled();
   await expect(card.getByRole("button", { name: "Check available workflows", exact: true })).toHaveCount(0);
   await expect(definitions).toHaveCount(0);
+  await expect(qualification).toHaveCount(0);
   expect(state.calls.filter((call) => call.method !== "GET").map(({ method, path }) => `${method} ${path}`)).toEqual([
-    "POST /api/higgsfield/consumer/capabilities", "DELETE /api/higgsfield/consumer/connection",
+    "POST /api/higgsfield/consumer/capabilities", "POST /api/higgsfield/consumer/qualification", "DELETE /api/higgsfield/consumer/connection",
   ]);
   await page.reload();
   await expect(consumerCard(page).getByRole("button", { name: "Connect Higgsfield account", exact: true })).toBeEnabled();
-  expect(state.calls.filter((call) => call.method !== "GET")).toHaveLength(2);
+  expect(state.calls.filter((call) => call.method !== "GET")).toHaveLength(3);
   expect(state.unexpected).toEqual([]);
   expect(state.external).toEqual([]);
   expect(state.errors).toEqual([]);

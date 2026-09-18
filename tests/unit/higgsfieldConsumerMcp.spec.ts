@@ -297,6 +297,39 @@ test("upstream token or session echoes in returned schema keys, values or descri
   }
 });
 
+test("discovery rejects URL-encoded token echoes and preserves bounded advertised output schemas", async () => {
+  const privateToken = "fixture/token+not-a-secret";
+  for (const encoded of [
+    encodeURIComponent(privateToken),
+    encodeURIComponent(privateToken).replace("%2F", "%2f"),
+    encodeURIComponent(privateToken).replace(/%[A-F0-9]{2}/g, (s) =>
+      s.toLowerCase(),
+    ),
+  ]) {
+    for (const entry of [
+      { ...tool(), description: encoded },
+      { ...tool(), outputSchema: { type: "object", description: encoded } },
+    ]) {
+      const f = fixture((p) => json(p.id!, { tools: [entry] }));
+      await errorCode(
+        discoverConsumerTools(privateToken, { fetch: f.fetch }),
+        "protocol_error",
+      );
+    }
+  }
+  const outputSchema = {
+    type: "object",
+    properties: { credits: { type: "number" } },
+  };
+  const f = fixture((p) =>
+    json(p.id!, { tools: [{ ...tool(), outputSchema }] }),
+  );
+  expect(
+    (await discoverConsumerTools(token, { fetch: f.fetch })).tools[0]
+      .outputSchema,
+  ).toEqual(outputSchema);
+});
+
 test("tool-less servers stop after initialized; unsupported versions and invalid sessions fail closed", async () => {
   for (const [result, headers, code] of [
     [{ ...initialize, capabilities: {} }, {}, null],

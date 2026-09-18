@@ -1,6 +1,6 @@
 # Moleculr provider capabilities
 
-Verified from official public documentation and unauthenticated discovery on 17–18 September 2026. No authorization grant, app registration, or paid operation was performed during this review. Documented support does not prove that a particular account has access.
+Verified from official public documentation and unauthenticated discovery on 17–18 September 2026. Public repository research performed no authorization grant, app registration, or paid operation; the later owner-approved live connection is recorded below. Documented support does not prove that a particular account has access.
 
 ## Three distinct Higgsfield surfaces
 
@@ -8,9 +8,9 @@ Verified from official public documentation and unauthenticated discovery on 17�
 | --- | --- | --- |
 | Cloud Marketing Studio Image | Existing server-side `HF_CREDENTIALS` / workspace Higgsfield key | Direct campaign images and editing; live, credential-specific image presets; asynchronous image generation with the existing quote, reservation, receipt, and recovery flow. |
 | Consumer CLI / MCP | Separate user OAuth and consumer billing workspace | Documented prompt-based Marketing Video and image workflows, plus consumer product/avatar/brand metadata tools. These are not enabled by saving a Cloud API key. |
-| Template-first Marketing Studio website | Higgsfield website account | The current full template workflow remains website-only. Moleculr's own creative formats and storyboards are native application features, not access to this proprietary template library. |
+| Marketing Studio v2 templates | Connected consumer account | Authenticated discovery on 18 September advertises a preset feed, pricing, create and status tools. This supersedes the older website-only availability statement below; live response/contract qualification is underway. Moleculr's existing native creative briefs remain a separate catalog. |
 
-The official help article, dated 1 August 2026, explicitly says template-based Marketing Studio is not available through MCP, Supercomputer, or other agentic channels. It describes Product Shots, Ads, Marketplace, Posters, UGC Videos, Motion and reference-to-video tasks. Its 15-second maximum and poster-only post-generation editing apply to that website workflow. Do not transfer those limits to an unrelated API contract. [Official current Marketing Studio help](https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads).
+The official help article, dated 1 August 2026, says template-based Marketing Studio is not available through MCP, Supercomputer, or other agentic channels. That availability statement conflicts with the newer authenticated catalogue observed on 18 September. Its 15-second maximum and poster-only post-generation editing describe the website workflow, and are not assumed to be API limits. [Marketing Studio help](https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads).
 
 ## Current Cloud API integration
 
@@ -59,6 +59,16 @@ Inspected pinned official sources: CLI `dc7e2d2eac0b1fdad255de24d87552d1ba479037
 
 ## Implemented release — 18 September 2026
 
+### Authenticated catalogue qualification
+
+The workspace owner explicitly authorized Particl's own OAuth client, and the live callback and encrypted connection succeeded. An owner-triggered `tools/list` returned 98 tools. The catalogue includes `generate_video`, `marketing_studio_v2_presets`, `marketing_studio_v2_costs`, `marketing_studio_v2_create`, `marketing_studio_v2_status` and `virality_predictor`. It does not advertise the CLI's ad-reference or brand-kit entity operations. Generic model prompts referring to a missing tool are not proof that the missing tool is callable.
+
+The live `generate_video` definition documents `get_cost:true` as a non-submitting credit preflight, and advertises `marketing_studio_video` plus the direct reference-video models `hf_mult_replace_object` and `hf_mult_motion_control`. The latter are a possible supported path to source-ad product replacement or motion matching, distinct from the CLI ad-reference entity workflow. Their constraints still require model-catalog qualification.
+
+`select_workspace` explicitly changes a selection that persists across sessions and clients. No documented request-scoped MCP workspace binding has been found. A local lock alone cannot prove isolation from other clients changing that selection. Paid integration must address wallet binding rather than silently selecting a workspace.
+
+The owner can now run a fixed, bounded qualification set: workspace listing, selected model constraints, v2 preset examples and prices, the ad-multiplier workflow text, and a hardcoded `get_cost:true` product-video quote. No user-supplied tool names/arguments, workspace switch, media upload, paid generation, or scoring call is admitted. Provider instructions and suggested recovery tools are returned as inert diagnostic text, never executed.
+
 | Workflow | Implemented behavior | Verification and boundary |
 | --- | --- | --- |
 | Brand kit and website extraction | Saved name, description, tagline, voice, audience, colors, font direction and canonical logo asset. A website review extracts bounded structured metadata, embedded CSS colours/typefaces and image candidates with source evidence. Applying reviewed facts preserves manual voice, audience and logo. Chosen originals import into the project library. | Desktop/mobile review, explicit original import, URL invalidation and save/reload checks; parser and authenticated route tests. Static metadata only: no scripts or external stylesheets, no inferred audience, no automatic image downloads. This native extraction is distinct from a Higgsfield consumer brand entity. |
@@ -71,4 +81,4 @@ Inspected pinned official sources: CLI `dc7e2d2eac0b1fdad255de24d87552d1ba479037
 | Generation recovery | Accepted campaign prompt, model, resolution, aspect, duration and applicable marketing/Soul settings persist on the reviewed variant. An uncertain submission recovers the identical stored request and idempotency key. | Phone/desktop lost-acknowledgement/reload tests verify the same request is recovered and reopening alone does not submit again. |
 | Poster design and delivery | Editable native layers export a full-size PNG and save it as a reusable project original. Saved profiles, logo and hidden poster layers retain original-asset dependencies for save and delivery. | Poster browser flow plus schema, dependency and delivery-lineage tests. Native editor; no Higgsfield Layers integration. |
 
-Release browser checks use isolated local fixtures and mocked provider responses; they establish application wiring and recovery behavior, not a new paid production-provider rehearsal, load qualification, or full Higgsfield parity. Existing connected video engines remain available through Particl's review flow. Consumer Marketing Video, reference-ad processing, Virality scoring and provider brand/product/avatar services still await authenticated schema qualification and execution wiring. Social publishing and the full website template library are not enabled. OAuth discovery does not remove the documented website-template restriction.
+Release browser checks use isolated local fixtures and mocked provider responses; they establish application wiring and recovery behavior, not a new paid production-provider rehearsal, load qualification, or full Higgsfield parity. Existing connected video engines remain available through Particl's review flow. Consumer Marketing Video, reference-ad processing, Virality scoring and provider brand/product/avatar services still await authenticated schema qualification and execution wiring. Social publishing and the full website template library are not enabled. The newer v2 catalogue supersedes the older website-only availability claim, but discovery alone does not establish completed application integration.
