@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {brandKitSchema, productProfileSchema, productSourceSchema, creativeSchema} from "./moleculr-creative";
 import {posterDocumentSchema} from "./moleculr-poster";
+import {referenceAdSchema, referenceAdBindingSchema} from "./reference-ad";
 import { suiteAgentPlanSchema } from "./suite-agent-plan";
 import { MARKETING_BRIEF_LIMITS } from "./marketing-brief";
 import { validateBins } from "./editorial";
@@ -137,6 +138,7 @@ export const marketingBriefSchema = z.object({
   constraints: z.string().max(MARKETING_BRIEF_LIMITS.constraints),
 }).strict();
 export const moleculrSchema = z.object({
+  referenceAd:referenceAdSchema.optional(),
   brandKit:brandKitSchema.optional(),productDescription:z.string().max(4000).optional(),productBrand:z.string().max(200).optional(),productSource:productSourceSchema.optional(),
   products:z.array(productProfileSchema).max(24).refine(items=>new Set(items.map(item=>item.id)).size===items.length).optional(),activeProductId:z.string().min(1).max(100).optional(),creative:creativeSchema.optional(),poster:posterDocumentSchema.optional(),
   marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional(),presetName:z.string().max(300).optional()}).strict().optional(),
@@ -144,7 +146,7 @@ export const moleculrSchema = z.object({
   productAssetIds:z.array(z.string().max(100)).max(5),castAssetIds:z.array(z.string().max(100)).max(6),
   format:z.enum(['ugc-review','tutorial','unboxing','try-on','cgi','cinematic-demo','poster','marketplace','motion']),
   hooks:z.array(z.string().max(500)).max(12),notes:z.string().max(6000),
-  variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional()}).strict().optional()}).strict()).max(100),
+  variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional()}).strict().optional()}).strict()).max(100),
 }).strict();
 export const projectSchema = z.object({
   moleculr:moleculrSchema.optional(),

@@ -14,6 +14,10 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
   let connectResult: { status: number; json: unknown } = { status: 503, json: { error: "Higgsfield authorization is not configured on this deployment." } };
   let discoveryRelease: (() => void) | undefined;
   let discoveryGate: Promise<void> | undefined;
+  const verificationJob = { id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", status: "quoted", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", workspaceName: "Test studio", quoteCredits: 75, quoteExpiresAt: Date.now() + 300000, providerJobId: null as string | null };
+  let videoJob: typeof verificationJob | null = null;
+  let uncertain = false;
+  const videoActions: Record<string, unknown>[] = [];
   const catalog = {
     discoveryOnly: true, capabilitiesVerified: false, protocolVersion: "2025-11-25",
     tools: [
@@ -47,6 +51,13 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
         return json(catalog);
       }
       if (path.endsWith("/qualification") && call.method === "POST") return json({readOnly:true,results:[{tool:"marketing_studio_v2_costs",arguments:{},result:{cost_units_per_credit:100,note:'<img src="https://untrusted.example.com/cost.png">'}},{tool:"list_workspaces",arguments:{},error:{code:"unavailable"}}]});
+      if (path.endsWith("/video") && call.method === "GET") return json({ jobs: videoJob ? [videoJob] : [] });
+      if (path.endsWith("/video") && call.method === "POST") {
+        const body = request.postDataJSON(); videoActions.push(body);
+        if (body.action === "quote-rehearsal") { videoJob = { ...verificationJob }; return json({ job: videoJob }); }
+        if (body.action === "submit") { videoJob = { ...verificationJob, status: uncertain ? "uncertain" : "accepted", providerJobId: uncertain ? null : "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061" }; return json({ job: videoJob }); }
+        if (body.action === "status") return json({ job: videoJob, providerStatus: { status: "running", note: '<img src="https://untrusted.example.com/result.png">' }, pollAfterSeconds: 30 });
+      }
       if (path.endsWith("/connect") && call.method === "POST") return json(connectResult.json, connectResult.status);
       unexpected.push(`${call.method} ${path}`);
       return json({ error: "No operation allowed in fixture." }, 409);
@@ -64,7 +75,8 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
     return json({});
   });
   return {
-    calls, unexpected, external, errors,
+    calls, unexpected, external, errors, videoActions,
+    setUncertain: () => { uncertain = true; },
     setStatusError: (value: boolean) => { statusError = value; },
     setConnectResult: (value: typeof connectResult) => { connectResult = value; },
     holdDiscovery: () => { discoveryGate = new Promise<void>((resolve) => { discoveryRelease = resolve; }); },
@@ -78,7 +90,7 @@ test("owner checks scoped consumer definitions explicitly, then disconnects with
   await page.goto("/settings#engines");
   const card = consumerCard(page);
   await expect(card.getByText("Account connected to this workspace owner.")).toBeVisible();
-  expect(state.calls.every((call) => call.method === "GET" && call.path.endsWith("/connection"))).toBe(true);
+  expect(state.calls.every((call) => call.method === "GET" && /\/(connection|video)$/.test(call.path))).toBe(true);
   await expect(card.getByText(/tools advertised by the connected account/)).toHaveCount(0);
   state.holdDiscovery();
   // Two synchronous user activations must still enter only one request.
@@ -156,4 +168,46 @@ test("member settings do not mount owner consumer connection controls or load ow
   expect(state.unexpected).toEqual([]);
   expect(state.external).toEqual([]);
   expect(state.errors).toEqual([]);
+});
+
+test("verification quotes are inert until exact wallet approval; accepted jobs survive reload without resubmission", async ({ page }, info) => {
+  const state = await fixture(page);
+  await page.goto("/settings#engines");
+  const panel = page.getByRole("region", { name: "Marketing Video verification", exact: true });
+  await expect(panel.getByRole("button", { name: "Get verification quote", exact: true })).toBeVisible();
+  expect(state.videoActions).toEqual([]);
+  await panel.getByRole("button", { name: "Get verification quote", exact: true }).click();
+  const submit = panel.getByRole("button", { name: "Run verification · 75 credits", exact: true });
+  await expect(submit).toBeDisabled();
+  expect(state.videoActions.map(x => x.action)).toEqual(["quote-rehearsal"]);
+  await panel.getByRole("checkbox", { name: "Charge 75 Higgsfield credits to Test studio for this one test.", exact: true }).check();
+  await submit.evaluate(element => { (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click(); });
+  await expect(panel.getByText(/Higgsfield accepted the video request/)).toBeVisible();
+  expect(state.videoActions.filter(x => x.action === "submit")).toEqual([{ action: "submit", id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", credits: 75 }]);
+  await page.reload();
+  await expect(panel.getByRole("button", { name: "Check verification result", exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: /Run verification|Get verification quote/ })).toHaveCount(0);
+  await panel.getByRole("button", { name: "Check verification result", exact: true }).click();
+  await panel.getByText("Verification result details", { exact: true }).click();
+  await expect(panel.getByLabel("Higgsfield verification result")).toContainText('"status": "running"');
+  await expect(panel.getByRole("button", { name: /Check again in/ })).toBeDisabled();
+  await expect(panel.locator("img")).toHaveCount(0);
+  await panel.screenshot({ path: info.outputPath("higgsfield-verification.png") });
+  expect(state.videoActions.map(x => x.action)).toEqual(["quote-rehearsal", "submit", "status"]);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test("an uncertain verification cannot create a replacement or retry after reload", async ({ page }) => {
+  const state = await fixture(page); state.setUncertain();
+  await page.goto("/settings#engines");
+  const panel = page.getByRole("region", { name: "Marketing Video verification", exact: true });
+  await panel.getByRole("button", { name: "Get verification quote", exact: true }).click();
+  await panel.getByRole("checkbox").check();
+  await panel.getByRole("button", { name: "Run verification · 75 credits", exact: true }).click();
+  await expect(panel.getByText(/Submission needs reconciliation/)).toBeVisible();
+  await page.reload();
+  await expect(panel.getByText(/Submission needs reconciliation/)).toBeVisible();
+  await expect(panel.getByRole("button")).toHaveCount(0);
+  expect(state.videoActions.map(x => x.action)).toEqual(["quote-rehearsal", "submit"]);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });

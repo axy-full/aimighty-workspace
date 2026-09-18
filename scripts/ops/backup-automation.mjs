@@ -95,6 +95,11 @@ export async function assertNoActiveOrUncertain(config, env) {
           }
         }
       }
+      // Consumer jobs use Higgsfield credits and their own status vocabulary.
+      // A dispatch claim, accepted remote job or uncertain admission must not
+      // disappear behind a successful scheduled checkpoint.
+      if (names.has("higgsfield_consumer_jobs") &&
+          (await db.execute("SELECT 1 FROM higgsfield_consumer_jobs WHERE status IS NULL OR status NOT IN ('quoted','failed','completed') LIMIT 1")).rows.length) blocked();
       if (names.has("workbench_development_jobs") &&
           (await db.execute("SELECT 1 FROM workbench_development_jobs WHERE settled=0 LIMIT 1")).rows.length) blocked();
       // Queued phases may remain on a terminal failed workflow. Only started

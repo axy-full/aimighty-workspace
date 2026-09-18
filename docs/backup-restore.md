@@ -298,8 +298,10 @@ key and assume an old archive will decrypt.
    `prepare` creates new local copies, remaps workspace and provisioning database
    URLs/tokens (sealed with the original keyring), replaces absolute upload URLs
    using the verified Blob map, and removes restored sessions, API bearer tokens,
-   review links and password-reset tokens. It does not change drafts, membership,
-   ledger balances, job IDs, request keys or paid claims. It refuses targets equal
+   review links, password-reset tokens and consumer OAuth grants. It does not change drafts, membership,
+   ledger balances, job IDs, request keys or paid claims. Consumer jobs that were
+   quoted or dispatching are quarantined as uncertain; their quotes cannot be
+   reused to submit work. Old consumer polling leases are invalidated. It refuses targets equal
    to the source. The original snapshots remain unchanged for audit.
 
 5. Import prepared SQLite copies into **new** Turso databases, using the installed
@@ -358,6 +360,40 @@ The jobs API hides `paidClaim` and `producedOutcome`; the full database backup
 retains both. Provider acceptance without durable handle persistence requires
 support investigation; automated recovery cannot safely invent the missing
 provider ID.
+
+### Higgsfield consumer jobs
+
+Every tenant snapshot includes `higgsfield_consumer_jobs`, its immutable payload
+and quote fingerprints, original asset IDs, OAuth connection generation,
+idempotency key, dispatch claim, provider UUID and saved result/acknowledgement.
+Its quoted amount is in **Higgsfield credits**, separate from Particl credits or
+USD. The reconciliation report exposes the amount and unit, IDs and disposition;
+it excludes prompts, claim hashes, provider response bodies and results.
+
+Scheduled backup preflight rejects dispatching, accepted, uncertain or unknown
+consumer states. Offline forensic restore still preserves such records exactly.
+Preparation always quarantines quoted and dispatching snapshots as uncertain:
+a quote in an older backup may have been submitted after capture. It retains
+the original quote expiry, fingerprints and claims rather than clearing or
+renewing them. A known accepted UUID remains attached to the same job. Stale GET
+polling leases are cleared, and completed/failed records and their receipts stay
+intact. No preparation or report step sends a provider request.
+
+| Consumer report disposition | Recovery action |
+| --- | --- |
+| `restored-consumer-quote-requires-reconciliation-never-submit` | Check the post-backup interval before any new action; the restored quote is permanently ineligible for automatic dispatch. |
+| `uncertain-consumer-outcome-never-resubmit` | Preserve the claim and quoted Higgsfield amount. Reconcile the original owner, consumer workspace and provider records; do not infer rejection from a missing UUID. |
+| `verify-consumer-connection-then-poll-existing-handle-only` | Re-establish and verify the original account/workspace through an explicit recovery procedure before reading the saved UUID. A fresh OAuth grant does not automatically satisfy the immutable old connection generation. |
+| `recover-persisted-consumer-result-no-submit` | Recover the saved receipt and original media. Attaching output to a deleted or changed draft can fail without losing the receipt or requiring another generation. |
+| `terminal-consumer-no-provider-work` | Retain the failed record and original idempotency key; it does not authorize new work. |
+
+Collected consumer files must use the existing owned upload/generation storage
+paths. Their bytes are captured and verified by the normal media inventory.
+Deleting a workspace follows the existing disabled-access, grace-period and
+retryable purge sequence: media first, then the entire tenant database containing
+the consumer ledger. Other tenants' ledgers and media remain separate. There is
+no consumer-specific remote deletion, generation or credit adjustment during
+this lifecycle. Reapply post-backup workspace deletions before reopening access.
 
 Do not set an uncertain job's cost or credits to zero. Keep its estimate in both
 the generation row and authoritative meter reservation until the provider outcome

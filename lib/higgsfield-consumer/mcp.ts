@@ -1,6 +1,6 @@
 /**
- * Bounded Streamable HTTP client for discovery and a fixed set of read-only
- * qualification calls. There is deliberately no generic RPC/tools/call export.
+ * Bounded Streamable HTTP client for discovery, fixed read-only qualification,
+ * and typed Marketing Video operations. No generic RPC/tools/call export.
  * Server instructions, descriptions and schemas are data, never executable
  * instructions or URLs to fetch.
  * https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
@@ -12,6 +12,18 @@ import {
   QualificationPayloadError,
   type QualificationValue,
 } from "./qualification";
+import {
+  ConsumerVideoError,
+  consumerVideoAcknowledgement,
+  consumerVideoJobId,
+  consumerVideoParams,
+  parseConsumerVideoCredits,
+  parseConsumerVideoInput,
+  parseConsumerVideoWorkspace,
+  validateConsumerVideoStatus,
+  type ConsumerVideoInput,
+  type ConsumerVideoWorkspace,
+} from "./video-contract";
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
 export const DISCOVERY_LIMITS = {
@@ -152,7 +164,21 @@ type ConsumerSession = {
   active: () => boolean;
   list: (cursor?: string) => Promise<Record<string, unknown>>;
   qualificationRead: (index: number) => Promise<Record<string, unknown>>;
+  videoWorkspaces: () => Promise<Record<string, unknown>>;
+  videoQuote: (input: ConsumerVideoInput) => Promise<Record<string, unknown>>;
+  videoSubmit: (
+    input: ConsumerVideoInput,
+    sending: () => void,
+  ) => Promise<Record<string, unknown>>;
+  videoStatus: (jobId: string) => Promise<Record<string, unknown>>;
 };
+// A caller's durable admission error must reach that caller unchanged. It is
+// never exposed by a transport response or interpreted as an attempted POST.
+class ConsumerAdmissionStopped extends Error {
+  constructor(readonly original: unknown) {
+    super("Consumer admission stopped");
+  }
+}
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -382,6 +408,7 @@ async function withConsumerSession<T>(
     method:
       "initialize" | "notifications/initialized" | "tools/list" | "tools/call",
     params?: Record<string, unknown>,
+    sending?: () => void,
   ) {
     assertDeadline(controller.signal);
     const id =
@@ -410,6 +437,8 @@ async function withConsumerSession<T>(
       method === "tools/call" ? setTimeout(abortRequest, requestMs) : undefined;
     let pendingResponse: Response | undefined;
     try {
+      assertDeadline(requestController.signal, requestDeadline);
+      sending?.();
       const response = await withinDeadline(
         fetcher(CONSUMER_MCP_URL, {
           method: "POST",
@@ -533,9 +562,35 @@ async function withConsumerSession<T>(
           arguments: read.arguments,
         }))!;
       },
+      videoWorkspaces: async () =>
+        (await post("tools/call", { name: "list_workspaces", arguments: {} }))!,
+      videoQuote: async (input) =>
+        (await post("tools/call", {
+          name: "generate_video",
+          arguments: { params: consumerVideoParams(input, true) },
+        }))!,
+      videoSubmit: async (input, sending) =>
+        (await post(
+          "tools/call",
+          {
+            name: "generate_video",
+            arguments: { params: consumerVideoParams(input, false) },
+          },
+          sending,
+        ))!,
+      videoStatus: async (jobId) =>
+        (await post("tools/call", {
+          name: "job_status",
+          arguments: { jobId, sync: false, raw_data: true },
+        }))!,
     });
   } catch (error) {
-    if (error instanceof ConsumerDiscoveryError) throw error;
+    if (
+      error instanceof ConsumerDiscoveryError ||
+      error instanceof ConsumerVideoError ||
+      error instanceof ConsumerAdmissionStopped
+    )
+      throw error;
     // Never propagate a fetch/JSON/provider error that might contain headers,
     // tokens, session identifiers, account data, or server instructions.
     return fail(controller.signal.aborted ? "timeout" : "provider_unavailable");
@@ -701,4 +756,196 @@ export async function readConsumerQualification(
       return { readOnly: true, results };
     },
   );
+}
+
+export type ConsumerVideoQuote = {
+  input: Readonly<ConsumerVideoInput>;
+  workspace: ConsumerVideoWorkspace;
+  credits: number;
+};
+export type ConsumerVideoSubmission =
+  | { state: "accepted"; providerJobId: string; raw: QualificationValue }
+  | {
+      state: "uncertain";
+      raw?: QualificationValue;
+      error: { code: "submission_uncertain"; message: string };
+    };
+const uncertainSubmission = (
+  raw?: QualificationValue,
+): ConsumerVideoSubmission => ({
+  state: "uncertain",
+  ...(raw === undefined ? {} : { raw }),
+  error: {
+    code: "submission_uncertain",
+    message:
+      "Higgsfield may have accepted this video. Keep its reservation and do not submit it again.",
+  },
+});
+function videoReadResult(
+  session: ConsumerSession,
+  raw: Record<string, unknown>,
+) {
+  const result = normalizeQualificationResult(raw, session.secrets);
+  if (result.isError) throw new ConsumerVideoError("provider_error");
+  return result.result;
+}
+function videoPreflightError(error: unknown): never {
+  if (error instanceof ConsumerVideoError) throw error;
+  throw new ConsumerVideoError("preflight_unavailable");
+}
+function videoWorkspaceId(id: string) {
+  try {
+    return consumerVideoJobId(id);
+  } catch {
+    throw new ConsumerVideoError("invalid_workspace");
+  }
+}
+function matchingWorkspace(
+  workspace: ConsumerVideoWorkspace,
+  expected: string,
+) {
+  if (workspace.id !== expected)
+    throw new ConsumerVideoError("workspace_changed");
+}
+
+/** Cost-only. The returned billing workspace is an observation, not a provider
+ * transaction lock; no tool here selects or switches the remote workspace. */
+export async function getConsumerVideoQuote(
+  accessToken: string,
+  value: ConsumerVideoInput,
+  options: Options = {},
+): Promise<ConsumerVideoQuote> {
+  const input = parseConsumerVideoInput(value);
+  try {
+    return await withConsumerSession(
+      accessToken,
+      options,
+      QUALIFICATION_LIMITS.timeoutMs,
+      async (session) => {
+        if (!session.supportsTools)
+          throw new ConsumerVideoError("provider_error");
+        const workspace = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        const credits = parseConsumerVideoCredits(
+          videoReadResult(session, await session.videoQuote(input)),
+          input,
+        );
+        const current = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        matchingWorkspace(current, workspace.id);
+        return { input, workspace: current, credits };
+      },
+    );
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+
+/**
+ * Fresh workspace/price checks precede durable admission, which precedes exactly
+ * one paid POST. Never retries, selects a workspace, or runs provider instructions.
+ * Other Higgsfield clients can still switch the global workspace after the read;
+ * this transport cannot promise atomic billing-workspace binding.
+ */
+export async function submitConsumerVideo(
+  accessToken: string,
+  value: ConsumerVideoInput,
+  expectedWorkspaceId: string,
+  expectedCredits: number,
+  options: Options & { admit: () => Promise<void> },
+): Promise<ConsumerVideoSubmission> {
+  const input = parseConsumerVideoInput(value),
+    expected = videoWorkspaceId(expectedWorkspaceId);
+  if (
+    !Number.isFinite(expectedCredits) ||
+    expectedCredits <= 0 ||
+    expectedCredits > Number.MAX_SAFE_INTEGER ||
+    typeof options?.admit !== "function"
+  )
+    throw new ConsumerVideoError("invalid_input");
+  let paidAttempted = false;
+  try {
+    return await withConsumerSession(
+      accessToken,
+      options,
+      QUALIFICATION_LIMITS.timeoutMs,
+      async (session) => {
+        if (!session.supportsTools)
+          throw new ConsumerVideoError("provider_error");
+        const workspace = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        matchingWorkspace(workspace, expected);
+        const credits = parseConsumerVideoCredits(
+          videoReadResult(session, await session.videoQuote(input)),
+          input,
+        );
+        if (credits !== expectedCredits)
+          throw new ConsumerVideoError("quote_changed");
+        const current = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        matchingWorkspace(current, expected);
+        if (current.credits < credits)
+          throw new ConsumerVideoError("insufficient_credits");
+        try {
+          await options.admit();
+        } catch (error) {
+          throw new ConsumerAdmissionStopped(error);
+        }
+        if (!session.active())
+          throw new ConsumerVideoError("preflight_unavailable");
+        const reply = await session.videoSubmit(input, () => {
+          paidAttempted = true;
+        });
+        const raw = normalizeQualificationResult(reply, session.secrets).result;
+        const providerJobId = consumerVideoAcknowledgement(raw);
+        // Even an isError envelope with an exact accepted ID retains that receipt.
+        return providerJobId
+          ? { state: "accepted", providerJobId, raw }
+          : uncertainSubmission(raw);
+      },
+    );
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (paidAttempted) return uncertainSubmission();
+    return videoPreflightError(error);
+  }
+}
+
+/** Read-only polling of one already acknowledged UUID. Results stay diagnostic
+ * until an explicit collector validates the provider's artifact/status contract. */
+export async function readConsumerVideoJob(
+  accessToken: string,
+  value: string,
+  expectedWorkspaceId: string,
+  options: Options = {},
+): Promise<{
+  jobId: string;
+  raw: QualificationValue;
+  pollAfterSeconds?: number;
+}> {
+  const jobId = consumerVideoJobId(value),
+    expected = videoWorkspaceId(expectedWorkspaceId);
+  try {
+    return await withConsumerSession(
+      accessToken,
+      options,
+      QUALIFICATION_LIMITS.timeoutMs,
+      async (session) => {
+        if (!session.supportsTools)
+          throw new ConsumerVideoError("provider_error");
+        const workspace = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        matchingWorkspace(workspace, expected);
+        const raw = videoReadResult(session, await session.videoStatus(jobId));
+        return { jobId, raw, ...validateConsumerVideoStatus(raw, jobId) };
+      },
+    );
+  } catch (error) {
+    return videoPreflightError(error);
+  }
 }

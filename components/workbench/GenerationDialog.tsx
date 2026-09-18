@@ -13,6 +13,7 @@ import { mediaReferenceIdentity, mediaQuoteReferences } from '@/lib/workbench/me
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { nodeAudioBody, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
 import { videoReferenceProblem } from "@/lib/generationReferences";
+import { referenceVideoModels } from "@/lib/workbench/reference-ad";
 import type { ModelDef } from "@/lib/models";
 import type { MoleculrGenerationOptions } from '@/lib/workbench/moleculr';
 import {
@@ -151,6 +152,8 @@ export function GenerationDialog({
   const soulAssets = boundRefs.filter((asset, index, all) => asset.soulIdentityId && all.findIndex(a => a.soulIdentityId === asset.soulIdentityId) === index);
   const selectedSoulId = soulIdentityId || soulAssets[0]?.soulIdentityId || "";
   const boundSoulId = soulAssets[0]?.soulIdentityId;
+  const hasBoundVideo = boundRefs.some(asset => asset.kind === "video");
+  const videoReferenceKinds = hasBoundVideo ? boundRefs.map(asset => asset.kind).join(',') : '';
   // A trained likeness supplies the face; its cover is not an extra style reference.
   const refs = useMemo(() => kind === "audio" ? [] : model?.soulIdentity ? boundRefs.filter(asset => !asset.soulIdentityId) : boundRefs, [kind, model?.soulIdentity, boundRefs]);
   const referenceQuery = mediaQuoteReferences(refs);
@@ -163,10 +166,11 @@ export function GenerationDialog({
   useEffect(() => {
     studioRequest<{ models: Model[] }>("/api/workbench/engines", { headers: { "X-Workbench-Scope": scope } })
       .then((d) => {
-        setModels(d.models);
-        const preferred = target.options?.modelId ? d.models.find(m => m.id === target.options?.modelId) : undefined;
+        const available = initial.pending ? d.models : referenceVideoModels(d.models, videoReferenceKinds.split(','));
+        setModels(available);
+        const preferred = target.options?.modelId ? available.find(m => m.id === target.options?.modelId) : undefined;
         const first = preferred || (!target.options?.modelId ? (initialKind === "image" && boundSoulId ? d.models.find(m => m.soulIdentity) : undefined)
-          || d.models.find(m => m.kind === initialKind && !m.soulIdentity)
+          || available.find(m => m.kind === initialKind && !m.soulIdentity)
           || (initialKind === "image" ? d.models.find(m => !m.soulIdentity) : undefined) : undefined);
         if (first && !initial.pending && initialKind !== "audio") {
           setKind(first.kind);
@@ -177,7 +181,7 @@ export function GenerationDialog({
           const desiredDuration = target.options?.duration || 5;
           setDuration(first.durations.includes(desiredDuration) ? desiredDuration : first.durations[0] || 5);
         } else if (!first && initialKind !== "audio")
-          setError(d.models.some(m => m.soulIdentity)
+          setError(hasBoundVideo ? "No configured video engine accepts these references. Connect a compatible engine or change the attached media before generating." : d.models.some(m => m.soulIdentity)
             ? "Connect a ready Soul character to this node, or connect another image engine in Workspace settings."
             : "No generation engine is configured for this workspace.");
         if (initial.pending && initial.pending.endpoint !== "/api/audio") {
@@ -186,7 +190,7 @@ export function GenerationDialog({
         }
       })
       .catch((e) => setError(e.message));
-  }, [initial.pending, initialKind, project.aspect, boundSoulId, scope, target.options?.modelId, target.options?.ratio, target.options?.duration, target.options?.resolution]);
+  }, [initial.pending, initialKind, project.aspect, boundSoulId, hasBoundVideo, videoReferenceKinds, scope, target.options?.modelId, target.options?.ratio, target.options?.duration, target.options?.resolution]);
   useEffect(() => {
     if (kind !== "audio") return;
     const abort = new AbortController();
@@ -389,7 +393,7 @@ export function GenerationDialog({
                 setRatio(nextModel.ratios.includes(project.aspect) ? project.aspect : nextModel.ratios[0]); setDuration(nextModel.durations[0] || 5); }
               else if (next !== "audio") { setModelId(""); setError(`No ${next} generation engine is configured for this workspace.`); }
             }}>
-              <option value="image">Image</option><option value="video">Video</option><option value="audio">Audio</option>
+              <option value="image" disabled={hasBoundVideo}>Image</option><option value="video">Video</option><option value="audio">Audio</option>
             </select>
           </label>
           {kind !== "audio" && <label className="field-label">

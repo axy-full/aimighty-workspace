@@ -235,6 +235,35 @@ export async function prepareRestore(
               rows: result.rowsAffected,
             });
           }
+          if (names.has("higgsfield_consumer_jobs")) {
+            // An older quoted snapshot cannot prove that admission never
+            // happened after capture. Never make it dispatchable on restore.
+            // Preserve every immutable fingerprint, original quote, dispatch
+            // claim and known provider UUID for operator reconciliation.
+            const quarantined = await tx.execute({
+              sql: `UPDATE higgsfield_consumer_jobs SET status='uncertain',updated_at=?
+                WHERE status IN ('quoted','dispatching')
+                OR (status='accepted' AND provider_job_id IS NULL)`,
+              args: [Date.now()],
+            });
+            changes.push({
+              database: source.id,
+              table: "higgsfield_consumer_jobs",
+              action: "quarantined-restored-consumer-admissions",
+              rows: quarantined.rowsAffected,
+            });
+            // Poll claims authorize GET/collection only. The old process must
+            // not complete through its stale lease on these new copies.
+            const released = await tx.execute(`UPDATE higgsfield_consumer_jobs
+              SET poll_lease_hash=NULL,poll_lease_until=NULL
+              WHERE poll_lease_hash IS NOT NULL OR poll_lease_until IS NOT NULL`);
+            changes.push({
+              database: source.id,
+              table: "higgsfield_consumer_jobs",
+              action: "invalidated-restored-consumer-poll-leases",
+              rows: released.rowsAffected,
+            });
+          }
           for (const table of ["uploads", "workbench_media"]) {
             if (!names.has(table)) continue;
             for (const row of (
