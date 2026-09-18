@@ -322,7 +322,7 @@ test("suite navigation waits for hydration and project initialization, then foll
   expect(state.mutations).toEqual([]);
 });
 
-test("suite navigation blocks leaving an unsaved project and keeps every original stage reachable", async ({
+test("suite navigation includes Astra blender in order, retains every prior stage and blocks leaving unsaved work", async ({
   page,
 }, info) => {
   await fixture(page, true);
@@ -333,10 +333,27 @@ test("suite navigation blocks leaving an unsaved project and keeps every origina
   const links = page
     .getByRole("navigation", { name: "Particl Studio pages" })
     .getByRole("link");
-  await expect(links).toHaveCount(10);
-  await expect(
-    page.getByRole("link", { name: "Rig", exact: true }),
-  ).toHaveAttribute("href", /stage=canvas/);
+  const stages = [
+    ["Brief", "brief"],
+    ["Script", "script"],
+    ["Look", "moodboard"],
+    ["Cast", "characters"],
+    ["Elements", "elements"],
+    ["Astra blender", "astra-blender"],
+    ["Rig", "canvas"],
+    ["Boards", "storyboard"],
+    ["Takes", "assets"],
+    ["Edit", "edit"],
+    ["Deliver", "export"],
+  ] as const;
+  await expect(links).toHaveCount(stages.length);
+  for (const [index, [label, stage]] of stages.entries()) {
+    await expect(links.nth(index)).toHaveAccessibleName(label);
+    await expect(links.nth(index)).toBeEnabled();
+    await expect(links.nth(index)).toHaveAttribute(
+      "href", `/workbench?project=suite-test&stage=${stage}`,
+    );
+  }
   await page
     .getByPlaceholder("Start with a thought, a script or a client brief…")
     .fill("An unsaved brief.");
