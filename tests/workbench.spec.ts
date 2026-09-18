@@ -72,6 +72,12 @@ test("studio context actions edit the right node, respect locks, support keyboar
   const nodeTarget = () => mobile
     ? page.locator(".mobile-node-list button").filter({hasText:"Browser test shot"}).first()
     : page.getByRole("article", {name:"Generate node: Browser test shot",exact:true});
+  if (!mobile) {
+    await expect.poll(async () => {
+      const nodeBounds = await nodeTarget().boundingBox();
+      return !!nodeBounds && nodeBounds.width > 24 && nodeBounds.height > 24;
+    }).toBe(true);
+  }
   await nodeTarget().click({button:"right",position:{x:12,y:12},timeout:8000});
   const menu = page.getByRole("menu", {name:"Browser test shot actions",exact:true});
   await expect(menu).toBeVisible();
@@ -231,6 +237,14 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   await goStage(page, "Assets & takes");
   await page.getByLabel("Upload project files", { exact: true }).setInputFiles({ name: "Uploaded reference.webp", mimeType: "image/webp", buffer: await readFile("public/campaign/hero.webp") });
   await expect.poll(() => state.current().assets.some(asset => asset.uploadId === "upload-browser")).toBeTruthy();
+  const uploadToast = page.locator('[data-sonner-toast][data-front="true"]');
+  await expect(uploadToast).toBeVisible();
+  await expect.poll(async () => {
+    const toastBounds = await uploadToast.boundingBox();
+    const navigationBounds = await page.getByRole("navigation", { name: "Particl Studio pages", exact: true }).boundingBox();
+    return !!toastBounds && !!navigationBounds && toastBounds.y + toastBounds.height <= navigationBounds.y;
+  }).toBe(true);
+
   await goStage(page, "Production canvas");
   if (mobile) {
     await page.locator(".mobile-node-viewbar").getByRole("tab", { name: "List", exact: true }).click();

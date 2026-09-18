@@ -3,7 +3,37 @@
   overflow: clip;
 }
 
+@media (min-width: 760px) and (max-width: 1000px) and (max-height: 599px) {
+  /* Keep all suites and account controls visible without using three header rows. */
+  :global(.ps.four-suite-workbench .studio-redesign):has(.workbench.workbench) :global(.project-bar) {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-rows: 36px 46px;
+    height: 98px;
+    min-height: 98px;
+  }
+  :global(.ps.four-suite-workbench .studio-redesign):has(.workbench.workbench) :global(.project-bar .project-breadcrumb) {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+  :global(.ps.four-suite-workbench .studio-redesign):has(.workbench.workbench) :global(.project-bar .workflow-utilities) {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  :global(.ps.four-suite-workbench .studio-redesign):has(.workbench.workbench) :global(.project-bar .studio-account) {
+    grid-column: 4;
+    grid-row: 1;
+  }
+}
+
 @media (min-width: 760px) and (max-height: 599px) {
+  .workbench.workbench :global(.ng-canvas-label) {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .workbench.workbench :global(.ng-canvas-bottom) {
+    bottom: 6px;
+  }
   :global(.studio-redesign):has(.workbench.workbench) :global(.sequence-shelf) {
     height: 42px;
     min-height: 42px;

@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 /**
  * The bottom toast (design/particl-v2/README.md §7; board 4b): every action
  * on the grid narrates here — `SH11 moved to Saltwater · 2 takes and 38 cr
- * went with it` — 20px up from the bottom, centred: ink on ground, radius
+ * went with it` — above the suite navigation, centred: ink on ground, radius
  * 12, `12px 16px`, Outfit 500 13.5px, and when the action can be undone a
  * 30px `Undo` pill (1px at .25 of ground) 14px after the words. It stays
  * six seconds; a new one replaces it.
@@ -29,11 +29,11 @@ export function ToastHost({ children }: { children: ReactNode }) {
     <ToastCtx.Provider value={{ show }}>
       {children}
       {toast && (
-        <div role="status" className="fixed bottom-[20px] left-1/2 z-[20] flex -translate-x-1/2 items-center gap-[14px] whitespace-nowrap rounded-card bg-ink px-[16px] py-[12px] text-[13.5px] font-medium leading-none text-ground">
+        <div role="status" style={{ bottom: "calc(76px + env(safe-area-inset-bottom, 0px))" }} className="fixed left-1/2 z-[20] flex max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-[14px] whitespace-normal rounded-card bg-ink px-[16px] py-[12px] text-[13.5px] font-medium leading-snug text-ground">
           {toast.text}
           {toast.undo && (
             <button type="button" onClick={() => { toast.undo?.(); setToast(null); }}
-              className="h-[30px] rounded-pill border border-[rgba(11,13,17,.25)] bg-transparent px-[12px] text-[13px] font-medium leading-none text-ground">
+              className="h-[30px] shrink-0 rounded-pill border border-[rgba(11,13,17,.25)] bg-transparent px-[12px] text-[13px] font-medium leading-none text-ground">
               Undo
             </button>
           )}
