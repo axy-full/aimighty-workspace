@@ -541,6 +541,71 @@ test("prepared copies remap tenant credentials and revoke old access without cha
   );
 });
 
+test("consumer ledger round-trip preserves receipts and prepare quarantines pre-backup admissions without resetting claims", async (t) => {
+  const f = await fixture(t), bundle = join(f.root, "consumer-backup"),
+    restored = join(f.root, "consumer-restored"), prepared = join(f.root, "consumer-prepared");
+  await f.tenant.execute(`CREATE TABLE higgsfield_consumer_jobs (
+    id TEXT PRIMARY KEY,user_id TEXT,draft_id TEXT,connected_owner_id TEXT,connection_generation TEXT,
+    higgsfield_workspace_id TEXT,workflow TEXT,idempotency_key TEXT,payload_json TEXT,payload_hash TEXT,
+    immutable_hash TEXT,quote_credits REAL,quote_expires_at INTEGER,original_asset_ids TEXT,status TEXT,
+    provider_job_id TEXT,dispatch_claim_hash TEXT,poll_lease_hash TEXT,poll_lease_until INTEGER,
+    result_manifest TEXT,failure_code TEXT,created_at INTEGER,updated_at INTEGER,provider_receipt TEXT)`);
+  const expires = Date.now() + 3600_000;
+  const originalRows = [];
+  for (const status of ["quoted", "dispatching", "uncertain", "accepted", "completed", "failed"]) {
+    await f.tenant.execute({
+      sql: "INSERT INTO higgsfield_consumer_jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      args: [status, "user-a", "draft-a", "user-a", "original-grant-generation", "consumer-wallet", "marketing-video", `${status}-permanent-key`, '{"prompt":"private consumer prompt"}', "payload-hash", "immutable-hash", 17.5, expires, '["source-original"]', status,
+        ["accepted", "completed"].includes(status) ? `${status}-provider-uuid` : null,
+        status === "quoted" ? null : `${status}-permanent-claim`,
+        status === "accepted" ? "old-poll-claim" : null, status === "accepted" ? expires : null,
+        status === "completed" ? '{"originalAssetId":"result-original"}' : null,
+        status === "failed" ? "submission_rejected" : null, 10, 20,
+        status === "uncertain" ? '{"status":"submitted","request_ref":"unrecognized-handle"}' : null],
+    });
+  }
+  originalRows.push(...(await f.tenant.execute("SELECT * FROM higgsfield_consumer_jobs ORDER BY id")).rows.map(row => ({ ...row })));
+  await createBackup(f.config, bundle, { env: f.env });
+  await restoreBackup(bundle, restored, { env: f.env });
+  assert.equal((await verifyDatabase(join(restored, "databases", "tenant.db"), f.config.databases[1])).verified, true);
+  // The backup was quoted, but the original environment later accepted it.
+  // Restoring its old absence of a claim must never permit a second submission.
+  await f.tenant.execute("UPDATE higgsfield_consumer_jobs SET status='accepted',provider_job_id='post-backup-provider-uuid',dispatch_claim_hash='post-backup-permanent-claim' WHERE id='quoted'");
+  const snapshotBytes = await readFile(join(restored, "databases", "tenant.db"));
+  await prepareRestore(restored, {
+    invalidateAccess: true,
+    databases: [
+      { id: "platform", url: pathToFileURL(join(f.root, "consumer-new-platform.db")).href },
+      { id: "tenant", url: pathToFileURL(join(f.root, "consumer-new-tenant.db")).href },
+    ],
+  }, prepared, { env: f.env });
+  assert.deepEqual(await readFile(join(restored, "databases", "tenant.db")), snapshotBytes);
+  const copy = createClient({ url: pathToFileURL(join(prepared, "tenant.db")).href });
+  try {
+    const rows = (await copy.execute("SELECT * FROM higgsfield_consumer_jobs ORDER BY id")).rows;
+    assert.equal(rows.length, 6);
+    for (let i = 0; i < rows.length; i++) {
+      const { status, poll_lease_hash, poll_lease_until, updated_at, ...preserved } = rows[i];
+      const { status: previousStatus, poll_lease_hash: previousLease, poll_lease_until: previousUntil, updated_at: previousUpdated, ...original } = originalRows[i];
+      assert.deepEqual(preserved, original);
+      assert.equal(status, ["quoted", "dispatching"].includes(previousStatus) ? "uncertain" : previousStatus);
+      assert.equal(poll_lease_hash, null);
+      assert.equal(poll_lease_until, null);
+      assert.ok(updated_at >= previousUpdated);
+      // Keep destructured old lease values checked, including the live lease.
+      if (previousStatus === "accepted") { assert.equal(previousLease, "old-poll-claim"); assert.equal(previousUntil, expires); }
+    }
+    assert.equal((await copy.execute("UPDATE higgsfield_consumer_jobs SET status='dispatching' WHERE id='quoted' AND status='quoted'")).rowsAffected, 0);
+    assert.equal((await copy.execute("UPDATE higgsfield_consumer_jobs SET status='completed' WHERE id='accepted' AND poll_lease_hash='old-poll-claim'")).rowsAffected, 0);
+    assert.equal((await copy.execute("SELECT dispatch_claim_hash FROM higgsfield_consumer_jobs WHERE id='dispatching'")).rows[0].dispatch_claim_hash, "dispatching-permanent-claim");
+    assert.equal((await copy.execute("SELECT quote_expires_at FROM higgsfield_consumer_jobs WHERE id='quoted'")).rows[0].quote_expires_at, expires);
+  } finally { copy.close(); }
+  const changes = JSON.parse(await readFile(join(prepared, "preparation.json"), "utf8")).changes;
+  assert.equal(changes.find(change => change.action === "quarantined-restored-consumer-admissions").rows, 2);
+  assert.equal(changes.find(change => change.action === "invalidated-restored-consumer-poll-leases").rows, 1);
+  assert.equal((await f.tenant.execute("SELECT provider_job_id FROM higgsfield_consumer_jobs WHERE id='quoted'")).rows[0].provider_job_id, "post-backup-provider-uuid");
+});
+
 test("missing referenced media blocks backup and database-only files are excluded from local media directories", async (t) => {
   const f = await fixture(t);
   await f.tenant.executeMultiple(

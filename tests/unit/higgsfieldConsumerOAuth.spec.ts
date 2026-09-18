@@ -330,6 +330,238 @@ test("concurrent refresh claims rotate once; later readers use the committed tok
   expect(calls).toBe(1);
 });
 
+test("access snapshots bind token and generation to the exact owner and workspace", async () => {
+  const { oauth, platform } = await modules(),
+    flow = await connected();
+  let calls = 0;
+  const fetcher = asFetch(async () => {
+    calls++;
+    throw new Error("Unexpected refresh");
+  });
+  const access = await oauth.getConsumerAccess(
+    flow.id.workspaceId,
+    flow.id.userId,
+    { fetch: fetcher },
+  );
+  const row = (
+    await platform.platformDb().execute({
+      sql: "SELECT generation FROM higgsfield_consumer_connections WHERE workspace_id=? AND user_id=?",
+      args: [flow.id.workspaceId, flow.id.userId],
+    })
+  ).rows[0];
+  expect(access).toEqual({
+    accessToken: flow.tokens.accessToken,
+    generation: row.generation,
+  });
+  expect(
+    await oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+      expectedGeneration: access!.generation,
+      fetch: fetcher,
+    }),
+  ).toEqual(access);
+  for (const id of [
+    { ...flow.id, userId: "another-owner" },
+    { ...flow.id, workspaceId: "another-workspace" },
+  ]) {
+    await expect(
+      oauth.getConsumerAccess(id.workspaceId, id.userId, {
+        expectedGeneration: access!.generation,
+        fetch: fetcher,
+      }),
+    ).rejects.toMatchObject({ code: "connection_changed", status: 409 });
+  }
+  expect(
+    await oauth.getConsumerAccess("unknown", "owner", { fetch: fetcher }),
+  ).toBeNull();
+  expect(await oauth.getConsumerConnection(flow.id)).not.toHaveProperty(
+    "generation",
+  );
+  expect(calls).toBe(0);
+});
+
+test("a completed reconnect invalidates old quote generations before a replacement token can refresh", async () => {
+  const { oauth, store, platform } = await modules(),
+    flow = await connected();
+  const old = await oauth.getConsumerAccess(
+    flow.id.workspaceId,
+    flow.id.userId,
+  );
+  const replacement = await start(flow.id);
+  // Starting consent does not silently replace a still-valid account.
+  expect(
+    await oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+      expectedGeneration: old!.generation,
+    }),
+  ).toEqual(old);
+  const authorization = await store.consumeAuthorization(
+    replacement.params.get("state")!,
+    {
+      ...flow.id,
+      sessionHash: store.hashConsumerSecret(replacement.session),
+    },
+  );
+  expect(
+    await store.completeAuthorization(authorization!, {
+      ...flow.tokens,
+      accessToken: "replacement-account-private",
+      expiresAt: Date.now() + 1000,
+    }),
+  ).toBe(true);
+  const snapshot = async () =>
+    (
+      await platform.platformDb().execute({
+        sql: "SELECT generation,status,tokens_enc,refresh_lease,updated_at FROM higgsfield_consumer_connections WHERE workspace_id=? AND user_id=?",
+        args: [flow.id.workspaceId, flow.id.userId],
+      })
+    ).rows[0];
+  const before = await snapshot();
+  expect(before.generation).not.toBe(old!.generation);
+  let calls = 0;
+  const fetcher = asFetch(async () => {
+    calls++;
+    return tokenResponse();
+  });
+  for (const generation of [old!.generation, ""]) {
+    const error = await oauth
+      .getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+        expectedGeneration: generation,
+        fetch: fetcher,
+      })
+      .catch((error) => error);
+    expect(error).toMatchObject({ code: "connection_changed", status: 409 });
+    expect(error.message).not.toContain("private");
+    expect(error.message).not.toContain(old!.generation);
+  }
+  expect(calls).toBe(0);
+  expect(await snapshot()).toEqual(before);
+  expect(
+    await oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+      expectedGeneration: String(before.generation),
+      fetch: fetcher,
+    }),
+  ).toEqual({
+    accessToken: "access-private-abc",
+    generation: before.generation,
+  });
+  expect(calls).toBe(1);
+});
+
+test("routine refresh preserves the quote generation and excludes competing refresh claims", async () => {
+  const { oauth, store } = await modules(),
+    flow = await connected(Date.now() + 1000);
+  const snapshot = await store.claimConsumerAccess(
+    flow.id,
+    Date.now() - 120_000,
+  );
+  expect(snapshot.kind).toBe("ready");
+  if (snapshot.kind !== "ready") throw new Error("Fixture access unavailable");
+  let respond!: (response: Response) => void,
+    entered!: () => void,
+    calls = 0;
+  const started = new Promise<void>((resolve) => (entered = resolve));
+  const fetcher = asFetch(async () => {
+    calls++;
+    entered();
+    return new Promise((resolve) => (respond = resolve));
+  });
+  const pending = oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+    expectedGeneration: snapshot.generation,
+    fetch: fetcher,
+  });
+  await started;
+  await expect(
+    oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+      expectedGeneration: snapshot.generation,
+      fetch: fetcher,
+    }),
+  ).rejects.toMatchObject({ code: "connection_busy" });
+  respond(tokenResponse());
+  const refreshed = {
+    accessToken: "access-private-abc",
+    generation: snapshot.generation,
+  };
+  expect(await pending).toEqual(refreshed);
+  expect(
+    await oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+      expectedGeneration: snapshot.generation,
+      fetch: fetcher,
+    }),
+  ).toEqual(refreshed);
+  expect(calls).toBe(1);
+});
+
+test("disconnect and reconnect during refresh reject the old result without clearing a replacement grant", async () => {
+  const { oauth, store } = await modules();
+  for (const reconnect of [false, true]) {
+    const flow = await connected(Date.now() + 1000);
+    const snapshot = await store.claimConsumerAccess(
+      flow.id,
+      Date.now() - 120_000,
+    );
+    if (snapshot.kind !== "ready")
+      throw new Error("Fixture access unavailable");
+    let respond!: (response: Response) => void,
+      entered!: () => void,
+      calls = 0;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const fetcher = asFetch(async () => {
+      calls++;
+      entered();
+      return new Promise((resolve) => (respond = resolve));
+    });
+    const pending = oauth.getConsumerAccess(
+      flow.id.workspaceId,
+      flow.id.userId,
+      {
+        expectedGeneration: snapshot.generation,
+        fetch: fetcher,
+      },
+    );
+    await started;
+    if (reconnect) {
+      const replacement = await start(flow.id);
+      const authorization = await store.consumeAuthorization(
+        replacement.params.get("state")!,
+        {
+          ...flow.id,
+          sessionHash: store.hashConsumerSecret(replacement.session),
+        },
+      );
+      expect(
+        await store.completeAuthorization(authorization!, {
+          ...flow.tokens,
+          accessToken: "new-account-private",
+          expiresAt: Date.now() + 3600_000,
+        }),
+      ).toBe(true);
+    } else await store.disconnectConsumer(flow.id);
+    respond(tokenResponse());
+    await expect(pending).rejects.toMatchObject({ code: "reconnect_required" });
+    await expect(
+      oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+        expectedGeneration: snapshot.generation,
+        fetch: fetcher,
+      }),
+    ).rejects.toMatchObject({ code: "connection_changed" });
+    const current = await oauth.getConsumerAccess(
+      flow.id.workspaceId,
+      flow.id.userId,
+      { fetch: fetcher },
+    );
+    if (reconnect) {
+      expect(current?.accessToken).toBe("new-account-private");
+      expect(current?.generation).not.toBe(snapshot.generation);
+      expect(
+        await oauth.getConsumerAccess(flow.id.workspaceId, flow.id.userId, {
+          expectedGeneration: current!.generation,
+          fetch: fetcher,
+        }),
+      ).toEqual(current);
+    } else expect(current).toBeNull();
+    expect(calls).toBe(1);
+  }
+});
+
 test("ambiguous refresh and malformed refresh token require reconnect without replay", async () => {
   const { oauth } = await modules();
   for (const response of [

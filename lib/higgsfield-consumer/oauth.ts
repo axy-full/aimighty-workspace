@@ -23,6 +23,7 @@ type ErrorCode =
   | "authorization_denied"
   | "authorization_failed"
   | "reconnect_required"
+  | "connection_changed"
   | "connection_busy"
   | "unavailable";
 const messages: Record<ErrorCode, string> = {
@@ -37,6 +38,8 @@ const messages: Record<ErrorCode, string> = {
     "Higgsfield could not complete this connection. Start again in workspace settings.",
   reconnect_required:
     "Reconnect Higgsfield in workspace settings before continuing.",
+  connection_changed:
+    "The Higgsfield connection changed. Request a new quote before starting a new job; existing jobs require their original connection.",
   connection_busy:
     "The Higgsfield connection is refreshing. Try again shortly.",
   unavailable:
@@ -45,7 +48,7 @@ const messages: Record<ErrorCode, string> = {
 export class ConsumerOAuthError extends Error {
   constructor(
     public code: ErrorCode,
-    public status = code === "connection_busy"
+    public status = code === "connection_busy" || code === "connection_changed"
       ? 409
       : code === "reconnect_required"
         ? 401
@@ -278,19 +281,33 @@ export async function finishConsumerAuthorization(
     throw new ConsumerOAuthError("session_changed");
 }
 
-/** For server-side MCP only. No route should serialize this result. */
-export async function getConsumerAccessToken(
+export type ConsumerAccess = { accessToken: string; generation: string };
+
+/**
+ * Server-only access snapshot; never serialize it in a route response.
+ * Capture generation with a quote, then pass it as expectedGeneration immediately
+ * before dispatch/poll. Refresh preserves it; reconnect/disconnect invalidate it.
+ * This admission snapshot does not lock out a subsequent owner disconnect.
+ */
+export async function getConsumerAccess(
   workspaceId: string,
   userId: string,
-  fetcher: typeof fetch = fetch,
-): Promise<string | null> {
+  options: { expectedGeneration?: string; fetch?: typeof fetch } = {},
+): Promise<ConsumerAccess | null> {
   try {
-    const access = await claimConsumerAccess({ workspaceId, userId });
+    const access = await claimConsumerAccess({
+      workspaceId,
+      userId,
+      expectedGeneration: options.expectedGeneration,
+    });
+    if (access.kind === "changed")
+      throw new ConsumerOAuthError("connection_changed");
     if (access.kind === "missing") return null;
     if (access.kind === "busy") throw new ConsumerOAuthError("connection_busy");
     if (access.kind === "reconnect")
       throw new ConsumerOAuthError("reconnect_required");
-    if (access.kind === "ready") return access.token;
+    if (access.kind === "ready")
+      return { accessToken: access.token, generation: access.generation };
     if (access.kind !== "refresh") throw new ConsumerOAuthError("unavailable");
     const { claim } = access;
     try {
@@ -301,7 +318,7 @@ export async function getConsumerAccessToken(
           refresh_token: claim.tokens.refreshToken!,
           resource: CONSUMER_RESOURCE,
         }),
-        fetcher,
+        options.fetch ?? fetch,
       );
       const tokens = parseTokens(
         data,
@@ -311,7 +328,7 @@ export async function getConsumerAccessToken(
       );
       if (!(await finishConsumerRefresh(claim, tokens)))
         throw new ConsumerOAuthError("reconnect_required");
-      return tokens.accessToken;
+      return { accessToken: tokens.accessToken, generation: claim.generation };
     } catch {
       await finishConsumerRefresh(claim, null).catch(() => {});
       throw new ConsumerOAuthError("reconnect_required");
@@ -320,6 +337,18 @@ export async function getConsumerAccessToken(
     if (error instanceof ConsumerOAuthError) throw error;
     throw new ConsumerOAuthError("unavailable");
   }
+}
+
+/** For read-only diagnostics without a saved job. Never use for job dispatch. */
+export async function getConsumerAccessToken(
+  workspaceId: string,
+  userId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string | null> {
+  const access = await getConsumerAccess(workspaceId, userId, {
+    fetch: fetcher,
+  });
+  return access?.accessToken ?? null;
 }
 export const getConsumerConnection = consumerConnectionStatus;
 export async function removeConsumerConnection(

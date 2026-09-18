@@ -24,6 +24,8 @@ import { MarketingPresets } from "./MarketingPresets";
 import { BrandKitEditor } from "./BrandKitEditor";
 import { ProductProfileEditor } from "./ProductProfileEditor";
 import { CreativeTemplateBrowser } from "./CreativeTemplateBrowser";
+import { ReferenceAd } from "./ReferenceAd";
+import { EMPTY_REFERENCE_AD } from "@/lib/workbench/reference-ad";
 import {
   DEFAULT_CREATIVE,
   creativeTemplate,
@@ -400,6 +402,7 @@ export function MoleculrWorkspace({
             onBuildStoryboard={onBuildStoryboard}
             onDesign={() => onPage("design")}
           />
+          {media === "video" && <ReferenceAd project={project} enabled={enabled} value={brief.referenceAd ?? EMPTY_REFERENCE_AD} onChange={referenceAd => onChange({ ...brief, referenceAd })}/>}
           <section className="suite-panel">
             <div className="suite-section-heading">
               <div>
@@ -499,6 +502,7 @@ export function MoleculrWorkspace({
       )}
       {page === "variants" && (
         <>
+          {media === "video" && <ReferenceAd project={project} enabled={enabled} value={brief.referenceAd ?? EMPTY_REFERENCE_AD} onChange={referenceAd => onChange({ ...brief, referenceAd })}/>}
           <section className="suite-panel">
             <div className="suite-section-heading">
               <div>

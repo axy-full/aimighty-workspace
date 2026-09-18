@@ -225,11 +225,11 @@ export type RefreshClaim = ConsumerIdentity & {
   tokens: ConsumerTokens;
 };
 export type AccessClaim =
-  | { kind: "missing" | "reconnect" | "busy" }
-  | { kind: "ready"; token: string }
+  | { kind: "missing" | "reconnect" | "busy" | "changed" }
+  | { kind: "ready"; token: string; generation: string }
   | { kind: "refresh"; claim: RefreshClaim };
 export async function claimConsumerAccess(
-  identity: ConsumerIdentity,
+  identity: ConsumerIdentity & { expectedGeneration?: string },
   at = Date.now(),
 ): Promise<AccessClaim> {
   await consumerStoreReady();
@@ -240,6 +240,13 @@ export async function claimConsumerAccess(
         args: [identity.workspaceId, identity.userId],
       })
     ).rows[0];
+    // Compare the quote/job's grant in the same transaction as token access or
+    // refresh admission. A mismatch must never refresh the replacement account.
+    if (
+      identity.expectedGeneration !== undefined &&
+      (!row || row.generation !== identity.expectedGeneration)
+    )
+      return { kind: "changed" };
     if (!row || row.status === "disconnected") return { kind: "missing" };
     if (row.status !== "connected") return { kind: "reconnect" };
     if (row.refresh_lease && Number(row.refresh_lease_until) > at)
@@ -262,7 +269,11 @@ export async function claimConsumerAccess(
       return { kind: "reconnect" };
     }
     if (tokens.expiresAt > at + 60_000)
-      return { kind: "ready", token: tokens.accessToken };
+      return {
+        kind: "ready",
+        token: tokens.accessToken,
+        generation: String(row.generation),
+      };
     const lease = randomUUID();
     await tx.execute({
       sql: "UPDATE higgsfield_consumer_connections SET refresh_lease=?,refresh_lease_until=?,updated_at=? WHERE workspace_id=? AND user_id=?",

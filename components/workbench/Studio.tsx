@@ -156,7 +156,8 @@ import {MoleculrWorkspace} from '@/components/suites/MoleculrWorkspace';
 import {PosterDesigner} from '@/components/suites/PosterDesigner';
 import {buildMoleculrStoryboard,prepareMoleculrVariants} from '@/lib/workbench/moleculr-storyboard';
 import {creativeTemplate} from '@/lib/workbench/moleculr-creative';
-import {EMPTY_MOLECULR,moleculrNode,moleculrPrompt,moleculrReferences} from '@/lib/workbench/moleculr';
+import {EMPTY_MOLECULR,moleculrNode,moleculrPrompt,moleculrReferences,moleculrVideoPrompt} from '@/lib/workbench/moleculr';
+import {referenceAdBinding,validateReferenceAdBinding,type ReferenceAdBinding} from '@/lib/workbench/reference-ad';
 import {PAGES} from '@/lib/suites';
 import {bindMoleculrReferences} from '@/lib/workbench/moleculr-graph';
 import {generationReferenceIds} from '@/lib/workbench/node-graph';
@@ -1265,7 +1266,12 @@ export default function Studio({
     const current=pRef.current,node=current.nodes.find(item=>item.id===nodeId);if(!node)return;
     if(node.locked){toast.error('Unlock this shot in Rig before generating.');return;}
     const variant=current.moleculr?.variants.find(item=>item.nodeId===nodeId);
-    setGenerationTarget({node,prompt:node.text||node.title,refs:generationReferenceIds(node,current),draftId:current.id,options:variant?.generation});
+    const refs=generationReferenceIds(node,current);
+    if(variant?.referenceVideo){
+      try{validateReferenceAdBinding(current,variant.referenceVideo);if(!refs.includes(variant.referenceVideo.assetId))throw new Error('Reconnect this variant’s original reference ad in Rig before generating.');}
+      catch(error){toast.error(error instanceof Error?error.message:'The reference ad is unavailable.');return;}
+    }
+    setGenerationTarget({node,prompt:node.text||node.title,refs:variant?.referenceVideo?refs.filter(id=>id!==node.assetId||id===variant.referenceVideo!.assetId):refs,draftId:current.id,options:variant?.generation});
   }
   function createCampaignAvatar(prompt:string){
     if(transitioningRef.current||!readyRef.current||!signedIn)return;
@@ -1278,10 +1284,13 @@ export default function Studio({
   function configureMoleculr(hook:string,castId:string|undefined,kind:'image'|'video',options?:GenerationTarget['options']){
     if(transitioningRef.current||!readyRef.current||!signedIn)return;
     const current=pRef.current,brief=current.moleculr??EMPTY_MOLECULR;
-    const rawRequest=moleculrPrompt(current,brief,hook,castId),request=options?.marketing?rawRequest.slice(0,5000):rawRequest;
+    let referenceVideo:ReferenceAdBinding|undefined;
+    try{referenceVideo=kind==='video'?referenceAdBinding(current,brief.referenceAd):undefined;}
+    catch(error){toast.error(error instanceof Error?error.message:'The reference ad is unavailable.');return;}
+    const rawRequest=(kind==='video'?moleculrVideoPrompt:moleculrPrompt)(current,brief,hook,castId),request=options?.marketing?rawRequest.slice(0,5000):rawRequest;
     const template=creativeTemplate(brief);
     const generation={modelId:options?.modelId,marketing:options?.marketing,ratio:options?.ratio??brief.creative?.aspect,duration:options?.duration??brief.creative?.seconds};
-    const existing=brief.variants.find(item=>item.hook===hook&&item.castAssetId===castId&&item.kind===kind&&item.productId===brief.activeProductId&&item.templateId===template?.id&&JSON.stringify(item.generation)===JSON.stringify(generation)&&current.nodes.some(node=>node.id===item.nodeId&&node.text===request));
+    const existing=brief.variants.find(item=>item.hook===hook&&item.castAssetId===castId&&item.kind===kind&&item.productId===brief.activeProductId&&item.templateId===template?.id&&JSON.stringify(item.referenceVideo)===JSON.stringify(referenceVideo)&&JSON.stringify(item.generation)===JSON.stringify(generation)&&current.nodes.some(node=>node.id===item.nodeId&&node.text===request));
     if(existing&&current.nodes.find(item=>item.id===existing.nodeId)?.locked){toast.error('This variant is locked in Rig. Unlock it before changing its generation.');return;}
     if(!existing&&(current.nodes.length>=250||brief.variants.length>=100)){toast.error('This project has reached its variant or node limit. Start another project to continue.');return;}
     const nodeId=existing?.nodeId??uid('variant');
@@ -1290,10 +1299,12 @@ export default function Studio({
       const base=existing?{...current.nodes.find(item=>item.id===nodeId)!,text:request,mode:planned.mode}:planned;
       const chosenRefs=options?.referenceAssetIds ? options.referenceAssetIds.map(id=>current.assets.find(asset=>asset.id===id&&asset.kind==='image')).filter((asset):asset is Asset=>!!asset) : moleculrReferences(current,{...brief,castAssetIds:castId?[castId]:[]},castId);
       if(options?.referenceAssetIds&&chosenRefs.length!==options.referenceAssetIds.length)throw new Error('A selected product or cast reference is no longer available.');
-      const binding=bindMoleculrReferences(current,base,chosenRefs,()=>uid('reference'));
+      if(referenceVideo)chosenRefs.push(current.assets.find(asset=>asset.id===referenceVideo.assetId)!);
+      const binding=bindMoleculrReferences(current,base,chosenRefs,()=>uid('reference'),referenceVideo?.assetId);
       const nextNodes=[...(existing?current.nodes.map(item=>item.id===nodeId?binding.node:item):[...current.nodes,binding.node]),...binding.sources];
-      change(old=>({...old,nodes:nextNodes,moleculr:{...brief,variants:existing?brief.variants:[...brief.variants,{id:uid('campaign'),nodeId,hook,castAssetId:castId,kind,productId:brief.activeProductId,templateId:template?.id,createdAt:new Date().toISOString(),generation}]}}));
-      setGenerationTarget({node:binding.node,prompt:request,refs:generationReferenceIds(binding.node,{...current,nodes:nextNodes}),draftId:current.id,options:{ratio:brief.creative?.aspect,duration:brief.creative?.seconds,...options}});
+      change(old=>({...old,nodes:nextNodes,moleculr:{...brief,variants:existing?brief.variants:[...brief.variants,{id:uid('campaign'),nodeId,hook,castAssetId:castId,kind,productId:brief.activeProductId,templateId:template?.id,...(referenceVideo?{referenceVideo}:{}),createdAt:new Date().toISOString(),generation}]}}));
+      const targetRefs=generationReferenceIds(binding.node,{...current,nodes:nextNodes});
+      setGenerationTarget({node:binding.node,prompt:request,refs:referenceVideo?targetRefs.filter(id=>id!==binding.node.assetId||id===referenceVideo.assetId):targetRefs,draftId:current.id,options:{ratio:brief.creative?.aspect,duration:brief.creative?.seconds,...options}});
     }catch(error){toast.error(error instanceof Error?error.message:'The variant could not be configured.');}
   }
 

@@ -1,4 +1,5 @@
 import type { Asset, CanvasNode, Project } from "./studio";
+import { resolveReferenceAd } from "./reference-ad";
 
 const SOURCE_TYPES = new Set<CanvasNode["type"]>([
   "media",
@@ -18,12 +19,13 @@ function boundedPosition(value: number) {
   );
 }
 
-/** Persist original image inputs so reopening a campaign node in Rig keeps them. */
+/** Persist original inputs; one reference video requires an explicit video binding. */
 export function bindMoleculrReferences(
   project: Project,
   node: CanvasNode,
   refs: Asset[],
   createId: () => string,
+  referenceVideoAssetId?: string,
 ): { node: CanvasNode; sources: CanvasNode[] } {
   if (node.locked)
     throw new Error(
@@ -42,16 +44,18 @@ export function bindMoleculrReferences(
     );
 
   // The caller's objects supply IDs only; canonical originals belong to this draft.
+  if (referenceVideoAssetId && (!['Video', 'Image to video'].includes(node.mode ?? '') || !refs.some(asset => asset.id === referenceVideoAssetId) || !resolveReferenceAd(project, { assetId: referenceVideoAssetId })))
+    throw new Error('The reference ad needs its stored original and a video generation node.');
   const assets = new Map(
     project.assets
-      .filter((asset) => asset.kind === "image")
+      .filter((asset) => asset.kind === "image" || asset.id === referenceVideoAssetId)
       .map((asset) => [asset.id, asset]),
   );
   const selected = [...new Set(refs.map((asset) => asset.id))]
     .map((id) => assets.get(id))
     .filter((asset): asset is Asset => !!asset);
   if (selected.length > 100)
-    throw new Error("A variant can bind up to 100 image references.");
+    throw new Error("A variant can bind up to 100 media references.");
 
   const bindings = selected.map((asset) => ({
     asset,

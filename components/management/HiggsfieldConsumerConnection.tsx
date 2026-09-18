@@ -5,6 +5,7 @@ import { useApi } from "@/lib/useApi";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useSession } from "@/lib/session";
 import { ManagementCard, ManagementNotice } from "./ManagementPage";
+import ConsumerVideoVerification from "./ConsumerVideoVerification";
 
 type Connection = { connected: boolean; requiresReconnect: boolean; connectedAt?: number; expiresAt?: number };
 type Discovery = { discoveryOnly: true; capabilitiesVerified: false; tools: { name: string; description?: string; inputSchema: Record<string, unknown> }[]; summary: Record<string, string[]>; protocolVersion: string };
@@ -64,6 +65,7 @@ export default function HiggsfieldConsumerConnection() {
       {(problem || error) && <ManagementNotice error>{problem || error}</ManagementNotice>}
       {!dismissedOutcome && outcome && <ManagementNotice error={outcome !== "connected"}>{outcome === "connected" ? "Higgsfield account connected. Check available workflows to continue setup." : "The Higgsfield connection was not completed. Sign in to the same Particl workspace and try connecting again."}</ManagementNotice>}
       {notice && <p role="status" className="text-sm">{notice}</p>}
+      {data?.connected && !data.requiresReconnect && <ConsumerVideoVerification key={requestScope ?? "signed-out"} />}
       {qualification && <details><summary className="cursor-pointer text-xs text-mute">Account capability diagnostics</summary><pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-chip p-3 text-[11px]" aria-label="Higgsfield account capabilities">{JSON.stringify(qualification, null, 2)}</pre></details>}
       {discovery && <div className="space-y-3"><p className="text-sm">{discovery.tools.length} tools advertised by the connected account. Availability still needs workflow qualification.</p><dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">{Object.entries(labels).map(([key, label]) => <div key={key} className="text-xs"><dt className="font-medium">{label}</dt><dd className="text-mute break-words">{discovery.summary[key]?.length ? `${discovery.summary[key].length} related tools found` : "No matching tool name found"}</dd></div>)}</dl><details><summary className="cursor-pointer text-xs text-mute">Connection diagnostics</summary><pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-chip p-3 text-[11px]" aria-label="Higgsfield workflow definitions">{JSON.stringify({ protocolVersion: discovery.protocolVersion, tools: discovery.tools }, null, 2)}</pre></details></div>}
     </div>

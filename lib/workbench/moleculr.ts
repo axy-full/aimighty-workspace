@@ -1,6 +1,7 @@
 import type { Asset, CanvasNode, Project } from "./studio";
 import { creativeTemplate, type BrandKit, type MoleculrCreative, type ProductProfile } from './moleculr-creative';
 import type { PosterDocument } from './moleculr-poster';
+import { referenceAdDirection, resolveReferenceAd, validateReferenceAd, type ReferenceAdBinding, type ReferenceAdConfig } from './reference-ad';
 
 export const MOLECULR_FORMATS = [
   {
@@ -68,6 +69,7 @@ export type MoleculrGenerationOptions = {
   soulStrength?: number;
 };
 export type MoleculrBrief = {
+  referenceAd?: ReferenceAdConfig;
   brandKit?: BrandKit;
   productDescription?: string;
   productBrand?: string;
@@ -93,6 +95,7 @@ export type MoleculrBrief = {
     productId?: string;
     templateId?: string;
     createdAt?: string;
+    referenceVideo?: ReferenceAdBinding;
     generation?: Omit<MoleculrGenerationOptions, 'referenceAssetIds'>;
   }[];
 };
@@ -213,6 +216,17 @@ export function moleculrNode(
     mode: kind === "video" ? "Video" : "Image",
     role: "Art director",
   };
+}
+/** Reference-video direction and media are included only by video preparation paths. */
+export function moleculrVideoPrompt(project: Project, brief: MoleculrBrief, hook: string, castId?: string): string {
+  const direction = referenceAdDirection(project, brief.referenceAd);
+  const base = moleculrPrompt(project, brief, hook, castId);
+  return direction ? `${direction}\n\n${base}`.slice(0, 12000) : base;
+}
+export function moleculrVideoReferences(project: Project, brief: MoleculrBrief, castId?: string): Asset[] {
+  if (brief.referenceAd) validateReferenceAd(project, brief.referenceAd);
+  const video = brief.referenceAd && resolveReferenceAd(project, brief.referenceAd);
+  return [...moleculrReferences(project, brief, castId), ...(video ? [video.asset] : [])];
 }
 export function variantAssets(project: Project, brief: MoleculrBrief) {
   const nodes = new Set(brief.variants.map((item) => item.nodeId));

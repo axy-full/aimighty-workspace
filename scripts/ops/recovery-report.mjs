@@ -148,6 +148,33 @@ export async function recoveryReport(directory) {
           action("higgsfield_generation_receipts", row, "restore-known-soul-generation-handle-and-poll-only", handle.ref ?? null);
         }
       }
+      if (names.has("higgsfield_consumer_jobs")) {
+        for (const row of (await db.execute("SELECT * FROM higgsfield_consumer_jobs")).rows) {
+          // This is a distinct consumer-credit ledger. Never invent a USD
+          // reservation or include prompts, raw provider results or claims.
+          const disposition = row.status === "completed" ? "recover-persisted-consumer-result-no-submit"
+            : row.status === "failed" ? "terminal-consumer-no-provider-work"
+            : row.status === "quoted" ? "restored-consumer-quote-requires-reconciliation-never-submit"
+            : row.provider_job_id ? "verify-consumer-connection-then-poll-existing-handle-only"
+            : "uncertain-consumer-outcome-never-resubmit";
+          report.actions.push({
+            database: source.id,
+            workspaceIds: source.workspaceIds,
+            table: "higgsfield_consumer_jobs",
+            id: row.id,
+            userId: row.user_id,
+            draftId: row.draft_id,
+            status: row.status,
+            disposition,
+            handle: row.provider_job_id ?? null,
+            connectedOwnerId: row.connected_owner_id,
+            connectionGeneration: row.connection_generation,
+            higgsfieldWorkspaceId: row.higgsfield_workspace_id ?? null,
+            quoteCredits: row.quote_credits,
+            creditUnit: "higgsfield_credits",
+          });
+        }
+      }
       if (names.has("soul_training_receipts")) {
         for (const row of (await db.execute("SELECT * FROM soul_training_receipts WHERE settled_at IS NULL")).rows) {
           action("soul_training_receipts", { ...row, status: row.provider_status },

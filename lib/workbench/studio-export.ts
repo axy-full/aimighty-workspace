@@ -3,6 +3,7 @@ import {zipSync,strToU8} from 'fflate';
 import {Asset,Project,makeEDL,safeName,timecode,assetFilename,validateSequence} from './studio';
 import {moleculrAssetDependencies,validateMoleculrBindings} from './moleculr-bindings';
 import {originalAssetDownload} from './original-asset';
+import {resolveReferenceAd} from './reference-ad';
 
 export type EditSettings={exposure:number;contrast:number;saturation:number;ratio:string;flip:boolean};
 export const defaultEdits:EditSettings={exposure:100,contrast:100,saturation:100,ratio:'Original',flip:false};
@@ -41,6 +42,7 @@ const mediaTypes=new Set(['image/png','image/jpeg','image/webp','image/avif','im
 /** Build separately from download so source recovery and package integrity can be tested with mocks. */
 export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Promise<Response>=(url)=>fetch(url)){
  const sources=collectExportAssets(p);
+ const referenceVideoUrls=new Map(moleculrAssetDependencies(p).filter(binding=>binding.kind==='video').map(binding=>[binding.assetId,resolveReferenceAd(p,{assetId:binding.assetId})!.original.url]));
  const files:Record<string,Uint8Array>={};
  const sourceFiles:{assetId:string;file:string}[]=[];
  const exportAssets=new Map(p.assets.map(asset=>[asset.id,asset]));
@@ -48,7 +50,7 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
  let bytes=0;
  for(const original of sources){
   if(original.kind==='link'){links.push({assetId:original.id,name:original.name,url:original.url});continue;}
-  const response=await fetchAsset(originalAssetDownload(original)?.url ?? original.url);
+  const response=await fetchAsset(referenceVideoUrls.get(original.id) ?? originalAssetDownload(original)?.url ?? original.url);
   if(!response.ok)throw new Error('Cannot export '+original.name+'. Try opening the asset first.');
   const length=Number(response.headers.get('content-length')||0);
   if(length>EXPORT_LIMIT-bytes)throw new Error('This browser package is limited to 200 MB. Export the EDL and collect large sources separately.');
@@ -83,7 +85,7 @@ ${p.fps} fps, non-drop frame. Record starts at 01:00:00:00.
 sequence.edl: CMX3600, one video track, straight cuts only.
 shotlist.csv: inclusive in / exclusive out timecodes and creative notes.
 production.json: project snapshot, production record mappings, reference bindings, take lineage and crew plans.
-media/: original bytes of assets used in the sequence, scratch audio, saved product profiles, brand logo, poster image layers (including hidden layers), and their bound source/reference lineage.
+media/: original bytes of assets used in the sequence, scratch audio, saved product profiles, brand logo, poster image layers (including hidden layers), current and prepared campaign reference videos, and their bound source/reference lineage.
 reference-links.json (when present): saved website references. Web pages are not downloaded as media.
 
 Import the EDL at the stated frame rate and relink using FROM CLIP NAME comments. Image sources are still-frame holds, not rendered video; configure still duration manually if your editor does not conform them. Some editors need WebP/GIF stills converted to PNG before relinking. Export a PNG from the Particl asset editor if needed. Video must already match the sequence frame rate and have zero-based source timecode; embedded timecodes and source frame rates have not been probed.
