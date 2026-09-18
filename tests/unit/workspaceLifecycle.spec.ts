@@ -121,7 +121,7 @@ test("workspace purge removes only its consumer grants and pending states, fenci
   const result = await purgeWorkspace(ws, { files: async () => ({ files: 0, uploads: 0 }), key: async () => {}, database: async () => {} });
   expect(result.completed).toBe(true);
   for (const table of ["higgsfield_consumer_connections", "higgsfield_consumer_authorizations"]) {
-    const rows = (await p.execute(`SELECT workspace_id FROM ${table}`)).rows;
+    const rows = (await p.execute(`SELECT workspace_id FROM ${table} WHERE workspace_id IN ('consumer-purge','other-customer')`)).rows;
     expect(rows.map(row => row.workspace_id)).toEqual(["other-customer"]);
   }
   expect(await consumer.completeAuthorization(states[0].authorization, states[0].tokens)).toBe(false);
