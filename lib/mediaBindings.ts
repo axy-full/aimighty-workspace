@@ -56,6 +56,10 @@ export async function mediaBindingProblem(
   if ((await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='higgsfield_consumer_media_imports'")).rows.length &&
       (await tx.execute({sql:"SELECT 1 FROM higgsfield_consumer_media_imports WHERE source_identity=? AND created_at>? LIMIT 1",args:[`${kind}:${id}`,Date.now()-180_000]})).rows.length)
     return "This original is being transferred for a Higgsfield quote. Try again after the transfer finishes.";
+  if ((await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='astra_render_jobs'")).rows.length) {
+    const jobs=(await tx.execute("SELECT source_json FROM astra_render_jobs WHERE settled=0")).rows;
+    for(const job of jobs){const refs=referencedMedia(JSON.parse(String(job.source_json)));if((kind==='upload'?refs.uploads:refs.generations).has(id))return 'This original is retained by a native Blender render. Finish or cancel the render before deleting it.';}
+  }
   const directSql =
     kind === "upload"
       ? [

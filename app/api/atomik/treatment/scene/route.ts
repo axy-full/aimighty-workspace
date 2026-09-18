@@ -1,3 +1,4 @@
+import { vendorKey } from '@/lib/vendorKeys';
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { now } from "@/lib/db";
@@ -44,7 +45,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const t = await getTreatment(projectId);
   const scene = t?.scenes.find((s) => s.n === n);
   if (!t || !scene) return NextResponse.json({ error: "No such scene." }, { status: 404 });
-  if (!gatewayReachable()) return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
+  if (!gatewayReachable() && !vendorKey('openai')) return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
 
   const effort = requestEffort(body.effort);
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");

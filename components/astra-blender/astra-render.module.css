@@ -1,0 +1,62 @@
+.panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; border-top: 1px solid var(--graphite-line); padding-top: 18px; color: var(--graphite-ink); font-size: 12px; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.heading h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.02em; }
+.heading svg { color: var(--graphite-accent-text); }
+.panel p { margin: 0; color: var(--graphite-body); font-size: 11px; line-height: 1.7; }
+.status { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--graphite-body); }
+.status > i { width: 5px; height: 5px; border-radius: 50%; background: var(--graphite-muted); }
+.status[data-ready=true] > i { background: var(--graphite-success); }
+.notice { border: 1px solid var(--graphite-line); border-radius: 7px; background: var(--graphite-card); padding: 11px; display: grid; gap: 6px; }
+.notice strong { font-size: 11px; font-weight: 600; }
+.notice a { color: var(--graphite-accent-text); text-decoration: underline; text-underline-offset: 2px; font-size: 11px; }
+.source { display: flex; flex-direction: column; gap: 6px; color: var(--graphite-body); font-size: 11px; }
+.panel .source select { width: 100%; min-width: 0; min-height: 35px; padding: 8px; border: 1px solid var(--graphite-line); border-radius: 6px; background: var(--graphite-control); color: var(--graphite-ink); font: inherit; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 10px; min-height: 35px; border: 1px solid var(--graphite-line); border-radius: 6px; background: var(--graphite-control); color: var(--graphite-ink); font-size: 11px; cursor: pointer; }
+.button.primary { color: var(--graphite-on-primary); background: var(--graphite-primary); border-color: var(--graphite-primary); }
+.button:disabled { opacity: .4; cursor: default; }
+.button:focus-visible, .panel a:focus-visible, .panel select:focus-visible, .panel summary:focus-visible { outline: 2px solid var(--graphite-accent-text); outline-offset: 2px; }
+.error { border: 1px solid color-mix(in srgb, var(--graphite-warning) 40%, var(--graphite-line)); background: var(--graphite-card); color: #ffc77c; font-size: 11px; padding: 10px; border-radius: 6px; line-height: 1.7; overflow-wrap: anywhere; }
+.historyHeading { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; padding-top: 15px; border-top: 1px solid var(--graphite-line); }
+.historyHeading h4 { font-size: 12px; font-weight: 600; margin: 0; }
+.refresh { display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; border: 1px solid var(--graphite-line); border-radius: 5px; background: var(--graphite-control); color: var(--graphite-body); cursor: pointer; }
+.jobs { display: flex; flex-direction: column; gap: 10px; }
+.job { border: 1px solid var(--graphite-line); border-radius: 8px; padding: 11px; display: flex; flex-direction: column; gap: 9px; background: var(--graphite-panel); min-width: 0; }
+.jobTitle { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.jobTitle strong { font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+.jobTitle span { font-size: 9px; padding: 2px 5px; border: 1px solid var(--graphite-line); border-radius: 4px; white-space: nowrap; color: var(--graphite-body); }
+.jobTitle span[data-status=succeeded] { color: var(--graphite-success); }
+.jobTitle span[data-status=failed], .jobTitle span[data-status=uncertain] { color: var(--graphite-warning); }
+.meta { color: var(--graphite-body); font-size: 9px; display: flex; flex-wrap: wrap; gap: 4px 8px; font-variant-numeric: tabular-nums; }
+.progress { display: flex; flex-direction: column; gap: 6px; font-size: 10px; color: var(--graphite-body); }
+.progress progress { width: 100%; height: 5px; accent-color: var(--graphite-accent-text); border-radius: 3px; overflow: hidden; }
+.progress progress::-webkit-progress-bar { background: var(--graphite-control); }
+.progress progress::-webkit-progress-value { background: var(--graphite-accent-text); }
+.preview { display: block; width: 100%; max-height: 200px; object-fit: contain; border: 1px solid var(--graphite-line); border-radius: 5px; background: var(--graphite-ground); }
+.artifacts { display: flex; flex-wrap: wrap; gap: 6px; }
+.artifacts a { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--graphite-line); padding: 6px 8px; border-radius: 5px; font-size: 10px; color: var(--graphite-ink); background: var(--graphite-control); text-decoration: none; }
+.library { display: flex; align-items: flex-start; gap: 5px; font-size: 10px; color: var(--graphite-body); }
+.library svg { color: var(--graphite-success); flex: none; margin-top: 1px; }
+.jobActions { display: flex; gap: 7px; }
+.jobActions .button { flex: 1; padding: 7px; min-height: 31px; font-size: 10px; }
+.details { font-size: 10px; line-height: 1.6; color: var(--graphite-body); }
+.details summary { cursor: pointer; }
+.details code { display: block; font-family: var(--graphite-mono); word-break: break-all; font-size: 9px; margin-top: 6px; }
+.quote { display: flex; flex-direction: column; gap: 18px; }
+.quote p { line-height: 1.7; font-size: 13px; color: var(--graphite-body); margin: 0; }
+.quoteFacts { display: grid; grid-template-columns: 1fr auto; gap: 9px 16px; padding: 14px; background: var(--graphite-control); border: 1px solid var(--graphite-line); border-radius: 8px; font-size: 12px; }
+.quoteFacts dt { color: var(--graphite-body); }
+.quoteFacts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.quote .primary { min-height: 43px; font-size: 13px; }
+@media (max-width: 767px) {
+  .panel { gap: 16px; }
+  .panel p { font-size: 12px; }
+  .heading h3 { font-size: 16px; }
+  .panel .source select { font-size: 16px; min-height: 42px; }
+  .button { min-height: 42px; font-size: 12px; }
+  .refresh { width: 35px; height: 35px; }
+  .job { padding: 12px; }
+  .jobTitle strong { font-size: 12px; }
+  .jobTitle span, .meta, .library, .details { font-size: 10px; }
+  .artifacts a { min-height: 35px; font-size: 11px; }
+  .jobActions .button { min-height: 36px; font-size: 11px; }
+}

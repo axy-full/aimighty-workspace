@@ -1,4 +1,10 @@
 "use client";
+
+import dynamic from 'next/dynamic';
+import { astraNativeDigest, serializeAstraNative, validateAstraNativeBindings } from '@/lib/astra-blender/native';
+import { mergeRegisteredAstraAssets } from '@/lib/astra-blender/merge-assets';
+import { createAstraScene } from '@/lib/astra-blender/scene';
+import { astraSceneDigest, serializeAstraScene, validateAstraBindings } from '@/lib/astra-blender/proposal';
 import {draftRequest,writeDraft,reconcileDraftWrite,DraftRequestError,type DraftWrite} from "@/lib/workbench/draft-request";
 import {AtomikResizer,useAtomikSize} from "./AtomikResizer";
 import UploadRecovery from "@/components/UploadRecovery";
@@ -196,18 +202,7 @@ import {
   useMobileViewport,
 } from "./mobile-ui";
 
-const icons = [
-  NotebookPen,
-  FileText,
-  Palette,
-  UserRound,
-  Box,
-  GitBranch,
-  Clapperboard,
-  Layers,
-  Scissors,
-  Download,
-];
+const icons: Record<Stage, typeof Box> = { brief:NotebookPen, script:FileText, moodboard:Palette, characters:UserRound, elements:Box, 'astra-blender':Box, canvas:GitBranch, storyboard:Clapperboard, assets:Layers, edit:Scissors, export:Download };
 const nodeIcons = {
   brief: NotebookPen,
   moodboard: Palette,
@@ -224,6 +219,8 @@ const nodeLabels = {
   scene: "SCENE 01",
   note: "DIRECTION",
 };
+const AstraStudio = dynamic(() => import('@/components/astra-blender/AstraStudio').then(module => module.AstraStudio), { loading: () => <p>Opening Astra blender…</p> });
+
 function IconButton({
   label,
   children,
@@ -580,6 +577,25 @@ export default function Studio({
     if(transitioningRef.current||pRef.current.id!==expectedId)return false;
     if(refreshIdentities)savedSnapshots.current.delete(expectedId);
     return drainSaves(expectedId);
+  }
+  async function refreshAstraAssets(expectedId: string) {
+    if (transitioningRef.current || pRef.current.id !== expectedId) throw new Error('Return to the render’s project to load its saved outputs.');
+    transitioningRef.current = true; setTransitioning(true);
+    try {
+      // Finish already-sent writes, but do not send a stale revision merely to
+      // load append-only outputs registered by the native worker.
+      await saveChain.current;
+      if (uncertainSave.current) throw new Error('Confirm the pending project save before loading render outputs.');
+      const base = savedSnapshots.current.get(expectedId);
+      if (!base) throw new Error('Save this project before loading render outputs.');
+      const data = await draftRequest<{ project?: Project; revision: number }>(apiBase + '/projects?id=' + encodeURIComponent(expectedId), storageKey);
+      if (!data.project || pRef.current.id !== expectedId || activeStorageKey.current !== storageKey) throw new Error('The active project changed. Your render is saved in its original library.');
+      const next = mergeRegisteredAstraAssets(JSON.parse(base), pRef.current, data.project);
+      revisions.current.set(expectedId, data.revision);
+      savedSnapshots.current.set(expectedId, JSON.stringify(data.project));
+      pendingSave.current = null; failedSave.current = false; retryableSave.current = false; autoSaveRetries.current = 0;
+      pRef.current = next; setP(next); setSaveError(''); setSaveState(JSON.stringify(next) === JSON.stringify(data.project) ? 'Saved' : 'Saving');
+    } finally { transitioningRef.current = false; setTransitioning(false); }
   }
   async function saveNamedEdit(label:string,id:string):Promise<EditVersion>{
     const draftId=pRef.current.id;
@@ -1029,6 +1045,7 @@ export default function Studio({
   }
   function applyPlan(plan: Plan) {
     if (plan.applied) return;
+    if (plan.astraBlender || plan.astraNative || plan.intent === 'astra-blender') { setStage('astra-blender'); setAtomOpen(false); toast('Review this scene proposal in Astra blender.'); return; }
     if (plan.referenceAdAnalysis) {
       toast.error('Review and apply this analysis in Moleculr’s Reference ad panel so its selected original can be verified.');
       return;
@@ -1340,7 +1357,7 @@ export default function Studio({
           <main className="studio-main">
             {mobile && <header className="phone-project-header">
               {home ? <MobileStudioMenu projectId={ready?p.id:undefined} active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/> : <button className="phone-back" aria-label="Back to project workflow" onClick={()=>setMobileWorkflowOpen(true)}><ArrowLeft size={18}/></button>}
-              {home ? <button className="phone-project-crumb" aria-label="Select project" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronDown size={12}/><strong>Workspace</strong></button> : <button className="phone-project-crumb" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronRight size={12}/><strong>{String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,'0')} {['Brief','Script','Look','Cast','Elements','Canvas','Boards','Takes','Edit','Deliver'][STAGES.findIndex(s=>s.id===stage)]}</strong></button>}
+              {home ? <button className="phone-project-crumb" aria-label="Select project" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronDown size={12}/><strong>Workspace</strong></button> : <button className="phone-project-crumb" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronRight size={12}/><strong>{String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,'0')} {['Brief','Script','Look','Cast','Elements','Astra blender','Canvas','Boards','Takes','Edit','Deliver'][STAGES.findIndex(s=>s.id===stage)]}</strong></button>}
               <button className={'phone-save '+(saveError?'has-error':'')} aria-label={saveState} title={saveState} onClick={()=>saveError&&toast.error(saveError)}>{saveError?<TriangleAlert size={12}/>:saveState==='Saving'?<Loader2 size={12} className="spin"/>:saveState==='Saved'?<Check size={12}/>:null}<span>{home && initialAccount?.credits ? `${Math.round(initialAccount.credits.balance).toLocaleString()} cr` : saveState.startsWith('Sample')?'Sample':saveState}</span></button>
               <button className="phone-all-assets" aria-label="All assets" onClick={()=>void leaveWorkspace("/library?all=1&project="+encodeURIComponent(p.id))}><FolderOpen size={18}/></button>
               <button className="phone-atomik" aria-label="Toggle Atomik creative engine" disabled={!hydrated} onClick={()=>setAtomOpen(v=>!v)}><AtomMark/><span>Atomik</span></button>
@@ -1618,7 +1635,7 @@ export default function Studio({
                       <h3>One project. Every department.</h3>
                       <div>
                         {STAGES.map((s, i) => {
-                          const Icon = icons[i];
+                          const Icon = icons[s.id];
                           return (
                             <button key={s.id} onClick={() => setStage(s.id)}>
                               <small>{String(i + 1).padStart(2, "0")}</small>
@@ -1636,11 +1653,11 @@ export default function Studio({
                 {!home && !welcomeChoice && suite==='moleculr' && moleculrPage==='design' && <PosterDesigner key={`poster:${p.id}`} project={p} scope={storageKey} enabled={ready&&signedIn&&!transitioning} onChange={poster=>change(old=>({...old,moleculr:{...(old.moleculr??EMPTY_MOLECULR),poster}}))} onSaveAsset={saveMoleculrPoster}/>}
                 {!home && !welcomeChoice && suite==='particl' && (
                   <>
-                    {stage !== "canvas" && (
+                    {stage !== "canvas" && stage !== "astra-blender" && (
                       <div className="page-heading">
                         <div>
                           <div className="eyebrow">
-                            {mobile ? `${String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,"0")} / ${["THE IDEA","THE STORY","THE LOOK","THE CAST","THE WORLD","PRODUCTION CANVAS","STORYBOARDS","ASSETS & TAKES","EDIT & SOUND","DELIVERY"][STAGES.findIndex(s=>s.id===stage)]}` : ["brief", "script"].includes(stage)
+                            {mobile ? `${String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,"0")} / ${["THE IDEA","THE STORY","THE LOOK","THE CAST","THE WORLD","ASTRA BLENDER","PRODUCTION CANVAS","STORYBOARDS","ASSETS & TAKES","EDIT & SOUND","DELIVERY"][STAGES.findIndex(s=>s.id===stage)]}` : ["brief", "script"].includes(stage)
                               ? "DEVELOPMENT"
                               : ["edit", "export"].includes(stage)
                                 ? "POST-PRODUCTION"
@@ -1736,6 +1753,27 @@ export default function Studio({
                         />
                       </>
                     )}
+                    {stage === "astra-blender" && <AstraStudio key={storageKey + p.id} project={p} scope={storageKey} enabled={ready && signedIn && !transitioning}
+                      onSave={() => ensureSaved(p.id)}
+                      onRefreshProject={() => refreshAstraAssets(p.id)}
+                      onAsset={asset => change(old => { if (old.id !== p.id) throw new Error('The project changed. Your upload is preserved in All assets.'); if (old.assets.length >= 500) throw new Error('The project asset limit was reached. Your upload is preserved in All assets.'); return {...old, assets:[...old.assets.filter(item=>item.id!==asset.id),asset]}; })}
+                      onChange={patch => change(old => { if (old.id !== p.id) throw new Error('The project changed. Return to the original project.'); return {...old,...patch}; })}
+                      onApply={async plan => {
+                        const proposal = plan.astraBlender, native = plan.astraNative;
+                        if (!proposal && !native) throw new Error('This proposal has no 3D scene.');
+                        const current = pRef.current;
+                        const source = current.astraBlender ?? createAstraScene('product');
+                        if (current.id !== p.id || await astraSceneDigest(source) !== (native ?? proposal)!.baseSceneDigest) throw new Error('The scene changed after this proposal was requested. Preserve your edits and request a new proposal.');
+                        if (native && await astraNativeDigest(current.astraNative) !== native.baseNativeDigest) throw new Error('The native source changed after this proposal was requested. Review a new proposal.');
+                        change(old => {
+                          if (old.id !== current.id || serializeAstraScene(old.astraBlender ?? createAstraScene('product')) !== serializeAstraScene(source)) throw new Error('The scene changed. Review a new proposal.');
+                          if (native) {
+                            if (serializeAstraNative(old.astraNative) !== serializeAstraNative(current.astraNative)) throw new Error('The native source changed. Review a new proposal.');
+                            validateAstraNativeBindings(native.source, [...old.assets, ...(old.sharedAssets ?? [])]);
+                          } else validateAstraBindings(proposal!.scene, [...old.assets, ...(old.sharedAssets ?? [])]);
+                          return {...old, ...(native ? {astraNative:native.source} : {astraBlender:proposal!.scene}), plans:[{...plan,astraNative:undefined,astraBlender:undefined,role:'Astra blender',applied:true}, ...old.plans.filter(item=>item.id!==plan.id)].slice(0,100)};
+                        });
+                      }} />}
                     {stage === "script" && (
                       <ScriptPanel
                         key={p.id}

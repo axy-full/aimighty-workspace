@@ -359,3 +359,28 @@ test('a definitively invalid paid answer settles its bill and resolves the accep
     expect(ledger.status).toBe('failed'); expect(Number(ledger.engine_cost_usd)).toBe(.004);
   });
 });
+
+
+test('direct development prices its saved per-step cache receipt and stops on unknown usage', async () => {
+  const prior = process.env.ENGINE_MOCK; delete process.env.ENGINE_MOCK;
+  try { for (const unknown of [false, true]) {
+    const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
+    await runInTenant(ws, async () => {
+      const { request } = await fixture(), h = harness();
+      const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      h.deps.models = async () => [priced]; request.model = priced.id;
+      const { job } = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
+      h.deps.models = async () => { throw new Error('Must use saved model snapshot.'); };
+      h.deps.call = async input => { h.calls.push(input); return { text: JSON.stringify(input.stage === 'critique' ? { issues: ['Check.'], revisions: ['Preserve.'] } : output(input)),
+        inputTokens: 100, outputTokens: 20, directUsage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, ...(unknown ? {} : { cache_write_tokens: 40 }) } } }; };
+      for (let index = 0; index < 4; index++) await runDevelopmentStep(job.id, 'owner', h.deps);
+      const [saved] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
+      expect(saved.status).toBe(unknown ? 'uncertain' : 'succeeded');
+      expect(h.calls).toHaveLength(unknown ? 1 : 3);
+      if (unknown) { expect(saved.costUsd).toBeNull(); expect(h.events.at(-1)?.engineCostUsd).toBe(job.estimateUsd); }
+      else expect(saved.costUsd).toBeCloseTo(3 * (30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003), 12);
+      const receipt = (await db().execute({ sql: 'SELECT usage,response FROM workbench_development_steps WHERE job_id=? AND step_index=0', args: [job.id] })).rows[0];
+      expect(String(receipt.usage)).toContain('cached_tokens'); expect(String(receipt.response)).toContain('summary');
+    });
+  } } finally { if (prior === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = prior; }
+});

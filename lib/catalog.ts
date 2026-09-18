@@ -1,5 +1,8 @@
 import { ATOMIK_MODEL_IDS, isAtomikModel } from "./atomikModelPolicy";
 import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
+import { vendorKey } from './vendorKeys';
+import { openAIConnection } from './openai-models';
+import { engineMock } from './mock';
 
 /**
  * Everything the Vercel AI Gateway will run, read from the gateway itself.
@@ -78,11 +81,13 @@ const TTL_MS = 60 * 60 * 1000;   // an hour; the catalogue moves in weeks
  * Atomik's screen refusing to render, and every caller here is drawing a
  * menu rather than spending money.
  */
-export async function catalog(force = false): Promise<CatalogModel[]> {
+async function gatewayCatalog(force = false): Promise<CatalogModel[]> {
   if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.models;
-  if (!gatewayReachable()) return cache?.models ?? [];
+  if (!gatewayReachable() && !vendorKey('openai')) return [];
   try {
-    const auth = await gatewayAuth();
+    // This metadata endpoint is public; an OpenAI-only workspace still needs
+    // its capabilities and price metadata without borrowing Gateway credentials.
+    const auth = gatewayReachable() ? await gatewayAuth() : {};
     const res = await fetch(`${GATEWAY_BASE()}/models`, {
       headers: auth, signal: AbortSignal.timeout(15_000), cache: "no-store",
     });
@@ -116,6 +121,14 @@ export async function catalog(force = false): Promise<CatalogModel[]> {
     console.warn(`catalog: ${(e as Error).message}`);
     return cache?.models ?? [];
   }
+}
+
+export async function catalog(force = false): Promise<CatalogModel[]> {
+  const models = await gatewayCatalog(force);
+  if (!vendorKey('openai') || engineMock()) return models;
+  const direct = await openAIConnection(force);
+  const allowed = new Set(direct.models);
+  return models.filter(model => model.owner === 'openai' ? direct.verified && allowed.has(model.id.slice('openai/'.length)) : gatewayReachable());
 }
 
 export async function byType(type: CatalogType): Promise<CatalogModel[]> {
@@ -239,47 +252,99 @@ export function imageCostUsd(m: CatalogModel): number | null {
   return null;   // openai's image models bill as tokens; say so rather than guess
 }
 
-/** Dollars for a text call of roughly this size. */
-export function textCostUsd(m: CatalogModel, inTokens: number, outTokens: number): number | null {
+export type TextCacheUsage = { cacheReadTokens: number; cacheWriteTokens: number };
+type TextRateKey = 'input' | 'output' | 'input_cache_read' | 'input_cache_write';
+
+/** Each rate uses the full input context, including cached tokens. */
+function textRate(m: CatalogModel, inTokens: number, key: TextRateKey): number | null | undefined {
   const p = m.pricing;
   if (!p) return null;
-  if (![inTokens, outTokens].every(n => Number.isFinite(n) && n >= 0)) return null;
-  // Gateway ranges are [min, max). Both input and output prices depend on
-  // prompt/context size, not the number of generated tokens:
-  // https://vercel.com/docs/ai-gateway/sdks-and-apis/rest-api#tiered-pricing
-  // https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-pro-preview
-  const rate = (key: 'input' | 'output'): number | null | undefined => {
-    const tierKey = `${key}_tiers`;
-    if (!Object.prototype.hasOwnProperty.call(p, tierKey)) return num(p[key]) ?? undefined;
-    const raw: unknown = p[tierKey];
-    if (!Array.isArray(raw) || !raw.length) return null;
-    const tiers: { min: number; max: number; cost: number }[] = [];
-    for (const item of raw) {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-      // The live Astra catalog omits min on its first tier, meaning zero.
-      const min = item.min === undefined ? 0 : item.min;
-      const max = item.max === undefined ? Infinity : item.max;
-      const cost = typeof item.cost === 'string' && !item.cost.trim() ? null : num(item.cost);
-      if (!Number.isSafeInteger(min) || min < 0 ||
-        (item.max !== undefined && (!Number.isSafeInteger(max) || max <= min)) ||
-        cost == null || cost < 0) return null;
-      tiers.push({ min, max, cost });
-    }
-    tiers.sort((a, b) => a.min - b.min);
-    let end = 0, selected: number | null = null;
-    for (const tier of tiers) {
-      // Gaps or overlaps make the advertised price ambiguous. Never fall back
-      // to a cheaper base rate when declared tiers cannot be trusted.
-      if (tier.min !== end) return null;
-      if (inTokens >= tier.min && inTokens < tier.max) selected = tier.cost;
-      end = tier.max;
-    }
-    return selected;
-  };
-  const i = rate('input'), o = rate('output');
+  const tierKey = `${key}_tiers`;
+  if (!Object.prototype.hasOwnProperty.call(p, tierKey)) {
+    if (!Object.prototype.hasOwnProperty.call(p, key)) return undefined;
+    const value = typeof p[key] === 'string' && !String(p[key]).trim() ? null : num(p[key]);
+    return value != null && value >= 0 ? value : null;
+  }
+  // Gateway ranges are [min, max); output prices also depend on input size.
+  const raw: unknown = p[tierKey];
+  if (!Array.isArray(raw) || !raw.length) return null;
+  const tiers: { min: number; max: number; cost: number }[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const min = item.min === undefined ? 0 : item.min;
+    const max = item.max === undefined ? Infinity : item.max;
+    const cost = typeof item.cost === 'string' && !item.cost.trim() ? null : num(item.cost);
+    if (!Number.isSafeInteger(min) || min < 0 ||
+      (item.max !== undefined && (!Number.isSafeInteger(max) || max <= min)) ||
+      cost == null || cost < 0) return null;
+    tiers.push({ min, max, cost });
+  }
+  tiers.sort((a, b) => a.min - b.min);
+  let end = 0, selected: number | null = null;
+  for (const tier of tiers) {
+    // Gaps and overlaps must never fall back to a cheaper base price.
+    if (tier.min !== end) return null;
+    if (inTokens >= tier.min && inTokens < tier.max) selected = tier.cost;
+    end = tier.max;
+  }
+  return selected;
+}
+
+/** Modern direct language models expose cached-input usage. */
+export function openAIHasCacheReads(model: string): boolean {
+  return model.startsWith('openai/') && !/^openai\/gpt-(?:3\.5(?:-|$)|4(?:-|$))/.test(model);
+}
+
+/** GPT-5.6 and later expose separately billed automatic cache writes. */
+export function openAIHasCacheWrites(model: string): boolean {
+  const version = /^openai\/gpt-(\d+)(?:\.(\d+))?(?:-|$)/.exec(model);
+  return !!version && (Number(version[1]) > 5 || (Number(version[1]) === 5 && Number(version[2] ?? 0) >= 6));
+}
+
+/** Actual call cost. Cache counts partition total input; reasoning is already
+ * included in total output and must not be billed a second time. Omit cache
+ * counts to retain the existing Gateway fallback calculation. */
+export function textCostUsd(m: CatalogModel, inTokens: number, outTokens: number, cache?: TextCacheUsage): number | null {
+  if (!m.pricing || ![inTokens, outTokens].every(n => Number.isFinite(n) && n >= 0)) return null;
+  const i = textRate(m, inTokens, 'input'), o = textRate(m, inTokens, 'output');
   if (i === null || o === null || (i === undefined && o === undefined)) return null;
-  const cost = (i ?? 0) * inTokens + (o ?? 0) * outTokens;
+  let inputCost = (i ?? 0) * inTokens;
+  if (cache) {
+    const { cacheReadTokens: read, cacheWriteTokens: write } = cache;
+    if (![inTokens, outTokens, read, write].every(n => Number.isSafeInteger(n) && n >= 0) || read + write > inTokens) return null;
+    const ordinary = inTokens - read - write;
+    const r = read ? textRate(m, inTokens, 'input_cache_read') : 0;
+    const w = write ? textRate(m, inTokens, 'input_cache_write') : 0;
+    if (r == null || w == null || (ordinary > 0 && i == null) || (outTokens > 0 && o == null)) return null;
+    inputCost = ordinary * (i ?? 0) + read * r + write * w;
+  }
+  const cost = inputCost + (o ?? 0) * outTokens;
   return Number.isFinite(cost) ? cost : null;
+}
+
+/** Direct OpenAI's quote covers a cold cache write as well as ordinary input.
+ * Missing modern write prices cannot establish an approved spending ceiling. */
+export function textQuoteCostUsd(m: CatalogModel, inTokens: number, outTokens: number, directOpenAI = false): number | null {
+  const baseline = textCostUsd(m, inTokens, outTokens);
+  if (!directOpenAI || baseline == null) return baseline;
+  const p = m.pricing!;
+  if ((inTokens > 0 && textRate(m, inTokens, 'input') == null) || (outTokens > 0 && textRate(m, inTokens, 'output') == null)) return null;
+  const costs = [baseline];
+  for (const [key, cache] of [
+    ['input_cache_read', { cacheReadTokens: inTokens, cacheWriteTokens: 0 }],
+    ['input_cache_write', { cacheReadTokens: 0, cacheWriteTokens: inTokens }],
+  ] as const) {
+    const hasRate = Object.prototype.hasOwnProperty.call(p, key) || Object.prototype.hasOwnProperty.call(p, `${key}_tiers`);
+    if (!hasRate) {
+      if ((key === 'input_cache_write' && openAIHasCacheWrites(m.id)) || (key === 'input_cache_read' && openAIHasCacheReads(m.id))) return null;
+      continue;
+    }
+    if (textRate(m, inTokens, key) == null) return null;
+    const cost = textCostUsd(m, inTokens, outTokens, cache);
+    if (cost == null) return null;
+    costs.push(cost);
+  }
+  return Math.max(...costs);
 }
 
 /** A short, honest price label for a menu row. */

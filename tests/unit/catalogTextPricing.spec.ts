@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { textCostUsd, type CatalogModel } from '../../lib/catalog';
+import { textCostUsd, textQuoteCostUsd, type CatalogModel } from '../../lib/catalog';
 
 function model(pricing: CatalogModel['pricing']): CatalogModel {
   return { id: 'google/gemini-3.1-pro-preview', name: 'Planner', owner: 'google', type: 'language',
@@ -72,4 +72,53 @@ test('invalid token counts and overflowing totals never produce a payable price'
     expect(textCostUsd(m, 1, count)).toBeNull();
   }
   expect(textCostUsd(model({ input: Number.MAX_VALUE }), 2, 0)).toBeNull();
+});
+
+
+// Direct OpenAI partitions input into ordinary, cache-read and cache-write.
+// Each category uses the tier selected by TOTAL prompt size, not its own size.
+test('cache read/write rates follow the complete context tier and output already includes reasoning', () => {
+  const m = { ...model({ input: .00001, output: .00005, input_cache_read: .000001, input_cache_write: .0000125,
+    input_tiers: [{ cost: .00001, max: 272001 }, { cost: .00002, min: 272001 }],
+    output_tiers: [{ cost: .00005, max: 272001 }, { cost: .000075, min: 272001 }],
+    input_cache_read_tiers: [{ cost: .000001, max: 272001 }, { cost: .000002, min: 272001 }],
+    input_cache_write_tiers: [{ cost: .0000125, max: 272001 }, { cost: .000025, min: 272001 }],
+  }), id: 'openai/gpt-6-astra' };
+  expect(textCostUsd(m, 272000, 200, { cacheReadTokens: 200000, cacheWriteTokens: 50000 })).toBeCloseTo(22000 * .00001 + 200000 * .000001 + 50000 * .0000125 + 200 * .00005, 12);
+  expect(textCostUsd(m, 272001, 200, { cacheReadTokens: 200000, cacheWriteTokens: 50000 })).toBeCloseTo(22001 * .00002 + 200000 * .000002 + 50000 * .000025 + 200 * .000075, 12);
+  expect(textQuoteCostUsd(m, 272001, 200, true)).toBeCloseTo(272001 * .000025 + 200 * .000075, 12);
+  expect(textQuoteCostUsd(m, 272001, 200)).toBe(textCostUsd(m, 272001, 200));
+});
+
+test('cache usage cannot be negative, fractional, overlapping, nonnumeric or priced from missing metadata', () => {
+  const m = model({ input: .01, output: .02, input_cache_read: .001, input_cache_write: .0125 });
+  for (const cache of [
+    { cacheReadTokens: -1, cacheWriteTokens: 0 }, { cacheReadTokens: .5, cacheWriteTokens: 0 },
+    { cacheReadTokens: 80, cacheWriteTokens: 21 }, { cacheReadTokens: NaN, cacheWriteTokens: 0 },
+    { cacheReadTokens: 0, cacheWriteTokens: Infinity },
+  ]) expect(textCostUsd(m, 100, 20, cache)).toBeNull();
+  expect(textCostUsd(model({ input: .01, output: .02 }), 100, 20, { cacheReadTokens: 1, cacheWriteTokens: 0 })).toBeNull();
+  expect(textCostUsd(model({ input: .01, output: .02 }), 100, 20, { cacheReadTokens: 0, cacheWriteTokens: 1 })).toBeNull();
+  expect(textCostUsd(model({ input: .01, output: .02 }), 100, 20, { cacheReadTokens: 0, cacheWriteTokens: 0 })).toBeCloseTo(1.4);
+});
+
+test('direct modern quotes reject missing or malformed write metadata while Gateway behavior is unchanged', () => {
+  for (const id of ['openai/gpt-5.6-luna', 'openai/gpt-6-astra']) {
+    const m = { ...model({ input: .001, output: .003 }), id };
+    expect(textQuoteCostUsd(m, 100, 20, true)).toBeNull();
+    expect(textQuoteCostUsd(m, 100, 20)).toBeCloseTo(.16);
+    for (const write of [null, [], [{ cost: .001, min: 1 }], [{ cost: .001, max: 100 }]]) {
+      expect(textQuoteCostUsd({ ...m, pricing: { ...m.pricing, input_cache_write_tiers: write } }, 100, 20, true)).toBeNull();
+    }
+  }
+  expect(textQuoteCostUsd({ ...model({ input: .001, output: .003, input_cache_read: .0001 }), id: 'openai/gpt-4.1' }, 100, 20, true)).toBeCloseTo(.16);
+});
+
+
+test('direct quotes require every applicable price before dispatch, including ordinary input and cache reads', () => {
+  const m = { ...model({ input: .001, output: .003, input_cache_read: .0001, input_cache_write: .00125 }), id: 'openai/gpt-6-astra' };
+  for (const field of ['input', 'output', 'input_cache_read', 'input_cache_write']) {
+    const pricing = { ...m.pricing }; delete pricing[field];
+    expect(textQuoteCostUsd({ ...m, pricing }, 100, 20, true)).toBeNull();
+  }
 });

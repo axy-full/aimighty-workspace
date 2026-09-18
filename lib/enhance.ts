@@ -1,3 +1,5 @@
+import { textVendor } from './openai-direct';
+import { languageAuth } from './language-provider';
 import { recoveryFetch as fetch } from "./recovery";
 /**
  * Prompt refinement — the layer platforms like Higgsfield run between the
@@ -24,7 +26,6 @@ import { recoveryFetch as fetch } from "./recovery";
 import { getSetting } from "./settings";
 import {
   gatewayReachable,
-  gatewayAuth,
   explainGatewayFailure,
 } from "./gateway";
 import { vendorKey } from "./vendorKeys";
@@ -44,8 +45,8 @@ import { currentTenant } from "./tenant";
 export { TEXT_RATES, promptRichness, shouldRefine };
 export type { Richness };
 export {
-  gatewayReachable,
   gatewayAuth,
+  gatewayReachable,
   gatewayCredits,
   GATEWAY_BASE,
   GATEWAY_URL,
@@ -173,10 +174,10 @@ export async function activeWriter(): Promise<ActiveWriter> {
     provider: "gateway",
     model: m,
     label: prettyModel(m),
-    via: vendorKey("gateway")
+    via: textVendor(m) === "openai" ? "OpenAI direct" : vendorKey("gateway")
       ? "Vercel AI Gateway (API key)"
       : "Vercel AI Gateway (OIDC)",
-    configured: gatewayReachable(),
+    configured: textVendor(m) !== "openai" && gatewayReachable(),
   };
 }
 export type RefineResult = {
@@ -419,10 +420,14 @@ async function refineWithGateway(
   userMsg: string,
   style: string,
 ): Promise<RefineResult & { cachedIn: number }> {
-  const auth = await gatewayAuth();
   const selected = currentTenant()?.workspace ? await activeWriter() : null;
   const model =
     selected?.provider === "gateway" ? selected.model : GATEWAY_MODELS()[0];
+  // Inline refinement has only legacy static writer pricing and is skipped
+  // for subscribed workspaces. OpenAI planning belongs to the durable, quoted
+  // Atomik path; a manual environment override must not create an unpriced call.
+  if (textVendor(model) === "openai") throw new Error("Use a quoted Atomik request for OpenAI prompt development. Inline refinement is unavailable for this model.");
+  const auth = await languageAuth(model);
   const res = await gatewayPost(
     JSON.stringify({
       model,

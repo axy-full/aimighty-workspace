@@ -1,0 +1,208 @@
+.workspace {
+  --ab-ground: var(--graphite-ground, #000);
+  --ab-panel: var(--graphite-panel, #0d0d10);
+  --ab-card: var(--graphite-card, #17171b);
+  --ab-control: var(--graphite-control, #1b1b1f);
+  --ab-edge: var(--graphite-line, #ffffff1a);
+  --ab-ink: var(--graphite-ink, #f5f5f7);
+  --ab-muted: var(--graphite-body, #aaaab3);
+  --ab-accent: var(--graphite-accent-text, #6eb4ff);
+  color: var(--ab-ink);
+  background: var(--ab-ground);
+  border: 1px solid var(--ab-edge);
+  border-radius: 12px;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.workspace button, .workspace input, .workspace textarea, .workspace select { font: inherit; }
+.workspace button { cursor: pointer; }
+.workspace button:disabled { opacity: .35; cursor: default; }
+.workspace button:focus-visible, .workspace input:focus-visible, .workspace textarea:focus-visible, .workspace select:focus-visible, .workspace summary:focus-visible { outline: 2px solid var(--ab-accent); outline-offset: 2px; }
+.workspace button, .workspace select, .workspace input { -webkit-tap-highlight-color: transparent; }
+.header { display: flex; align-items: center; gap: 16px; justify-content: space-between; min-height: 78px; padding: 14px 18px; border-bottom: 1px solid var(--ab-edge); background: var(--ab-panel); }
+.brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.brandIcon { display: grid; place-items: center; flex: none; width: 37px; height: 37px; border: 1px solid var(--ab-edge); border-radius: 10px; background: var(--ab-control); }
+.brand h1 { font-size: 18px; font-weight: 600; letter-spacing: -.04em; margin: 0 0 2px; }
+.brand p { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ab-muted); margin: 0; }
+.headerActions { display: flex; align-items: center; gap: 6px; }
+.templatePicker, .addSelect { position: relative; display: flex; align-items: center; border: 1px solid var(--ab-edge); border-radius: 7px; background: var(--ab-control); padding-left: 9px; }
+.templatePicker svg, .addSelect svg { pointer-events: none; flex: none; }
+.templatePicker select, .addSelect select { width: 100%; min-width: 0; background: var(--ab-control); color: var(--ab-ink); padding: 7px 6px; border-radius: 7px; cursor: pointer; border: 0; }
+.templatePicker { min-width: 112px; }
+.iconButton { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border: 1px solid transparent; border-radius: 6px; color: var(--ab-muted); background: transparent; }
+.iconButton:hover:not(:disabled), .rowIcon:hover, .keyListRow button:hover { background: var(--ab-control); color: var(--ab-ink); }
+.iconButton[aria-pressed=true] { color: var(--ab-ink); background: var(--ab-control); border-color: var(--ab-edge); }
+.assistantButton { display: flex; align-items: center; gap: 7px; border: 1px solid var(--ab-edge); border-radius: 7px; padding: 8px 11px; margin-left: 5px; background: var(--ab-control); font-size: 11px; }
+.assistantButton svg { color: var(--ab-accent); }
+.layout { display: grid; grid-template-columns: 190px minmax(260px, 1fr) 270px; min-height: 615px; }
+.outliner { display: flex; flex-direction: column; background: var(--ab-panel); border-right: 1px solid var(--ab-edge); min-width: 0; padding-bottom: 12px; }
+.panelHeading { display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 13px; }
+.panelHeading h2 { font-size: 11px; font-weight: 600; margin: 0; }
+.panelHeading > span { font-size: 10px; background: var(--ab-control); border-radius: 4px; padding: 1px 5px; color: var(--ab-muted); }
+.addRow { margin: 0 10px 10px; }
+.addSelect { font-size: 11px; }
+.objectList { padding: 0 6px 15px; max-height: 350px; overflow: auto; }
+.objectRow { display: flex; align-items: center; gap: 0; border: 1px solid transparent; padding: 1px 2px; border-radius: 5px; min-height: 32px; }
+.objectRow[data-selected=true] { background: var(--ab-control); border-color: var(--ab-edge); }
+.objectRow[data-selected=true] .objectName { color: var(--ab-ink); }
+.objectName { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; text-align: left; padding: 5px 3px; color: var(--ab-muted); font-size: 11px; }
+.objectName > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.objectName svg { flex: none; }
+.objectName svg:last-child:not(:first-child) { color: var(--ab-accent); }
+.rowIcon { display: flex; align-items: center; justify-content: center; color: var(--ab-muted); flex: none; width: 23px; height: 26px; border-radius: 4px; }
+.subheading { display: flex; align-items: center; justify-content: space-between; color: var(--ab-muted); padding: 10px 10px 4px 13px; border-top: 1px solid var(--ab-edge); font-size: 10px; }
+.sceneItem { display: flex; align-items: center; gap: 7px; padding: 8px 7px; margin: 0 6px; min-width: 0; text-align: left; font-size: 11px; border-radius: 5px; color: var(--ab-muted); }
+.sceneItem span { flex: 1; min-width: 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.sceneItem small { font-size: 9px; color: var(--ab-muted); }
+.sceneItem[aria-pressed=true] { background: var(--ab-control); color: var(--ab-ink); }
+.outlinerFooter { display: flex; flex-direction: column; gap: 4px; padding: 28px 13px 0; margin-top: auto; font-size: 9px; color: var(--ab-muted); }
+.outlinerFooter span:first-child { color: var(--ab-ink); opacity: .65; }
+.stage { display: flex; flex-direction: column; min-width: 0; position: relative; background: var(--ab-panel); }
+.viewportToolbar { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 44px; padding: 5px 8px; border-bottom: 1px solid var(--ab-edge); }
+.segment { display: flex; align-items: center; gap: 2px; }
+.segment button { display: flex; align-items: center; justify-content: center; gap: 5px; border-radius: 5px; padding: 6px 7px; color: var(--ab-muted); font-size: 10px; border: 1px solid transparent; }
+.segment button[aria-pressed=true] { color: var(--ab-ink); background: var(--ab-control); border-color: var(--ab-edge); }
+.viewportTools { display: flex; gap: 1px; }
+.viewport { flex: 1; position: relative; min-height: 420px; }
+.viewportRoot, .canvasHost { position: absolute; inset: 0; min-width: 0; overflow: hidden; }
+.canvasHost canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.viewportLabel { position: absolute; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; top: 14px; left: 14px; right: 14px; color: #e5e5ea; font-size: 10px; pointer-events: none; text-shadow: 0 1px 4px #000; }
+.viewportLabel > span:last-child { color: #c1c3ca; margin-left: auto; font-size: 9px; }
+.liveDot { background: #8ba7c2; width: 5px; height: 5px; border-radius: 50%; }
+.viewportHelp { position: absolute; left: 14px; right: 14px; bottom: 12px; text-align: center; color: #c8c9cf; font-size: 9px; text-shadow: 0 1px 4px #000; pointer-events: none; }
+.viewportError { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 60px 25px; text-align: center; background: var(--ab-card); font-size: 13px; line-height: 1.7; color: var(--ab-muted); }
+.assetNotice { position: absolute; left: 12px; right: 12px; bottom: 36px; padding: 8px 10px; border: 1px solid var(--ab-edge); background: var(--ab-panel); color: var(--ab-ink); border-radius: 6px; font-size: 10px; }
+.loading { height: 100%; min-height: 420px; display: grid; place-items: center; color: var(--ab-muted); }
+.timeline { padding: 9px 12px 10px; border-top: 1px solid var(--ab-edge); min-height: 114px; }
+.timelineTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+.playback { display: flex; align-items: center; gap: 1px; }
+.playback label { display: flex; align-items: center; gap: 7px; color: var(--ab-muted); font-size: 10px; margin-left: 7px; }
+.workspace.workspace .playback input { line-height: 1.4; border: 1px solid var(--ab-edge); color: var(--ab-ink); background: var(--ab-control); border-radius: 5px; width: 53px; padding: 4px 3px 4px 7px; font-variant-numeric: tabular-nums; }
+.fps { color: var(--ab-muted); font-size: 9px; margin-left: 9px; white-space: nowrap; }
+.keyButton { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--ab-accent); padding: 6px; white-space: nowrap; }
+.scrubber { position: relative; height: 23px; padding: 0 4px; }
+.workspace.workspace .scrubber > input { padding: 0; border: 0; background: transparent; width: 100%; margin: 0; accent-color: var(--ab-accent); height: 13px; display: block; }
+.keyMarkers { position: absolute; left: 12px; right: 12px; height: 10px; }
+.keyMarkers button { position: absolute; transform: translateX(-50%); color: var(--ab-accent); padding: 1px 3px; }
+.timelineLabels { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; color: var(--ab-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+.timelineLabels > span:nth-child(2) { text-align: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.inspector { display: flex; flex-direction: column; background: var(--ab-panel); border-left: 1px solid var(--ab-edge); min-width: 0; }
+.inspectorTabs { display: flex; min-height: 44px; padding: 0 10px; border-bottom: 1px solid var(--ab-edge); }
+.inspectorTabs button { display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1; font-size: 11px; color: var(--ab-muted); border-bottom: 2px solid transparent; }
+.inspectorTabs button[aria-pressed=true] { color: var(--ab-ink); border-bottom-color: var(--ab-accent); }
+.inspectorBody { padding: 16px 14px 20px; display: flex; flex-direction: column; gap: 14px; max-height: 670px; overflow-y: auto; min-width: 0; }
+.propertyHeading h2 { font-size: 13px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 3px; }
+.propertyHeading p { font-size: 10px; color: var(--ab-muted); margin: 0; text-transform: capitalize; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 10px; color: var(--ab-muted); min-width: 0; }
+.workspace.workspace .field input, .workspace.workspace .field select { line-height: 1.4; color: var(--ab-ink); padding: 8px 9px; border: 1px solid var(--ab-edge); background: var(--ab-control); border-radius: 5px; min-width: 0; width: 100%; }
+.objectActions { display: flex; gap: 7px; }
+.objectActions button, .secondaryButton, .exportActions button { display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--ab-edge); background: var(--ab-control); padding: 7px 9px; border-radius: 5px; font-size: 10px; color: var(--ab-ink); }
+.objectActions button { flex: 1; }
+.propertiesFieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.propertiesFieldset:disabled { opacity: .5; }
+.propertySection { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--ab-edge); padding-top: 15px; margin-top: 1px; }
+.propertiesFieldset > .propertySection + .propertySection { margin-top: 18px; }
+.propertySection h3 { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 600; margin: 0; }
+.propertySection h3 span { color: var(--ab-muted); font-weight: 400; font-size: 9px; }
+.vector { border: 0; padding: 0; margin: 0; min-width: 0; }
+.vector legend { font-size: 10px; color: var(--ab-muted); margin-bottom: 7px; }
+.vector > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.numberField { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--ab-muted); min-width: 0; }
+.workspace.workspace .numberField input { line-height: 1.4; background: var(--ab-control); color: var(--ab-ink); border: 1px solid var(--ab-edge); border-radius: 5px; padding: 7px; width: 90px; min-width: 0; font-variant-numeric: tabular-nums; }
+.vector .numberField { position: relative; }
+.vector .numberField span { position: absolute; left: 7px; font-size: 0; pointer-events: none; }
+.vector .numberField span::first-letter { font-size: 0; }
+.workspace.workspace .vector .numberField input { width: 100%; padding: 7px 3px 7px 7px; font-size: 11px; }
+.vector .numberField:nth-child(1) input { border-bottom-color: #b46b6b; }
+.vector .numberField:nth-child(2) input { border-bottom-color: #5b9471; }
+.vector .numberField:nth-child(3) input { border-bottom-color: #6485b6; }
+.twoColumns { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.twoColumns .numberField { flex-direction: column; align-items: flex-start; gap: 6px; }
+.workspace.workspace .twoColumns .numberField input { width: 100%; }
+.colorField { display: flex; align-items: center; gap: 9px; font-size: 10px; color: var(--ab-muted); }
+.colorField span { margin-right: auto; }
+.workspace.workspace .colorField input { width: 26px; height: 26px; border: 1px solid var(--ab-edge); padding: 2px; border-radius: 5px; background: var(--ab-control); cursor: pointer; }
+.colorField code { font-size: 9px; font-family: var(--graphite-mono); color: var(--ab-ink); }
+.hint, .emptyHint { font-size: 10px; line-height: 1.7; color: var(--ab-muted); margin: 0; }
+.emptyHint { padding: 10px 6px; }
+.keyListRow { display: flex; align-items: center; justify-content: space-between; margin-top: -6px; }
+.keyListRow button { display: flex; align-items: center; gap: 7px; color: var(--ab-muted); padding: 6px; font-size: 10px; border-radius: 4px; }
+.keyListRow button:first-child { color: var(--ab-accent); }
+.sceneSettings { border-top: 1px solid var(--ab-edge); margin-top: 3px; padding-top: 13px; }
+.sceneSettings summary { color: var(--ab-muted); font-size: 11px; cursor: pointer; }
+.sceneSettings[open] summary { color: var(--ab-ink); }
+.sceneSettings .propertySection { border-top: 0; padding-top: 15px; }
+.exportActions { display: flex; flex-direction: column; gap: 8px; }
+.exportActions button { justify-content: flex-start; font-size: 11px; padding: 10px; }
+.checkbox { display: flex; align-items: center; gap: 7px; font-size: 10px; color: var(--ab-muted); }
+.checkbox input { accent-color: var(--ab-accent); }
+.emptyPanel { display: flex; flex-direction: column; gap: 14px; padding: 14px 0; color: var(--ab-muted); }
+.emptyPanel svg { color: var(--ab-accent); }
+.emptyPanel h2 { font-size: 15px; color: var(--ab-ink); }
+.emptyPanel p { font-size: 12px; line-height: 1.7; }
+.error { padding: 10px 16px; background: var(--ab-card); color: #ffc77c; font-size: 11px; border-bottom: 1px solid var(--ab-edge); }
+.mobileTabs { display: none; }
+@media (min-width: 1500px) { .layout { grid-template-columns: 205px minmax(300px, 1fr) 295px; min-height: 700px; } .viewport { min-height: 520px; } .inspectorBody { max-height: 760px; } }
+@media (max-width: 1199px) and (min-width: 768px) { .layout { grid-template-columns: 155px minmax(230px, 1fr) 230px; } .header { padding: 12px; } .inspectorBody { padding: 14px 10px; } .segment button span { display: none; } .objectRow .rowIcon { width: 19px; } .sceneItem small { display: none; } .fps { display: none; } .keyButton span { font-size: 9px; } .viewportLabel > span:last-child { display: none; } }
+@media (max-width: 900px) and (min-width: 768px) { .layout { grid-template-columns: 140px minmax(200px, 1fr) 210px; } .brand p { max-width: 200px; overflow: hidden; white-space: nowrap; } .headerActions { gap: 2px; } .assistantButton { padding: 7px; } .templatePicker { min-width: 98px; } }
+@media (max-width: 767px) {
+  .workspace { border-radius: 9px; }
+  .header { padding: 12px; min-height: 69px; gap: 8px; flex-wrap: wrap; }
+  .brand { gap: 9px; }
+  .brand h1 { font-size: 17px; }
+  .brand p { max-width: 130px; font-size: 10px; white-space: nowrap; overflow: hidden; }
+  .brandIcon { width: 32px; height: 32px; border-radius: 8px; }
+  .headerActions { gap: 3px; }
+  .headerActions > .iconButton { width: 25px; min-height: 36px; }
+  .assistantButton { display: none; }
+  .templatePicker { min-width: 103px; }
+  .templatePicker select { font-size: 11px; min-height: 36px; }
+  .mobileTabs { display: flex; align-items: stretch; padding: 0 6px; min-height: 41px; background: var(--ab-panel); border-bottom: 1px solid var(--ab-edge); }
+  .mobileTabs button { flex: 1; font-size: 11px; color: var(--ab-muted); border-bottom: 2px solid transparent; }
+  .mobileTabs button[aria-pressed=true] { color: var(--ab-ink); border-color: var(--ab-accent); }
+  .layout { display: block; min-height: 530px; }
+  .outliner, .inspector { display: none; border: 0; }
+  .stage { min-height: 530px; }
+  .viewport { min-height: 370px; }
+  .loading { min-height: 370px; }
+  .viewportLabel > span:last-child { font-size: 8px; }
+  .viewportToolbar { min-height: 46px; }
+  .segment button { min-height: 33px; font-size: 10px; }
+  .viewportTools .iconButton { width: 29px; height: 33px; }
+  .timeline { padding: 8px 10px 12px; min-height: 114px; }
+  .timelineTop { gap: 3px; }
+  .timelineTop .iconButton { width: 31px; min-height: 35px; }
+  .fps { display: none; }
+  .keyButton { min-height: 35px; }
+  .playback label { margin-left: 3px; gap: 4px; }
+  .workspace.workspace .playback input { font-size: 16px; width: 53px; padding: 4px 5px; }
+  .timelineLabels { font-size: 8px; }
+  .timelineLabels > span:nth-child(2) { max-width: 75%; }
+  .workspace[data-mobile-tab=objects] .outliner { display: flex; min-height: 530px; }
+  .workspace[data-mobile-tab=objects] .stage, .workspace[data-mobile-tab=properties] .stage, .workspace[data-mobile-tab=astra] .stage, .workspace[data-mobile-tab=output] .stage { display: none; }
+  .workspace[data-mobile-tab=properties] .inspector, .workspace[data-mobile-tab=astra] .inspector, .workspace[data-mobile-tab=output] .inspector { display: flex; min-height: 530px; }
+  .inspectorTabs { display: none; }
+  .inspectorBody { padding: 18px; max-height: none; min-height: 530px; }
+  .propertyHeading h2 { font-size: 16px; }
+  .propertyHeading p, .field, .hint, .numberField, .vector legend, .colorField, .sceneSettings summary { font-size: 12px; }
+  .workspace.workspace .field input, .workspace.workspace .field select, .workspace.workspace .numberField input, .workspace.workspace .vector .numberField input { font-size: 16px; padding: 9px 10px; }
+  .vector > div { gap: 9px; }
+  .workspace.workspace .numberField input { width: 110px; }
+  .objectActions button, .secondaryButton, .exportActions button, .keyListRow button { min-height: 40px; font-size: 12px; }
+  .panelHeading { height: 48px; padding: 0 15px; }
+  .panelHeading h2 { font-size: 13px; }
+  .addRow { margin: 0 12px 10px; }
+  .addSelect { padding-left: 12px; }
+  .addSelect select { min-height: 40px; font-size: 16px; }
+  .objectList { max-height: none; padding: 0 9px 16px; }
+  .objectRow { min-height: 45px; }
+  .objectName { font-size: 13px; padding: 9px 6px; gap: 10px; }
+  .rowIcon { width: 36px; height: 36px; }
+  .subheading { padding: 12px 12px 5px 16px; font-size: 11px; }
+  .sceneItem { min-height: 42px; padding: 9px 10px; font-size: 13px; }
+  .sceneItem small { font-size: 10px; }
+  .outlinerFooter { padding: 24px 16px 0; font-size: 10px; }
+}

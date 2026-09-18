@@ -1,3 +1,6 @@
+import type { AstraNativeSource, AstraNativeProposal } from '../astra-blender/native';
+import type { AstraScene } from '../astra-blender/scene';
+import type { AstraProposal } from '../astra-blender/proposal';
 import type { SuiteAgentPlan } from './suite-agent-plan';
 import type {MoleculrBrief} from './moleculr';
 import type {AssetBin} from './editorial';
@@ -6,7 +9,7 @@ export type {MarketingBrief} from './marketing-brief';
 import {validateColor, type ColorGrade} from './color';
 import {validateAudio, type AudioClip} from './audio';
 import type {ScriptSource, SceneReview} from './screenplay';
-export type Stage = 'brief' | 'script' | 'moodboard' | 'characters' | 'elements' | 'canvas' | 'storyboard' | 'assets' | 'edit' | 'export';
+export type Stage = 'brief' | 'script' | 'moodboard' | 'characters' | 'elements' | 'astra-blender' | 'canvas' | 'storyboard' | 'assets' | 'edit' | 'export';
 export type AssetKind = 'image' | 'video' | 'audio' | 'document' | 'link';
 export type AssetStatus = 'Draft' | 'Selected' | 'Continuity note';
 export type Asset = { id:string; name:string; kind:AssetKind; category:string; url:string; description:string; prompt:string; status:AssetStatus; locked:boolean; version:number; refs:string[]; parentId?:string; mime?:string; uploadId?:string; generationId?:string; soulIdentityId?:string; productionShotId?:string; nodeId?:string };
@@ -15,11 +18,12 @@ export type NodeOperation = {id:string;kind:'direction'|'grade'|'transform'|'mas
 export type NodeVersion = {id:string;label:string;assetId?:string;text?:string;operations:NodeOperation[];savedAt:string};
 export type CanvasNode = {id:string; title:string; type:NodeType; assetId?:string; text?:string;developmentSource?:{jobId:string;sourceHash:string;sceneId:string;sourceAssetId?:string;sourceStart:number;sourceEnd:number};scriptScene?:{id:string;sourceKey:string;sourceAssetId?:string;pageStart?:number;pageEnd?:number}; x:number; y:number; width:number; linked:string[];operations?:NodeOperation[];bypassed?:boolean;locked?:boolean;collapsed?:boolean;role?:string;mode?:string;status?:'draft'|'review'|'approved';versions?:NodeVersion[];activeInput?:string};
 export type Shot = {id:string; name:string; assetId:string; duration:number; sourceIn:number; note:string};
-export type Plan = {referenceAdAnalysis?:import('./reference-ad-analysis').ReferenceAdAnalysis;suiteAgent?:SuiteAgentPlan;id:string; request:string; model:string; depth:string; effort?:string; intent:string; summary:string; steps:string[]; applied:boolean; refs:string[]; role?:string};
-export type Project = {moleculr?:MoleculrBrief;marketingBrief?:MarketingBrief;bins?:AssetBin[];colorGrade?:ColorGrade;productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; audioClips?:AudioClip[]; clipAudio?:boolean; script?:string;scriptFormat?:'screenplay'|'adfilm';scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>;developmentApplications?:string[]; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[]};
+export type Plan = {astraNative?:AstraNativeProposal;astraBlender?:AstraProposal;referenceAdAnalysis?:import('./reference-ad-analysis').ReferenceAdAnalysis;suiteAgent?:SuiteAgentPlan;id:string; request:string; model:string; depth:string; effort?:string; intent:string; summary:string; steps:string[]; applied:boolean; refs:string[]; role?:string};
+export type Project = {astraNative?:AstraNativeSource;astraBlender?:AstraScene;moleculr?:MoleculrBrief;marketingBrief?:MarketingBrief;bins?:AssetBin[];colorGrade?:ColorGrade;productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; audioClips?:AudioClip[]; clipAudio?:boolean; script?:string;scriptFormat?:'screenplay'|'adfilm';scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>;developmentApplications?:string[]; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[]};
 export const STAGES: {id:Stage; label:string; hint:string}[] = [
  {id:'brief',label:'Brief & ideas',hint:'Find the story'}, {id:'script',label:'Script & breakdown',hint:'Find the production in the story'}, {id:'moodboard',label:'Moodboard',hint:'Define the visual world'},
  {id:'characters',label:'Characters',hint:'Keep identity consistent'}, {id:'elements',label:'Elements',hint:'Build a reusable world'},
+ {id:'astra-blender',label:'Astra blender',hint:'Shape your scene with GPT-6 Astra'},
  {id:'canvas',label:'Production canvas',hint:'Bring it all together'}, {id:'storyboard',label:'Storyboards',hint:'Plan every frame'}, {id:'assets',label:'Assets & takes',hint:'Select the right take'},
  {id:'edit',label:'Edit & sound',hint:'Shape the story'}, {id:'export',label:'Delivery',hint:'Ready for the next room'}];
 export function uid(prefix='id') {return prefix+'-'+crypto.randomUUID().slice(0,8)}
@@ -52,7 +56,7 @@ export function seedProject():Project {const p:Project={
 export function newProject(name:string):Project {const p=seedProject();return {...p,id:uid('project'),name,description:'New project',brief:'',script:'',audience:'',deliverables:'',direction:'',briefPinned:false,lookPinned:false,assets:[],nodes:[],shots:[],plans:[],sharedAssetIds:[],sharedNodeIds:[],sharedAssets:[],sharedNodes:[],createdAt:new Date().toISOString()};}
 export function timecode(frame:number,fps:number) {const f=Math.max(0,Math.round(frame));return [Math.floor(f/(fps*3600)),Math.floor(f/(fps*60))%60,Math.floor(f/fps)%60,f%fps].map(n=>String(n).padStart(2,'0')).join(':');}
 export function safeName(s:string){return s.replace(/[^a-zA-Z0-9_.-]+/g,'_').slice(0,90)||'asset'}
-export function assetFilename(a:Asset){const ext:Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/avif':'avif','image/gif':'gif','video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov','audio/mpeg':'mp3','audio/wav':'wav','audio/x-wav':'wav','audio/mp4':'m4a','audio/ogg':'ogg','application/pdf':'pdf','text/plain':'txt'};const suffix=(a.kind==='document'&&/\.cube$/i.test(a.name)?'cube':undefined)||ext[a.mime||'']||a.url.split('?')[0].match(/\.([a-zA-Z0-9]{2,5})$/)?.[1]||(a.kind==='video'?'mp4':a.kind==='audio'?'mp3':'png');return safeName(a.id)+'_'+safeName(a.name.replace(/\.[a-zA-Z0-9]{2,5}$/,''))+'.'+suffix;}
+export function assetFilename(a:Asset){const ext:Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/avif':'avif','image/gif':'gif','video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov','audio/mpeg':'mp3','audio/wav':'wav','audio/x-wav':'wav','audio/mp4':'m4a','audio/ogg':'ogg','application/pdf':'pdf','text/plain':'txt','model/gltf-binary':'glb','application/x-blender':'blend'};const suffix=(a.kind==='document'&&/\.cube$/i.test(a.name)?'cube':undefined)||ext[a.mime||'']||a.url.split('?')[0].match(/\.([a-zA-Z0-9]{2,5})$/)?.[1]||(a.kind==='video'?'mp4':a.kind==='audio'?'mp3':'png');return safeName(a.id)+'_'+safeName(a.name.replace(/\.[a-zA-Z0-9]{2,5}$/,''))+'.'+suffix;}
 /** Validate the edit before exporting: a missing source must never become a fictitious filename. */
 export function validateSequence(p:Project):void {
  validateColor(p);

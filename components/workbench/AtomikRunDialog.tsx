@@ -1,4 +1,5 @@
 'use client';
+import type { AstraRequest } from '@/lib/astra-blender/proposal';
 
 import { useEffect, useRef, useState } from 'react';
 import type { SuiteId } from '@/lib/suites';
@@ -17,7 +18,7 @@ import { Button } from './ui/button';
 import { studioRequest } from './GenerationDialog';
 import { ModelPicker, EffortPicker, effortLabel, thinkingModelName, type ThinkingModel } from '@/components/atomik/ModelPicker';
 
-export type AtomikRunTarget = { referenceAd?:ReferenceAnalysisSource; suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
+export type AtomikRunTarget = { astraBlender?: AstraRequest; referenceAd?:ReferenceAnalysisSource; suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
 type Quote = { estimateCredits: number; model: string; effort?: string; key: string };
 
 export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued }: {
@@ -30,6 +31,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   onSave: () => Promise<boolean>;
   onQueued: (id: string) => void;
 }) {
+  const [astraBlender, setAstraBlender] = useState(target.astraBlender);
   const [suite, setSuite] = useState(target.suite);
   const [referenceAd, setReferenceAd] = useState(target.referenceAd);
   const [request, setRequest] = useState(target.request);
@@ -55,7 +57,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   const selectedAssets = [...project.assets, ...(project.sharedAssets ?? [])].filter((asset, index, assets) => refs.includes(asset.id) && assets.findIndex(item => item.id === asset.id) === index);
   const referenceKey = JSON.stringify({ scope, projectId: project.id, referenceAd, assets: selectedAssets.map(asset => ({ id: asset.id, name: asset.name, kind: asset.kind, url: asset.url, version: asset.version, uploadId: asset.uploadId, generationId: asset.generationId })) });
   const readyFrames = frameState?.key === referenceKey && !frameState.error ? frameState.frames : null;
-  const quoteKey = JSON.stringify({ ...(referenceAd ? { referenceAd } : {}), ...(suite ? { suite } : {}), projectId: project.id, request, role, model, effort, depth, refs, requestId, ...(readyFrames?.length ? { videoFrames: readyFrames } : {}) });
+  const quoteKey = JSON.stringify({ ...(astraBlender ? { astraBlender } : {}), ...(referenceAd ? { referenceAd } : {}), ...(suite ? { suite } : {}), projectId: project.id, request, role, model, effort, depth, refs, requestId, ...(readyFrames?.length ? { videoFrames: readyFrames } : {}) });
   const shownQuote = quote?.key === quoteKey ? quote : null;
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       if (!active) return;
       if (!saved) { setLoaded(true); return; }
       const input = atomikPendingInput(saved);
-      setSuite(input.suite); setReferenceAd(input.referenceAd); setPending(saved); setRequest(input.request); setRequestId(saved.requestId); setModel(input.model);
+      setAstraBlender(input.astraBlender); setSuite(input.suite); setReferenceAd(input.referenceAd); setPending(saved); setRequest(input.request); setRequestId(saved.requestId); setModel(input.model);
       setDepth(input.depth); setEffort(input.effort || 'auto'); setRole(input.role); setRefs(input.refs);
       try {
         const state = await studioRequest<{ jobs: AtomikRecoveryJob[] }>('/api/workbench/atomik?' + new URLSearchParams({ projectId: project.id, requestId: saved.requestId }), { headers: { 'X-Workbench-Scope': scope } });
@@ -121,7 +123,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
 
   function restore(record: PendingAtomikRequest) {
     const input = atomikPendingInput(record);
-    setSuite(input.suite); setReferenceAd(input.referenceAd); setPending(record); setRequest(input.request); setRequestId(record.requestId); setModel(input.model);
+    setAstraBlender(input.astraBlender); setSuite(input.suite); setReferenceAd(input.referenceAd); setPending(record); setRequest(input.request); setRequestId(record.requestId); setModel(input.model);
     setDepth(input.depth); setEffort(input.effort || 'auto'); setRole(input.role); setRefs(input.refs);
   }
   function accept(record: PendingAtomikRequest, job: AtomikRecoveryJob) {
@@ -184,7 +186,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
     <DialogContent className="ps ps-dialog" showCloseButton={!busy}>
       <DialogHeader>
-        <DialogTitle>{referenceAd ? 'Analyze reference ad' : suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Marketing Studio' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
+        <DialogTitle>{astraBlender ? 'Build with Astra blender' : referenceAd ? 'Analyze reference ad' : suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Marketing Studio' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
         <DialogDescription>{project.name} · {refs.length} selected reference{refs.length === 1 ? '' : 's'}</DialogDescription>
       </DialogHeader>
       <div className="dialog-fields">
@@ -195,18 +197,18 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
         </label>
         <div className="generation-options">
           <div className="atomik-option-field atomik-option-model"><label htmlFor="atomik-request-model">Thinking model</label>
-            <ModelPicker id="atomik-request-model" label="Atomik request model" value={model} models={suite ? models.filter(item => /^(anthropic|openai)\//.test(item.id)) : models} disabled={busy || !!pending || !loaded} onPick={value => { setModel(value); setEffort('auto'); }} />
+            <ModelPicker id="atomik-request-model" label="Atomik request model" value={model} models={suite ? models.filter(item => /^(anthropic|openai)\//.test(item.id)) : models} disabled={!!astraBlender || busy || !!pending || !loaded} onPick={value => { setModel(value); setEffort('auto'); }} />
           </div>
           <div className="atomik-option-field"><label htmlFor="atomik-request-effort">Reasoning effort</label>
             <EffortPicker id="atomik-request-effort" label="Atomik request effort" value={effort} model={models.find(option => option.id === model)} onPick={setEffort} disabled={busy || !!pending || !loaded} />
           </div>
-          <label>Response detail
+          {!astraBlender && <label>Response detail
             <select aria-label="Atomik request depth" value={depth} disabled={busy || !!pending || !loaded} onChange={event => setDepth(event.target.value)}>
               {['Quick', 'Considered', 'Deep'].map(value => <option key={value}>{value}</option>)}
             </select>
-          </label>
+          </label>}
         </div>
-        <p className="muted small-copy">{referenceAd ? REFERENCE_AD_LIMITATION + ' Includes the saved campaign brief. Each sampled frame is priced in the estimate.' : <>Includes the saved {role === 'marketing' ? 'campaign brief, project brief, ' : 'brief, '}script, uploaded TXT and actual image references. Selected videos contribute three sampled stills. Images are read as 512px review copies; audio, PDFs and links supply descriptions only.</>}</p>
+        <p className="muted small-copy">{astraBlender ? (astraBlender.mode === 'native' ? 'Includes the saved scene, native Blender source, project brief and selected image references. Review the Python revision before applying it. Native execution has a separate render quote.' : 'Includes the saved 3D scene and project brief. Review and apply the scene proposal before export. No Blender render is started by this request.') : referenceAd ? REFERENCE_AD_LIMITATION + ' Includes the saved campaign brief. Each sampled frame is priced in the estimate.' : <>Includes the saved {role === 'marketing' ? 'campaign brief, project brief, ' : 'brief, '}script, uploaded TXT and actual image references. Selected videos contribute three sampled stills. Images are read as 512px review copies; audio, PDFs and links supply descriptions only.</>}</p>
         {shownQuote && !pending && <p className="small-copy">{thinkingModelName(shownQuote.model, models)} · {effortLabel(shownQuote.effort ?? effort, models.find(option => option.id === shownQuote.model))} · up to {shownQuote.estimateCredits} cr reserved</p>}
         {pending && <p className="small-copy">Original estimate: up to {atomikPendingInput(pending).maxCredits} cr · {effortLabel(atomikPendingInput(pending).effort, models.find(option => option.id === model))}.</p>}
         {!pending && !readyFrames && !frameState?.error && <p className="small-copy" role="status">Preparing visual references before the estimate…</p>}

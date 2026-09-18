@@ -1,3 +1,5 @@
+import { textVendor, directTextCostUsd } from './openai-direct';
+import { engineMock } from './mock';
 import { creditsApply } from "./credits";
 import { atomikPublicResponse } from "./workbench/atomik-response";
 import { workbenchScopeProblem } from "./workbench/request-scope";
@@ -7,7 +9,7 @@ import { atomikReasoningRequest } from "./atomik-reasoning";
 import { withRecoveryActivity } from './recovery';
 import { db, ready, id as newId, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
-import { findModel, textCostUsd, type CatalogModel } from "./catalog";
+import { findModel, textCostUsd, textQuoteCostUsd, type CatalogModel } from "./catalog";
 import { engineFor } from "./engines";
 import { meter } from "./meter";
 import {
@@ -75,7 +77,7 @@ export function textRequestEstimate(
       "This request exceeds the selected model's context or output limit. Shorten it or choose another model.",
       400,
     );
-  const estimate = textCostUsd(model, input, maxTokens);
+  const estimate = textQuoteCostUsd(model, input, maxTokens, textVendor(model.id) === 'openai');
   if (estimate == null || !Number.isFinite(estimate) || estimate <= 0)
     throw new PaidTextError(
       "This model has no confirmed price. Choose a priced language model.",
@@ -114,7 +116,7 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) 
   if (usesImages && !model.inputModalities?.includes("image"))
     throw new PaidTextError("This model cannot read image references. Choose a model with image input or remove the references.", 422);
   const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens, input.effort !== undefined);
-  const estimateCredits = paidByPlatform("gateway") ? billCredits(estimate, "text") : 0;
+  const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimate, "text") : 0;
   if (input.maxCredits !== undefined && (!Number.isInteger(input.maxCredits) || input.maxCredits < 0 || estimateCredits > input.maxCredits))
     throw new PaidTextError("The writing estimate changed. Review the new quote before running.", 409);
   const requestBody = JSON.stringify({
@@ -200,12 +202,12 @@ return await withRecoveryActivity('paid-text', async () => {
   const ts = now();
   await db().execute({
     sql: `INSERT INTO paid_text_jobs(id,model,kind,status,estimate_usd,effort,request_body,created_at,updated_at) VALUES(?,?,?,'queued',?,?,?,?,?)`,
-    args: [id, input.model, input.kind, estimate, input.effort ?? null, requestBody, ts, ts],
+    args: [id, input.model, input.kind, estimate, input.effort ?? null, textVendor(input.model) === 'openai' ? JSON.stringify({ ...JSON.parse(requestBody), pricingModel: model }) : requestBody, ts, ts],
   });
   const event = {
     id,
     kind: "text" as const,
-    engine: "vercel",
+    engine: textVendor(input.model) === "openai" ? "openai" : "vercel",
     model: input.model,
     projectId: input.projectId ?? null,
     createdBy: input.createdBy ?? currentTenant()?.user?.id ?? "",
@@ -265,6 +267,7 @@ return await withRecoveryActivity('paid-text', async () => {
         cost?: number;
         prompt_tokens?: number;
         completion_tokens?: number;
+        prompt_tokens_details?: unknown;
       };
       choices?: { message?: { content?: string } }[];
     };
@@ -276,8 +279,13 @@ return await withRecoveryActivity('paid-text', async () => {
       );
     }
     const content = json?.choices?.[0]?.message?.content;
-    let cost = Number(json?.usage?.cost);
-    if (!Number.isFinite(cost) || cost < 0) {
+    const direct = textVendor(input.model) === 'openai';
+    let cost = direct && !engineMock() ? directTextCostUsd(model, json?.usage) : Number(json?.usage?.cost);
+    if (direct && !engineMock() && (cost == null || !Number.isFinite(cost) || cost > estimate + 0.00000001)) {
+      await db().execute({ sql: 'UPDATE paid_text_jobs SET response_json=?,updated_at=? WHERE id=?', args: [response.text, now(), id] });
+      throw new PaidTextError('Direct provider usage is missing, invalid, or outside the approved price snapshot. The paid answer is saved and its reservation is retained for review.');
+    }
+    if (cost == null || !Number.isFinite(cost) || cost < 0) {
       const inputTokens = Number(json?.usage?.prompt_tokens);
       const outputTokens = Number(json?.usage?.completion_tokens);
       cost =

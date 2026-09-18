@@ -1,3 +1,4 @@
+import { runAstraRender, reconcileAstraRender } from "./astra-blender/render-jobs";
 import { withRecoveryJob } from "./recovery";
 import { inngest, EVENTS } from "./inngest";
 import { ready } from "./db";
@@ -133,5 +134,10 @@ export const render = inngest.createFunction(
   },
 );
 
+export const astraRender = inngest.createFunction(
+ {id:"astra-blender-render",name:"Render Astra Blender",triggers:[{event:EVENTS.astraRender}],concurrency:[{limit:4},{limit:2,key:"event.data.workspaceId"}],retries:2},
+ async ({event,step})=>step.run("render-persist-and-account",()=>withRecoveryJob(String(event.data.workspaceId),String(event.data.jobId),async()=>runInTenant(await workspaceOf(event.data),async()=>{await runAstraRender(String(event.data.jobId));await reconcileAstraRender(String(event.data.jobId));return{jobId:String(event.data.jobId)};}))),
+);
+
 /** Everything the route serves. Workers are added here as they are written. */
-export const functions = [probe, render];
+export const functions = [probe, render, astraRender];

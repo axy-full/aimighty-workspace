@@ -57,6 +57,12 @@ export async function drainRecoveryJobs(
           throw new Error("Recovery job workspace unavailable.");
         await runInTenant(ws, async () => {
           await ready();
+          if (/^astra_render_[a-f0-9]{32}$/.test(jobId)) {
+            const { runAstraRender, reconcileAstraRender } = await import('./astra-blender/render-jobs');
+            await runAstraRender(jobId);
+            await reconcileAstraRender(jobId);
+            return;
+          }
           if (["image", "audio", "video"].includes(String(intent.kind))) {
             const job = await getGeneration(jobId);
             if (!job || job.status === "held")

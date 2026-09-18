@@ -16,6 +16,7 @@ export const EVENTS = {
   probe: "worker/probe",
   /** A still or a piece of audio whose row already exists as "running". */
   render: "render/requested",
+  astraRender: "astra-blender/render.requested",
 } as const;
 
 /**

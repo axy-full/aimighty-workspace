@@ -1,12 +1,14 @@
+import { textVendor, directTextCostUsd, sdkTextUsage, TEXT_PROVIDER_HEADER, type TextVendor } from '../openai-direct';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { ToolLoopAgent, createGateway, stepCountIs } from 'ai';
+import { ToolLoopAgent, stepCountIs } from 'ai';
 import type { JSONObject } from '@ai-sdk/provider';
 import { db, now } from '../db';
-import { catalog, textCostUsd, type CatalogModel } from '../catalog';
+import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { atomikModels, getAtomikProject } from './atomik-server';
 import { atomikReasoningRequest } from '../atomik-reasoning';
-import { gatewayAuth, gatewayReachable } from '../gateway';
+import { gatewayReachable } from '../gateway';
+import { languageAuth, languageModel } from '../language-provider';
 import { allowanceCheck } from '../allowance';
 import { reserveGenerationSpend } from '../generationRequests';
 import { assertMeterFunding, meter, type MeterEvent } from '../meter';
@@ -35,22 +37,23 @@ export type DevelopmentCall = {
   model: CatalogModel; effort: string; stage: DevelopmentStage; kind: DevelopmentRequest['kind'];
   instructions: string; prompt: string; maxTokens: number; chunk: DevelopmentChunk;
 };
-export type DevelopmentReply = { text: string; inputTokens?: number; outputTokens?: number; costUsd?: number };
+export type DevelopmentReply = { text: string; inputTokens?: number; outputTokens?: number; costUsd?: number; directUsage?: unknown };
 export type DevelopmentDependencies = {
   models: typeof catalog; allowance: typeof allowanceCheck; reserve: typeof reserveGenerationSpend; meter: typeof meter;
   call: (input: DevelopmentCall) => Promise<DevelopmentReply>;
-  auth: () => Promise<DevelopmentAuth>;
-  funding: (id: string) => Promise<void>;
+  auth: (model: string) => Promise<DevelopmentAuth>;
+  funding: (id: string, model?: string) => Promise<void>;
   reservation: (id: string) => Promise<boolean>;
 };
-export type DevelopmentAuth = { token: string; method: 'api-key' | 'oidc' };
-async function developmentAuth(): Promise<DevelopmentAuth> {
+export type DevelopmentAuth = { token: string; method: 'api-key' | 'oidc'; vendor?: TextVendor };
+async function developmentAuth(model: string): Promise<DevelopmentAuth> {
   if (engineMock()) return { token: 'mock-not-sent', method: 'api-key' };
-  const method = vendorKey('gateway') ? 'api-key' : 'oidc';
-  const auth = await gatewayAuth();
+  const vendor = textVendor(model);
+  const method = vendor === 'openai' || vendorKey('gateway') ? 'api-key' : 'oidc';
+  const auth = await languageAuth(model);
   const token = auth.Authorization?.replace(/^Bearer\s+/i, '');
   if (!token) throw new DevelopmentError('This workspace has no connected development provider.', 503);
-  return { token, method };
+  return { token, method, vendor };
 }
 async function reservationExists(id: string) {
   await platformReady();
@@ -61,7 +64,7 @@ async function reservationExists(id: string) {
 const dependencies = (overrides?: Partial<DevelopmentDependencies>): DevelopmentDependencies => ({
   models: catalog, allowance: allowanceCheck, reserve: reserveGenerationSpend, meter, call: callDevelopmentAgent,
   auth: developmentAuth, reservation: reservationExists,
-  funding: async id => { if (!await reservationExists(id)) throw new Error('The development reservation is missing. No provider call was sent.'); await assertMeterFunding(id, 'vercel'); },
+  funding: async (id, model) => { if (!await reservationExists(id)) throw new Error('The development reservation is missing. No provider call was sent.'); await assertMeterFunding(id, textVendor(model ?? '') === 'openai' ? 'openai' : 'vercel'); },
   ...overrides,
 });
 const initialized = new Map<string, Promise<void>>();
@@ -128,7 +131,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     const prior = stage === 'draft' ? 0 : stage === 'critique' ? DEVELOPMENT_RESULT_BYTES : DEVELOPMENT_RESULT_BYTES + DEVELOPMENT_CRITIQUE_BYTES;
     const inputTokens = base + prior;
     if (model.contextWindow && inputTokens + reasoning.maxTokens > model.contextWindow) throw new DevelopmentError('This model has too little context for the complete source and review stages. Choose a larger-context model or shorten the project brief.', 422);
-    const cost = textCostUsd(model, inputTokens, reasoning.maxTokens);
+    const cost = textQuoteCostUsd(model, inputTokens, reasoning.maxTokens, textVendor(model.id) === 'openai');
     if (cost == null || !Number.isFinite(cost) || cost < 0) throw new DevelopmentError('The selected model has no confirmed token price.', 503);
     return { chunk: chunk.index, stage, cost, maxTokens: reasoning.maxTokens };
   }));
@@ -136,7 +139,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   const limit = Math.min(1000, Math.max(1, Number(process.env.WORKBENCH_DEVELOPMENT_MAX_REQUEST_USD) || 100));
   if (estimateUsd > limit) throw new DevelopmentError('The full development workflow exceeds the per-request spending ceiling. Choose a less expensive model or lower effort.', 409);
   const sourceHash = developmentSourceHash(canonical);
-  const estimateCredits = paidByPlatform('gateway') ? billCredits(estimateUsd, 'text') : 0;
+  const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimateUsd, 'text') : 0;
   return { project, canonical, snapshot, sourceHash, chunks, estimates, estimateUsd, estimateCredits, model };
 }
 export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<DevelopmentQuote> {
@@ -167,7 +170,8 @@ async function publicJob(row: Row, offset = 0): Promise<DevelopmentJob> {
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at) };
 }
 function eventFor(row: Row, status: MeterEvent['status'], cost?: number): MeterEvent {
-  return { id: String(row.id), kind: 'text', engine: 'vercel', model: (JSON.parse(String(row.request_body)) as DevelopmentRequest).model,
+  const model = (JSON.parse(String(row.request_body)) as DevelopmentRequest).model;
+  return { id: String(row.id), kind: 'text', engine: textVendor(model) === 'openai' ? 'openai' : 'vercel', model,
     projectId: String(row.production_project_id), createdBy: String(row.owner), status, engineCostUsd: cost };
 }
 const preparationTails = new Map<string, Promise<void>>();
@@ -188,18 +192,18 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
     if (found.fingerprint !== fingerprint) throw new DevelopmentError('This request ID belongs to a different workflow. Start a new request.', 409);
     return { job: await publicJob(found), scheduled: false };
   }
-  if (!input.sourceHash || input.maxCredits == null || (!paidByPlatform('gateway') && input.maxUsd == null)) throw new DevelopmentError('Review the complete workflow quote before starting.');
+  if (!input.sourceHash || input.maxCredits == null || (!paidByPlatform(textVendor(input.model)) && input.maxUsd == null)) throw new DevelopmentError('Review the complete workflow quote before starting.');
   const compiled = await compile(input, owner, deps);
-  await deps.auth();
+  await deps.auth(input.model);
   if (input.sourceHash !== compiled.sourceHash) throw new DevelopmentError('The source changed after the quote. Save the current project and review a new quote.', 409);
   if (compiled.estimateCredits > input.maxCredits || (input.maxUsd != null && compiled.estimateUsd > input.maxUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
-  const allowance = await deps.allowance('gateway', compiled.estimateUsd, input.model);
+  const allowance = await deps.allowance(textVendor(input.model), compiled.estimateUsd, input.model);
   if (!allowance.ok) throw new DevelopmentError(allowance.error, allowance.status);
   const id = 'wb_development_' + randomUUID(), ts = now();
   // Claim and immutable source snapshot commit before reserving or calling a provider.
   const inserted = await db().execute({ sql: `INSERT OR IGNORE INTO workbench_development_jobs(id,owner,project_id,production_project_id,request_id,fingerprint,request_body,source_hash,snapshot,model_body,chunks,status,estimate_usd,estimate_credits,funded_by_platform,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?,?)`,
     args: [id, owner, input.projectId, compiled.project.productionProjectId!, input.requestId, fingerprint, JSON.stringify(input), compiled.sourceHash,
-      compiled.canonical, JSON.stringify(compiled.model), JSON.stringify(compiled.chunks), compiled.estimateUsd, compiled.estimateCredits, paidByPlatform('gateway') ? 1 : 0, ts, ts] });
+      compiled.canonical, JSON.stringify(compiled.model), JSON.stringify(compiled.chunks), compiled.estimateUsd, compiled.estimateCredits, paidByPlatform(textVendor(input.model)) ? 1 : 0, ts, ts] });
   if (!inserted.rowsAffected) {
     const duplicate = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, input.requestId] })).rows[0];
     if (!duplicate || duplicate.fingerprint !== fingerprint) throw new DevelopmentError('This request identity conflicts with another workflow.', 409);
@@ -237,7 +241,7 @@ export function developmentProviderOptions(model: CatalogModel, effort: string):
 async function callDevelopmentAgent(input: DevelopmentCall): Promise<DevelopmentReply> {
   if (engineMock()) return mockDevelopmentReply(input);
   let auth: DevelopmentAuth;
-  try { auth = await developmentAuth(); }
+  try { auth = await developmentAuth(input.model.id); }
   catch (error) { throw Object.assign(error as Error, { providerSubmitted: false }); }
   return executeDevelopmentAgent(input, auth, recoveryFetch);
 }
@@ -248,19 +252,19 @@ export async function executeDevelopmentAgent(input: DevelopmentCall, auth: Deve
     if ((init?.method ?? (url instanceof Request ? url.method : 'GET')).toUpperCase() === 'POST') providerSubmitted = true;
     return fetcher(url, init);
   };
-  const gateway = createGateway({ apiKey: auth.token, headers: { 'ai-gateway-auth-method': auth.method }, fetch: trackedFetch,
-    ...(process.env.AI_GATEWAY_BASE_URL ? { baseURL: process.env.AI_GATEWAY_BASE_URL.replace(/\/v1\/?$/, '/v4/ai') } : {}) });
+  try {
+  const model = languageModel(input.model.id, { auth: { Authorization: `Bearer ${auth.token}`, 'ai-gateway-auth-method': auth.method, ...(auth.vendor ? { [TEXT_PROVIDER_HEADER]: auth.vendor } : {}) }, fetch: trackedFetch });
   // Every phase is its own bounded agent and persisted worker step. Critique and
   // refinement consume the saved prior result, so no multi-call stream is lost.
-  const agent = new ToolLoopAgent({ model: gateway(input.model.id), instructions: input.instructions,
+  const agent = new ToolLoopAgent({ model, instructions: input.instructions,
     // The Anthropic SDK adds budgetTokens to maxOutputTokens. Our quote
     // already includes thinking, so subtract it here to keep the paid ceiling.
     maxOutputTokens: input.model.id.startsWith('anthropic/') && input.effort.startsWith('budget:') ? input.maxTokens - Number(input.effort.slice(7)) : input.maxTokens,
     maxRetries: 0, stopWhen: stepCountIs(1),
     providerOptions: developmentProviderOptions(input.model, input.effort) });
-  try {
     const result = await agent.generate({ prompt: input.prompt, abortSignal: AbortSignal.timeout(240_000) });
-    return { text: result.text, inputTokens: result.totalUsage.inputTokens, outputTokens: result.totalUsage.outputTokens };
+    return { text: result.text, inputTokens: result.totalUsage.inputTokens, outputTokens: result.totalUsage.outputTokens,
+      ...(textVendor(input.model.id) === 'openai' ? { directUsage: result.steps.length === 1 ? sdkTextUsage(result.steps[0].usage, true) : null } : {}) };
   } catch (error) { throw Object.assign(error as Error, { providerSubmitted }); }
 }
 function mockDevelopmentReply(input: DevelopmentCall): DevelopmentReply {
@@ -304,19 +308,26 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
     const draft = prior.find(step => step.stage === 'draft'), critique = prior.find(step => step.stage === 'critique');
     let submitted = false, returned = false, cost = Number(next.estimate_usd), reply: DevelopmentReply | undefined;
     try {
-      await deps.funding(id);
-      await deps.auth();
+      await deps.funding(id, input.model);
+      await deps.auth(input.model);
       const snapshot = JSON.parse(String(row.snapshot)) as Snapshot;
       const prompt = promptFor(snapshot, input, chunk, draft ? JSON.parse(String(draft.result)) : undefined, critique ? JSON.parse(String(critique.result)) : undefined);
       submitted = true;
       reply = await deps.call({ model, effort: input.effort, stage, kind: input.kind, chunk,
         prompt, instructions: developmentInstructions(input.kind, stage), maxTokens: Number(next.max_tokens) });
       returned = true;
-      if (typeof reply.costUsd === 'number' && Number.isFinite(reply.costUsd) && reply.costUsd >= 0) cost = reply.costUsd;
-      else if (typeof reply.inputTokens === 'number' && Number.isFinite(reply.inputTokens) && reply.inputTokens >= 0 && typeof reply.outputTokens === 'number' && Number.isFinite(reply.outputTokens) && reply.outputTokens >= 0) cost = textCostUsd(model, reply.inputTokens, reply.outputTokens) ?? cost;
+      const direct = textVendor(input.model) === 'openai';
+      const directCost = direct ? directTextCostUsd(model, reply.directUsage) : null;
+      if ((!direct || engineMock()) && typeof reply.costUsd === 'number' && Number.isFinite(reply.costUsd) && reply.costUsd >= 0) cost = reply.costUsd;
+      else if (direct && directCost != null) cost = directCost;
+      else if (!direct && typeof reply.inputTokens === 'number' && Number.isFinite(reply.inputTokens) && reply.inputTokens >= 0 && typeof reply.outputTokens === 'number' && Number.isFinite(reply.outputTokens) && reply.outputTokens >= 0) cost = textCostUsd(model, reply.inputTokens, reply.outputTokens) ?? cost;
       // Preserve the paid answer before validating its structure; invalid answers
       // remain addressable and cannot be silently purchased again as a repair.
-      await db().execute({ sql: 'UPDATE workbench_development_steps SET response=?,usage=?,cost_usd=?,updated_at=? WHERE job_id=? AND step_index=?', args: [reply.text, JSON.stringify({ inputTokens: reply.inputTokens, outputTokens: reply.outputTokens }), cost, now(), id, Number(next.step_index)] });
+      await db().execute({ sql: 'UPDATE workbench_development_steps SET response=?,usage=?,cost_usd=?,updated_at=? WHERE job_id=? AND step_index=?', args: [reply.text, JSON.stringify({ inputTokens: reply.inputTokens, outputTokens: reply.outputTokens, ...(direct ? { directUsage: reply.directUsage } : {}) }), cost, now(), id, Number(next.step_index)] });
+      if (direct && !engineMock() && (directCost == null || directCost > Number(next.estimate_usd) + 0.00000001)) {
+        returned = false; cost = Number(next.estimate_usd);
+        throw new Error('Direct provider usage is missing, invalid, or outside the approved price snapshot; this step needs billing review.');
+      }
       const value: unknown = JSON.parse(reply.text);
       const result = stage === 'critique' ? developmentCritiqueSchema.parse(value) : validateDevelopmentResult(value, input.kind, chunk);
       if (stage === 'critique' && Buffer.byteLength(JSON.stringify(result), 'utf8') > DEVELOPMENT_CRITIQUE_BYTES) throw new Error('The critique exceeded its saved review budget.');
@@ -411,7 +422,7 @@ export async function listDevelopmentJobs(owner: string, projectId: string, requ
 }
 export async function developmentState(owner: string, projectId: string, requestId?: string) {
   const jobs = await listDevelopmentJobs(owner, projectId, requestId);
-  const configured = gatewayReachable();
+  const configured = gatewayReachable() || !!vendorKey('openai');
   const models = configured ? developmentModels(await catalog()) : [];
   return { configured: configured && !!models.length, models, jobs };
 }

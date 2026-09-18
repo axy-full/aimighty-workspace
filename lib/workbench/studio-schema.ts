@@ -1,3 +1,6 @@
+import { astraNativeSchema, astraNativeProposalSchema, validateAstraNativeBindings } from '../astra-blender/native';
+import { astraSceneSchema } from '../astra-blender/scene';
+import { astraProposalSchema, validateAstraBindings } from '../astra-blender/proposal';
 import { z } from "zod";
 import {brandKitSchema, productProfileSchema, productSourceSchema, creativeSchema} from "./moleculr-creative";
 import {posterDocumentSchema} from "./moleculr-poster";
@@ -117,6 +120,8 @@ const shot = z.object({
   note: z.string().max(10000),
 });
 const plan = z.object({
+  astraNative: astraNativeProposalSchema.optional(),
+  astraBlender: astraProposalSchema.optional(),
   referenceAdAnalysis: referenceAdAnalysisSchema.optional(),
   suiteAgent: suiteAgentPlanSchema.optional(),
   id: z.string(),
@@ -151,6 +156,8 @@ export const moleculrSchema = z.object({
   variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({quality:z.enum(["low","medium","high"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional()}).strict().optional()}).strict()).max(100),
 }).strict();
 export const projectSchema = z.object({
+  astraNative: astraNativeSchema.optional(),
+  astraBlender: astraSceneSchema.optional(),
   moleculr:moleculrSchema.optional(),
   marketingBrief: marketingBriefSchema.optional(),
   productionProjectId: z.string().max(100).optional(),
@@ -262,6 +269,8 @@ export const saveSchema = z
     revision: z.number().int().min(0),
   })
   .superRefine(({ project }, context) => {
+    try { if (project.astraNative) validateAstraNativeBindings(project.astraNative, [...project.assets, ...(project.sharedAssets ?? [])]); } catch(error) {context.addIssue({code:"custom",path:["project","astraNative"],message:(error as Error).message});}
+    try { if (project.astraBlender) validateAstraBindings(project.astraBlender, [...project.assets, ...(project.sharedAssets ?? [])]); } catch(error) {context.addIssue({code:"custom",path:["project","astraBlender"],message:(error as Error).message});}
     try {validateMoleculrBindings(project as Project);} catch(error) {context.addIssue({code:"custom",path:["project","moleculr"],message:(error as Error).message});}
     try {validateBins(project as Project);} catch(error) {context.addIssue({code:"custom",path:["project","bins"],message:(error as Error).message});}
 

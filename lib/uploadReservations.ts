@@ -48,6 +48,7 @@ export async function uploadReservationsReady() {
         objects TEXT NOT NULL DEFAULT '[]', prepared TEXT, response TEXT,
         cleanup_attempted_at INTEGER NOT NULL DEFAULT 0
       )`,
+          `CREATE TABLE IF NOT EXISTS astra_render_storage (job_id TEXT PRIMARY KEY, reserved_bytes INTEGER NOT NULL DEFAULT 0)`,
           `CREATE TABLE IF NOT EXISTS upload_chunks (
         session_id TEXT NOT NULL, chunk_index INTEGER NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL,
         state TEXT NOT NULL, lease TEXT, lease_until INTEGER, PRIMARY KEY(session_id,chunk_index)
@@ -137,7 +138,7 @@ export async function reservedUploadBytes(): Promise<number> {
   return Number(
     (
       await db().execute(
-        "SELECT (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) + (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') AS n",
+        "SELECT (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) + (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') + (SELECT COALESCE(SUM(reserved_bytes),0) FROM astra_render_storage) AS n",
       )
     ).rows[0].n,
   );
@@ -147,7 +148,7 @@ async function admit(tx: Transaction, incoming: number, quota: number) {
     (SELECT COALESCE(SUM(bytes),0) FROM generations) +
     (SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads) +
     (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) +
-    (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') AS used`);
+    (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') + (SELECT COALESCE(SUM(reserved_bytes),0) FROM astra_render_storage) AS used`);
   const verdict = quotaVerdict({
     usedBytes: Number(result.rows[0].used),
     incomingBytes: incoming,

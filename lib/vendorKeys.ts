@@ -10,16 +10,17 @@ import { currentTenant } from "./tenant";
  * sign-up, walled by lib/allowance.ts). A workspace on its own keys reaches
  * nothing it has not added: that vendor is simply unrouted for it.
  */
-export type VendorKeyName = "ark" | "gemini" | "gateway" | "fal" | "elevenlabs" | "higgsfield";
+export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "fal" | "elevenlabs" | "higgsfield";
 
 const ENV: Record<VendorKeyName, string> = {
-  ark: "ARK_API_KEY", gemini: "GEMINI_API_KEY", gateway: "AI_GATEWAY_API_KEY",
+  ark: "ARK_API_KEY", gemini: "GEMINI_API_KEY", gateway: "AI_GATEWAY_API_KEY", openai: "OPENAI_API_KEY",
   fal: "FAL_KEY", elevenlabs: "ELEVENLABS_API_KEY", higgsfield: "HF_CREDENTIALS",
 };
 
 export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[] = [
   { name: "ark", label: "BytePlus ModelArk", does: "Seedance video · Seedream prompt writer" },
   { name: "gateway", label: "Vercel AI Gateway", does: "Claude prompt writer · Nano Banana stills" },
+  { name: "openai", label: "OpenAI", does: "GPT models · Atomik · script development · Astra blender, directly through OpenAI" },
   { name: "gemini", label: "Google Gemini", does: "Nano Banana stills, direct" },
   { name: "fal", label: "fal.ai", does: "Kling 3.0 video · motion control · Topaz Astra upscale · identity training" },
   { name: "elevenlabs", label: "ElevenLabs", does: "Voice · sound effects · music" },
