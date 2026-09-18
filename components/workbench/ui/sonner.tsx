@@ -17,6 +17,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      offset={{ bottom: "calc(76px + env(safe-area-inset-bottom, 0px))" }}
       mobileOffset={{ bottom: "calc(86px + env(safe-area-inset-bottom))", left: "16px", right: "16px" }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
@@ -27,6 +28,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
+          // Keep modal errors visible above dialogs/sheets (50/60), while
+          // interactive Studio menus (90) and model/effort pickers (200+) win.
+          zIndex: 80,
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",

@@ -737,3 +737,22 @@ test("stable pagination and late receipts survive draft deletion without permitt
     });
   });
 });
+
+test("receipt recovery is immutable, owner-scoped, unique and never restores dispatch admission", async () => {
+  await fixture(async ({ jobs }) => {
+    const { job } = await jobs.createConsumerJob(input());
+    const scope = key(job);
+    const claim = await jobs.claimConsumerDispatch(scope);
+    const providerJobId = randomUUID();
+    const receipt = { response: { results: [{ id: providerJobId, model: "marketing_studio_video", type: "video" }] } };
+    await jobs.markConsumerUncertain({ ...scope, claimToken: claim!.claimToken, providerReceipt: receipt });
+    expect(await jobs.reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: { wrong: true } })).toBeNull();
+    await expect(jobs.reconcileConsumerReceipt({ ...scope, userId: "another-owner", providerJobId, expectedReceipt: receipt })).rejects.toMatchObject({ code: "not_found" });
+    const recovered = await jobs.reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: receipt });
+    expect(recovered?.status).toBe("accepted");
+    expect(recovered?.providerJobId).toBe(providerJobId);
+    expect(await jobs.claimConsumerDispatch(scope)).toBeNull();
+    expect((await jobs.reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: receipt }))?.status).toBe("accepted");
+    await expect(jobs.reconcileConsumerReceipt({ ...scope, providerJobId: randomUUID(), expectedReceipt: receipt })).rejects.toMatchObject({ code: "provider_job_conflict" });
+  });
+});

@@ -1,6 +1,27 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { newProject } from "../lib/workbench/studio";
+
+/** Gen uses a saved Studio draft so recovered originals remain project-scoped. */
+async function savedProject(page: Page, scope: string) {
+  const headers = { "X-Workbench-Scope": scope };
+  const production = await page.request.post("/api/projects", {
+    headers,
+    data: { name: "Upload recovery project" },
+  });
+  expect(production.ok(), await production.text()).toBe(true);
+  const draft = {
+    ...newProject("Upload recovery project"),
+    productionProjectId: (await production.json()).id,
+  };
+  const saved = await page.request.put("/api/workbench/projects", {
+    headers,
+    data: { project: draft, revision: 0 },
+  });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  return draft.id;
+}
 
 async function uploadEntries(page: import("@playwright/test").Page) {
   return page.evaluate(() =>
@@ -22,6 +43,7 @@ test("a lost upload finish response recovers the same stored upload after reload
     .get("/api/me")
     .then((response) => response.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
+  const projectId = await savedProject(page, scope);
   let finishes = 0,
     chunks = 0,
     original = "";
@@ -42,7 +64,9 @@ test("a lost upload finish response recovers the same stored upload after reload
   })
     .png()
     .toBuffer();
-  await page.goto("/generate?mode=video");
+  await page.goto(
+    `/generate?mode=video&project=${encodeURIComponent(projectId)}`,
+  );
   const referencePicker = page
     .getByRole("region", { name: "Video composer", exact: true })
     .locator('input[type="file"][accept="image/*,video/*"]');
@@ -115,6 +139,13 @@ test("a paused upload requires the original file and resends only the missing im
     "one bounded partial-file recovery regression",
   );
   await signInLocally(page.request);
+  const me = await page.request
+    .get("/api/me")
+    .then((response) => response.json());
+  const projectId = await savedProject(
+    page,
+    `particl-active-${me.workspace.id}-${me.id}`,
+  );
   const chunks: { session: string; index: number; body: Buffer }[] = [];
   let fail = true;
   await page.route("**/api/uploads/chunk", async (route) => {
@@ -142,7 +173,9 @@ test("a paused upload requires the original file and resends only the missing im
     mimeType: "image/tiff",
     buffer: bytes,
   };
-  await page.goto("/generate?mode=video");
+  await page.goto(
+    `/generate?mode=video&project=${encodeURIComponent(projectId)}`,
+  );
   const referencePicker = page
     .getByRole("region", { name: "Video composer", exact: true })
     .locator('input[type="file"][accept="image/*,video/*"]');

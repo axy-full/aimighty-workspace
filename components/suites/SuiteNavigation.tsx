@@ -60,15 +60,22 @@ export function SuiteSwitcher({
   suite,
   projectId,
   onNavigate,
+  disabled = false,
 }: {
   suite: SuiteId;
   projectId?: string;
   onNavigate?: SuiteNavigate;
+  disabled?: boolean;
 }) {
   const { follow, error } = useFollow(onNavigate);
   return <div className="suite-switcher">
     <nav className="suite-top-tabs" aria-label="Suites">
-      {SUITES.map(item => <Link key={item.id} href={suiteHref(item.id, projectId)} prefetch={false}
+      {SUITES.map(item => disabled ? <a key={item.id} role="link" aria-disabled="true" tabIndex={-1}
+        aria-current={suite === item.id ? "page" : undefined}
+        style={{ '--suite-tab-color': item.color } as import('react').CSSProperties}>
+        <span className="suite-dot" style={{ backgroundColor: item.color }} aria-hidden="true" />
+        <span>{item.name}</span>
+      </a> : <Link key={item.id} href={suiteHref(item.id, projectId)} prefetch={false}
         onClick={event => follow(event, suiteHref(item.id, projectId))}
         aria-current={suite === item.id ? "page" : undefined}
         style={{ '--suite-tab-color': item.color } as import('react').CSSProperties}>
@@ -91,15 +98,23 @@ export function RoomRail({
   active,
   projectId,
   onNavigate,
+  disabled = false,
 }: {
   active: RoomId;
   projectId?: string;
   onNavigate?: SuiteNavigate;
+  disabled?: boolean;
 }) {
   const { follow, error } = useFollow(onNavigate);
   return (
     <nav className="suite-room-rail" aria-label="Rooms">
-      {ROOMS.map(({ id, label, icon: Icon }) => (
+      {ROOMS.map(({ id, label, icon: Icon }) => disabled ? (
+        <a key={id} role="link" aria-label={label} title={label} aria-disabled="true" tabIndex={-1}
+          aria-current={id === active ? "page" : undefined}>
+          <Icon size={19} strokeWidth={1.6} />
+          <span>{label}</span>
+        </a>
+      ) : (
         <Link
           key={id}
           href={roomHref(id, projectId)}

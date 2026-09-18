@@ -1665,7 +1665,8 @@
   .addReference [data-phone-reference-label] { display: block; }
   .addReference span, .workspace [data-phone-reference-alternate] span { font-size: 11px; line-height: 1.4; }
   .referenceHint { font-size: 11px; line-height: 1.5; }
-  .composer[data-composer="video"] .referenceHint { display: none; }
+  .referenceHint > label { display: grid; gap: 6px; }
+  .referenceHint select { min-width: 0; width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--gen-edge); border-radius: 6px; background: var(--gen-control); color: var(--gen-ink); font: inherit; font-size: 16px; }
   .settingsSection { gap: 0; padding: 0; overflow: hidden; border-color: var(--gen-edge); border-radius: 12px; background: var(--gen-raised); }
   .composer[data-composer] .settingsSection > .sectionLabel { padding: 16px 16px 6px; }
   .settingsSection > .sectionLabel > svg { display: none; }
@@ -1760,4 +1761,15 @@
   :global(.collective-assets) .takeCost { top: 5px; left: 5px; right: auto; max-width: calc(100% - 48px); font-size: 8px; }
   :global(.collective-assets) .takeError { position: absolute; bottom: 22px; left: 0; right: 0; max-height: 44px; overflow: auto; margin: 0; padding: 4px; background: var(--gen-ground); pointer-events: auto; }
   :global(.collective-assets) .jobStatus { bottom: 23px; font-size: 10px; padding: 6px; }
+}
+
+/* Keep the scroll area and paid action above the suite navigation on a short landscape phone. */
+@media (min-width: 760px) and (max-width: 899px) and (max-height: 500px) {
+  .header { flex-wrap: nowrap; min-height: 48px; padding: 0 16px; gap: 12px; }
+  .heading { width: auto; gap: 12px; }
+  .modes { width: auto; flex: 1; margin: 0; padding: 0; }
+  .mobileViews { min-height: 44px; padding: 0; margin: 0 16px 4px; }
+  .mobileViews button { min-height: 44px; }
+  .composerScroll { padding: 0 16px; }
+  .composerFooter { padding: 4px 16px; }
 }

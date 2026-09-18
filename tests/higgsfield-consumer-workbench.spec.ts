@@ -14,9 +14,10 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
   let connectResult: { status: number; json: unknown } = { status: 503, json: { error: "Higgsfield authorization is not configured on this deployment." } };
   let discoveryRelease: (() => void) | undefined;
   let discoveryGate: Promise<void> | undefined;
-  const verificationJob = { id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", status: "quoted", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", workspaceName: "Test studio", quoteCredits: 75, quoteExpiresAt: Date.now() + 300000, providerJobId: null as string | null };
+  const verificationJob = { id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", status: "quoted", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", workspaceName: "Test studio", quoteCredits: 75, quoteExpiresAt: Date.now() + 300000, providerJobId: null as string | null, providerReceipt: null as Record<string, unknown> | null };
   let videoJob: typeof verificationJob | null = null;
   let uncertain = false;
+  let recoverableReceipt = false;
   const videoActions: Record<string, unknown>[] = [];
   const catalog = {
     discoveryOnly: true, capabilitiesVerified: false, protocolVersion: "2025-11-25",
@@ -51,12 +52,16 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
         return json(catalog);
       }
       if (path.endsWith("/qualification") && call.method === "POST") return json({readOnly:true,results:[{tool:"marketing_studio_v2_costs",arguments:{},result:{cost_units_per_credit:100,note:'<img src="https://untrusted.example.com/cost.png">'}},{tool:"list_workspaces",arguments:{},error:{code:"unavailable"}}]});
+      if (path.endsWith("/analysis-qualification") && call.method === "POST") return json({readOnly:true,scope:"analysis-models",results:[{tool:"models_explore",arguments:{action:"get",model_id:"brain_activity"},result:{note:'<img src="https://untrusted.example.com/analysis.png">'}},{tool:"models_explore",arguments:{action:"get",model_id:"virality_predictor"},result:{model:"virality_predictor"}}]});
       if (path.endsWith("/video") && call.method === "GET") return json({ jobs: videoJob ? [videoJob] : [] });
       if (path.endsWith("/video") && call.method === "POST") {
         const body = request.postDataJSON(); videoActions.push(body);
         if (body.action === "quote-rehearsal") { videoJob = { ...verificationJob }; return json({ job: videoJob }); }
-        if (body.action === "submit") { videoJob = { ...verificationJob, status: uncertain ? "uncertain" : "accepted", providerJobId: uncertain ? null : "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061" }; return json({ job: videoJob }); }
-        if (body.action === "status") return json({ job: videoJob, providerStatus: { status: "running", note: '<img src="https://untrusted.example.com/result.png">' }, pollAfterSeconds: 30 });
+        if (body.action === "submit") { videoJob = { ...verificationJob, status: uncertain ? "uncertain" : "accepted", providerJobId: uncertain ? null : "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061", providerReceipt: recoverableReceipt ? { response: { results: [{ id: "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061", model: "marketing_studio_video", type: "video", status: "pending" }] } } : null }; return json({ job: videoJob }); }
+        if (body.action === "status") {
+          if (recoverableReceipt && videoJob?.status === "uncertain") videoJob = { ...videoJob, status: "accepted", providerJobId: "40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061" };
+          return json({ job: videoJob, providerStatus: { status: "running", note: '<img src="https://untrusted.example.com/result.png">' }, pollAfterSeconds: 30 });
+        }
       }
       if (path.endsWith("/connect") && call.method === "POST") return json(connectResult.json, connectResult.status);
       unexpected.push(`${call.method} ${path}`);
@@ -77,6 +82,7 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
   return {
     calls, unexpected, external, errors, videoActions,
     setUncertain: () => { uncertain = true; },
+    setRecoverableReceipt: () => { uncertain = true; recoverableReceipt = true; },
     setStatusError: (value: boolean) => { statusError = value; },
     setConnectResult: (value: typeof connectResult) => { connectResult = value; },
     holdDiscovery: () => { discoveryGate = new Promise<void>((resolve) => { discoveryRelease = resolve; }); },
@@ -112,6 +118,14 @@ test("owner checks scoped consumer definitions explicitly, then disconnects with
   const qualification = card.getByLabel("Higgsfield account capabilities");
   expect(JSON.parse((await qualification.textContent())!).results[0].result.note).toBe('<img src="https://untrusted.example.com/cost.png">');
   await expect(card.locator("img")).toHaveCount(0);
+  await card.getByRole("button", { name: "Check analysis model definitions", exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("higgsfield-consumer-analysis-controls.png") });
+  await card.getByRole("button", { name: "Check analysis model definitions", exact: true }).click();
+  await expect(card.getByRole("status")).toHaveText("Analysis model definitions checked. No video was uploaded and no scoring job was started.");
+  await card.getByText("Analysis model diagnostics", { exact: true }).click();
+  const analysis = card.getByLabel("Higgsfield analysis model definitions");
+  expect(JSON.parse((await analysis.textContent())!).results.map((read: { arguments: { model_id: string } }) => read.arguments.model_id)).toEqual(["brain_activity", "virality_predictor"]);
+  await expect(card.locator("img")).toHaveCount(0);
   await card.screenshot({ path: info.outputPath("higgsfield-consumer-discovery.png") });
   await card.getByRole("button", { name: "Disconnect marketing account", exact: true }).click();
   await expect(card.getByRole("status")).toHaveText("Higgsfield consumer connection removed from this Particl workspace.");
@@ -119,12 +133,13 @@ test("owner checks scoped consumer definitions explicitly, then disconnects with
   await expect(card.getByRole("button", { name: "Check available workflows", exact: true })).toHaveCount(0);
   await expect(definitions).toHaveCount(0);
   await expect(qualification).toHaveCount(0);
+  await expect(analysis).toHaveCount(0);
   expect(state.calls.filter((call) => call.method !== "GET").map(({ method, path }) => `${method} ${path}`)).toEqual([
-    "POST /api/higgsfield/consumer/capabilities", "POST /api/higgsfield/consumer/qualification", "DELETE /api/higgsfield/consumer/connection",
+    "POST /api/higgsfield/consumer/capabilities", "POST /api/higgsfield/consumer/qualification", "POST /api/higgsfield/consumer/analysis-qualification", "DELETE /api/higgsfield/consumer/connection",
   ]);
   await page.reload();
   await expect(consumerCard(page).getByRole("button", { name: "Connect Higgsfield account", exact: true })).toBeEnabled();
-  expect(state.calls.filter((call) => call.method !== "GET")).toHaveLength(3);
+  expect(state.calls.filter((call) => call.method !== "GET")).toHaveLength(4);
   expect(state.unexpected).toEqual([]);
   expect(state.external).toEqual([]);
   expect(state.errors).toEqual([]);
@@ -209,5 +224,42 @@ test("an uncertain verification cannot create a replacement or retry after reloa
   await expect(panel.getByText(/Submission needs reconciliation/)).toBeVisible();
   await expect(panel.getByRole("button")).toHaveCount(0);
   expect(state.videoActions.map(x => x.action)).toEqual(["quote-rehearsal", "submit"]);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test("saved uncertain submission recovers its provider receipt after reload through status only", async ({ page }, info) => {
+  const state = await fixture(page); state.setRecoverableReceipt();
+  await page.goto("/settings#engines");
+  const panel = page.getByRole("region", { name: "Marketing Video verification", exact: true });
+  await panel.getByRole("button", { name: "Get verification quote", exact: true }).click();
+  await panel.getByRole("checkbox").check();
+  await panel.getByRole("button", { name: "Run verification · 75 credits", exact: true }).click();
+  await expect(panel.getByText(/Submission needs reconciliation/)).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Check saved submission", exact: true })).toBeVisible();
+  expect(state.videoActions.map(action => action.action)).toEqual(["quote-rehearsal", "submit"]);
+
+  await page.reload();
+  await expect(panel.getByText(/Submission needs reconciliation/)).toBeVisible();
+  const recover = panel.getByRole("button", { name: "Check saved submission", exact: true });
+  await expect(recover).toBeEnabled();
+  await expect(panel.getByRole("button", { name: /Run verification|Get verification quote/ })).toHaveCount(0);
+  expect(state.videoActions.map(action => action.action)).toEqual(["quote-rehearsal", "submit"]);
+  await panel.getByText("Verification result details", { exact: true }).click();
+  await expect(panel.getByLabel("Higgsfield verification result")).toContainText('"results"');
+  await expect(panel.getByLabel("Higgsfield verification result")).toContainText("40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061");
+  await recover.click();
+  await expect(panel.getByText(/Higgsfield accepted the video request/)).toBeVisible();
+  await expect(panel.getByLabel("Higgsfield verification result")).toContainText('"status": "running"');
+  await expect(panel.getByRole("button", { name: /Check again in/ })).toBeDisabled();
+  await expect(panel.getByRole("button", { name: /Run verification|Get verification quote|Check saved submission/ })).toHaveCount(0);
+  expect(state.videoActions).toEqual([
+    expect.objectContaining({ action: "quote-rehearsal" }),
+    { action: "submit", id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", credits: 75 },
+    { action: "status", id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test" },
+  ]);
+  expect(state.videoActions.filter(action => action.action === "submit")).toHaveLength(1);
+  await expect(panel.locator("img")).toHaveCount(0);
+  await panel.getByRole("status").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("higgsfield-saved-submission-recovered.png") });
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });

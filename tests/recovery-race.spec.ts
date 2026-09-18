@@ -1,5 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { newProject } from "../lib/workbench/studio";
+import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
 /** Pause this tab immediately before acquiring its claim lock; other tabs keep their real lock implementation. */
 async function holdNextClaim(page: Page) {
@@ -35,6 +37,18 @@ for (const surface of ["batch", "audio", "writing"] as const) {
       "One desktop check per shared recovery protocol.",
     );
     await signInLocally(page.request);
+    const draft = surface === "writing" ? null : newProject(`${surface} recovery race project`);
+    let productionProjectId: string | null = null;
+    if (draft) {
+      const me = await page.request.get("/api/me").then(response => response.json());
+      const saved = await page.request.put("/api/workbench/projects", {
+        headers: { "X-Workbench-Scope": workbenchScopeFor(me.workspace.id, me.id) },
+        data: { project: draft, revision: 0 },
+      });
+      expect(saved.ok(), await saved.text()).toBe(true);
+      productionProjectId = (await saved.json()).productionProjectId;
+      expect(productionProjectId).toBeTruthy();
+    }
     const submissions: string[] = [];
     await context.route("**/api/**", async (route) => {
       const request = route.request();
@@ -83,6 +97,7 @@ for (const surface of ["batch", "audio", "writing"] as const) {
         ) &&
         request.method() === "POST"
       ) {
+        if (draft) expect(request.postDataJSON().projectId).toBe(productionProjectId);
         submissions.push(request.headers()["idempotency-key"]);
         if (submissions.length === 1)
           return json(
@@ -116,8 +131,8 @@ for (const surface of ["batch", "audio", "writing"] as const) {
       surface === "writing"
         ? "/atomik/ideas"
         : surface === "audio"
-          ? "/make/audio"
-          : "/make/images";
+          ? `/make/audio?project=${draft!.id}`
+          : `/make/images?project=${draft!.id}`;
     await page.goto(path);
     if (surface === "writing") {
       await page.getByRole("button", { name: "New idea", exact: true }).click();
@@ -132,6 +147,7 @@ for (const surface of ["batch", "audio", "writing"] as const) {
         .getByRole("button", { name: "OK", exact: true })
         .click();
     } else {
+      await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeVisible();
       await page
         .getByRole("textbox", { name: "Prompt", exact: true })
         .fill("A private original generation prompt.");

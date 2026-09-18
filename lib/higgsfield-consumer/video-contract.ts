@@ -209,6 +209,16 @@ export function consumerVideoAcknowledgement(
       if (!Array.isArray(value[key]) || value[key].length !== 1) invalid = true;
       else entry(value[key][0]);
     }
+  // Observed Consumer Marketing Video acknowledgement, qualified 2026-09-18.
+  // A batch or another model is not evidence for this single-video workflow.
+  if ("results" in value) {
+    if (!Array.isArray(value.results) || value.results.length !== 1) invalid = true;
+    else {
+      const result = value.results[0];
+      if (!record(result) || result.model !== "marketing_studio_video" || result.type !== "video") invalid = true;
+      else entry(result);
+    }
+  }
   return !invalid && new Set(ids).size === 1 ? ids[0] : null;
 }
 export function validateConsumerVideoStatus(
@@ -217,7 +227,7 @@ export function validateConsumerVideoStatus(
 ) {
   if (!record(value)) throw new ConsumerVideoError("invalid_job");
   if (
-    ["job_id", "id", "jobs", "job_ids"].some((key) => key in value) &&
+    ["job_id", "id", "jobs", "job_ids", "results"].some((key) => key in value) &&
     consumerVideoAcknowledgement(value) !== expectedJobId
   )
     throw new ConsumerVideoError("invalid_job");

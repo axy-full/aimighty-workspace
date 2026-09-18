@@ -7,10 +7,11 @@ import {
   createConsumerJob, getConsumerJob, getConsumerJobByKey, listConsumerJobs,
   claimConsumerDispatch, markConsumerAccepted, markConsumerUncertain,
   claimConsumerPoll, releaseConsumerPoll, ConsumerJobError,
+  reconcileConsumerReceipt,
   type ConsumerJob, type ConsumerJobScope, type ConsumerJson,
 } from "./jobs";
 import { getConsumerVideoQuote, submitConsumerVideo, readConsumerVideoJob } from "./mcp";
-import { parseConsumerVideoInput, type ConsumerVideoInput } from "./video-contract";
+import { parseConsumerVideoInput, consumerVideoAcknowledgement, type ConsumerVideoInput } from "./video-contract";
 
 export const MARKETING_VIDEO_REHEARSAL: ConsumerVideoInput = {
   prompt: "A plain reusable bottle on a clean studio background. A short product demo with no people, logos or text.",
@@ -132,7 +133,18 @@ export async function submitConsumerMarketingVideo(scope: ConsumerJobScope, appr
   }
 }
 export async function pollConsumerMarketingVideo(scope: ConsumerJobScope) {
-  const prior = await ownedVideo(scope);
+  let prior = await ownedVideo(scope);
+  if (prior.status === "uncertain" && prior.providerReceipt) {
+    const savedId = consumerVideoAcknowledgement(prior.providerReceipt);
+    const responseId = consumerVideoAcknowledgement(prior.providerReceipt.response);
+    // The outer ID survives truncation of a large diagnostic response. Both
+    // identifiers must agree if both are present; never scrape its preview.
+    const providerJobId = savedId && responseId && savedId !== responseId ? null : savedId ?? responseId;
+    if (providerJobId) {
+      await connected(scope.userId, prior.connectionGeneration);
+      prior = await reconcileConsumerReceipt({ ...scope, providerJobId, expectedReceipt: prior.providerReceipt }) ?? await ownedVideo(scope);
+    }
+  }
   if (prior.status !== "accepted") return { job: consumerVideoView(prior) };
   const access = await connected(scope.userId, prior.connectionGeneration);
   const claim = await claimConsumerPoll(scope);

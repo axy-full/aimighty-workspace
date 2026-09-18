@@ -286,6 +286,42 @@ test("Moleculr saves product and cast, configures video, preserves original refe
   expect(errors).toEqual([]);
 });
 
+test("suite navigation waits for hydration and project initialization, then follows the first click", async ({ page }, info) => {
+  test.skip(!["workbench-360x640", "workbench-1440x900"].includes(info.project.name), "startup race on phone and desktop");
+  const state = await fixture(page);
+  let releaseScripts = () => {};
+  const scripts = new Promise<void>(resolve => { releaseScripts = resolve; });
+  await page.route("**/_next/static/**", async route => {
+    if (route.request().resourceType() === "script") await scripts;
+    await route.continue();
+  });
+  let releaseProject = () => {}, projectRequested = false;
+  const project = new Promise<void>(resolve => { releaseProject = resolve; });
+  await page.route("**/api/workbench/projects?*", async route => {
+    if (route.request().method() === "GET") { projectRequested = true; await project; }
+    await route.fallback();
+  });
+  await page.goto("/workbench?project=suite-test&stage=export", { waitUntil: "commit" });
+  const suite = page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Moleculr Business Suite", exact: true });
+  const room = page.getByRole("navigation", { name: "Rooms", exact: true }).getByRole("link", { name: "Make", exact: true });
+  await expect(suite).toBeDisabled();
+  await expect(suite).not.toHaveAttribute("href");
+  await expect(room).toBeDisabled();
+  await expect(room).not.toHaveAttribute("href");
+  releaseScripts();
+  await expect.poll(() => projectRequested).toBe(true);
+  await expect(suite).toBeDisabled();
+  releaseProject();
+  await expect(suite).toBeEnabled();
+  await expect(suite).toHaveAttribute("href", "/workbench?project=suite-test&suite=moleculr&page=brand");
+  await expect(room).toBeEnabled();
+  await suite.click();
+  await expect(page).toHaveURL(/project=suite-test&suite=moleculr&page=brand/);
+  await page.getByRole("link", { name: "Product", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "The product, precisely." })).toBeVisible();
+  expect(state.mutations).toEqual([]);
+});
+
 test("suite navigation blocks leaving an unsaved project and keeps every original stage reachable", async ({
   page,
 }, info) => {

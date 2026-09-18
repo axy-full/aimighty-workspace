@@ -1333,7 +1333,7 @@ export default function Studio({
 
             <div className="project-bar">
               <Link className="suite-wordmark" href="/" prefetch={false} onNavigate={e=>{e.preventDefault();void leaveWorkspace('/')}} aria-label="Particl home"><Image src="/brand/particl-wordmark-on-dark@4x.png" alt="Particl" width={68} height={22}/></Link>
-              <SuiteSwitcher suite={suite} projectId={ready?p.id:undefined} onNavigate={path=>leaveWorkspace(path)}/>
+              <SuiteSwitcher disabled={!hydrated||(signedIn&&initializedScope!==storageKey)||transitioning} suite={suite} projectId={ready?p.id:undefined} onNavigate={path=>leaveWorkspace(path)}/>
               <div className="project-breadcrumb">
                 <button onClick={() => setHome(true)}>Projects</button>
                 <ChevronRight size={12} />
@@ -1498,7 +1498,7 @@ export default function Studio({
             <div
               className={"workspace-body " + (atomOpen ? "with-atomik" : "")}
             >
-              {suite==='particl'&&<RoomRail active="production" projectId={ready?p.id:undefined} onNavigate={path=>leaveWorkspace(path)}/>}
+              {suite==='particl'&&<RoomRail disabled={!hydrated||(signedIn&&initializedScope!==storageKey)||transitioning} active="production" projectId={ready?p.id:undefined} onNavigate={path=>leaveWorkspace(path)}/>}
               <section
                 className={
                   "work-area " +

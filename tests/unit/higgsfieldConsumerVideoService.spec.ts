@@ -468,3 +468,38 @@ test("accepted polling obeys persisted provider backoff and pins the original co
     expect(state.paidCount).toBe(1);
   });
 });
+
+test("an immutable qualified receipt recovers the original job without a second paid call", async () => {
+  await fixture(async ({ service, state, jobs }) => {
+    const quote = await service.quoteConsumerMarketingVideo(identity.userId, identity.draftId, prompt, randomUUID());
+    const scope = { ...identity, id: quote.id };
+    const claim = await jobs.claimConsumerDispatch(scope);
+    await jobs.markConsumerUncertain({ ...scope, claimToken: claim!.claimToken,
+      providerReceipt: { response: { results: [{ id: state.providerJobId, model: "marketing_studio_video", type: "video", status: "pending" }] } } });
+    const recovered = await service.pollConsumerMarketingVideo(scope);
+    expect(recovered.job.status).toBe("accepted");
+    expect(recovered.job.providerJobId).toBe(state.providerJobId);
+    expect(state.paidCount).toBe(0);
+    expect(state.statusCount).toBe(1);
+    await service.pollConsumerMarketingVideo(scope);
+    expect(state.paidCount).toBe(0);
+    expect(state.statusCount).toBe(1);
+  });
+});
+
+test("a saved accepted UUID survives diagnostic truncation; conflicting receipt IDs stay uncertain", async () => {
+  await fixture(async ({ service, state, jobs }) => {
+    for (const conflicting of [false, true]) {
+      const quote = await service.quoteConsumerMarketingVideo(identity.userId, identity.draftId, prompt, randomUUID());
+      const scope = { ...identity, id: quote.id };
+      const claim = await jobs.claimConsumerDispatch(scope);
+      const providerReceipt: NonNullable<Parameters<typeof jobs.markConsumerUncertain>[0]["providerReceipt"]> = { job_id: state.providerJobId, response: conflicting
+        ? { job_id: randomUUID() } : { truncated: true, preview: "not parsed for identifiers" } };
+      await jobs.markConsumerUncertain({ ...scope, claimToken: claim!.claimToken, providerReceipt });
+      const recovered = await service.pollConsumerMarketingVideo(scope);
+      expect(recovered.job.status).toBe(conflicting ? "uncertain" : "accepted");
+      expect(state.paidCount).toBe(0);
+      expect(state.statusCount).toBe(1);
+    }
+  });
+});

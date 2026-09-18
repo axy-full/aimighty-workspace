@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { newProject } from "../lib/workbench/studio";
+import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
 test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one request and reuses its output", async ({
   page,
@@ -25,6 +27,15 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
   } else {
     await signInLocally(page.request);
   }
+  const me = await page.request.get("/api/me").then(response => response.json());
+  const draft = newProject("Astra original recovery project");
+  const saved = await page.request.put("/api/workbench/projects", {
+    headers: { "X-Workbench-Scope": workbenchScopeFor(me.workspace.id, me.id) },
+    data: { project: draft, revision: 0 },
+  });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const { productionProjectId } = await saved.json();
+  expect(productionProjectId).toBeTruthy();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const source = readFileSync("tests/fixtures/astra-source.mp4");
@@ -42,7 +53,7 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     if (submitted.length === 1) return route.abort("failed");
     return route.fulfill({ response });
   });
-  await page.goto("/generate?mode=video");
+  await page.goto(`/generate?mode=video&project=${draft.id}`);
   await page.getByRole("button", { name: "Engine", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Choose a model" })
@@ -121,6 +132,7 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     astraSource: { width: 720, height: 1280, seconds: 1.5 },
     sourceUploadId: sourceKey.split(":")[1],
   });
+  expect(job.projectId).toBe(productionProjectId);
   expect(job.params.astraOutput).toMatchObject({
     width: 720,
     height: 1280,
@@ -132,9 +144,12 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     `/api/uploads/${sourceKey.split(":")[1]}`,
   );
   expect(await original.body()).toEqual(source);
-  await page.goto("/generate?mode=video");
+  await page.goto(`/generate?mode=video&project=${draft.id}`);
   const takes = page.getByRole("button", { name: /^Takes/ });
   if (await takes.isVisible()) await takes.click();
+  await page.getByRole("region", { name: "Workspace asset library", exact: true })
+    .getByRole("group", { name: "Asset source", exact: true })
+    .getByRole("button", { name: "Generations", exact: true }).click();
   await page
     .locator("article")
     .filter({
