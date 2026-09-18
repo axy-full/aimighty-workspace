@@ -67,3 +67,21 @@ test("BytePlus refinement does not fall through to a second model when access is
     globalThis.fetch = fetchBefore;
   }
 });
+
+
+test("a direct OpenAI override cannot create an unquoted inline refinement", async () => {
+  const { enhancePrompt } = await import('../../lib/enhance');
+  const previous = { models: process.env.GATEWAY_PROMPT_MODELS, key: process.env.OPENAI_API_KEY, mock: process.env.ENGINE_MOCK };
+  const fetchBefore = globalThis.fetch; let calls = 0;
+  process.env.GATEWAY_PROMPT_MODELS = 'openai/gpt-6-astra';
+  process.env.OPENAI_API_KEY = 'unit-fixture-not-sent';
+  process.env.ENGINE_MOCK = '0';
+  globalThis.fetch = async () => { calls++; throw new Error('unexpected dispatch'); };
+  try {
+    await expect(enhancePrompt({ prompt: 'A boat drifts', citations: [], provider: 'gateway' })).rejects.toThrow('quoted Atomik request');
+    expect(calls).toBe(0);
+  } finally {
+    globalThis.fetch = fetchBefore;
+    for (const [name, value] of [['GATEWAY_PROMPT_MODELS', previous.models], ['OPENAI_API_KEY', previous.key], ['ENGINE_MOCK', previous.mock]]) if (value === undefined) delete process.env[name!]; else process.env[name!] = value;
+  }
+});

@@ -31,6 +31,7 @@ function harness() {
   let calls = 0, reservations = 0;
   const deps: AtomikDependencies = {
     assertFunding: async () => {},
+    runAstra: async () => { throw new Error("Unexpected Astra agent call"); },
     runSuite: async () => { throw new Error("Unexpected suite agent call"); },
     models: async () => [model], allowance: async () => ({ ok: true }),
     limits: async () => ({ allow: true, limits: { concurrency: 3, rendersPerHour: 30, storageBytes: 1000000 }, standing: { running: 0, startedLastHour: 0, usedBytes: 0 } }),
@@ -547,4 +548,97 @@ test('a failed funding recheck releases the unsent suite reservation and prevent
     expect(h.events).toHaveLength(1); expect(h.events[0]).toMatchObject({ status: 'failed', engineCostUsd: 0 });
     expect(Number((await db().execute({ sql: 'SELECT cost_usd FROM atomik_spend WHERE id=?', args: [job.id] })).rows[0].cost_usd)).toBe(0);
   });
+});
+
+test('Astra uses the exact requested model, binds the saved scene and prices both bounded calls', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input, project } = await fixture();
+    const { createAstraScene, ASTRA_BLENDER_MODEL } = await import('../../lib/astra-blender/scene');
+    const { astraSceneDigest } = await import('../../lib/astra-blender/proposal');
+    const { ASTRA_AGENT_INPUT_TOKENS, ASTRA_AGENT_STEPS } = await import('../../lib/astra-blender/agent');
+    const astraModel = { ...model, id: ASTRA_BLENDER_MODEL, owner: 'openai', maxTokens: 128000, contextWindow: 1050000, pricing: { input: .00001, output: .00005 }, reasoningOptions: [{ type: 'effort' as const, values: ['low', 'medium', 'high', 'xhigh', 'max'] }] };
+    const h = harness(); h.deps.models = async () => [astraModel, model];
+    const request = { ...input, model: ASTRA_BLENDER_MODEL, refs: [], effort: 'medium', astraBlender: { sceneDigest: await astraSceneDigest(createAstraScene('product')) } };
+    const quote = await quoteAtomikJob(request, 'owner', h.deps);
+    expect(quote.model).toBe(ASTRA_BLENDER_MODEL);
+    expect(quote.estimateUsd).toBeCloseTo(textCostUsd(astraModel, ASTRA_AGENT_INPUT_TOKENS, quote.maxTokens)! * ASTRA_AGENT_STEPS);
+    expect(h.calls()).toBe(0); expect(h.reservations()).toBe(0);
+    await expect(quoteAtomikJob({ ...request, model: 'auto' }, 'owner', h.deps)).rejects.toThrow('uses GPT-6 Astra');
+    h.deps.models = async () => [model];
+    await expect(quoteAtomikJob(request, 'owner', h.deps)).rejects.toThrow('No priced language model');
+    h.deps.models = async () => [astraModel];
+    const changed = { ...project, astraBlender: createAstraScene('empty') };
+    await db().execute({ sql: 'UPDATE workbench_projects SET body=? WHERE owner=? AND project_id=?', args: [JSON.stringify(changed), 'owner', input.projectId] });
+    await expect(prepareAtomikJob({ ...request, maxCredits: quote.estimateCredits }, 'owner', undefined, h.deps)).rejects.toThrow('scene changed');
+    expect(h.reservations()).toBe(0);
+  });
+});
+
+test('Astra proposals use durable paid accounting and do not replay a duplicate submission', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture();
+    const { createAstraScene, ASTRA_BLENDER_MODEL } = await import('../../lib/astra-blender/scene');
+    const { astraSceneDigest } = await import('../../lib/astra-blender/proposal');
+    const h = harness(); let runs = 0;
+    h.deps.models = async () => [{ ...model, id: ASTRA_BLENDER_MODEL, owner: 'openai', maxTokens: 128000, contextWindow: 1050000, pricing: { input: .00001, output: .00005 } }];
+    h.deps.runAstra = async envelope => { runs++; const scene = structuredClone(envelope.scene); scene.name = 'Astra product'; return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Product scene.', steps: ['Preserved geometry.'], sceneJson: JSON.stringify(scene) }) } }], usage: { steps: [{ prompt_tokens: 200, completion_tokens: 100 }] } }) }; };
+    const inputAstra = { ...input, model: ASTRA_BLENDER_MODEL, refs: [], astraBlender: { sceneDigest: await astraSceneDigest(createAstraScene('product')) }, maxCredits: 1000 };
+    const prepared = await prepareAtomikJob(inputAstra, 'owner', undefined, h.deps);
+    await runAtomikJob(prepared.job.id, 'owner', h.deps);
+    const [job] = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter });
+    expect(job.status).toBe('succeeded');
+    expect(job.plan?.astraBlender?.scene.name).toBe('Astra product');
+    expect(job.plan?.astraBlender?.baseSceneDigest).toBe(inputAstra.astraBlender.sceneDigest);
+    expect(job.costUsd).toBeCloseTo(.007);
+    expect(job.plan?.applied).toBe(false);
+    const again = await prepareAtomikJob(inputAstra, 'owner', undefined, h.deps);
+    expect(again.scheduled).toBe(false);
+    await runAtomikJob(prepared.job.id, 'owner', h.deps);
+    expect(runs).toBe(1); expect(h.reservations()).toBe(1);
+  });
+});
+
+
+for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agentKind} usage settles each saved price snapshot and preserves unknown cache receipts`, async () => {
+  const { createHash } = await import('node:crypto');
+  const { createAstraScene } = await import('../../lib/astra-blender/scene');
+  const { serializeAstraScene } = await import('../../lib/astra-blender/proposal');
+  const previousMock = process.env.ENGINE_MOCK; delete process.env.ENGINE_MOCK;
+  try { for (const unknown of [false, true]) {
+    const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
+    await runInTenant(ws, async () => {
+      const { input } = await fixture(), h = harness();
+      const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', maxTokens: 128000, contextWindow: 1050000,
+        pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125,
+          input_tiers: [{ cost: .0000001, max: 150 }, { cost: .0000002, min: 150 }],
+          output_tiers: [{ cost: .0000003, max: 150 }, { cost: .0000004, min: 150 }],
+          input_cache_read_tiers: [{ cost: .00000001, max: 150 }, { cost: .00000002, min: 150 }],
+          input_cache_write_tiers: [{ cost: .000000125, max: 150 }, { cost: .00000025, min: 150 }] } };
+      h.deps.models = async () => [priced];
+      const scene = createAstraScene('product');
+      const request = { ...input, model: priced.id, refs: [], maxCredits: 0,
+        ...(agentKind === 'suite' ? { suite: 'particl' as const } : {}),
+        ...(agentKind === 'astra' ? { astraBlender: { sceneDigest: createHash('sha256').update(serializeAstraScene(scene)).digest('hex') } } : {}) };
+      const prepared = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+      const row = (await db().execute({ sql: 'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
+      expect(JSON.parse(String(row.provider_body)).pricingModel.pricing).toEqual(priced.pricing);
+      let calls = 0;
+      const usage = { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, ...(unknown ? {} : { cache_write_tokens: 40 }) }, completion_tokens_details: { reasoning_tokens: 10 } };
+      const result = agentKind === 'astra' ? { summary: 'Preserved scene', steps: ['Reviewed scene.'], sceneJson: JSON.stringify(scene) }
+        : agentKind === 'suite' ? { ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'Motivated soft light.', referenceIds: [] }], hooks: [], assumptions: [] } : validReply;
+      const reply = async () => { calls++; return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: agentKind === 'raw' ? usage : { steps: [usage, usage] } }) }; };
+      h.deps.run = async req => { expect(req.body).not.toContain('pricingModel'); return reply(); };
+      h.deps.runSuite = reply; h.deps.runAstra = reply;
+      h.deps.models = async () => { throw new Error('Must use the saved price, never a new catalog lookup.'); };
+      await runAtomikJob(prepared.job.id, 'owner', h.deps);
+      await runAtomikJob(prepared.job.id, 'owner', h.deps);
+      const saved = (await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }))[0];
+      expect(calls).toBe(1);
+      expect(saved.status).toBe(unknown ? 'uncertain' : 'succeeded');
+      if (unknown) { expect(saved.costUsd).toBeNull(); expect(h.events.at(-1)?.engineCostUsd).toBe(prepared.job.estimateUsd); }
+      else expect(saved.costUsd).toBeCloseTo((30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003) * (agentKind === 'raw' ? 1 : 2), 12);
+      const receipt = (await db().execute({ sql: 'SELECT provider_response,usage FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
+      expect(String(receipt.provider_response)).toContain('cached_tokens'); expect(String(receipt.usage)).toContain('cached_tokens');
+    });
+  } } finally { if (previousMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = previousMock; }
 });

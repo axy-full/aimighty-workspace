@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
-import { paidByPlatform, vendorKeyNameFor, platformSpendRecordsSince } from "./platformSpend";
+import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCredits, marginKeyOf } from "./creditTerms";
@@ -143,7 +143,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: {
   const projectId = event.projectId ?? options.projectId ?? null;
   const cost = Number(event.engineCostUsd);
   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400);
-  const paid = paidByPlatform(vendorKeyNameFor(event.engine));
+  const paid = paidByPlatformEngine(event.engine);
   const billed = paid ? billCredits(cost, marginKeyOf(event.kind, event.model)) : 0;
   await ready();
   await reservationsReady();

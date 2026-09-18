@@ -37,6 +37,7 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
     { id: "moodboard", label: "Look" },
     { id: "characters", label: "Cast" },
     { id: "elements", label: "Elements" },
+    { id: "astra-blender", label: "Astra blender" },
     { id: "canvas", label: "Rig" },
     { id: "storyboard", label: "Boards" },
     { id: "assets", label: "Takes" },

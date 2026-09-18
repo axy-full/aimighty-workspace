@@ -1,6 +1,7 @@
 import { recoveryFetch as fetch } from "./recovery";
 import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
 import { engineMock, mockCompletion } from "./mock";
+import { assertTextProvider, openaiDirectPost, TEXT_PROVIDER_HEADER, textVendor } from './openai-direct';
 /**
  * Vercel AI Gateway — the one door this deployment can always open.
  *
@@ -47,6 +48,10 @@ export async function gatewayAuth(): Promise<Record<string, string>> {
 
 /** What a gateway error should say to a person, by status. */
 export function explainGatewayFailure(status: number, text: string): string | null {
+  try {
+    const reply = JSON.parse(text);
+    if (reply.provider === 'openai') return status === 401 ? 'OpenAI rejected the connected API key. Check the OpenAI connection.' : status === 429 ? 'OpenAI reached its rate or usage limit. Check the connected OpenAI account.' : `OpenAI could not complete this request (${status}). ${typeof reply.error?.message === 'string' ? reply.error.message.slice(0, 400) : ''}`;
+  } catch { /* Other gateway responses retain their existing explanation. */ }
   if (status === 403 && /free tier|RestrictedModels/i.test(text)) {
     return "Vercel AI Gateway is on its free tier, which does not include this model. " +
            "Add credits under Vercel → AI Gateway and it will work from then on.";
@@ -100,7 +105,11 @@ export async function gatewayPost(
   opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" } = {},
 ): Promise<GatewayReply> {
   if (engineMock()) return mockCompletion(opts.mock ?? "prompt", body);
-  const auth = opts.auth ?? await gatewayAuth();
+  const input = JSON.parse(body) as Record<string, unknown>;
+  if (typeof input.model !== 'string') throw new Error('Choose a language model before submitting.');
+  assertTextProvider(input.model, opts.auth);
+  if (textVendor(input.model) === 'openai') return openaiDirectPost(input, { timeoutMs: opts.timeoutMs });
+  const auth = { ...(opts.auth ?? await gatewayAuth()) }; delete auth[TEXT_PROVIDER_HEADER];
   const res = await fetch(GATEWAY_URL(), {
     method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
@@ -143,7 +152,7 @@ export async function gatewayChat(c: ChatCall): Promise<GatewayReply> {
   const send = (cacheable: boolean) =>
     gatewayPost(chatBody(c, cacheable), { auth: c.auth, timeoutMs: c.timeoutMs, mock: c.mock });
   const res = await send(true);
-  if (res.status === 400 && REFUSED_THE_MARK.test(res.text)) {
+  if (textVendor(c.model) !== 'openai' && res.status === 400 && REFUSED_THE_MARK.test(res.text)) {
     console.warn(`gatewayChat: ${c.model} rejected the cache mark, retrying plain — ${res.text.slice(0, 140)}`);
     return send(false);
   }

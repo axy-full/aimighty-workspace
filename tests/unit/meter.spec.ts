@@ -192,3 +192,19 @@ test("changing vendor keys while a job runs cannot change who funds its complete
     ["key_removed", 0, 0],
   ]);
 });
+
+
+test('direct OpenAI funding is separate from Gateway and provider changes fail before dispatch', async () => {
+  const { meter, assertMeterFunding } = await import('../../lib/meter');
+  const { runInTenant } = await import('../../lib/tenant');
+  const { platformDb } = await import('../../lib/platform');
+  const platform = workspace({ keys: { gateway: 'workspace-gateway' } });
+  await runInTenant(platform, () => meter({ id: 'meter-direct-openai', kind: 'text', engine: 'openai', model: 'openai/gpt-6-astra', status: 'running', engineCostUsd: .10 }));
+  await runInTenant(platform, () => assertMeterFunding('meter-direct-openai', 'openai'));
+  await expect(runInTenant(platform, () => assertMeterFunding('meter-direct-openai', 'vercel'))).rejects.toThrow('credentials changed');
+  const direct = workspace({ keys: { openai: 'workspace-openai' } });
+  await runInTenant(direct, () => meter({ id: 'meter-direct-byok', kind: 'text', engine: 'openai', model: 'openai/gpt-6-astra', status: 'running', engineCostUsd: .10 }));
+  const rows = await platformDb().execute("SELECT id,paid_by_platform,billed_credits FROM meter_events WHERE id IN ('meter-direct-openai','meter-direct-byok') ORDER BY id");
+  expect(rows.rows[0]).toMatchObject({ id: 'meter-direct-byok', paid_by_platform: 0, billed_credits: 0 });
+  expect(rows.rows[1].paid_by_platform).toBe(1);
+});

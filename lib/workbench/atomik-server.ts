@@ -1,3 +1,10 @@
+import { vendorKey } from '../vendorKeys';
+import { textVendor, directTextCostUsd } from '../openai-direct';
+import { languageAuth } from '../language-provider';
+import { ASTRA_BLENDER_MODEL, createAstraScene } from '../astra-blender/scene';
+import { astraRequestSchema, astraAgentResultSchema, serializeAstraScene, validateAstraProposal, astraAssetKind } from '../astra-blender/proposal';
+import { runAstraAgent, astraAgentInstructions, astraAgentMessages, astraAgentInputTokens, ASTRA_AGENT_STEPS, ASTRA_AGENT_INPUT_TOKENS, type AstraAgentEnvelope } from '../astra-blender/agent';
+import { astraNativeResultSchema, serializeAstraNative, isAstraBlendAsset, validateAstraNativeResult } from '../astra-blender/native';
 import { withRecoveryJob } from '../recovery';
 import { runSuiteAgent, checkSuiteProposal, suiteAgentInstructions, suiteAgentBounds, SUITE_AGENT_STEPS, type SuiteAgentEnvelope } from './suite-agent';
 import { suiteAgentResultSchema } from './suite-agent-plan';
@@ -8,9 +15,9 @@ import { atomikEffortOptions, atomikReasoningRequest } from "../atomik-reasoning
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, ready, now } from '../db';
-import { catalog, textCostUsd, type CatalogModel } from '../catalog';
+import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { engineFor } from '../engines';
-import { gatewayAuth, gatewayReachable, explainGatewayFailure } from '../gateway';
+import { gatewayReachable, explainGatewayFailure } from '../gateway';
 import { allowanceCheck } from '../allowance';
 import { checkLimits, limitVerdict } from '../limits';
 import { meter, assertMeterFunding, type MeterEvent } from '../meter';
@@ -25,6 +32,7 @@ import type { Plan, Project } from './studio';
 import { requireTenant, type TenantToken } from '../tenant';
 
 export const atomikRequestSchema = z.object({
+  astraBlender: astraRequestSchema.optional(),
   referenceAd: referenceAnalysisSourceSchema.optional(),
   suite: z.enum(['particl', 'atomik', 'moleculr', 'subatomik']).optional(),
   projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
@@ -42,6 +50,7 @@ export const atomikRequestSchema = z.object({
 export type AtomikRequest = z.infer<typeof atomikRequestSchema>;
 export type AtomikStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'uncertain';
 export type AtomikJob = {
+  astraBlender?: AtomikRequest['astraBlender'];
   suite?: AtomikRequest['suite'];
   id: string; requestId: string; projectId: string; productionProjectId: string | null; status: AtomikStatus;
   request: string; model: string; depth: AtomikRequest['depth']; effort?: string; role?: string;
@@ -114,6 +123,7 @@ function asJob(row: Row): AtomikJob {
   const input = atomikRequestSchema.parse(JSON.parse(String(row.request_body)));
   return {
     ...(input.suite ? { suite: input.suite } : {}),
+    ...(input.astraBlender ? { astraBlender: input.astraBlender } : {}),
     id: String(row.id), requestId: input.requestId, projectId: input.projectId, productionProjectId: row.production_project_id ? String(row.production_project_id) : null,
     status: String(row.status) as AtomikStatus, request: input.request, model: String(row.model),
     depth: input.depth, ...(input.effort == null ? {} : { effort: input.effort }), role: input.role, refs: input.refs,
@@ -218,18 +228,19 @@ export type AtomikDependencies = {
   limits: typeof checkLimits;
   reserve: typeof reserveGenerationSpend;
   meter: typeof meter;
-  auth: typeof gatewayAuth;
+  auth: typeof languageAuth;
   run: NonNullable<ReturnType<typeof engineFor>['run']>;
   runSuite: typeof runSuiteAgent;
+  runAstra: typeof runAstraAgent;
   assertFunding: typeof assertMeterFunding;
 };
 const dependencies = (): AtomikDependencies => ({
   models: catalog, allowance: allowanceCheck, limits: checkLimits,
-  reserve: reserveGenerationSpend, meter, auth: gatewayAuth,
+  reserve: reserveGenerationSpend, meter, auth: languageAuth,
   run: request => engineMock() && JSON.parse(request.body).response_format?.json_schema?.name === 'reference_ad_analysis'
     ? Promise.resolve({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Mock visual analysis; no provider was called.', beats: [{ sampleIndex: 0, observation: 'Mock opening sample.', adaptation: 'Introduce the supplied product with clear framing.' }], camera: 'Mock composition review.', pacing: 'Mock comparison between sampled stills; cut timing is unknown.', colors: ['Mock neutral palette'], direction: 'Create an original product introduction using the reviewed brand and product facts.', uncertainties: ['Mock result. No real reference analysis was performed.'] }) } }], usage: { cost: 0, prompt_tokens: 0, completion_tokens: 0 } }) })
     : engineFor('vercel').run!(request),
-  runSuite: runSuiteAgent, assertFunding: assertMeterFunding,
+  runSuite: runSuiteAgent, runAstra: runAstraAgent, assertFunding: assertMeterFunding,
 });
 const withDependencies = (overrides?: Partial<AtomikDependencies>) => ({ ...dependencies(), ...overrides });
 
@@ -242,16 +253,22 @@ export async function getAtomikProject(owner: string, projectId: string) {
   return parsed.data as Project;
 }
 const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], cost?: number): MeterEvent => ({
-  id: job.id, kind: 'text', engine: 'vercel', model: job.model, status, engineCostUsd: cost,
+  id: job.id, kind: 'text', engine: textVendor(job.model) === 'openai' ? 'openai' : 'vercel', model: job.model, status, engineCostUsd: cost,
   projectId: job.productionProjectId, createdBy: owner,
 });
 
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
+  if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('Astra blender uses GPT-6 Astra and the saved 3D scene. Start this request from Astra blender.', 422);
   if (input.referenceAd && input.suite) throw new AtomikError('Reference-ad analysis is a separate bounded review, not a suite-agent run.', 422);
   if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new AtomikError('Save this project to link its budget before starting Atomik.', 409);
-  const references = await loadAtomikReferences(project, input.refs, owner, input.videoFrames, {}, input.referenceAd);
+  const astraScene = input.astraBlender ? project.astraBlender ?? createAstraScene('product') : null;
+  if (astraScene && createHash('sha256').update(serializeAstraScene(astraScene)).digest('hex') !== input.astraBlender!.sceneDigest) throw new AtomikError('The scene changed since this request was prepared. Close the quote and review a new request for the latest scene.', 422);
+  if (input.astraBlender?.mode === 'native' && createHash('sha256').update(serializeAstraNative(project.astraNative)).digest('hex') !== input.astraBlender.nativeDigest) throw new AtomikError('The native Blender source changed. Review a new quote for the latest source.', 422);
+  const referenceIds = input.astraBlender?.referenceIds ?? input.refs;
+  if (input.astraBlender && referenceIds.some(id => ![...project.assets, ...(project.sharedAssets ?? [])].some(asset => asset.id === id && asset.kind === 'image'))) throw new AtomikError('Choose project images or rendered previews as Astra visual references.', 422);
+  const references = await loadAtomikReferences(project, referenceIds, owner, input.videoFrames, {}, input.referenceAd);
   const models = await deps.models();
   const menu = atomikModels(models).filter(model => (!input.suite || /^(anthropic|openai)\//.test(model.id)) && (!references.images.length || model.vision));
   if (input.model === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);
@@ -259,26 +276,26 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const selectedId = input.model === 'auto' ? economy?.id : input.model;
   const model = models.find(m => m.id === selectedId && menu.some(c => c.id === m.id));
   if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
-  if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or connect AI Gateway.', 503);
-  const system = input.referenceAd ? referenceAnalysisInstructions() : input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
-  const user = atomikContext(project, input, references.text, references.images);
+  if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or check the provider connection in Workspace → Engines.', 503);
+  const system = input.astraBlender ? astraAgentInstructions(input.astraBlender.mode) : input.referenceAd ? referenceAnalysisInstructions() : input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
+  const user = input.astraBlender ? JSON.stringify({ request: input.request, project: project.name, brief: project.brief.slice(0, 4000), direction: project.direction.slice(0, 4000) }) : atomikContext(project, input, references.text, references.images);
   // UTF-8 byte count is a conservative token upper bound, including non-Latin scripts.
   const inputTokens = Buffer.byteLength(system + user, 'utf8') + 512 + references.inputTokens;
   const reasoning = atomikReasoningRequest(model, input.effort, LIMITS[input.depth].maxTokens);
-  const maxTokens = reasoning.maxTokens;
+  const maxTokens = input.astraBlender ? Math.min(32768, reasoning.maxTokens + 8000, model.maxTokens ?? 32768) : reasoning.maxTokens;
   if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) {
     throw new AtomikError('This model has too little context for the project. Choose a larger-context model or fewer references.');
   }
   // Bound repeated context, tool schemas/results and prior generated text for all three calls.
   const bounds = suiteAgentBounds(inputTokens, maxTokens);
   if (input.suite && model.contextWindow && bounds.perStepInputTokens + maxTokens > model.contextWindow) throw new AtomikError('Choose a larger-context model or lower effort for this multi-step agent.', 422);
-  const perCallEstimate = textCostUsd(model, input.suite ? bounds.perStepInputTokens : inputTokens, maxTokens);
-  const estimateUsd = perCallEstimate == null ? null : perCallEstimate * (input.suite ? SUITE_AGENT_STEPS : 1);
+  const perCallEstimate = textQuoteCostUsd(model, input.astraBlender ? ASTRA_AGENT_INPUT_TOKENS : input.suite ? bounds.perStepInputTokens : inputTokens, maxTokens, textVendor(model.id) === 'openai');
+  const estimateUsd = perCallEstimate == null ? null : perCallEstimate * (input.astraBlender ? ASTRA_AGENT_STEPS : input.suite ? SUITE_AGENT_STEPS : 1);
   if (estimateUsd == null || !Number.isFinite(estimateUsd) || estimateUsd < 0) throw new AtomikError('This model has no confirmed price for the current context. Choose another model or refresh the catalogue.', 503);
-  const budgets = atomikBudgets(input.effort !== undefined);
+  const budgets = atomikBudgets(input.effort !== undefined || !!input.astraBlender);
   if (estimateUsd > budgets.maxRequestUsd) throw new AtomikError('This request exceeds the Atomik spending limit. Choose a less expensive model, lower effort, shorter response detail, or fewer references.', 409);
   let providerBody = JSON.stringify({
-    model: model.id, max_tokens: maxTokens,
+    model: model.id, max_tokens: maxTokens, ...(textVendor(model.id) === 'openai' ? { pricingModel: model } : {}),
     ...reasoning.requestFields,
     ...(Object.keys(reasoning.providerOptions).length ? { providerOptions: reasoning.providerOptions } : {}),
     messages: [{ role: 'system', content: system }, { role: 'user', content: references.images.length ? [
@@ -310,7 +327,20 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
       images: references.images.map(image => ({ dataUrl: image.dataUrl, label: JSON.stringify({ referenceId: image.assetId, name: image.name, sampledAtSeconds: image.timeSeconds }) })) };
     providerBody = JSON.stringify({ ...envelope, pricingModel: model });
   }
-  const estimateCredits = paidByPlatform('gateway') ? billCredits(estimateUsd, 'text') : 0;
+  if (input.astraBlender && astraScene) {
+    const providerOptions = structuredClone(reasoning.providerOptions) as SharedV4ProviderOptions;
+    if (reasoning.requestFields?.reasoning_effort) providerOptions.openai = { ...providerOptions.openai, reasoningEffort: String(reasoning.requestFields.reasoning_effort) };
+    const envelope: AstraAgentEnvelope = { model: ASTRA_BLENDER_MODEL, context: user, scene: astraScene, baseSceneDigest: input.astraBlender.sceneDigest,
+      ...(input.astraBlender.mode === 'native' ? { mode: 'native', native: project.astraNative, baseNativeDigest: input.astraBlender.nativeDigest } : {}),
+      images: references.images.map(image => ({ dataUrl: image.dataUrl, label: JSON.stringify({ assetId: image.assetId, name: image.name, sha256: image.sha256, evidence: 'Image pixels supplied as a 512px review copy.' }) })),
+      maxTokens, inputTokenBudget: ASTRA_AGENT_INPUT_TOKENS, providerOptions, pricingModel: model,
+      assetIds: [...project.assets, ...(project.sharedAssets ?? [])].filter((asset, index, all) => (astraAssetKind(asset) || input.astraBlender?.mode === 'native' && isAstraBlendAsset(asset)) && all.findIndex(item => item.id === asset.id) === index)
+        .filter((asset, index, all) => index >= all.length - 64 || astraScene.objects.some(object => object.assetId === asset.id) || project.astraNative?.assetIds.includes(asset.id) || project.astraNative?.baseBlendAssetId === asset.id)
+        .map(({ id, kind, mime, name, description }) => ({ id, kind, mime, name: name.slice(0, 100), description: description.slice(0, 200) })) };
+    if (astraAgentInputTokens(envelope, astraAgentMessages(envelope)) > ASTRA_AGENT_INPUT_TOKENS || (model.contextWindow && ASTRA_AGENT_INPUT_TOKENS + maxTokens > model.contextWindow)) throw new AtomikError('This scene exceeds the reviewed Astra context budget. Simplify the scene before requesting a change.', 422);
+    providerBody = JSON.stringify(envelope);
+  }
+  const estimateCredits = paidByPlatform(textVendor(model.id)) ? billCredits(estimateUsd, 'text') : 0;
   if (input.maxCredits != null && estimateCredits > input.maxCredits) {
     throw new AtomikError('The estimate changed since it was shown. Review the new quote before starting this request.', 409);
   }
@@ -334,9 +364,9 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
     if (existing.fingerprint !== fingerprint) throw new AtomikError('This request ID belongs to different instructions. Start a new request.', 409);
     return { job: asJob(existing), scheduled: false };
   }
-  if ((input.effort !== undefined || input.suite || input.referenceAd) && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
+  if ((input.effort !== undefined || input.suite || input.referenceAd || input.astraBlender) && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
   const { project, model, providerBody, estimateUsd, estimateCredits, budgets } = await compileAtomikRequest(input, owner, deps);
-  const wall = await deps.allowance('gateway', estimateUsd, model.id);
+  const wall = await deps.allowance(textVendor(model.id), estimateUsd, model.id);
   if (!wall.ok) throw new AtomikError(wall.error, wall.status);
   const lim = await deps.limits();
   if (!lim.allow) throw new AtomikError(lim.error, lim.why === 'rate' ? 429 : 409);
@@ -393,8 +423,8 @@ export async function prepareAtomikJob(input: AtomikRequest, owner: string, toke
 
 /** Context tiers apply to each SDK call, not its aggregate usage. Only the
  * admitted price snapshot and complete numeric counts can settle a suite job. */
-function suiteStepCost(steps: unknown, providerBody: string, modelId: string): number | null {
-  if (!Array.isArray(steps) || !steps.length || steps.length > SUITE_AGENT_STEPS) return null;
+function suiteStepCost(steps: unknown, providerBody: string, modelId: string, astra = false): number | null {
+  if (!Array.isArray(steps) || !steps.length || steps.length > (astra ? ASTRA_AGENT_STEPS : SUITE_AGENT_STEPS)) return null;
   const snapshot = JSON.parse(providerBody) as SuiteAgentEnvelope;
   const model = snapshot.pricingModel;
   if (!model || model.id !== modelId) return null;
@@ -403,8 +433,9 @@ function suiteStepCost(steps: unknown, providerBody: string, modelId: string): n
     if (!step || typeof step !== 'object') return null;
     const { prompt_tokens: input, completion_tokens: output } = step;
     if (![input, output].every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)) return null;
-    const cost = textCostUsd(model, input, output);
+    const cost = textVendor(modelId) === 'openai' ? directTextCostUsd(model, step) : textCostUsd(model, input, output);
     if (cost == null || !Number.isFinite(cost) || cost < 0) return null;
+    if (astra && (input > snapshot.inputTokenBudget || output > snapshot.maxTokens)) return null;
     total += cost;
   }
   return Number.isFinite(total) ? total : null;
@@ -427,31 +458,45 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
   let raw = '';
   let usage: unknown = null;
   try {
-    const auth = await deps.auth();
-    await deps.assertFunding(id, "vercel");
+    const auth = await deps.auth(job.model);
+    await deps.assertFunding(id, textVendor(job.model) === "openai" ? "openai" : "vercel");
     submitted = true;
     const input = atomikRequestSchema.parse(JSON.parse(String(row.request_body)));
-    const response = input.suite
+    const response = input.astraBlender
+      ? await deps.runAstra(JSON.parse(String(row.provider_body)), auth, async trace => {
+          await db().execute({ sql: "UPDATE workbench_atomik_jobs SET provider_response=?,updated_at=? WHERE id=? AND owner=? AND status='running'", args: [trace, now(), id, owner] });
+        })
+      : input.suite
       ? await deps.runSuite(JSON.parse(String(row.provider_body)), auth, async trace => {
           await db().execute({ sql: "UPDATE workbench_atomik_jobs SET provider_response=?,updated_at=? WHERE id=? AND owner=? AND status='running'", args: [trace, now(), id, owner] });
         })
-      : await deps.run({ body: input.referenceAd ? JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(String(row.provider_body))).filter(([key]) => key !== 'referenceAnalysisEvidence'))) : String(row.provider_body), auth, timeoutMs: 270000 });
+      : await deps.run({ body: JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(String(row.provider_body))).filter(([key]) => !['referenceAnalysisEvidence', 'pricingModel'].includes(key)))), auth, timeoutMs: 270000 });
     providerReturned = true;
     raw = response.text;
     if (!response.ok) {
       // A definitive 4xx rejection incurred no generation. 5xx is ambiguous.
-      if (response.status >= 400 && response.status < 500) cost = 0;
+      if (response.status >= 400 && response.status < 500 && response.status !== 408) cost = 0;
       else providerReturned = false;
       throw new AtomikError(explainGatewayFailure(response.status, raw) ?? `The model could not complete this request (${response.status}). This attempt will not be retried automatically.`, 502);
     }
-    const reply = JSON.parse(raw) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: { cost?: number; prompt_tokens?: number; completion_tokens?: number; steps?: unknown } };
+    const reply = JSON.parse(raw) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: { cost?: number; prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: unknown; steps?: unknown } };
+    const direct = textVendor(job.model) === 'openai';
     usage = reply.usage ?? null;
-    if (typeof reply.usage?.cost === 'number' && Number.isFinite(reply.usage.cost) && reply.usage.cost >= 0) cost = reply.usage.cost;
-    else if (input.suite) {
-      const actual = suiteStepCost(reply.usage?.steps, String(row.provider_body), job.model);
+    if ((!direct || engineMock()) && typeof reply.usage?.cost === 'number' && Number.isFinite(reply.usage.cost) && reply.usage.cost >= 0) cost = reply.usage.cost;
+    else if (input.suite || input.astraBlender) {
+      const actual = suiteStepCost(reply.usage?.steps, String(row.provider_body), job.model, !!input.astraBlender);
       if (actual == null) {
         providerReturned = false;
         throw new AtomikError('The provider usage could not be priced against the approved estimate. This attempt needs billing review.', 409);
+      }
+      cost = actual;
+    }
+    else if (direct) {
+      const snapshot = JSON.parse(String(row.provider_body)).pricingModel as CatalogModel | undefined;
+      const actual = snapshot?.id === job.model ? directTextCostUsd(snapshot, reply.usage) : null;
+      if (actual == null) {
+        providerReturned = false;
+        throw new AtomikError('The direct provider usage could not be priced against the saved snapshot. This attempt needs billing review.', 409);
       }
       cost = actual;
     }
@@ -459,7 +504,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       const model = (await deps.models()).find(m => m.id === job.model);
       if (model) cost = textCostUsd(model, reply.usage!.prompt_tokens!, reply.usage!.completion_tokens!) ?? cost;
     }
-    if ((input.suite || input.referenceAd) && cost > job.estimateUsd + 0.00000001) {
+    if ((direct || input.suite || input.referenceAd || input.astraBlender) && cost > job.estimateUsd + 0.00000001) {
       // Provider pricing/usage outside the accepted ceiling requires reconciliation.
       // Preserve the response, but never debit an unapproved overage automatically.
       providerReturned = false; cost = job.estimateUsd;
@@ -469,11 +514,17 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
     const referenceAnalysis = input.referenceAd ? referenceAdAnalysisSchema.parse({ projectId: input.projectId, jobId: job.id, model: job.model, createdAt: new Date().toISOString(), evidence: JSON.parse(String(row.provider_body)).referenceAnalysisEvidence, result: referenceAnalysisResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) }) : null;
     const suiteResult = input.suite ? suiteAgentResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) : null;
     if (suiteResult && !checkSuiteProposal(suiteResult, (JSON.parse(String(row.provider_body)) as SuiteAgentEnvelope).assetIds).valid) throw new AtomikError('The agent proposed unavailable references. Review this saved attempt; no media was generated.', 502);
-    const result = referenceAnalysis ? { intent: 'campaign', summary: referenceAnalysis.result.summary, steps: [referenceAnalysis.result.direction], referenceAdAnalysis: referenceAnalysis } : suiteResult ? { intent: suiteResult.intent, summary: suiteResult.summary, steps: suiteResult.steps, suiteAgent: { suite: input.suite!, projectId: input.projectId, actions: suiteResult.actions, hooks: suiteResult.hooks, assumptions: suiteResult.assumptions } } : parseAtomikResult(typeof content === 'string' ? content : '');
+    const nativeResult = input.astraBlender?.mode === 'native' ? astraNativeResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) : null;
+    const astraResult = input.astraBlender && !nativeResult ? astraAgentResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) : null;
+    const astraEnvelope = input.astraBlender ? JSON.parse(String(row.provider_body)) as AstraAgentEnvelope : null;
+    const result = nativeResult && astraEnvelope ? { intent: 'astra-blender', summary: nativeResult.summary, steps: nativeResult.steps,
+      astraNative: { baseSceneDigest: astraEnvelope.baseSceneDigest, baseNativeDigest: astraEnvelope.baseNativeDigest!, source: validateAstraNativeResult(nativeResult, astraEnvelope.assetIds.map(asset => ({ ...asset, name: asset.name ?? '' }))) } }
+      : astraResult && astraEnvelope ? { intent: 'astra-blender', summary: astraResult.summary, steps: astraResult.steps,
+      astraBlender: { baseSceneDigest: astraEnvelope.baseSceneDigest, scene: validateAstraProposal(astraResult, astraEnvelope.scene, astraEnvelope.assetIds) } } : referenceAnalysis ? { intent: 'campaign', summary: referenceAnalysis.result.summary, steps: [referenceAnalysis.result.direction], referenceAdAnalysis: referenceAnalysis } : suiteResult ? { intent: suiteResult.intent, summary: suiteResult.summary, steps: suiteResult.steps, suiteAgent: { suite: input.suite!, projectId: input.projectId, actions: suiteResult.actions, hooks: suiteResult.hooks, assumptions: suiteResult.assumptions } } : parseAtomikResult(typeof content === 'string' ? content : '');
     const role = CREW.find(c => c.id === job.role);
     const plan: Plan = { id: job.id, request: job.request, model: job.model, depth: job.depth, ...(job.effort == null ? {} : { effort: job.effort }), refs: job.refs,
       role: job.role === 'marketing' ? 'marketing' : role?.name, applied: false, ...result };
-    const credits = paidByPlatform('gateway') ? billCredits(cost, 'text') : 0;
+    const credits = paidByPlatform(textVendor(job.model)) ? billCredits(cost, 'text') : 0;
     await db().batch([
       { sql: "UPDATE workbench_atomik_jobs SET status='succeeded',result=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?", args: [JSON.stringify(plan), cost, credits, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },
@@ -490,7 +541,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       raw = partial?.provider_response ? String(partial.provider_response) : '';
     }
     await db().batch([
-      { sql: 'UPDATE workbench_atomik_jobs SET status=?,error=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?', args: [uncertain ? 'uncertain' : 'failed', errorText, uncertain ? null : cost, uncertain ? null : paidByPlatform('gateway') ? billCredits(cost, 'text') : 0, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
+      { sql: 'UPDATE workbench_atomik_jobs SET status=?,error=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?', args: [uncertain ? 'uncertain' : 'failed', errorText, uncertain ? null : cost, uncertain ? null : paidByPlatform(textVendor(job.model)) ? billCredits(cost, 'text') : 0, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },
     ], 'write');
     await deps.meter(eventFor(job, owner, 'failed', cost), { critical: false });
@@ -515,7 +566,7 @@ export async function listAtomikJobs(owner: string, projectId: string, overrides
 }
 export async function atomikState(owner: string, projectId: string) {
   const jobs = await listAtomikJobs(owner, projectId);
-  const configured = gatewayReachable();
+  const configured = gatewayReachable() || !!vendorKey('openai');
   const models = configured ? atomikModels(await catalog()) : [];
   return { configured: configured && models.length > 0, models, defaultModel: models[0]?.id ?? null, jobs, budgets: atomikBudgets(true), referenceSupport: 'Images and three sampled stills per selected video are visually inspected as 512px review copies. Up to six images/frames per request. TXT content is read; PDF, audio and links supply descriptions only.' };
 }

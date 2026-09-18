@@ -28,6 +28,8 @@ export function collectExportAssets(p:Project):Asset[]{
   seen.add(id);result.push(asset);
   for(const reference of [...asset.refs,...(asset.parentId?[asset.parentId]:[])])visit(reference);
  };
+ for(const assetId of [...(p.astraNative?.assetIds ?? []), ...(p.astraNative?.baseBlendAssetId ? [p.astraNative.baseBlendAssetId] : [])])visit(assetId);
+ for(const object of p.astraBlender?.objects ?? [])if(object.assetId)visit(object.assetId);
  for(const shot of p.shots)visit(shot.assetId);
  for(const clip of audioClips(p))visit(clip.assetId);
  if(p.colorGrade?.lutAssetId)visit(p.colorGrade.lutAssetId);

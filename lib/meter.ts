@@ -3,7 +3,7 @@ import { platformDb, platformReady, now } from "./platform";
 import { currentTenant } from "./tenant";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import type { Span } from "./concurrency";
-import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
+import { paidByPlatformEngine } from "./platformSpend";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx } from "./billingLedger";
 
 /**
@@ -72,14 +72,15 @@ export async function assertMeterFunding(
     );
   const row = (
     await platformDb().execute({
-      sql: "SELECT workspace_id,paid_by_platform FROM meter_events WHERE id=?",
+      sql: "SELECT workspace_id,paid_by_platform,engine FROM meter_events WHERE id=?",
       args: [id],
     })
   ).rows[0];
   if (!row) return; // Historical queued work can predate the meter.
   if (
     row.workspace_id !== workspaceId ||
-    Boolean(row.paid_by_platform) !== paidByPlatform(vendorKeyNameFor(engine))
+    row.engine !== engine ||
+    Boolean(row.paid_by_platform) !== paidByPlatformEngine(engine)
   )
     throw new FundingSourceChangedError();
 }
@@ -95,7 +96,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
   const critical = opts.critical ?? e.status === "running";
   const workspaceId = e.workspaceId ?? currentTenant()?.workspace?.id;
   if (!workspaceId) return;
-  const paid = paidByPlatform(vendorKeyNameFor(e.engine));
+  const paid = paidByPlatformEngine(e.engine);
   const cost = typeof e.engineCostUsd === "number" && Number.isFinite(e.engineCostUsd) ? Math.max(0, e.engineCostUsd) : null;
   const ts = now();
   let lastErr: unknown = null;

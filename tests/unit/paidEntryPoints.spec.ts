@@ -555,3 +555,32 @@ test("premium reasoning is available within its explicit quote while old unquote
     await expect(quotePaidText({ ...request, effort: undefined }, premium)).rejects.toThrow("request budget");
     expect(await metered("text_premium_quote")).toEqual([]);
   }));
+
+
+test('legacy direct OpenAI saves cache receipts and price snapshot, retaining unknown usage without replay', async () => {
+  const priorMock = process.env.ENGINE_MOCK, priorKey = process.env.OPENAI_API_KEY;
+  delete process.env.ENGINE_MOCK; process.env.OPENAI_API_KEY = 'fixture-only-never-sent';
+  try { for (const unknown of [false, true]) await scope(`direct_cache_${unknown}`, async () => {
+    const { runPaidText } = await import('../../lib/paidText');
+    const { db } = await import('../../lib/db');
+    const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+    let calls = 0;
+    const input = { ...call, model: priced.id, id: `direct-cache-${unknown}` };
+    const submit = async (request: { body: string }) => {
+      calls++; expect(request.body).not.toContain('pricingModel');
+      return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: 'Saved paid answer.' } }], usage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, ...(unknown ? {} : { cache_write_tokens: 40 }) }, completion_tokens_details: { reasoning_tokens: 10 } } }) };
+    };
+    if (unknown) await expect(runPaidText(input, { model: priced, submit })).rejects.toThrow('retained for review');
+    else expect((await runPaidText(input, { model: priced, submit })).costUsd).toBeCloseTo(30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003, 12);
+    await expect(runPaidText(input, { model: priced, submit })).rejects.toThrow('already has a paid claim');
+    expect(calls).toBe(1);
+    const saved = (await db().execute({ sql: 'SELECT * FROM paid_text_jobs WHERE id=?', args: [input.id] })).rows[0];
+    expect(saved.status).toBe(unknown ? 'uncertain' : 'succeeded');
+    expect(JSON.parse(String(saved.request_body)).pricingModel.pricing).toEqual(priced.pricing);
+    expect(String(saved.response_json)).toContain('cached_tokens');
+    if (unknown) expect(saved.cost_usd).toBe(saved.estimate_usd);
+  }); } finally {
+    if (priorMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = priorMock;
+    if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey;
+  }
+});

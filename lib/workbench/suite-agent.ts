@@ -1,11 +1,10 @@
+import { sdkTextUsage, textVendor } from '../openai-direct';
 import { ToolLoopAgent, Output, isStepCount, tool, type ModelMessage, type LanguageModel } from 'ai';
-import { createGateway } from '@ai-sdk/gateway';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
 import { engineMock } from '../mock';
-import { recoveryFetch } from '../recovery';
-import { GATEWAY_BASE, type GatewayReply } from '../gateway';
-import { vendorKey } from '../vendorKeys';
+import type { GatewayReply } from '../gateway';
+import { languageModel } from '../language-provider';
 import { SUITE_AGENT_COPY, suiteAgentResultSchema, type SuiteAgentResult } from './suite-agent-plan';
 import type { SuiteId } from '../suites';
 import { ATOMIK_IMAGE_TOKENS, ATOMIK_MAX_VISUALS } from './atomik-reference-types';
@@ -158,12 +157,9 @@ export async function runSuiteAgent(envelope: SuiteAgentEnvelope, auth: Record<s
     };
     return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: { cost: 0, prompt_tokens: 0, completion_tokens: 0 }, agentTrace: [{ tool: 'inspect_project' }, { tool: 'check_plan' }] }) };
   }
-  const token = auth.Authorization?.replace(/^Bearer /i, '');
-  if (!token) throw new Error('The planning engine is not connected for this workspace.');
-  const gateway = createGateway({ apiKey: token, headers: { ...auth, 'ai-gateway-auth-method': vendorKey('gateway') ? 'api-key' : 'oidc' },
-    baseURL: new URL('/v4/ai', GATEWAY_BASE()).href, fetch: recoveryFetch });
+  const model = languageModel(envelope.model, { auth });
   const trace: { step: number; tools: string[]; inputTokens?: number; outputTokens?: number }[] = [];
-  const agent = createSuiteAgent(envelope, gateway(envelope.model), async step => {
+  const agent = createSuiteAgent(envelope, model, async step => {
     trace.push(step);
     await checkpoint?.(JSON.stringify({ agentTrace: trace }));
   });
@@ -174,5 +170,5 @@ export async function runSuiteAgent(envelope: SuiteAgentEnvelope, auth: Record<s
   if (!validation.valid) throw new Error('The agent proposal referenced unavailable assets. This attempt is saved and will not be repeated automatically.');
   return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(output) } }],
     usage: { prompt_tokens: result.totalUsage.inputTokens, completion_tokens: result.totalUsage.outputTokens,
-      steps: result.steps.map(step => ({ prompt_tokens: step.usage.inputTokens, completion_tokens: step.usage.outputTokens })) }, agentTrace: trace }) };
+      steps: result.steps.map(step => sdkTextUsage(step.usage, textVendor(envelope.model) === 'openai')) }, agentTrace: trace }) };
 }

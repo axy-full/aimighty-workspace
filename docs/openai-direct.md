@@ -1,0 +1,13 @@
+# Direct OpenAI connection
+
+Set `OPENAI_API_KEY` as a private Production environment variable and deploy the app again. Never use a `NEXT_PUBLIC_` variable. A workspace's encrypted OpenAI key takes precedence; workspaces configured to use only their own keys cannot borrow the deployment key.
+
+When an OpenAI key is configured, all implemented `openai/*` text requests use the official OpenAI API. This includes Atomik, suite agents, idea/script development, Astra Blender proposals. Inline automatic refinement retains its existing Claude/ByteDance choices; an unsupported OpenAI environment override is refused before a paid call and points to quoted Atomik prompt development. Claude and Google retain their existing routing. A rejected or interrupted direct OpenAI request never falls back to Gateway. Existing model identities are stripped only of the `openai/` prefix, never translated into an alias or a different model.
+
+Modern models use Responses; GPT-3.5 and the original GPT-4 family use Chat Completions. Native tool loops use the OpenAI AI SDK adapter, with retries disabled and response storage disabled. Provider selection and funding are checked before dispatch. Usage remains associated with the existing project, job, reservation and meter; a workspace's OpenAI BYOK and Gateway BYOK are separate funding sources.
+
+Model menus intersect priced capability metadata with the exact models returned by the configured key's `/v1/models` endpoint. Verification is cached by a private credential fingerprint, never shared across different keys. A failed verification does not advertise direct model availability. Restricted project keys need Models read and Responses/Chat Completions write permissions.
+
+Workspace owners can open Settings → Engines → **Verify OpenAI connection**. This performs a read-only model-list request and reports whether `gpt-6-astra` is listed. It does not perform paid generation, prove available credit, or establish a model's runtime capacity. Native Blender render compute is a separate Vercel Sandbox service; see [its runtime documentation](astra-blender-runtime.md).
+
+Mocked transport tests exercise structured output, effort, image references, legacy compatibility, usage conversion, credential isolation, provider changes and single-attempt failures. Live model-list verification and an explicitly quoted generation rehearsal are different checks and must be reported separately.

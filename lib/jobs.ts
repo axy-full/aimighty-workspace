@@ -568,6 +568,10 @@ export async function syncPending(
   results.attempted += dispatch.attempted;
   results.failed += dispatch.failed;
   results.deferred += dispatch.deferred;
+  const native = await (await import("./astra-blender/render-dispatch")).recoverAstraRenders({limit:4,deadlineAt:options.deadlineAt});
+  results.attempted += native.attempted;
+  results.failed += native.failed;
+  results.deferred += native.deferred;
   const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)

@@ -1,3 +1,4 @@
+import { vendorKey } from '@/lib/vendorKeys';
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 
@@ -61,7 +62,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const brief = String(body.brief ?? "").trim().slice(0, 2000);
   const toneIn = String(body.tone ?? "").trim().slice(0, 300);
   if (!brief) return NextResponse.json({ error: "Write a few words first." }, { status: 400 });
-  if (!gatewayReachable()) {
+  if (!gatewayReachable() && !vendorKey('openai')) {
     return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
   }
 

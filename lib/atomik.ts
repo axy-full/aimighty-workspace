@@ -1,3 +1,5 @@
+import { vendorKey } from './vendorKeys';
+import { textVendor } from './openai-direct';
 import { selectAtomikModel } from "./atomikModelPolicy";
 import { withMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
@@ -434,7 +436,7 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   if (opts.userMessage) messages.push({ id: "", chatId: chat.id, role: "user", text: opts.userMessage.text,
     attachments: opts.userMessage.attachments, activity: [], ask: null, workedMs: null, costUsd: 0, model: "", createdAt: 0 });
 
-  if (!gatewayReachable()) {
+  if (!gatewayReachable() && !vendorKey('openai')) {
     throw new Error(
       "Atomik needs the Vercel AI Gateway. Set AI_GATEWAY_API_KEY, or run on Vercel with OIDC."
     );
@@ -518,7 +520,7 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
       turn.ask ? JSON.stringify(turn.ask) : null,
       Date.now() - started, costUsd, model, effort ?? null, ts],
   });
-  await meter({ id: messageId, kind: "text", engine: "vercel", model, status: "succeeded", engineCostUsd: costUsd,
+  await meter({ id: messageId, kind: "text", engine: textVendor(model) === "openai" ? "openai" : "vercel", model, status: "succeeded", engineCostUsd: costUsd,
                 projectId: chat.projectId, createdBy: chat.createdBy }, { critical: false });
 
   const saved: Step[] = [];

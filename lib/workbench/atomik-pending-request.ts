@@ -1,10 +1,13 @@
+import { astraRequestSchema, type AstraRequest } from '../astra-blender/proposal';
+import { ASTRA_BLENDER_MODEL } from '../astra-blender/scene';
 import type { AtomikVideoFrame } from './atomik-reference-types';
 import { referenceAnalysisSourceSchema, REFERENCE_AD_FRAMES, type ReferenceAnalysisSource } from './reference-ad-analysis';
 /** Browser-side write-ahead record: a lost HTTP response must never mint another paid request ID. */
 export type AtomikPendingStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export type AtomikSubmission = {
+  astraBlender?: AstraRequest;
   referenceAd?: ReferenceAnalysisSource;
-  suite?: 'particl' | 'atomik' | 'moleculr';
+  suite?: 'particl' | 'atomik' | 'moleculr' | 'subatomik';
   projectId: string; requestId: string; request: string; model: string; effort?: string; depth: string;
   refs: string[]; role?: string; maxCredits: number; videoFrames?: AtomikVideoFrame[];
 };
@@ -30,7 +33,8 @@ export function atomikPendingInput(record: PendingAtomikRequest): AtomikSubmissi
   try { data = JSON.parse(record.body); } catch { throw new Error('The saved Atomik request is unreadable. Review Activity before starting another request.'); }
   const value = data as Partial<AtomikSubmission> & { quoteOnly?: unknown };
   if (!value || typeof value !== 'object' || value.projectId !== record.projectId || value.requestId !== record.requestId ||
-    (value.suite != null && !['particl', 'atomik', 'moleculr'].includes(value.suite)) ||
+    (value.suite != null && !['particl', 'atomik', 'moleculr', 'subatomik'].includes(value.suite)) ||
+    (value.astraBlender != null && (!astraRequestSchema.safeParse(value.astraBlender).success || value.model !== ASTRA_BLENDER_MODEL || value.suite != null || value.referenceAd != null || value.refs?.length || value.videoFrames?.length)) ||
     (value.referenceAd != null && (!referenceAnalysisSourceSchema.safeParse(value.referenceAd).success || value.suite != null)) ||
     typeof value.request !== 'string' || typeof value.model !== 'string' ||
     (value.effort != null && (typeof value.effort !== 'string' || value.effort.length < 1 || value.effort.length > 40)) || !['Quick', 'Considered', 'Deep'].includes(value.depth ?? '') ||

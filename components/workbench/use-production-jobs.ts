@@ -31,7 +31,7 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
     const result=await studioRequest<{models:ThinkingModel[];jobs:AtomikJob[]}>('/api/workbench/atomik?projectId='+encodeURIComponent(p.id),requestOptions);
     if(!current())return;
     setModels({scope,items:result.models??[]});setAtomik({scope,jobs:result.jobs??[]});
-    const plans=(result.jobs??[]).filter(j=>j.status==='succeeded'&&j.plan).map(j=>j.plan!);
+    const plans=(result.jobs??[]).filter(j=>j.status==='succeeded'&&j.plan&&!j.plan.astraBlender&&!j.plan.astraNative).map(j=>j.plan!);
     if(plans.some(plan=>!ref.current.plans.some(a=>a.id===plan.id)))change(old=>scopeOf(old,requestScope)===scope?{...old,plans:[...old.plans,...plans.filter(plan=>!old.plans.some(a=>a.id===plan.id))].slice(-100)}:old,false);
     report('atomik');
    }catch(error){report('atomik',error);}

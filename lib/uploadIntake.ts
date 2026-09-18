@@ -1,3 +1,4 @@
+import { validateAstraGlb } from './astra-blender/glb';
 import { identifyImage, validateVideo } from "./imagemeta";
 import { storeUpload } from "./storage";
 import { getProvider, DEFAULT_PROVIDER } from "./providers";
@@ -20,6 +21,22 @@ export async function storeReferenceUpload(
 ) {
   if (buf.length !== claim.bytes)
     throw new UploadError("The upload bytes do not match its chunks.");
+  if (/\.blend$/i.test(filename)) {
+    if (buf.length < 12 || buf.length > 50 * 1024 * 1024 || !/^BLENDER[-_][vV][0-9]{3}$/.test(buf.toString('ascii', 0, 12))) throw new UploadError('Use an uncompressed .blend file smaller than 50 MB. Disable Compress when saving in Blender.');
+    await planUploadObjects(claim, [{ id: claim.uploadId, ext: 'blend' }], buf.length);
+    const master = await storeUpload(claim.uploadId, 'blend', buf, 'application/x-blender');
+    const response = { id: claim.uploadId, filename, mime: 'application/x-blender', kind: 'file', bytes: buf.length, width: null, height: null, durationS: null, sha256: master.sha256, url: `/api/uploads/${claim.uploadId}` };
+    await prepareUpload(claim, { count, response, record: { id: claim.uploadId, filename, mime: response.mime, kind: 'file', ext: 'blend', bytes: buf.length, sha256: master.sha256, width: null, height: null, durationS: null, storedUrl: master.url } });
+    return completeUpload(claim);
+  }
+  if (/\.glb$/i.test(filename) || (buf.length >= 4 && buf.readUInt32LE(0) === 0x46546c67)) {
+    try { validateAstraGlb(buf); } catch(error) { throw new UploadError((error as Error).message); }
+    await planUploadObjects(claim, [{ id: claim.uploadId, ext: 'glb' }], buf.length);
+    const master = await storeUpload(claim.uploadId, 'glb', buf, 'model/gltf-binary');
+    const response = { id: claim.uploadId, filename, mime: 'model/gltf-binary', kind: 'file', bytes: buf.length, width: null, height: null, durationS: null, sha256: master.sha256, url: `/api/uploads/${claim.uploadId}` };
+    await prepareUpload(claim, { count, response, record: { id: claim.uploadId, filename, mime: response.mime, kind: 'file', ext: 'glb', bytes: buf.length, sha256: master.sha256, width: null, height: null, durationS: null, storedUrl: master.url } });
+    return completeUpload(claim);
+  }
   const meta = identifyImage(buf);
   if (!meta)
     throw new UploadError(
