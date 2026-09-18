@@ -44,7 +44,10 @@ test("published production â†’ individually approved image/video/audio stages â†
   expect(published.ok(), await published.text()).toBeTruthy();
   const catalog = await page.request
     .get(`/api/pipelines?projectId=${savedBody.productionProjectId}`, {
-      headers,
+      // This is the final setup request before cold browser-page compilation.
+      // Do not retain its socket across that idle interval: Next can expire it
+      // as the first scope-rejection probe starts. Never retry a paid POST.
+      headers: { ...headers, Connection: "close" },
     })
     .then((r) => r.json());
   const imageModel = catalog.models.find(
