@@ -206,10 +206,11 @@ test("asset training retains its identity through close and retries one asset cr
     if (r.method() !== "GET") throw new Error(`Unexpected mutation: ${path}`);
     return route.fallback();
   });
-  await page.goto("/library");
-  await page.getByRole("group", { name: "Asset library views", exact: true })
-    .getByRole("button", { name: "Elements", exact: true }).click();
-  await expect(page).toHaveURL(/\/library\?view=elements$/);
+  await page.goto("/library?all=1");
+  const assetViews = page.getByRole("group", { name: "Asset library views", exact: true });
+  await expect(assetViews).toBeVisible();
+  await assetViews.getByRole("button", { name: "Elements", exact: true }).click();
+  await expect(page).toHaveURL(/\/library\?all=1&view=elements$/);
   await page.getByRole("button", { name: /^New asset/ }).click();
   const sheet = page.getByRole("dialog", { name: "New asset", exact: true });
   await expect(sheet).toBeVisible();
@@ -381,10 +382,11 @@ test("ordinary drafts belong to each account even inside the same workspace", as
     await page.evaluate((value) => {
       Reflect.set(window, "__privateDraftNavigation", value);
     }, sentinel);
-    await page
-      .getByRole("navigation", { name: "Atomik pages", exact: true })
-      .getByRole("link", { name: "Models", exact: true })
-      .click();
+    const models = page
+      .getByRole("navigation", { name: "Atomik Agent pages", exact: true })
+      .getByRole("link", { name: "Models", exact: true });
+    await expect(models).toBeVisible();
+    await models.click();
     await expect(page).toHaveURL(/\/atomik\?page=models$/);
     expect(
       await page.evaluate(() =>
