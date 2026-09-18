@@ -285,7 +285,10 @@ test("Atomik maps the saved draft, shows real plan/quote states, reuses recipes 
   await expect(suite.getByRole("heading", { name: "Choose a saved project", exact: true })).toBeVisible();
   await page.goto(`/?project=${f.project.id}`);
   await expect(
-    page.locator(".suite-home-card").filter({ hasText: "Atomik" }),
+    page.locator(".suite-home-card").filter({
+      has: page.getByText("Atomik Agent", { exact: true }),
+      visible: true,
+    }),
   ).toHaveAttribute("href", `/atomik?project=${f.project.id}&page=runs`);
   await expect(
     page.getByRole("link", { name: "Start from a saved recipe", exact: true }),

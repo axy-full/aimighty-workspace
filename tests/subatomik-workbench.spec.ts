@@ -819,7 +819,11 @@ test("an uncertain connected submission survives reload and polls its saved job 
       exact: true,
     })
     .click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Connected Higgsfield Genjutsu", exact: true })
+      .getByRole("alert"),
+  ).toHaveText("Failed to fetch");
   await page.reload();
   await expect(
     page.getByRole("button", {

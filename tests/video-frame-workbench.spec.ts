@@ -93,6 +93,7 @@ async function controlsFixture(page: Page, holdSource = false) {
   let captures = 0, release: () => void = () => {};
   const held = new Promise<void>(resolve => { release = resolve; });
   page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => { if (message.type() === "error" && message.text().includes("[particl] screen failed")) errors.push(message.text()); });
   await page.route("**/api/**", async route => {
     const req = route.request(), url = new URL(req.url()), name = url.pathname;
     const json = (value: unknown) => route.fulfill({ json: value });
@@ -121,6 +122,7 @@ async function controlsFixture(page: Page, holdSource = false) {
     if (name === "/api/uploads") return json({ uploads: [upload], nextCursor: null, nextPageCursor: null });
     if (name.startsWith("/api/uploads/frame-")) return route.fulfill({ contentType: "image/png", body: pngs.at(-1)! });
     if (name === "/api/jobs") return json({ generations: [], nextCursor: null, nextPageCursor: null });
+    if (name === "/api/pipelines") return json({ runs: [], publications: [], models: [], audioModels: { speech: [], sound: "sound_effects_v1", music: "music_v1" } });
     if (name === "/api/workbench/atomik") return json({ configured: false, models: [], jobs: [] });
     if (name === "/api/atomik/chats") return json({ chats: [] });
     if (name === "/api/settings") return json({ settings: {}, defaults: {} });
@@ -159,6 +161,7 @@ test("leaving the selected project while extracting cannot upload or attach a st
   await page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Atomik Agent", exact: true }).click();
   await expect(page).toHaveURL(/\/atomik\?/);
   f.release();
+  await expect(page.getByRole("region", { name: "Atomik Agent suite", exact: true }).getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
   await expect(page.getByLabel("Genjutsu source preview")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Extract start frame", exact: true })).toHaveCount(0);
   expect(f.writes).toEqual([]); expect(f.filings).toEqual([]); expect(f.errors).toEqual([]);
