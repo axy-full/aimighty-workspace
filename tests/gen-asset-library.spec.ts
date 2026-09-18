@@ -140,6 +140,7 @@ test("Gen lists linked project assets by source and type across modes and upload
   for (const mode of ["Video", "Images", "Audio"] as const) {
     await page.getByRole("navigation", { name: "Generation mode" }).getByRole("button", { name: mode, exact: true }).click();
     await showLibrary(page);
+    await library(page).getByRole('group',{name:'Asset scope',exact:true}).getByRole('button',{name:'This project',exact:true}).click();
     if (page.viewportSize()!.width <= 759) {
       await expect(page.getByRole("group", { name: "Generation view", exact: true }).getByRole("button", { name: "Takes & assets", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(library(page)).toBeVisible();
@@ -363,6 +364,7 @@ test("Gen keeps take and upload pages independent and refreshes cursor boundarie
   });
   await page.route("**/api/media/page_*", (route) => route.fulfill({ path: "public/fixtures/still.png", contentType: "image/png" }));
   await page.goto("/generate?mode=images");
+  await library(page).getByRole('group',{name:'Asset scope',exact:true}).getByRole('button',{name:'This project',exact:true}).click();
   await selectSource(library(page),'Generations');
   await expect(assetCard(page, "generation", "page_a")).toHaveAttribute("draggable", "false");
   await selectSource(library(page),'Uploads');

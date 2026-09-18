@@ -31,6 +31,8 @@ export type GenAssetLibraryProps = {
   onUsePrompt: (take: Generation) => void;
   workbenchProjectId?: string;
   projectName?: string;
+  allowWorkspaceBrowse?: boolean;
+  initialBrowseScope?: 'project' | 'workspace';
   source?: LibrarySource;
   onSourceChange?: (source: LibrarySource) => void;
   initialSource?: LibrarySource;
@@ -133,6 +135,8 @@ function AssetLibrary(props: Props) {
   } }), [toast]);
   const [progress, setProgress] = useState<string | null>(null), [dragOver, setDragOver] = useState(false);
   const [localSource, setLocalSource] = useState<LibrarySource>(props.initialSource ?? 'uploads');
+  const [localBrowseScope, setBrowseScope] = useState<'project' | 'workspace'>(props.allowWorkspaceBrowse ? props.initialBrowseScope ?? 'project' : 'project');
+  const browseScope = props.workbenchProjectId ? localBrowseScope : 'workspace';
   const source = props.source ?? localSource;
   const changeSource = (next: LibrarySource) => { setLocalSource(next); props.onSourceChange?.(next); };
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, [requestScope]);
@@ -163,24 +167,31 @@ function AssetLibrary(props: Props) {
     onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }}
     onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); e.stopPropagation(); setDragOver(false); void files(e.dataTransfer.files); } }}>
     <div className={styles.libraryToolbar}>
-      <p>{props.workbenchProjectId ? `${props.projectName || 'This project'} · ` : workspace?.name ? `${workspace.name} · ` : ""}Uploaded originals and generated takes</p>
+      <p>{browseScope === 'project' ? `${props.projectName || 'This project'} · Project assets` : `${workspace?.name ? `${workspace.name} · ` : ''}Workspace assets`}</p>
       <button type="button" className={styles.libraryUpload} aria-label="Upload assets" disabled={!signedIn || !!progress} onClick={() => picker.current?.click()}><Upload size={15}/><span data-library-upload-label="">Upload assets</span><span className="hidden" data-phone-upload-label="">Upload</span></button>
       <input ref={picker} type="file" multiple hidden aria-label="Upload library assets" disabled={!signedIn || !!progress}
         onChange={e => { if (e.target.files) void files(e.target.files); e.target.value = ""; }}/>
     </div>
+    {props.allowWorkspaceBrowse && props.workbenchProjectId && <>
+      <div className={styles.libraryScope} role="group" aria-label="Asset scope">
+        <button type="button" aria-pressed={browseScope === 'project'} onClick={() => setBrowseScope('project')}>This project</button>
+        <button type="button" aria-pressed={browseScope === 'workspace'} onClick={() => setBrowseScope('workspace')}>All workspace assets</button>
+      </div>
+      <p className={styles.libraryScopeNote}>{browseScope === 'project' ? `Files and takes linked to ${props.projectName || 'this project'}.` : 'Browse shared originals and takes across this workspace.'} Uploads are added to {props.projectName || 'this project'}.</p>
+    </>}
     <div className={styles.librarySources} role="group" aria-label="Asset source">
       {(['uploads','generations'] as const).map(value=><button key={value} type="button" aria-pressed={source===value} onClick={()=>changeSource(value)}>{value==='uploads'?'Uploads':'Generations'}</button>)}
     </div>
     {progress && <p className={styles.libraryProgress} role="status">{progress}</p>}
     {!signedIn ? <div className={styles.empty}><h3>Your workspace library</h3><p>Sign in to upload assets and use your team’s takes.</p></div>
-      : <LibraryResults key={`${requestScope}:${props.workbenchProjectId ?? 'all'}:${props.search.trim()}`} {...props} source={source}/>}
+      : <LibraryResults key={`${requestScope}:${props.workbenchProjectId ?? 'all'}:${browseScope}:${props.search.trim()}`} {...props} source={source} browseScope={browseScope} onBrowseWorkspace={props.allowWorkspaceBrowse ? () => setBrowseScope('workspace') : undefined}/>}
   </div>;
 }
 
-function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, onUseFirstFrame, onUseReference, onAddToProject, workbenchProjectId, source }: Props) {
+function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, onUseFirstFrame, onUseReference, onAddToProject, workbenchProjectId, projectName, source, browseScope, onBrowseWorkspace }: Props & { browseScope: 'project' | 'workspace'; onBrowseWorkspace?: () => void }) {
   const {requestScope}=useSession(),toast=useToast(),removing=useRef(new Set<string>());
   const q = search.trim() ? `&q=${encodeURIComponent(search.trim())}` : "";
-  const projectPath = workbenchProjectId ? `/api/workbench/library?projectId=${encodeURIComponent(workbenchProjectId)}&limit=60${q}` : null;
+  const projectPath = browseScope === 'project' && workbenchProjectId ? `/api/workbench/library?projectId=${encodeURIComponent(workbenchProjectId)}&limit=60${q}` : null;
   const gens = useLibraryPages<Generation>(projectPath ? `${projectPath}&source=generations` : `/api/jobs?limit=60&sync=0&pagination=stable${q}`, "generations");
   const uploads = useLibraryPages<LibraryUpload>(projectPath ? `${projectPath}&source=uploads` : `/api/uploads?limit=60${q}`, "uploads");
   const money = useMoney();
@@ -190,6 +201,9 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, on
     ...uploads.items.map(value => ({ origin: "upload" as const, value })),
   ].sort((a, b) => b.value.createdAt - a.value.createdAt || libraryId(b).localeCompare(libraryId(a))), [gens.items, uploads.items]);
   const errors = [gens.error, uploads.error].filter(Boolean);
+  const sourceReady = source === 'uploads' ? uploads.ready : gens.ready && (!projectPath || uploads.ready);
+  const sourceError = source === 'uploads' ? uploads.error : gens.error || (projectPath && uploads.error);
+  const visibleAssets = assets.filter(asset => librarySource(asset) === source);
   async function removeFiling(upload:LibraryUpload) {
     if(!requestScope||!workbenchProjectId||removing.current.has(upload.id))return;
     removing.current.add(upload.id);
@@ -199,12 +213,13 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, on
   }
   return <>
     {errors.length > 0 && <div className={styles.notice} role="alert"><p>{[...new Set(errors)].join(" ")}</p><button type="button" className={styles.secondary} onClick={() => { void gens.refresh(); void uploads.refresh(); }}>Retry library</button></div>}
-    {!gens.ready && !uploads.ready && !errors.length && <p role="status">Loading {workbenchProjectId ? 'project' : 'workspace'} assets…</p>}
-    {ASSET_GROUPS.map(group => {
-      const items = assets.filter(asset => librarySource(asset) === source && libraryKind(asset) === group.kind);
+    {!sourceReady && !sourceError && <p role="status">Loading {source === 'uploads' ? 'uploads' : 'generated takes'} from this {projectPath ? 'project' : 'workspace'}…</p>}
+    {sourceReady && !visibleAssets.length && projectPath && !search && <div className={styles.notice}><p>No {source === 'uploads' ? 'uploads' : 'generated takes'} are linked to {projectName || 'this project'} yet.</p>{onBrowseWorkspace && <button type="button" className={styles.secondary} onClick={onBrowseWorkspace}>Browse all workspace assets</button>}</div>}
+    {sourceReady && ASSET_GROUPS.map(group => {
+      const items = visibleAssets.filter(asset => libraryKind(asset) === group.kind);
       return <section className={styles.assetGroup} key={group.kind} aria-label={group.label}>
         <div className={styles.assetGroupHeader}><h3>{group.label}</h3><span>{items.length} loaded</span></div>
-        {!items.length ? <p className={styles.groupEmpty}>{search ? `No matching ${group.label.toLowerCase()} loaded.` : `No ${group.label.toLowerCase()} loaded yet.`}</p>
+        {!items.length ? <p className={styles.groupEmpty}>{search ? `No matching ${group.label.toLowerCase()} loaded in this ${projectPath ? 'project' : 'workspace'}.` : `No ${source === 'uploads' ? 'uploaded' : 'generated'} ${group.label.toLowerCase()} loaded in this ${projectPath ? 'project' : 'workspace'}.`}</p>
           : <div className={styles.takeGrid} data-library-grid="">{items.map(asset => {
             const kind = libraryKind(asset), ready = libraryReady(asset), gen = asset.origin === "generation" ? asset.value : null;
             const name = libraryName(asset), id = libraryId(asset), visual = kind === "image" || kind === "video";
@@ -245,7 +260,7 @@ function LibraryResults({ search, onUseAsset, onEdit, onUpscale, onUsePrompt, on
       </section>;
     })}
     <div className={styles.libraryMore}>
-      {source==='generations'&&(gens.next||(workbenchProjectId&&uploads.next))&&<button type="button" disabled={gens.moreBusy||uploads.moreBusy} onClick={()=>void Promise.all([gens.more(),...(workbenchProjectId?[uploads.more()]:[])])}>{gens.moreBusy||uploads.moreBusy?'Loading takes…':'Load more takes'}</button>}
+      {source==='generations'&&(gens.next||(projectPath&&uploads.next))&&<button type="button" disabled={gens.moreBusy||uploads.moreBusy} onClick={()=>void Promise.all([gens.more(),...(projectPath?[uploads.more()]:[])])}>{gens.moreBusy||uploads.moreBusy?'Loading takes…':'Load more takes'}</button>}
       {source==='uploads'&&uploads.next&&<button type="button" disabled={uploads.moreBusy} onClick={() => void uploads.more()}>{uploads.moreBusy ? "Loading uploads…" : "Load more uploads"}</button>}
     </div>
     <Dialog.Root open={!!selected} onOpenChange={open => { if (!open) setSelected(null); }}><Dialog.Portal><Dialog.Overlay className={styles.dialogOverlay}/><Dialog.Content className={`${styles.dialog} ${styles.previewDialog}`} aria-describedby={undefined}>

@@ -15,6 +15,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
 import { ToastHost, useToast } from "@/components/ui/Toast";
+import { importLibraryAsset } from "@/components/workbench/ProjectLibraryPage";
 import type { Generation } from "@/lib/jobs";
 import type { Project } from "@/lib/workbench/studio";
 import { isAssetDrag, readDrag, type DraggedAsset } from "@/lib/dnd";
@@ -76,6 +77,30 @@ function Workspace({ initialKind }: { initialKind?: string }) {
   usePageTitle(`Gen · ${mode.label}`);
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<"create" | "takes">("create");
+  const importContext = useRef<object | null>(null);
+  const importLock = useRef(false);
+  useEffect(() => {
+    const context = {};
+    importContext.current = context;
+    return () => { if (importContext.current === context) importContext.current = null; };
+  }, [requestScope, workbenchProjectId]);
+  async function addToProject(asset: LibraryAsset) {
+    const target = generationProject;
+    const capturedScope = requestScope;
+    const context = importContext.current;
+    if (!target || !capturedScope || !context || importLock.current) return;
+    importLock.current = true;
+    try {
+      await importLibraryAsset(target.id, capturedScope, asset);
+      if (importContext.current !== context) return;
+      window.dispatchEvent(new CustomEvent(GEN_ASSETS_CHANGED, { detail: { scope: capturedScope } }));
+      toast(`Asset added to ${target.name}.`);
+    } catch (error) {
+      if (importContext.current === context) toast(error instanceof Error ? error.message : "Could not add this asset to the project.");
+    } finally {
+      importLock.current = false;
+    }
+  }
   const refreshLibrary = () => window.dispatchEvent(new CustomEvent(GEN_ASSETS_CHANGED, { detail: { scope: requestScope } }));
   const composer = useRef<ComposerHandle>(null);
   const specialized = useRef<GenAssetInputHandle>(null);
@@ -325,7 +350,10 @@ function Workspace({ initialKind }: { initialKind?: string }) {
             {generationProject && <GenAssetLibrary
               workbenchProjectId={generationProject.id}
               projectName={generationProject.name}
+              allowWorkspaceBrowse
+              initialBrowseScope="workspace"
               search={query}
+              onAddToProject={asset => void addToProject(asset)}
               onUseAsset={asset => void addAsset(asset)}
               onUsePrompt={reuse}
               onEdit={editAsset}
@@ -333,7 +361,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
               onUseFirstFrame={mode.kind === "video" && !toolOpen ? asset => { void composer.current?.useFirstFrame(libraryInput(asset)); setMobileView("create"); } : undefined}
               onUseReference={mode.kind === "video" && !toolOpen ? asset => { void composer.current?.useReference(libraryInput(asset)); setMobileView("create"); } : undefined}
             />}
-            <Link href={workbenchProjectId ? `/library?project=${encodeURIComponent(workbenchProjectId)}` : "/library"} className="hidden" data-phone-library-link="">
+            <Link href={workbenchProjectId ? `/library?all=1&project=${encodeURIComponent(workbenchProjectId)}` : "/library?all=1"} className="hidden" data-phone-library-link="">
               <span><strong>Your workspace library</strong><small>All uploads and generated takes</small></span>
               <ArrowLeft size={16} aria-hidden="true" />
             </Link>
