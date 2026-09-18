@@ -1884,7 +1884,7 @@ export default function Studio({
                       stage,
                     ) && (
                       <div className="stage-scroll">
-                        {stage === 'assets' && <div className="collective-assets-link"><div><strong>Project assets & takes</strong><p>Open the collective library for originals and takes across this workspace.</p></div><button className="btn" onClick={() => void leaveWorkspace('/library')}>All workspace assets <ArrowUpRight size={14}/></button></div>}
+                        {stage === 'assets' && <div className="collective-assets-link"><div><strong>Project assets & takes</strong><p>Open the collective library for originals and takes across this workspace.</p></div><button className="btn" onClick={() => void leaveWorkspace(`/library?all=1&project=${encodeURIComponent(p.id)}`)}>All workspace assets <ArrowUpRight size={14}/></button></div>}
                         <div className="library-toolbar">
                           <div className="search-field">
                             <Search size={16} />
