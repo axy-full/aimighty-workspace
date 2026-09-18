@@ -1665,7 +1665,8 @@
   .addReference [data-phone-reference-label] { display: block; }
   .addReference span, .workspace [data-phone-reference-alternate] span { font-size: 11px; line-height: 1.4; }
   .referenceHint { font-size: 11px; line-height: 1.5; }
-  .composer[data-composer="video"] .referenceHint { display: none; }
+  .referenceHint > label { display: grid; gap: 6px; }
+  .referenceHint select { min-width: 0; width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--gen-edge); border-radius: 6px; background: var(--gen-control); color: var(--gen-ink); font: inherit; font-size: 16px; }
   .settingsSection { gap: 0; padding: 0; overflow: hidden; border-color: var(--gen-edge); border-radius: 12px; background: var(--gen-raised); }
   .composer[data-composer] .settingsSection > .sectionLabel { padding: 16px 16px 6px; }
   .settingsSection > .sectionLabel > svg { display: none; }

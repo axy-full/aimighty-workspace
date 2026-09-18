@@ -459,6 +459,7 @@ test("Gen makes video, images and each audio kind with quoted requests, then rev
   await expect(prompt).toHaveValue(
     "An isolated slow tracking shot through soft light.",
   );
+  await expect(page.getByLabel("First frame", { exact: true })).toBeVisible();
   await expect(page.getByLabel("First frame", { exact: true })).toHaveValue("");
   await page.getByLabel("First frame", { exact: true }).selectOption("upload:gen-reference-1");
   await expect(primary).toBeDisabled(); // Frames cannot be combined with ordinary references.

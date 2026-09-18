@@ -133,7 +133,7 @@ export default function Header({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <Link href={roomHref('library',projectId)} prefetch={false} className="suite-assets-toggle" aria-label="All assets" title="All assets" onNavigate={event=>{event.preventDefault();void go(roomHref('library',projectId));}}><FolderOpen size={18}/></Link>
+        <Link href={roomHref('library',projectId)} prefetch={false} className="suite-assets-toggle" aria-current={path === "/library" && query.get("all") === "1" ? "page" : undefined} aria-label="All assets" title="All assets" onNavigate={event=>{event.preventDefault();void go(roomHref('library',projectId));}}><FolderOpen size={18}/></Link>
         <button
           className="suite-agent-toggle"
           type="button"

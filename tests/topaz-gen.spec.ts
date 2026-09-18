@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import sharp from "sharp";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { newProject } from "../lib/workbench/studio";
+import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
 test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid request and reuses its saved output", async ({
   page,
@@ -25,6 +27,15 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
   } else {
     await signInLocally(page.request);
   }
+  const me = await page.request.get("/api/me").then(response => response.json());
+  const draft = newProject("Topaz original recovery project");
+  const saved = await page.request.put("/api/workbench/projects", {
+    headers: { "X-Workbench-Scope": workbenchScopeFor(me.workspace.id, me.id) },
+    data: { project: draft, revision: 0 },
+  });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const { productionProjectId } = await saved.json();
+  expect(productionProjectId).toBeTruthy();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const source = await sharp({
@@ -46,7 +57,7 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
     if (submitted.length === 1) return route.abort("failed");
     return route.fulfill({ response });
   });
-  await page.goto("/generate?mode=images");
+  await page.goto(`/generate?mode=images&project=${draft.id}`);
   await page.getByRole("button", { name: "Engine", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Choose a model" })
@@ -118,12 +129,13 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
     topaz: { model: "High Fidelity V2", factor: 4, faceEnhancement: false },
     references: [{ uploadId: sourceKey.split(":")[1] }],
   });
+  expect(job.projectId).toBe(productionProjectId);
   const original = await page.request.get(
     `/api/uploads/${sourceKey.split(":")[1]}`,
   );
   expect(await original.body()).toEqual(source);
   await page.goto(
-    `/generate?mode=images&task=upscale&source=generation:${generationId}`,
+    `/generate?mode=images&project=${draft.id}&task=upscale&source=generation:${generationId}`,
   );
   await expect(panel.getByLabel("Source image", { exact: true })).toHaveValue(
     `generation:${generationId}`,

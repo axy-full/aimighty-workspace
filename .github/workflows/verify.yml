@@ -54,11 +54,12 @@ jobs:
           ENGINE_MOCK: '1'
       - name: Verify production bundle privacy
         run: npm run test:unit -- tests/unit/bundle.spec.ts
-  browser:
+  browser-shards:
     strategy:
       fail-fast: false
       matrix:
         suite: [workbench, customer]
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -86,12 +87,26 @@ jobs:
           cat dev-ci.log
           exit 1
       - name: Browser suite
-        run: npx playwright test --config=playwright.${{ matrix.suite }}.config.ts --output=ci-results/${{ matrix.suite }}
+        run: npx playwright test --config=playwright.${{ matrix.suite }}.config.ts --shard=${{ matrix.shard }}/4 --output=ci-results/${{ matrix.suite }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-failure-${{ matrix.suite }}
+          name: browser-failure-${{ matrix.suite }}-${{ matrix.shard }}
           path: |
             ci-results/
             dev-ci.log
           retention-days: 7
+  # Keep the existing required-check names. A failed or cancelled shard must
+  # fail these gates instead of allowing a partial browser run to pass.
+  browser:
+    if: always()
+    needs: browser-shards
+    strategy:
+      matrix:
+        suite: [workbench, customer]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every browser shard
+        env:
+          SHARD_RESULT: ${{ needs.browser-shards.result }}
+        run: test "$SHARD_RESULT" = success

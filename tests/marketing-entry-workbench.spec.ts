@@ -104,7 +104,7 @@ for (const rememberedOnly of [false, true]) {
     const entry = page
       .getByRole("link", { name: "Open Moleculr", exact: true })
       .filter({ visible: true });
-    const href = `/workbench?project=${state.draft.id}&suite=moleculr&page=product`;
+    const href = `/workbench?project=${state.draft.id}&suite=moleculr&page=brand`;
     await expect(entry).toHaveAttribute("href", href);
     await expect(entry).toBeVisible();
     if (rememberedOnly) {
@@ -156,8 +156,8 @@ for (const rememberedOnly of [false, true]) {
     await expect(page.locator('[data-suite="moleculr"]')).toBeVisible();
     await expect(
       page
-        .getByRole("navigation", { name: "Moleculr pages" })
-        .getByRole("link", { name: "Product", exact: true }),
+        .getByRole("navigation", { name: "Moleculr Business Suite pages", exact: true })
+        .getByRole("link", { name: "Brand", exact: true }),
     ).toHaveAttribute("aria-current", "page");
     await expect(page.locator(".project-bar")).toContainText(state.draft.name);
     expect(state.paidRequests).toBe(0);

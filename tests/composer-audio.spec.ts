@@ -1,11 +1,25 @@
 import { test, expect } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { newProject } from "../lib/workbench/studio";
+import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
 test("audio uses the server quote and recovers one exact request across reload without sharing drafts", async ({
   page,
 }, testInfo) => {
   const first = await signInLocally(page.request);
-  const me = await page.request.get("/api/me").then((r) => r.json());
+  let me = await page.request.get("/api/me").then((r) => r.json());
+  const createProject = async () => {
+    const draft = newProject("Isolated audio project");
+    const response = await page.request.put("/api/workbench/projects", {
+      headers: { "X-Workbench-Scope": workbenchScopeFor(me.workspace.id, me.id) },
+      data: { project: draft, revision: 0 },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+    const saved = await response.json();
+    expect(saved.productionProjectId).toBeTruthy();
+    return { ...draft, productionProjectId: saved.productionProjectId as string };
+  };
+  const draft = await createProject();
   const submissions: {
     key: string | undefined;
     body: Record<string, unknown>;
@@ -84,7 +98,9 @@ test("audio uses the server quote and recovers one exact request across reload w
     if (path === "/api/me") return json(me);
     return route.fallback();
   });
-  await page.goto("/make/audio");
+  await page.goto(`/make/audio?project=${draft.id}`);
+  await page.waitForURL(url => url.pathname === "/generate" && url.searchParams.get("mode") === "audio" && url.searchParams.get("project") === draft.id);
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeVisible();
   await page.evaluate(() =>
     localStorage.setItem(
       "aw_draft:make:audio",
@@ -116,6 +132,7 @@ test("audio uses the server quote and recovers one exact request across reload w
   await expect(prompt).toBeDisabled();
   expect(submissions).toHaveLength(1);
   expect(submissions[0].body.maxCredits).toBe(21);
+  expect(submissions[0].body.projectId).toBe(draft.productionProjectId);
   await page.screenshot({ path: testInfo.outputPath("audio-pending.png") });
   await page.reload();
   await open();
@@ -153,11 +170,13 @@ test("audio uses the server quote and recovers one exact request across reload w
   );
   expect(
     savedKeys.some(
-      (key) => key.includes(first.workspace.id) && key.includes(me.email),
+      (key) => key.includes(first.workspace.id) && key.includes(me.email) && key.includes(draft.id),
     ),
   ).toBeTruthy();
   await signInLocally(page.request);
-  await page.goto("/make/audio");
+  me = await page.request.get("/api/me").then((r) => r.json());
+  const secondDraft = await createProject();
+  await page.goto(`/make/audio?project=${secondDraft.id}`);
   await open();
   await expect(prompt).toHaveValue("");
   await prompt.fill("Unavailable quote line.");
