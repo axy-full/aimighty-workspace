@@ -81,11 +81,14 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
     expect((await bearer.get("/api/jobs?sync=0")).status()).toBe(200);
     expect((await member.request.get("/api/jobs?sync=0")).status()).toBe(200);
     await member.goto("/workbench");
-    if ((member.viewportSize()?.width ?? 1440) <= 759) {
-      await member
-        .getByRole("button", { name: "Open workspace navigation", exact: true })
-        .click();
-    }
+    // The suite header keeps the account status visible on phone and desktop;
+    // it no longer uses the legacy mobile workspace drawer.
+    await expect(
+      member.getByRole("button", {
+        name: "Workspace credits and billing",
+        exact: true,
+      }),
+    ).toBeVisible();
     await page.goto("/account/security");
     const ownerCodes = await enrol(page);
     await page

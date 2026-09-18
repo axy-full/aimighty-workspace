@@ -278,8 +278,13 @@ test("Gen drags workspace assets into Seedance, Topaz and Astra source panels wi
   expect(redirected.searchParams.get("ref")).toBe(`upload:${f.imageUpload.id}`);
   expect(redirected.searchParams.get("task")).toBe("upscale");
   await expect(page.getByRole("region", { name: "Topaz Image Upscale", exact: true }).getByLabel("Source image", { exact: true })).toHaveValue(`upload:${f.imageUpload.id}`);
-  const invalid = await page.goto("/make/not-a-generation-mode");
-  expect(invalid?.status()).toBe(404);
+  await page.goto("/make/not-a-generation-mode");
+  // Next streams notFound() inside the app shell with HTTP 200; verify the
+  // missing-route contract rather than the transport status after streaming.
+  await expect(page).toHaveURL(/\/make\/not-a-generation-mode$/);
+  await expect(page.getByText("Nothing here", { exact: true })).toBeVisible();
+  await expect(page.locator('meta[name="robots"][content*="noindex"]').first()).toBeAttached();
+  await expect(page.getByRole("region", { name: "Topaz Image Upscale", exact: true })).toHaveCount(0);
   for (const [mode, task, panelName, sourceLabel, dropLabel, origin, id] of [
     ["video", "edit", "Seedance 2.5 Edit", "Source clip", "Edit source drop area", "generation", f.generationVideo],
     ["video", "upscale", "Topaz Astra 2", "Astra source clip", "Astra source drop area", "upload", f.videoUpload.id],
@@ -291,6 +296,13 @@ test("Gen drags workspace assets into Seedance, Topaz and Astra source panels wi
     await selectSource(library(page),origin==='generation'?'Generations':'Uploads');
     await assetCard(page, origin, id).dragTo(panel.getByLabel(dropLabel, { exact: true }));
     await expect(panel.getByLabel(sourceLabel, { exact: true })).toHaveValue(`${origin}:${id}`);
+    const sourceToast = page.getByRole("status").filter({ hasText: /selected (as|for)/ });
+    await expect(sourceToast).toBeVisible();
+    await expect.poll(async () => {
+      const toastBounds = await sourceToast.boundingBox();
+      const dockBounds = await page.getByRole("navigation", { name: "Particl Studio pages", exact: true }).boundingBox();
+      return !!toastBounds && !!dockBounds && toastBounds.y + toastBounds.height <= dockBounds.y;
+    }).toBe(true);
   }
   const originalImage = assetCard(page, "upload", f.imageUpload.id);
   await originalImage.getByRole("button", { name: "Edit image", exact: true }).click();
