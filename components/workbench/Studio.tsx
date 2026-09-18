@@ -2723,7 +2723,6 @@ export default function Studio({
                   </>
                 )}
               </section>
-              {!mobile&&!atomOpen&&<button className="suite-atomik-collapse" aria-label="Open Atomik" onClick={()=>setAtomOpen(true)}><AtomMark/><span>Atomik</span></button>}
               <MobilePanel
                 mobile={mobile}
                 open={atomOpen}
