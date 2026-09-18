@@ -10,6 +10,7 @@ const generationId = `gen_hfc_${'a'.repeat(40)}`;
 const original = { generationId, providerJobId: providerId, bytes: 1234, sha256: 'b'.repeat(64), width: 1080, height: 1920, seconds: 12,
   credits: 75, creditUnit: 'higgsfield_credits', asset: { generationId, url: `/api/media/${generationId}`, kind: 'video', mime: 'video/mp4', width: 1080, height: 1920, durationS: 12 } };
 type FakeJob = Record<string, unknown> & { id: string; status: string };
+const viewJob = (job: FakeJob) => ({ ...job, quoteExpired: job.status === 'quoted' && Number(job.quoteExpiresAt) <= Date.now() });
 async function fixture(page: Page, options: { owner?: boolean; connected?: boolean; loseSubmit?: boolean; unsafeResult?: boolean; refuseSubmit?: boolean; loseBeforeAdmission?: boolean } = {}) {
   await signInLocally(page.request);
   const me = await page.request.get('/api/me').then(response => response.json());
@@ -36,7 +37,8 @@ async function fixture(page: Page, options: { owner?: boolean; connected?: boole
       if (path.endsWith('/connection') && request.method() === 'GET') return json({ connected: options.connected ?? true, requiresReconnect: false });
       if (path.endsWith('/video') && request.method() === 'GET') {
         expect(url.searchParams.get('draftId')).toBe(project.id);
-        return json({ jobs: [...jobs].reverse() });
+        const recent = [...jobs].reverse(), active = (job: FakeJob) => ['dispatching', 'accepted', 'uncertain'].includes(job.status);
+        return json({ jobs: [...recent.filter(active), ...recent.filter(job => !active(job))].slice(0, 25).map(viewJob) });
       }
       if (path.endsWith('/video') && request.method() === 'POST') {
         const body = request.postDataJSON(); posts.push(body);
@@ -45,7 +47,7 @@ async function fixture(page: Page, options: { owner?: boolean; connected?: boole
           expect(body.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
           const job: FakeJob = { id: `11111111-1111-4111-8111-${String(jobs.length + 1).padStart(12, '0')}`, draftId: project.id, status: 'quoted', input: body.input,
             workspaceId: wallet, workspaceName: 'Brand wallet', quoteCredits: 75, creditUnit: 'higgsfield_credits', quoteExpiresAt: Date.now() + 300000, providerJobId: null, result: null, createdAt: Date.now() };
-          jobs.push(job); return json({ job });
+          jobs.push(job); return json({ job: viewJob(job) });
         }
         const job = jobs.find(item => item.id === body.id)!;
         expect(job).toBeTruthy();
@@ -56,13 +58,15 @@ async function fixture(page: Page, options: { owner?: boolean; connected?: boole
           job.status = options.loseSubmit ? 'uncertain' : 'accepted';
           job.providerReceipt = { response: { results: [{ id: providerId, model: 'marketing_studio_video', type: 'video', status: 'pending' }] } };
           if (options.loseSubmit) return route.abort('connectionreset');
-          job.providerJobId = providerId; return json({ job });
+          job.providerJobId = providerId; return json({ job: viewJob(job) });
         }
         if (body.action === 'status') {
           expect(body).toEqual({ action: 'status', draftId: project.id, id: job.id });
+          if (['quoted', 'failed', 'completed'].includes(job.status)) return json({ job: viewJob(job) });
           job.status = 'completed'; job.providerJobId = providerId;
           job.result = { original: options.unsafeResult ? { ...original, asset: { ...original.asset, url: 'https://provider.example.test/raw.mp4' } } : original };
-          return json({ job, pollAfterSeconds: 30 });
+          job.originalAvailable = true; job.originalAvailability = 'available';
+          return json({ job: viewJob(job), pollAfterSeconds: 30 });
         }
       }
     }
@@ -86,6 +90,122 @@ async function fixture(page: Page, options: { owner?: boolean; connected?: boole
   return { scope, posts, jobs, consumerReads, unexpected, external, errors, get project() { return project; } };
 }
 const open = (page: Page) => page.goto('/workbench?project=consumer-campaign&suite=moleculr&page=variants');
+function historyJob(index: number, status = 'quoted'): FakeJob {
+  return { id: `11111111-1111-4111-8111-${String(index).padStart(12, '0')}`, draftId: 'consumer-campaign', status,
+    input: { prompt: `Saved campaign ${index}.`, duration: 15, resolution: '720p', aspectRatio: '16:9', generateAudio: true, mode: 'product_showcase' },
+    workspaceId: wallet, workspaceName: 'Brand wallet', quoteCredits: 75, creditUnit: 'higgsfield_credits', quoteExpiresAt: Date.now() + 300000,
+    providerJobId: status === 'accepted' || status === 'completed' ? providerId : null, result: null, createdAt: Date.now() - 60000 + index };
+}
+
+test('an older accepted video remains recoverable after more than 25 newer quotes and reload', async ({ page }) => {
+  const state = await fixture(page);
+  const oldest = historyJob(1, 'accepted');
+  state.jobs.push(oldest, ...Array.from({ length: 30 }, (_, index) => historyJob(index + 2)));
+  await open(page);
+  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
+  const card = panel.locator('article').filter({ has: page.getByText('Saved campaign 1.', { exact: true }) });
+  await expect(card.getByRole('button', { name: 'Check video result', exact: true })).toBeEnabled();
+  await expect(panel.locator('article')).toHaveCount(25);
+  // Exercise the local merge as well as the server's capped history response.
+  for (let index = 0; index < 26; index++) {
+    await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
+    await expect.poll(() => state.posts.filter(body => body.action === 'quote').length).toBe(index + 1);
+  }
+  await expect(card.getByRole('button', { name: 'Check video result', exact: true })).toBeEnabled();
+  await expect(panel.locator('article')).toHaveCount(25);
+  await page.reload();
+  await expect(card.getByRole('button', { name: 'Check video result', exact: true })).toBeEnabled();
+  await card.getByRole('button', { name: 'Check video result', exact: true }).click();
+  await expect(card.getByText('Original ready', { exact: true })).toBeVisible();
+  expect(state.posts.filter(body => body.action === 'submit')).toEqual([]);
+  expect(state.posts.filter(body => body.action === 'status')).toEqual([{ action: 'status', draftId: state.project.id, id: oldest.id }]);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test('an attempted quote missing from recent history remains guarded until its exact saved record is recovered', async ({ page }) => {
+  const state = await fixture(page);
+  const oldest = historyJob(1);
+  state.jobs.push(oldest, ...Array.from({ length: 30 }, (_, index) => historyJob(index + 2)));
+  const attemptKey = `particl-consumer-video:${encodeURIComponent(state.scope)}:${encodeURIComponent(state.project.id)}:attempts`;
+  await page.addInitScript(({ key, id }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify([id])); }, { key: attemptKey, id: oldest.id });
+  await open(page);
+  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
+  const quote = panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true });
+  await expect(quote).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Recover earlier submission', exact: true })).toBeEnabled();
+  expect(state.posts).toEqual([]);
+  await panel.getByRole('button', { name: 'Recover earlier submission', exact: true }).click();
+  await expect(panel.getByText('Saved campaign 1.', { exact: true })).toBeVisible();
+  await expect(quote).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Recover earlier submission', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), attemptKey)).toEqual([oldest.id]);
+  oldest.quoteExpiresAt = Date.now() - 1000;
+  await page.reload();
+  await expect(quote).toBeDisabled();
+  await panel.getByRole('button', { name: 'Recover earlier submission', exact: true }).click();
+  await expect(quote).toBeEnabled();
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), attemptKey)).toEqual([]);
+  expect(state.posts).toEqual([
+    { action: 'status', draftId: state.project.id, id: oldest.id },
+    { action: 'status', draftId: state.project.id, id: oldest.id },
+  ]);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test('a fast browser clock cannot release an attempted quote before authoritative server expiry', async ({ page }) => {
+  const state = await fixture(page);
+  const job = historyJob(1);
+  state.jobs.push(job);
+  const attemptKey = `particl-consumer-video:${encodeURIComponent(state.scope)}:${encodeURIComponent(state.project.id)}:attempts`;
+  await page.addInitScript(({ key, id }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify([id])); }, { key: attemptKey, id: job.id });
+  await page.clock.setFixedTime(new Date(Date.now() + 86400000));
+  await open(page);
+  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
+  const quote = panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true });
+  await expect(panel.getByText('Submission needs reconciliation', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => Date.now())).toBeGreaterThan(Number(job.quoteExpiresAt));
+  expect(viewJob(job).quoteExpired).toBe(false);
+  await expect(quote).toBeDisabled();
+  await panel.getByRole('button', { name: 'Refresh saved video jobs', exact: true }).click();
+  await expect(quote).toBeDisabled();
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), attemptKey)).toEqual([job.id]);
+  job.quoteExpiresAt = Date.now() - 1000;
+  expect(viewJob(job).quoteExpired).toBe(true);
+  await panel.getByRole('button', { name: 'Refresh saved video jobs', exact: true }).click();
+  await expect(quote).toBeEnabled();
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), attemptKey)).toEqual([]);
+  expect(state.posts).toEqual([]);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+for (const availability of ['deleted', undefined] as const) test(`a ${availability ?? 'missing'} original availability removes campaign download and attachment controls without changing its receipt`, async ({ page }) => {
+  const state = await fixture(page);
+  const job = { ...historyJob(1, 'completed'), result: { original }, originalAvailable: true as boolean | undefined, originalAvailability: 'available' as string | undefined };
+  state.jobs.push(job);
+  await open(page);
+  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
+  await expect(panel.getByText('Original ready', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('link', { name: 'Download original', exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Add original to project', exact: true })).toBeEnabled();
+  const receipt = JSON.stringify(job.result);
+  // Simulate deletion in Library (or an older response without live proof).
+  job.originalAvailable = availability ? false : undefined;
+  job.originalAvailability = availability;
+  await panel.getByRole('button', { name: 'Refresh saved video jobs', exact: true }).click();
+  const label = availability ? 'Completed · original deleted' : 'Completed · original unavailable';
+  await expect(panel.getByText(label, { exact: true })).toBeVisible();
+  await expect(panel.getByText('Original ready', { exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('link', { name: 'Download original', exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Add original to project', exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(panel.getByText(label, { exact: true })).toBeVisible();
+  await expect(panel.getByRole('link', { name: 'Download original', exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Add original to project', exact: true })).toHaveCount(0);
+  expect(JSON.stringify(job.result)).toBe(receipt);
+  expect(state.posts).toEqual([]);
+  expect(state.project.assets.some(asset => asset.generationId === generationId)).toBe(false);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
 
 test('native campaign video requires a matching exact quote, recovers a lost acknowledgement and attaches only the collected original', async ({ page }, info) => {
   const state = await fixture(page, { loseSubmit: true });
@@ -220,7 +340,7 @@ test('completed provider URL without a verified local original cannot attach or 
   await panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.').check();
   await panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true }).click();
   await panel.getByRole('button', { name: 'Check video result', exact: true }).click();
-  await expect(panel.getByText(/The original receipt is unavailable/)).toBeVisible();
+  await expect(panel.getByText(/The original video is unavailable/)).toBeVisible();
   await expect(panel.getByText("Completed · original unavailable", { exact: true })).toBeVisible();
   await expect(panel.getByText("Original ready", { exact: true })).toHaveCount(0);
   await expect(panel.getByText("The original video is ready to add to this project.", { exact: true })).toHaveCount(0);

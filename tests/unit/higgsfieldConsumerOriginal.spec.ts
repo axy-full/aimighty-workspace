@@ -333,6 +333,33 @@ test("collection preserves original bytes, records exact consumer credits and ex
   });
 });
 
+test("completed original availability fails closed on missing or mismatched tenant records without rewriting its receipt", async () => {
+  const m = await modules(), videoService = await import("../../lib/higgsfield-consumer/video-service");
+  let completed!: NonNullable<Awaited<ReturnType<typeof m.jobs.getConsumerJob>>>;
+  await m.tenant.runInTenant(workspace(), async () => {
+    const { job } = await accepted(m), scope = { id: job.id, userId: job.userId, draftId: job.draftId };
+    const collected = await m.originals.collectConsumerVideoOriginal(job, sourceUrl, { fetchDependencies: transport().deps });
+    const poll = (await m.jobs.claimConsumerPoll(scope))!;
+    completed = (await m.jobs.completeConsumerJob({ ...scope, leaseToken: poll.leaseToken, resultManifest: { original: collected } }))!;
+    expect(await videoService.consumerVideoView(completed)).toMatchObject({ originalAvailable: true, originalAvailability: "available" });
+    const originalRow = (await m.database.db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [collected.generationId] })).rows[0];
+    for (const [column, value] of [["stored_url", null], ["bytes", 1], ["created_by", "another-owner"], ["params", JSON.stringify({ consumerJobId: "another-job" })]] as const) {
+      await m.database.db().execute({ sql: `UPDATE generations SET ${column}=? WHERE id=?`, args: [value, collected.generationId] });
+      const view = await videoService.consumerVideoView(completed);
+      expect(view).toMatchObject({ originalAvailable: false, originalAvailability: "unavailable" });
+      expect(view.result!.original).not.toHaveProperty("asset");
+      await m.database.db().execute({ sql: `UPDATE generations SET ${column}=? WHERE id=?`, args: [originalRow[column], collected.generationId] });
+    }
+    await m.database.db().execute({ sql: "DELETE FROM consumer_video_originals WHERE job_id=?", args: [job.id] });
+    expect(await videoService.consumerVideoView(completed)).toMatchObject({ originalAvailable: false, originalAvailability: "unavailable" });
+    expect((await m.jobs.getConsumerJob(scope))!.resultManifest).toEqual(completed.resultManifest);
+  });
+  await m.tenant.runInTenant(workspace(), async () => {
+    await m.database.ready();
+    expect(await videoService.consumerVideoView(completed)).toMatchObject({ originalAvailable: false, originalAvailability: "unavailable" });
+  });
+});
+
 test("collector leases exclude concurrent writers and durable reservations compete atomically with uploads", async () => {
   const m = await modules();
   await m.tenant.runInTenant(workspace(original.length + 1), async () => {
@@ -590,6 +617,10 @@ test("a crash after collection protects the original from deletion until a fresh
       )?.status,
     ).toBe("completed");
 
+    const videoService = await import("../../lib/higgsfield-consumer/video-service");
+    const beforeDeletion = await videoService.pollConsumerMarketingVideo(scope);
+    expect(beforeDeletion.job).toMatchObject({ originalAvailability: "available", originalAvailable: true, result: { original: collected } });
+    const immutableManifest = (await m.jobs.getConsumerJob(scope))!.resultManifest;
     await workbenchTransaction((tx) =>
       deletion.markGenerationDeletion(tx, collected.generationId),
     );
@@ -601,6 +632,13 @@ test("a crash after collection protects the original from deletion until a fresh
       ),
     ).toMatchObject({ cleaned: 1, failed: 0 });
     expect((await m.quota.standing()).usedBytes).toBe(0);
+    for (const view of [(await videoService.pollConsumerMarketingVideo(scope)).job,
+      ...(await videoService.consumerMarketingJobs(job.userId, job.draftId))]) {
+      expect(view).toMatchObject({ status: "completed", originalAvailability: "deleted", originalAvailable: false,
+        result: { original: { generationId: collected.generationId, sha256: collected.sha256, bytes: collected.bytes } } });
+      expect(view.result!.original).not.toHaveProperty("asset");
+    }
+    expect((await m.jobs.getConsumerJob(scope))!.resultManifest).toEqual(immutableManifest);
     await expect(
       m.originals.collectConsumerVideoOriginal(fresh.job, sourceUrl, {
         fetchDependencies: noNetwork.deps,

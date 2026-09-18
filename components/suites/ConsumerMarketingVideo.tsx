@@ -13,6 +13,8 @@ type Job = {
   input: ConsumerVideoInput; workspaceId: string; workspaceName: string; quoteCredits: number;
   creditUnit: "higgsfield_credits"; quoteExpiresAt: number; providerJobId: string | null;
   result?: unknown; providerReceipt?: unknown; createdAt: number;
+  quoteExpired?: boolean;
+  originalAvailable?: boolean; originalAvailability?: "available" | "deleted" | "unavailable" | "not_collected";
 };
 type Capability = { owner: boolean; connected: boolean; suspended: boolean };
 const endpoint = "/api/higgsfield/consumer/video";
@@ -23,6 +25,11 @@ class VideoRequestError extends Error {
 }
 const preflightCodes = new Set(["quote_expired", "quote_changed", "workspace_changed", "unapproved_adjustment", "insufficient_credits", "approval_changed", "invalid_input", "preflight_unavailable", "reconnect_required", "connection_changed", "connection_busy"]);
 const sameInput = (a: ConsumerVideoInput, b: ConsumerVideoInput) => JSON.stringify(a) === JSON.stringify(b);
+const recoverable = (job: Job) => ["dispatching", "accepted", "uncertain"].includes(job.status);
+function retainedJobs(jobs: Job[], attempted: string[] = []) {
+  const pinned = (job: Job) => recoverable(job) || job.status === "quoted" && attempted.includes(job.id);
+  return [...jobs.filter(pinned), ...jobs.filter(job => !pinned(job))].slice(0, 25);
+}
 const modeLabels: Record<NonNullable<ConsumerVideoInput["mode"]>, string> = {
   ugc: "UGC · presenter",
   ugc_how_to: "UGC · how-to",
@@ -48,7 +55,7 @@ function parseJob(value: unknown, draftId: string): Job {
 
 /** Only the service's collected local original can become a project asset. */
 function originalAsset(job: Job): Asset | null {
-  if (job.status !== "completed" || !record(job.result) || !record(job.result.original)) return null;
+  if (job.status !== "completed" || job.originalAvailable !== true || job.originalAvailability !== "available" || !record(job.result) || !record(job.result.original)) return null;
   const original = job.result.original, asset = original.asset;
   if (!record(asset) || typeof original.generationId !== "string" || !/^gen_hfc_[a-f0-9]{40}$/.test(original.generationId) ||
     !job.providerJobId || typeof original.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(original.sha256) ||
@@ -96,21 +103,30 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
   const [notice, setNotice] = useState("");
   const [clock, setClock] = useState(() => Date.now());
   const [nextPoll, setNextPoll] = useState<Record<string, number>>({});
-  const [refreshedAt, setRefreshedAt] = useState(0);
   const pending = useRef(false), lifecycle = useRef(0);
   const attemptIds = useRef<string[]>([]);
   const live = useRef(false);
   const valid = consumerVideoInputSchema.safeParse(input).success;
   const selected = jobs.find(job => job.id === selectedId);
   const matches = !!selected && sameInput(selected.input, input);
-  const unresolved = jobs.some(job => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id) && refreshedAt <= job.quoteExpiresAt));
+  const missingAttempts = attempts.filter(id => !jobs.some(job => job.id === id));
+  const unresolved = missingAttempts.length > 0 || jobs.some(job => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
   const canQuote = enabled && capability?.owner && capability.connected && !capability.suspended && !busy && valid && !unresolved;
   const canSubmit = canQuote && selected?.status === "quoted" && matches && walletReviewed && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
   const update = (next: ConsumerVideoInput) => {
     setEdit(next); setWalletReviewed(false); setNotice("");
     try { localStorage.setItem(storageKey, JSON.stringify(next)); window.dispatchEvent(new Event(draftEvent)); } catch { /* Editing remains available; submission recovery requires storage below. */ }
   };
-  const saveJob = (job: Job) => { setJobs(before => [job, ...before.filter(item => item.id !== job.id)].slice(0, 25)); setSelectedId(job.id); setClock(Date.now()); };
+  const confirmAttempts = useCallback((confirmed: Job[]) => {
+    const byId = new Map(confirmed.map(job => [job.id, job]));
+    const next = attemptIds.current.filter(id => {
+      const job = byId.get(id);
+      return !job || ["dispatching", "uncertain"].includes(job.status) || job.status === "quoted" && job.quoteExpired !== true;
+    });
+    try { localStorage.setItem(attemptKey, JSON.stringify(next)); attemptIds.current = next; setAttempts(next); }
+    catch { /* Keep the guard if its authoritative resolution cannot be saved. */ }
+  }, [attemptKey, setAttempts]);
+  const saveJob = (job: Job) => { setJobs(before => retainedJobs([job, ...before.filter(item => item.id !== job.id)], attemptIds.current)); setSelectedId(job.id); setClock(Date.now()); };
   const json = useCallback(async (url: string, init?: RequestInit) => {
     const response = await request(url, { cache: "no-store", ...init });
     const result = await response.json().catch(() => null);
@@ -131,11 +147,12 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
       if (!live.current || lifecycle.current !== token) return;
       if (!Array.isArray(result.jobs) || result.jobs.length > 25) throw new Error("Saved marketing jobs could not be loaded.");
       const saved = result.jobs.map(job => parseJob(job, draftId));
-      setJobs(saved); setCapability({ owner: true, connected: connection.connected === true && connection.requiresReconnect !== true, suspended: me.workspace.suspended === true });
-      setClock(Date.now()); setRefreshedAt(Date.now());
+      confirmAttempts(saved);
+      setJobs(retainedJobs(saved, attemptIds.current)); setCapability({ owner: true, connected: connection.connected === true && connection.requiresReconnect !== true, suspended: me.workspace.suspended === true });
+      setClock(Date.now());
     } catch (reason) { if (live.current && lifecycle.current === token) { setCapability(null); setError(reason instanceof Error ? reason.message : "Saved marketing jobs could not be loaded."); } }
     finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
-  }, [enabled, json, scope, draftId, setBusy, setError, setCapability, setJobs, setClock, setRefreshedAt]);
+  }, [enabled, json, scope, draftId, confirmAttempts, setBusy, setError, setCapability, setJobs, setClock]);
   useEffect(() => {
     live.current = true;
     try { const values = JSON.parse(localStorage.getItem(attemptKey) ?? "[]"); attemptIds.current = Array.isArray(values) ? values.filter((value): value is string => typeof value === "string" && uuid.test(value)).slice(-100) : []; setAttempts(attemptIds.current); } catch { /* A later submit requires writable recovery storage. */ }
@@ -149,11 +166,12 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [jobs.length]);
-  async function act(action: "quote" | "submit" | "status", job = selected) {
+  async function act(action: "quote" | "submit" | "status", job: Job | null | undefined = selected, missingId?: string) {
     if (!enabled || pending.current || !capability?.owner) return;
     if (action === "quote" && !canQuote) return;
     if (action === "submit" && (!canSubmit || !job || job.id !== selectedId)) return;
-    if (action === "status" && (!job || !(job.status === "accepted" || job.status === "uncertain" && job.providerReceipt) || Date.now() < (nextPoll[job.id] ?? 0))) return;
+    const recoveringEarlier = action === "status" && job === null && !!missingId && missingAttempts.includes(missingId);
+    if (action === "status" && !recoveringEarlier && (!job || !(job.status === "accepted" || job.status === "uncertain" && job.providerReceipt) || Date.now() < (nextPoll[job.id] ?? 0))) return;
     const token = lifecycle.current;
     pending.current = true; setBusy(action); setError(""); setNotice("");
     try {
@@ -166,16 +184,16 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
         attemptIds.current = next; setAttempts(next); setWalletReviewed(false);
       }
       const body = action === "quote" ? { action, draftId, input: consumerVideoInputSchema.parse(input), idempotencyKey: crypto.randomUUID() }
-        : { action, draftId, id: job!.id, ...(action === "submit" ? { workspaceId: job!.workspaceId, credits: job!.quoteCredits } : {}) };
+        : { action, draftId, id: job?.id ?? missingId!, ...(action === "submit" ? { workspaceId: job!.workspaceId, credits: job!.quoteCredits } : {}) };
       const result = await json(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!live.current || lifecycle.current !== token) return;
-      const saved = parseJob(result.job, draftId); saveJob(saved);
+      const saved = parseJob(result.job, draftId); confirmAttempts([saved]); saveJob(saved);
       if (action === "quote") { update(saved.input); setNotice("Review the complete prompt, settings, wallet and price below."); }
       if (action === "submit") setNotice("Request recorded. Use Check video result to recover its progress.");
       if (action === "status") {
         const delay = typeof result.pollAfterSeconds === "number" && Number.isFinite(result.pollAfterSeconds) ? Math.min(3600, Math.max(15, result.pollAfterSeconds)) : 30;
         setNextPoll(before => ({ ...before, [saved.id]: Date.now() + delay * 1000 }));
-        setNotice(saved.status === "completed" ? originalAsset(saved) ? "The original video is ready to add to this project." : "The video completed, but its original receipt is unavailable. Refresh saved jobs before adding it." : "Status checked. The saved job remains available here.");
+        setNotice(saved.status === "completed" ? originalAsset(saved) ? "The original video is ready to add to this project." : saved.originalAvailability === "deleted" ? "The original video was deleted. Its job receipt remains available." : "The video completed, but its original is unavailable. Refresh saved jobs before adding it." : "Status checked. The saved job remains available here.");
       }
     } catch (reason) {
       if (live.current && lifecycle.current === token) {
@@ -221,6 +239,7 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
       </fieldset>
       <div className={styles.actions}><button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get Higgsfield video quote"}</button><button type="button" className="suite-button" disabled={!enabled || !!busy} onClick={() => void refresh()}><RefreshCw size={14}/>Refresh saved video jobs</button></div>
       {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
+      {!!missingAttempts.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another video.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missingAttempts[0])}>Recover earlier submission</button></div>}
       {selected?.status === "quoted" && <div className={styles.quote} aria-label="Higgsfield video quote">
         <strong>{selected.quoteCredits} Higgsfield credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
         <small>Creative format · {modeLabel(selected.input.mode)}</small>
@@ -232,12 +251,12 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
       {!!jobs.length && <div className={styles.jobs} aria-label="Saved Higgsfield video jobs">{jobs.map(job => {
         const original = originalAsset(job), attached = original && project.assets.some(asset => asset.generationId === original.generationId);
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
-        return <article key={job.id} className={styles.job}><div><strong>{job.status === "completed" ? original ? "Original ready" : "Completed · original unavailable" : job.status === "accepted" ? "Video in progress" : job.status === "quoted" && attempts.includes(job.id) && refreshedAt > job.quoteExpiresAt ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || attempts.includes(job.id) && job.status === "quoted" ? "Submission needs reconciliation" : job.status === "failed" ? "Video failed" : "Saved quote"}</strong><span>{job.quoteCredits} Higgsfield credits</span></div>
+        return <article key={job.id} className={styles.job}><div><strong>{job.status === "completed" ? original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable" : job.status === "accepted" ? "Video in progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || attempts.includes(job.id) && job.status === "quoted" ? "Submission needs reconciliation" : job.status === "failed" ? "Video failed" : "Saved quote"}</strong><span>{job.quoteCredits} Higgsfield credits</span></div>
           <p>{job.input.prompt}</p><small>{modeLabel(job.input.mode)} · {job.input.duration}s · {job.input.resolution} · {job.input.aspectRatio} · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { update(job.input); setSelectedId(job.id); setWalletReviewed(false); }}>Review this saved quote</button>}
           {(job.status === "accepted" || job.status === "uncertain" && !!job.providerReceipt) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved video request" : "Check video result"}</button>}
           {original && <div className={styles.actions}><a className="suite-text-button" href={`${original.url}?download=1`} download>Download original</a>{onAsset && <button type="button" className="suite-button" disabled={!!busy || !!attached} onClick={() => void attach(job, original)}>{attached ? "In project library" : "Add original to project"}</button>}</div>}
-          {job.status === "completed" && !original && <p className="suite-footnote">The original receipt is unavailable. Refresh saved jobs before adding this video.</p>}
+          {job.status === "completed" && !original && <p className="suite-footnote">{job.originalAvailability === "deleted" ? "The original video was deleted from the library. The job receipt is retained; downloading and adding it are unavailable." : "The original video is unavailable. Refresh saved jobs before adding this video."}</p>}
         </article>;
       })}</div>}
     </>}

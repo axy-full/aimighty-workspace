@@ -1,10 +1,10 @@
 "use client";
 import type { Asset } from "./studio";
-import { referenceAdFrameTimes } from "./reference-ad-analysis";
 import { mediaReferenceIdentity } from "./media-reference-input";
 import {
   ATOMIK_IMAGE_EDGE,
   atomikFrameTimes,
+  referenceAdFrameTimes,
   type AtomikVideoFrame,
 } from "./atomik-reference-types";
 

@@ -2,9 +2,9 @@ import { z } from "zod";
 import type { Project } from "./studio";
 import type { ReferenceAdConfig } from "./reference-ad";
 import { mediaReferenceIdentity } from "./media-reference-input";
+import { REFERENCE_AD_FRAMES, REFERENCE_AD_SECONDS } from "./atomik-reference-types";
+export { REFERENCE_AD_FRAMES, REFERENCE_AD_SECONDS, referenceAdFrameTimes } from "./atomik-reference-types";
 
-export const REFERENCE_AD_FRAMES = 12;
-export const REFERENCE_AD_SECONDS = 60;
 export const REFERENCE_AD_LIMITATION =
   "Visual review of 12 sampled stills with browser-reported timestamps. Motion and pacing are interpretations between samples; audio, unsampled events, performance and virality have not been assessed.";
 export const referenceAnalysisSourceSchema = z
@@ -118,22 +118,6 @@ export type ReferenceAnalysisSource = z.infer<
   typeof referenceAnalysisSourceSchema
 >;
 
-export function referenceAdFrameTimes(duration: number): number[] {
-  if (
-    !Number.isFinite(duration) ||
-    duration < 0.1 ||
-    duration > REFERENCE_AD_SECONDS
-  )
-    throw new Error(
-      "Analyze a video between 0.1 and 60 seconds long. Keep the original and upload a shorter review clip if needed.",
-    );
-  return Array.from(
-    { length: REFERENCE_AD_FRAMES },
-    (_, index) =>
-      Math.round(((duration * (index + 0.5)) / REFERENCE_AD_FRAMES) * 1000000) /
-      1000000,
-  );
-}
 export function assertReferenceAnalysisSource(
   project: Project,
   source: ReferenceAnalysisSource,
