@@ -451,6 +451,26 @@ test("prepared copies remap tenant credentials and revoke old access without cha
     bundle = join(f.root, "backup"),
     restored = join(f.root, "restored"),
     prepared = join(f.root, "prepared");
+  const original = createClient({ url: pathToFileURL(f.platformPath).href });
+  try {
+    await original.executeMultiple(`CREATE TABLE higgsfield_consumer_connections(workspace_id TEXT,user_id TEXT,tokens_enc TEXT);
+      CREATE TABLE higgsfield_consumer_authorizations(workspace_id TEXT,user_id TEXT,verifier_enc TEXT);`);
+    for (const [table, field] of [
+      ["higgsfield_consumer_connections", "tokens_enc"],
+      ["higgsfield_consumer_authorizations", "verifier_enc"],
+    ]) {
+      await original.execute({
+        sql: `INSERT INTO ${table}(workspace_id,user_id,${field}) VALUES(?,?,?)`,
+        args: [
+          "ws_fixture",
+          "user-a",
+          seal("fixture-old-consumer-secret", f.env.KEYRING_SECRET),
+        ],
+      });
+    }
+  } finally {
+    original.close();
+  }
   await createBackup(f.config, bundle, { env: f.env });
   await restoreBackup(bundle, restored, { env: f.env });
   const mappings = {
@@ -484,6 +504,15 @@ test("prepared copies remap tenant credentials and revoke old access without cha
       (await p.execute("SELECT COUNT(*) AS n FROM p_sessions")).rows[0].n,
       0,
     );
+    for (const table of [
+      "higgsfield_consumer_connections",
+      "higgsfield_consumer_authorizations",
+    ]) {
+      assert.equal(
+        (await p.execute(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n,
+        0,
+      );
+    }
     assert.equal(
       (await p.execute("SELECT billed_credits FROM meter_events")).rows[0]
         .billed_credits,

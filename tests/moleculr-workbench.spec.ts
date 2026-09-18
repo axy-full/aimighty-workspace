@@ -122,6 +122,57 @@ async function fixture(page: Page, failSave = false) {
   };
 }
 
+test("Moleculr reviews website branding, imports the original logo and preserves reviewed identity", async ({ page }, info) => {
+  const state = await fixture(page);
+  let extracted = 0, imported = 0, externalImages = 0;
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("request", request => { if (request.url().startsWith("https://brand.example.test/") && request.resourceType() === "image") externalImages++; });
+  const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jC1kAAAAASUVORK5CYII=", "base64");
+  await page.route("**/api/workbench/moleculr/extract-brand", async route => {
+    expect(route.request().headers()["x-workbench-scope"]).toBeTruthy();
+    expect(route.request().postDataJSON()).toEqual({projectId:"suite-test",url:"https://brand.example.test"});
+    extracted++;
+    await route.fulfill({json:{source:{requestedUrl:"https://brand.example.test",finalUrl:"https://brand.example.test/",fetchedAt:"2026-09-18T12:00:00.000Z"},brand:{name:"North",description:"Camera equipment for filmmakers.",tagline:"Find your frame.",colors:["#225544","#FFFFFF"],fontFamilies:["Inter","Georgia"]},logoCandidates:[{url:"https://brand.example.test/logo.png",source:"json-ld",alt:"North logo"},{url:"https://brand.example.test/logo.svg",source:"html-image",alt:"Vector logo"}],imageryCandidates:[],evidence:[{field:"name",source:"json-ld",value:"North",sourceUrl:"https://brand.example.test/"}],warnings:["Review the extracted colours before use."],requiresReview:true}});
+  });
+  await page.route("**/api/workbench/moleculr/import-image", async route => {
+    expect(route.request().postDataJSON()).toEqual({projectId:"suite-test",url:"https://brand.example.test/logo.png"});
+    expect(route.request().headers()["x-workbench-scope"]).toBeTruthy();
+    imported++;
+    await route.fulfill({contentType:"image/png",body:bytes});
+  });
+  await page.route("**/api/uploads/chunk", route => route.fulfill({json:{ok:true}}));
+  await page.route("**/api/uploads/finish", route => route.fulfill({json:{id:"north-logo",filename:"brand-reference.png",mime:"image/png",kind:"image",bytes:bytes.length,width:1,height:1,durationS:null,sha256:"a".repeat(64),url:"/api/uploads/north-logo"}}));
+  await page.route("**/api/uploads/north-logo", route => route.fulfill({contentType:"image/png",body:bytes}));
+  await page.goto("/workbench?project=suite-test&suite=moleculr&page=brand");
+  const kit = page.getByRole("region",{name:"Brand kit",exact:true});
+  const review = page.getByRole("region",{name:"Import brand from website"});
+  await kit.getByLabel("Brand voice",{exact:true}).fill("Quiet confidence.");
+  await kit.getByLabel("Brand audience",{exact:true}).fill("Professional filmmakers.");
+  await review.getByLabel("Brand website",{exact:true}).fill("https://brand.example.test");
+  await review.getByRole("button",{name:"Extract brand",exact:true}).click();
+  await expect(review.getByLabel("Extracted brand name",{exact:true})).toHaveValue("North");
+  await expect(kit.getByLabel("Brand name",{exact:true})).toHaveValue("");
+  expect(imported).toBe(0); expect(externalImages).toBe(0);
+  await expect(review.getByRole("button",{name:"Import logo",exact:true}).nth(1)).toBeDisabled();
+  await review.getByRole("button",{name:"Import logo",exact:true}).first().click();
+  await expect.poll(()=>state.project.moleculr?.brandKit?.logoAssetId).toBe("north-logo");
+  expect(state.project.assets.find(asset=>asset.id==="north-logo")).toMatchObject({kind:"image",category:"Brand",uploadId:"north-logo"});
+  await review.getByLabel("Extracted brand name",{exact:true}).fill("North Studio");
+  await review.getByRole("button",{name:"Apply reviewed brand",exact:true}).click();
+  await expect.poll(()=>state.project.moleculr?.brandKit?.name).toBe("North Studio");
+  expect(state.project.moleculr?.brandKit).toMatchObject({description:"Camera equipment for filmmakers.",voice:"Quiet confidence.",audience:"Professional filmmakers.",fontFamilies:["Inter","Georgia"],colors:["#225544","#FFFFFF"],logoAssetId:"north-logo",source:{url:"https://brand.example.test/"}});
+  await page.screenshot({path:info.outputPath("reviewed-brand.png")});
+  await review.getByLabel("Brand website",{exact:true}).fill("https://brand.example.test/new");
+  await expect(review.getByRole("button",{name:"Apply reviewed brand",exact:true})).toHaveCount(0);
+  await expect.poll(()=>state.project.moleculr?.brandKit?.website).toBe("https://brand.example.test/new");
+  await page.reload();
+  await expect(kit.getByLabel("Brand name",{exact:true})).toHaveValue("North Studio");
+  await expect(kit.getByLabel("Brand voice",{exact:true})).toHaveValue("Quiet confidence.");
+  expect(extracted).toBe(1); expect(imported).toBe(1); expect(externalImages).toBe(0);
+  expect(state.mutations).toEqual([]); expect(errors).toEqual([]);
+});
+
 test("Moleculr saves product and cast, configures video, preserves original references and returns to delivery", async ({
   page,
 }, info) => {

@@ -1,7 +1,8 @@
 "use client";
 
 import type { MoleculrBrief } from "@/lib/workbench/moleculr";
-import type { Project } from "@/lib/workbench/studio";
+import type { Asset, Project } from "@/lib/workbench/studio";
+import { BrandImport } from "./BrandImport";
 import styles from "./moleculr-creative.module.css";
 
 const emptyKit: NonNullable<MoleculrBrief["brandKit"]> = {
@@ -19,12 +20,18 @@ export function BrandKitEditor({
   enabled,
   onChange,
   onUpload,
+  scope,
+  onSave,
+  onImportRemote,
 }: {
   project: Project;
   brief: MoleculrBrief;
   enabled: boolean;
   onChange: (brief: MoleculrBrief) => void;
   onUpload: () => void;
+  scope: string;
+  onSave?: () => Promise<boolean>;
+  onImportRemote?: (url: string, category?: "Product" | "Brand") => Promise<Asset>;
 }) {
   const kit = brief.brandKit ?? emptyKit;
   const set = <K extends keyof typeof kit>(key: K, value: (typeof kit)[K]) =>
@@ -41,6 +48,7 @@ export function BrandKitEditor({
         </div>
         <span className="suite-badge">Brand kit</span>
       </div>
+      <BrandImport key={`${scope}:${project.id}`} projectId={project.id} scope={scope} brief={brief} enabled={enabled} onChange={onChange} onSave={onSave} onImportRemote={onImportRemote}/>
       <fieldset disabled={!enabled} className="suite-fields">
         <label>
           Brand name
@@ -50,6 +58,10 @@ export function BrandKitEditor({
             placeholder="Brand or studio name"
             onChange={(e) => set("name", e.target.value)}
           />
+        </label>
+        <label>
+          Brand description
+          <textarea aria-label="Brand description" rows={3} value={kit.description ?? ""} maxLength={4000} onChange={e => set("description", e.target.value)} placeholder="Approved facts about the brand and what it offers"/>
         </label>
         <label>
           Tagline
@@ -63,6 +75,7 @@ export function BrandKitEditor({
         <label>
           Brand voice
           <textarea
+            aria-label="Brand voice"
             rows={3}
             value={kit.voice}
             maxLength={2000}
@@ -73,6 +86,7 @@ export function BrandKitEditor({
         <label>
           Brand audience
           <textarea
+            aria-label="Brand audience"
             rows={3}
             value={kit.audience}
             maxLength={2000}
@@ -119,6 +133,8 @@ export function BrandKitEditor({
           </button>
         </div>
       </fieldset>
+      {!!kit.fontFamilies?.length && <p className={styles.note}>Recorded typefaces: {kit.fontFamilies.join(" · ")}. These names guide creative work; they do not load external fonts.</p>}
+      {kit.source && <p className={styles.note}>Website identity reviewed from {kit.source.url}.</p>}
       <div className={styles.palette} aria-label="Brand palette">
         <div>
           <strong>Brand colours</strong>

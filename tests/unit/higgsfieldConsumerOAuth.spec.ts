@@ -1,0 +1,669 @@
+import { test, expect } from "@playwright/test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import ts from "typescript";
+import type { TenantStore } from "../../lib/tenant";
+
+const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-oauth-"));
+process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
+process.env.TURSO_DATABASE_URL = `file:${path.join(directory, "tenant.db")}`;
+process.env.KEYRING_SECRET = "unit-test-consumer-keyring-not-a-real-secret";
+process.env.APP_ORIGIN = "https://particl.example";
+delete process.env.HF_CONSUMER_CLIENT_ID;
+const identity = { workspaceId: "workspace", userId: "owner" };
+let sequence = 0;
+const fresh = () => ({ ...identity, workspaceId: `workspace-${++sequence}` });
+const tokenResponse = () =>
+  Response.json({
+    access_token: "access-private-abc",
+    refresh_token: "refresh-private-xyz",
+    expires_in: 3600,
+    token_type: "Bearer",
+    scope: "openid email offline_access",
+  });
+const asFetch = (fn: (url: unknown, init?: RequestInit) => Promise<Response>) =>
+  fn as typeof fetch;
+async function modules() {
+  return {
+    oauth: await import("../../lib/higgsfield-consumer/oauth"),
+    store: await import("../../lib/higgsfield-consumer/store"),
+    platform: await import("../../lib/platform"),
+  };
+}
+async function start(id = fresh(), session = "browser-session") {
+  const { oauth } = await modules();
+  const result = await oauth.beginConsumerAuthorization(id, session);
+  const url = new URL(result.url),
+    params = new URLSearchParams({
+      state: url.searchParams.get("state")!,
+      code: "authorization-code",
+      iss: oauth.CONSUMER_ISSUER,
+    });
+  return { id, session, url, params };
+}
+async function connected(expiry = Date.now() + 3600_000) {
+  const { store } = await modules(),
+    flow = await start();
+  const authorization = await store.consumeAuthorization(
+    flow.params.get("state")!,
+    { ...flow.id, sessionHash: store.hashConsumerSecret(flow.session) },
+  );
+  expect(authorization).toBeTruthy();
+  const tokens = {
+    accessToken: "old-access-private",
+    refreshToken: "old-refresh-private",
+    expiresAt: expiry,
+    scope: "openid email offline_access",
+    clientId: authorization!.clientId,
+    redirectUri: authorization!.redirectUri,
+  };
+  expect(await store.completeAuthorization(authorization!, tokens)).toBe(true);
+  return { ...flow, tokens };
+}
+
+test("own HTTPS metadata, minimal scopes and S256 state store no plaintext session or verifier", async () => {
+  const { oauth, store, platform } = await modules();
+  const flow = await start();
+  expect(oauth.consumerClientMetadata()).toEqual({
+    client_id: "https://particl.example/api/higgsfield/consumer/client",
+    client_name: "Particl",
+    client_uri: "https://particl.example",
+    redirect_uris: ["https://particl.example/api/higgsfield/consumer/callback"],
+    token_endpoint_auth_method: "none",
+  });
+  expect(flow.url.origin).toBe(oauth.CONSUMER_ISSUER);
+  expect(flow.url.searchParams.get("scope")).toBe(
+    "openid email offline_access",
+  );
+  expect(flow.url.searchParams.get("resource")).toBe(oauth.CONSUMER_RESOURCE);
+  expect(flow.url.searchParams.get("code_challenge_method")).toBe("S256");
+  const row = (
+    await platform.platformDb().execute({
+      sql: "SELECT * FROM higgsfield_consumer_authorizations WHERE workspace_id=?",
+      args: [flow.id.workspaceId],
+    })
+  ).rows[0];
+  expect(JSON.stringify(row)).not.toContain(flow.session);
+  expect(row.state_hash).not.toBe(flow.params.get("state"));
+  const authorization = await store.consumeAuthorization(
+    flow.params.get("state")!,
+    { ...flow.id, sessionHash: store.hashConsumerSecret(flow.session) },
+  );
+  expect(JSON.stringify(row)).not.toContain(authorization!.verifier);
+  expect(flow.url.searchParams.get("code_challenge")).toBe(
+    createHash("sha256").update(authorization!.verifier).digest("base64url"),
+  );
+  process.env.HF_CONSUMER_CLIENT_ID = "our-legit-preregistered-client";
+  expect(oauth.consumerConfiguration().clientId).toBe(
+    "our-legit-preregistered-client",
+  );
+  delete process.env.HF_CONSUMER_CLIENT_ID;
+  process.env.APP_ORIGIN = "http://localhost:4765";
+  expect(() => oauth.consumerConfiguration()).toThrow("not configured");
+  process.env.APP_ORIGIN = "https://particl.example";
+});
+
+test("authorization checks exact account, workspace and browser session before consuming once", async () => {
+  const { store } = await modules(),
+    flow = await start(),
+    state = flow.params.get("state")!;
+  const bound = {
+    ...flow.id,
+    sessionHash: store.hashConsumerSecret(flow.session),
+  };
+  expect(
+    await store.consumeAuthorization(state, { ...bound, userId: "another" }),
+  ).toBeNull();
+  expect(
+    await store.consumeAuthorization(state, {
+      ...bound,
+      workspaceId: "another",
+    }),
+  ).toBeNull();
+  expect(
+    await store.consumeAuthorization(state, {
+      ...bound,
+      sessionHash: store.hashConsumerSecret("new-session"),
+    }),
+  ).toBeNull();
+  const values = await Promise.all([
+    store.consumeAuthorization(state, bound),
+    store.consumeAuthorization(state, bound),
+  ]);
+  expect(values.filter(Boolean)).toHaveLength(1);
+  expect(await store.consumeAuthorization(state, bound)).toBeNull();
+});
+
+test("expired, superseded and disconnected authorization states cannot exchange", async () => {
+  const { store, oauth } = await modules(),
+    flow = await start(),
+    bound = { ...flow.id, sessionHash: store.hashConsumerSecret(flow.session) };
+  expect(
+    await store.consumeAuthorization(
+      flow.params.get("state")!,
+      bound,
+      Date.now() + store.AUTHORIZATION_TTL + 1,
+    ),
+  ).toBeNull();
+  const first = await start(flow.id),
+    second = await start(flow.id);
+  expect(
+    await store.consumeAuthorization(first.params.get("state")!, bound),
+  ).toBeNull();
+  await store.disconnectConsumer(flow.id);
+  let calls = 0;
+  await expect(
+    oauth.finishConsumerAuthorization(
+      second.id,
+      second.session,
+      second.params,
+      asFetch(async () => {
+        calls++;
+        return tokenResponse();
+      }),
+    ),
+  ).rejects.toMatchObject({ code: "invalid_state" });
+  expect(calls).toBe(0);
+});
+
+test("callback exchanges captured client and redirect exactly once; stores encrypted tokens and safe status", async () => {
+  const { oauth, platform } = await modules(),
+    flow = await start();
+  let calls = 0;
+  const fetcher = asFetch(async (url, init) => {
+    calls++;
+    expect(url).toBe("https://clerk.higgsfield.ai/oauth/token");
+    expect(init?.redirect).toBe("error");
+    expect(init?.headers).toMatchObject({
+      "Content-Type": "application/x-www-form-urlencoded",
+    });
+    const form = new URLSearchParams(String(init?.body));
+    expect(form.get("client_id")).toBe(flow.url.searchParams.get("client_id"));
+    expect(form.get("redirect_uri")).toBe(
+      flow.url.searchParams.get("redirect_uri"),
+    );
+    expect(form.get("resource")).toBe(oauth.CONSUMER_RESOURCE);
+    expect(form.has("client_secret")).toBe(false);
+    return tokenResponse();
+  });
+  process.env.HF_CONSUMER_CLIENT_ID = "different-client-after-start";
+  await oauth.finishConsumerAuthorization(
+    flow.id,
+    flow.session,
+    flow.params,
+    fetcher,
+  );
+  delete process.env.HF_CONSUMER_CLIENT_ID;
+  await expect(
+    oauth.finishConsumerAuthorization(
+      flow.id,
+      flow.session,
+      flow.params,
+      fetcher,
+    ),
+  ).rejects.toMatchObject({ code: "invalid_state" });
+  expect(calls).toBe(1);
+  const row = (
+    await platform.platformDb().execute({
+      sql: "SELECT * FROM higgsfield_consumer_connections WHERE workspace_id=?",
+      args: [flow.id.workspaceId],
+    })
+  ).rows[0];
+  expect(JSON.stringify(row)).not.toContain("access-private");
+  expect(JSON.stringify(row)).not.toContain("refresh-private");
+  const status = await oauth.getConsumerConnection(flow.id);
+  expect(status).toMatchObject({ connected: true, requiresReconnect: false });
+  expect(Object.keys(status).sort()).toEqual([
+    "connected",
+    "connectedAt",
+    "expiresAt",
+    "requiresReconnect",
+  ]);
+  expect(
+    await oauth.getConsumerAccessToken(
+      flow.id.workspaceId,
+      flow.id.userId,
+      fetcher,
+    ),
+  ).toBe("access-private-abc");
+  expect(
+    await oauth.getConsumerAccessToken("wrong", flow.id.userId, fetcher),
+  ).toBeNull();
+  expect(calls).toBe(1);
+});
+
+test("wrong issuer and ambiguous token response fail closed, redact upstream errors and never repeat exchange", async () => {
+  const { oauth } = await modules(),
+    wrong = await start();
+  let calls = 0;
+  const fetcher = asFetch(async () => {
+    calls++;
+    throw new Error("secret upstream token leaked");
+  });
+  wrong.params.set("iss", "https://untrusted.example");
+  await expect(
+    oauth.finishConsumerAuthorization(
+      wrong.id,
+      wrong.session,
+      wrong.params,
+      fetcher,
+    ),
+  ).rejects.toMatchObject({ code: "authorization_failed" });
+  expect(calls).toBe(0);
+  const flow = await start();
+  const error = await oauth
+    .finishConsumerAuthorization(flow.id, flow.session, flow.params, fetcher)
+    .catch((error) => error);
+  expect(error.message).not.toContain("secret");
+  expect(error.cause).toBeUndefined();
+  await expect(
+    oauth.finishConsumerAuthorization(
+      flow.id,
+      flow.session,
+      flow.params,
+      fetcher,
+    ),
+  ).rejects.toMatchObject({ code: "invalid_state" });
+  expect(calls).toBe(1);
+  expect(await oauth.getConsumerConnection(flow.id)).toMatchObject({
+    connected: false,
+  });
+});
+
+test("disconnect during code exchange prevents a late callback from restoring the connection", async () => {
+  const { oauth, store } = await modules(),
+    flow = await start();
+  let respond!: (response: Response) => void, called!: () => void;
+  const entered = new Promise<void>((resolve) => (called = resolve));
+  const pending = oauth.finishConsumerAuthorization(
+    flow.id,
+    flow.session,
+    flow.params,
+    asFetch(async () => {
+      called();
+      return new Promise((resolve) => (respond = resolve));
+    }),
+  );
+  await entered;
+  await store.disconnectConsumer(flow.id);
+  respond(tokenResponse());
+  await expect(pending).rejects.toMatchObject({ code: "session_changed" });
+  expect(await oauth.getConsumerConnection(flow.id)).toMatchObject({
+    connected: false,
+  });
+});
+
+test("concurrent refresh claims rotate once; later readers use the committed token without another refresh", async () => {
+  const { oauth } = await modules(),
+    flow = await connected(Date.now() + 1000);
+  let respond!: (response: Response) => void,
+    called!: () => void,
+    calls = 0;
+  const entered = new Promise<void>((resolve) => (called = resolve));
+  const fetcher = asFetch(async (_url, init) => {
+    calls++;
+    const form = new URLSearchParams(String(init?.body));
+    expect(form.get("refresh_token")).toBe(flow.tokens.refreshToken);
+    called();
+    return new Promise((resolve) => (respond = resolve));
+  });
+  const first = oauth.getConsumerAccessToken(
+    flow.id.workspaceId,
+    flow.id.userId,
+    fetcher,
+  );
+  await entered;
+  await expect(
+    oauth.getConsumerAccessToken(flow.id.workspaceId, flow.id.userId, fetcher),
+  ).rejects.toMatchObject({ code: "connection_busy" });
+  respond(tokenResponse());
+  expect(await first).toBe("access-private-abc");
+  expect(
+    await oauth.getConsumerAccessToken(
+      flow.id.workspaceId,
+      flow.id.userId,
+      fetcher,
+    ),
+  ).toBe("access-private-abc");
+  expect(calls).toBe(1);
+});
+
+test("ambiguous refresh and malformed refresh token require reconnect without replay", async () => {
+  const { oauth } = await modules();
+  for (const response of [
+    null,
+    Response.json({
+      access_token: "new-token",
+      expires_in: 3600,
+      token_type: "Bearer",
+      refresh_token: "",
+    }),
+  ]) {
+    const flow = await connected(Date.now() + 1000);
+    let calls = 0;
+    const fetcher = asFetch(async () => {
+      calls++;
+      if (!response) throw new Error("secret lost acknowledgement");
+      return response;
+    });
+    await expect(
+      oauth.getConsumerAccessToken(
+        flow.id.workspaceId,
+        flow.id.userId,
+        fetcher,
+      ),
+    ).rejects.toMatchObject({ code: "reconnect_required" });
+    await expect(
+      oauth.getConsumerAccessToken(
+        flow.id.workspaceId,
+        flow.id.userId,
+        fetcher,
+      ),
+    ).rejects.toMatchObject({ code: "reconnect_required" });
+    expect(calls).toBe(1);
+    expect(await oauth.getConsumerConnection(flow.id)).toMatchObject({
+      connected: false,
+      requiresReconnect: true,
+    });
+  }
+});
+
+test("a validated refresh may retain an omitted refresh token and its original scope", async () => {
+  const { oauth, store } = await modules(),
+    flow = await connected(Date.now() + 1000);
+  expect(
+    await oauth.getConsumerAccessToken(
+      flow.id.workspaceId,
+      flow.id.userId,
+      asFetch(async () =>
+        Response.json({
+          access_token: "refreshed-access",
+          expires_in: 3600,
+          token_type: "Bearer",
+        }),
+      ),
+    ),
+  ).toBe("refreshed-access");
+  const access = await store.claimConsumerAccess(
+    flow.id,
+    Date.now() + 3600_000,
+  );
+  expect(access.kind).toBe("refresh");
+  if (access.kind === "refresh") {
+    expect(access.claim.tokens.refreshToken).toBe(flow.tokens.refreshToken);
+    expect(access.claim.tokens.scope).toBe(flow.tokens.scope);
+  }
+});
+
+test("expired refresh lease cannot be reclaimed and disconnect cannot be undone by late rotation", async () => {
+  const { store, oauth } = await modules(),
+    flow = await connected(Date.now() + 1000);
+  const access = await store.claimConsumerAccess(flow.id);
+  expect(access.kind).toBe("refresh");
+  expect(
+    await store.claimConsumerAccess(
+      flow.id,
+      Date.now() + store.REFRESH_LEASE_TTL + 1,
+    ),
+  ).toEqual({ kind: "reconnect" });
+  if (access.kind === "refresh")
+    expect(
+      await store.finishConsumerRefresh(access.claim, {
+        ...flow.tokens,
+        accessToken: "late",
+      }),
+    ).toBe(false);
+  const another = await connected(Date.now() + 1000);
+  let respond!: (response: Response) => void, called!: () => void;
+  const entered = new Promise<void>((resolve) => (called = resolve));
+  const pending = oauth.getConsumerAccessToken(
+    another.id.workspaceId,
+    another.id.userId,
+    asFetch(async () => {
+      called();
+      return new Promise((resolve) => (respond = resolve));
+    }),
+  );
+  await entered;
+  await store.disconnectConsumer(another.id);
+  respond(tokenResponse());
+  await expect(pending).rejects.toMatchObject({ code: "reconnect_required" });
+  expect(await oauth.getConsumerConnection(another.id)).toMatchObject({
+    connected: false,
+    requiresReconnect: false,
+  });
+});
+
+test("oversized token body is cancelled and ciphertext swapped across accounts cannot authorize", async () => {
+  const { oauth, platform } = await modules(),
+    flow = await start();
+  let cancelled = false;
+  const oversized = asFetch(
+    async () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            controller.enqueue(new Uint8Array(33_000));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+  );
+  await expect(
+    oauth.finishConsumerAuthorization(
+      flow.id,
+      flow.session,
+      flow.params,
+      oversized,
+    ),
+  ).rejects.toMatchObject({ code: "authorization_failed" });
+  expect(cancelled).toBe(true);
+  const first = await connected(),
+    second = await connected();
+  const ciphertext = (
+    await platform.platformDb().execute({
+      sql: "SELECT tokens_enc FROM higgsfield_consumer_connections WHERE workspace_id=?",
+      args: [first.id.workspaceId],
+    })
+  ).rows[0].tokens_enc;
+  await platform.platformDb().execute({
+    sql: "UPDATE higgsfield_consumer_connections SET tokens_enc=? WHERE workspace_id=?",
+    args: [ciphertext, second.id.workspaceId],
+  });
+  await expect(
+    oauth.getConsumerAccessToken(second.id.workspaceId, second.id.userId),
+  ).rejects.toMatchObject({ code: "reconnect_required" });
+});
+
+test("disconnect succeeds even when upstream revoke fails and exposes no token in its error", async () => {
+  const { oauth } = await modules(),
+    flow = await connected();
+  let calls = 0;
+  await oauth.removeConsumerConnection(
+    flow.id,
+    asFetch(async (url, init) => {
+      calls++;
+      expect(url).toBe("https://clerk.higgsfield.ai/oauth/token/revoke");
+      expect(new URLSearchParams(String(init?.body)).get("token")).toBe(
+        flow.tokens.refreshToken,
+      );
+      throw new Error("private failed revoke");
+    }),
+  );
+  expect(calls).toBe(1);
+  expect(await oauth.getConsumerConnection(flow.id)).toEqual({
+    connected: false,
+    requiresReconnect: false,
+  });
+});
+
+async function routeFixture() {
+  const auth = await import("../../lib/auth"),
+    tenant = await import("../../lib/tenant"),
+    scope = await import("../../lib/workbench/request-scope");
+  const account = await import("../../lib/accountDb"),
+    media = await import("../../lib/mediaBindings");
+  let store = {
+    workspace: { id: "ws", deletedAt: null },
+    user: { id: "owner", role: "admin", owner: true },
+  } as TenantStore;
+  const source = ts.createSourceFile(
+    "auth.ts",
+    readFileSync("lib/auth.ts", "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const declaration = source.statements.find(
+    (statement) =>
+      ts.isFunctionDeclaration(statement) &&
+      statement.name?.text === "withTenant",
+  )!;
+  const exports = {} as Pick<typeof auth, "withTenant">;
+  new Function(
+    "exports",
+    "resolveStore",
+    "runWithStore",
+    "NoTenantError",
+    "MediaSourceError",
+    "workbenchScopeFor",
+    "recoveryRoute",
+    ts.transpileModule(declaration.getText(source), {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }).outputText,
+  )(
+    exports,
+    async () => store,
+    tenant.runWithStore,
+    tenant.NoTenantError,
+    media.MediaSourceError,
+    scope.workbenchScopeFor,
+    (handler: unknown) => handler,
+  );
+  let starts = 0,
+    disconnects = 0,
+    limit = false;
+  const dependencies: Record<string, unknown> = {
+    "next/headers": {
+      cookies: async () => ({ get: () => ({ value: "session" }) }),
+    },
+    "@/lib/auth": { ...auth, withTenant: exports.withTenant },
+    "@/lib/tenant": tenant,
+    "@/lib/workbench/request-scope": scope,
+    "@/lib/accountDb": {
+      AccountError: account.AccountError,
+      takeAccountLimit: async (_key: string, count: number, window: number) => {
+        expect(count).toBe(5);
+        expect(window).toBe(300_000);
+        if (limit) throw new account.AccountError("Too many requests.", 429);
+      },
+    },
+    "@/lib/higgsfield-consumer/oauth": {
+      ...(await modules()).oauth,
+      beginConsumerAuthorization: async () => {
+        starts++;
+        return { url: "https://clerk.higgsfield.ai/oauth/authorize" };
+      },
+      getConsumerConnection: async () => ({
+        connected: false,
+        requiresReconnect: false,
+      }),
+      removeConsumerConnection: async () => {
+        disconnects++;
+      },
+    },
+  };
+  const routes: Record<
+    string,
+    Record<string, (request: Request, ctx?: unknown) => Promise<Response>>
+  > = {};
+  for (const name of ["connect", "connection"]) {
+    const loaded = { exports: {} };
+    new Function(
+      "require",
+      "module",
+      "exports",
+      ts.transpileModule(
+        readFileSync(`app/api/higgsfield/consumer/${name}/route.ts`, "utf8"),
+        {
+          compilerOptions: {
+            module: ts.ModuleKind.CommonJS,
+            target: ts.ScriptTarget.ES2022,
+          },
+        },
+      ).outputText,
+    )(
+      (id: string) => {
+        if (!(id in dependencies)) throw new Error(id);
+        return dependencies[id];
+      },
+      loaded,
+      loaded.exports,
+    );
+    routes[name] = loaded.exports;
+  }
+  return {
+    set: (value: TenantStore) => (store = value),
+    original: () => store,
+    counts: () => ({ starts, disconnects }),
+    limit: () => {
+      limit = true;
+    },
+    request: (
+      route: string,
+      method: string,
+      captured?: string,
+      origin?: string,
+    ) =>
+      routes[route][method](
+        new Request(
+          `https://particl.example/api/higgsfield/consumer/${route}`,
+          {
+            method,
+            headers: {
+              ...(captured ? { "X-Workbench-Scope": captured } : {}),
+              ...(origin ? { origin } : {}),
+            },
+          },
+        ),
+      ),
+  };
+}
+test("real route guards reject stale scope, cross-origin, bearer tokens and nonowners before starting or disconnecting", async () => {
+  const route = await routeFixture(),
+    original = route.original(),
+    scope = "particl-active-ws-owner";
+  expect((await route.request("connect", "POST")).status).toBe(409);
+  expect((await route.request("connect", "POST", "stale")).status).toBe(409);
+  expect(
+    (await route.request("connect", "POST", scope, "https://other.example"))
+      .status,
+  ).toBe(403);
+  expect((await route.request("connection", "GET")).status).toBe(409);
+  for (const tokenScope of ["read", "render"] as const) {
+    route.set({
+      ...original,
+      token: { id: "token", name: "Token", scope: tokenScope, capUsd: null },
+    });
+    expect((await route.request("connect", "POST", scope)).status).toBe(403);
+    expect((await route.request("connection", "DELETE", scope)).status).toBe(
+      403,
+    );
+  }
+  route.set({ ...original, user: { ...original.user!, owner: false } });
+  expect((await route.request("connect", "POST", scope)).status).toBe(403);
+  expect(route.counts()).toEqual({ starts: 0, disconnects: 0 });
+  route.set(original);
+  expect((await route.request("connect", "POST", scope)).status).toBe(200);
+  expect((await route.request("connection", "DELETE", scope)).status).toBe(200);
+  route.limit();
+  expect((await route.request("connect", "POST", scope)).status).toBe(429);
+  expect(route.counts()).toEqual({ starts: 1, disconnects: 1 });
+});

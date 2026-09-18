@@ -219,6 +219,21 @@ return await withRecoveryActivity('purge', async () => {
       await completeStage("database_at");
     }
     report.dbDropped = true;
+    // Consumer OAuth grants live in the platform database, not the tenant DB.
+    // Remove every owner's grant and pending authorization before declaring
+    // the workspace purged. A late exchange/refresh cannot pass its row CAS.
+    const consumerTables = await p.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('higgsfield_consumer_connections','higgsfield_consumer_authorizations')",
+    );
+    if (consumerTables.rows.length) {
+      const names = new Set(consumerTables.rows.map(row => String(row.name)));
+      await p.batch(
+        ["higgsfield_consumer_connections", "higgsfield_consumer_authorizations"]
+          .filter(table => names.has(table))
+          .map(table => ({ sql: `DELETE FROM ${table} WHERE workspace_id=?`, args: [ws.id] })),
+        "write",
+      );
+    }
     // Provisioning keeps a sealed access token so failed setup can resume.
     // Once the database is gone that second copy must be removed too.
     const provisioning = await p.execute(

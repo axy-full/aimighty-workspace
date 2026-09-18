@@ -1214,7 +1214,7 @@ export default function Studio({
       : p.nodes;
   const latestPlan = p.plans.at(-1);
   function renderMarketingPanel(){return <MarketingStudioPanel key={p.id} task={marketingDraft.task} instructions={marketingDraft.instructions} onTask={task=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,task}}))} onInstructions={instructions=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,instructions}}))} project={p} enabled={ready&&signedIn&&!transitioning} busy={busy} references={contextIds.length} jobs={jobs.atomikJobs} error={jobs.error} onBriefChange={brief=>change(old=>({...old,marketingBrief:brief}))} onRun={request=>void runGenie(request,'marketing','Considered')} onApply={applyPlan} onContext={()=>{setAtomOpen(true);setAtomTab('context')}} onActivity={()=>{setAtomOpen(true);setAtomTab('runs')}}/>;}
-  async function importMoleculrImage(url:string):Promise<Asset>{
+  async function importMoleculrImage(url:string,category:'Product'|'Brand'='Product'):Promise<Asset>{
     if(transitioningRef.current||!readyRef.current||!signedIn)throw new Error('Open a saved project first.');
     const draftId=pRef.current.id;
     if(pRef.current.assets.length>=500)throw new Error('This project has reached its 500-asset limit.');
@@ -1229,10 +1229,10 @@ export default function Studio({
       if(!ext[mime]||Number(response.headers.get('content-length')||0)>10*1024*1024)throw new Error('The product image has an unsupported format or size.');
       const blob=await response.blob();if(blob.size>10*1024*1024)throw new Error('Product images must be 10 MB or smaller.');
       if(pRef.current.id!==draftId||transitioningRef.current||activeStorageKey.current!==storageKey)throw new Error('The project changed. Return to it before importing.');
-      const file=new File([blob],`product-reference.${ext[mime]}`,{type:mime});
+      const file=new File([blob],`${category.toLowerCase()}-reference.${ext[mime]}`,{type:mime});
       const data=await uploadWorkbench(file,undefined,storageKey);
       if(pRef.current.id!==draftId||transitioningRef.current||activeStorageKey.current!==storageKey)throw new Error('The original is in workspace uploads. Return to the original project to attach it.');
-      const asset:Asset={id:data.id,uploadId:data.id,url:data.url,name:file.name,kind:'image',category:'Product',mime,description:'Original product reference imported from '+new URL(url).hostname,prompt:'',status:'Draft',version:1,locked:false,refs:[]};
+      const asset:Asset={id:data.id,uploadId:data.id,url:data.url,name:file.name,kind:'image',category,mime,description:`Original ${category.toLowerCase()} reference imported from `+new URL(url).hostname,prompt:'',status:'Draft',version:1,locked:false,refs:[]};
       change(old=>({...old,assets:[...old.assets,asset]}));return asset;
     }finally{uploadingRef.current--;setUploading(uploadingRef.current>0);}
   }

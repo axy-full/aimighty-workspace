@@ -5,6 +5,9 @@ const id = z.string().min(1).max(100);
 export const brandKitSchema = z.object({
   name: z.string().max(200), tagline: z.string().max(300), voice: z.string().max(2000), audience: z.string().max(2000),
   colors: z.array(z.string().regex(/^#[\da-f]{6}$/i)).max(8), font: z.enum(['system', 'editorial', 'geometric']), logoAssetId: id.optional(),
+  website: z.string().max(2000).optional(), description: z.string().max(4000).optional(),
+  fontFamilies: z.array(z.string().max(120)).max(8).optional(),
+  source: z.object({url:z.string().url().max(2048).refine(value=>/^https?:\/\//i.test(value)),reviewedAt:z.string().datetime()}).strict().optional(),
 }).strict();
 export const productSourceSchema = z.object({ url: z.string().url().max(2000).refine(value => /^https?:\/\//i.test(value)), title: z.string().max(300).optional(), reviewedAt: z.string().datetime() }).strict();
 export const productProfileSchema = z.object({
