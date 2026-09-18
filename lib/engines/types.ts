@@ -33,7 +33,7 @@ export type AudioRenderRequest = {
 export type RenderRequest = VideoRenderRequest | StillRenderRequest | AudioRenderRequest;
 
 /** An asynchronous job at the vendor: what to ask after, and where. */
-export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; credentialFingerprint?: string };
+export type RenderHandle = { provider: ProviderId; ref: string; model: string; endpoint?: string; cancelUrl?: string; credentialFingerprint?: string };
 
 /** Bytes back from a synchronous engine, with what it charged. */
 export type Produced = {
@@ -70,6 +70,7 @@ export type EngineAdapter = {
   render(req: RenderRequest): Promise<RenderOutcome>;
   /** Ask after an asynchronous job. Throws when the vendor cannot be reached; the caller decides what a throw means. */
   poll?(handle: RenderHandle): Promise<PollResult>;
+  cancel?(handle: RenderHandle): Promise<void>;
   /** The master's bytes from where the vendor left them. */
   fetchMaster?(url: string): Promise<Buffer>;
   /** A text call — the thinking engine's shape. */

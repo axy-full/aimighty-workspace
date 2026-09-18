@@ -1,3 +1,7 @@
+import { isGenjutsuModel } from "./genjutsuTypes";
+import { higgsfieldSubmissionRejected } from "./higgsfield";
+import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
+import type { RenderHandle } from "./engines/types";
 import { ASTRA_MODEL, astraSettings } from "./astra";
 import { withRecoveryJob } from "./recovery";
 import { db, ready, now } from "./db";
@@ -40,6 +44,7 @@ type SubmittedVideo = {
   kind: "video";
   taskId: string;
   endpoint?: string;
+  higgsfieldHandle?: RenderHandle;
   queueMs: number;
   submitMs: number;
 };
@@ -63,7 +68,7 @@ async function submissionRow(
 }
 function knownTask(row: SubmissionRow): string | null {
   const p = JSON.parse(row.params || "{}");
-  const id = row.ark_task_id || p.falRequestId;
+  const id = row.ark_task_id || p.falRequestId || p.higgsfieldVideoHandle?.ref;
   return typeof id === "string" && id.length > 0 ? id : null;
 }
 
@@ -85,6 +90,15 @@ async function rememberSubmission(
   out: SubmittedVideo,
 ): Promise<void> {
   await writeSubmission(async () => {
+    if (isGenjutsuModel(job.model.id)) {
+      if (!out.higgsfieldHandle || out.higgsfieldHandle.model !== job.model.id || out.higgsfieldHandle.ref !== out.taskId) throw new Error("The Genjutsu receipt is incomplete.");
+      const saved = await db().execute({ sql: `UPDATE generations SET status=CASE WHEN status IN ('succeeded','cancelled') THEN status ELSE 'running' END,
+        attempts=1,queue_ms=?,submit_ms=?,error=NULL,params=json_set(params,'$.higgsfieldVideoHandle',json(?),'$.producedOutcome',json(?)),updated_at=?
+        WHERE id=? AND deleted=0 AND (json_extract(params,'$.higgsfieldVideoHandle.ref') IS NULL OR json_extract(params,'$.higgsfieldVideoHandle.ref')=?)`,
+        args: [out.queueMs,out.submitMs,JSON.stringify(out.higgsfieldHandle),JSON.stringify(out),now(),job.genId,out.taskId] });
+      if (!saved.rowsAffected) throw new Error("The submitted take is no longer available.");
+      return;
+    }
     const result = await db().execute({
       sql:
         job.model.provider === "fal"
@@ -161,7 +175,7 @@ async function submissionFailed(
   }
   await writeSubmission(() =>
     db().execute({
-      sql: `UPDATE generations SET status='failed',error=?,attempts=1,cost_usd=COALESCE(cost_usd,?),updated_at=? WHERE id=? AND deleted=0 AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL`,
+      sql: `UPDATE generations SET status='failed',error=?,attempts=1,cost_usd=COALESCE(cost_usd,?),updated_at=? WHERE id=? AND deleted=0 AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL AND json_extract(params,'$.higgsfieldVideoHandle') IS NULL`,
       args: [error, retainedCost, now(), job.genId],
     }),
   ).catch(() => {});
@@ -188,6 +202,7 @@ async function submissionFailed(
 export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
   return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     await ready();
+    if (isGenjutsuModel(job.model.id)) await restoreHiggsfieldGenerationReceipt(job.genId);
     let row = await submissionRow(job.genId);
     if (!row) return { ok: false, error: "No such take.", cls: "fatal" };
     const existing = knownTask(row);
@@ -240,7 +255,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
     const claimed = await db().execute({
       sql: `UPDATE generations SET params=json_set(params,'$.paidClaim',?),attempts=1,updated_at=?
     WHERE id=? AND kind='video' AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.paidClaim') IS NULL
-      AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL`,
+      AND ark_task_id IS NULL AND json_extract(params,'$.falRequestId') IS NULL AND json_extract(params,'$.higgsfieldVideoHandle') IS NULL`,
       args: [now(), now(), job.genId],
     });
     if (!claimed.rowsAffected) {
@@ -286,6 +301,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
         taskId: out.handle.ref,
         queueMs: started - job.ts,
         submitMs: now() - started,
+        ...(isGenjutsuModel(job.model.id) ? { higgsfieldHandle: out.handle } : {}),
         ...(job.model.provider === "fal"
           ? {
               endpoint:
@@ -304,7 +320,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
       ).replace(/; it will be retried\./, "; no additional request was sent.");
       const uncertain =
         !(error instanceof FundingSourceChangedError) &&
-        !definitelyRejected(message);
+        !definitelyRejected(message) && !higgsfieldSubmissionRejected(error);
       return submissionFailed(
         job,
         uncertain
@@ -313,6 +329,11 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
         uncertain,
       );
     }
+    if (submitted.higgsfieldHandle) {
+      // An independent platform receipt survives failure of the tenant handle write.
+      // Receipt failure must never cause another paid POST: the paidClaim is permanent.
+      await saveHiggsfieldGenerationReceipt(job.genId, submitted.higgsfieldHandle, job.params.higgsfieldCredentialFingerprint!).catch(() => {});
+    }
     try {
       await rememberSubmission(job, submitted);
       return { ok: true, taskId: submitted.taskId, attempts: 1 };
@@ -320,6 +341,8 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
       // A database timeout may be a lost acknowledgment of a committed write.
       // Recover the known handle; never go through engine.render a second time.
       const recovered = await submissionRow(job.genId).catch(() => undefined);
+      if (submitted.higgsfieldHandle)
+        await saveHiggsfieldGenerationReceipt(job.genId, submitted.higgsfieldHandle, job.params.higgsfieldCredentialFingerprint!).catch(() => {});
       if (recovered && knownTask(recovered) === submitted.taskId)
         return { ok: true, taskId: submitted.taskId, attempts: 1 };
       return submissionFailed(

@@ -9,7 +9,7 @@ The September 2026 four-suite design brief reorganizes the existing application.
 | Particl | Brief, Script, Look, Cast, Elements, Rig, Boards, Takes, Edit, Deliver | The ten workbench stages, with their original stage IDs and project save/recovery behavior. |
 | Atomik | Runs, Recipes, Approvals, Budget, Models | Durable pipelines, exact saved-plan cloning, per-stage priced approvals, settled job accounting, project caps, existing thinking model and effort controls. |
 | Moleculr | Product, Cast, Format, Variants, Publish | Project references, Soul identities, Marketing Studio, the existing generation dialog, original takes, edit and delivery tools. |
-| Subatomic | Trends, Presets, Factory, Score, Schedule | Research supplied by the user, saved pipeline recipes, production runs, editorial approval queues and delivery handoffs. |
+| Subatomik viral studio | Motion Transfer, Object Swap, Creative Directions, History | Genjutsu through Cloud and connected-account routes, shared originals, reviewed quotes, frame extraction, comparison, recreation and editorial handoffs. See [the Genjutsu contract](subatomik-genjutsu.md). |
 
 The shared shell includes a suite selector, project context, credits and account access, All assets, a resizable Atomik rail, and the appropriate bottom page dock. Particl retains its Projects, Production, Make, Library and Workspace room rail. Billing and account security use the same navigation without changing authentication or payments. The home route presents the four suites and saved projects instead of redirecting to the workbench.
 
@@ -26,13 +26,13 @@ The existing generation dialog owns engine selection, explicit first-frame choic
 ## Capability boundaries
 
 - Product URLs are saved references, not a claim that a storefront was scraped.
-- Subatomic's research desk uses supplied notes and links. No live trend provider is connected.
+- Subatomik's creative directions are Particl prompt starting points. The official Genjutsu motion gallery is linked; no live gallery or trend feed is invented.
 - Score shows editorial decisions and approval checkpoints, not an invented engagement prediction.
 - Publish and Schedule lead to review and delivery. Social accounts and posting/scheduling providers are not connected by this release.
 - Make retains the current saved-project requirement. It does not silently create unfiled paid work.
 - The existing subscription and credit model remains unchanged. Stripe is outside this change.
 
-Subatomic research drafts use account/project-scoped browser storage. The shared draft hook now flushes pending keystrokes on hard reload/page exit as well as client navigation, preserving immediate reload recovery without writing into another scope.
+Legacy `/subatomic` links redirect to `/subatomik` while preserving project context. Creator controls and recovery records remain scoped to the account and selected project.
 
 ## Validation
 

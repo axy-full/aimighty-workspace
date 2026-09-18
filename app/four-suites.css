@@ -549,7 +549,7 @@
 }
 .suite-home-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin: 24px 0 34px;
 }
@@ -922,11 +922,11 @@
 }
 
 /* All suites are permanently visible in the top navigation. */
-@media(min-width:1001px){
+@media(min-width:1201px){
  .suite-header .studio-navigation.studio-navigation,.ps.four-suite-workbench .studio-redesign .project-bar{gap:12px;height:58px;min-height:58px;}
  .suite-switcher .suite-top-tabs{min-height:57px;}
 }
-@media(max-width:1000px){
+@media(max-width:1200px){
  .suite-header .studio-navigation.studio-navigation,.suite-application .suite-header:not(.suite-account-header) .studio-navigation.studio-navigation{display:grid;grid-template-columns:auto minmax(0,1fr) 36px 36px;grid-template-rows:36px 46px 36px;gap:4px 8px;height:auto;min-height:138px;padding:6px 10px;}
  .suite-header .suite-wordmark{grid-column:1;grid-row:1;}
  .suite-header .studio-account{grid-column:2 / 5;grid-row:1;justify-self:end;}
@@ -934,8 +934,8 @@
  .suite-header .suite-project-context,.suite-application .suite-header .suite-project-context{grid-column:1 / 3;grid-row:3;justify-content:flex-start;}
  .suite-header .suite-assets-toggle,.suite-application .suite-header .suite-assets-toggle{grid-column:3;grid-row:3;}
  .suite-header .suite-agent-toggle,.suite-application .suite-header .suite-agent-toggle{grid-column:4;grid-row:3;}
- .suite-switcher .suite-top-tabs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.5fr);gap:2px;min-width:0;}
- .suite-switcher .suite-top-tabs a{min-width:0;padding:5px 7px;gap:5px;white-space:normal;text-align:center;font-size:11px;line-height:1.3;}
+ .suite-switcher .suite-top-tabs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr) minmax(0,1fr);gap:2px;min-width:0;}
+ .suite-switcher .suite-top-tabs a{min-width:0;padding:5px 4px;gap:4px;white-space:normal;text-align:center;font-size:11px;line-height:1.3;}
  .suite-switcher .suite-top-tabs .suite-dot{width:5px;height:5px;}
  .ps.four-suite-workbench .studio-redesign .project-bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:36px 46px 36px;height:138px;min-height:138px;padding:6px 10px;gap:4px 8px;}
  .ps.four-suite-workbench .studio-redesign .project-bar .suite-wordmark{grid-column:1;grid-row:1;}

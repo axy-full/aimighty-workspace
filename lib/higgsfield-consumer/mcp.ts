@@ -18,12 +18,15 @@ import {
   consumerVideoJobId,
   consumerVideoParams,
   parseConsumerVideoCredits,
+  parseConsumerCreditsForParams,
+  sameConsumerValue,
   parseConsumerVideoInput,
   parseConsumerVideoWorkspace,
   validateConsumerVideoStatus,
   type ConsumerVideoInput,
   type ConsumerVideoWorkspace,
 } from "./video-contract";
+import { consumerGenjutsuParams, parseConsumerGenjutsuInput, type ConsumerGenjutsuInput, type ConsumerGenjutsuParams, type ConsumerGenjutsuMedia } from "./genjutsu-contract";
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
 export const DISCOVERY_LIMITS = {
@@ -183,6 +186,10 @@ type ConsumerSession = {
     input: ConsumerVideoInput,
     sending: () => void,
   ) => Promise<Record<string, unknown>>;
+  genjutsuStatus: (jobId:string)=>Promise<Record<string,unknown>>;
+  genjutsuImport: (url: string, type: "image"|"video") => Promise<Record<string,unknown>>;
+  genjutsuQuote: (params: ConsumerGenjutsuParams) => Promise<Record<string,unknown>>;
+  genjutsuSubmit: (params: ConsumerGenjutsuParams, sending:()=>void) => Promise<Record<string,unknown>>;
   videoStatus: (jobId: string) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
@@ -599,6 +606,10 @@ async function withConsumerSession<T>(
           },
           sending,
         ))!,
+      genjutsuStatus: async jobId=>(await post("tools/call",{name:"job_status",arguments:{jobId,sync:false,raw_data:false}}))!,
+      genjutsuImport: async (url,type) => (await post("tools/call", {name:"media_import_url",arguments:{url,type}}))!,
+      genjutsuQuote: async params => (await post("tools/call", {name:"generate_video",arguments:{params:{...params,get_cost:true}}}))!,
+      genjutsuSubmit: async (params,sending) => (await post("tools/call", {name:"generate_video",arguments:{params:{...params,get_cost:false}}},sending))!,
       videoStatus: async (jobId) =>
         (await post("tools/call", {
           name: "job_status",
@@ -996,6 +1007,217 @@ export async function readConsumerVideoJob(
         matchingWorkspace(workspace, expected);
         const raw = videoReadResult(session, await session.videoStatus(jobId));
         return { jobId, raw, ...validateConsumerVideoStatus(raw, jobId) };
+      },
+    );
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+
+/** Imports only application-authorized originals. The resolve hook persists its
+ * permanent import claim/receipt; this transport never retries a mutation. */
+export async function getConsumerGenjutsuQuote(
+  accessToken: string,
+  value: ConsumerGenjutsuInput,
+  sources: { url: string; type: "image" | "video" }[],
+  options: Options & {
+    resolveMedia: (
+      index: number,
+      workspaceId: string,
+      perform: () => Promise<string>,
+    ) => Promise<string>;
+  },
+) {
+  const input = parseConsumerGenjutsuInput(value);
+  if (
+    sources.length !== input.references.length + 1 ||
+    sources.some(
+      (s, i) =>
+        s.type !== (i === 0 ? "video" : "image") || !safeImportUrl(s.url),
+    )
+  )
+    throw new ConsumerVideoError("invalid_input");
+  try {
+    return await withConsumerSession(
+      accessToken,
+      options,
+      150_000,
+      async (session) => {
+        if (!session.supportsTools)
+          throw new ConsumerVideoError("provider_error");
+        const workspace = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        const medias: ConsumerGenjutsuMedia[] = [];
+        // Sequential bounded imports keep one remote mutation in flight and its
+        // outcome recorded before the next one is admitted.
+        for (let i = 0; i < sources.length; i++) {
+          if (!session.active())
+            throw new ConsumerVideoError("preflight_unavailable");
+          const source = sources[i];
+          let mediaId: string;
+          try {
+            mediaId = await options.resolveMedia(i, workspace.id, async () => {
+              const raw = videoReadResult(
+                session,
+                await session.genjutsuImport(source.url, source.type),
+              );
+              if (
+                !object(raw) ||
+                typeof raw.media_id !== "string" ||
+                (raw.type !== undefined && raw.type !== source.type) ||
+                (raw.error != null && raw.error !== "") ||
+                (raw.warning != null && raw.warning !== "")
+              )
+                throw new ConsumerVideoError("provider_error");
+              return consumerVideoJobId(raw.media_id);
+            });
+          } catch (error) {
+            throw new ConsumerAdmissionStopped(error);
+          }
+          medias.push({ value: mediaId, role: i === 0 ? "video" : "image" });
+        }
+        const params = consumerGenjutsuParams(input, medias);
+        const credits = parseConsumerCreditsForParams(
+          videoReadResult(session, await session.genjutsuQuote(params)),
+          { ...params, get_cost: true },
+        );
+        const current = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        matchingWorkspace(current, workspace.id);
+        return { input, params, workspace: current, credits };
+      },
+    );
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    return videoPreflightError(error);
+  }
+}
+function safeImportUrl(value: string) {
+  try {
+    const u = new URL(value);
+    return (
+      u.protocol === "https:" &&
+      !u.username &&
+      !u.password &&
+      !u.port &&
+      !u.hash
+    );
+  } catch {
+    return false;
+  }
+}
+function checkedGenjutsuParams(
+  input: ConsumerGenjutsuInput,
+  params: ConsumerGenjutsuParams,
+) {
+  const checked = consumerGenjutsuParams(input, params.medias);
+  if (!sameConsumerValue(checked, params))
+    throw new ConsumerVideoError("invalid_input");
+  return checked;
+}
+export async function submitConsumerGenjutsu(
+  accessToken: string,
+  input: ConsumerGenjutsuInput,
+  value: ConsumerGenjutsuParams,
+  expectedWorkspaceId: string,
+  expectedCredits: number,
+  options: Options & { admit: () => Promise<void> },
+): Promise<ConsumerVideoSubmission> {
+  const params = checkedGenjutsuParams(input, value),
+    expected = videoWorkspaceId(expectedWorkspaceId);
+  if (
+    !Number.isFinite(expectedCredits) ||
+    expectedCredits <= 0 ||
+    typeof options.admit !== "function"
+  )
+    throw new ConsumerVideoError("invalid_input");
+  let attempted = false;
+  try {
+    return await withConsumerSession(
+      accessToken,
+      options,
+      QUALIFICATION_LIMITS.timeoutMs,
+      async (session) => {
+        const workspace = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        matchingWorkspace(workspace, expected);
+        const credits = parseConsumerCreditsForParams(
+          videoReadResult(session, await session.genjutsuQuote(params)),
+          { ...params, get_cost: true },
+        );
+        if (credits !== expectedCredits)
+          throw new ConsumerVideoError("quote_changed");
+        const current = parseConsumerVideoWorkspace(
+          videoReadResult(session, await session.videoWorkspaces()),
+        );
+        matchingWorkspace(current, expected);
+        if (current.credits < credits)
+          throw new ConsumerVideoError("insufficient_credits");
+        try {
+          await options.admit();
+        } catch (error) {
+          throw new ConsumerAdmissionStopped(error);
+        }
+        if (!session.active())
+          throw new ConsumerVideoError("preflight_unavailable");
+        const reply = await session.genjutsuSubmit(params, () => {
+          attempted = true;
+        });
+        const raw = normalizeQualificationResult(reply, session.secrets).result;
+        const providerJobId = consumerVideoAcknowledgement(raw, params.model);
+        return providerJobId
+          ? { state: "accepted", providerJobId, raw }
+          : uncertainSubmission(raw);
+      },
+    );
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (attempted) return uncertainSubmission();
+    return videoPreflightError(error);
+  }
+}
+export async function readConsumerGenjutsuJob(
+  accessToken: string,
+  jobId: string,
+  expectedWorkspaceId: string,
+  model: ConsumerGenjutsuParams["model"],
+  options: Options = {},
+) {
+  consumerVideoJobId(jobId);
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  if (!["hf_mult_motion_control", "hf_mult_replace_object"].includes(model))
+    throw new ConsumerVideoError("invalid_input");
+  try {
+    return await withConsumerSession(
+      accessToken,
+      options,
+      QUALIFICATION_LIMITS.timeoutMs,
+      async (session) => {
+        matchingWorkspace(
+          parseConsumerVideoWorkspace(
+            videoReadResult(session, await session.videoWorkspaces()),
+          ),
+          expected,
+        );
+        const raw = videoReadResult(
+          session,
+          await session.genjutsuStatus(jobId),
+        );
+        if (object(raw) && object(raw.generation)) {
+          const generation = raw.generation;
+          if (("id" in generation && consumerVideoJobId(generation.id) !== jobId) ||
+              ("model" in generation && generation.model !== model) ||
+              ("type" in generation && generation.type !== "video"))
+            throw new ConsumerVideoError("invalid_job");
+        }
+        return {
+          jobId,
+          raw,
+          ...validateConsumerVideoStatus(raw, jobId, model),
+        };
       },
     );
   } catch (error) {

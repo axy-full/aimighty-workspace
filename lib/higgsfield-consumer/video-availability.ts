@@ -3,6 +3,7 @@ import { requireTenant } from "../tenant";
 import { uploadReservationsReady } from "../uploadReservations";
 import type { ConsumerJob, ConsumerJson } from "./jobs";
 import { consumerOriginalGenerationId } from "./video-original";
+import { consumerVideoIdentity } from "./original-identity";
 
 export type ConsumerOriginalAvailability =
   "available" | "deleted" | "unavailable" | "not_collected";
@@ -46,6 +47,8 @@ export async function consumerOriginalAvailability(
   ).rows;
   const byId = new Map(rows.map((row) => [String(row.job_id), row]));
   for (const job of completed) {
+    let model: string;
+    try { model = consumerVideoIdentity(job).model; } catch { continue; }
     const original = job.resultManifest!.original as Record<
         string,
         ConsumerJson
@@ -104,7 +107,7 @@ export async function consumerOriginalAvailability(
       row.gen_id !== generationId ||
       row.gen_owner !== job.userId ||
       row.gen_provider !== "higgsfield" ||
-      row.gen_model !== "marketing_studio_video" ||
+      row.gen_model !== model ||
       row.gen_kind !== "video" ||
       row.gen_status !== "succeeded" ||
       params?.consumerJobId !== job.id ||

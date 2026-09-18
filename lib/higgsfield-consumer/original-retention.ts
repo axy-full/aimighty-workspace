@@ -11,9 +11,12 @@ const pendingOriginalIds = `SELECT g.id FROM consumer_video_originals o
   JOIN higgsfield_consumer_jobs j ON j.id=o.job_id AND j.user_id=o.owner_id
     AND j.draft_id=o.draft_id AND j.provider_job_id=o.provider_job_id
   JOIN generations g ON g.id=o.generation_id AND g.created_by=o.owner_id
-  WHERE j.status='accepted' AND j.workflow='marketing-video' AND j.dispatch_claim_hash IS NOT NULL
+  WHERE j.status='accepted' AND j.dispatch_claim_hash IS NOT NULL
+    AND ((j.workflow='marketing-video' AND g.model='marketing_studio_video') OR
+      (j.workflow='genjutsu' AND g.model IN ('hf_mult_motion_control','hf_mult_replace_object')
+        AND g.model=json_extract(CASE WHEN json_valid(j.payload_json) THEN j.payload_json ELSE '{}' END,'$.params.model')))
     AND o.state='stored' AND o.receipt_json IS NOT NULL AND o.sha256 IS NOT NULL
-    AND g.status='succeeded' AND g.provider='higgsfield' AND g.model='marketing_studio_video' AND g.kind='video'
+    AND g.status='succeeded' AND g.provider='higgsfield' AND g.kind='video'
     AND g.stored_url IS NOT NULL AND g.bytes=o.bytes
     AND json_extract(CASE WHEN json_valid(g.params) THEN g.params ELSE '{}' END,'$.consumerJobId')=o.job_id
     AND json_extract(CASE WHEN json_valid(g.params) THEN g.params ELSE '{}' END,'$.consumerProviderJobId')=o.provider_job_id

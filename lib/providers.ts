@@ -51,11 +51,11 @@ export type ProviderDef = {
 
 export const PROVIDERS: ProviderDef[] = [
   {
-    id: "higgsfield", label: "Higgsfield", serves: "Soul character identities",
+    id: "higgsfield", label: "Higgsfield", serves: "Images, identities and Genjutsu video",
     envKey: "HF_CREDENTIALS", baseUrlEnv: "HF_BASE_URL", defaultBaseUrl: "https://api.higgsfield.ai",
     docs: "https://console.higgsfield.ai/models/soul-id/api-reference",
     // Conservative Particl admission limits, not a claim about the vendor's maximums.
-    limits: { maxImageBytes: 20 * 1024 * 1024, maxVideoBytes: 0, maxRequestBytes: 1024 * 1024,
+    limits: { maxImageBytes: 20 * 1024 * 1024, maxVideoBytes: 200 * 1024 * 1024, maxRequestBytes: 1024 * 1024,
       minImagePx: 64, maxImagePx: 8192, minAspect: 0.25, maxAspect: 4, imageFormats: ["jpeg", "jpg", "png", "webp"] },
     rateLimit: "Account limits are managed in Higgsfield. An uncertain paid submission is reconciled without resubmitting.",
     billsFailures: false,

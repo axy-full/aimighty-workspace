@@ -1,3 +1,4 @@
+import { GENJUTSU_MODELS, GENJUTSU_LABELS } from "./genjutsuTypes";
 import type { TaskId } from "./tasks";
 import { FPS } from "./transport";
 /**
@@ -101,6 +102,7 @@ export type ModelDef = {
   soulIdentity?: boolean;
   /** Uses live Higgsfield Marketing Studio quotes and preset discovery. */
   marketing?: boolean;
+  genjutsu?: boolean;
   /** Which tasks this engine can be asked for. Absent means generate only.
    *  Editing and extension are Seedance 2.5 features: 2.0's own ceilings
    *  (three reference videos, fifteen seconds combined) show it was never
@@ -410,6 +412,13 @@ export const MODELS: ModelDef[] = [
     maxVideoSecondsTotal: 0,
     note: "Google's quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
   },
+  ...Object.entries(GENJUTSU_MODELS).map(([variant, id]): ModelDef => ({
+    id, label: GENJUTSU_LABELS[variant as keyof typeof GENJUTSU_LABELS], short: "Genjutsu", family: "genjutsu",
+    provider: "higgsfield", kind: "video", billing: "second", genjutsu: true, hidden: true, paramStyle: "fields",
+    supportsTasks: ["genjutsu"], resolutions: ["720p", "480p"], ratios: ["adaptive"], durations: [],
+    supportsAudio: false, supportsCameraFixed: false, maxReferenceImages: 8, maxReferenceVideos: 1, maxVideoSecondsTotal: 30,
+    use: "Transform an original video with Genjutsu and optional image references. A live quote is required.",
+  })),
   {
     id: MARKETING_IMAGE_MODEL_ID, label: "Marketing Studio Image", short: "Marketing", family: "higgsfield-marketing",
     provider: "higgsfield", kind: "image", billing: "image", marketing: true, hidden: true, paramStyle: "fields",

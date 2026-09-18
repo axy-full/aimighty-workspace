@@ -22,6 +22,9 @@ const HOST =
 const TASKS_URL = `${HOST}/api/v3/contents/generations/tasks`;
 
 export type VideoParams = {
+  higgsfieldCredentialFingerprint?: string;
+  higgsfieldVendorCostUsd?: number;
+  genjutsuSource?: import("./videoMetadata.server").VideoMetadata;
   astra?: import("./astra").AstraSettings;
   astraSource?: import("./videoMetadata.server").VideoMetadata;
   ratio: string;

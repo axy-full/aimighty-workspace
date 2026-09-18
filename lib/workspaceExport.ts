@@ -56,6 +56,10 @@ function generation(row: Row) {
     delete params.higgsfieldVendorCostUsd;
     delete params.higgsfieldStillHandle;
     delete params.higgsfieldStillPollUntil;
+    delete params.higgsfieldVideoHandle;
+    delete params.higgsfieldVideoPollUntil;
+    delete params.higgsfieldVideoPollToken;
+    delete params.genjutsuOriginal;
   }
   return { ...row, params };
 }

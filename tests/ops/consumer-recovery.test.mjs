@@ -221,3 +221,20 @@ test("original collection independently blocks backup and appears in reconciliat
   );
   await assertNoActiveOrUncertain(config, {});
 });
+
+test("a pre-quote media import claim blocks a clean checkpoint and reports recovery without private media handles", async (t) => {
+  const { root, db, config } = await fixture(t);
+  await db.execute(`CREATE TABLE higgsfield_consumer_media_imports (
+    user_id TEXT,draft_id TEXT,quote_key TEXT,source_index INTEGER,state TEXT,
+    media_id TEXT,source_identity TEXT,fingerprint TEXT)`);
+  await db.execute("INSERT INTO higgsfield_consumer_media_imports VALUES('owner','draft','attempt',0,'claimed',NULL,'PRIVATE-SOURCE','PRIVATE-GRANT')");
+  await assert.rejects(assertNoActiveOrUncertain(config, {}), /requires reconciliation/);
+  await recoveryReport(root);
+  const report = await readFile(join(root, 'reconciliation-report.json'), 'utf8');
+  assert.doesNotMatch(report, /PRIVATE-|source_identity|fingerprint|media_id/);
+  assert.deepEqual(JSON.parse(report).actions, [{ database: 'tenant', workspaceIds: ['workspace-a'], table: 'higgsfield_consumer_media_imports', id: 'attempt:0', userId: 'owner', draftId: 'draft', status: 'claimed', disposition: 'reconcile-consumer-media-import-never-replay-claim' }]);
+  await db.execute("UPDATE higgsfield_consumer_media_imports SET state='ready'");
+  await assert.rejects(assertNoActiveOrUncertain(config, {}), /requires reconciliation/);
+  await db.execute("UPDATE higgsfield_consumer_media_imports SET media_id='PRIVATE-MEDIA'");
+  await assertNoActiveOrUncertain(config, {});
+});

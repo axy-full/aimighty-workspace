@@ -108,7 +108,7 @@ async function modules() {
     uploads: await import("../../lib/uploadReservations"),
   };
 }
-async function accepted(m: Awaited<ReturnType<typeof modules>>, mapped = true) {
+async function accepted(m: Awaited<ReturnType<typeof modules>>, mapped = true, variant?: 'motion-transfer' | 'object-swap') {
   await m.database.ready();
   const draftId = `draft-${randomUUID()}`,
     productionId = `project-${randomUUID()}`;
@@ -127,14 +127,16 @@ async function accepted(m: Awaited<ReturnType<typeof modules>>, mapped = true) {
       }),
     ],
   });
+  if (variant) for (const [id, kind, ext] of [['original-motion', 'video', 'mp4'], ['original-look', 'image', 'png']] as const)
+    await m.database.db().execute({ sql: 'INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES(?,?,?,?,100,?,?,?,0)', args: [id, `${id}.${ext}`, `${kind}/${ext}`, ext, 'fixture-hash', `/api/uploads/${id}`, kind] });
   const { job } = await m.jobs.createConsumerJob({
     userId: "owner",
     draftId,
     connectedOwnerId: "owner",
     connectionGeneration: randomUUID(),
-    workflow: "marketing-video",
+    workflow: variant ? "genjutsu" : "marketing-video",
     idempotencyKey: randomUUID(),
-    payload: {
+    payload: variant ? { input: { variant, resolution: '1080p', prompt: 'Keep the camera movement; restage the world.', source: { uploadId: 'original-motion' }, references: [{ uploadId: 'original-look' }] }, params: { model: variant === 'motion-transfer' ? 'hf_mult_motion_control' : 'hf_mult_replace_object' } } : {
       input: {
         ...parseConsumerVideoInput({
           prompt: "A plain bottle.",
@@ -147,7 +149,7 @@ async function accepted(m: Awaited<ReturnType<typeof modules>>, mapped = true) {
     },
     quoteCredits: 75,
     quoteExpiresAt: Date.now() + 60_000,
-    originalAssetIds: [],
+    originalAssetIds: variant ? ['upload:original-motion', 'upload:original-look'] : [],
   });
   const scope = { id: job.id, userId: job.userId, draftId };
   const claim = await m.jobs.claimConsumerDispatch(scope);
@@ -357,6 +359,29 @@ test("completed original availability fails closed on missing or mismatched tena
   await m.tenant.runInTenant(workspace(), async () => {
     await m.database.ready();
     expect(await videoService.consumerVideoView(completed)).toMatchObject({ originalAvailable: false, originalAvailability: "unavailable" });
+  });
+});
+
+test("both consumer Genjutsu modes retain original bindings, their own credit unit and a deletion guard until completion", async () => {
+  const m = await modules(), generation = await import('../../lib/jobs');
+  const availability = await import('../../lib/higgsfield-consumer/video-availability');
+  const retention = await import('../../lib/higgsfield-consumer/original-retention');
+  for (const variant of ['motion-transfer', 'object-swap'] as const) await m.tenant.runInTenant(workspace(), async () => {
+    const { job, productionId } = await accepted(m, true, variant);
+    const collected = await m.originals.collectConsumerVideoOriginal(job, sourceUrl, { fetchDependencies: transport().deps });
+    const gen = (await generation.getGeneration(collected.generationId))!;
+    expect(gen).toMatchObject({ model: variant === 'motion-transfer' ? 'hf_mult_motion_control' : 'hf_mult_replace_object', projectId: productionId, costUsd: null,
+      providerCreditQuote: { provider: 'higgsfield', unit: 'higgsfield_credits', credits: 75, basis: 'approved_quote' },
+      params: { task: 'genjutsu', workbenchProjectId: job.draftId, sourceUploadId: 'original-motion', resolution: '1080p', references: [{ uploadId: 'original-look', role: 'reference_image' }] } });
+    expect(await generation.syncGeneration(gen)).toBe(gen);
+    expect(await retention.consumerOriginalPending(m.database.db(), gen.id)).toBe(true);
+    const scope = { id: job.id, userId: job.userId, draftId: job.draftId }, poll = (await m.jobs.claimConsumerPoll(scope))!;
+    const completed = (await m.jobs.completeConsumerJob({ ...scope, leaseToken: poll.leaseToken, resultManifest: { original: collected } }))!;
+    expect((await availability.consumerOriginalAvailability([completed])).get(job.id)).toBe('available');
+    expect(await retention.consumerOriginalPending(m.database.db(), gen.id)).toBe(false);
+    await m.database.db().execute({ sql: "UPDATE generations SET model='marketing_studio_video' WHERE id=?", args: [gen.id] });
+    expect((await availability.consumerOriginalAvailability([completed])).get(job.id)).toBe('unavailable');
+    await expect(m.originals.collectConsumerVideoOriginal(completed, sourceUrl, { fetchDependencies: transport([]).deps })).rejects.toMatchObject({ code: 'conflict' });
   });
 });
 

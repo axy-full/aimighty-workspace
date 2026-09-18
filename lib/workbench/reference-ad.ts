@@ -100,7 +100,7 @@ export function referenceAdDirection(project: Pick<Project, "assets">, value?: R
 }
 
 /** Catalogue entries are already workspace-configured; preserve image-only behavior. */
-export function referenceVideoModels<T extends Pick<ModelDef, 'kind' | 'label' | 'family' | 'maxReferenceImages' | 'maxReferenceVideos'>>(models: T[], kinds: string[]): T[] {
+export function referenceVideoModels<T extends Pick<ModelDef, 'kind' | 'label' | 'family' | 'maxReferenceImages' | 'maxReferenceVideos' | 'hidden'>>(models: T[], kinds: string[]): T[] {
   if (!kinds.includes('video')) return models;
-  return models.filter(model => model.kind === 'video' && !videoReferenceProblem(model, kinds.map(kind => ({ kind, role: kind === 'video' ? 'reference_video' : 'reference_image' }))));
+  return models.filter(model => !model.hidden && model.kind === 'video' && !videoReferenceProblem(model, kinds.map(kind => ({ kind, role: kind === 'video' ? 'reference_video' : 'reference_image' }))));
 }

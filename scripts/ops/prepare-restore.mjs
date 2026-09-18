@@ -236,6 +236,10 @@ export async function prepareRestore(
             });
           }
           if (names.has("higgsfield_consumer_jobs")) {
+            // Genjutsu import receipts are preserved with their permanent
+            // claims. Revoking OAuth above changes the grant fingerprint, so
+            // neither ready nor ambiguous imports authorize a replay after
+            // restore. They never contain a signed URL or credential.
             // An older quoted snapshot cannot prove that admission never
             // happened after capture. Never make it dispatchable on restore.
             // Preserve every immutable fingerprint, original quote, dispatch

@@ -356,7 +356,7 @@ test("suite navigation blocks leaving an unsaved project and keeps every origina
   await page.screenshot({ path: info.outputPath("particl-brief.png") });
 });
 
-test("three-suite home and retired suite redirects preserve project without inference", async ({
+test("four-suite home and legacy Subatomic redirect preserve project without inference", async ({
   page,
 }, info) => {
   const state = await fixture(page);
@@ -364,7 +364,7 @@ test("three-suite home and retired suite redirects preserve project without infe
   await expect(
     page.getByRole("heading", { name: "What are we making?" }),
   ).toBeVisible();
-  await expect(page.locator(".suite-home-card")).toHaveCount(3);
+  await expect(page.locator(".suite-home-card")).toHaveCount(4);
   if (page.viewportSize()!.width < 760) {
     const header = await page.locator(".suite-header").boundingBox();
     expect(header!.height).toBeLessThanOrEqual(140);
@@ -386,16 +386,16 @@ test("three-suite home and retired suite redirects preserve project without infe
     page.getByRole("navigation", { name: "Particl Studio pages" }),
   ).toBeInViewport();
   await page.goto("/subatomic?project=suite-test&page=trends");
-  await expect(page).toHaveURL(/\/atomik\?project=suite-test&page=runs/);
+  await expect(page).toHaveURL(/\/subatomik\?project=suite-test&page=motion-transfer/);
   await expect(
     page
       .getByRole("navigation", { name: "Suites", exact: true })
       .getByRole("link"),
-  ).toHaveCount(3);
+  ).toHaveCount(4);
   await expect(
-    page.getByRole("navigation", { name: "Atomik Agent pages", exact: true }),
+    page.getByRole("navigation", { name: "Subatomik pages", exact: true }),
   ).toBeVisible();
-  await page.screenshot({ path: info.outputPath("atomik-redirect.png") });
+  await page.screenshot({ path: info.outputPath("subatomik-redirect.png") });
   expect(state.mutations).toEqual([]);
 });
 

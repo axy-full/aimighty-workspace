@@ -17,14 +17,19 @@ import { billCredits } from "../../lib/creditTerms";
 
 const cr = buildRateTable("cr");
 
-test("the rate table covers exactly the catalogue, and nothing else", () => {
+test("the rate table covers fixed-price catalogue entries; Genjutsu requires a live quote", () => {
   /* Two files hold what used to be one object, so the thing that can go wrong
      is a model in one and not the other — a new engine that silently cannot be
      priced, or a rate for something nobody can pick. */
   const catalogue = new Set(MODELS.map((m) => m.id));
   const rated = new Set(Object.keys(VENDOR_RATES));
   expect([...rated].filter((id) => !catalogue.has(id))).toEqual([]);
-  expect([...catalogue].filter((id) => !rated.has(id))).toEqual([]);
+  expect([...catalogue].filter((id) => !rated.has(id))).toEqual(MODELS.filter(model => model.genjutsu).map(model => model.id));
+  for (const model of MODELS.filter(model => model.genjutsu)) {
+    expect(rated.has(model.id)).toBe(false);
+    expect(estimateCostUsd(model.id, '720p', '16:9', 5, 0, true)).toBeNull();
+    expect(estimateVideo(cr, model.id, '720p', 5, null, costUsd)).toBeNull();
+  }
 });
 
 test("every video in the catalogue prices the same both ways", () => {

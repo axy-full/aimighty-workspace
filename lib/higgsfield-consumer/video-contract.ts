@@ -43,7 +43,7 @@ export type ConsumerVideoErrorCode =
   | "provider_error"
   | "preflight_unavailable";
 const messages: Record<ConsumerVideoErrorCode, string> = {
-  invalid_input: "Review the Marketing Video prompt and settings.",
+  invalid_input: "Review the video prompt, references and settings.",
   invalid_workspace:
     "Higgsfield did not return one selected billing workspace.",
   workspace_changed:
@@ -55,7 +55,7 @@ const messages: Record<ConsumerVideoErrorCode, string> = {
   insufficient_credits:
     "The selected Higgsfield workspace has insufficient credits.",
   invalid_job: "Higgsfield did not return the requested job.",
-  provider_error: "Higgsfield could not complete this read-only check.",
+  provider_error: "Higgsfield could not complete this request.",
   preflight_unavailable:
     "Higgsfield could not verify the submission prerequisites. No video was submitted.",
 };
@@ -158,6 +158,9 @@ export function parseConsumerVideoCredits(
   value: QualificationValue,
   input: ConsumerVideoInput,
 ): number {
+  return parseConsumerCreditsForParams(value, consumerVideoParams(input, true));
+}
+export function parseConsumerCreditsForParams(value: QualificationValue, params: Record<string, unknown>): number {
   if (!record(value) || !record(value.cost))
     throw new ConsumerVideoError("invalid_quote");
   const { credits, credits_exact: exact } = value.cost;
@@ -173,14 +176,13 @@ export function parseConsumerVideoCredits(
   if (value.adjustments !== undefined) {
     if (!record(value.adjustments))
       throw new ConsumerVideoError("unapproved_adjustment");
-    const params: Record<string, unknown> = consumerVideoParams(input, true);
     for (const [key, adjustment] of Object.entries(value.adjustments)) {
       if (
         !key.startsWith("params.") ||
         !Object.hasOwn(params, key.slice(7)) ||
         !record(adjustment) ||
-        adjustment.requested !== params[key.slice(7)] ||
-        adjustment.used !== params[key.slice(7)]
+        !sameConsumerValue(adjustment.requested, params[key.slice(7)]) ||
+        !sameConsumerValue(adjustment.used, params[key.slice(7)])
       )
         throw new ConsumerVideoError("unapproved_adjustment");
     }
@@ -192,6 +194,7 @@ export function parseConsumerVideoCredits(
  * arbitrary nested IDs are not searched; conflicting or malformed IDs fail closed. */
 export function consumerVideoAcknowledgement(
   value: unknown,
+  expectedModel = "marketing_studio_video",
 ): string | null {
   if (!record(value)) return null;
   const ids: string[] = [];
@@ -222,7 +225,7 @@ export function consumerVideoAcknowledgement(
     if (!Array.isArray(value.results) || value.results.length !== 1) invalid = true;
     else {
       const result = value.results[0];
-      if (!record(result) || result.model !== "marketing_studio_video" || result.type !== "video") invalid = true;
+      if (!record(result) || result.model !== expectedModel || result.type !== "video") invalid = true;
       else entry(result);
     }
   }
@@ -231,11 +234,12 @@ export function consumerVideoAcknowledgement(
 export function validateConsumerVideoStatus(
   value: QualificationValue,
   expectedJobId: string,
+  expectedModel = "marketing_studio_video",
 ) {
   if (!record(value)) throw new ConsumerVideoError("invalid_job");
   if (
     ["job_id", "id", "jobs", "job_ids", "results"].some((key) => key in value) &&
-    consumerVideoAcknowledgement(value) !== expectedJobId
+    consumerVideoAcknowledgement(value, expectedModel) !== expectedJobId
   )
     throw new ConsumerVideoError("invalid_job");
   const wait = value.poll_after_seconds;
@@ -305,4 +309,13 @@ export function consumerVideoProviderResult(value: unknown, input: ConsumerVideo
       ...(text.length > 8000 ? { enhancedPromptTruncated: true as const } : {}),
     }),
   };
+}
+
+/** JSON structural equality; provider object key order does not change consent. */
+export function sameConsumerValue(a:unknown,b:unknown):boolean {
+  if(a===b)return true;
+  if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>sameConsumerValue(v,b[i]));
+  if(!a||!b||typeof a!=="object"||typeof b!=="object")return false;
+  const left=a as Record<string,unknown>,right=b as Record<string,unknown>,keys=Object.keys(left);
+  return keys.length===Object.keys(right).length&&keys.every(k=>Object.hasOwn(right,k)&&sameConsumerValue(left[k],right[k]));
 }

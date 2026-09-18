@@ -1,3 +1,6 @@
+import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
+import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem } from "@/lib/genjutsu";
+import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
@@ -252,6 +255,22 @@ export async function executeGenerationAdmission(
         { status: 400 },
       );
     }
+    const genjutsu = isGenjutsuModel(modelId);
+    if (genjutsu) {
+      if (!options.checkpoint) return admissionReply({ error: "Review a live Genjutsu quote before submitting this take." }, { status: 400 });
+      if (body.task !== "genjutsu" || prompt.length > GENJUTSU_LIMITS.maxPromptChars || !GENJUTSU_RESOLUTIONS.includes(body.resolution) ||
+          Boolean(body.sourceGenId) === Boolean(body.sourceUploadId) || !/^[A-Za-z0-9_-]{1,160}$/.test(String(body.sourceGenId || body.sourceUploadId)))
+        return admissionReply({ error: "Choose one original video, a Genjutsu operation and 480p or 720p output." }, { status: 400 });
+      if (body.references != null && (!Array.isArray(body.references) || body.references.length > GENJUTSU_LIMITS.maxImages || body.references.some((ref: unknown) => {
+        if (!ref || typeof ref !== "object" || Array.isArray(ref)) return true;
+        const r = ref as Record<string, unknown>;
+        return Boolean(r.uploadId) === Boolean(r.genId) || !/^[A-Za-z0-9_-]{1,160}$/.test(String(r.uploadId || r.genId)) || r.role !== "reference_image" ||
+          Object.keys(r).some(k => !["uploadId", "genId", "role"].includes(k));
+      }))) return admissionReply({ error: "Choose up to eight original still references using saved media identities." }, { status: 400 });
+      if (typeof body.workbenchProjectId !== "string" || !body.projectId) return admissionReply({ error: "Save and select a project before using Genjutsu." }, { status: 400 });
+      const draft = await readDraft(got.user.id, body.workbenchProjectId);
+      if (!draft || draft.project.productionProjectId !== body.projectId) return admissionReply({ error: "This saved project is unavailable in the current account." }, { status: 409 });
+    }
     if (model.marketing && !options.checkpoint)
       return admissionReply({ error: "Review a live Marketing Studio quote before submitting this take." }, { status: 400 });
     if (!model.marketing && body.marketing != null)
@@ -327,6 +346,7 @@ export async function executeGenerationAdmission(
     let sourceBytes = 0;
     let astra: AstraSettings | undefined;
     let astraSource: VideoMetadata | undefined;
+    let genjutsuSource: VideoMetadata | undefined;
     let sourceResolution: string | null = null;
     let sourceRatio: string | null = null;
     /* An engine with no generate mode (Topaz only upscales) cannot be asked
@@ -422,7 +442,7 @@ export async function executeGenerationAdmission(
          believed: absent (which every ceiling below silently lets through,
          since each is written `!= null && > max`) or shorter than the file's
          own size permits. Unpriceable is not the same as cheap. */
-        if (task.locked && modelId !== ASTRA_MODEL) {
+        if (task.locked && modelId !== ASTRA_MODEL && !genjutsu) {
           const doubt = clipDoubt(u.duration_s, u.bytes);
           if (doubt)
             return admissionReply(
@@ -430,7 +450,7 @@ export async function executeGenerationAdmission(
               { status: 400 },
             );
         }
-        const refused = modelId === ASTRA_MODEL ? null : sourceProblem(task, sp, "upload");
+        const refused = modelId === ASTRA_MODEL || genjutsu ? null : sourceProblem(task, sp, "upload");
         if (refused) return admissionReply({ error: refused }, { status: 400 });
         const advice = sourceAdvice(
           task,
@@ -493,7 +513,7 @@ export async function executeGenerationAdmission(
           if (typeof sp.resolution === "string")
             sourceResolution = sp.resolution;
           // The vendor's limits, applied here as well as in the picker.
-          const refused = modelId === ASTRA_MODEL ? null : sourceProblem(task, sp);
+          const refused = modelId === ASTRA_MODEL || genjutsu ? null : sourceProblem(task, sp);
           if (refused)
             return admissionReply({ error: refused }, { status: 400 });
           const advice = sourceAdvice(
@@ -513,6 +533,16 @@ export async function executeGenerationAdmission(
           sourceResolution = `${Math.min(astraSource.width,astraSource.height)}p`;
         } catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
         notices.push("Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
+      }
+      if (genjutsu && sourceRef) {
+        try {
+          genjutsuSource = await inspectOriginalVideo(sourceRef, sourceBytes);
+          const problem = genjutsuSourceProblem(genjutsuSource.seconds);
+          if (problem) throw new Error(problem);
+          sourceSeconds = genjutsuSource.seconds;
+          sourceRatio = `${genjutsuSource.width}:${genjutsuSource.height}`;
+          sourceResolution = `${Math.min(genjutsuSource.width,genjutsuSource.height)}p`;
+        } catch { return admissionReply({ error: "Genjutsu needs a readable original video between 1 and 30 seconds, no larger than 200 MB." }, { status: 400 }); }
       }
       if (
         task.forceRatio === "adaptive" &&
@@ -567,6 +597,7 @@ export async function executeGenerationAdmission(
       fps60: astra ? astra.fps === 60 : Boolean(body.fps60),
       astra,
       astraSource,
+      genjutsuSource,
       sourceResolution: sourceResolution ?? undefined,
     };
     // Provider payloads still force adaptive/-1. Store and price the known source
@@ -776,13 +807,15 @@ export async function executeGenerationAdmission(
     // Our own renders join the list after the uploads, so a person's own
     // @Image1 stays their first attached file.
     references.push(...ownRefs);
-    if (marketing && Array.isArray(body.references)) {
+    if ((marketing || genjutsu) && Array.isArray(body.references)) {
       // Presets distinguish product (first) from optional cast (second). Mixing
       // uploads and generated stills must not silently reverse those roles.
       const ordered = new Map(references.map(ref => [`${ref.fromGeneration ? "generation" : "upload"}:${ref.id}`, ref]));
       references = body.references.map((ref: { genId?: string; uploadId?: string }) =>
         ordered.get(ref.genId ? `generation:${ref.genId}` : `upload:${ref.uploadId}`)!);
     }
+    if (genjutsu && (references.length !== (body.references?.length ?? 0) || references.some(r => r.kind !== "image" || r.role !== "reference_image")))
+      return admissionReply({ error: "Genjutsu reference slots accept still images only." }, { status: 400 });
     const knownInputSeconds = videoReferenceSeconds(referenceDurations);
     if (knownInputSeconds == null)
       return admissionReply(
@@ -816,7 +849,7 @@ export async function executeGenerationAdmission(
     let castPrompt = prompt;
     let castUsed: string[] = [];
     let castIds: string[] = [];
-    if (/@[A-Za-z]/.test(prompt)) {
+    if (!genjutsu && /@[A-Za-z]/.test(prompt)) {
       const roster = await listCast(projectIdForCast);
       const startIndex = references.filter(
         (r) => r.kind === "image" && r.role === "reference_image",
@@ -1364,6 +1397,7 @@ export async function executeGenerationAdmission(
     const refineCall = shouldRefine(castPrompt, detectedAxes);
     const writer = await activeWriter();
     if (
+      genjutsu ||
       task.id === "motion" ||
       task.id === "upscale" ||
       task.id === "reframe"
@@ -1528,6 +1562,7 @@ export async function executeGenerationAdmission(
     /* The platform's rules in scope, as plain sentences at the end — never on
      a raw: prompt, never on a clip that is itself the brief. */
     if (
+      !genjutsu &&
       !/^raw:/i.test(castPrompt) &&
       task.id !== "motion" &&
       task.id !== "upscale" &&
@@ -1588,7 +1623,12 @@ export async function executeGenerationAdmission(
       version = await nextVersion(shotId);
     }
 
-    const estUsd =
+    if (genjutsu) {
+      params.higgsfieldCredentialFingerprint = higgsfieldCredentialFingerprint();
+      params.higgsfieldVendorCostUsd = await estimateGenjutsuInput(modelId,
+        await genjutsuInput(modelId, finalPrompt, params.resolution, sourceRef, references.filter(r => r.kind === "image")));
+    }
+    const estUsd = params.higgsfieldVendorCostUsd ??
       estimateCostUsd(
         modelId,
         params.resolution,
@@ -1663,6 +1703,7 @@ export async function executeGenerationAdmission(
 
     const storedParams = {
       ...params,
+      ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
       references: references.map((r) =>
         r.fromGeneration
           ? { genId: r.id, role: r.role, kind: r.kind }
@@ -1702,7 +1743,7 @@ export async function executeGenerationAdmission(
 
     if (options.checkpoint) {
       if (
-        !estimateCostUsd(
+        !genjutsu && !estimateCostUsd(
           modelId,
           params.resolution,
           params.ratio,
@@ -1736,6 +1777,9 @@ export async function executeGenerationAdmission(
       );
       if (stopped) return stopped;
     }
+
+    if (genjutsu && body.maxCredits == null)
+      return admissionReply({ error: "Confirm the quoted Genjutsu credit ceiling before generating." }, { status: 400 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
     await withMediaSources(storedParams, (tx) =>

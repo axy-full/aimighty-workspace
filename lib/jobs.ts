@@ -1,3 +1,6 @@
+import { isGenjutsuModel } from "./genjutsuTypes";
+import { isConsumerVideoModel } from "./higgsfield-consumer/original-identity";
+import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
@@ -108,7 +111,7 @@ export function rowToGeneration(r: any): Generation {
   const params = JSON.parse(r.params || "{}");
   const providerCreditQuote: ProviderCreditQuote | null =
     /^gen_hfc_[a-f0-9]{40}$/.test(r.id) && r.provider === "higgsfield" &&
-    r.model === "marketing_studio_video" && r.status === "succeeded" &&
+    isConsumerVideoModel(r.model) && r.status === "succeeded" &&
     params.consumerCreditUnit === "higgsfield_credits" &&
     typeof params.consumerCredits === "number" && Number.isFinite(params.consumerCredits) && params.consumerCredits >= 0
       ? { provider: "higgsfield", unit: "higgsfield_credits", credits: params.consumerCredits, basis: "approved_quote" }
@@ -123,6 +126,10 @@ export function rowToGeneration(r: any): Generation {
   delete params.higgsfieldVendorCostUsd;
   delete params.higgsfieldStillHandle;
   delete params.higgsfieldStillPollUntil;
+  delete params.higgsfieldVideoHandle;
+  delete params.higgsfieldVideoPollUntil;
+  delete params.higgsfieldVideoPollToken;
+  delete params.genjutsuOriginal;
   return {
     id: r.id,
     projectId: r.project_id ?? null,
@@ -296,12 +303,16 @@ export async function syncGeneration(
   gen: Generation,
   options: { strict?: boolean } = {},
 ): Promise<Generation> {
-  if (gen.status === "succeeded" && gen.provider === "higgsfield" && gen.model === "marketing_studio_video" && gen.storedUrl && await hasRetainedConsumerOriginal(gen.id)) return gen;
+  if (gen.status === "succeeded" && gen.provider === "higgsfield" && isConsumerVideoModel(gen.model) && gen.storedUrl && await hasRetainedConsumerOriginal(gen.id)) return gen;
 return await withRecoveryJob(requireTenant().id, gen.id, async () => {
 
   await deliverGenerationSettlement(gen.id);
   if (gen.kind === "image" && gen.provider === "higgsfield") {
     try { await reconcileHiggsfieldImage(gen.id); } catch (error) { if (options.strict) throw error; }
+    return (await getGeneration(gen.id)) ?? gen;
+  }
+  if (gen.kind === "video" && gen.provider === "higgsfield" && isGenjutsuModel(gen.model)) {
+    try { await reconcileGenjutsuVideo(gen.id); } catch (error) { if (options.strict) throw error; }
     return (await getGeneration(gen.id)) ?? gen;
   }
   const savedCosts = await generationCosts(gen.id);
