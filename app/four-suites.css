@@ -121,9 +121,6 @@
   z-index: 25;
   border-top: 1px solid #2a2c33;
 }
-.ps.four-suite-workbench .suite-atomik-collapse {
-  height: auto;
-}
 .ps.four-suite-workbench .mobile-app-nav,
 .ps.four-suite-workbench .phone-home-dock,
 .ps.four-suite-workbench .phone-stage-pager {
@@ -753,9 +750,6 @@
   }
   .ps.four-suite-workbench .workspace-body > .work-area {
     padding-bottom: 0;
-  }
-  .ps.four-suite-workbench .suite-atomik-collapse {
-    display: none;
   }
   .ps.four-suite-workbench .project-bar .workbench-account-name {
     display: none;

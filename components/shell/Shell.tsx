@@ -12,7 +12,6 @@ import {
 import { AtomikProvider } from "@/components/atomik/AtomikProvider";
 import AtomikRail from "@/components/atomik/AtomikRail";
 import AtomikSheet from "@/components/atomik/AtomikSheet";
-import { AtomikMark } from "@/components/AtomikMark";
 import { RoomRail } from "@/components/suites/SuiteNavigation";
 import { SuiteProjectProvider } from "@/components/suites/SuiteProjectContext";
 import { PAGES, roomForRoute, suiteForRoute } from "@/lib/suites";
@@ -100,18 +99,7 @@ function SuiteShell({ children }: { children: React.ReactNode }) {
             {!focusedSection && (
               <>
                 <div className="suite-desktop-atomik">
-                  {rail.open ? (
-                    <AtomikRail />
-                  ) : (
-                    <button
-                      className="suite-atomik-collapse"
-                      aria-label="Open Atomik"
-                      onClick={rail.expand}
-                    >
-                      <AtomikMark size={19} />
-                      <span>Atomik</span>
-                    </button>
-                  )}
+                  {rail.open && <AtomikRail />}
                 </div>
                 <div className="suite-phone-atomik">
                   <AtomikSheet />

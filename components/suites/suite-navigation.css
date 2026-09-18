@@ -280,22 +280,6 @@ body:has(.suite-application) .studio-menu-label {
   flex-direction: row;
   min-width: 0;
 }
-.suite-atomik-collapse {
-  display: flex;
-  flex: 0 0 56px;
-  width: 56px;
-  align-items: center;
-  flex-direction: column;
-  gap: 14px;
-  padding: 15px 6px;
-  border-left: 1px solid #2a2c33;
-  color: #c9cbd1;
-  background: #0a0a0c;
-}
-.suite-atomik-collapse span {
-  writing-mode: vertical-rl;
-  font-size: 13px;
-}
 .suite-application .suite-desktop-atomik {
   display: contents;
 }
