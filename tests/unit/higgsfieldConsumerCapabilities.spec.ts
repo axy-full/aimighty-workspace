@@ -29,7 +29,9 @@ const discovered = {
 
 /** Executes the real route, withTenant and requireOwner; only identity resolution,
  * rate storage, OAuth refresh and outbound discovery are isolated fixtures. */
-async function fixture() {
+async function fixture(
+  kind: "capabilities" | "qualification" = "capabilities",
+) {
   const auth = await import("../../lib/auth");
   const tenant = await import("../../lib/tenant");
   let store = {
@@ -109,7 +111,14 @@ async function fixture() {
         return token;
       },
     },
-    "@/lib/higgsfield-consumer/mcp": { ConsumerDiscoveryError },
+    "@/lib/higgsfield-consumer/mcp": {
+      ConsumerDiscoveryError,
+      readConsumerQualification: async (value: string) => {
+        discoveries.push(value);
+        if (failure) throw failure;
+        return { readOnly: true, results: [] };
+      },
+    },
     "@/lib/higgsfield-consumer/discovery": {
       discoverConsumerCapabilities: async (value: string) => {
         discoveries.push(value);
@@ -122,7 +131,7 @@ async function fixture() {
     exports: {} as { POST(req: Request, ctx: unknown): Promise<Response> },
   };
   const route = ts.transpileModule(
-    readFileSync("app/api/higgsfield/consumer/capabilities/route.ts", "utf8"),
+    readFileSync(`app/api/higgsfield/consumer/${kind}/route.ts`, "utf8"),
     {
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
@@ -163,7 +172,7 @@ async function fixture() {
       origin?: string,
     ) =>
       output.exports.POST(
-        new Request("http://localhost/api/higgsfield/consumer/capabilities", {
+        new Request(`http://localhost/api/higgsfield/consumer/${kind}`, {
           method: "POST",
           headers: {
             ...(scope === null ? {} : { "X-Workbench-Scope": scope }),
@@ -207,6 +216,48 @@ test("capabilities route rejects unauthenticated, nonowner, bearer and stale bro
   expect(f.tokenRequests).toEqual([]);
   expect(f.discoveries).toEqual([]);
   expect(f.limits).toEqual([]);
+});
+
+test("qualification route enforces owner session, origin, captured scope, connection and rate before fixed read execution", async () => {
+  const f = await fixture("qualification"),
+    original = f.store();
+  for (const scope of [
+    null,
+    "",
+    workbenchScopeFor("other", "owner"),
+    workbenchScopeFor("workspace", "other"),
+  ])
+    expect((await f.post(scope)).status).toBe(409);
+  expect((await f.post(undefined, "https://evil.example")).status).toBe(403);
+  f.setStore({ ...original, user: null });
+  expect((await f.post(null)).status).toBe(401);
+  f.setStore({ ...original, user: { ...original.user!, owner: false } });
+  expect((await f.post()).status).toBe(403);
+  for (const scope of ["read", "render"] as const) {
+    f.setStore({
+      ...original,
+      token: { id: "token", scope } as TenantStore["token"],
+    });
+    expect((await f.post(null)).status).toBe(403);
+  }
+  expect(f.tokenRequests).toEqual([]);
+  expect(f.discoveries).toEqual([]);
+  f.setStore(original);
+  const response = await f.post();
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.json()).toEqual({ readOnly: true, results: [] });
+  expect(f.tokenRequests).toEqual([["workspace", "owner"]]);
+  expect(f.limits).toEqual([
+    ["higgsfield-consumer-qualification:workspace:owner", 3, 60_000],
+  ]);
+  f.limit();
+  expect((await f.post()).status).toBe(429);
+  expect(f.discoveries).toHaveLength(1);
+  const absent = await fixture("qualification");
+  absent.disconnect();
+  expect((await absent.post()).status).toBe(409);
+  expect(absent.discoveries).toEqual([]);
 });
 
 test("owner discovery uses only resolved account/workspace, returns unverified schemas, and never caches or returns tokens", async () => {

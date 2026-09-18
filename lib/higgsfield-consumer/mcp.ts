@@ -1,9 +1,17 @@
 /**
- * Discovery-only Streamable HTTP client. There is deliberately no generic RPC
- * or tools/call export. Server instructions, descriptions and schemas are data,
- * never executable instructions or URLs to fetch.
+ * Bounded Streamable HTTP client for discovery and a fixed set of read-only
+ * qualification calls. There is deliberately no generic RPC/tools/call export.
+ * Server instructions, descriptions and schemas are data, never executable
+ * instructions or URLs to fetch.
  * https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
  */
+import {
+  consumerSecretForms,
+  containsConsumerSecret,
+  normalizeQualificationResult,
+  QualificationPayloadError,
+  type QualificationValue,
+} from "./qualification";
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
 export const DISCOVERY_LIMITS = {
@@ -14,6 +22,70 @@ export const DISCOVERY_LIMITS = {
   tools: 200,
   messages: 256,
 } as const;
+export const QUALIFICATION_LIMITS = {
+  timeoutMs: 45_000,
+  callTimeoutMs: 10_000,
+} as const;
+
+// These exact tools/arguments were advertised by the authorized consumer MCP
+// catalogue and reviewed as non-generating reads. Never accept a caller's tool
+// name or arguments here; selecting a workspace also mutates remote state.
+const QUALIFICATION_READS = Object.freeze([
+  Object.freeze({ tool: "list_workspaces", arguments: Object.freeze({}) }),
+  Object.freeze({
+    tool: "models_explore",
+    arguments: Object.freeze({
+      action: "get",
+      model_id: "marketing_studio_video",
+    }),
+  }),
+  Object.freeze({
+    tool: "models_explore",
+    arguments: Object.freeze({
+      action: "get",
+      model_id: "hf_mult_replace_object",
+    }),
+  }),
+  Object.freeze({
+    tool: "models_explore",
+    arguments: Object.freeze({
+      action: "get",
+      model_id: "hf_mult_motion_control",
+    }),
+  }),
+  Object.freeze({
+    tool: "models_explore",
+    arguments: Object.freeze({ action: "search", query: "virality", limit: 3 }),
+  }),
+  Object.freeze({
+    tool: "marketing_studio_v2_presets",
+    arguments: Object.freeze({ category: "all", size: 2 }),
+  }),
+  Object.freeze({
+    tool: "marketing_studio_v2_costs",
+    arguments: Object.freeze({}),
+  }),
+  Object.freeze({
+    tool: "get_workflow_instructions",
+    arguments: Object.freeze({ workflow: "ad-multiplier" }),
+  }),
+  Object.freeze({
+    tool: "generate_video",
+    arguments: Object.freeze({
+      params: Object.freeze({
+        model: "marketing_studio_video",
+        prompt:
+          "A plain reusable bottle on a clean studio background. A short product demo with no people, logos or text.",
+        duration: 15,
+        resolution: "720p",
+        aspect_ratio: "16:9",
+        count: 1,
+        get_cost: true,
+        use_unlim: false,
+      }),
+    }),
+  }),
+]);
 
 export type ConsumerDiscoveryCode =
   | "reconnect_required"
@@ -60,6 +132,7 @@ export type DiscoveredConsumerTool = {
   name: string;
   description?: string;
   inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
 };
 export type ConsumerToolCatalogue = {
   protocolVersion: string;
@@ -70,6 +143,15 @@ type Options = {
   signal?: AbortSignal;
   /** Tests may shorten, but cannot increase, the production deadline. */
   timeoutMs?: number;
+  callTimeoutMs?: number;
+};
+type ConsumerSession = {
+  protocolVersion: string;
+  supportsTools: boolean;
+  secrets: string[];
+  active: () => boolean;
+  list: (cursor?: string) => Promise<Record<string, unknown>>;
+  qualificationRead: (index: number) => Promise<Record<string, unknown>>;
 };
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -98,20 +180,22 @@ function validateSchema(
     if (++nodes > 20_000 || item.depth > 40) fail("catalog_limit");
     if (typeof item.value === "string") {
       const text = item.value;
-      if (secrets.some((secret) => text.includes(secret))) fail();
+      if (containsConsumerSecret(text, secrets)) fail();
     } else if (item.value !== null && typeof item.value === "object") {
       for (const [key, child] of Object.entries(item.value)) {
-        if (secrets.some((secret) => key.includes(secret))) fail();
+        if (containsConsumerSecret(key, secrets)) fail();
         stack.push({ value: child, depth: item.depth + 1 });
       }
     }
   }
 }
 
-export async function discoverConsumerTools(
+async function withConsumerSession<T>(
   accessToken: string,
-  options: Options = {},
-): Promise<ConsumerToolCatalogue> {
+  options: Options,
+  maximumMs: number,
+  run: (session: ConsumerSession) => Promise<T>,
+): Promise<T> {
   if (
     !accessToken ||
     accessToken.length > 16_384 ||
@@ -121,10 +205,14 @@ export async function discoverConsumerTools(
   const fetcher = options.fetch ?? fetch;
   const controller = new AbortController();
   const timeoutMs = Math.min(
-    DISCOVERY_LIMITS.timeoutMs,
-    Math.max(1, options.timeoutMs ?? DISCOVERY_LIMITS.timeoutMs),
+    maximumMs,
+    Math.max(1, options.timeoutMs ?? maximumMs),
   );
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const deadline = performance.now() + timeoutMs;
+  function assertDeadline(signal: AbortSignal, requestDeadline = deadline) {
+    if (signal.aborted || performance.now() >= requestDeadline) fail("timeout");
+  }
   const cancel = () => controller.abort();
   options.signal?.addEventListener("abort", cancel, { once: true });
   if (options.signal?.aborted) controller.abort();
@@ -135,19 +223,25 @@ export async function discoverConsumerTools(
 
   // A fetch implementation or stalled body must not be able to extend the
   // overall deadline, even if it ignores AbortSignal.
-  async function withinDeadline<T>(promise: Promise<T>): Promise<T> {
-    if (controller.signal.aborted) fail("timeout");
+  async function withinDeadline<T>(
+    promise: Promise<T>,
+    signal = controller.signal,
+    requestDeadline = deadline,
+  ): Promise<T> {
+    assertDeadline(signal, requestDeadline);
     let onAbort: () => void = () => {};
     try {
-      return await Promise.race([
+      const result = await Promise.race([
         promise,
         new Promise<never>((_, reject) => {
           onAbort = () => reject(new ConsumerDiscoveryError("timeout"));
-          controller.signal.addEventListener("abort", onAbort, { once: true });
+          signal.addEventListener("abort", onAbort, { once: true });
         }),
       ]);
+      assertDeadline(signal, requestDeadline);
+      return result;
     } finally {
-      controller.signal.removeEventListener("abort", onAbort);
+      signal.removeEventListener("abort", onAbort);
     }
   }
 
@@ -188,6 +282,8 @@ export async function discoverConsumerTools(
   async function readReply(
     response: Response,
     id: string,
+    signal: AbortSignal,
+    requestDeadline: number,
   ): Promise<Record<string, unknown>> {
     const mime = response.headers
       .get("content-type")
@@ -248,7 +344,11 @@ export async function discoverConsumerTools(
     }
     try {
       while (true) {
-        const chunk = await withinDeadline(reader.read());
+        const chunk = await withinDeadline(
+          reader.read(),
+          signal,
+          requestDeadline,
+        );
         if (chunk.done) {
           text += decoder.decode();
           if (mime === "application/json")
@@ -279,10 +379,11 @@ export async function discoverConsumerTools(
   }
 
   async function post(
-    method: "initialize" | "notifications/initialized" | "tools/list",
+    method:
+      "initialize" | "notifications/initialized" | "tools/list" | "tools/call",
     params?: Record<string, unknown>,
   ) {
-    if (controller.signal.aborted) fail("timeout");
+    assertDeadline(controller.signal);
     const id =
       method === "notifications/initialized"
         ? undefined
@@ -294,22 +395,43 @@ export async function discoverConsumerTools(
     };
     if (sessionId) headers["Mcp-Session-Id"] = sessionId;
     if (protocolVersion) headers["MCP-Protocol-Version"] = protocolVersion;
-    const response = await withinDeadline(
-      fetcher(CONSUMER_MCP_URL, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          ...(id ? { id } : {}),
-          method,
-          ...(params ? { params } : {}),
-        }),
-        redirect: "error",
-        cache: "no-store",
-        signal: controller.signal,
-      }),
+    const requestController = new AbortController();
+    const abortRequest = () => requestController.abort();
+    controller.signal.addEventListener("abort", abortRequest, { once: true });
+    const requestMs = Math.min(
+      QUALIFICATION_LIMITS.callTimeoutMs,
+      Math.max(1, options.callTimeoutMs ?? QUALIFICATION_LIMITS.callTimeoutMs),
     );
+    const requestDeadline =
+      method === "tools/call"
+        ? Math.min(deadline, performance.now() + requestMs)
+        : deadline;
+    const requestTimer =
+      method === "tools/call" ? setTimeout(abortRequest, requestMs) : undefined;
+    let pendingResponse: Response | undefined;
     try {
+      const response = await withinDeadline(
+        fetcher(CONSUMER_MCP_URL, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            ...(id ? { id } : {}),
+            method,
+            ...(params ? { params } : {}),
+          }),
+          redirect: "error",
+          cache: "no-store",
+          signal: requestController.signal,
+        }).then((received) => {
+          pendingResponse = received;
+          if (requestController.signal.aborted)
+            void received.body?.cancel().catch(() => {});
+          return received;
+        }),
+        requestController.signal,
+        requestDeadline,
+      );
       if (
         response.redirected ||
         (response.status >= 300 && response.status < 400) ||
@@ -325,7 +447,16 @@ export async function discoverConsumerTools(
         if (response.body) {
           const reader = response.body.getReader();
           try {
-            if (!(await withinDeadline(reader.read())).done) fail();
+            if (
+              !(
+                await withinDeadline(
+                  reader.read(),
+                  requestController.signal,
+                  requestDeadline,
+                )
+              ).done
+            )
+              fail();
           } finally {
             void reader.cancel().catch(() => {});
             reader.releaseLock();
@@ -333,7 +464,13 @@ export async function discoverConsumerTools(
         }
         return undefined;
       }
-      const result = await readReply(response, id);
+      const result = await readReply(
+        response,
+        id,
+        requestController.signal,
+        requestDeadline,
+      );
+      assertDeadline(requestController.signal, requestDeadline);
       if (method === "initialize") {
         const session = response.headers.get("Mcp-Session-Id");
         if (session !== null) {
@@ -342,9 +479,17 @@ export async function discoverConsumerTools(
         }
       }
       return result;
+    } catch (error) {
+      if (error instanceof ConsumerDiscoveryError) throw error;
+      return fail(
+        requestController.signal.aborted ? "timeout" : "provider_unavailable",
+      );
     } finally {
-      if (response.body && !response.body.locked)
-        void response.body.cancel().catch(() => {});
+      clearTimeout(requestTimer);
+      controller.signal.removeEventListener("abort", abortRequest);
+      requestController.abort();
+      if (pendingResponse?.body && !pendingResponse.body.locked)
+        void pendingResponse.body.cancel().catch(() => {});
     }
   }
 
@@ -365,65 +510,30 @@ export async function discoverConsumerTools(
       fail();
     protocolVersion = initialized.protocolVersion as string;
     await post("notifications/initialized");
-    if (initialized.capabilities.tools === undefined)
-      return { protocolVersion, tools: [] };
-    if (!object(initialized.capabilities.tools)) fail();
-    const tools: DiscoveredConsumerTool[] = [];
-    const cursors = new Set<string>();
-    const names = new Set<string>();
-    let cursor: string | undefined;
-    for (let page = 0; page < DISCOVERY_LIMITS.pages; page++) {
-      const result = (await post(
-        "tools/list",
-        cursor === undefined ? {} : { cursor },
-      ))!;
-      if (!Array.isArray(result.tools)) fail();
-      if (tools.length + result.tools.length > DISCOVERY_LIMITS.tools)
-        fail("catalog_limit");
-      for (const entry of result.tools) {
-        if (
-          !object(entry) ||
-          typeof entry.name !== "string" ||
-          !/^[\x21-\x7e]{1,128}$/.test(entry.name) ||
-          names.has(entry.name) ||
-          (entry.description !== undefined &&
-            (typeof entry.description !== "string" ||
-              entry.description.length > 16_000))
-        )
-          fail();
-        const name = entry.name;
-        const secrets = [accessToken, ...(sessionId ? [sessionId] : [])];
-        if (
-          secrets.some(
-            (secret) =>
-              name.includes(secret) ||
-              (typeof entry.description === "string" &&
-                entry.description.includes(secret)),
-          )
-        )
-          fail();
-        validateSchema(entry.inputSchema, secrets);
-        names.add(entry.name);
-        tools.push({
-          name: entry.name,
-          ...(entry.description === undefined
-            ? {}
-            : { description: entry.description as string }),
-          inputSchema: entry.inputSchema,
-        });
-      }
-      if (result.nextCursor === undefined) return { protocolVersion, tools };
-      if (
-        typeof result.nextCursor !== "string" ||
-        result.nextCursor.length < 1 ||
-        result.nextCursor.length > 4096 ||
-        cursors.has(result.nextCursor)
-      )
-        fail();
-      cursors.add(result.nextCursor);
-      cursor = result.nextCursor;
-    }
-    return fail("catalog_limit");
+    if (
+      initialized.capabilities.tools !== undefined &&
+      !object(initialized.capabilities.tools)
+    )
+      fail();
+    return await run({
+      protocolVersion,
+      supportsTools: initialized.capabilities.tools !== undefined,
+      secrets: consumerSecretForms([
+        accessToken,
+        ...(sessionId ? [sessionId] : []),
+      ]),
+      active: () => !controller.signal.aborted && performance.now() < deadline,
+      list: async (cursor) =>
+        (await post("tools/list", cursor === undefined ? {} : { cursor }))!,
+      qualificationRead: async (index) => {
+        const read = QUALIFICATION_READS[index];
+        if (!Number.isInteger(index) || !read) fail("unsupported_protocol");
+        return (await post("tools/call", {
+          name: read.tool,
+          arguments: read.arguments,
+        }))!;
+      },
+    });
   } catch (error) {
     if (error instanceof ConsumerDiscoveryError) throw error;
     // Never propagate a fetch/JSON/provider error that might contain headers,
@@ -434,4 +544,161 @@ export async function discoverConsumerTools(
     options.signal?.removeEventListener("abort", cancel);
     controller.abort();
   }
+}
+
+export async function discoverConsumerTools(
+  accessToken: string,
+  options: Options = {},
+): Promise<ConsumerToolCatalogue> {
+  return withConsumerSession(
+    accessToken,
+    options,
+    DISCOVERY_LIMITS.timeoutMs,
+    async (session) => {
+      const { protocolVersion } = session;
+      if (!session.supportsTools) return { protocolVersion, tools: [] };
+      const tools: DiscoveredConsumerTool[] = [];
+      const cursors = new Set<string>();
+      const names = new Set<string>();
+      let cursor: string | undefined;
+      for (let page = 0; page < DISCOVERY_LIMITS.pages; page++) {
+        const result = await session.list(cursor);
+        if (!Array.isArray(result.tools)) fail();
+        if (tools.length + result.tools.length > DISCOVERY_LIMITS.tools)
+          fail("catalog_limit");
+        for (const entry of result.tools) {
+          if (
+            !object(entry) ||
+            typeof entry.name !== "string" ||
+            !/^[\x21-\x7e]{1,128}$/.test(entry.name) ||
+            names.has(entry.name) ||
+            (entry.description !== undefined &&
+              (typeof entry.description !== "string" ||
+                entry.description.length > 16_000))
+          )
+            fail();
+          const name = entry.name;
+          const secrets = session.secrets;
+          if (
+            containsConsumerSecret(name, secrets) ||
+            (typeof entry.description === "string" &&
+              containsConsumerSecret(entry.description, secrets))
+          )
+            fail();
+          validateSchema(entry.inputSchema, secrets);
+          if (entry.outputSchema !== undefined)
+            validateSchema(entry.outputSchema, secrets);
+          names.add(entry.name);
+          tools.push({
+            name: entry.name,
+            ...(entry.description === undefined
+              ? {}
+              : { description: entry.description as string }),
+            inputSchema: entry.inputSchema,
+            ...(entry.outputSchema === undefined
+              ? {}
+              : { outputSchema: entry.outputSchema }),
+          });
+        }
+        if (result.nextCursor === undefined) return { protocolVersion, tools };
+        if (
+          typeof result.nextCursor !== "string" ||
+          result.nextCursor.length < 1 ||
+          result.nextCursor.length > 4096 ||
+          cursors.has(result.nextCursor)
+        )
+          fail();
+        cursors.add(result.nextCursor);
+        cursor = result.nextCursor;
+      }
+      return fail("catalog_limit");
+    },
+  );
+}
+
+export type ConsumerQualification = {
+  readOnly: true;
+  results: {
+    tool: string;
+    arguments: Record<string, unknown>;
+    result?: QualificationValue;
+    error?: { code: string; message: string };
+  }[];
+};
+
+/** Only the fixed reviewed reads above can be called. No caller-selected tool,
+ * workspace selection, generation, upload or analysis submission is accepted. */
+export async function readConsumerQualification(
+  accessToken: string,
+  options: Options = {},
+): Promise<ConsumerQualification> {
+  return withConsumerSession(
+    accessToken,
+    options,
+    QUALIFICATION_LIMITS.timeoutMs,
+    async (session) => {
+      const results: ConsumerQualification["results"] = [];
+      let stopped = !session.supportsTools;
+      for (const [index, read] of QUALIFICATION_READS.entries()) {
+        const observation = {
+          tool: read.tool,
+          arguments: { ...read.arguments },
+        };
+        if (stopped || !session.active()) {
+          results.push({
+            ...observation,
+            error: {
+              code: "not_run",
+              message:
+                "This read was not run because the MCP session was unavailable or its diagnostic limit was reached.",
+            },
+          });
+          continue;
+        }
+        try {
+          const raw = await session.qualificationRead(index);
+          const { result, isError } = normalizeQualificationResult(
+            raw,
+            session.secrets,
+          );
+          results.push({
+            ...observation,
+            result,
+            ...(isError
+              ? {
+                  error: {
+                    code: "tool_error",
+                    message:
+                      "Higgsfield could not complete this read-only check. Its redacted response is included for inspection.",
+                  },
+                }
+              : {}),
+          });
+        } catch (error) {
+          if (error instanceof QualificationPayloadError) {
+            results.push({
+              ...observation,
+              error: { code: error.code, message: error.message },
+            });
+            continue;
+          }
+          const safe =
+            error instanceof ConsumerDiscoveryError
+              ? error
+              : new ConsumerDiscoveryError("provider_unavailable");
+          results.push({
+            ...observation,
+            error: { code: safe.code, message: safe.message },
+          });
+          // A per-call timeout or ordinary RPC error need not discard other
+          // independent reads. No failed request is retried, and exhausted byte
+          // limits, auth failures or malformed protocol stop further admission.
+          stopped =
+            safe.code !== "provider_error" &&
+            !(safe.code === "timeout" && session.active());
+        }
+      }
+      return { readOnly: true, results };
+    },
+  );
 }
