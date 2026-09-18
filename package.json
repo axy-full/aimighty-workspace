@@ -17,7 +17,7 @@
     "@ai-sdk/gateway": "4.0.86",
     "@ai-sdk/openai": "4.0.70",
     "@anthropic-ai/sdk": "^0.123.0",
-    "@libsql/client": "^0.17.4",
+    "@libsql/client": "^0.18.0",
     "@mediabunny/aac-encoder": "file:public/open-source/mediabunny-aac-encoder-1.56.2-particl.1.tgz",
     "@tesseract.js-data/eng": "1.0.0",
     "@vercel/blob": "^2.8.0",
