@@ -79,6 +79,81 @@ async function setNumber(workspace: Locator, label: string, value: string) {
   await input.press('Enter');
 }
 
+async function observeViewportDraws(page: Page) {
+  await page.addInitScript(() => {
+    const metrics = { calls: 0 };
+    Object.defineProperty(window, '__astraDraws', { value: metrics });
+    for (const prototype of [WebGLRenderingContext.prototype, WebGL2RenderingContext.prototype]) {
+      for (const name of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced']) {
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+        if (typeof descriptor?.value !== 'function') continue;
+        const original = descriptor.value;
+        Object.defineProperty(prototype, name, { ...descriptor, value: function (this: WebGLRenderingContext, ...args: unknown[]) {
+          if (this.canvas instanceof HTMLCanvasElement && this.canvas.getAttribute('aria-label') === 'Interactive 3D viewport') metrics.calls++;
+          return Reflect.apply(original, this, args);
+        } });
+      }
+    }
+  });
+  const count = () => page.evaluate(() => (window as unknown as { __astraDraws: { calls: number } }).__astraDraws.calls);
+  const idle = async () => {
+    await expect.poll(() => page.evaluate(async () => {
+      const metrics = (window as unknown as { __astraDraws: { calls: number } }).__astraDraws;
+      const before = metrics.calls;
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return metrics.calls - before;
+    }), { message: 'An unchanged viewport must issue no WebGL draw calls' }).toBe(0);
+    return count();
+  };
+  return { count, idle };
+}
+
+test('viewport draws only for changes, finishes orbit damping and restores overlays after PNG capture', async ({ page }) => {
+  const draws = await observeViewportDraws(page);
+  const { workspace } = await fixture(page);
+  const canvas = workspace.getByRole('img', { name: 'Interactive 3D viewport' });
+  await expect(canvas).toBeVisible();
+  await expect.poll(draws.count).toBeGreaterThan(0);
+  let before = await draws.idle();
+  await workspace.getByRole('button', { name: 'Toggle grid', exact: true }).click();
+  await expect.poll(draws.count).toBeGreaterThan(before);
+  before = await draws.idle();
+  const bounds = (await canvas.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width * .2, bounds.y + bounds.height * .2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * .25, bounds.y + bounds.height * .25, { steps: 3 });
+  await page.mouse.up();
+  await expect.poll(draws.count).toBeGreaterThan(before);
+  await draws.idle();
+  await workspace.getByRole('button', { name: 'Play animation', exact: true }).click();
+  before = await draws.count();
+  await expect.poll(draws.count).toBeGreaterThan(before);
+  await workspace.getByRole('button', { name: 'Pause animation', exact: true }).click();
+  await draws.idle();
+  await workspace.getByRole('button', { name: 'Toggle grid', exact: true }).click();
+  await draws.idle();
+  const shown = await canvas.evaluate(node => (node as HTMLCanvasElement).toDataURL());
+  await openPanel(workspace, 'Output');
+  const downloaded = page.waitForEvent('download');
+  await workspace.getByRole('button', { name: 'Save viewport PNG', exact: true }).click();
+  await downloaded;
+  await openPanel(workspace, 'Scene');
+  await draws.idle();
+  expect(await canvas.evaluate(node => (node as HTMLCanvasElement).toDataURL()) === shown, 'PNG capture must restore the visible grid and selection overlays').toBe(true);
+  // A hidden document cancels pending drawing but retains changes to render
+  // once it becomes visible again. Exercise the browser event deterministically.
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  before = await draws.idle();
+  await workspace.getByRole('button', { name: 'Toggle grid', exact: true }).click();
+  expect(await draws.idle()).toBe(before);
+  await page.evaluate(() => { delete (document as unknown as { hidden?: boolean }).hidden; document.dispatchEvent(new Event('visibilitychange')); });
+  await expect.poll(draws.count).toBeGreaterThan(before);
+  await draws.idle();
+  await page.getByRole('navigation', { name: 'Particl Studio pages', exact: true }).getByRole('link', { name: 'Brief', exact: true }).click();
+  await expect(canvas).toHaveCount(0);
+  await draws.idle();
+});
+
 test('editable 3D scene persists transforms, material, keyframes, locks and scene export without paid calls', async ({ page }, info) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -171,6 +246,7 @@ test('templates, playback, camera and viewport capture stay usable across viewpo
 });
 
 test('project GLB and image previews retain loaded resources during edits and reject external model resources', async ({ page }) => {
+  const draws = await observeViewportDraws(page);
   const state = await fixture(page, true);
   const workspace = state.workspace;
   // Wait for the lazy viewport (including development Strict Mode setup) before
@@ -178,15 +254,30 @@ test('project GLB and image previews retain loaded resources during edits and re
   await expect(workspace.getByRole('img', { name: 'Interactive 3D viewport' })).toBeVisible();
   const external: string[] = [];
   await page.route('https://untrusted.example/**', async (route) => { external.push(route.request().url()); await route.abort(); });
+  let releaseModel!: () => void, releaseImage!: () => void;
+  const modelReady = new Promise<void>(resolve => { releaseModel = resolve; });
+  const imageReady = new Promise<void>(resolve => { releaseImage = resolve; });
+  await page.route('**/api/uploads/astra-model**', async route => { await modelReady; await route.fallback(); });
+  await page.route('**/api/uploads/astra-image**', async route => { await imageReady; await route.fallback(); });
   await openPanel(workspace, 'Objects');
   await workspace.getByLabel('Add object', { exact: true }).selectOption('asset:triangle');
+  await openPanel(workspace, 'Scene');
+  let before = await draws.idle();
+  releaseModel();
   await expect.poll(() => state.assetReads.filter((path) => path.endsWith('model')).length).toBe(1);
+  await expect.poll(draws.count).toBeGreaterThan(before);
+  await draws.idle();
   await openPanel(workspace, 'Properties');
   await setNumber(workspace, 'Position X', '2');
   await setNumber(workspace, 'Scale Z', '2');
   await openPanel(workspace, 'Objects');
   await workspace.getByLabel('Add object', { exact: true }).selectOption('asset:image');
+  await openPanel(workspace, 'Scene');
+  before = await draws.idle();
+  releaseImage();
   await expect.poll(() => state.assetReads.filter((path) => path.endsWith('image')).length).toBe(1);
+  await expect.poll(draws.count).toBeGreaterThan(before);
+  await draws.idle();
   await openPanel(workspace, 'Properties');
   await setNumber(workspace, 'Position Z', '1');
   expect(state.assetReads.filter((path) => path.endsWith('model'))).toHaveLength(1);

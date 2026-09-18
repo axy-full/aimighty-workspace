@@ -176,6 +176,46 @@ export default function AstraViewport(props: Props) {
     let cameraSignature = '';
     let pointerStart: { x: number; y: number; transforming: boolean } | null = null;
     let changed = false;
+    let pendingFrame: number | null = null;
+    let needsRender = true;
+    let updatingOrbit = false;
+    let dampingFrames = 0;
+    let contextLost = false;
+    const canRender = () => !disposed && visible && !document.hidden && !contextLost;
+    const cancelFrame = () => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      pendingFrame = null;
+    };
+    const invalidate = () => {
+      needsRender = true;
+      if (canRender() && pendingFrame === null) pendingFrame = requestAnimationFrame(drawFrame);
+    };
+    const drawFrame = () => {
+      pendingFrame = null;
+      if (!canRender()) return;
+      const requested = needsRender;
+      needsRender = false;
+      updatingOrbit = true;
+      let moving = orbit.update();
+      if ((moving && ++dampingFrames >= 180) || (!moving && dampingFrames > 0)) {
+        // Finish any residual inertia without leaving an unbounded RAF loop.
+        // Clear sub-pixel residuals at rest too, so later scene invalidations
+        // cannot make the camera drift after the orbit gesture has settled.
+        orbit.enableDamping = false;
+        orbit.update();
+        orbit.enableDamping = true;
+        moving = false;
+      }
+      updatingOrbit = false;
+      if (requested || moving) renderer.render(stage, camera);
+      if (moving) invalidate(); else dampingFrames = 0;
+    };
+    const onOrbitChange = () => {
+      // update() dispatches change synchronously. Schedule its next damping
+      // frame above, so that event cannot keep an otherwise idle loop alive.
+      if (!updatingOrbit) { dampingFrames = 0; invalidate(); }
+    };
+    orbit.addEventListener('change', onOrbitChange);
 
     const updateSelection = () => {
       const object = selected ? objects.get(selected) : null;
@@ -185,6 +225,7 @@ export default function AstraViewport(props: Props) {
         box.visible = !box.box.isEmpty();
         if (!source.locked && !playing) transform.attach(object); else transform.detach();
       } else { box.visible = false; transform.detach(); }
+      invalidate();
     };
     const applyFrame = () => {
       for (const source of current?.objects ?? []) {
@@ -205,6 +246,7 @@ export default function AstraViewport(props: Props) {
       camera.setFocalLength(current.camera.focalLength);
       orbit.target.fromArray(current.camera.target);
       orbit.update();
+      invalidate();
     };
     const resize = () => {
       const width = container.clientWidth;
@@ -212,14 +254,17 @@ export default function AstraViewport(props: Props) {
       // Mobile panel switching hides, but does not destroy, the viewport. Keep
       // its last real resolution so exports from the Output tab remain useful.
       visible = width >= 2 && height >= 2;
-      if (!visible) return;
+      if (!visible) { cancelFrame(); return; }
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      invalidate();
     };
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
     resize();
+    const onVisibilityChange = () => { if (document.hidden) cancelFrame(); else resize(); };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const onPointerDown = (event: PointerEvent) => { pointerStart = { x: event.clientX, y: event.clientY, transforming: transform.dragging || !!transform.axis }; };
     const onPointerUp = (event: PointerEvent) => {
@@ -233,7 +278,7 @@ export default function AstraViewport(props: Props) {
       callbacks.current.onSelect(object?.userData.astraId ?? null);
     };
     const onDrag = (event: { value?: unknown }) => { orbit.enabled = !event.value; };
-    const onChange = () => { changed = true; if (transform.object) box.box.setFromObject(transform.object); };
+    const onChange = () => { changed = true; if (transform.object) box.box.setFromObject(transform.object); invalidate(); };
     const onTransformEnd = () => {
       const object = transform.object;
       if (object && changed) callbacks.current.onTransform(object.userData.astraId, {
@@ -247,15 +292,11 @@ export default function AstraViewport(props: Props) {
     renderer.domElement.addEventListener('pointerup', onPointerUp);
     transform.addEventListener('dragging-changed', onDrag);
     transform.addEventListener('objectChange', onChange);
+    transform.addEventListener('change', invalidate);
     transform.addEventListener('mouseUp', onTransformEnd);
-    const onContextLost = (event: Event) => { event.preventDefault(); setError('The browser lost its graphics connection. Reload the workspace to restore the viewport. Your scene is saved.'); };
+    const onContextLost = (event: Event) => { event.preventDefault(); contextLost = true; cancelFrame(); setError('The browser lost its graphics connection. Reload the workspace to restore the viewport. Your scene is saved.'); };
     renderer.domElement.addEventListener('webglcontextlost', onContextLost);
 
-    renderer.setAnimationLoop(() => {
-      if (!visible || document.hidden) return;
-      orbit.update();
-      renderer.render(stage, camera);
-    });
     runtime.current = {
       setScene: (scene, previews) => {
         current = scene;
@@ -337,6 +378,7 @@ export default function AstraViewport(props: Props) {
                 material.map = texture;
                 material.color.set('#ffffff');
                 material.needsUpdate = true;
+                invalidate();
                 return;
               }
               validateAstraGlb(new Uint8Array(bytes));
@@ -372,16 +414,22 @@ export default function AstraViewport(props: Props) {
       },
       setFrame: (frame) => { currentFrame = frame; applyFrame(); },
       setSelection: (id, isPlaying) => { selected = id; playing = isPlaying; updateSelection(); },
-      setMode: (mode) => transform.setMode(mode),
-      setGrid: (value) => { grid.visible = value; axes.visible = value; },
+      setMode: (mode) => { transform.setMode(mode); invalidate(); },
+      setGrid: (value) => { grid.visible = value; axes.visible = value; invalidate(); },
       dispose: () => {
         disposed = true;
         for (const controller of assetLoads.values()) controller.abort();
-        renderer.setAnimationLoop(null);
+        cancelFrame();
         resizeObserver.disconnect();
+        document.removeEventListener('visibilitychange', onVisibilityChange);
         renderer.domElement.removeEventListener('pointerdown', onPointerDown);
         renderer.domElement.removeEventListener('pointerup', onPointerUp);
         renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
+        transform.removeEventListener('dragging-changed', onDrag);
+        transform.removeEventListener('objectChange', onChange);
+        transform.removeEventListener('change', invalidate);
+        transform.removeEventListener('mouseUp', onTransformEnd);
+        orbit.removeEventListener('change', onOrbitChange);
         transform.dispose();
         orbit.dispose();
         disposeTree(content);
@@ -407,19 +455,23 @@ export default function AstraViewport(props: Props) {
         orbit.target.copy(center);
         camera.position.copy(center).addScaledVector(direction, distance);
         orbit.update();
+        invalidate();
       },
       getCamera: () => ({ position: camera.position.toArray() as AstraVector3, target: orbit.target.toArray() as AstraVector3, focalLength: camera.getFocalLength() }),
       downloadPng: () => {
         const shown = [grid.visible, axes.visible, box.visible, gizmo.visible];
         grid.visible = axes.visible = box.visible = gizmo.visible = false;
-        renderer.render(stage, camera);
         try {
+          renderer.render(stage, camera);
           const link = document.createElement('a');
           link.href = renderer.domElement.toDataURL('image/png');
           link.download = `astra-viewport-frame-${currentFrame}.png`;
           link.click();
         } catch { setAssetError('The browser could not export this preview. Use the Blender render export.'); }
-        [grid.visible, axes.visible, box.visible, gizmo.visible] = shown;
+        finally {
+          [grid.visible, axes.visible, box.visible, gizmo.visible] = shown;
+          invalidate();
+        }
       },
     });
     return () => { runtime.current?.dispose(); runtime.current = null; callbacks.current.onReady(null); };
