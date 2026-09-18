@@ -63,7 +63,7 @@ jobs:
           PARTICL_BACKUP_KEY: ${{ secrets.PARTICL_BACKUP_KEY }}
           PARTICL_BACKUP_QUIESCENCE_JSON: ${{ secrets.PARTICL_BACKUP_QUIESCENCE_JSON }}
       - name: Retain only verified ciphertext
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: particl-backup-verified-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.backup.outputs.bundle_path }}/
