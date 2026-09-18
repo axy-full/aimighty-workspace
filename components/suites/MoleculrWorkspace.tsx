@@ -72,7 +72,7 @@ export function MoleculrWorkspace({
   onSequence: (asset: Asset) => void;
   onAgent: () => void;
   onSave?: () => Promise<boolean>;
-  onImportRemote?: (url: string) => Promise<Asset>;
+  onImportRemote?: (url: string, category?: "Product" | "Brand") => Promise<Asset>;
   onCreateAvatar?: (prompt: string) => void;
   onBuildStoryboard?: () => void;
   onReviewVariant?: (nodeId: string) => void;
@@ -190,9 +190,12 @@ export function MoleculrWorkspace({
           <BrandKitEditor
             project={project}
             brief={brief}
+            scope={scope}
             enabled={enabled}
             onChange={onChange}
             onUpload={() => onUpload("Brand")}
+            onSave={onSave}
+            onImportRemote={onImportRemote}
           />
           <div className="suite-marketing-tools">{marketing}</div>
           <footer className="suite-panel-footer">

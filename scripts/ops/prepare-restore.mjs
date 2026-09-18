@@ -214,14 +214,17 @@ export async function prepareRestore(
               }
             }
           }
-          // Old bearer sessions, review links and password reset tokens must not
-          // become valid again merely because an older backup contained them.
+          // Old bearer sessions, review links, password reset tokens and OAuth
+          // grants must not become valid again because an older backup retained
+          // them. Restored consumer connections require fresh authorization.
           for (const table of [
             "p_sessions",
             "sessions",
             "api_tokens",
             "p_shares",
             "password_resets",
+            "higgsfield_consumer_connections",
+            "higgsfield_consumer_authorizations",
           ]) {
             if (!names.has(table)) continue;
             const result = await tx.execute(`DELETE FROM ${table}`);

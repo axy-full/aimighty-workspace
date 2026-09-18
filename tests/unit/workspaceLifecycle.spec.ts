@@ -96,6 +96,39 @@ test("purge retains credentials and unfinished stages on failure, retries exactl
   ).toBeNull();
 });
 
+test("workspace purge removes only its consumer grants and pending states, fencing a late OAuth callback", async () => {
+  const { platformReady, platformDb, getWorkspace } = await import("../../lib/platform");
+  const { markWorkspaceDeleted, purgeWorkspace } = await import("../../lib/purge");
+  const consumer = await import("../../lib/higgsfield-consumer/store");
+  await platformReady();
+  const p = platformDb();
+  await p.execute(`INSERT INTO workspaces(id,slug,name,db_url,owner_id,created_at,updated_at) VALUES('consumer-purge','consumer-purge','Customer','file:unused','owner',0,0)`);
+  const states = [];
+  for (const [index, workspaceId] of ["consumer-purge", "other-customer"].entries()) {
+    const identity = { workspaceId, userId: "owner" };
+    const state = String(index).repeat(43), sessionHash = "fixture-session-hash";
+    await consumer.storeAuthorization({ ...identity, state, sessionHash, verifier: "v".repeat(43), clientId: "fixture-client", redirectUri: "https://particl.example/callback" });
+    const authorization = await consumer.consumeAuthorization(state, { ...identity, sessionHash });
+    const tokens = { accessToken: "fixture-access", refreshToken: "fixture-refresh", clientId: "fixture-client", redirectUri: "https://particl.example/callback", expiresAt: Date.now() + 3600_000, scope: "offline_access" };
+    expect(await consumer.completeAuthorization(authorization!, tokens)).toBe(true);
+    states.push({ authorization: authorization!, tokens });
+  }
+  // A second pending login from another owner must also be removed.
+  await consumer.storeAuthorization({ workspaceId: "consumer-purge", userId: "previous-owner", state: "p".repeat(43), sessionHash: "hash", verifier: "v".repeat(43), clientId: "fixture-client", redirectUri: "https://particl.example/callback" });
+  const ws = (await getWorkspace("consumer-purge"))!;
+  await markWorkspaceDeleted(ws.id);
+  await p.execute("UPDATE workspace_purges SET next_attempt_at=0 WHERE workspace_id='consumer-purge'");
+  const result = await purgeWorkspace(ws, { files: async () => ({ files: 0, uploads: 0 }), key: async () => {}, database: async () => {} });
+  expect(result.completed).toBe(true);
+  for (const table of ["higgsfield_consumer_connections", "higgsfield_consumer_authorizations"]) {
+    const rows = (await p.execute(`SELECT workspace_id FROM ${table} WHERE workspace_id IN ('consumer-purge','other-customer')`)).rows;
+    expect(rows.map(row => row.workspace_id)).toEqual(["other-customer"]);
+  }
+  expect(await consumer.completeAuthorization(states[0].authorization, states[0].tokens)).toBe(false);
+  expect(await consumer.claimConsumerAccess({ workspaceId: "consumer-purge", userId: "owner" })).toEqual({ kind: "missing" });
+  expect((await consumer.claimConsumerAccess({ workspaceId: "other-customer", userId: "owner" })).kind).toBe("ready");
+});
+
 test("workspace export includes shared production records and owner drafts but excludes other private drafts and credentials", async () => {
   const { rowToWorkspace, platformDb, platformReady } =
     await import("../../lib/platform");
