@@ -15,7 +15,7 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 90;
+export const maxDuration = 180;
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 const id = z.string().min(1).max(200).regex(/^[A-Za-z0-9_-]+$/);
 const quote = z.object({ action: z.literal("quote"), draftId: id, input: consumerVideoInputSchema, idempotencyKey: z.uuid() }).strict();

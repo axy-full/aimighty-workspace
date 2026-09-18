@@ -69,7 +69,8 @@ export class ConsumerJobError extends Error {
   }
 }
 export const CONSUMER_ACTIVE_LIMIT = 4;
-export const CONSUMER_POLL_LEASE_MS = 30_000;
+// A result read can include bounded original-media collection before settling.
+export const CONSUMER_POLL_LEASE_MS = 180_000;
 const initialized = new WeakMap<Client, Promise<void>>();
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -529,6 +530,33 @@ async function finishDispatch(
         hash(input.claimToken),
       ],
     });
+    return asJob(await requiredRow(tx, input));
+  });
+}
+
+/** Recover a newly understood acknowledgement from the immutable server-saved
+ * receipt. This only adopts an existing provider job; it never admits a POST.
+ * The workflow service must validate the receipt format before calling. */
+export async function reconcileConsumerReceipt(
+  input: ConsumerJobScope & { providerJobId: string; expectedReceipt: { [key: string]: ConsumerJson } },
+): Promise<ConsumerJob | null> {
+  jobScope(input);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.providerJobId)) invalid();
+  const providerJobId = input.providerJobId.toLowerCase();
+  const expected = canonicalObject(input.expectedReceipt, 65_536);
+  await consumerJobsReady();
+  return workbenchTransaction(async tx => {
+    const row = await requiredRow(tx, input);
+    if (row.provider_receipt !== expected || !row.dispatch_claim_hash || row.workflow !== "marketing-video") return null;
+    if (row.provider_job_id != null) {
+      if (row.provider_job_id !== providerJobId) throw new ConsumerJobError("provider_job_conflict");
+      return asJob(row);
+    }
+    if (row.status !== "uncertain") return null;
+    if ((await tx.execute({ sql: "SELECT 1 FROM higgsfield_consumer_jobs WHERE provider_job_id=? AND id<>?", args: [providerJobId, input.id] })).rows.length)
+      throw new ConsumerJobError("provider_job_conflict");
+    await tx.execute({ sql: "UPDATE higgsfield_consumer_jobs SET status='accepted',provider_job_id=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='uncertain' AND provider_receipt=? AND provider_job_id IS NULL",
+      args: [providerJobId, Date.now(), input.id, input.userId, input.draftId, expected] });
     return asJob(await requiredRow(tx, input));
   });
 }

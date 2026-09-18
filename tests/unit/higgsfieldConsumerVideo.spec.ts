@@ -24,6 +24,16 @@ const input: ConsumerVideoInput = {
   aspectRatio: "16:9",
   generateAudio: true,
 };
+
+test("qualified single-result receipt accepts only this video model and one consistent UUID", () => {
+  const result = { id: jobId, model: "marketing_studio_video", type: "video", status: "pending" };
+  expect(consumerVideoAcknowledgement({ results: [result] })).toBe(jobId);
+  expect(consumerVideoAcknowledgement({ results: [result, result] })).toBeNull();
+  expect(consumerVideoAcknowledgement({ results: [{ ...result, type: "image" }] })).toBeNull();
+  expect(consumerVideoAcknowledgement({ results: [{ ...result, model: "other" }] })).toBeNull();
+  expect(consumerVideoAcknowledgement({ results: [result], id: otherId })).toBeNull();
+  expect(consumerVideoAcknowledgement({ results: [{ ...result, id: "not-a-job" }] })).toBeNull();
+});
 type Packet = {
   id: string;
   method: string;

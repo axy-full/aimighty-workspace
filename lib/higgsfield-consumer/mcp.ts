@@ -98,6 +98,16 @@ const QUALIFICATION_READS = Object.freeze([
     }),
   }),
 ]);
+const ANALYSIS_QUALIFICATION_READS = Object.freeze([
+  Object.freeze({
+    tool: "models_explore",
+    arguments: Object.freeze({ action: "get", model_id: "brain_activity" }),
+  }),
+  Object.freeze({
+    tool: "models_explore",
+    arguments: Object.freeze({ action: "get", model_id: "virality_predictor" }),
+  }),
+]);
 
 export type ConsumerDiscoveryCode =
   | "reconnect_required"
@@ -164,6 +174,9 @@ type ConsumerSession = {
   active: () => boolean;
   list: (cursor?: string) => Promise<Record<string, unknown>>;
   qualificationRead: (index: number) => Promise<Record<string, unknown>>;
+  analysisQualificationRead: (
+    index: number,
+  ) => Promise<Record<string, unknown>>;
   videoWorkspaces: () => Promise<Record<string, unknown>>;
   videoQuote: (input: ConsumerVideoInput) => Promise<Record<string, unknown>>;
   videoSubmit: (
@@ -562,6 +575,14 @@ async function withConsumerSession<T>(
           arguments: read.arguments,
         }))!;
       },
+      analysisQualificationRead: async (index) => {
+        const read = ANALYSIS_QUALIFICATION_READS[index];
+        if (!Number.isInteger(index) || !read) fail("unsupported_protocol");
+        return (await post("tools/call", {
+          name: read.tool,
+          arguments: read.arguments,
+        }))!;
+      },
       videoWorkspaces: async () =>
         (await post("tools/call", { name: "list_workspaces", arguments: {} }))!,
       videoQuote: async (input) =>
@@ -691,71 +712,103 @@ export async function readConsumerQualification(
     accessToken,
     options,
     QUALIFICATION_LIMITS.timeoutMs,
-    async (session) => {
-      const results: ConsumerQualification["results"] = [];
-      let stopped = !session.supportsTools;
-      for (const [index, read] of QUALIFICATION_READS.entries()) {
-        const observation = {
-          tool: read.tool,
-          arguments: { ...read.arguments },
-        };
-        if (stopped || !session.active()) {
-          results.push({
-            ...observation,
-            error: {
-              code: "not_run",
-              message:
-                "This read was not run because the MCP session was unavailable or its diagnostic limit was reached.",
-            },
-          });
-          continue;
-        }
-        try {
-          const raw = await session.qualificationRead(index);
-          const { result, isError } = normalizeQualificationResult(
-            raw,
-            session.secrets,
-          );
-          results.push({
-            ...observation,
-            result,
-            ...(isError
-              ? {
-                  error: {
-                    code: "tool_error",
-                    message:
-                      "Higgsfield could not complete this read-only check. Its redacted response is included for inspection.",
-                  },
-                }
-              : {}),
-          });
-        } catch (error) {
-          if (error instanceof QualificationPayloadError) {
-            results.push({
-              ...observation,
-              error: { code: error.code, message: error.message },
-            });
-            continue;
-          }
-          const safe =
-            error instanceof ConsumerDiscoveryError
-              ? error
-              : new ConsumerDiscoveryError("provider_unavailable");
-          results.push({
-            ...observation,
-            error: { code: safe.code, message: safe.message },
-          });
-          // A per-call timeout or ordinary RPC error need not discard other
-          // independent reads. No failed request is retried, and exhausted byte
-          // limits, auth failures or malformed protocol stop further admission.
-          stopped =
-            safe.code !== "provider_error" &&
-            !(safe.code === "timeout" && session.active());
-        }
-      }
-      return { readOnly: true, results };
-    },
+    (session) =>
+      qualificationObservations(
+        session,
+        QUALIFICATION_READS,
+        session.qualificationRead,
+      ),
   );
+}
+
+/** Separate short diagnostic: exact model metadata only. It never requests a
+ * price, uploads media, predicts a score or invokes an analysis creation tool. */
+export async function readConsumerAnalysisQualification(
+  accessToken: string,
+  options: Options = {},
+): Promise<ConsumerQualification & { scope: "analysis-models" }> {
+  return withConsumerSession(
+    accessToken,
+    options,
+    DISCOVERY_LIMITS.timeoutMs,
+    async (session) => ({
+      ...(await qualificationObservations(
+        session,
+        ANALYSIS_QUALIFICATION_READS,
+        session.analysisQualificationRead,
+      )),
+      scope: "analysis-models",
+    }),
+  );
+}
+
+async function qualificationObservations(
+  session: ConsumerSession,
+  reads: readonly { tool: string; arguments: Record<string, unknown> }[],
+  readAtIndex: (index: number) => Promise<Record<string, unknown>>,
+): Promise<ConsumerQualification> {
+  const results: ConsumerQualification["results"] = [];
+  let stopped = !session.supportsTools;
+  for (const [index, read] of reads.entries()) {
+    const observation = {
+      tool: read.tool,
+      arguments: { ...read.arguments },
+    };
+    if (stopped || !session.active()) {
+      results.push({
+        ...observation,
+        error: {
+          code: "not_run",
+          message:
+            "This read was not run because the MCP session was unavailable or its diagnostic limit was reached.",
+        },
+      });
+      continue;
+    }
+    try {
+      const raw = await readAtIndex(index);
+      const { result, isError } = normalizeQualificationResult(
+        raw,
+        session.secrets,
+      );
+      results.push({
+        ...observation,
+        result,
+        ...(isError
+          ? {
+              error: {
+                code: "tool_error",
+                message:
+                  "Higgsfield could not complete this read-only check. Its redacted response is included for inspection.",
+              },
+            }
+          : {}),
+      });
+    } catch (error) {
+      if (error instanceof QualificationPayloadError) {
+        results.push({
+          ...observation,
+          error: { code: error.code, message: error.message },
+        });
+        continue;
+      }
+      const safe =
+        error instanceof ConsumerDiscoveryError
+          ? error
+          : new ConsumerDiscoveryError("provider_unavailable");
+      results.push({
+        ...observation,
+        error: { code: safe.code, message: safe.message },
+      });
+      // A per-call timeout or ordinary RPC error need not discard other
+      // independent reads. No failed request is retried, and exhausted byte
+      // limits, auth failures or malformed protocol stop further admission.
+      stopped =
+        safe.code !== "provider_error" &&
+        !(safe.code === "timeout" && session.active());
+    }
+  }
+  return { readOnly: true, results };
 }
 
 export type ConsumerVideoQuote = {
