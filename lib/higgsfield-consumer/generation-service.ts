@@ -52,7 +52,8 @@ import {
   type ConnectedOutputType,
 } from "./catalogue";
 import { loadConnectedCatalogue } from "./catalogue-cache";
-import { resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
+import { describeConsumerGenerationSources, resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
+import { requireConnectedTool, type ConnectedToolName } from "./tools";
 import { consumerMediaKey } from "./genjutsu-contract";
 import { sameConsumerValue } from "./video-contract";
 import { collectConsumerVideoOriginal } from "./video-original";
@@ -65,6 +66,10 @@ type Snapshot = {
   params: ConsumerGenerationParams;
   workspaceName: string;
   model: { id: string; name: string; outputType: ConnectedOutputType };
+  /** Set when a media tool preset produced the job. */
+  tool?: { name: ConnectedToolName; label: string; model: string; suffix: string };
+  /** Display names of the request's reference files, in request order. */
+  sources?: { role: string; kind: string; name: string }[];
 };
 function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvailability, observedAt: number) {
   const snapshot = JSON.parse(job.payloadJson) as Snapshot;
@@ -77,6 +82,8 @@ function presentGeneration(job: ConsumerJob, availability: ConsumerOriginalAvail
     status: job.status,
     input: snapshot.input,
     model: snapshot.model,
+    tool: snapshot.tool ?? null,
+    sources: snapshot.sources ?? [],
     workspaceName: snapshot.workspaceName,
     workspaceId: job.higgsfieldWorkspaceId,
     quoteCredits: job.quoteCredits,
@@ -148,6 +155,7 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
   // Catalogue validation precedes source resolution, imports and pricing.
   consumerGenerationParams(model, normalized, normalized.medias.map((media) => ({ value: PLACEHOLDER_MEDIA, role: media.role })));
   const access = await connected(userId);
+  const described = await describeConsumerGenerationSources(normalized);
   const sources = await resolveConsumerGenerationSources(normalized);
   const quote = await getConsumerGenerationQuote(access.accessToken, model, normalized, sources, {
     resolveMedia: async (index, workspaceId, perform) => {
@@ -164,7 +172,12 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
     params: quote.params,
     workspaceName: quote.workspace.name ?? "Connected wallet",
     model: { id: model.id, name: model.name, outputType: model.outputType },
+    sources: described,
   };
+  if (normalized.tool) {
+    const tool = requireConnectedTool(normalized.tool.name);
+    payload.tool = { name: tool.name, label: tool.label, model: normalized.tool.model, suffix: tool.suffix };
+  }
   try {
     const { job } = await createConsumerJob({
       userId,

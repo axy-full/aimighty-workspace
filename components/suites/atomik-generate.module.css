@@ -8,6 +8,7 @@
 .form textarea { resize: vertical; min-height: 120px; }
 .form select, .form input:not([type="checkbox"]) { min-height: 44px; }
 .form :disabled { opacity: .6; cursor: not-allowed; }
+.groups { display: grid; gap: 8px; min-width: 0; }
 .workflows, .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .workflows button, .chips button { border: 1px solid var(--graphite-edge); border-radius: 8px; background: var(--graphite-panel); color: var(--graphite-body); padding: 9px 12px; min-height: 40px; font-size: 12px; }
 .workflows button[aria-pressed="true"], .chips button[aria-pressed="true"] { border-color: #f0b23e; color: var(--graphite-ink); background: #1c170f; }

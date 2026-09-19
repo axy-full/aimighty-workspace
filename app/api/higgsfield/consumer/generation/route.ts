@@ -14,6 +14,7 @@ import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
 import { GENERATION_SOURCE_BYTES } from "@/lib/higgsfield-consumer/generation-sources";
+import { CONNECTED_TOOLS } from "@/lib/higgsfield-consumer/tools";
 import {
   connectedGenerationCatalogue,
   consumerGenerationJobs,
@@ -87,6 +88,7 @@ export const GET = withTenant(async (req: Request) => {
       connection: await getConsumerConnection({ workspaceId: requireTenant().id, userId: owner.user.id }),
       capabilities: {
         types: CONNECTED_OUTPUT_TYPES,
+        tools: CONNECTED_TOOLS.map((tool) => ({ name: tool.name, label: tool.label, outputType: tool.outputType, sourceKind: tool.sourceKind, extraKinds: tool.extraKinds, models: tool.models })),
         promptLimit: PROMPT_LIMIT,
         maxMedias: MEDIA_LIMIT,
         maxMediaBytes: GENERATION_SOURCE_BYTES,

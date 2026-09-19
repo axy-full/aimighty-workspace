@@ -16,6 +16,7 @@ import { ConsumerOriginalError } from "../../lib/higgsfield-consumer/video-origi
 import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-sources";
 import * as catalogue from "../../lib/higgsfield-consumer/catalogue";
 import * as contract from "../../lib/higgsfield-consumer/generation-contract";
+import * as tools from "../../lib/higgsfield-consumer/tools";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -60,6 +61,7 @@ async function fixture() {
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
     "@/lib/higgsfield-consumer/generation-contract": contract,
     "@/lib/higgsfield-consumer/catalogue": catalogue,
+    "@/lib/higgsfield-consumer/tools": tools,
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/generation-sources": { GENERATION_SOURCE_BYTES: 52428800 },
     "@/lib/higgsfield-consumer/generation-service": {
@@ -142,7 +144,7 @@ test("owner catalogue, quote, exact approval and status receive server-derived i
   }
   const response = await f.request("GET", undefined, { query: "?draftId=draft-1&userId=other&workspaceId=other" });
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ connection: f.connection, jobs: [f.job], capabilities: { types: ["image", "video", "audio", "3d"], promptLimit: 5000, maxMedias: 30, maxMediaBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, cancel: false } });
+  expect(await response.json()).toEqual({ connection: f.connection, jobs: [f.job], capabilities: { types: ["image", "video", "audio", "3d"], tools: tools.CONNECTED_TOOLS.map((tool) => ({ name: tool.name, label: tool.label, outputType: tool.outputType, sourceKind: tool.sourceKind, extraKinds: tool.extraKinds, models: tool.models })), promptLimit: 5000, maxMedias: 30, maxMediaBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, cancel: false } });
   expect(f.connections).toEqual([{ workspaceId: "workspace", userId: "owner" }]);
   expect(f.calls).toEqual([
     { name: "catalogue", args: ["owner", { refresh: false }], workspace: "workspace" },

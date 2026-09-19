@@ -1,6 +1,6 @@
 # Atomik Generate — catalogue-driven workflows on the connected account
 
-PR I, slice I1 (19 September 2026). Atomik Super Agent gains a **Generate** page with four workflows — Image, Video, Sound and 3D — that run on the workspace owner's connected account. The page never names the provider: it speaks of the connected account, its wallet and its credits.
+PR I, slice I1 (19 September 2026). Atomik Super Agent gains a **Generate** page with four workflows — Image, Video, Sound and 3D — that run on the workspace owner's connected account. The page never names the provider: it speaks of the connected account, its wallet and its credits. Slice I2 (same day) adds a second group, **Tools**, on the same page; see "Tools" below.
 
 ## What it does
 
@@ -31,14 +31,38 @@ Outputs are the connected account's and are billed in **its credits**; Particl r
 - Rate limits per owner: 12 catalogue reads, 6 quotes, 6 submits, 30 status reads per minute.
 - The connected account's selected wallet is global across its clients; Particl checks it immediately before submission but cannot bind a request to a wallet. This surface is owner-operated, not qualified for unattended multi-tenant spending.
 
-## Not covered by I1
+## Tools (slice I2)
+
+The Generate page shows a second group, **Tools**, beside the workflow buttons. A tool is a thin preset over the same generation request: it fixes the output workflow, the candidate catalogue models, and the one project file it works on (plus one audio track for lip-sync). Everything else — the declared settings, media roles, `get_cost` quote, exact-credit approval, single durable dispatch claim, leased `job_status` polling, original collection and filing — is the I1 pipeline unchanged. Tools take no prompt. The request carries `tool: {name, model}` (recorded on the job, never sent to the provider); `lib/higgsfield-consumer/tools.ts` is pure and shared by the form and the server.
+
+| Tool | Catalogue models (in offer order) | Source role(s) | Settings shown |
+| --- | --- | --- | --- |
+| Upscale image | `bytedance_image_upscale`, `topaz_image` | one image (`image_references`) | `resolution`, `remove_bg` / `output_width`, `output_height` (required), `variant`, `face_enhancement*`, `sharpen`, `denoise`, `folder_id` |
+| Upscale video | `video_upscale`, `topaz_video`, `bytedance_video_upscale` | one video (`input_video` / `video_references`) | `duration`, `folder_id` / `resolution`, `enhancement`, `frame_interpolation`, `aspect_ratio` / `fps`, `resolution`, `preset`, `model_version` |
+| Remove background (image) | `image_background_remover` | one image (`image_references`) | none |
+| Remove background (video) | `video_background_remover` | one video (`video_references`) | none |
+| Extend canvas | `outpaint`, `flux_2_pro_outpaint` | one image (`image_references`) | `aspect_ratio`, `folder_id` / `expand_top|bottom|left|right` (−8192…2048), `folder_id` |
+| Deflicker | `video_deflicker` | one video (`input_video`) | `duration`, `folder_id` |
+| Lip-sync | `sync_so` | one video (`input_video`) **and** one audio file (`input_audio`) | `sync_mode`, `folder_id` |
+
+Rules, enforced before any provider call (`validateToolRequest`): the model must be one of the tool's candidates with the tool's output type and a declared role for every file the tool needs (`tool_model` / `tool_source`); exactly one source of the right kind and exactly one file per extra kind, nothing else (`tool_source`); then the generic catalogue validation. A tool whose candidate is absent from the live catalogue simply offers the remaining candidates (none → the tool cannot quote). In the page, picking a file for a role replaces the previous one; the library offers "Use as reference" on audio cards only while an audio role is active.
+
+Results are filed into the project library as `<source name without extension> · <suffix>` (`upscaled`, `background removed`, `extended`, `deflickered`, `lip-synced`) under the category **Tools**; the job snapshot records the source names read from the uploads/generations rows at quote time (`sources`), and the view exposes `tool` and `sources`. Same limits as the workflows (≤50 MB per source, ≤100 MiB per original, four active jobs, the same rate limits).
+
+**Excluded from I2, and why**
+
+- **Reframe.** The catalogue has no `reframe` model, so `models_explore get` gives no constraints. The connected account's MCP does advertise a `reframe` tool with its own form (`params:{medias:[{role:"video"}…], aspect_ratio, duration_seconds, resolution, get_cost}`), but `mcp.ts` has no typed operation for it — the catalogue pipeline quotes only through `generate_image/video/audio/3d` by model id — and its status envelope is unverified. It needs its own typed quote/submit/status contract; deferred.
+- **Clipify.** `clipify` is declared, but its only input is a required `urls` list of YouTube links (no project source) and it yields up to 20 clips, while the collector stores exactly one `results.rawUrl` original. It is not a transform of a project file and does not fit the single-original pipeline; deferred.
+- Also unchanged: 3D tools were already covered by I1's 3D workflow (`image_to_3d`, rigging, remesh, retexture models with their declared roles) and are not duplicated as presets.
+
+## Not covered by I1/I2
 
 - Virality scoring (no non-submitting price for `brain_activity`).
 - Per-request wallet binding.
 - Cancellation (the connected account advertises no job cancel tool; `cancel:false` in capabilities).
-- The media tools (upscale, reframe, background removal, outpaint) and voice/dubbing/analysis workflows — I2 and I3.
-- Live qualification: every browser and unit check here uses fixtures; no paid call was made while building this slice.
+- Reframe and Clipify (above); the voice/dubbing/analysis workflows — I3.
+- Live qualification: every browser and unit check here uses fixtures; no paid call was made while building these slices.
 
 ## Files
 
-`lib/higgsfield-consumer/catalogue.ts`, `catalogue-cache.ts`, `generation-contract.ts`, `generation-sources.ts`, `generation-service.ts`; `mcp.ts` (`catalogueList`, `catalogueGet`, `generationQuote`, `generationSubmit`, `generationStatus`); `jobs.ts` (`generation` workflow); `video-original.ts` (kind-generic collection); `app/api/higgsfield/consumer/generation/route.ts`; `components/suites/AtomikGenerate.tsx`; specs `tests/unit/connectedCatalogue.spec.ts`, `generationConsumerTransport.spec.ts`, `generationConsumerService.spec.ts`, `generationConsumerRoute.spec.ts`, `tests/atomik-generate-workbench.spec.ts`.
+`lib/higgsfield-consumer/catalogue.ts`, `catalogue-cache.ts`, `tools.ts`, `generation-contract.ts`, `generation-sources.ts`, `generation-service.ts`; `mcp.ts` (`catalogueList`, `catalogueGet`, `generationQuote`, `generationSubmit`, `generationStatus`); `jobs.ts` (`generation` workflow); `video-original.ts` (kind-generic collection); `app/api/higgsfield/consumer/generation/route.ts`; `components/suites/AtomikGenerate.tsx`; specs `tests/unit/connectedCatalogue.spec.ts`, `generationConsumerTransport.spec.ts`, `generationConsumerService.spec.ts`, `generationConsumerRoute.spec.ts`, `tests/atomik-generate-workbench.spec.ts`; I2: `tests/unit/connectedTools.spec.ts`, `tests/atomik-tools-workbench.spec.ts`.

@@ -103,7 +103,10 @@ export type CatalogueErrorCode =
   | "media_limit"
   | "media_required"
   | "prompt_required"
-  | "prompt_limit";
+  | "prompt_limit"
+  | "tool_unknown"
+  | "tool_model"
+  | "tool_source";
 export class CatalogueError extends Error {
   readonly status: number;
   constructor(

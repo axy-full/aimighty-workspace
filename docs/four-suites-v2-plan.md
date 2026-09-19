@@ -38,6 +38,8 @@ Atomik today orchestrates Particl's own engines (runs, recipes, approvals, budge
 
 **I1 done (19 September, branch `feat/atomik-generation-tools`).** Atomik has a **Generate** page (after Runs) with Image · Video · Sound · 3D workflows over the captured `models_explore` catalogue (`tests/fixtures/connected-models.json`): per-model settings, media roles, aspect ratios and durations are enforced before any call; references are imported once per quote; `generate_image/video/audio/3d` are quoted with `get_cost:true`, approved at the exact connected-credit price, submitted under one durable claim, polled with `job_status`, and collected as image/video/audio/GLB originals into private storage and the project library. Details, limits and what is not covered: `docs/atomik-generation.md`. Not covered: virality, wallet binding, cancellation (no tool advertised), and I2/I3 tools.
 
+**I2 done (19 September, branch `feat/atomik-media-tools`).** The Generate page gains a **Tools** group — Upscale image, Upscale video, Remove background (image / video), Extend canvas, Deflicker, Lip-sync — each a preset over the same catalogue-driven request (`tool:{name,model}` recorded on the job), constrained to one project source of the right kind (plus one audio file for lip-sync) and the chosen model's declared settings, quoted/approved/claimed/polled/collected exactly as I1, and filed as `<source> · upscaled` etc. under **Tools**. Reframe (no catalogue model; the MCP's `reframe` tool has its own untyped form) and Clipify (YouTube-URL input, multi-clip output) are excluded and explained in `docs/atomik-generation.md`.
+
 ## Order
 
 1. **PR A** IA restructure (labels, order, merges, aliases, home, Moleculr page, tests) — in progress.
