@@ -1,8 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
-import ts from "typescript";
 import {
   currentTenant,
   runInTenant,
@@ -10,32 +8,18 @@ import {
 } from "../../lib/tenant";
 import { byteRange } from "../../lib/mediaRange";
 import { servingFor } from "../../lib/serveType";
+import { loadIsolated } from "./storageSeam";
 
 function load<T>(file: string, dependencies: Record<string, unknown>): T {
-  const filename = path.resolve(file),
-    require = createRequire(filename);
-  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-      esModuleInterop: true,
-    },
-  }).outputText;
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "process", compiled)(
-    (name: string) =>
-      Object.hasOwn(dependencies, name) ? dependencies[name] : require(name),
-    mod,
-    mod.exports,
-    {
+  return loadIsolated<T>(file, dependencies, {
+    process: {
       ...process,
       env: {
         ...process.env,
         BLOB_READ_WRITE_TOKEN: "isolated-sdk-fixture-no-network",
       },
     },
-  );
-  return mod.exports as T;
+  });
 }
 
 const original = readFileSync(path.resolve("tests/fixtures/astra-source.mp4"));

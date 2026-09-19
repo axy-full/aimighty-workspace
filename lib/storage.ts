@@ -7,14 +7,18 @@ import { currentTenant } from "./tenant";
 import { isFixtureUrl } from "./mock";
 import { fetchBytes } from "./mockFs";
 import type { ByteRange } from './mediaRange';
+import { cloudBackend, resolveStored, usingCloud, type ResolvedObject, type StorageBackend } from "./storage/backend";
+
+export { backendKind, usingCloud, type StorageBackendKind } from "./storage/backend";
 
 /**
  * Ark's video_url expires (~24h). We copy every finished render into our own
  * storage the first time we see it complete, so links never rot.
  *
- * Vercel Blob when BLOB_READ_WRITE_TOKEN is present, local disk otherwise.
+ * A cloud backend (Vercel Blob today, Cloudflare R2 behind STORAGE_BACKEND=r2)
+ * when one is configured, local disk otherwise; see lib/storage/backend.ts.
  *
- * Blobs are stored PRIVATE and streamed back through our own authenticated
+ * Objects are stored PRIVATE and streamed back through our own authenticated
  * routes. A public blob URL is reachable by anyone who has the link, which is
  * wrong for client work — nothing here should be viewable outside the login.
  */
@@ -41,10 +45,8 @@ export async function storePlatformBytes(file: string, buf: Buffer, contentType:
 return await withRecoveryActivity('storage', async () => {
 
   if (!/^[A-Za-z0-9_\-:./]+$/.test(file) || file.includes("..")) throw new Error("bad platform path");
-  if (usingBlob()) {
-    const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-    await put(platformPath(file), buf, { access: "private", contentType, addRandomSuffix: false, allowOverwrite: true });
+  if (usingCloud()) {
+    await cloudBackend().put(platformPath(file), buf, { contentType, overwrite: true });
     return platformPath(file);
   }
   const full = path.join(PLATFORM_DIR, file);
@@ -57,12 +59,20 @@ return await withRecoveryActivity('storage', async () => {
 
 export async function readPlatformBytes(file: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_\-:./]+$/.test(file) || file.includes("..")) throw new Error("bad platform path");
-  if (usingBlob()) return readBlob(platformPath(file));
+  if (usingCloud()) return readCloud(platformPath(file));
   return readFile(path.join(PLATFORM_DIR, file));
 }
 
+/** True when a cloud backend holds the objects — Blob or R2. The name predates R2; usingCloud() is the same test. */
 export function usingBlob(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return usingCloud();
+}
+
+/** A stored row value that names an object outside the deterministic key: an
+ *  absolute URL from an older browser-direct upload. Route URLs and empty
+ *  values are not storage-shaped and fall through to the caller's own key. */
+function storedObject(stored?: string | null): ResolvedObject | null {
+  return stored && /^https?:\/\//.test(stored) ? resolveStored(stored) : null;
 }
 
 async function download(sourceUrl: string): Promise<Buffer> {
@@ -89,18 +99,11 @@ return await withRecoveryActivity('storage', async () => {
      300s cron, where one stalled download could own the whole window. */
   const buf = isFixtureUrl(sourceUrl) ? await fetchBytes(sourceUrl) : await download(sourceUrl);
 
-  if (usingBlob()) {
-    const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-    await put(videoPath(genId), buf, {
-      access: "private",
-      contentType: "video/mp4",
-      addRandomSuffix: false,
-      // Saves are retried by every poll until they stick. Without this, a
-      // partial first attempt leaves a blob behind and every retry then dies
-      // on "blob already exists" — the video never records as saved.
-      allowOverwrite: true,
-    });
+  if (usingCloud()) {
+    // Saves are retried by every poll until they stick. Without overwrite, a
+    // partial first attempt leaves an object behind and every retry then dies
+    // on "already exists" — the video never records as saved.
+    await cloudBackend().put(videoPath(genId), buf, { contentType: "video/mp4", overwrite: true });
     // Always hand back our own route, never a storage URL.
     return { url: `/api/media/${genId}`, bytes: buf.length };
   }
@@ -112,27 +115,29 @@ return await withRecoveryActivity('storage', async () => {
 });
 }
 
-/** Reads a private blob back as bytes. */
-async function readBlob(pathnameOrUrl: string): Promise<Buffer> {
-  const { get } = await import("@vercel/blob");
-  const found = await get(pathnameOrUrl, { access: "private" });
-  if (!found?.stream) throw new Error("blob not found");
-  const chunks: Uint8Array[] = [];
-  // @ts-expect-error - web stream is async-iterable at runtime
-  for await (const c of found.stream) chunks.push(c as Uint8Array);
+/** Reads a private object back as bytes, from the active backend or the one a stored URL names. */
+async function readCloud(key: string, backend: StorageBackend = cloudBackend()): Promise<Buffer> {
+  const found = await backend.get(key);
+  if (!found) throw new Error("blob not found");
+  const reader = found.stream.getReader(), chunks: Uint8Array[] = [];
+  while (true) {
+    const part = await reader.read();
+    if (part.done) break;
+    chunks.push(part.value);
+  }
   return Buffer.concat(chunks);
 }
 
 export async function readVideoBytes(genId: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
-  if (usingBlob()) return readBlob(videoPath(genId));
+  if (usingCloud()) return readCloud(videoPath(genId));
   return readFile(path.join(LOCAL_DIR, `${genId}.mp4`));
 }
 
 /** Bounded private read for immutable consumer-original recovery. */
 export async function readVideoBytesLimited(genId: string, maximum: number): Promise<Buffer | null> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId) || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 100 * 1024 * 1024) throw new Error("Invalid original video read.");
-  if (!usingBlob()) {
+  if (!usingCloud()) {
     const file = path.join(LOCAL_DIR, `${genId}.mp4`);
     try {
       if ((await stat(file)).size > maximum) throw new Error("Stored original exceeds its recorded length.");
@@ -141,9 +146,8 @@ export async function readVideoBytesLimited(genId: string, maximum: number): Pro
       return bytes;
     } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
   }
-  const { get } = await import("@vercel/blob");
-  const found = await get(videoPath(genId), { access: "private", abortSignal: AbortSignal.timeout(20_000) });
-  if (!found?.stream) return null;
+  const found = await cloudBackend().get(videoPath(genId), { signal: AbortSignal.timeout(20_000) });
+  if (!found) return null;
   const reader = found.stream.getReader(), chunks: Uint8Array[] = [];
   let length = 0;
   try {
@@ -167,12 +171,11 @@ export async function storeVideoBytes(genId: string, bytes: Buffer): Promise<{ur
     if (!existing || existing.length !== bytes.length || createHash("sha256").update(existing).digest("hex") !== sha256) throw new Error("The stored original could not be verified; it was not overwritten.");
   };
   await withRecoveryActivity("storage", async () => {
-    if (usingBlob()) {
-      const { put } = await import("@vercel/blob");
-      await withRecoveryActivity("blob-put", async () => {
-        try { await put(videoPath(genId), bytes, { access: "private", contentType: "video/mp4", addRandomSuffix: false, allowOverwrite: false, abortSignal: AbortSignal.timeout(30_000) }); }
-        catch { await verifyExisting(); }
-      }, { uncertainOnError: true });
+    if (usingCloud()) {
+      // overwrite:false rejects with ObjectExistsError when the original is
+      // already there; any failure to write leads to the same verification.
+      try { await cloudBackend().put(videoPath(genId), bytes, { contentType: "video/mp4", overwrite: false, signal: AbortSignal.timeout(30_000) }); }
+      catch { await verifyExisting(); }
       return;
     }
     await mkdir(LOCAL_DIR, { recursive: true });
@@ -192,15 +195,8 @@ export async function storeVideoBytes(genId: string, bytes: Buffer): Promise<{ur
 export async function storeImageBytes(genId: string, buf: Buffer): Promise<{ url: string; bytes: number }> {
 return await withRecoveryActivity('storage', async () => {
 
-  if (usingBlob()) {
-    const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-    await put(imagePath(genId), buf, {
-      access: "private",
-      contentType: "image/png",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    });
+  if (usingCloud()) {
+    await cloudBackend().put(imagePath(genId), buf, { contentType: "image/png", overwrite: true });
     return { url: `/api/media/${genId}`, bytes: buf.length };
   }
   await mkdir(LOCAL_DIR, { recursive: true });
@@ -212,7 +208,7 @@ return await withRecoveryActivity('storage', async () => {
 
 export async function readImageBytes(genId: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
-  if (usingBlob()) return readBlob(imagePath(genId));
+  if (usingCloud()) return readCloud(imagePath(genId));
   return readFile(path.join(LOCAL_DIR, `${genId}.png`));
 }
 
@@ -221,15 +217,8 @@ export async function readImageBytes(genId: string): Promise<Buffer> {
 export async function storeAudioBytes(genId: string, buf: Buffer): Promise<{ url: string; bytes: number }> {
 return await withRecoveryActivity('storage', async () => {
 
-  if (usingBlob()) {
-    const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-    await put(audioPath(genId), buf, {
-      access: "private",
-      contentType: "audio/mpeg",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    });
+  if (usingCloud()) {
+    await cloudBackend().put(audioPath(genId), buf, { contentType: "audio/mpeg", overwrite: true });
     return { url: `/api/media/${genId}`, bytes: buf.length };
   }
   await mkdir(LOCAL_DIR, { recursive: true });
@@ -241,7 +230,7 @@ return await withRecoveryActivity('storage', async () => {
 
 export async function readAudioBytes(genId: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
-  if (usingBlob()) return readBlob(audioPath(genId));
+  if (usingCloud()) return readCloud(audioPath(genId));
   return readFile(path.join(LOCAL_DIR, `${genId}.mp3`));
 }
 
@@ -254,15 +243,8 @@ export async function storeIdentityZip(identityId: string, buf: Buffer): Promise
 return await withRecoveryActivity('storage', async () => {
 
   if (!/^[A-Za-z0-9_-]+$/.test(identityId)) throw new Error("bad id");
-  if (usingBlob()) {
-    const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-    await put(identityZipPath(identityId), buf, {
-      access: "private",
-      contentType: "application/zip",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    });
+  if (usingCloud()) {
+    await cloudBackend().put(identityZipPath(identityId), buf, { contentType: "application/zip", overwrite: true });
     return identityZipPath(identityId);
   }
   await mkdir(LOCAL_DIR, { recursive: true });
@@ -285,11 +267,10 @@ export async function openMediaStream(
 ): Promise<ReadableStream<Uint8Array>> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
   const pathname = kind === "image" ? imagePath(genId) : kind === "audio" ? audioPath(genId) : videoPath(genId);
-  if (usingBlob()) {
-    const { get } = await import("@vercel/blob");
-    const found = await get(pathname, { access: "private" });
-    if (!found?.stream) throw new Error("blob not found");
-    return found.stream as ReadableStream<Uint8Array>;
+  if (usingCloud()) {
+    const found = await cloudBackend().get(pathname);
+    if (!found) throw new Error("blob not found");
+    return found.stream;
   }
   const { createReadStream } = await import("node:fs");
   const local = path.join(LOCAL_DIR, `${genId}.${kind === "image" ? "png" : kind === "audio" ? "mp3" : "mp4"}`);
@@ -319,12 +300,8 @@ return await withRecoveryActivity('storage', async () => {
 
   const { createHash } = await import("node:crypto");
 
-  if (usingBlob()) {
-    const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-    await put(uploadPath(uploadId, ext), buf, {
-      access: "private", contentType, addRandomSuffix: false, allowOverwrite: true,
-    });
+  if (usingCloud()) {
+    await cloudBackend().put(uploadPath(uploadId, ext), buf, { contentType, overwrite: true });
     return {
       url: `/api/uploads/${uploadId}`,
       sha256: createHash("sha256").update(buf).digest("hex"),
@@ -344,18 +321,19 @@ return await withRecoveryActivity('storage', async () => {
 
 export async function readUploadBytes(uploadId: string, ext: string, storedUrl: string): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
-  if (usingBlob()) {
-    if (/^https?:\/\//.test(storedUrl)) {
-      // Browser-direct upload. Public host segment → plain fetch;
+  if (usingCloud()) {
+    const stored = storedObject(storedUrl);
+    if (stored) {
+      // Browser-direct upload. Public host → plain fetch;
       // anything else goes through the authorized private read.
-      if (storedUrl.includes(".public.blob.vercel-storage.com/")) {
-        const res = await fetch(storedUrl);
+      if (stored.publicUrl) {
+        const res = await fetch(stored.key);
         if (!res.ok) throw new Error(`Could not read upload ${uploadId} (${res.status})`);
         return Buffer.from(await res.arrayBuffer());
       }
-      return readBlob(storedUrl);
+      return readCloud(stored.key, stored.backend);
     }
-    return readBlob(uploadPath(uploadId, ext));
+    return readCloud(uploadPath(uploadId, ext));
   }
   return readFile(path.join(UPLOAD_DIR, `${uploadId}.${ext}`));
 }
@@ -366,13 +344,12 @@ return await withRecoveryActivity('storage', async () => {
 
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) { if (strict) throw new Error("Invalid generation media identity"); return; }
   const targets = [videoPath(genId), imagePath(genId), audioPath(genId)];
-  if (usingBlob() && storedUrl && /^https?:\/\//.test(storedUrl)) targets.push(storedUrl);
+  if (usingCloud() && storedUrl && /^https?:\/\//.test(storedUrl)) targets.push(storedUrl);
   for (const target of targets) {
     try {
-      if (usingBlob()) {
-        const { del: rawDel } = await import("@vercel/blob");
-    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true });
-        await del(target);
+      if (usingCloud()) {
+        const stored = storedObject(target);
+        await (stored ? stored.backend.del([stored.key]) : cloudBackend().del([target]));
       } else {
         const { rm } = await import("node:fs/promises");
         await rm(path.join(LOCAL_DIR, path.basename(target)), { force: true });
@@ -389,11 +366,10 @@ return await withRecoveryActivity('storage', async () => {
 
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) return;
   try {
-    if (usingBlob()) {
-      const { del: rawDel } = await import("@vercel/blob");
-    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true });
+    if (usingCloud()) {
       // Browser-direct uploads carry a random suffix known only via stored_url.
-      await del(/^https?:\/\//.test(storedUrl) ? storedUrl : uploadPath(uploadId, ext));
+      const stored = storedObject(storedUrl);
+      await (stored ? stored.backend.del([stored.key]) : cloudBackend().del([uploadPath(uploadId, ext)]));
     } else {
       const { rm } = await import("node:fs/promises");
       await rm(path.join(UPLOAD_DIR, `${uploadId}.${ext}`), { force: true });
@@ -416,13 +392,8 @@ const chunkPath = (sess: string, i: number) => `${prefix()}chunks/${sess}/${i}`;
 export async function storeChunk(sess: string, i: number, buf: Buffer): Promise<void> {
 return await withRecoveryActivity('storage', async () => {
 
-  if (usingBlob()) {
-    const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-    await put(chunkPath(sess, i), buf, {
-      access: "private", contentType: "application/octet-stream",
-      addRandomSuffix: false, allowOverwrite: true,
-    });
+  if (usingCloud()) {
+    await cloudBackend().put(chunkPath(sess, i), buf, { contentType: "application/octet-stream", overwrite: true });
     return;
   }
   await mkdir(path.join(CHUNK_DIR, prefix(), sess), { recursive: true });
@@ -435,8 +406,8 @@ export async function assembleChunks(sess: string, count: number): Promise<Buffe
   const parts: Buffer[] = [];
   for (let i = 0; i < count; i++) {
     parts.push(
-      usingBlob()
-        ? await readBlob(chunkPath(sess, i))
+      usingCloud()
+        ? await readCloud(chunkPath(sess, i))
         : await readFile(path.join(CHUNK_DIR, prefix(), sess, String(i)))
     );
   }
@@ -447,10 +418,8 @@ export async function deleteChunks(sess: string, count: number, strict = false):
 return await withRecoveryActivity('storage', async () => {
 
   try {
-    if (usingBlob()) {
-      const { del: rawDel } = await import("@vercel/blob");
-    const del = (...args: Parameters<typeof rawDel>) => withRecoveryActivity("blob-delete", () => rawDel(...args), { uncertainOnError: true });
-      await del(Array.from({ length: count }, (_, i) => chunkPath(sess, i)));
+    if (usingCloud()) {
+      await cloudBackend().del(Array.from({ length: count }, (_, i) => chunkPath(sess, i)));
     } else {
       const { rm } = await import("node:fs/promises");
       await rm(path.join(CHUNK_DIR, prefix(), sess), { recursive: true, force: true });
@@ -467,13 +436,7 @@ return await withRecoveryActivity('storage', async () => {
  * -------------------------------------------------------------------- */
 
 export async function presignedReadUrl(pathname: string, hours = 24): Promise<string> {
-  const { issueSignedToken, presignUrl } = await import("@vercel/blob");
-  const validUntil = Date.now() + hours * 3600_000;
-  const token = await issueSignedToken({ pathname, operations: ["get"], validUntil });
-  const { presignedUrl } = await presignUrl(token, {
-    operation: "get", pathname, access: "private", validUntil,
-  });
-  return presignedUrl;
+  return cloudBackend().presignGet(pathname, Date.now() + hours * 3600_000);
 }
 
 /* ── Streaming assembly, for chat attachments up to 2GB ───────────────────
@@ -497,8 +460,8 @@ return await withRecoveryActivity('storage', async () => {
 
   async function* chunks(): AsyncGenerator<Buffer> {
     for (let i = 0; i < count; i++) {
-      const buf = usingBlob()
-        ? await readBlob(chunkPath(sess, i))
+      const buf = usingCloud()
+        ? await readCloud(chunkPath(sess, i))
         : await readFile(path.join(CHUNK_DIR, prefix(), sess, String(i)));
       if (i === 0) headChunk = buf;
       hash.update(buf);
@@ -508,17 +471,9 @@ return await withRecoveryActivity('storage', async () => {
     }
   }
 
-  if (usingBlob()) {
-    const { put: rawPut } = await import("@vercel/blob");
-    const put = (...args: Parameters<typeof rawPut>) => withRecoveryActivity("blob-put", () => rawPut(...args), { uncertainOnError: true });
-    await put(pathnameFor, Readable.from(chunks()), {
-      access: "private",
-      contentType,
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      // The SDK splits the stream into parts itself — memory stays flat.
-      multipart: true,
-    });
+  if (usingCloud()) {
+    // The backend splits the stream into parts itself — memory stays flat.
+    await cloudBackend().put(pathnameFor, Readable.from(chunks()), { contentType, overwrite: true, multipart: true });
   } else {
     await mkdir(UPLOAD_DIR, { recursive: true });
     const { createWriteStream } = await import("node:fs");
@@ -540,15 +495,11 @@ export async function openUploadStream(
   uploadId: string, ext: string, range?: ByteRange | null, storedUrl?: string, signal?: AbortSignal
 ): Promise<{ stream: ReadableStream; size: number | null }> {
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
-  if (usingBlob()) {
-    const { get } = await import("@vercel/blob");
-    const target = storedUrl && /^https?:\/\//.test(storedUrl) ? storedUrl : uploadPath(uploadId, ext);
-    const found = await get(target, {
-      access: target.includes('.public.blob.vercel-storage.com/') ? 'public' : "private",
-      abortSignal: signal,
-      headers: { 'Accept-Encoding': 'identity', ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {}) },
-    });
-    if (!found?.stream) throw new Error("blob not found");
+  if (usingCloud()) {
+    const stored = storedObject(storedUrl);
+    const backend = stored ? stored.backend : cloudBackend(), target = stored ? stored.key : uploadPath(uploadId, ext);
+    const found = await backend.get(target, { ...(range ? { range } : {}), signal, identity: true });
+    if (!found) throw new Error("blob not found");
     const encoding = found.headers.get('content-encoding');
     const identity = !encoding || encoding.trim().toLowerCase() === 'identity';
     if(range && (!identity || found.headers.get('content-range')!==`bytes ${range.start}-${range.end}/${range.total}`)){await found.stream.cancel().catch(()=>{});throw new Error('Storage did not honor the requested media range');}
@@ -574,13 +525,12 @@ export async function openUploadStream(
 /** Bounded reads of a retained generation, for metadata inspection without a full download. */
 export async function openVideoStream(genId: string, range: ByteRange, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad generation id");
-  if (usingBlob()) {
-    const { get } = await import("@vercel/blob");
-    const found = await get(videoPath(genId), {access:"private",abortSignal:signal,headers:{'Accept-Encoding':'identity',Range:`bytes=${range.start}-${range.end}`}});
-    if (!found?.stream) throw new Error("Original video not found");
+  if (usingCloud()) {
+    const found = await cloudBackend().get(videoPath(genId), { range, signal, identity: true });
+    if (!found) throw new Error("Original video not found");
     const encoding = found.headers.get('content-encoding');
     if ((encoding && encoding.trim().toLowerCase() !== 'identity') || found.headers.get("content-range") !== `bytes ${range.start}-${range.end}/${range.total}`) { await found.stream.cancel().catch(()=>{}); throw new Error("Storage did not honor the requested original range"); }
-    return found.stream as ReadableStream<Uint8Array>;
+    return found.stream;
   }
   const {createReadStream} = await import("node:fs");
   const {stat} = await import("node:fs/promises");
