@@ -28,6 +28,7 @@ import { CONNECTED_TOOLS, connectedToolModels, connectedToolResultName, connecte
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
 import { VOICE_TOOLS, findVoiceTool, type ConnectedVoices, type VoiceToolName } from "@/lib/higgsfield-consumer/voice-tools";
 import { AtomikVoiceTools, parseVoiceJob, voiceEndpoint, type VoiceCapabilities, type VoiceToolsHandle } from "./AtomikVoiceTools";
+import type { ExplainerPreset } from "@/lib/higgsfield-consumer/explainer-presets";
 import styles from "./atomik-generate.module.css";
 
 const endpoint = "/api/higgsfield/consumer/generation";
@@ -150,6 +151,26 @@ function VoicePicker({ kinds, required, voices, error, disabled, type, id, onCha
     </select><small>{error || (voices ? `${usable.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}${required ? " · Required" : ""}` : "The connected account’s voices are read once an hour.")}</small></label>
     <button type="button" className="suite-button" disabled={disabled} onClick={onRefresh}><RefreshCw size={14} />Reload voices</button>
   </div>;
+}
+
+type Explainer = { presets: ExplainerPreset[]; fetchedAt: number; catalogueModels: string[] };
+/** Read-only explainer / faceless-video styles (slice F6). Generation is not
+ * wired: there is no catalogue-declared, priced explainer job to quote. */
+function ExplainerStyles({ load, disabled }: { load: (refresh: boolean) => Promise<Explainer>; disabled: boolean }) {
+  const [value, setValue] = useState<Explainer | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const read = async (refresh: boolean) => {
+    if (busy) return;
+    setBusy(true); setError("");
+    try { setValue(await load(refresh)); } catch (reason) { setError(reason instanceof Error ? reason.message : "The explainer styles could not be read."); } finally { setBusy(false); }
+  };
+  return <section className="suite-panel" aria-label="Explainer styles">
+    <div className="suite-section-heading"><div><h2>Explainer styles</h2><p>Styles the connected account offers for narrated explainer and faceless videos.</p></div><span className="suite-badge">Not runnable yet</span></div>
+    <p className={styles.hint} role="status">{value?.catalogueModels.length ? "The connected catalogue lists an explainer model, but explainer generation is not wired here yet." : "Browsing only: the connected catalogue lists no explainer model to quote, so nothing here can be priced or generated."}</p>
+    <div className={styles.actions}><button type="button" className="suite-button" disabled={disabled || busy} onClick={() => void read(!!value)}><RefreshCw size={14} />{busy ? "Reading styles…" : value ? "Reload explainer styles" : "Load explainer styles"}</button></div>
+    {value && <><small className={styles.hint}>{value.presets.length.toLocaleString("en-US")} styles · read {new Date(value.fetchedAt).toLocaleTimeString()}</small>
+      <ul className={styles.explainers} aria-label="Explainer style list">{value.presets.map((preset) => <li key={preset.id}><span>{preset.title}</span>{preset.aspect && <small>{preset.aspect}</small>}</li>)}</ul></>}
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+  </section>;
 }
 
 /** Catalogue-driven generation on the workspace owner's connected account.
@@ -466,6 +487,13 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
           onUsePrompt={(take) => change({ prompt: take.prompt.slice(0, 5000) })} onEdit={() => {}} onUpscale={() => {}} />
       </aside>
     </div>
+    {capability?.owner && <ExplainerStyles disabled={!capability.connected} load={async (refresh) => {
+      const result = await post({ action: "explainer-presets", ...(refresh ? { refresh: true } : {}) });
+      const value = result.explainer;
+      if (!record(value) || !Array.isArray(value.presets) || value.presets.length > 200) throw new Error("The explainer styles could not be read.");
+      return { presets: value.presets.flatMap((item) => record(item) && typeof item.id === "string" && typeof item.title === "string" ? [{ id: item.id, title: item.title.slice(0, 120), aspect: item.aspect === "9:16" || item.aspect === "16:9" ? item.aspect : null }] : []),
+        fetchedAt: Number(value.fetchedAt) || Date.now(), catalogueModels: Array.isArray(value.catalogueModels) ? value.catalogueModels.filter((id): id is string => typeof id === "string").slice(0, 4) : [] };
+    }} />}
     <section className="suite-panel" aria-label="Saved generation jobs">
       <div className="suite-section-heading"><div><h2>Results</h2><p>Saved quotes, submissions and collected originals for this project.</p></div></div>
       {!jobs.length ? <p className="suite-footnote">No saved generation jobs yet.</p> : <div className={styles.jobs}>{jobs.map((job) => {

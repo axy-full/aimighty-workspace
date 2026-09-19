@@ -1,0 +1,39 @@
+{
+ "capturedAt": "2026-09-19",
+ "note": "Shape of one read-only get_explainer_presets response from a connected-account MCP session on 19 September 2026 (22 items; three kept, preview URLs replaced by example.com). No preset was resolved and nothing was generated.",
+ "tool": {
+  "name": "get_explainer_presets",
+  "inputSchema": {
+   "type": "object",
+   "properties": {}
+  }
+ },
+ "response": {
+  "items": [
+   {
+    "id": "56fc6472-33b7-45dc-83ff-80c71d40aec6",
+    "title": "Editorial Motion Graphics",
+    "aspect": "9:16",
+    "image": "https://cdn.example.com/a.webp",
+    "video_url": "https://cdn.example.com/a.mp4",
+    "prompt": "Create an explainer video in the 'Editorial Motion Graphics' preset style (explainer preset id: 56fc6472-33b7-45dc-83ff-80c71d40aec6)."
+   },
+   {
+    "id": "237dd06c-3729-4895-9672-1c623c4266e0",
+    "title": "Stickman Cartoon",
+    "aspect": "9:16",
+    "image": "https://cdn.example.com/b.webp",
+    "video_url": "https://cdn.example.com/b.mp4",
+    "prompt": "Create an explainer video in the 'Stickman Cartoon' preset style (explainer preset id: 237dd06c-3729-4895-9672-1c623c4266e0)."
+   },
+   {
+    "id": "b347d852-98fc-4013-92b7-6b0219fb21be",
+    "title": "Whiteboard Doodle",
+    "aspect": "9:16",
+    "image": "https://cdn.example.com/c.webp",
+    "video_url": "https://cdn.example.com/c.mp4",
+    "prompt": "Create an explainer video in the 'Whiteboard Doodle' preset style (explainer preset id: b347d852-98fc-4013-92b7-6b0219fb21be)."
+   }
+  ]
+ }
+}

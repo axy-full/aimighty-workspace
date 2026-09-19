@@ -158,6 +158,12 @@ The page lists each clip with Download and Save to project, plus **Save all N cl
 
 Not covered: creating user styles (`shorts_studio_create_preset` stores public reference URLs on the provider), `shorts_studio_list_sessions` import of sessions started elsewhere, and cancellation (none advertised). Unverified until the first owner-approved run: that a `media_import_url` media id is accepted as the "uploaded video_input id" `source_video_id` expects (the same assumption Analyse video makes), and the exact session/clip envelopes, which come from the tools' descriptions. Unrecognised envelopes keep the job `accepted` and collect nothing.
 
+## Explainer styles (slice F6, read-only)
+
+The Generate page has an **Explainer styles** panel marked **Not runnable yet**. "Load explainer styles" makes one free `get_explainer_presets {}` read (generation route action `explainer-presets`, cached for 1 h per connection in memory, rate limit 12/min). It lists each style's title and aspect. Preview images and videos are not loaded, and the preset's `prompt` (provider-authored instruction text) is dropped (`lib/higgsfield-consumer/explainer-presets.ts`; fixture `tests/fixtures/connected-explainer-presets.json`).
+
+**Why generation is not wired:** the explainer jobs (`video_explainer`, monolithic, 20–600 s; `explainer_video`, the assembler) are **absent from the connected catalogue** captured on 19 September (98 models). No catalogue-declared contract means no `generate_video get_cost` quote this product accepts. `preset_id` is also a workflow-owned setting, and the assembler needs ordered job pairs from other quoted runs. `resolve_explainer_preset` imports media into the connected account (a remote mutation) and is never called. The route reports `catalogueModels` (which explainer ids the live catalogue lists), and the panel's copy changes when one appears. Wiring a priced path then belongs to F5 (on top of the F4 multi-original collector and the A5 recipes).
+
 ## Not covered by I1/I2
 
 - Virality scoring (no non-submitting price for `brain_activity`).

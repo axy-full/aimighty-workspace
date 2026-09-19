@@ -72,6 +72,9 @@ async function fixture() {
       submitConsumerGenerationJob: service("submit", { ...job, status: "accepted" }),
       pollConsumerGeneration: service("status", { job: { ...job, status: "accepted" } }),
     },
+    "@/lib/higgsfield-consumer/explainer-service": {
+      connectedExplainerPresets: service("explainer", { presets: [{ id: "56fc6472-33b7-45dc-83ff-80c71d40aec6", title: "Editorial Motion Graphics", aspect: "9:16" }], fetchedAt: 1, runnable: false, catalogueModels: [] }),
+    },
   };
   const output = { exports: {} as Record<"GET" | "POST", (request: Request) => Promise<Response>> };
   new Function("require", "module", "exports", compile(readFileSync("app/api/higgsfield/consumer/generation/route.ts", "utf8")))((name: string) => {
@@ -168,7 +171,8 @@ test("strict generation schemas reject remote URLs, spoofed identities, provider
       { medias: Array.from({ length: 31 }, (_, i) => ({ role: "image_references", source: { uploadId: `image-${i}` } })) },
       { medias: [{ role: "image_references", source: { uploadId: "../secret" } }] }, { count: 2 }, { use_unlim: true }].map((patch) => ({ ...quote, input: { ...input, ...patch } })),
     { ...submit, credits: -1 }, { ...submit, credits: 100001 }, { ...submit, credits: "9" }, { ...submit, workspaceId: "bad" }, { ...submit, id: "bad" }, { ...submit, input },
-    { ...status, tool: "generate_image" }, { ...status, userId: "other" }, { ...listing, type: "gif" }, { ...listing, refresh: "yes" }, { ...listing, model: "x" }];
+    { ...status, tool: "generate_image" }, { ...status, userId: "other" }, { ...listing, type: "gif" }, { ...listing, refresh: "yes" }, { ...listing, model: "x" },
+    { action: "explainer-presets", presetId: "56fc6472-33b7-45dc-83ff-80c71d40aec6" }, { action: "explainer-presets", refresh: "yes" }, { action: "resolve-explainer-preset" }];
   for (const body of malformed) expect((await f.request("POST", body)).status, JSON.stringify(body).slice(0, 150)).toBe(400);
   for (const draftId of ["", "../other", "a".repeat(201)])
     expect((await f.request("GET", undefined, { query: `?draftId=${encodeURIComponent(draftId)}` })).status).toBe(400);
@@ -222,4 +226,14 @@ test("generation errors preserve bounded categories and never expose provider or
     expect(text).not.toContain("PRIVATE_PROVIDER_TOKEN_AND_URL");
     expect(text.toLowerCase()).not.toContain("higgsfield");
   }
+});
+
+test("the explainer style listing is an owner read with its own limit; it carries no generation or resolve action", async () => {
+  const f = await fixture();
+  const response = await f.request("POST", { action: "explainer-presets" });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ explainer: { presets: [{ id: "56fc6472-33b7-45dc-83ff-80c71d40aec6", title: "Editorial Motion Graphics", aspect: "9:16" }], fetchedAt: 1, runnable: false, catalogueModels: [] } });
+  expect((await f.request("POST", { action: "explainer-presets", refresh: true })).status).toBe(200);
+  expect(f.calls.map((call) => [call.name, call.args])).toEqual([["explainer", ["owner", { refresh: false }]], ["explainer", ["owner", { refresh: true }]]]);
+  expect(f.limits.map((args) => [args[0], args[1]])).toEqual([["hf-consumer-generation:workspace:owner:explainer-presets", 12], ["hf-consumer-generation:workspace:owner:explainer-presets", 12]]);
 });
