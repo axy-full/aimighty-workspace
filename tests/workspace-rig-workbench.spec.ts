@@ -25,7 +25,7 @@ function shot(id: string, title: string, note: string, y: number, extra: Partial
   };
 }
 
-async function seeded(page: Page) {
+async function seeded(page: Page, graph: (nodes: CanvasNode[]) => CanvasNode[] = (nodes) => nodes) {
   const signed = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
@@ -40,11 +40,11 @@ async function seeded(page: Page) {
   }
   const project: Project = {
     ...newProject(`Rig fixture ${randomUUID().slice(0, 6)}`),
-    nodes: [
+    nodes: graph([
       shot("rig-a", "Opening wide", "Wide. Hold still.", 100),
       shot("rig-b", "The encounter", "She enters. The landscape becomes a reflection.", 500, { look: "Warm daylight" }),
       shot("rig-c", "Departure", "Wide again.", 900, { durationS: 8 }),
-    ],
+    ]),
   };
   const saved = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBeTruthy();
@@ -254,4 +254,80 @@ test("no clipping at 1200, 1440 and 1920 with a shot selected", async ({ page },
     await expect(page.locator('.pxw-rig-row[data-status="ready"]')).toHaveCount(3);
     await assertNoClipping(page);
   }
+});
+
+test("graph view: the real graph, edges from real boxes, selection shared with the list, connections by the graph's rules", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  /* Test fixtures only: a look board and a direction note feed the encounter; a colour node follows it. */
+  const { project, scope } = await seeded(page, (shots) => [
+    { id: "look", type: "moodboard", title: "Warm daylight board", x: -300, y: 100, width: 280, linked: [], text: "Warm sand. Cool chrome.", role: "Art director" },
+    { id: "brief", type: "note", title: "Director's note", x: -300, y: 500, width: 280, linked: [], text: "Let the world feel impossible.", role: "Director" },
+    ...shots.map((n) => (n.id === "rig-b" ? { ...n, linked: ["look", "brief"] } : n)),
+    { id: "grade", type: "grade", title: "Desert daylight", x: 500, y: 500, width: 236, linked: ["rig-b"], operations: [{ id: "g1", kind: "grade", enabled: true, values: { brightness: 103, contrast: 105, saturation: 90 } }] },
+  ]);
+  await page.goto(rigUrl(project.id, "rig-b"));
+  await expect(page.getByTestId("inspector-title")).toHaveText("The encounter");
+  await page.getByRole("group", { name: "Rig view" }).getByRole("button", { name: "Canvas" }).click();
+  await expect(page.locator(".pxw-crumbs .pxw-kicker")).toHaveText("NODE GRAPH");
+  const graph = page.getByTestId("rig-graph");
+  await expect(graph.locator(".pxw-graph-node")).toHaveCount(6);
+  await expect(graph.locator("path[data-edge]")).toHaveCount(3);
+  await expect(graph.locator('.pxw-graph-node[data-selected]')).toHaveAttribute("aria-label", "Scene: The encounter");
+  await expect(graph.locator(".pxw-graph-badge")).toHaveText("SCENE PREVIEW");
+  await expect(graph.locator('path[data-active]')).toHaveCount(2);
+  await expect(graph.getByRole("group", { name: "Colour: Desert daylight" })).toContainText("B103C105S90");
+  await expect(graph).toContainText("The graph is the advanced view of the same 3 shots. Everything here can be done from the shot list.");
+
+  /* Every edge runs from its source card's right edge to its target card's left edge, at their middles. */
+  const mismatches = await page.evaluate(() => {
+    const out: string[] = [];
+    const canvas = document.querySelector<HTMLElement>(".pxw-graph-canvas")!.getBoundingClientRect();
+    for (const path of Array.from(document.querySelectorAll<SVGPathElement>("path[data-edge]"))) {
+      const box = (id: string) => document.querySelector<HTMLElement>(`[data-node-id="${id}"]`)!.getBoundingClientRect();
+      const from = box(path.dataset.source!), to = box(path.dataset.target!);
+      const nums = (path.getAttribute("d") ?? "").match(/-?[\d.]+/g)!.map(Number);
+      const [x1, y1] = nums, [x2, y2] = nums.slice(-2);
+      const near = (a: number, b: number) => Math.abs(a - b) < 1.5;
+      if (!near(x1, from.right - canvas.left) || !near(y1, from.top + from.height / 2 - canvas.top) || !near(x2, to.left - canvas.left) || !near(y2, to.top + to.height / 2 - canvas.top))
+        out.push(`${path.dataset.edge}: ${path.getAttribute("d")}`);
+    }
+    return out;
+  });
+  expect(mismatches).toEqual([]);
+
+  /* The canvas scrolls inside the content pane; the shell does not widen. */
+  const fit = await page.evaluate(() => {
+    const content = document.querySelector<HTMLElement>('[data-testid="content"]')!, studio = document.querySelector<HTMLElement>(".pxw-studio")!;
+    return { wrap: document.querySelector<HTMLElement>(".pxw-graph-wrap")!.offsetWidth, studioScrolls: studio.scrollWidth > studio.clientWidth + 0.5, pageScrolls: document.documentElement.scrollWidth > innerWidth + 1, contentScroll: content.scrollWidth };
+  });
+  expect(fit.wrap).toBeGreaterThanOrEqual(1110);
+  expect(fit.studioScrolls).toBe(false);
+  expect(fit.pageScrolls).toBe(false);
+  /* Whatever does not fit scrolls inside the content pane. */
+  expect(fit.contentScroll).toBeGreaterThanOrEqual(fit.wrap);
+
+  /* Selecting a node selects the same shot in the Inspector, and in the list. */
+  await graph.getByRole("button", { name: "Select Departure" }).click();
+  await expect(page.getByTestId("inspector-title")).toHaveText("Departure");
+  await expect(graph.getByRole("button", { name: "Select Departure" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/[?&]sel=shot%3Arig-c(&|$)/);
+  await expect(graph.locator('path[data-active]')).toHaveCount(0);
+
+  /* Connections follow the graph's rules and save through the draft. */
+  await graph.getByRole("button", { name: "Connect from Departure" }).click();
+  await graph.getByRole("button", { name: "Connect into Departure" }).click();
+  await expect(graph.getByRole("status")).toHaveText("A node cannot connect to itself.");
+  await graph.getByRole("button", { name: "Connect from Warm daylight board" }).click();
+  await graph.getByRole("button", { name: "Connect into Departure" }).click();
+  await expect(graph.locator("path[data-edge]")).toHaveCount(4);
+  await expect(graph.locator('path[data-active]')).toHaveCount(1);
+  await expect.poll(async () => (await savedDraft(page, scope, project.id)).nodes.find((n) => n.id === "rig-c")!.linked).toEqual(["look"]);
+
+  /* Back to the list: the same shot is selected. */
+  await page.getByRole("group", { name: "Rig view" }).getByRole("button", { name: "List" }).click();
+  await expect(row(page, /Departure/)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".pxw-crumbs .pxw-kicker")).toHaveText("STUDIO");
+  expect(errors).toEqual([]);
 });

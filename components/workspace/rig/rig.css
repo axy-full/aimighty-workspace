@@ -32,8 +32,47 @@
 .pxw .pxw-rig-add:hover { border-color: var(--pxw-blue); color: var(--pxw-blue-ink); }
 .pxw .pxw-rig-empty { margin: 14px 12px; font-size: 13px; color: var(--pxw-dimmer); }
 .pxw .pxw-rig-save-error { margin: 10px 12px 0; font-size: 12px; color: var(--pxw-amber-ink); }
-.pxw .pxw-rig-graph-pending { padding: 24px; font-size: 12.5px; color: var(--pxw-faint); line-height: 1.5; max-width: 560px; }
-.pxw .pxw-rig-graph-pending p { margin: 0 0 10px; }
+
+/* ── Node graph (the advanced view) ───────────────────────────────────── */
+/* min-width keeps the canvas at its design width; the content pane scrolls. */
+.pxw .pxw-graph-scroll { contain: inline-size; }
+.pxw .pxw-graph-wrap { padding: 24px; min-width: 1110px; width: max-content; }
+.pxw .pxw-graph-canvas { position: relative; }
+.pxw .pxw-graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.pxw .pxw-graph-node { position: absolute; display: flex; flex-direction: column; background: var(--pxw-card); border: 1px solid var(--pxw-control-border); border-radius: 13px; padding: 12px; }
+.pxw .pxw-graph-node[data-shape="text"],
+.pxw .pxw-graph-node[data-shape="operator"],
+.pxw .pxw-graph-node[data-shape="flow"] { padding: 13px; }
+.pxw .pxw-graph-node[data-selected] { background: var(--pxw-blue-selected-row); border: 1.5px solid var(--pxw-blue); border-radius: 14px; padding: 13px; box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1); }
+.pxw .pxw-graph-node[data-wiring] { border-color: var(--pxw-atomik-gold); }
+.pxw .pxw-graph-node > :not(.pxw-graph-hit):not(.pxw-graph-port) { pointer-events: none; position: relative; }
+.pxw .pxw-graph-hit { position: absolute; inset: 0; border-radius: inherit; }
+.pxw .pxw-graph-hit:hover { background: rgba(255, 255, 255, 0.015); }
+.pxw .pxw-graph-kicker { display: flex; justify-content: space-between; font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.11em; color: var(--pxw-faintest); }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-kicker { color: #7fb6ff; }
+.pxw .pxw-graph-media { display: flex; flex-direction: column; border-radius: 7px; margin-top: 9px; overflow: hidden; }
+.pxw .pxw-graph-node[data-shape="scene"] .pxw-graph-media { border-radius: 8px; margin-top: 10px; }
+.pxw .pxw-graph-media > span:not(.pxw-graph-badge) { display: block; }
+.pxw .pxw-graph-media > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pxw .pxw-graph-badge { position: absolute; left: 8px; bottom: 8px; font-family: var(--pxw-mono); font-size: 8.5px; letter-spacing: 0.09em; color: var(--pxw-near-primary); background: rgba(0, 0, 0, 0.55); padding: 2px 6px; border-radius: 4px; }
+.pxw .pxw-graph-title { display: block; font-size: 13px; font-weight: 545; margin-top: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-graph-node[data-shape="text"] .pxw-graph-title,
+.pxw .pxw-graph-node[data-shape="operator"] .pxw-graph-title { font-weight: 560; margin-top: 9px; }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-title { font-size: 13.5px; font-weight: 580; }
+.pxw .pxw-graph-desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: var(--pxw-faint); line-height: 1.4; margin-top: 4px; }
+.pxw .pxw-graph-node[data-selected] .pxw-graph-desc { color: var(--pxw-dimmer); }
+.pxw .pxw-graph-node[data-shape="text"] .pxw-graph-desc { font-size: 12.5px; color: var(--pxw-muted); line-height: 1.5; margin-top: 6px; }
+.pxw .pxw-graph-readouts { display: flex; gap: 6px; margin-top: 10px; }
+.pxw .pxw-graph-readouts > span { flex: 1; display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 7px; background: var(--pxw-chip-inner); font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-muted); }
+.pxw .pxw-graph-readouts > span > span:last-child { color: var(--pxw-near-primary); }
+.pxw .pxw-graph-foot { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11.5px; color: var(--pxw-dimmer); }
+.pxw .pxw-graph-port { position: absolute; top: 50%; width: 11px; height: 11px; margin-top: -5.5px; border-radius: 50%; background: var(--pxw-ground); border: 1.5px solid var(--pxw-hover-border); z-index: 1; }
+.pxw .pxw-graph-port--in { left: -6px; }
+.pxw .pxw-graph-port--out { right: -6px; }
+.pxw .pxw-graph-port:hover,
+.pxw .pxw-graph-port[data-armed] { border-color: var(--pxw-blue); background: var(--pxw-blue-selected-row); }
+.pxw .pxw-graph-status { margin: 0 0 12px; font-size: 12px; color: var(--pxw-amber-ink); }
+.pxw .pxw-graph-note { font-size: 12.5px; color: var(--pxw-faint); margin: 20px 0 0; max-width: 560px; line-height: 1.5; }
 
 /* ── Inspector: shot ──────────────────────────────────────────────────── */
 .pxw .pxw-insp-output { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
