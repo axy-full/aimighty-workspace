@@ -68,6 +68,29 @@ then redeploy. `/api/inngest` will answer 503 "dispatch is native", the Inngest 
 
 On — set `DISPATCH_MODE=inngest` with both keys present and redeploy. The functions in `lib/workers.ts` and `lib/workbench/development-worker.ts` register with their original ids, triggers, concurrency and retries.
 
+## Verifying in production: `/api/health` as the owner
+
+Every native hand-off and every worker run is also written to the platform database — table `dispatch_log` (`lib/dispatch-log.ts`, created by the platform bootstrap next to `worker_slots`) — so the outcome can be read back without the Vercel log viewer:
+
+1. Trigger a render (a still, an audio clip, an Astra render — anything that dispatches).
+2. Signed in as the workspace owner, `GET /api/health`. The full JSON's `dispatch` is `{ mode, recent: [...] }`: the last ten rows, newest first. The public (anonymous) JSON keeps `dispatch: { mode }` only.
+3. For one taken render you see, reading upward from the oldest of the pair, `phase: "send", outcome: "sent", status: 202` followed by `phase: "run", outcome: "finished-ok"` with a `durationMs`; both share the same `eventId` (e.g. `render-<workspace>-<generation>`).
+
+What the rows mean:
+
+| phase | outcome | Written by | Meaning |
+| --- | --- | --- | --- |
+| `send` | `sent` (status 202) | `queueSender()` in `lib/inngest.ts`, around `dispatchEventDetailed` | The worker took the event, or was busy and left it queued. |
+| `send` | `refused` (status 401/500/…) | same | The route answered but did not accept; the caller ran the work inline. |
+| `send` | `failed` | same | Timeout or network error; inline fallback. |
+| `send` | `unconfigured` | same | No origin or no `CRON_SECRET`; inline fallback. |
+| `run` | `busy` | `/api/worker` before the 202 `accepted:false` | Slot refused; nothing ran, the chain or the cron will retry. |
+| `run` | `finished-ok` / `finished-error` | `runWorkerEvent` in `/api/worker`, with `durationMs` | The handler ended (the same fact as the `worker.finished` log line). |
+
+A `send: sent` with no matching `run` row after a few minutes means the worker function never reached its `after()` continuation (or the run is still going); a `run: busy` with no later `run: finished-*` for the same job means the chain and the cron have not picked it up yet. Development phase re-dispatches (`lib/worker-handlers.ts`) call `dispatchEvent` directly and so appear as `run` rows only.
+
+Rows carry identifiers, the outcome, an HTTP status and a duration — never a prompt, URL, credential or error message. Recording is best-effort and never throws; when the platform database cannot answer, nothing is written and `dispatch.recent` is `null`. Rows older than seven days are pruned on write, 200 at a time.
+
 ## Verifying in Vercel logs
 
 For one render on a native deployment, the request logs show, in order:

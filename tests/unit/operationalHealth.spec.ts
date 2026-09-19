@@ -6,7 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 
 const nativeRequire = createRequire(path.resolve("package.json"));
-function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseDown?: boolean; rangeStatus?: number; cleanupFails?: boolean } = {}) {
+function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseDown?: boolean; dispatchLogDown?: boolean; rangeStatus?: number; cleanupFails?: boolean } = {}) {
   const writes: string[] = [], deletes: string[] = [];
   const ctx = options.signedIn ? { user: { id: "account" }, workspace: { id: "workspace", name: "Workspace" } } : null;
   const database = { execute: async () => { if (options.databaseDown) throw new Error("SECRET_DATABASE_URL"); return { rows: [{ saved: 1, atrisk: 0 }] }; } };
@@ -23,6 +23,15 @@ function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseD
     "@/lib/mail": { mailConfigured: () => false, mailFrom: () => null },
     "@/lib/mock": { engineMock: () => false },
     "@/lib/dispatch": { dispatchMode: () => "native" },
+    "@/lib/dispatch-log": {
+      recentDispatches: async (limit: number) => {
+        if (options.dispatchLogDown) throw new Error("SECRET_DATABASE_URL");
+        return [
+          { id: "r2", eventId: "render-ws-gen_1", name: "render/requested", phase: "run", outcome: "finished-ok", status: null, durationMs: 1234, workspaceId: "workspace", createdAt: 2 },
+          { id: "r1", eventId: "render-ws-gen_1", name: "render/requested", phase: "send", outcome: "sent", status: 202, durationMs: 40, workspaceId: "workspace", createdAt: 1 },
+        ].slice(0, limit);
+      },
+    },
     "@vercel/blob": {
       put: async (key: string) => { writes.push(key); return { url: "https://private.example/" + key }; },
       del: async (url: string) => { deletes.push(url); if (options.cleanupFails) throw new Error("SECRET_TOKEN"); },
@@ -45,6 +54,22 @@ test("public health is read-only and explicitly does not claim storage verificat
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({ ok: true, database: "ok", storageVerified: false, dispatch: { mode: "native" } });
   expect(f.writes).toHaveLength(0);
+});
+
+test("the dispatch timeline is in the signed-in briefing only, and its failure is coarse", async () => {
+  const anonymous = await (await healthFixture().get(new Request("https://example.test/api/health"))).json();
+  expect(anonymous.dispatch).toEqual({ mode: "native" });
+  const full = await (await healthFixture({ signedIn: true }).get(new Request("https://example.test/api/health"))).json();
+  expect(full.dispatch.mode).toBe("native");
+  expect(full.dispatch.recent).toHaveLength(2);
+  expect(full.dispatch.recent[0]).toMatchObject({ phase: "run", outcome: "finished-ok", eventId: "render-ws-gen_1" });
+  expect(full.dispatch.recent[1]).toMatchObject({ phase: "send", outcome: "sent", status: 202 });
+  const down = healthFixture({ signedIn: true, dispatchLogDown: true });
+  const response = await down.get(new Request("https://example.test/api/health"));
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.dispatch).toEqual({ mode: "native", recent: null });
+  expect(JSON.stringify(body)).not.toContain("SECRET");
 });
 
 test("workspace membership cannot authorize shared storage probes", async () => {

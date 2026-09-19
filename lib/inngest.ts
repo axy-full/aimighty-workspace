@@ -1,6 +1,7 @@
 import { Inngest } from "inngest";
 import { dispatchRender, recoverRenderDispatches } from "./renderDispatch";
-import { dispatchEvent, dispatchMode, type WorkerEvent } from "./dispatch";
+import { dispatchEventDetailed, dispatchMode, type WorkerEvent } from "./dispatch";
+import { recordDispatch } from "./dispatch-log";
 
 export { EVENTS } from "./dispatch";
 
@@ -34,14 +35,26 @@ export function inngestConfigured(): boolean {
  *
  * In native mode a refused hand-off (no 202) is surfaced as a throw so every
  * caller's existing "send failed → false → inline fallback" path applies
- * unchanged; dispatchEvent itself never throws.
+ * unchanged; dispatchEvent itself never throws. Every native hand-off, taken
+ * or not, is also written to the platform's dispatch_log (best-effort) so
+ * the outcome is readable from /api/health afterwards.
  */
 export function queueSender(): ((event: WorkerEvent) => Promise<unknown>) | null {
   const mode = dispatchMode();
   if (mode === "inngest") return (event) => inngest.send(event);
   if (mode === "native")
     return async (event) => {
-      if (!(await dispatchEvent(event)))
+      const result = await dispatchEventDetailed(event);
+      await recordDispatch({
+        eventId: event.id,
+        name: event.name,
+        phase: "send",
+        outcome: result.outcome,
+        status: result.status,
+        durationMs: result.durationMs,
+        workspaceId: event.data.workspaceId,
+      });
+      if (result.outcome !== "sent")
         throw new Error("The native worker did not accept the event.");
     };
   return null;
