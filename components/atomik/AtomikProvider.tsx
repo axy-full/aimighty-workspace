@@ -11,6 +11,7 @@ import { useMoney } from "@/lib/price";
 import { useAtomikQuote } from "@/lib/useAtomikQuote";
 import type { PaidTextQuote } from "@/lib/paidText";
 import type { ThinkingModel } from "./ModelPicker";
+import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
 
 /**
  * Atomik, at app level (design/particl-v2/README.md §5).
@@ -51,10 +52,15 @@ export type AtomikLive = {
   ring: { steps: StepState[] } | { mode: RingMode };
   /** The word beside the shortcut on the header button (`CHECKPOINT`), or none. */
   word: string | null;
-  /** Credits: the plan's total, what is left under the production's cap, and what planning has cost. */
-  totals: { total: number; underCap: number | null; planning: number };
-  /** A step's price, as a number in the workspace's unit. */
+  /** Credits: the plan's total, what is left under the production's cap, and what planning has cost.
+   *  `connected` is the plan's connected-credit total, billed to the connected account, never mixed in. */
+  totals: { total: number; underCap: number | null; planning: number; connected: number };
+  /** A step's price, as a number in the workspace's unit (0 for a connected step). */
   credits: (step: Step) => number;
+  /** A step's price as shown: `24 cr`, or `42 connected cr` for a connected-account step. */
+  priceLabel: (step: Step) => string;
+  /** True for a step that runs on the connected account at its quoted price. */
+  isConnected: (step: Step) => boolean;
   /** That number as the workspace prints it: `24 cr`, or `$2.90`. */
   fmt: (n: number) => string;
   engineLabel: (id: string) => string;
@@ -140,7 +146,12 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   /* The server's estimate is already in the workspace's unit (lib/price.ts):
      in credits it is rounded up to a whole credit, at least one, exactly as
      the price on a button is. */
-  const credits = useCallback((s: Step) => money.inCredits ? whole(usdOf(s)) : usdOf(s), [money]);
+  const credits = useCallback((s: Step) => connectedMeta(s.params) ? 0 : money.inCredits ? whole(usdOf(s)) : usdOf(s), [money]);
+  const isConnected = useCallback((s: Step) => connectedMeta(s.params) !== null, []);
+  const priceLabel = useCallback((s: Step) => {
+    const meta = connectedMeta(s.params);
+    return meta ? `${meta.credits.toLocaleString("en-US")} connected cr` : money.price(credits(s));
+  }, [money, credits]);
 
   const messages = useMemo(() => loaded?.messages ?? [], [loaded]);
   const lastAssistant = useMemo(() => [...messages].reverse().find((m) => m.role === "assistant") ?? null, [messages]);
@@ -185,7 +196,23 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const cap = production ? (money.inCredits ? production.capCredits ?? null : production.capUsd ?? null) : null;
   const spent = production ? (money.inCredits ? production.credits ?? 0 : production.spend ?? 0) : 0;
   const planning = loaded ? (money.inCredits ? whole(loaded.chat.textCostUsd) : loaded.chat.textCostUsd) : 0;
-  const totals = { total, underCap: cap === null ? null : cap - spent - total, planning };
+  const connectedTotal = plan.reduce((a, s) => a + (connectedMeta(s.params)?.credits ?? 0), 0);
+  const totals = { total, underCap: cap === null ? null : cap - spent - total, planning, connected: connectedTotal };
+
+  /* A connected step runs on the connected account: its status is read (one
+     leased read per step) until the original is collected and filed. */
+  const runningConnected = plan.filter((s) => s.status === "running" && connectedMeta(s.params)).map((s) => s.id).join(",");
+  useEffect(() => {
+    if (!runningConnected) return;
+    const ids = runningConnected.split(",");
+    const read = async () => {
+      for (const id of ids)
+        await fetch(`/api/atomik/steps/${encodeURIComponent(id)}/connected`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "status" }) }).catch(() => null);
+      await refreshRef.current();
+    };
+    const timer = setInterval(() => void read(), 15_000);
+    return () => clearInterval(timer);
+  }, [runningConnected]);
 
   const send = useCallback(async (text: string) => {
     const t = (recoveryText??text).trim();
@@ -221,6 +248,16 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     dispatched.current.add(proposed.id);
     setBusy(true); setError(null);
     try {
+      const meta = connectedMeta(proposed.params);
+      if (meta) {
+        /* The exact connected credits and wallet this card shows; the server
+           checks them against the durable quote, claims once and submits once. */
+        const r = await fetch(`/api/atomik/steps/${encodeURIComponent(proposed.id)}/connected`, { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "approve", credits: meta.credits, workspaceId: meta.workspaceId }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { dispatched.current.delete(proposed.id); setError(j.error ?? "That step couldn't be started."); }
+        return;
+      }
       const claim = await fetch(`/api/atomik/steps/${proposed.id}/claim`, { method: "POST" });
       const cj = await claim.json().catch(() => ({}));
       if (!claim.ok) { if (claim.status !== 409) setError(cj.error ?? "That step couldn't be started."); return; }
@@ -267,7 +304,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
-    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, fmt, engineLabel,
+    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, isConnected, fmt, engineLabel,
     busy, error:paid.error??error, recoveryText, models, model, effort, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -275,7 +312,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
-  totals: { total: 0, underCap: null, planning: 0 }, credits: () => 0, fmt: (n) => String(n), engineLabel: (id) => id,
+  totals: { total: 0, underCap: null, planning: 0, connected: 0 }, credits: () => 0, priceLabel: () => "", isConnected: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
   busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
 };
 

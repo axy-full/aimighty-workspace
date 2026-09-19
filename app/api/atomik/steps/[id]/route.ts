@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { getStep, patchStep, type StepStatus } from "@/lib/atomik";
+import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,11 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
       { status: 409 },
     );
   }
+
+  /* A connected step's settings are its quote; its status moves only through
+     the connected route (which records what was spent). Rejecting it is fine. */
+  if (connectedMeta(cur.params) && (wantsEdit || b.genId !== undefined || (b.status !== undefined && b.status !== "rejected")))
+    return NextResponse.json({ error: "Ask Atomik for a new version of a connected step instead." }, { status: 409 });
 
   const status = STATUSES.includes(b.status) ? b.status as StepStatus : undefined;
   const step = await patchStep(id, {

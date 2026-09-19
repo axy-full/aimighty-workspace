@@ -106,14 +106,15 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
   }
   if (c.kind === "checkpoint") {
     const step = c.step;
-    const cost = a.credits(step);
+    const connected = a.isConnected(step);
+    const cost = connected ? undefined : a.credits(step);
     const lastDone = c.done[c.done.length - 1];
-    const sameKind = a.engines.filter((e) => e.kind === step.kind);
+    const sameKind = a.engines.filter((e) => e.kind === step.kind && !e.connected);
     return (
       <div className={box}>
         <Mono>Checkpoint · stopped</Mono>
         <span className={title}>{lastDone ? `${lastDone.title} done` : "Ready"} · {a.fmt(c.spentCredits)} spent.</span>
-        <span className={body}>Next: {step.title} on {a.engineLabel(step.model)}. {firstSentence(step.prompt)}</span>
+        <span className={body}>Next: {step.title} on {a.engineLabel(step.model)}{connected ? ", billed in connected credits" : ""}. {firstSentence(step.prompt)}</span>
         {picking ? (
           <span className="flex flex-col gap-[6px]">
             {sameKind.map((e) => (
@@ -124,10 +125,10 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
         ) : (
           <>
             <Button variant="primary" placement={placement} cost={cost} busy={a.busy} busyLabel="Starting…" onClick={() => a.approve(step)}>
-              {placement === "rail" ? `Continue · ${step.title}` : "Continue"}
+              {placement === "rail" ? `Continue · ${step.title}` : "Continue"}{connected ? ` · ${a.priceLabel(step)}` : ""}
             </Button>
             <span className="flex gap-[6px]">
-              <Button placement="card" className="flex-1" onClick={() => setPicking(true)}>Change engine</Button>
+              {!connected && <Button placement="card" className="flex-1" onClick={() => setPicking(true)}>Change engine</Button>}
               <Button placement="card" className="flex-1" muted onClick={() => a.stop(step)}>Stop</Button>
             </span>
           </>
@@ -204,10 +205,11 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
         <span className="text-ink">{a.fmt(a.totals.total)}</span> total
         {a.totals.underCap !== null && <> · {a.fmt(a.totals.underCap)} under cap</>}
         {" · "}planning <span className="text-ink">{a.fmt(a.totals.planning)}</span>
+        {a.totals.connected > 0 && <> · <span className="text-ink">{a.totals.connected.toLocaleString("en-US")}</span> connected cr</>}
       </Mono>
       {checkpoint && (
-        <Button variant="primary" placement="rail" cost={a.credits(checkpoint)} busy={a.busy} busyLabel="Starting…" onClick={() => a.approve(checkpoint)}>
-          Continue · {checkpoint.title}
+        <Button variant="primary" placement="rail" cost={a.isConnected(checkpoint) ? undefined : a.credits(checkpoint)} busy={a.busy} busyLabel="Starting…" onClick={() => a.approve(checkpoint)}>
+          Continue · {checkpoint.title}{a.isConnected(checkpoint) ? ` · ${a.priceLabel(checkpoint)}` : ""}
         </Button>
       )}
       <div className="flex gap-[8px] pt-[8px]"><ChatComposer inputHeight={46} /></div>
@@ -259,7 +261,7 @@ function Row({ n, first, step, checkpoint }: { n: number; first: boolean; step: 
           <span className="truncate text-[13px] font-medium leading-[1.2] text-ink">{step.title} <span className="font-normal text-ink-body">· {scope}</span></span>
           <Mono>{a.engineLabel(step.model)}</Mono>
         </span>
-        <Mono cost tone="ink">{a.fmt(a.credits(step))}</Mono>
+        <Mono cost tone="ink">{a.priceLabel(step)}</Mono>
       </div>
       {checkpoint && (
         <div className="flex h-[30px] items-center gap-[8px] whitespace-nowrap border-b border-hairline px-[12px]">

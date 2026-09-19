@@ -9,6 +9,7 @@ import { effectiveRules } from "@/lib/rules";
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
 import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, paidTextQuoteResponse, requestMaxCredits } from "@/lib/paidText";
 import { cleanAttachments } from "@/lib/attachments";
+import { connectedPlannerFor } from "@/lib/higgsfield-consumer/planner-service";
 
 export const dynamic = "force-dynamic";
 /* A bounded 270s provider attempt has enough time for reasoning before this route ends. */
@@ -82,11 +83,14 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Choose an available Atomik model." }, { status: 400 });
     const context = await projectContext(loaded.chat.projectId);
     const rules = writerRulesByScope(await effectiveRules());
-    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, context, model: b.model, effort, rules,
+    /* The owner's connected account: read-only context and priced proposals.
+       The quote and the turn it prices see the same (cached) context. */
+    const connected = await connectedPlannerFor(got.user, got.token, loaded.chat.projectId);
+    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, context, model: b.model, effort, rules, connected,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
     const maxCredits = requestMaxCredits(b.maxCredits, b.effort !== undefined);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
-    await runTurn(id, { context, model: b.model, effort, maxCredits, rules });
+    await runTurn(id, { context, model: b.model, effort, maxCredits, rules, connected });
   } catch (e) {
     if (!quoteOnly) await patchChat(id, { status: "failed" });
     const known = e instanceof PaidTextError || e instanceof SpendReservationError;

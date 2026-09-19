@@ -7,6 +7,7 @@ import { effectiveRules } from "@/lib/rules";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
 import { menuFor, priceLabel, type CatalogModel } from "@/lib/catalog";
+import { connectedEngineModels, connectedPlannerFor } from "@/lib/higgsfield-consumer/planner-service";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ export const GET = withTenant(async function GET() {
   if (got.response) return got.response;
 
   const [chats, menu, eng] = await Promise.all([
-    listChats(), menuFor("planner"), engines(),
+    listChats(), menuFor("planner"), connectedEngineModels(got.user, got.token).then(engines),
   ]);
   return NextResponse.json({
     chats,
@@ -74,7 +75,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
     const projectId = typeof body.projectId === "string" ? body.projectId : null;
-    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,
+    const connected = await connectedPlannerFor(auth.user, auth.token, projectId);
+    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, connected,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
       context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
