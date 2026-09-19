@@ -123,3 +123,23 @@ test("a seal failure after a paid produce never re-runs produce, does not fail t
     expect(params.paidClaim).toBe(1);
   });
 });
+
+test("a dubbing event advances its job inside the tenant, routes by name, and refuses a malformed id", async () => {
+  const ws = await workspace("ws_dubbing_handler");
+  const { handleDubbing, runWorkerHandler, workerJobId } = await import("../../lib/worker-handlers");
+  const { EVENTS, WORKER_EVENT_NAMES } = await import("../../lib/dispatch");
+  const { currentTenant } = await import("../../lib/tenant");
+  expect(EVENTS.dubbing).toBe("audio/dubbing.requested");
+  expect(WORKER_EVENT_NAMES).toContain(EVENTS.dubbing);
+  const jobId = "dub_" + "a".repeat(32);
+  const event: WorkerEvent = { id: `dubbing-${jobId}`, name: EVENTS.dubbing, data: { jobId, workspaceId: ws.id } };
+  expect(workerJobId(event)).toBe(jobId);
+  const advanced: { id: string; tenant: string | undefined }[] = [];
+  const deps = { workspaceOf: async () => ws, advance: async (id: string) => { advanced.push({ id, tenant: currentTenant()?.workspace?.id }); return null; } };
+  expect(await handleDubbing({ jobId, workspaceId: ws.id }, deps)).toEqual({ jobId, status: "missing" });
+  expect(advanced).toEqual([{ id: jobId, tenant: ws.id }]);
+  await expect(handleDubbing({ jobId: "not-a-dub", workspaceId: ws.id }, deps)).rejects.toThrow(/Invalid dubbing/);
+  // The switch reaches the real handler; a missing row is a no-op, never a submission.
+  expect(await runWorkerHandler(event)).toEqual({ jobId, status: "missing" });
+});
+

@@ -16,7 +16,7 @@ function uploadMetadata(row: Row): LibraryUpload {
     bytes: Number(row.bytes ?? 0),
     width: row.width == null ? null : Number(row.width),
     height: row.height == null ? null : Number(row.height),
-    kind: row.kind === "image" || row.kind === "video" ? row.kind : "file",
+    kind: row.kind === "image" || row.kind === "video" || row.kind === "audio" ? row.kind : "file",
     durationS: row.duration_s == null ? null : Number(row.duration_s),
     sha256: String(row.sha256 ?? ""),
     url: `/api/uploads/${encodeURIComponent(String(row.id))}`,

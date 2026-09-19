@@ -4,7 +4,7 @@ import { vendorKey } from "./vendorKeys";
 import { memoGet, memoPut } from "./memo";
 import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
-import { ELEVENLABS_RATES } from "./vendorRates";
+import { ELEVENLABS_RATES, ELEVENLABS_SOURCE_LIMIT_BYTES, type DubbingMode } from "./vendorRates";
 
 /**
  * ElevenLabs — voices, sound effects and music.
@@ -470,4 +470,171 @@ export async function subscription(): Promise<Subscription> {
       : null,
     usdPerCredit: PLAN_USD_PER_CREDIT[tier] ?? FALLBACK_USD_PER_CREDIT,
   };
+}
+
+/* ── Voice change (speech to speech) ───────────────────────────────── */
+
+export const VOICE_CHANGE_MODEL = ELEVENLABS_RATES.voiceChange.modelId;
+/** $0.12 per minute of INPUT audio, whole minutes rounded up (API pricing page, 19 September 2026). */
+export function voiceChangeUsd(seconds: number): number {
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("Voice change needs the source's length to price.");
+  const minutes = Math.max(1, Math.ceil(seconds / 60 - 1e-9));
+  return Math.round(minutes * ELEVENLABS_RATES.voiceChange.usdPerMinute * 10_000) / 10_000;
+}
+
+/** Multipart POST for bytes: the same deadline and error sentences as callAudio. */
+async function callAudioMultipart(
+  path: string,
+  form: FormData,
+  timeoutMs = 300_000,
+): Promise<{ bytes: Buffer; mime: string; credits: number | null; requestId: string | null }> {
+  const res = await elevenFetch(
+    `${base()}${path}`,
+    { method: "POST", cache: "no-store", headers: { "xi-api-key": key(), Accept: "audio/mpeg" }, body: form },
+    timeoutMs,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let json: unknown = null;
+    try { json = JSON.parse(text); } catch { json = { message: text.slice(0, 300) }; }
+    throw new ElevenLabsError(res.status, explain(res.status, json));
+  }
+  return {
+    bytes: Buffer.from(await res.arrayBuffer()),
+    mime: res.headers.get("content-type") ?? "audio/mpeg",
+    credits: null,
+    requestId: res.headers.get("request-id") ?? res.headers.get("x-request-id"),
+  };
+}
+
+/**
+ * POST /v1/speech-to-speech/{voice_id}: the source's bytes as multipart
+ * `audio`, re-voiced on eleven_multilingual_sts_v2, back as MP3. Only the
+ * documented fields travel: model_id, optional voice_settings, seed and
+ * remove_background_noise; output_format as the query.
+ */
+export async function speechToSpeech(opts: {
+  voiceId: string;
+  audio: Buffer;
+  filename: string;
+  mime: string;
+  seconds: number;
+  modelId?: string;
+  settings?: VoiceSettings;
+  seed?: number;
+  removeBackgroundNoise?: boolean;
+  format?: string;
+}) {
+  const costUsd = voiceChangeUsd(opts.seconds);
+  if (engineMock())
+    return { bytes: await fixtureBytes("tone.mp3"), mime: "audio/mpeg", credits: null, costUsd, requestId: "mock" };
+  if (opts.audio.length > ELEVENLABS_SOURCE_LIMIT_BYTES)
+    throw new Error("Voice change takes a source up to 100 MB.");
+  const form = new FormData();
+  form.append("audio", new Blob([new Uint8Array(opts.audio)], { type: opts.mime || "application/octet-stream" }), opts.filename || "source");
+  form.append("model_id", opts.modelId ?? VOICE_CHANGE_MODEL);
+  if (opts.settings && Object.keys(opts.settings).length) form.append("voice_settings", JSON.stringify(opts.settings));
+  if (opts.seed != null && Number.isInteger(opts.seed)) form.append("seed", String(opts.seed));
+  if (opts.removeBackgroundNoise) form.append("remove_background_noise", "true");
+  const format = opts.format ?? "mp3_44100_128";
+  const out = await callAudioMultipart(
+    `/v1/speech-to-speech/${encodeURIComponent(opts.voiceId)}?output_format=${encodeURIComponent(format)}`,
+    form,
+  );
+  return { ...out, costUsd };
+}
+
+/* ── Dubbing (an asynchronous project) ─────────────────────────────── */
+
+export type DubbingStatus = "dubbing" | "dubbed" | "failed";
+export type DubbingProject = { dubbingId: string; expectedDurationSec: number | null };
+
+/** The per-minute price of a mode; one target language is charged up front. */
+export function dubbingUsdPerMinute(mode: DubbingMode): number {
+  const rate = ELEVENLABS_RATES.dubbing.modes[mode];
+  if (!rate) throw new Error("Unknown dubbing mode.");
+  return rate;
+}
+export function dubbingUsd(seconds: number, mode: DubbingMode): number {
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("Dubbing needs the source's length to price.");
+  const minutes = Math.max(1, Math.ceil(seconds / 60 - 1e-9));
+  return Math.round(minutes * dubbingUsdPerMinute(mode) * 10_000) / 10_000;
+}
+
+/**
+ * POST /v1/dubbing: multipart `file`, `source_lang`, `target_lang`,
+ * `num_speakers` (0 = detect), `watermark`, `mode` automatic. Answers the
+ * project id and the vendor's own expectation of how long it will take.
+ * A 4xx is a refusal before any work; a timeout is an UNCONFIRMED outcome
+ * the caller must treat as uncertain and never resubmit.
+ */
+export async function submitDubbing(opts: {
+  file: Buffer;
+  filename: string;
+  mime: string;
+  sourceLang: string;
+  targetLang: string;
+  watermark: boolean;
+  numSpeakers?: number;
+}): Promise<DubbingProject> {
+  if (engineMock()) return { dubbingId: `mock-dub-${Date.now()}`, expectedDurationSec: 1 };
+  if (opts.file.length > ELEVENLABS_SOURCE_LIMIT_BYTES) throw new Error("Dubbing takes a source up to 100 MB.");
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(opts.file)], { type: opts.mime || "application/octet-stream" }), opts.filename || "source");
+  form.append("source_lang", opts.sourceLang);
+  form.append("target_lang", opts.targetLang);
+  form.append("num_speakers", String(opts.numSpeakers ?? 0));
+  form.append("watermark", opts.watermark ? "true" : "false");
+  form.append("mode", "automatic");
+  const res = await elevenFetch(
+    `${base()}/v1/dubbing`,
+    { method: "POST", cache: "no-store", headers: { "xi-api-key": key() }, body: form },
+    120_000,
+  );
+  const text = await res.text();
+  let json: unknown = null;
+  try { json = text ? JSON.parse(text) : null; } catch { json = { message: text.slice(0, 300) }; }
+  if (!res.ok) throw new ElevenLabsError(res.status, explain(res.status, json));
+  const j = (json ?? {}) as { dubbing_id?: string; expected_duration_sec?: number };
+  if (!j.dubbing_id || typeof j.dubbing_id !== "string") throw new Error("ElevenLabs accepted the dubbing request without a project id. The outcome is unconfirmed.");
+  return { dubbingId: j.dubbing_id, expectedDurationSec: Number.isFinite(Number(j.expected_duration_sec)) ? Number(j.expected_duration_sec) : null };
+}
+
+/** GET /v1/dubbing/{id}: `dubbing` while it works, `dubbed` when the audio can be downloaded, `failed` with the vendor's note. */
+export async function dubbingStatus(dubbingId: string): Promise<{ status: DubbingStatus; error: string | null; targetLanguages: string[] }> {
+  if (engineMock()) return { status: "dubbed", error: null, targetLanguages: [] };
+  const j = await callJson<{ status?: string; error?: string | null; target_languages?: string[] }>(`/v1/dubbing/${encodeURIComponent(dubbingId)}`);
+  const status = j.status === "dubbed" ? "dubbed" : j.status === "failed" ? "failed" : "dubbing";
+  return { status, error: j.error ? String(j.error) : null, targetLanguages: Array.isArray(j.target_languages) ? j.target_languages.map(String) : [] };
+}
+
+/** GET /v1/dubbing/{id}/audio/{language_code}: the dubbed track's bytes, bounded. */
+export async function downloadDubbedAudio(dubbingId: string, languageCode: string, maxBytes = ELEVENLABS_SOURCE_LIMIT_BYTES): Promise<{ bytes: Buffer; mime: string }> {
+  if (engineMock()) return { bytes: await fixtureBytes("tone.mp3"), mime: "audio/mpeg" };
+  const res = await elevenFetch(
+    `${base()}/v1/dubbing/${encodeURIComponent(dubbingId)}/audio/${encodeURIComponent(languageCode)}`,
+    { method: "GET", cache: "no-store", headers: { "xi-api-key": key() } },
+    300_000,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let json: unknown = null;
+    try { json = JSON.parse(text); } catch { json = { message: text.slice(0, 300) }; }
+    throw new ElevenLabsError(res.status, explain(res.status, json));
+  }
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) { await res.body?.cancel(); throw new Error("The dubbed audio exceeds the download limit."); }
+  if (!res.body) throw new Error("ElevenLabs returned an empty dubbed track.");
+  const reader = res.body.getReader(), chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) { await reader.cancel(); throw new Error("The dubbed audio exceeds the download limit."); }
+      chunks.push(Buffer.from(value));
+    }
+  } finally { reader.releaseLock(); }
+  return { bytes: Buffer.concat(chunks, total), mime: res.headers.get("content-type") ?? "audio/mpeg" };
 }

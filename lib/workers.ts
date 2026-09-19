@@ -2,6 +2,7 @@ import { inngest, EVENTS } from "./inngest";
 import { withRecoveryJob } from "./recovery";
 import {
   handleAstraRender,
+  handleDubbing,
   handleProbe,
   renderFailed,
   renderProduce,
@@ -116,5 +117,22 @@ export const astraRender = inngest.createFunction(
     ),
 );
 
+export const dubbing = inngest.createFunction(
+  {
+    id: "audio-dubbing",
+    name: "Advance dubbing project",
+    triggers: [{ event: EVENTS.dubbing }],
+    concurrency: [{ limit: 4 }, { limit: 2, key: "event.data.workspaceId" }],
+    retries: 2,
+  },
+  async ({ event, step }) =>
+    step.run("submit-poll-or-collect", () =>
+      handleDubbing({
+        jobId: String(event.data.jobId),
+        workspaceId: String(event.data.workspaceId),
+      }),
+    ),
+);
+
 /** Everything the route serves. Workers are added here as they are written. */
-export const functions = [probe, render, astraRender];
+export const functions = [probe, render, astraRender, dubbing];

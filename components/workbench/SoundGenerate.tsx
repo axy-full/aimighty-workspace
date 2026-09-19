@@ -11,25 +11,35 @@ import {
 } from "@/lib/workbench/pending-generation";
 import {
   SOUND_TASKS,
+  SOUND_TOOLS,
   SOUND_SECONDS,
   SOUND_CLIP_LIMIT,
   clampSeconds,
   createSoundNode,
+  dubBody,
   expectedSeconds,
   findSoundNode,
+  isSoundTool,
   parseSoundPlacements,
   placeGeneratedClip,
   readSoundPlacements,
+  replaceableClips,
   soundGenerationBody,
+  soundJobLabel,
   soundPlacementsKey,
+  soundSources,
   soundTask,
+  soundTool,
   timecodeOf,
+  voiceChangeBody,
   writeSoundPlacements,
+  type SoundJobTask,
   type SoundLane,
   type SoundPlacement,
 } from "@/lib/workbench/sound-generate";
+import { DEFAULT_DUBBING_MODE, DUBBING_LANGUAGES, DUBBING_MODE_OPTIONS, DUBBING_SOURCE_AUTO, dubbingLanguageLabel } from "@/lib/workbench/dubbing-options";
 import { audioClips } from "@/lib/workbench/audio";
-import type { Project } from "@/lib/workbench/studio";
+import type { Asset, Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import styles from "./SoundGenerate.module.css";
 
@@ -80,6 +90,28 @@ function probeSeconds(url: string, timeoutMs = 8000): Promise<number | null> {
   });
 }
 
+/** The account's voices, with a refresh — shared by Voice-over and Change voice. */
+function VoicePicker({ voices, voiceId, disabled, busy, onChange, onRefresh }: { voices: Voice[]; voiceId: string; disabled: boolean; busy: boolean; onChange: (id: string) => void; onRefresh: () => void }) {
+  return (
+    <label>
+      Voice
+      <span className={styles.voiceRow}>
+        <select aria-label="Voice" value={voiceId} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+          {!voices.length && <option value="">{busy ? "Loading voices…" : "No voices available"}</option>}
+          {voices.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+        <button type="button" className="btn" disabled={disabled} onClick={onRefresh} aria-label="Refresh voices">
+          Refresh
+        </button>
+      </span>
+    </label>
+  );
+}
+
 function validMapping(value: unknown): value is { shotId: string; productionProjectId: string } {
   if (!value || typeof value !== "object") return false;
   const mapping = value as Record<string, unknown>;
@@ -88,11 +120,25 @@ function validMapping(value: unknown): value is { shotId: string; productionProj
   );
 }
 
+/** What a dub is doing, in the panel's words, from the job feed's dubbingStatus. */
+function dubbingWord(status: string | undefined): string | null {
+  switch (status) {
+    case "queued": return "waiting to submit";
+    case "submitted": return "submitted, waiting for the vendor";
+    case "dubbing": return "dubbing…";
+    case "uncertain": return "outcome unconfirmed — under review";
+    default: return null;
+  }
+}
+
 /**
  * Generate sound straight onto the timeline: a voice-over, a sound effect or
  * a piece of music, quoted first, submitted through the same audio admission
  * as every other track, filed as a take of the lane's Rig node, and placed on
- * its lane at the playhead the moment its bytes exist.
+ * its lane at the playhead the moment its bytes exist. Two tools sit beside
+ * them — Change voice (a stored track re-voiced, replacing or joining a
+ * dialogue clip) and Dub (an asynchronous project that lands on the dialogue
+ * lane when the vendor is done) — quoted per minute of the chosen original.
  */
 export function SoundGenerate({
   scope,
@@ -115,10 +161,19 @@ export function SoundGenerate({
   onSave: (refresh?: boolean) => Promise<boolean>;
   onQueued: () => void;
 }) {
-  const [task, setTask] = useState<NodeAudioTask>("speech");
-  const def = soundTask(task);
+  const [task, setTask] = useState<SoundJobTask>("speech");
+  const tool = isSoundTool(task) ? soundTool(task) : null;
+  /** The generator the fields describe; a tool borrows the voice-over's shape. */
+  const genTask: NodeAudioTask = isSoundTool(task) ? "speech" : task;
+  const def = soundTask(genTask);
   const [text, setText] = useState("");
   const [lane, setLane] = useState<SoundLane>(def.lane);
+  const [sourceIds, setSourceIds] = useState<Record<string, string>>({});
+  const [replaceClipId, setReplaceClipId] = useState("");
+  const [removeNoise, setRemoveNoise] = useState(false);
+  const [sourceLang, setSourceLang] = useState(DUBBING_SOURCE_AUTO);
+  const [targetLang, setTargetLang] = useState("en");
+  const [mode, setMode] = useState<string>(DEFAULT_DUBBING_MODE);
   const [voiceId, setVoiceId] = useState("");
   const [modelId, setModelId] = useState("");
   const [seconds, setSeconds] = useState<Record<NodeAudioTask, number>>({
@@ -132,7 +187,7 @@ export function SoundGenerate({
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voicesError, setVoicesError] = useState("");
   const [voicesBusy, setVoicesBusy] = useState(false);
-  const [quote, setQuote] = useState<{ key: string; credits: number } | null>(null);
+  const [quote, setQuote] = useState<{ key: string; credits: number; minutes?: number; seconds?: number } | null>(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -206,21 +261,38 @@ export function SoundGenerate({
       .finally(() => setVoicesBusy(false));
   }
 
+  /* The tools take a stored original: the project's own or shared audio (and, for a dub, video) assets. */
+  const sources = useMemo(() => (tool ? soundSources(project, tool.sources) : []), [project, tool]);
+  const source: Asset | null = tool ? (sources.find((a) => a.id === sourceIds[tool.id]) ?? sources[0] ?? null) : null;
+  const replaceable = useMemo(() => (tool?.id === "voiceChange" && source ? replaceableClips(project, source) : []), [project, tool, source]);
+  const voiceName = voices.find((v) => v.id === voiceId)?.name;
+  const endpoint = tool ? tool.endpoint : "/api/audio";
   const body = useMemo(
     () =>
-      soundGenerationBody({
-        task,
-        text: text.trim(),
-        seconds: seconds[task],
-        instrumental,
-        promptInfluence,
-        voiceId,
-        modelId,
-      }),
-    [task, text, seconds, instrumental, promptInfluence, voiceId, modelId],
+      tool?.id === "voiceChange"
+        ? source ? voiceChangeBody({ source, voiceId, voiceName, removeBackgroundNoise: removeNoise }) : null
+        : tool?.id === "dub"
+          ? source ? dubBody({ source, sourceLang, targetLang, mode }) : null
+          : soundGenerationBody({
+              task: genTask,
+              text: text.trim(),
+              seconds: seconds[genTask],
+              instrumental,
+              promptInfluence,
+              voiceId,
+              modelId,
+            }),
+    [tool, source, voiceId, voiceName, removeNoise, sourceLang, targetLang, mode, genTask, text, seconds, instrumental, promptInfluence, modelId],
   );
   const bodyKey = JSON.stringify(body);
-  const ready = Boolean(setup?.configured && text.trim() && (task !== "speech" || voiceId));
+  const ready = Boolean(
+    setup?.configured && body &&
+      (tool?.id === "voiceChange"
+        ? source && voiceId
+        : tool?.id === "dub"
+          ? source && targetLang && sourceLang !== targetLang
+          : text.trim() && (task !== "speech" || voiceId)),
+  );
   const cost = pending?.credits ?? (quote?.key === bodyKey ? quote.credits : null);
 
   /* Quote first: the button carries the price before anything is spent. */
@@ -228,7 +300,7 @@ export function SoundGenerate({
     if (!enabled || pending || !ready) return;
     const abort = new AbortController();
     const timer = setTimeout(() => {
-      studioRequest<{ estimatedCredits: number }>("/api/audio", {
+      studioRequest<{ estimatedCredits: number; minutes?: number; sourceSeconds?: number }>(endpoint, {
         method: "POST",
         signal: abort.signal,
         headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
@@ -238,7 +310,12 @@ export function SoundGenerate({
           if (!validAudioQuote(data)) throw new Error("Audio pricing returned an invalid estimate.");
           if (!abort.signal.aborted) {
             setError("");
-            setQuote({ key: bodyKey, credits: data.estimatedCredits });
+            setQuote({
+              key: bodyKey,
+              credits: data.estimatedCredits,
+              ...(typeof data.minutes === "number" ? { minutes: data.minutes } : {}),
+              ...(typeof data.sourceSeconds === "number" ? { seconds: data.sourceSeconds } : {}),
+            });
           }
         })
         .catch((e) => {
@@ -252,7 +329,7 @@ export function SoundGenerate({
       clearTimeout(timer);
       abort.abort();
     };
-  }, [enabled, pending, ready, body, bodyKey, scope]);
+  }, [enabled, pending, ready, body, bodyKey, scope, endpoint]);
 
   const remember = useCallback(
     (next: SoundPlacement[]) => {
@@ -273,9 +350,12 @@ export function SoundGenerate({
         void probeSeconds(asset.url).then((measured) => {
           try {
             onPause();
-            onChange((p) => placeGeneratedClip(p, placement, asset, measured ?? placement.seconds));
+            const replacing = placement.replaceClipId && audioClips(projectRef.current).some((c) => c.id === placement.replaceClipId);
+            onChange((p) => placeGeneratedClip(p, placement, asset, measured ?? asset.seconds ?? placement.seconds));
             setStatus(
-              `${placement.label} placed on the ${placement.lane === "sfx" ? "SFX" : placement.lane} lane at ${timecodeOf(placement.startFrame, projectRef.current.fps)}.`,
+              replacing
+                ? `${placement.label} replaced its dialogue clip in place.`
+                : `${placement.label} placed on the ${placement.lane === "sfx" ? "SFX" : placement.lane} lane at ${timecodeOf(placement.startFrame, projectRef.current.fps)}.`,
             );
           } catch (e) {
             setError(e instanceof Error ? e.message : "The clip could not be placed.");
@@ -301,8 +381,10 @@ export function SoundGenerate({
     let attempt: PendingGeneration | null = null;
     let key = pendingKey;
     const startFrame = frameRef.current;
-    const label = def.label;
-    const asked = expectedSeconds(task, text, seconds[task]);
+    const label = soundJobLabel(task);
+    const asked = tool ? Math.max(1, Math.ceil(quote?.seconds ?? source?.seconds ?? 5)) : expectedSeconds(genTask, text, seconds[genTask]);
+    const replaceId = tool?.id === "voiceChange" && replaceClipId && replaceable.some((c) => c.id === replaceClipId) ? replaceClipId : undefined;
+    const placementLane: SoundLane = tool ? "dialogue" : lane;
     try {
       attempt = key ? readPendingGeneration(window.localStorage, key) : null;
       if (!attempt) {
@@ -329,10 +411,12 @@ export function SoundGenerate({
             projectId: mapping.productionProjectId,
             shotId: mapping.shotId,
             maxCredits: cost!,
-            title: `${label} · ${text.trim().slice(0, 60)}`,
+            title: tool?.id === "voiceChange"
+              ? `${source!.name.replace(/\.[A-Za-z0-9]{1,8}$/, "").slice(0, 50)} · voice changed${voiceName ? ` (${voiceName.slice(0, 20)})` : ""}`
+              : `${label} · ${(tool ? source!.name : text.trim()).slice(0, 60)}`,
           }),
           credits: cost!,
-          endpoint: "/api/audio",
+          endpoint: endpoint as "/api/audio" | "/api/audio/dub",
         });
         notifyStorage();
       }
@@ -340,15 +424,21 @@ export function SoundGenerate({
         clearPendingGeneration(window.localStorage, key!, attempt!.key);
         remember([
           ...readSoundPlacements(window.localStorage, placementsKey),
-          { jobId: id, task, lane, startFrame, seconds: asked, label },
+          { jobId: id, task, lane: placementLane, startFrame, seconds: asked, label, ...(replaceId ? { replaceClipId: replaceId } : {}) },
         ]);
-        setStatus(`${label} submitted. It lands on the ${lane === "sfx" ? "SFX" : lane} lane at ${timecodeOf(startFrame, projectRef.current.fps)} when it is ready.`);
+        setStatus(
+          tool?.id === "dub"
+            ? `Dub submitted. The dubbed track lands on the dialogue lane at ${timecodeOf(startFrame, projectRef.current.fps)} when the vendor has finished; this takes a few minutes.`
+            : replaceId
+              ? `${label} submitted. It replaces its dialogue clip when it is ready.`
+              : `${label} submitted. It lands on the ${placementLane === "sfx" ? "SFX" : placementLane} lane at ${timecodeOf(startFrame, projectRef.current.fps)} when it is ready.`,
+        );
         setQuote(null);
         void onSave(true).then((saved) => {
           if (saved) onQueued();
         });
       };
-      const result = await studioRequest<{ id: string }>("/api/audio", {
+      const result = await studioRequest<{ id: string }>(attempt.endpoint ?? "/api/audio", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.key, "X-Workbench-Scope": scope },
         body: attempt.body,
@@ -361,7 +451,7 @@ export function SoundGenerate({
           clearPendingGeneration(window.localStorage, key, attempt.key);
           remember([
             ...readSoundPlacements(window.localStorage, placementsKey),
-            { jobId: e.data.id, task, lane, startFrame, seconds: asked, label },
+            { jobId: e.data.id, task, lane: placementLane, startFrame, seconds: asked, label, ...(replaceId ? { replaceClipId: replaceId } : {}) },
           ]);
           setBusy(false);
           void onSave(true).then((saved) => {
@@ -382,14 +472,22 @@ export function SoundGenerate({
   }
 
   const disabled = busy || !enabled || !!pending;
-  const bounds = SOUND_SECONDS[task];
+  const bounds = SOUND_SECONDS[genTask];
   const laneName = (value: SoundLane) => (value === "sfx" ? "SFX" : value === "dialogue" ? "Dialogue" : "Music");
+  const pick = (id: SoundJobTask) => {
+    setTask(id);
+    setLane(isSoundTool(id) ? "dialogue" : soundTask(id).lane);
+    setQuote(null);
+    setError("");
+    setStatus("");
+  };
+  const sourceLabel = (a: Asset) => `${a.name}${a.kind === "video" ? " · video" : ""}${a.seconds ? ` · ${Math.round(a.seconds)} s` : ""}`;
   return (
     <section className={styles.panel} aria-label="Generate sound">
       <header>
         <div>
           <span className="eyebrow">GENERATE</span>
-          <h3>Voice-over, sound effects & music</h3>
+          <h3>Voice-over, sound effects, music, voice change & dubbing</h3>
         </div>
         <span className={styles.playhead}>
           Playhead {timecodeOf(frame, project.fps)} · frame {frame}
@@ -397,60 +495,119 @@ export function SoundGenerate({
       </header>
       <div className={styles.tasks} role="group" aria-label="Sound type">
         {SOUND_TASKS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            aria-pressed={task === t.id}
-            disabled={busy}
-            onClick={() => {
-              setTask(t.id);
-              setLane(t.lane);
-              setQuote(null);
-              setError("");
-              setStatus("");
-            }}
-          >
+          <button key={t.id} type="button" aria-pressed={task === t.id} disabled={busy} onClick={() => pick(t.id)}>
+            {t.label}
+          </button>
+        ))}
+        {SOUND_TOOLS.map((t) => (
+          <button key={t.id} type="button" aria-pressed={task === t.id} disabled={busy} onClick={() => pick(t.id)}>
             {t.label}
           </button>
         ))}
       </div>
-      <label className={styles.text}>
-        {def.field}
-        <textarea
-          aria-label={def.field}
-          value={text}
-          maxLength={5000}
-          rows={3}
-          disabled={disabled}
-          placeholder={
-            task === "speech"
-              ? "The line to read. Direct v3 with tags: [whispers], [sighs]."
-              : task === "sound"
-                ? "Rain on a tin roof, distant thunder, no music."
-                : "Slow piano, warm room tone, builds at the end."
-          }
-          onChange={(e) => setText(e.target.value)}
-        />
-      </label>
+      {!tool && (
+        <label className={styles.text}>
+          {def.field}
+          <textarea
+            aria-label={def.field}
+            value={text}
+            maxLength={5000}
+            rows={3}
+            disabled={disabled}
+            placeholder={
+              task === "speech"
+                ? "The line to read. Direct v3 with tags: [whispers], [sighs]."
+                : task === "sound"
+                  ? "Rain on a tin roof, distant thunder, no music."
+                  : "Slow piano, warm room tone, builds at the end."
+            }
+            onChange={(e) => setText(e.target.value)}
+          />
+        </label>
+      )}
       <div className={styles.fields}>
-        {task === "speech" && (
+        {tool && (
+          <label>
+            Source
+            <select
+              aria-label={tool.id === "dub" ? "Dub source" : "Voice change source"}
+              value={source?.id ?? ""}
+              disabled={disabled}
+              onChange={(e) => {
+                setSourceIds((s) => ({ ...s, [tool.id]: e.target.value }));
+                setReplaceClipId("");
+              }}
+            >
+              {!sources.length && <option value="">{tool.id === "dub" ? "No audio or video originals in this project" : "No audio originals in this project"}</option>}
+              {sources.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {sourceLabel(a)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {tool?.id === "voiceChange" && (
+          <>
+            <VoicePicker voices={voices} voiceId={voiceId} disabled={disabled || voicesBusy} busy={voicesBusy} onChange={(id) => setVoiceId(id)} onRefresh={refreshVoices} />
+            <label>
+              Result
+              <select aria-label="Voice change result" value={replaceClipId} disabled={disabled} onChange={(e) => setReplaceClipId(e.target.value)}>
+                <option value="">Add a dialogue clip at the playhead</option>
+                {replaceable.map((c) => {
+                  const index = audioClips(project).findIndex((clip) => clip.id === c.id) + 1;
+                  return (
+                    <option key={c.id} value={c.id}>
+                      Replace sound clip {index} at {timecodeOf(c.startFrame, project.fps)}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <label className={styles.check}>
+              <input type="checkbox" checked={removeNoise} disabled={disabled} onChange={(e) => setRemoveNoise(e.target.checked)} />
+              Remove background noise
+            </label>
+          </>
+        )}
+        {tool?.id === "dub" && (
           <>
             <label>
-              Voice
-              <span className={styles.voiceRow}>
-                <select aria-label="Voice" value={voiceId} disabled={disabled || voicesBusy} onChange={(e) => setVoiceId(e.target.value)}>
-                  {!voices.length && <option value="">{voicesBusy ? "Loading voices…" : "No voices available"}</option>}
-                  {voices.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}
-                    </option>
-                  ))}
-                </select>
-                <button type="button" className="btn" disabled={disabled || voicesBusy} onClick={refreshVoices} aria-label="Refresh voices">
-                  Refresh
-                </button>
-              </span>
+              From
+              <select aria-label="Source language" value={sourceLang} disabled={disabled} onChange={(e) => setSourceLang(e.target.value)}>
+                <option value={DUBBING_SOURCE_AUTO}>Detect the language</option>
+                {DUBBING_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
             </label>
+            <label>
+              Into
+              <select aria-label="Target language" value={targetLang} disabled={disabled} onChange={(e) => setTargetLang(e.target.value)}>
+                {DUBBING_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Mode
+              <select aria-label="Dub mode" value={mode} disabled={disabled} onChange={(e) => setMode(e.target.value)}>
+                {DUBBING_MODE_OPTIONS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} · {m.note}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+        {task === "speech" && (
+          <>
+            <VoicePicker voices={voices} voiceId={voiceId} disabled={disabled || voicesBusy} busy={voicesBusy} onChange={(id) => setVoiceId(id)} onRefresh={refreshVoices} />
             <label>
               Model
               <select aria-label="Speech model" value={modelId} disabled={disabled} onChange={(e) => setModelId(e.target.value)}>
@@ -464,7 +621,7 @@ export function SoundGenerate({
             </label>
           </>
         )}
-        {task !== "speech" && (
+        {!tool && task !== "speech" && (
           <label>
             Length · seconds
             <input
@@ -473,9 +630,9 @@ export function SoundGenerate({
               min={bounds.min}
               max={bounds.max}
               step={bounds.step}
-              value={seconds[task]}
+              value={seconds[genTask]}
               disabled={disabled}
-              onChange={(e) => setSeconds((s) => ({ ...s, [task]: clampSeconds(task, e.target.valueAsNumber) }))}
+              onChange={(e) => setSeconds((s) => ({ ...s, [genTask]: clampSeconds(genTask, e.target.valueAsNumber) }))}
             />
           </label>
         )}
@@ -500,14 +657,16 @@ export function SoundGenerate({
             Instrumental
           </label>
         )}
-        <label>
-          Lane
-          <select aria-label="Sound lane" value={lane} disabled={disabled} onChange={(e) => setLane(e.target.value as SoundLane)}>
-            <option value="dialogue">Dialogue</option>
-            <option value="sfx">SFX</option>
-            <option value="music">Music</option>
-          </select>
-        </label>
+        {!tool && (
+          <label>
+            Lane
+            <select aria-label="Sound lane" value={lane} disabled={disabled} onChange={(e) => setLane(e.target.value as SoundLane)}>
+              <option value="dialogue">Dialogue</option>
+              <option value="sfx">SFX</option>
+              <option value="music">Music</option>
+            </select>
+          </label>
+        )}
       </div>
       <div className={styles.actions}>
         <button
@@ -520,27 +679,30 @@ export function SoundGenerate({
           {busy
             ? "Submitting…"
             : pending
-              ? `Recover submitted ${def.label.toLowerCase()} · ${pending.credits} cr`
+              ? `Recover submitted ${(tool ? tool.label : def.label).toLowerCase()} · ${pending.credits} cr`
               : cost != null && ready
-                ? `Generate ${def.label.toLowerCase()} · ${cost} cr`
-                : `Generate ${def.label.toLowerCase()}`}
+                ? `${tool ? tool.label : `Generate ${def.label.toLowerCase()}`} · ${cost} cr`
+                : tool ? tool.label : `Generate ${def.label.toLowerCase()}`}
         </button>
         <span className={styles.hint}>
-          Lands on the {laneName(lane)} lane at {timecodeOf(frame, project.fps)}.
-          {task === "speech" ? " Per character." : task === "sound" ? " One price per effect, up to 30 s." : " Per minute, 10 s to 5 min."}
+          {tool?.id === "voiceChange"
+            ? `${replaceClipId ? "Replaces the chosen dialogue clip in place." : `Lands on the Dialogue lane at ${timecodeOf(frame, project.fps)}.`} Per started minute of the source${quote?.key === bodyKey && quote.minutes ? ` · ${quote.minutes} min` : ""}.`
+            : tool?.id === "dub"
+              ? `Lands on the Dialogue lane at ${timecodeOf(frame, project.fps)} when the vendor is done. ${DUBBING_MODE_OPTIONS.find((m) => m.id === mode)?.label ?? "Standard"} mode, one language (${dubbingLanguageLabel(targetLang)}), per started minute of the source${quote?.key === bodyKey && quote.minutes ? ` · ${quote.minutes} min` : ""}.`
+              : `Lands on the ${laneName(lane)} lane at ${timecodeOf(frame, project.fps)}.${task === "speech" ? " Per character." : task === "sound" ? " One price per effect, up to 30 s." : " Per minute, 10 s to 5 min."}`}
         </span>
       </div>
-      {voicesError && task === "speech" && (
+      {voicesError && (task === "speech" || tool?.id === "voiceChange") && (
         <p className={styles.note}>Voices: {voicesError}</p>
       )}
       {placements.length > 0 && (
         <ul className={styles.queue} aria-label="Sound in progress">
           {placements.map((p) => {
             const job = jobs.find((j) => j.id === p.jobId);
+            const word = job?.status === "held" ? "held for credits" : (job?.params?.task === "dub" && dubbingWord(job.params.dubbingStatus)) || job?.status || "queued";
             return (
-              <li key={p.jobId}>
-                <strong>{p.label}</strong> · {laneName(p.lane)} lane at {timecodeOf(p.startFrame, project.fps)} ·{" "}
-                {job?.status === "held" ? "held for credits" : job?.status ?? "queued"}
+              <li key={p.jobId} data-sound-progress={p.task}>
+                <strong>{p.label}</strong> · {p.replaceClipId ? "replaces its dialogue clip" : `${laneName(p.lane)} lane at ${timecodeOf(p.startFrame, project.fps)}`} · {word}
               </li>
             );
           })}

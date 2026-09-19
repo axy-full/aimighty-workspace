@@ -15,6 +15,13 @@ import {
   soundPlacementsKey,
   timecodeOf,
   writeSoundPlacements,
+  SOUND_TOOLS,
+  dubBody,
+  isSoundTool,
+  replaceableClips,
+  soundJobLabel,
+  soundSources,
+  voiceChangeBody,
   type SoundPlacement,
 } from "../../lib/workbench/sound-generate";
 import { validateAudio } from "../../lib/workbench/audio";
@@ -87,3 +94,46 @@ test("a finished asset becomes a clip on its lane at the playhead, within the ed
   expect(timecodeOf(12, 24)).toBe("00:00");
   expect(timecodeOf(24 * 61, 24)).toBe("01:01");
 });
+
+test("the two tools have their own lane nodes, take only stored originals, and a voice change can replace its clip in place", () => {
+  expect(SOUND_TOOLS.map((t) => [t.id, t.endpoint, t.sources])).toEqual([
+    ["voiceChange", "/api/audio", ["audio"]],
+    ["dub", "/api/audio/dub", ["audio", "video"]],
+  ]);
+  expect(isSoundTool("dub")).toBe(true);
+  expect(isSoundTool("speech")).toBe(false);
+  expect(soundJobLabel("voiceChange")).toBe("Change voice");
+  expect(soundJobLabel("music")).toBe("Music");
+  const project = seedProject();
+  const node = createSoundNode(project, "dub");
+  expect(node).toMatchObject({ type: "audio", mode: "Audio", role: soundNodeRole("dub"), title: "Dub", collapsed: true });
+  expect(findSoundNode({ ...project, nodes: [...project.nodes, node] }, "dub")?.id).toBe(node.id);
+  expect(findSoundNode(project, "voiceChange")).toBeUndefined();
+  // Sources: audio (and, for a dub, video) assets that name an upload or a generation; links and images never.
+  const audio: Asset = { ...asset, id: "interview", generationId: undefined, uploadId: "up-1", name: "Interview.wav", seconds: 65 };
+  const video: Asset = { ...asset, id: "hero", kind: "video", generationId: "gen-v", name: "Hero" };
+  const loose: Asset = { ...asset, id: "loose", generationId: undefined, uploadId: undefined };
+  const withSources = { ...project, assets: [...project.assets, audio, video, loose, asset], sharedAssets: [audio] };
+  expect(soundSources(withSources, ["audio"]).map((a) => a.id)).toEqual(["interview", "gen-vo-1"]);
+  expect(soundSources(withSources, ["audio", "video"]).map((a) => a.id)).toEqual(["interview", "hero", "gen-vo-1"]);
+  expect(voiceChangeBody({ source: audio, voiceId: "voiceAAA01", voiceName: "Avery", removeBackgroundNoise: true })).toEqual({ task: "voiceChange", sourceUploadId: "up-1", voiceId: "voiceAAA01", voiceName: "Avery", removeBackgroundNoise: true });
+  expect(voiceChangeBody({ source: asset, voiceId: "voiceAAA01", removeBackgroundNoise: false })).toEqual({ task: "voiceChange", sourceGenId: "gen-vo-1", voiceId: "voiceAAA01", removeBackgroundNoise: false });
+  expect(dubBody({ source: video, sourceLang: "auto", targetLang: "es", mode: "v1" })).toEqual({ sourceGenId: "gen-v", sourceLang: "auto", targetLang: "es", mode: "v1" });
+  expect(() => voiceChangeBody({ source: loose, voiceId: "voiceAAA01", removeBackgroundNoise: false })).toThrow(/stored original/);
+  // Replacement keeps the clip's place, length and mix; only its source changes. Other lanes' clips are not offered.
+  const clip = { id: "clip-1", assetId: "interview", lane: "dialogue" as const, startFrame: 6, sourceIn: 3, duration: 48, gainDb: -3, pan: 0.2, fadeIn: 2, fadeOut: 2, muted: false, solo: false };
+  const edited = { ...withSources, audioClips: [clip, { ...clip, id: "clip-music", lane: "music" as const }] };
+  expect(replaceableClips(edited, audio).map((c) => c.id)).toEqual(["clip-1"]);
+  expect(replaceableClips(edited, video)).toEqual([]);
+  const changed: Asset = { ...asset, id: "gen-vc-1", generationId: "gen-vc-1", name: "Interview · voice changed (Avery)" };
+  const replaced = placeGeneratedClip({ ...edited, assets: [...edited.assets, changed] }, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "clip-1" }, changed, 65);
+  expect(replaced.audioClips).toHaveLength(2);
+  expect(replaced.audioClips![0]).toEqual({ ...clip, assetId: "gen-vc-1", sourceIn: 0 });
+  expect(() => validateAudio(replaced)).not.toThrow();
+  // Replacing twice is a no-op; a vanished clip falls back to adding one at the playhead.
+  expect(placeGeneratedClip(replaced, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "clip-1" }, changed, 65)).toBe(replaced);
+  const added = placeGeneratedClip({ ...edited, assets: [...edited.assets, changed] }, { ...placement, jobId: "gen-vc-1", task: "voiceChange", replaceClipId: "gone", startFrame: 30 }, changed, 65);
+  expect(added.audioClips).toHaveLength(3);
+  expect(added.audioClips![2]).toMatchObject({ assetId: "gen-vc-1", lane: "dialogue", startFrame: 30, duration: 65 * added.fps });
+});
+

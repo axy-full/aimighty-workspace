@@ -18,8 +18,11 @@ import {
   sfxCredits,
   musicCredits,
   dialogueCredits,
+  voiceChangeUsd,
+  VOICE_CHANGE_MODEL,
   type DialogueLine,
 } from "@/lib/elevenlabs";
+import { findStoredSource, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "@/lib/mediaSource.server";
 import { getShot } from "@/lib/shots";
 import {
   bindGenerationRequest,
@@ -55,9 +58,34 @@ import {
 } from "./admissionSupport";
 
 const MAX_TEXT = 5000;
-export type AudioTask = "speech" | "sound" | "music" | "dialogue";
-const AUDIO_TASKS: AudioTask[] = ["speech", "sound", "music", "dialogue"];
+export type AudioTask = "speech" | "sound" | "music" | "dialogue" | "voiceChange";
+const AUDIO_TASKS: AudioTask[] = ["speech", "sound", "music", "dialogue", "voiceChange"];
 const VOICE_ID = /^[A-Za-z0-9]{6,64}$/;
+const SOURCE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * The voice change source: one stored audio original (an upload, or a
+ * generated track such as a dialogue clip's) whose length is known, because
+ * the price is per minute of it. A source that cannot be measured is refused
+ * with the reason rather than priced from a guess.
+ */
+export async function resolveVoiceChangeSource(body: { sourceUploadId?: unknown; sourceGenId?: unknown }): Promise<
+  | { source: NonNullable<Awaited<ReturnType<typeof findStoredSource>>>; seconds: number }
+  | { error: string; status: number }
+> {
+  const uploadId = body.sourceUploadId ? String(body.sourceUploadId) : "";
+  const genId = body.sourceGenId ? String(body.sourceGenId) : "";
+  if ((!uploadId && !genId) || (uploadId && genId)) return { error: "Pick one audio original to change the voice of.", status: 400 };
+  if ((uploadId && !SOURCE_ID.test(uploadId)) || (genId && !SOURCE_ID.test(genId))) return { error: "That audio source is not valid.", status: 400 };
+  const source = await findStoredSource(uploadId ? { uploadId } : { genId });
+  if (!source) return { error: "That audio original is not in this workspace.", status: 404 };
+  if (source.mediaKind !== "audio") return { error: "Voice change takes an audio original. Export the clip's sound first for a video.", status: 400 };
+  if (source.bytes > SOURCE_BYTES_LIMIT) return { error: "Voice change takes a source up to 100 MB.", status: 400 };
+  const length = await resolveStoredDuration(source);
+  if (length.seconds == null)
+    return { error: `This source has no measured length, so it cannot be priced per minute${length.reason ? `: ${length.reason}` : "."}`, status: 422 };
+  return { source, seconds: length.seconds };
+}
 
 /** Dialogue lines as the vendor takes them: text per voice, within its caps.
  *  Returns a sentence when the request cannot be priced. */
@@ -135,10 +163,17 @@ export async function executeAudioAdmission(
     task === "dialogue" ? normalizeDialogueLines(body.lines) : null;
   if (dialogue && "error" in dialogue)
     return admissionReply({ error: dialogue.error }, { status: 400 });
+  /* Voice change has no text: its prompt is what it was made from, so
+     Activity and the library say which track was re-voiced. */
+  const voiceChange = task === "voiceChange" ? await resolveVoiceChangeSource(body) : null;
+  if (voiceChange && "error" in voiceChange)
+    return admissionReply({ error: voiceChange.error }, { status: voiceChange.status });
   const text = (
     dialogue
       ? dialogue.lines.map((line) => line.text).join("\n")
-      : String(body.text ?? "")
+      : voiceChange
+        ? `Voice change · ${voiceChange.source.name}`
+        : String(body.text ?? "")
   )
     .trim()
     .slice(0, MAX_TEXT);
@@ -184,8 +219,24 @@ export async function executeAudioAdmission(
 
   let modelId = SFX_MODEL;
   let estCredits = 0;
+  /** Dollars for the per-minute task; the credit tasks derive theirs from estCredits. */
+  let estUsd: number | null = null;
   const params: Record<string, unknown> = { task };
-  if (task === "speech") {
+  if (task === "voiceChange") {
+    modelId = VOICE_CHANGE_MODEL;
+    const voiceId = String(body.voiceId ?? "").trim();
+    if (!VOICE_ID.test(voiceId))
+      return admissionReply({ error: "Pick a voice." }, { status: 400 });
+    const { source, seconds } = voiceChange!;
+    params.voiceId = voiceId;
+    params.voiceName = body.voiceName ? String(body.voiceName).slice(0, 80) : undefined;
+    if (source.kind === "upload") params.sourceUploadId = source.id;
+    else params.sourceGenId = source.id;
+    params.sourceName = source.name.slice(0, 200);
+    params.sourceSeconds = seconds;
+    params.removeBackgroundNoise = body.removeBackgroundNoise === true;
+    estUsd = voiceChangeUsd(seconds);
+  } else if (task === "speech") {
     modelId = SPEECH_MODELS.some((m) => m.id === body.modelId)
       ? String(body.modelId)
       : DEFAULT_SPEECH_MODEL;
@@ -240,17 +291,14 @@ export async function executeAudioAdmission(
   }
 
   const genId = newId("gen");
-  const estimatedCredits = billCredits(
-    usdForCredits(estCredits, null),
-    "elevenlabs",
-  );
+  const vendorUsd = estUsd ?? usdForCredits(estCredits, null);
+  const estimatedCredits = billCredits(vendorUsd, "elevenlabs");
   if (quoteOnly)
     return admissionReply({
       estimatedCredits,
-      price: creditsApply(requireTenant())
-        ? estimatedCredits
-        : usdForCredits(estCredits, null),
+      price: creditsApply(requireTenant()) ? estimatedCredits : vendorUsd,
       unit: creditsApply(requireTenant()) ? "cr" : "usd",
+      ...(voiceChange ? { sourceSeconds: voiceChange.seconds, minutes: Math.max(1, Math.ceil(voiceChange.seconds / 60 - 1e-9)) } : {}),
     });
   if (
     body.maxCredits != null &&
@@ -268,17 +316,17 @@ export async function executeAudioAdmission(
   }
   const wall = await allowanceCheck(
     "elevenlabs",
-    usdForCredits(estCredits, null),
+    vendorUsd,
     "elevenlabs",
   );
   if (!wall.ok && wall.status !== 402)
     return admissionReply({ error: wall.error }, { status: wall.status });
   let hold = !wall.ok
-    ? heldInfo(usdForCredits(estCredits, null), "audio", modelId)
+    ? heldInfo(vendorUsd, "audio", modelId)
     : null;
   const capV = await checkCap(
     projectId,
-    usdForCredits(estCredits, null),
+    vendorUsd,
     "elevenlabs",
   );
   if (!capV.allow)
@@ -287,7 +335,7 @@ export async function executeAudioAdmission(
   if (!lim.allow && lim.why === "rate")
     return admissionReply({ error: lim.error }, { status: 429 });
   if (!hold && !lim.allow)
-    hold = heldInfo(usdForCredits(estCredits, null), "audio", modelId, "slots");
+    hold = heldInfo(vendorUsd, "audio", modelId, "slots");
   const quota = await checkQuota(0);
   if (!quota.allow)
     return admissionReply({ error: quota.error }, { status: 507 });
@@ -296,7 +344,7 @@ export async function executeAudioAdmission(
     body,
     got,
     "audio",
-    usdForCredits(estCredits, null),
+    vendorUsd,
     "elevenlabs",
     {
       task,
@@ -325,6 +373,7 @@ export async function executeAudioAdmission(
       JSON.stringify({
         ...params,
         estCredits,
+        ...(estUsd != null ? { estUsd } : {}),
         ...(hold ? { held: hold } : {}),
       }),
       hold ? "held" : "running",
@@ -375,7 +424,7 @@ export async function executeAudioAdmission(
         engine: "elevenlabs",
         model: modelId,
         status: "running",
-        engineCostUsd: usdForCredits(estCredits, null),
+        engineCostUsd: vendorUsd,
         projectId,
         shotId,
         createdBy: got.user.id,
@@ -388,7 +437,7 @@ export async function executeAudioAdmission(
       (e.status === 402 || /Every job slot/.test(e.message))
     ) {
       const held = heldInfo(
-        usdForCredits(estCredits, null),
+        vendorUsd,
         "audio",
         modelId,
         e.status === 402 ? "credits" : "slots",

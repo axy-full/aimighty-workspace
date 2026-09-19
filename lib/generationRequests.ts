@@ -49,6 +49,7 @@ export function generationFingerprint(value: unknown): string {
 
 export type GenerationRequest = { userId: string; key: string };
 export async function bindGenerationRequest(claim: GenerationRequest, genId: string): Promise<void> {
+  await generationRequestsReady();
   await db().execute({ sql: `UPDATE generation_requests SET generation_id=?, updated_at=? WHERE user_id=? AND request_key=?`, args: [genId, now(), claim.userId, claim.key] });
 }
 

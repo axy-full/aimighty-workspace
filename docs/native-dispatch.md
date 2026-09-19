@@ -1,6 +1,6 @@
 # Native dispatch
 
-Background work — stills and audio (`render/requested`), video submission (the same event with `kind: "video"`), native Blender renders (`astra-blender/render.requested`), long-form development (`workbench/development.requested`) and the wiring probe (`worker/probe`) — is dispatched by the app itself on Vercel. Inngest is no longer required; it is an optional mode a deployment opts into.
+Background work — stills and audio (`render/requested`), video submission (the same event with `kind: "video"`), native Blender renders (`astra-blender/render.requested`), long-form development (`workbench/development.requested`), dubbing projects (`audio/dubbing.requested`) and the wiring probe (`worker/probe`) — is dispatched by the app itself on Vercel. Inngest is no longer required; it is an optional mode a deployment opts into.
 
 ## Modes
 
@@ -23,7 +23,7 @@ Environment, names only:
 
 ## The 202 hand-off
 
-`POST /api/worker` (`app/api/worker/route.ts`, `maxDuration = 300`) with `Authorization: Bearer $CRON_SECRET` and a JSON body `{ id, name, data }`, where `name` is one of the four event names and every `data` value is an identifier matching `^[A-Za-z0-9_-]{1,120}$`. Prompts, URLs and credentials never travel in the event; the handler reads them from tenant storage.
+`POST /api/worker` (`app/api/worker/route.ts`, `maxDuration = 300`) with `Authorization: Bearer $CRON_SECRET` and a JSON body `{ id, name, data }`, where `name` is one of the five event names and every `data` value is an identifier matching `^[A-Za-z0-9_-]{1,120}$`. Prompts, URLs and credentials never travel in the event; the handler reads them from tenant storage.
 
 The route, in order:
 
@@ -55,6 +55,7 @@ What differs from Inngest, per handler (`lib/worker-handlers.ts`):
   - A row that is already terminal, or gone, is skipped (`loadJob` returns null) — at-least-once delivery does nothing twice.
 - **Render, video.** `submitVideoRow`; a throw ends the dispatch with `failVideoDispatch` (a paid claim or known handle is never replaced or refunded).
 - **Astra Blender.** `runAstraRender` then `reconcileAstraRender`, unchanged. Only the permanent queued→starting claim can purchase compute, so a duplicate or repeated delivery cannot start a second VM.
+- **Dubbing** (`audio/dubbing.requested`, `data: { jobId, workspaceId }`, `handleDubbing` → `advanceDubbingJob` in `lib/dubbing.ts`). One step of the dubbing machine per event: submit a funded queued job (under a permanent `submit_claimed_at` claim, so a duplicate or repeated delivery cannot buy a second vendor project), or ask after a submitted one, or download and settle a finished one. A vendor refusal (4xx) fails and refunds the job inside the handler; a lost acknowledgement leaves it `uncertain` and no later event or cron pass resubmits it; a transport error on a poll ends the attempt with the row untouched. The ten-minute cron's `recoverDubbingJobs` (in `syncPending`, next to `recoverAstraRenders`) is the durable retry: queued funded jobs are re-sent to the worker (or advanced inline when there is no queue), submitted ones are polled no more often than every 45 seconds, terminal and uncertain rows are left alone. Inngest mode registers the same handler as `audio-dubbing`.
 - **Development.** Phases run back to back inside one invocation until the job is done or waiting, or until ~240 s of wall time have elapsed; the remainder is re-dispatched to a fresh invocation with a phase-keyed id (`development-<jobId>-phase-<n>`) under the same reservation. A phase whose saved result is awaiting ledger settlement stops the invocation; only recovery touches it. A started phase with an unknown outcome is never resubmitted.
 
 ## Turning Inngest off (or on)

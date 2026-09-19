@@ -20,6 +20,7 @@ import { engineFor } from "./engines";
 import { higgsfieldSubmissionRejected } from "./higgsfield";
 import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
+import { inspectAudioBuffer } from "./mediaSource.server";
 
 /**
  * The work of a still or a piece of audio, lifted out of the route that
@@ -76,14 +77,17 @@ export type StillJob = {
   startedAt: number;
 };
 
+export type AudioTaskName = "speech" | "sound" | "music" | "dialogue" | "voiceChange";
 export type AudioJob = {
   kind: "audio";
   genId: string;
   modelId: string;
   text: string;
-  task: "speech" | "sound" | "music" | "dialogue";
+  task: AudioTaskName;
   params: Record<string, unknown>;
   estCredits: number;
+  /** Dollars, for the per-minute task (voice change); the credit tasks price from estCredits. */
+  estUsd: number | null;
   startedAt: number;
 };
 
@@ -122,10 +126,12 @@ export async function loadJob(genId: string): Promise<Job | null> {
   const startedAt = Number(row.created_at);
 
   if (row.kind === "audio") {
-    const task = ["speech", "sound", "music", "dialogue"].includes(
+    // A dubbing project is not a render: its own workflow (lib/dubbing.ts) owns the row.
+    if (params.task === "dub") return null;
+    const task = ["speech", "sound", "music", "dialogue", "voiceChange"].includes(
       String(params.task),
     )
-      ? (params.task as "speech" | "sound" | "music" | "dialogue")
+      ? (params.task as AudioTaskName)
       : "speech";
     return {
       kind: "audio",
@@ -135,6 +141,7 @@ export async function loadJob(genId: string): Promise<Job | null> {
       task,
       params,
       estCredits: Number(params.estCredits ?? 0),
+      estUsd: typeof params.estUsd === "number" && Number.isFinite(params.estUsd) ? params.estUsd : null,
       startedAt,
     };
   }
@@ -287,6 +294,10 @@ export type Produced = { timings: Timings; bytes: number } &
         storedUrl: string;
         credits: number;
         requestId: string | null;
+        /** Set by the per-minute task, whose price is dollars rather than vendor credits. */
+        costUsd?: number | null;
+        /** The delivered file's own length, read from its header before storing. */
+        seconds?: number | null;
       }
   );
 
@@ -597,12 +608,16 @@ async function produceAudio(job: AudioJob): Promise<Produced> {
     () => storeAudioBytes(job.genId, out.bytes),
     { max: 3 },
   );
+  // The track's own length, from its header (bounded, in memory); null when unreadable.
+  const seconds = await inspectAudioBuffer(out.bytes).then((m) => Math.round(m.seconds * 1000) / 1000).catch(() => null);
   return {
     kind: "audio",
     storedUrl: stored.url,
     bytes: stored.bytes,
     credits: out.credits ?? 0,
     requestId: out.requestId ?? null,
+    ...(out.costUsd != null ? { costUsd: out.costUsd } : {}),
+    seconds,
     timings: { queueMs, engineMs, storeMs: now() - storeStart },
   };
 }
@@ -681,12 +696,14 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
       /* estimate at the fallback rate */
     }
     const credits = produced.credits;
-    const cost = usdForCredits(credits, tier);
+    // A per-minute task states its dollars itself; the credit tasks price from the plan.
+    const cost = produced.costUsd != null ? produced.costUsd : usdForCredits(credits, tier);
     await writeGenerationOutcome(
       {
         sql: `UPDATE generations
             SET status='succeeded', stored_url=?, total_tokens=?, cost_usd=?, rate_usd_per_m=?,
                 error=NULL, duration_ms=?, queue_ms=?, engine_ms=?, store_ms=?, bytes=?,
+                duration_s=COALESCE(?, duration_s),
                 params=json_set(params, '$.credits', ?, '$.tier', ?, '$.requestId', ?), updated_at=?
             WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
         args: [
@@ -699,6 +716,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
           t.engineMs,
           t.storeMs,
           produced.bytes,
+          produced.seconds ?? null,
           credits,
           tier,
           produced.requestId,
@@ -744,7 +762,7 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
   const spentUsd = rejectedBeforeGeneration
     ? 0
     : job?.kind === "audio"
-      ? usdForCredits(job.estCredits, null)
+      ? (job.estUsd ?? usdForCredits(job.estCredits, null))
       : job?.kind === "image"
         ? (isHiggsfieldImageModel(job.modelId) ? (job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldVendorCostUsd : job.soulVendorCostUsd) ?? null : estimateImageCostUsd(job.modelId, job.size, job.references.length)
             ?.net ?? null)

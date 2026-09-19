@@ -1,4 +1,4 @@
-export type PendingGeneration = { key: string; body: string; credits: number; endpoint?: "/api/generate" | "/api/audio" };
+export type PendingGeneration = { key: string; body: string; credits: number; endpoint?: "/api/generate" | "/api/audio" | "/api/audio/dub" };
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 
 export function pendingGenerationKey(
@@ -22,7 +22,7 @@ export function readPendingGeneration(
     typeof request.key !== "string" ||
     typeof request.body !== "string" ||
     !Number.isFinite(request.credits) ||
-    (request.endpoint != null && !["/api/generate", "/api/audio"].includes(request.endpoint))
+    (request.endpoint != null && !["/api/generate", "/api/audio", "/api/audio/dub"].includes(request.endpoint))
   ) {
     throw new Error(
       "The saved generation request cannot be read. Check Activity before starting another take.",

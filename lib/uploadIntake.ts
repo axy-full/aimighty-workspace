@@ -1,4 +1,5 @@
 import { validateAstraGlb } from './astra-blender/glb';
+import { inspectStoredUploadSeconds } from "./mediaSource.server";
 import { identifyImage, validateVideo } from "./imagemeta";
 import { storeUpload } from "./storage";
 import { getProvider, DEFAULT_PROVIDER } from "./providers";
@@ -87,6 +88,12 @@ export async function storeReferenceUpload(
         derivative.mime,
       )
     : null;
+  /* A video whose moov box trails its media states no length in its head;
+     the bounded inspector reads it from the stored file (best effort — a
+     missing length is backfilled on first use by the sound tools). */
+  const durationS = meta.kind === "video" && meta.durationS == null
+    ? await inspectStoredUploadSeconds({ id: uploadId, ext: meta.ext, kind: "video", storedUrl: master.url, bytes: buf.length }).catch(() => null)
+    : meta.durationS;
   const response = {
     id: uploadId,
     filename,
@@ -95,7 +102,7 @@ export async function storeReferenceUpload(
     bytes: buf.length,
     width: meta.width,
     height: meta.height,
-    durationS: meta.durationS,
+    durationS,
     sha256: master.sha256,
     url: `/api/uploads/${uploadId}`,
     delivery: derivative
@@ -117,7 +124,7 @@ export async function storeReferenceUpload(
       height: meta.height,
       storedUrl: master.url,
       kind: meta.kind,
-      durationS: meta.durationS,
+      durationS,
       derivativeUrl: copy?.url,
       derivativeBytes: derivative?.bytes.length,
       derivativeNote: derivative?.note,
