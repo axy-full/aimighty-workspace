@@ -553,3 +553,11 @@ test("job polling is read-only and validates workspace, known UUID and bounded p
     readConsumerVideoJob(token, "bad", workspaceId, { fetch: f.fetch }),
   ).rejects.toBeInstanceOf(ConsumerVideoError);
 });
+
+test("the verification rehearsal names its creative mode instead of inheriting the provider's presenter default", async () => {
+  const { MARKETING_VIDEO_REHEARSAL } = await import("../../lib/higgsfield-consumer/video-service");
+  const { parseConsumerVideoInput } = await import("../../lib/higgsfield-consumer/video-contract");
+  expect(MARKETING_VIDEO_REHEARSAL.mode).toBe("product_showcase");
+  expect(MARKETING_VIDEO_REHEARSAL.prompt).toMatch(/no people/);
+  expect(parseConsumerVideoInput(MARKETING_VIDEO_REHEARSAL)).toEqual(MARKETING_VIDEO_REHEARSAL);
+});
