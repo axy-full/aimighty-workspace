@@ -118,6 +118,7 @@ async function routes(initial: TenantWorkspace) {
     metadata: load<typeof import("../../app/api/uploads/[id]/metadata/route")>("app/api/uploads/[id]/metadata/route.ts", dependencies).GET,
     jobs: load<typeof import("../../app/api/jobs/route")>("app/api/jobs/route.ts", dependencies).GET,
     job: load<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", dependencies).GET,
+    jobDelete: load<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", dependencies).DELETE,
     productions: load<typeof import("../../app/api/productions/route")>("app/api/productions/route.ts", dependencies).GET,
     shots: load<typeof import("../../app/api/shots/route")>("app/api/shots/route.ts", dependencies).GET,
     readCount: () => reads,
@@ -214,6 +215,27 @@ test("all library reads enforce real authentication, MFA and captured workspace 
   expect((await shots.json()).shots.map((s: { id: string }) => s.id)).toEqual([second.id]);
   api.switch(first);
   for (const call of calls({ "X-Workbench-Scope": `particl-active-${first.id}-member` })) expect((await call()).status).toBe(200);
+});
+
+test("a generation delete from a browser session is refused without the captured workspace scope", async () => {
+  const ws = workspace("delete-scope");
+  await seed(ws, ["private-delete"]);
+  const api = await routes(ws);
+  const attempt = (headers: Record<string, string> = {}) =>
+    api.jobDelete(new Request("https://studio.test/api/jobs/private-delete", { method: "DELETE", headers }), { params: Promise.resolve({ id: "private-delete" }) });
+  api.signIn(false);
+  expect((await attempt()).status).toBe(401);
+  api.signIn(true); api.switch(ws); api.mfa(true);
+  // No header at all, and a header captured for another workspace, both stop
+  // before the deletion transaction (its dependencies are stubbed out here).
+  expect((await attempt()).status).toBe(409);
+  expect((await attempt({ "X-Workbench-Scope": "particl-active-somewhere-else-member" })).status).toBe(409);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  await runInTenant(ws, async () => {
+    expect((await db().execute("SELECT COUNT(*) AS n FROM generations WHERE id='private-delete'")).rows[0].n).toBe(1);
+  });
+  expect(api.readCount()).toBe(0);
 });
 
 test("malformed page parameters fail with 400 rather than truncating or querying an unbounded page", async () => {

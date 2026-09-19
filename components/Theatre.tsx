@@ -210,7 +210,7 @@ export default function Theatre({
 
   async function remove() {
     if (!(await appConfirm(`Delete ${clipId(gen!.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
-    await fetch(`/api/jobs/${gen!.id}`, { method: "DELETE" });
+    await fetch(`/api/jobs/${gen!.id}`, { method: "DELETE", headers: { "X-Workbench-Scope": requestScope ?? "visitor" } });
     onChanged();
     onClose();
   }

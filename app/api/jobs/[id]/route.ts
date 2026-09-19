@@ -132,9 +132,14 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
  * Hard-deleting rows made "remaining credit" drift optimistic with every
  * library cleanup.
  */
-export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {
+export const DELETE = withTenant(async function DELETE(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
+  // A browser tab whose account or workspace changed underneath it must not
+  // tombstone a clip in the workspace that is now active. Same rule as the
+  // upload DELETE; API tokens carry their own scope.
+  const scopeProblem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
+  if (scopeProblem) return NextResponse.json({ error: scopeProblem }, { status: 409 });
   await ready();
   const { id } = await params;
   await workbenchReady();
