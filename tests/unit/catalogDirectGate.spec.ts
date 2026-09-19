@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 
-process.env.OPENAI_API_KEY = "sk-unit-catalog-gate";
-process.env.AI_GATEWAY_API_KEY = "gw-unit-catalog-gate";
-delete process.env.ENGINE_MOCK;
-delete process.env.AI_GATEWAY_BASE_URL;
+// Worker processes are shared across spec files, so the environment this
+// test needs is set inside the test and restored afterwards; nothing here
+// may leak a live-engine configuration into a neighbouring mocked spec.
+const ENV_KEYS = ["OPENAI_API_KEY", "AI_GATEWAY_API_KEY", "ENGINE_MOCK", "AI_GATEWAY_BASE_URL"] as const;
 
 const gateway = {
   data: [
@@ -22,6 +22,11 @@ const gateway = {
  */
 test("a configured OpenAI key gates only its language models, never Gateway-served media", async () => {
   const { catalog } = await import("../../lib/catalog");
+  const saved = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+  process.env.OPENAI_API_KEY = "sk-unit-catalog-gate";
+  process.env.AI_GATEWAY_API_KEY = "gw-unit-catalog-gate";
+  delete process.env.ENGINE_MOCK;
+  delete process.env.AI_GATEWAY_BASE_URL;
   const realFetch = globalThis.fetch;
   let openaiStatus = 200;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -41,5 +46,9 @@ test("a configured OpenAI key gates only its language models, never Gateway-serv
     expect(restricted).toEqual(["openai/gpt-image-2", "openai/tts-1-hd", "anthropic/claude-sonnet-5"]);
   } finally {
     globalThis.fetch = realFetch;
+    for (const key of ENV_KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
   }
 });
