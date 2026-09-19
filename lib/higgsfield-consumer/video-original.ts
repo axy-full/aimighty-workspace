@@ -78,6 +78,10 @@ export class ConsumerOriginalError extends Error {
 }
 const digest = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
+/** The originals-ledger key of one clip of a multi-clip job (Shorts Studio):
+ * each clip is its own retained original, keyed apart from its parent job. */
+export const consumerClipKey = (jobId: string, index: number) => `${jobId}.clip-${index}`;
+export type ConsumerClip = { index: number; providerJobId: string };
 export function consumerOriginalGenerationId(
   workspaceId: string,
   jobId: string,
@@ -201,7 +205,7 @@ async function currentJob(tx: Transaction, job: ConsumerJob) {
     row.payload_json !== job.payloadJson ||
     Number(row.quote_credits) !== job.quoteCredits ||
     row.connection_generation !== job.connectionGeneration ||
-    row.workflow !== job.workflow || !["marketing-video", "genjutsu", "generation", "marketing-template", "voice-tool"].includes(job.workflow)
+    row.workflow !== job.workflow || !["marketing-video", "genjutsu", "generation", "marketing-template", "voice-tool", "shorts"].includes(job.workflow)
   )
     throw new ConsumerOriginalError("not_found");
   return row;
@@ -222,7 +226,7 @@ async function generationExists(tx: Transaction, id: string) {
     })
   ).rows[0];
 }
-function ownedGeneration(row: Row | undefined, job: ConsumerJob) {
+function ownedGeneration(row: Row | undefined, job: ConsumerJob, key = job.id, providerJobId = job.providerJobId) {
   if (!row) return;
   if (Number(row.deleted)) throw new ConsumerOriginalError("deleted");
   let params: Record<string, unknown>;
@@ -232,8 +236,8 @@ function ownedGeneration(row: Row | undefined, job: ConsumerJob) {
     throw new ConsumerOriginalError("conflict");
   }
   if (
-    params.consumerJobId !== job.id ||
-    params.consumerProviderJobId !== job.providerJobId ||
+    params.consumerJobId !== key ||
+    params.consumerProviderJobId !== providerJobId ||
     row.provider !== "higgsfield" ||
     row.model !== consumerVideoIdentity(job).model ||
     row.kind !== consumerVideoIdentity(job).kind ||
@@ -261,6 +265,7 @@ export async function hasRetainedConsumerOriginal(generationId: string) {
 }
 function receipt(
   job: ConsumerJob,
+  providerJobId: string,
   generationId: string,
   bytes: number,
   sha256: string,
@@ -270,7 +275,7 @@ function receipt(
   const { mime, ...dimensions } = metadata;
   return {
     generationId,
-    providerJobId: job.providerJobId!,
+    providerJobId,
     bytes,
     sha256,
     ...dimensions,
@@ -298,6 +303,9 @@ export async function collectConsumerVideoOriginal(
   options: {
     fetchDependencies?: Partial<ProductFetchDependencies>;
     store?: typeof storeVideoBytes;
+    /** One clip of a multi-clip job: keyed and receipted by the clip's own
+     * provider job, retained under the parent job's admission and quote. */
+    clip?: ConsumerClip;
   } = {},
 ): Promise<ConsumerVideoOriginal> {
   const workspace = requireTenant();
@@ -311,7 +319,14 @@ export async function collectConsumerVideoOriginal(
     kind = identity.kind;
   await workbenchReady();
   await uploadReservationsReady();
-  const generationId = consumerOriginalGenerationId(workspace.id, job.id),
+  const clip = options.clip;
+  if (clip && (job.workflow !== "shorts" || !Number.isSafeInteger(clip.index) || clip.index < 0 || clip.index >= 20 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(clip.providerJobId) || clip.providerJobId === job.providerJobId))
+    throw new ConsumerOriginalError("not_found");
+  if (!clip && job.workflow === "shorts") throw new ConsumerOriginalError("not_found");
+  const key = clip ? consumerClipKey(job.id, clip.index) : job.id,
+    providerJobId = clip ? clip.providerJobId : job.providerJobId!;
+  const generationId = consumerOriginalGenerationId(workspace.id, key),
     lease = randomUUID();
   const deadline = performance.now() + CONSUMER_ORIGINAL_DEADLINE_MS;
   const bound = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -338,14 +353,14 @@ export async function collectConsumerVideoOriginal(
   const prior = await workbenchTransaction(async (tx) => {
     await currentJob(tx, job);
     const generation = await generationExists(tx, generationId);
-    ownedGeneration(generation, job);
-    const row = await originalRow(tx, job.id);
+    ownedGeneration(generation, job, key, providerJobId);
+    const row = await originalRow(tx, key);
     if (
       row &&
       (row.generation_id !== generationId ||
         row.owner_id !== job.userId ||
         row.draft_id !== job.draftId ||
-        row.provider_job_id !== job.providerJobId)
+        row.provider_job_id !== providerJobId)
     )
       throw new ConsumerOriginalError("conflict");
     if (row?.state === "stored") {
@@ -367,11 +382,11 @@ export async function collectConsumerVideoOriginal(
     await tx.execute({
       sql: `INSERT INTO consumer_video_originals(job_id,generation_id,owner_id,draft_id,provider_job_id,lease,lease_until,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET lease=excluded.lease,lease_until=excluded.lease_until,updated_at=excluded.updated_at`,
       args: [
-        job.id,
+        key,
         generationId,
         job.userId,
         job.draftId,
-        job.providerJobId!,
+        providerJobId,
         lease,
         Date.now() + CONSUMER_ORIGINAL_LEASE_MS,
         Date.now(),
@@ -418,10 +433,10 @@ export async function collectConsumerVideoOriginal(
         const sha256 = digest(bytes),
           size = bytes.length,
           limit = (await workspaceLimits()).storageBytes;
-        const result = receipt(job, generationId, size, sha256, metadata!, kind);
+        const result = receipt(job, providerJobId, generationId, size, sha256, metadata!, kind);
         await workbenchTransaction(async (tx) => {
           await currentJob(tx, job);
-          const row = await originalRow(tx, job.id);
+          const row = await originalRow(tx, key);
           if (
             !row ||
             row.lease !== lease ||
@@ -453,7 +468,7 @@ export async function collectConsumerVideoOriginal(
               size,
               JSON.stringify(metadata),
               Date.now(),
-              job.id,
+              key,
               lease,
             ],
           });
@@ -469,7 +484,7 @@ export async function collectConsumerVideoOriginal(
           throw new ConsumerOriginalError("conflict");
         await workbenchTransaction(async (tx) => {
           await currentJob(tx, job);
-          const row = await originalRow(tx, job.id);
+          const row = await originalRow(tx, key);
           if (
             !row ||
             row.lease !== lease ||
@@ -478,7 +493,7 @@ export async function collectConsumerVideoOriginal(
           )
             throw new ConsumerOriginalError("busy");
           const generation = await generationExists(tx, generationId);
-          ownedGeneration(generation, job);
+          ownedGeneration(generation, job, key, providerJobId);
           if (generation) throw new ConsumerOriginalError("conflict");
           const draft = (
             await tx.execute({
@@ -504,14 +519,15 @@ export async function collectConsumerVideoOriginal(
             ...identity.params,
             ...(metadata!.seconds !== undefined ? { duration: metadata!.seconds } : {}),
             ...(job.workflow === "genjutsu" ? { ratio: `${metadata!.width}:${metadata!.height}` } : {}),
-            consumerJobId: job.id,
-            consumerProviderJobId: job.providerJobId,
+            consumerJobId: key,
+            consumerProviderJobId: providerJobId,
+            ...(clip ? { consumerParentJobId: job.id, consumerParentProviderJobId: job.providerJobId, clipIndex: clip.index } : {}),
             consumerCredits: job.quoteCredits,
             consumerCreditUnit: "higgsfield_credits",
             originalSha256: sha256,
             ...(metadata!.width !== undefined ? { width: metadata!.width } : {}),
             ...(metadata!.height !== undefined ? { height: metadata!.height } : {}),
-            ...(job.workflow === "generation" || job.workflow === "marketing-template" || job.workflow === "voice-tool" ? { consumerOriginalMime: result.asset.mime } : {}),
+            ...(job.workflow === "generation" || job.workflow === "marketing-template" || job.workflow === "voice-tool" || job.workflow === "shorts" ? { consumerOriginalMime: result.asset.mime } : {}),
           };
           await tx.execute({
             sql: `INSERT INTO generations(id,project_id,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,kind,provider,bytes,billed_to) VALUES(?,?,?,?,?,'succeeded',?,NULL,?,?,?,?,'higgsfield',?,'higgsfield')`,
@@ -531,7 +547,7 @@ export async function collectConsumerVideoOriginal(
           });
           await tx.execute({
             sql: "UPDATE consumer_video_originals SET state='stored',receipt_json=?,lease=NULL,lease_until=NULL,updated_at=? WHERE job_id=? AND lease=?",
-            args: [JSON.stringify(result), Date.now(), job.id, lease],
+            args: [JSON.stringify(result), Date.now(), key, lease],
           });
         });
         return result;
@@ -541,7 +557,7 @@ export async function collectConsumerVideoOriginal(
         await workbenchTransaction(async (tx) => {
           await tx.execute({
             sql: "UPDATE consumer_video_originals SET lease=NULL,lease_until=NULL WHERE job_id=? AND lease=? AND bytes=0",
-            args: [job.id, lease],
+            args: [key, lease],
           });
         }).catch(() => {});
         if (error instanceof ConsumerOriginalError) throw error;

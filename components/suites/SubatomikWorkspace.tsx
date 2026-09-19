@@ -56,6 +56,7 @@ import { SyncedVideoComparison } from "./SyncedVideoComparison";
 import { ReferenceImagePreview } from "./ReferenceImagePreview";
 import { FrameExtractControls } from "./FrameExtractControls";
 import { ConsumerGenjutsu } from "./ConsumerGenjutsu";
+import { ConsumerShorts } from "./ConsumerShorts";
 import { recreationProblem, recreationSettings } from "./subatomik-recreate";
 import styles from "./subatomik.module.css";
 import { SUBATOMIK_DIRECTIONS } from "./subatomik-directions";
@@ -155,6 +156,8 @@ export default function SubatomikWorkspace() {
     query = useSearchParams(),
     captured = useSuiteProject();
   const projectId = query.get("project") || captured.projectId;
+  // Shorts runs only on the connected account; the other pages are Genjutsu variants.
+  const shorts = query.get("page") === "shorts";
   const variant: GenjutsuVariant =
     query.get("page") === "object-swap" ? "object-swap" : "motion-transfer";
   // Billing is folded in silently: with a connected account the owner's
@@ -213,7 +216,7 @@ export default function SubatomikWorkspace() {
               new.
             </p>
           </div>
-          <span className="suite-badge">Transform</span>
+          <span className="suite-badge">{shorts || account === "higgsfield" ? "Connected account" : "Transform"}</span>
         </header>
         {!session.signedIn ? (
           <section className="suite-panel">
@@ -262,7 +265,29 @@ export default function SubatomikWorkspace() {
           </section>
         ) : (
           <>
-            {account === null ? (
+            {shorts ? (
+              account === null ? (
+                <p role="status">Checking the connected account…</p>
+              ) : account === "higgsfield" ? (
+                <ConsumerShorts
+                  key={`${session.requestScope}:${project.id}:shorts`}
+                  project={project}
+                  scope={session.requestScope}
+                  refreshProject={drafts.refresh}
+                />
+              ) : (
+                <section className="suite-panel" aria-label="Shorts on the connected account">
+                  <h2>Shorts</h2>
+                  <p className={styles.hint}>
+                    {session.owner ? (
+                      <>Shorts run on the owner’s connected account. Connect one in <a href="/settings#engines">Workspace settings</a>.</>
+                    ) : (
+                      "Shorts run on the workspace owner’s connected account."
+                    )}
+                  </p>
+                </section>
+              )
+            ) : account === null ? (
               <p role="status">Checking the connected account…</p>
             ) : account === "higgsfield" ? (
               <ConsumerGenjutsu
@@ -299,7 +324,7 @@ export default function SubatomikWorkspace() {
                 />
               </>
             )}
-            {account !== null && (
+            {account !== null && !shorts && (
               <details className={styles.advanced}>
                 <summary>Advanced</summary>
                 <p>

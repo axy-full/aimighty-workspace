@@ -96,6 +96,23 @@ import {
 } from "./toolset";
 import { PLANNER_READ_TOOLS, type PlannerRead, type PlannerReadResult } from "./planner-reads";
 import { BUNDLE_PATH, WORKFLOW_NAME } from "./workflows";
+import {
+  SHORTS_LIMITS,
+  SHORTS_TOOLS,
+  ShortsStudioError,
+  consumerShortsAcknowledgement,
+  consumerShortsParams,
+  mergeShortsPresets,
+  parseConsumerShortsInput,
+  parseShortsPresetsPage,
+  shortsCostArguments,
+  shortsCreateSchemaMatches,
+  shortsStatusSchemaMatches,
+  type ConsumerShortsInput,
+  type ConsumerShortsParams,
+  type ShortsPreset,
+  type ShortsPresets,
+} from "./shorts-studio";
 export const CATALOGUE_PAGE_LIMIT = 100;
 export const CATALOGUE_PAGES = 5;
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
@@ -286,6 +303,8 @@ type ConsumerSession = {
   workflowRead: (tool: "get_workflow_instructions" | "get_workflow_bundle_file", args: Record<string, unknown>) => Promise<Record<string, unknown>>;
   /** Only the fixed free reads of planner-reads.ts. */
   plannerRead: (read: PlannerRead) => Promise<Record<string, unknown>>;
+  /** Only the fixed Shorts Studio list/create/status tools. */
+  shortsCall: (tool: keyof typeof SHORTS_TOOLS, args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -751,6 +770,7 @@ async function withConsumerSession<T>(
         if (!PLANNER_READ_TOOLS.includes(read.tool)) fail("unsupported_protocol");
         return (await post("tools/call", { name: read.tool, arguments: read.args }))!;
       },
+      shortsCall: async (tool, args, sending) => (await post("tools/call", { name: SHORTS_TOOLS[tool], arguments: args }, sending))!,
     });
   } catch (error) {
     if (
@@ -2229,6 +2249,169 @@ export async function readConnectedWorkflow(accessToken: string, read: Connected
       if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
       await requireConnectedTools(session, [call]);
       return videoReadResult(session, await session.workflowRead(call.name as "get_workflow_instructions" | "get_workflow_bundle_file", call.args));
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+
+/* ── Shorts Studio (Subatomik, slice F4) ─────────────────────────────── */
+/** Read-only: the style presets, following next_cursor up to a fixed page count. */
+export async function readShortsPresets(accessToken: string, options: Options = {}): Promise<ShortsPresets> {
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const pages: ShortsPreset[][] = [], cursors = new Set<string>();
+      let cursor: string | undefined, more = false;
+      for (let page = 0; page < SHORTS_LIMITS.presetPages; page++) {
+        const parsed = parseShortsPresetsPage(videoReadResult(session, await session.shortsCall("presets", cursor === undefined ? {} : { cursor })));
+        pages.push(parsed.items);
+        more = parsed.next !== null;
+        if (!parsed.next) break;
+        if (cursors.has(parsed.next)) throw new ConsumerVideoError("provider_error");
+        cursors.add(parsed.next);
+        cursor = parsed.next;
+      }
+      return mergeShortsPresets(pages, !more);
+    });
+  } catch (error) {
+    if (error instanceof ShortsStudioError) throw new ConsumerVideoError("provider_error");
+    return videoPreflightError(error);
+  }
+}
+export type ConsumerShortsQuote = { input: ConsumerShortsInput; params: ConsumerShortsParams; workspace: ConsumerVideoWorkspace; credits: number };
+const shortsUnverified = () =>
+  new ShortsStudioError("contract_unverified", "The connected account's Shorts Studio tools do not advertise the arguments this workflow sends. Nothing was submitted.");
+async function verifiedShortsSchemas(session: ConsumerSession, params: ConsumerShortsParams, status = false) {
+  const schemas = await sessionToolSchemas(session, status ? [SHORTS_TOOLS.create, SHORTS_TOOLS.status] : [SHORTS_TOOLS.create]);
+  if (!shortsCreateSchemaMatches(schemas.get(SHORTS_TOOLS.create), params) || (status && !shortsStatusSchemaMatches(schemas.get(SHORTS_TOOLS.status))))
+    throw new ConsumerAdmissionStopped(shortsUnverified());
+}
+async function shortsPrice(session: ConsumerSession, params: ConsumerShortsParams) {
+  const sent = shortsCostArguments(params);
+  return parseConsumerCreditsForParams(videoReadResult(session, await session.shortsCall("create", sent)), sent);
+}
+/** Verifies the create/status contract, prices the stored duration with the
+ * cost-only form BEFORE the source is imported, imports the project video once
+ * (the resolve hook owns the durable claim), then confirms the same price. */
+export async function getConsumerShortsQuote(
+  accessToken: string,
+  value: ConsumerShortsInput,
+  source: { url: string; type: "video"; durationSeconds?: number },
+  options: Options & { resolveMedia: (workspaceId: string, perform: () => Promise<string>) => Promise<string> },
+): Promise<ConsumerShortsQuote> {
+  const input = parseConsumerShortsInput(value);
+  if (!safeImportUrl(source.url) || source.type !== "video") throw new ConsumerVideoError("invalid_input");
+  const placeholder = consumerShortsParams(input, "00000000-0000-4000-8000-000000000000", source.durationSeconds);
+  try {
+    return await withConsumerSession(accessToken, options, 150_000, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      await verifiedShortsSchemas(session, placeholder, true);
+      const early = await shortsPrice(session, placeholder);
+      let mediaId: string;
+      try {
+        mediaId = await options.resolveMedia(workspace.id, async () => {
+          const raw = videoReadResult(session, await session.genjutsuImport(source.url, "video"));
+          if (!object(raw) || typeof raw.media_id !== "string" || (raw.type !== undefined && raw.type !== "video") ||
+              (raw.error != null && raw.error !== "") || (raw.warning != null && raw.warning !== ""))
+            throw new ConsumerVideoError("provider_error");
+          return consumerVideoJobId(raw.media_id);
+        });
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      const params = consumerShortsParams(input, mediaId, placeholder.duration_seconds);
+      const credits = await shortsPrice(session, params);
+      if (credits !== early) throw new ConsumerVideoError("quote_changed");
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, workspace.id);
+      return { input, params, workspace: current, credits };
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    return videoPreflightError(error);
+  }
+}
+/** Fresh wallet, contract and price checks, durable admission, then exactly one paid call. */
+export async function submitConsumerShorts(
+  accessToken: string,
+  input: ConsumerShortsInput,
+  value: ConsumerShortsParams,
+  expectedWorkspaceId: string,
+  expectedCredits: number,
+  options: Options & { admit: () => Promise<void> },
+): Promise<ConsumerVideoSubmission> {
+  const params = consumerShortsParams(input, typeof value?.source_video_id === "string" ? value.source_video_id : "", value?.duration_seconds);
+  if (!sameConsumerValue(params, value)) throw new ConsumerVideoError("invalid_input");
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  if (!Number.isFinite(expectedCredits) || expectedCredits <= 0 || typeof options.admit !== "function") throw new ConsumerVideoError("invalid_input");
+  let attempted = false;
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      await verifiedShortsSchemas(session, params, true);
+      if ((await shortsPrice(session, params)) !== expectedCredits) throw new ConsumerVideoError("quote_changed");
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, expected);
+      if (current.credits < expectedCredits) throw new ConsumerVideoError("insufficient_credits");
+      try {
+        await options.admit();
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+      const reply = await session.shortsCall("create", { ...params }, () => {
+        attempted = true;
+      });
+      const normalized = normalizeQualificationResult(reply, session.secrets), raw = normalized.result;
+      const sessionId = normalized.isError ? null : consumerShortsAcknowledgement(raw);
+      return sessionId ? { state: "accepted", providerJobId: sessionId, raw } : uncertainSubmission(raw);
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (attempted) return uncertainSubmission();
+    return videoPreflightError(error);
+  }
+}
+/** Read-only: one session's status (verified status schema first). */
+export async function readConsumerShortsSession(accessToken: string, sessionId: string, expectedWorkspaceId: string, options: Options = {}): Promise<QualificationValue> {
+  consumerVideoJobId(sessionId);
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      if (!shortsStatusSchemaMatches((await sessionToolSchemas(session, [SHORTS_TOOLS.status])).get(SHORTS_TOOLS.status)))
+        throw new ConsumerAdmissionStopped(shortsUnverified());
+      return videoReadResult(session, await session.shortsCall("status", { session_id: sessionId }));
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    return videoPreflightError(error);
+  }
+}
+/** Read-only: `job_status` for the given clip jobs of one session (at most the
+ * clip cap), in one bounded MCP session. Each envelope must be for its job. */
+export async function readConsumerShortsClips(accessToken: string, clipJobIds: readonly string[], expectedWorkspaceId: string, options: Options = {}): Promise<{ jobId: string; raw: QualificationValue }[]> {
+  if (!Array.isArray(clipJobIds) || clipJobIds.length > SHORTS_LIMITS.clips) throw new ConsumerVideoError("invalid_job");
+  const ids = clipJobIds.map((id) => consumerVideoJobId(id));
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      const out: { jobId: string; raw: QualificationValue }[] = [];
+      for (const jobId of ids) {
+        if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+        const raw = videoReadResult(session, await session.generationStatus(jobId));
+        if (object(raw) && object(raw.generation)) {
+          const generation = raw.generation;
+          if (("id" in generation && consumerVideoJobId(generation.id) !== jobId) || ("type" in generation && generation.type !== "video"))
+            throw new ConsumerVideoError("invalid_job");
+        }
+        out.push({ jobId, raw });
+      }
+      return out;
     });
   } catch (error) {
     return videoPreflightError(error);
