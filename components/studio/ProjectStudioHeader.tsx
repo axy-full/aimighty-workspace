@@ -10,6 +10,7 @@ import {withPageLeaveGuard} from '@/lib/usePageLeaveGuard';
 import {toggleAtomikRail,useAtomikRail} from '@/lib/atomikRail';
 import {AtomikMark} from '@/components/AtomikMark';
 import {STAGES,type Project} from '@/lib/workbench/studio';
+import {PAGES} from '@/lib/suites';
 import StudioNavigation from './StudioNavigation';
 import {DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger} from '@/components/workbench/ui/dropdown-menu';
 import './project-navigation.css';
@@ -38,7 +39,7 @@ export default function ProjectStudioHeader(){
    <div className="project-studio-actions"><Link className="all-assets-button" href={href('/library','all=1')} aria-current={all?'page':undefined} aria-label="All assets" onClick={e=>follow(e,href('/library','all=1'))}><FolderOpen size={16}/><span>All assets</span></Link><button className="project-atomik-toggle" aria-label="Toggle Atomik creative engine" aria-expanded={rail.open} onClick={toggleAtomikRail}><AtomikMark size={17}/><span>Atomik</span></button></div>
   </StudioNavigation>
   {id&&<nav className="project-workflow-controls" aria-label="Project workflow">
-    {STAGES.map((stage,index)=><Link key={stage.id} href={href('/workbench','stage='+stage.id)} onClick={e=>follow(e,href('/workbench','stage='+stage.id))}><small>{String(index+1).padStart(2,'0')}</small>{['Brief','Script','Look','Cast','Elements','Astra blender','Nodes','Boards','Takes','Edit','Deliver'][index]}</Link>)}
+    {STAGES.map((stage,index)=><Link key={stage.id} href={href('/workbench','stage='+stage.id)} onClick={e=>follow(e,href('/workbench','stage='+stage.id))}><small>{String(index+1).padStart(2,'0')}</small>{PAGES.particl.find(page=>page.id===stage.id)?.label??stage.label}</Link>)}
     <span className="project-control-divider"/>
     <Link href={href('/generate')} aria-current={path==='/generate'?'page':undefined} onClick={e=>follow(e,href('/generate'))}><ScanLine size={14}/>Gen</Link>
     <Link href={href('/library')} aria-current={path==='/library'&&!all?'page':undefined} onClick={e=>follow(e,href('/library'))}><FolderOpen size={14}/>Library</Link>

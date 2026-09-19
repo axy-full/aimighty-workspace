@@ -136,6 +136,8 @@ import {
   Plan,
   Stage,
   STAGES,
+  STAGE_ALIASES,
+  normalizeStage,
   seedProject,
   newProject,
   uid,
@@ -164,7 +166,11 @@ import {buildMoleculrStoryboard,prepareMoleculrVariants} from '@/lib/workbench/m
 import {creativeTemplate} from '@/lib/workbench/moleculr-creative';
 import {EMPTY_MOLECULR,moleculrNode,moleculrPrompt,moleculrReferences,moleculrVideoPrompt} from '@/lib/workbench/moleculr';
 import {referenceAdBinding,validateReferenceAdBinding,type ReferenceAdBinding} from '@/lib/workbench/reference-ad';
-import {PAGES} from '@/lib/suites';
+import {PAGES,moleculrSection} from '@/lib/suites';
+import ProjectAssetLibrary from './ProjectAssetLibrary';
+import {libraryToolHref,projectAssetFromLibrary} from './ProjectLibraryPage';
+import type {LibraryAsset} from '@/lib/genLibrary';
+import type {DraggedAsset} from '@/lib/dnd';
 import {bindMoleculrReferences} from '@/lib/workbench/moleculr-graph';
 import {generationReferenceIds} from '@/lib/workbench/node-graph';
 import marketingStyles from './MarketingStudioPanel.module.css';
@@ -367,16 +373,20 @@ export default function Studio({
   const [p, setP] = useState<Project>(seedProject);
   const [stage, storeStage] = useState<Stage>("canvas");
   const [suite,setSuite]=useState<'particl'|'moleculr'>('particl');
-  const [moleculrPage,storeMoleculrPage]=useState('brand');
-  function setMoleculrPage(page:string){
-    if(!PAGES.moleculr.some(item=>item.id===page))return;
-    setSuite('moleculr');storeMoleculrPage(page);setHome(false);
-    const url=new URL(window.location.href);url.searchParams.set('suite','moleculr');url.searchParams.set('page',page);url.searchParams.delete('stage');url.searchParams.delete('view');window.history.replaceState(null,'',url);
+  const [moleculrPage,storeMoleculrPage]=useState('marketing');
+  const [moleculrSectionId,storeMoleculrSection]=useState<string|null>(null);
+  /** Marketing Studio is the single Moleculr page; former pages open as its in-page sections. */
+  function setMoleculrPage(target:string){
+    const section=moleculrSection(target);
+    if(!section&&!PAGES.moleculr.some(item=>item.id===target))return;
+    setSuite('moleculr');storeMoleculrPage('marketing');storeMoleculrSection(section);setHome(false);
+    const url=new URL(window.location.href);url.searchParams.set('suite','moleculr');url.searchParams.set('page','marketing');url.searchParams.delete('stage');url.searchParams.delete('view');url.hash=section??'';window.history.replaceState(null,'',url);
   }
   const [mobileWorkflowOpen,setMobileWorkflowOpen] = useState(false);
   const [homeOverride, setHome] = useState<boolean|null>(null);
   const home=homeOverride??mobile;
-  function setStage(value: Stage) {
+  function setStage(requested: Stage) {
+    const value: Stage = STAGE_ALIASES[requested] ?? requested;
     if(sourceMode&&typeof window!=='undefined'){const url=new URL(window.location.href);url.searchParams.set('stage',value);url.searchParams.delete('suite');url.searchParams.delete('page');url.searchParams.delete('view');window.history.replaceState(null,'',url);}
     setSuite('particl');
     setHome(false);
@@ -384,6 +394,7 @@ export default function Studio({
     setSequenceExpanded(false);
     if (mobile) setAtomOpen(false);
   }
+  const [lookOpen,setLookOpen]=useState(false);
   const [scope, setScope] = useState("My space");
   const [welcomeChoice,setWelcomeChoice]=useState(false);
   const [samplePreview,setSamplePreview]=useState(false);
@@ -691,11 +702,15 @@ export default function Studio({
     const params=new URLSearchParams(window.location.search);
     const requestedStage=params.get('stage');
     if(params.get('suite')==='moleculr'){
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the suite from the initial browser route alongside the existing stage state.
-      setSuite('moleculr');storeMoleculrPage(PAGES.moleculr.find(item=>item.id===params.get('page'))?.id??'brand');setHome(false);
+      // Former Moleculr pages (`page=brand` …) open as sections of the single Marketing Studio page.
+      const section=moleculrSection(params.get('page'))??moleculrSection(window.location.hash.replace(/^#/,''));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- URL-driven suite selection on mount, before any paint.
+      setSuite('moleculr');storeMoleculrPage('marketing');storeMoleculrSection(section);setHome(false);
+      if(sourceMode&&params.get('page')!=='marketing'){const url=new URL(window.location.href);url.searchParams.set('page','marketing');url.hash=section??'';window.history.replaceState(null,'',url);}
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial route state is read once from the browser URL.
-    if(STAGES.some(s=>s.id===requestedStage)){storeStage(requestedStage as Stage);setHome(false);}
+    // Retired stage IDs (`script`, `moodboard`, `elements`) normalise to the stage that now holds their panel.
+    const resolvedStage=normalizeStage(requestedStage);
+    if(resolvedStage){storeStage(resolvedStage);setHome(false);if(sourceMode&&resolvedStage!==requestedStage){const url=new URL(window.location.href);url.searchParams.set('stage',resolvedStage);window.history.replaceState(null,'',url);}}
     else if(params.get('view')==='workspace')setHome(true);
     if(['open','marketing'].includes(params.get('atomik')??''))setAtomOpen(true);
     if(params.get('atomik')==='marketing')setAtomTab('marketing');
@@ -705,7 +720,7 @@ export default function Studio({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the private draft from the server on mount.
     void loadProject(last).finally(()=>{if(active)setInitializedScope(storageKey);});
     return()=>{active=false;};
-  }, [loadProject,signedIn,storageKey]);
+  }, [loadProject,signedIn,storageKey,sourceMode]);
   useEffect(() => {
     if (!ready||!signedIn||transitioning) return;
     if(savedSnapshots.current.get(p.id)===JSON.stringify(p))return;
@@ -830,17 +845,16 @@ export default function Studio({
       {
         type: "object",
         properties: {
-          stage: { type: "string", enum: STAGES.map((s) => s.id) },
+          stage: { type: "string", enum: [...STAGES.map((s) => s.id), ...Object.keys(STAGE_ALIASES)] },
         },
         required: ["stage"],
         additionalProperties: false,
       },
       false,
       (input) => {
-        const s = (input as { stage: string })?.stage;
-        if (!STAGES.some((i) => i.id === s))
-          throw new Error("Unknown production stage");
-        setStage(s as Stage);
+        const s = normalizeStage((input as { stage: string })?.stage);
+        if (!s) throw new Error("Unknown production stage");
+        setStage(s);
         return { stage: s };
       },
     );
@@ -872,8 +886,8 @@ export default function Studio({
       {label: 'Add to sequence', disabled: !['image','video'].includes(a.kind), run: () => addToSequence(a)},
       {label: 'Organize in bins', run: () => setBinAssetId(a.id)},
       ...(a.kind === 'image' && ['Character','Element'].includes(a.category) ? [
-        {label: a.soulIdentityId ? 'Change Soul ID' : 'Attach Soul ID', disabled:a.locked, run: () => setSoulTarget({draftId:p.id,subjectType:a.category==='Character'?'character':'element',assetId:a.id})},
-        ...(a.soulIdentityId ? [{label:'Remove Soul ID binding',disabled:a.locked,run:()=>updateAsset(a.id,{soulIdentityId:undefined,version:a.version+1})}] : []),
+        {label: a.soulIdentityId ? 'Change identity' : 'Attach identity', disabled:a.locked, run: () => setSoulTarget({draftId:p.id,subjectType:a.category==='Character'?'character':'element',assetId:a.id})},
+        ...(a.soulIdentityId ? [{label:'Remove identity binding',disabled:a.locked,run:()=>updateAsset(a.id,{soulIdentityId:undefined,version:a.version+1})}] : []),
       ] : []),
       {label: 'Copy prompt', disabled: !a.prompt, run: () => { void navigator.clipboard.writeText(a.prompt || '').then(() => toast.success('Prompt copied')).catch(() => toast.error('Clipboard access is unavailable. Open the asset to copy its prompt.')); }},
     ];
@@ -1235,6 +1249,201 @@ export default function Studio({
       ? p.sharedNodes || p.nodes.filter((n) => p.sharedNodeIds.includes(n.id))
       : p.nodes;
   const latestPlan = p.plans.at(-1);
+  type LibraryView = 'moodboard' | 'characters' | 'assets';
+  type LibraryGroup = 'cast' | 'elements';
+  const libraryCategory = (group?: LibraryGroup) => group === 'cast' ? 'Character' : group === 'elements' ? 'Element' : 'Reference';
+  function libraryAssets(view: LibraryView, group?: LibraryGroup) {
+    return p.assets.filter((a) => {
+      if (view === 'assets' && selectedBin === 'unfiled' && (p.bins ?? []).some(b => b.assetIds.includes(a.id))) return false;
+      if (view === 'assets' && selectedBin && selectedBin !== 'unfiled' && p.bins?.some(b => b.id === selectedBin) && !p.bins.find(b => b.id === selectedBin)!.assetIds.includes(a.id)) return false;
+      if (assetSearch && !`${a.name} ${a.description} ${a.category}`.toLowerCase().includes(assetSearch.toLowerCase())) return false;
+      if (group === 'cast') return a.category === 'Character';
+      if (group === 'elements') return ['Element', 'Environment', 'Prop', 'Look'].includes(a.category);
+      if (view === 'moodboard') return ['image', 'link', 'document'].includes(a.kind);
+      return (
+        assetFilter === 'All assets' ||
+        (assetFilter === 'Images' && a.kind === 'image') ||
+        (assetFilter === 'Video' && a.kind === 'video') ||
+        (assetFilter === 'Audio' && a.kind === 'audio') ||
+        (assetFilter === 'Documents' && a.kind === 'document') ||
+        (assetFilter === 'Shared' && p.sharedAssetIds.includes(a.id))
+      );
+    });
+  }
+  function renderAssetGrid(view: LibraryView, group?: LibraryGroup) {
+    const category = libraryCategory(group);
+    return (
+      <div className={'asset-grid ' + (view === 'moodboard' ? 'mood-grid' : '')}>
+        {libraryAssets(view, group).map((a) => (
+          <ActionMenu key={a.id} label={a.name + ' actions'} actions={assetActions(a)}><article tabIndex={0} aria-label={'Asset: ' + a.name}
+            className={'asset-card ' + (group === 'cast' ? 'character-asset' : '')}
+          >
+            <button className="asset-image" onClick={() => setSelectedAsset(a.id)}>
+              <Media asset={a} />
+              <span className="asset-kind">
+                {a.category}{a.soulIdentityId ? ' · Identity' : ''}
+              </span>
+              <span className="asset-v">v{a.version}</span>
+              {p.sharedAssetIds.includes(a.id) && (
+                <span className="shared-corner">
+                  <Globe2 size={13} />
+                </span>
+              )}
+            </button>
+            <div className="asset-info">
+              <div>
+                <h3>{a.name}</h3>
+                <span className={'status ' + statusClass(a)}>{a.status}</span>
+              </div>
+              <p>{a.description}</p>
+              <div className="asset-actions">
+                <ActionDropdown label={'Actions for ' + a.name} actions={assetActions(a)}/>
+                <button
+                  onClick={() =>
+                    addNode(
+                      a.category === 'Character'
+                        ? 'character'
+                        : a.category === 'Environment' || a.category === 'Element'
+                          ? 'element'
+                          : 'scene',
+                      a.id,
+                    )
+                  }
+                >
+                  <Plus size={13} />
+                  To canvas
+                </button>
+                {['image', 'video'].includes(a.kind) && (
+                  <button onClick={() => addToSequence(a)}>
+                    <Film size={13} />
+                    To sequence
+                  </button>
+                )}
+                <IconButton label={'Edit ' + a.name} onClick={() => setSelectedAsset(a.id)}>
+                  <ArrowUpRight size={15} />
+                </IconButton>
+              </div>
+            </div>
+          </article></ActionMenu>
+        ))}
+        <button
+          className="upload-tile"
+          onClick={() => pickUpload(category)}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            void uploadFiles(e.dataTransfer.files, category);
+          }}
+        >
+          <Plus size={28} />
+          <strong>
+            {group === 'cast' ? 'Add a character' : group === 'elements' ? 'Add an element' : 'Add a reference'}
+          </strong>
+          <span>Drop files or choose from your device</span>
+          <small>Images, video, audio, PDF · large files supported</small>
+        </button>
+      </div>
+    );
+  }
+  /** One library view per stage: Look (inside Boards), Cast & Elements, and Takes. */
+  function renderLibrary(view: LibraryView) {
+    return (
+      <>
+        <div className="library-toolbar">
+          <div className="search-field">
+            <Search size={16} />
+            <input
+              aria-label="Search assets"
+              value={assetSearch}
+              onChange={(e) => setAssetSearch(e.target.value)}
+              placeholder={view === 'characters' ? 'Find a character or element…' : 'Find an asset…'}
+            />
+          </div>
+          {view === 'assets' && (
+            <Choice
+              label="Filter assets"
+              value={assetFilter}
+              onChange={setAssetFilter}
+              options={['All assets', 'Images', 'Video', 'Audio', 'Documents', 'Shared']}
+            />
+          )}
+          {view === 'characters' && <Button variant="outline" className="btn" onClick={() => setSoulTarget({draftId:p.id,subjectType:'character'})}><UserRound size={15}/>Identity</Button>}
+          <Button variant="outline" className="btn" onClick={() => setDialog('reference')}>
+            <Link2 size={15} />
+            Add link
+          </Button>
+          <Button
+            className="btn primary"
+            disabled={uploading}
+            onClick={() => pickUpload(libraryCategory(view === 'characters' ? 'cast' : undefined))}
+          >
+            {uploading ? <Loader2 size={15} className="spin" /> : <Upload size={15} />}
+            Upload
+          </Button>
+        </div>
+        {view === 'assets' && <AssetBins key={p.id+storageKey} project={p} selected={selectedBin} onSelect={id=>setBinSelection({projectId:p.id,id})} onChange={change}/>}
+        {view === 'moodboard' && (
+          <div className="moodboard-intro">
+            <div>
+              <span className="eyebrow">LOOK DEVELOPMENT</span>
+              <h2>
+                {p.id === 'dune-studies'
+                  ? 'Warm earth. Impossible reflections.'
+                  : 'The visual world of ' + p.name}
+              </h2>
+              <p>{p.direction || 'Collect the light, colour, texture and feeling of your project.'}</p>
+            </div>
+            <div className="large-palette">
+              {['sand', 'clay', 'ivory', 'steel', 'ink'].map((c) => (
+                <div key={c}>
+                  <span className={'swatch ' + c} />
+                  <small>{c}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {view === 'characters' ? (
+          <>
+            <section className="library-group" aria-label="Cast">
+              <div className="stage-context">
+                <UserRound size={18} />
+                <p>Identity, wardrobe, expression and voice—kept together as reusable references.</p>
+                <span className="small-tag">Versions stay editable</span>
+              </div>
+              {renderAssetGrid(view, 'cast')}
+              {p.assets.some((a) => a.id === 'character') && (
+                <div className="continuity-note">
+                  <Info size={18} />
+                  <div>
+                    <strong>A continuity note, not a roadblock.</strong>
+                    <p>
+                      The sample character’s inner layer differs from the hero frame. Make a new wardrobe
+                      version when you’re ready; your other work can continue.
+                    </p>
+                  </div>
+                  <button onClick={() => void runGenie('Check the character wardrobe continuity across the sample takes')}>
+                    Ask Atomik
+                    <ArrowUpRight size={14} />
+                  </button>
+                </div>
+              )}
+            </section>
+            <section className="library-group" aria-label="Elements">
+              <div className="stage-context">
+                <Box size={18} />
+                <p>Locations, props, materials and looks. Build once and reference across shots.</p>
+                <Button variant="outline" className="btn" onClick={() => setSoulTarget({draftId:p.id,subjectType:'element'})}><Box size={15}/>Element identity</Button>
+              </div>
+              {renderAssetGrid(view, 'elements')}
+            </section>
+          </>
+        ) : (
+          renderAssetGrid(view)
+        )}
+      </>
+    );
+  }
   function renderMarketingPanel(){return <MarketingStudioPanel key={p.id} task={marketingDraft.task} instructions={marketingDraft.instructions} onTask={task=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,task}}))} onInstructions={instructions=>setMarketingDrafts(old=>({...old,[marketingDraftKey]:{...marketingDraft,instructions}}))} project={p} enabled={ready&&signedIn&&!transitioning} busy={busy} references={contextIds.length} jobs={jobs.atomikJobs} error={jobs.error} onBriefChange={brief=>change(old=>({...old,marketingBrief:brief}))} onRun={request=>void runGenie(request,'marketing','Considered')} onApply={applyPlan} onContext={()=>{setAtomOpen(true);setAtomTab('context')}} onActivity={()=>{setAtomOpen(true);setAtomTab('runs')}}/>;}
   async function importMoleculrImage(url:string,category:'Product'|'Brand'='Product'):Promise<Asset>{
     if(transitioningRef.current||!readyRef.current||!signedIn)throw new Error('Open a saved project first.');
@@ -1357,7 +1566,7 @@ export default function Studio({
           <main className="studio-main">
             {mobile && <header className="phone-project-header">
               {home ? <MobileStudioMenu projectId={ready?p.id:undefined} active="studio" initialAccount={initialAccount} onNavigate={path=>leaveWorkspace(path)} onSwitch={id=>leaveWorkspace('/workbench',{kind:'switch',id})} onSignOut={()=>leaveWorkspace('/login',{kind:'logout'})}/> : <button className="phone-back" aria-label="Back to project workflow" onClick={()=>setMobileWorkflowOpen(true)}><ArrowLeft size={18}/></button>}
-              {home ? <button className="phone-project-crumb" aria-label="Select project" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronDown size={12}/><strong>Workspace</strong></button> : <button className="phone-project-crumb" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronRight size={12}/><strong>{String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,'0')} {['Brief','Script','Look','Cast','Elements','Astra blender','Canvas','Boards','Takes','Edit','Deliver'][STAGES.findIndex(s=>s.id===stage)]}</strong></button>}
+              {home ? <button className="phone-project-crumb" aria-label="Select project" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronDown size={12}/><strong>Workspace</strong></button> : <button className="phone-project-crumb" onClick={()=>setMobileWorkflowOpen(true)}><span>{p.name}</span><ChevronRight size={12}/><strong>{String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,'0')} {PAGES.particl.find(s=>s.id===stage)?.label}</strong></button>}
               <button className={'phone-save '+(saveError?'has-error':'')} aria-label={saveState} title={saveState} onClick={()=>saveError&&toast.error(saveError)}>{saveError?<TriangleAlert size={12}/>:saveState==='Saving'?<Loader2 size={12} className="spin"/>:saveState==='Saved'?<Check size={12}/>:null}<span>{home && initialAccount?.credits ? `${Math.round(initialAccount.credits.balance).toLocaleString()} cr` : saveState.startsWith('Sample')?'Sample':saveState}</span></button>
               <button className="phone-all-assets" aria-label="All assets" onClick={()=>void leaveWorkspace("/library?all=1&project="+encodeURIComponent(p.id))}><FolderOpen size={18}/></button>
               <button className="phone-atomik" aria-label="Toggle Atomik creative engine" disabled={!hydrated} onClick={()=>setAtomOpen(v=>!v)}><AtomMark/><span>Atomik</span></button>
@@ -1617,7 +1826,7 @@ export default function Studio({
                       </button>
                       <button onClick={() => setStage("storyboard")}>
                         <Clapperboard size={21} />
-                        <span>Storyboards</span>
+                        <span>Boards</span>
                         <small>{p.shots.length} shots</small>
                       </button>
                       <button
@@ -1649,15 +1858,14 @@ export default function Studio({
                     </div>
                   </div>
                 )}
-                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={`moleculr:${p.id}`} scope={storageKey} project={p} page={moleculrPage} enabled={ready&&signedIn&&!transitioning} marketing={<><SuiteAgentPanel key={`${p.id}:moleculr`} scope={storageKey} suite="moleculr" project={p} enabled={ready&&signedIn&&!transitioning} onSave={()=>ensureSaved(p.id)} onApply={applyPlan} onQueued={()=>void jobs.refresh()}/>{renderMarketingPanel()}</>} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onSave={()=>ensureSaved(p.id)} onImportRemote={importMoleculrImage} onCreateAvatar={createCampaignAvatar} onBuildStoryboard={buildCampaignStoryboard} onReviewVariant={reviewCampaignVariant} onPrepareVariants={prepareCampaignVariants} onConsumerVideoAsset={attachConsumerVideo} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
-                {!home && !welcomeChoice && suite==='moleculr' && moleculrPage==='design' && <PosterDesigner key={`poster:${p.id}`} project={p} scope={storageKey} enabled={ready&&signedIn&&!transitioning} onChange={poster=>change(old=>({...old,moleculr:{...(old.moleculr??EMPTY_MOLECULR),poster}}))} onSaveAsset={saveMoleculrPoster}/>}
+                {!home && !welcomeChoice && suite==='moleculr' && <MoleculrWorkspace key={`moleculr:${p.id}`} scope={storageKey} project={p} page={moleculrPage} section={moleculrSectionId} enabled={ready&&signedIn&&!transitioning} design={<PosterDesigner key={`poster:${p.id}`} project={p} scope={storageKey} enabled={ready&&signedIn&&!transitioning} onChange={poster=>change(old=>({...old,moleculr:{...(old.moleculr??EMPTY_MOLECULR),poster}}))} onSaveAsset={saveMoleculrPoster}/>} marketing={<><SuiteAgentPanel key={`${p.id}:moleculr`} scope={storageKey} suite="moleculr" project={p} enabled={ready&&signedIn&&!transitioning} onSave={()=>ensureSaved(p.id)} onApply={applyPlan} onQueued={()=>void jobs.refresh()}/>{renderMarketingPanel()}</>} onChange={brief=>change(old=>({...old,moleculr:brief}))} onPage={setMoleculrPage} onUpload={pickUpload} onIdentity={assetId=>setSoulTarget({draftId:p.id,subjectType:'character',assetId})} onStage={setStage} onRig={id=>{setSelectedNode(id);setScope('My space');setStage('canvas')}} onSave={()=>ensureSaved(p.id)} onImportRemote={importMoleculrImage} onCreateAvatar={createCampaignAvatar} onBuildStoryboard={buildCampaignStoryboard} onReviewVariant={reviewCampaignVariant} onPrepareVariants={prepareCampaignVariants} onConsumerVideoAsset={attachConsumerVideo} onGenerate={configureMoleculr} onSequence={addToSequence} onAgent={()=>{setAtomOpen(true);setAtomTab('genie')}}/>}
                 {!home && !welcomeChoice && suite==='particl' && (
                   <>
                     {stage !== "canvas" && stage !== "astra-blender" && (
                       <div className="page-heading">
                         <div>
                           <div className="eyebrow">
-                            {mobile ? `${String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,"0")} / ${["THE IDEA","THE STORY","THE LOOK","THE CAST","THE WORLD","ASTRA BLENDER","PRODUCTION CANVAS","STORYBOARDS","ASSETS & TAKES","EDIT & SOUND","DELIVERY"][STAGES.findIndex(s=>s.id===stage)]}` : ["brief", "script"].includes(stage)
+                            {mobile ? `${String(STAGES.findIndex(s=>s.id===stage)+1).padStart(2,"0")} / ${STAGES.find(s=>s.id===stage)?.label.toUpperCase()}` : stage === "brief"
                               ? "DEVELOPMENT"
                               : ["edit", "export"].includes(stage)
                                 ? "POST-PRODUCTION"
@@ -1675,7 +1883,7 @@ export default function Studio({
                     {stage === "canvas" && (
                       <>
                         <div className="sequence-shelf">
-                          <div className="canvas-stage-heading"><span className="eyebrow">BRING IT ALL TOGETHER</span><h1>Production canvas</h1></div>
+                          <div className="canvas-stage-heading"><span className="eyebrow">BRING IT ALL TOGETHER</span><h1>Rig</h1></div>
                           <div className="shelf-label">
                             <button
                               className="mobile-sequence-toggle"
@@ -1774,34 +1982,29 @@ export default function Studio({
                           return {...old, ...(native ? {astraNative:native.source} : {astraBlender:proposal!.scene}), plans:[{...plan,astraNative:undefined,astraBlender:undefined,role:'Astra blender',applied:true}, ...old.plans.filter(item=>item.id!==plan.id)].slice(0,100)};
                         });
                       }} />}
-                    {stage === "script" && (
-                      <ScriptPanel
-                        key={p.id}
-                        project={p}
-                        onScript={(v) => change(old=>({...old,script:v,scriptSource:old.scriptSource?{...old.scriptSource,edited:true}:undefined}))}
-                        onFormat={(value) => setField('scriptFormat', value)}
-                        development={<DevelopmentPanel key={p.id + (p.scriptFormat || 'screenplay')} project={p} kind={p.scriptFormat || 'screenplay'} scope={storageKey} enabled={signedIn && ready} models={jobs.models} onSave={() => ensureSaved(p.id)} onApply={applyDevelopmentResult}/> }
-                        onImport={importScreenplay}
-                        onReview={(id,review)=>change(old=>({...old,scriptReviews:{...old.scriptReviews,[id]:review}}))}
-                        onBuild={buildScriptCanvas}
-                        onDevelop={(scene)=>{try{void runGenie(sceneCoverageRequest(pRef.current,scene),"dop");}catch(error){toast.error(error instanceof Error?error.message:"Could not plan this scene.");}}}
-                        onCrew={() => {
-                          setAtomOpen(true);
-                          setAtomTab("crew");
-                        }}
-                      />
-                    )}
                     {stage === "storyboard" && (
-                      <StoryboardPanel
-                        project={p}
-                        onEdit={(s) => {
-                          focusShot(s);
-                          setStage("edit");
-                        }}
-                        onAsset={setSelectedAsset}
-                        onAdd={() => setStage("assets")}
-                        onField={(shots) => setField("shots", shots)}
-                      />
+                      <div className="stage-scroll boards-stage">
+                        <details className="look-section" open={lookOpen} onToggle={(event) => setLookOpen((event.currentTarget as HTMLDetailsElement).open)}>
+                          <summary>
+                            <Palette size={15} />
+                            <span>Look</span>
+                            <small>Define the visual world · {libraryAssets('moodboard').length} references</small>
+                            <ChevronDown size={15} aria-hidden="true" />
+                          </summary>
+                          <div className="look-section-body">{renderLibrary('moodboard')}</div>
+                        </details>
+                        <StoryboardPanel
+                          embedded
+                          project={p}
+                          onEdit={(s) => {
+                            focusShot(s);
+                            setStage("edit");
+                          }}
+                          onAsset={setSelectedAsset}
+                          onAdd={() => setStage("assets")}
+                          onField={(shots) => setField("shots", shots)}
+                        />
+                      </div>
                     )}
                     {stage === "brief" && (
                       <div className="stage-scroll">
@@ -1909,311 +2112,69 @@ export default function Studio({
                                 person can take it somewhere new in their own
                                 space.
                               </p>
-                              <button onClick={() => setStage("moodboard")}>
+                              <button onClick={() => setStage("storyboard")}>
                                 Build the visual world
                                 <ArrowRight size={15} />
                               </button>
                             </div>
                           </aside>
                         </div>
+                        <section className="brief-script" aria-label="Script">
+                      <ScriptPanel
+                        embedded
+                        key={p.id}
+                        project={p}
+                        onScript={(v) => change(old=>({...old,script:v,scriptSource:old.scriptSource?{...old.scriptSource,edited:true}:undefined}))}
+                        onFormat={(value) => setField('scriptFormat', value)}
+                        development={<DevelopmentPanel key={p.id + (p.scriptFormat || 'screenplay')} project={p} kind={p.scriptFormat || 'screenplay'} scope={storageKey} enabled={signedIn && ready} models={jobs.models} onSave={() => ensureSaved(p.id)} onApply={applyDevelopmentResult}/> }
+                        onImport={importScreenplay}
+                        onReview={(id,review)=>change(old=>({...old,scriptReviews:{...old.scriptReviews,[id]:review}}))}
+                        onBuild={buildScriptCanvas}
+                        onDevelop={(scene)=>{try{void runGenie(sceneCoverageRequest(pRef.current,scene),"dop");}catch(error){toast.error(error instanceof Error?error.message:"Could not plan this scene.");}}}
+                        onCrew={() => {
+                          setAtomOpen(true);
+                          setAtomTab("crew");
+                        }}
+                      />
+                        </section>
                       </div>
                     )}
-                    {["moodboard", "characters", "elements", "assets"].includes(
-                      stage,
-                    ) && (
+                    {stage === "characters" && (
+                      <div className="stage-scroll">{renderLibrary('characters')}</div>
+                    )}
+                    {stage === "assets" && (
                       <div className="stage-scroll">
-                        {stage === 'assets' && <div className="collective-assets-link"><div><strong>Project assets & takes</strong><p>Open the collective library for originals and takes across this workspace.</p></div><button className="btn" onClick={() => void leaveWorkspace(`/library?all=1&project=${encodeURIComponent(p.id)}`)}>All workspace assets <ArrowUpRight size={14}/></button></div>}
-                        <div className="library-toolbar">
-                          <div className="search-field">
-                            <Search size={16} />
-                            <input
-                              aria-label="Search assets"
-                              value={assetSearch}
-                              onChange={(e) => setAssetSearch(e.target.value)}
-                              placeholder={
-                                stage === "characters"
-                                  ? "Find a character…"
-                                  : stage === "elements"
-                                    ? "Find an element…"
-                                    : "Find an asset…"
-                              }
-                            />
+                        <div className="collective-assets-link"><div><strong>Project uploads & takes</strong><p>Everything this project uploaded or generated. Open the collective library for originals and takes across this workspace.</p></div><button className="btn" onClick={() => void leaveWorkspace(`/library?all=1&project=${encodeURIComponent(p.id)}`)}>All workspace assets <ArrowUpRight size={14}/></button></div>
+                        {renderLibrary('assets')}
+                        <section className="takes-generations" aria-label="Project generations">
+                          <div className="section-heading">
+                            <span className="eyebrow">GENERATED FOR THIS PROJECT</span>
+                            <span className="small-tag">Same library as Make</span>
                           </div>
-                          {stage === "assets" && (
-                            <Choice
-                              label="Filter assets"
-                              value={assetFilter}
-                              onChange={setAssetFilter}
-                              options={[
-                                "All assets",
-                                "Images",
-                                "Video",
-                                "Audio",
-                                "Documents",
-                                "Shared",
-                              ]}
-                            />
-                          )}
-                          {(stage === 'characters' || stage === 'elements') && <Button variant="outline" className="btn" onClick={() => setSoulTarget({draftId:p.id,subjectType:stage==='characters'?'character':'element'})}><UserRound size={15}/>Soul ID</Button>}
-                          <Button
-                            variant="outline"
-                            className="btn"
-                            onClick={() => setDialog("reference")}
-                          >
-                            <Link2 size={15} />
-                            Add link
-                          </Button>
-                          <Button
-                            className="btn primary"
-                            disabled={uploading}
-                            onClick={() =>
-                              pickUpload(
-                                stage === "characters"
-                                  ? "Character"
-                                  : stage === "elements"
-                                    ? "Element"
-                                    : "Reference",
-                              )
-                            }
-                          >
-                            {uploading ? (
-                              <Loader2 size={15} className="spin" />
-                            ) : (
-                              <Upload size={15} />
-                            )}
-                            Upload
-                          </Button>
-                        </div>
-                        {stage === "assets" && <AssetBins key={p.id+storageKey} project={p} selected={selectedBin} onSelect={id=>setBinSelection({projectId:p.id,id})} onChange={change}/>}
-                        {stage === "moodboard" && (
-                          <>
-                            <div className="moodboard-intro">
-                              <div>
-                                <span className="eyebrow">
-                                  LOOK DEVELOPMENT
-                                </span>
-                                <h2>
-                                  {p.id === "dune-studies"
-                                    ? "Warm earth. Impossible reflections."
-                                    : "The visual world of " + p.name}
-                                </h2>
-                                <p>
-                                  {p.direction ||
-                                    "Collect the light, colour, texture and feeling of your project."}
-                                </p>
-                              </div>
-                              <div className="large-palette">
-                                {["sand", "clay", "ivory", "steel", "ink"].map(
-                                  (c) => (
-                                    <div key={c}>
-                                      <span className={"swatch " + c} />
-                                      <small>{c}</small>
-                                    </div>
-                                  ),
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                        {stage === "characters" && (
-                          <div className="stage-context">
-                            <UserRound size={18} />
-                            <p>
-                              Identity, wardrobe, expression and voice—kept
-                              together as reusable references.
-                            </p>
-                            <span className="small-tag">
-                              Versions stay editable
-                            </span>
-                          </div>
-                        )}
-                        {stage === "elements" && (
-                          <div className="stage-context">
-                            <Box size={18} />
-                            <p>
-                              Locations, props, materials and looks. Build once
-                              and reference across shots.
-                            </p>
-                          </div>
-                        )}
-                        <div
-                          className={
-                            "asset-grid " +
-                            (stage === "moodboard" ? "mood-grid" : "")
-                          }
-                        >
-                          {p.assets
-                            .filter((a) => {
-                              if(stage==='assets'&&selectedBin==='unfiled'&&(p.bins??[]).some(b=>b.assetIds.includes(a.id)))return false;
-                              if(stage==='assets'&&selectedBin&&selectedBin!=='unfiled'&&p.bins?.some(b=>b.id===selectedBin)&&!p.bins.find(b=>b.id===selectedBin)!.assetIds.includes(a.id))return false;
-                              if (
-                                assetSearch &&
-                                !`${a.name} ${a.description} ${a.category}`
-                                  .toLowerCase()
-                                  .includes(assetSearch.toLowerCase())
-                              )
-                                return false;
-                              if (stage === "characters")
-                                return a.category === "Character";
-                              if (stage === "elements")
-                                return [
-                                  "Element",
-                                  "Environment",
-                                  "Prop",
-                                  "Look",
-                                ].includes(a.category);
-                              if (stage === "moodboard")
-                                return ["image", "link", "document"].includes(
-                                  a.kind,
-                                );
-                              return (
-                                assetFilter === "All assets" ||
-                                (assetFilter === "Images" &&
-                                  a.kind === "image") ||
-                                (assetFilter === "Video" &&
-                                  a.kind === "video") ||
-                                (assetFilter === "Audio" &&
-                                  a.kind === "audio") ||
-                                (assetFilter === "Documents" &&
-                                  a.kind === "document") ||
-                                (assetFilter === "Shared" &&
-                                  p.sharedAssetIds.includes(a.id))
-                              );
-                            })
-                            .map((a) => (
-                              <ActionMenu key={a.id} label={a.name + ' actions'} actions={assetActions(a)}><article tabIndex={0} aria-label={'Asset: ' + a.name}
-                                className={
-                                  "asset-card " +
-                                  (stage === "characters"
-                                    ? "character-asset"
-                                    : "")
-                                }
-                                key={a.id}
-                              >
-                                <button
-                                  className="asset-image"
-                                  onClick={() => setSelectedAsset(a.id)}
-                                >
-                                  <Media asset={a} />
-                                  <span className="asset-kind">
-                                    {a.category}{a.soulIdentityId ? ' · Soul ID' : ''}
-                                  </span>
-                                  <span className="asset-v">v{a.version}</span>
-                                  {p.sharedAssetIds.includes(a.id) && (
-                                    <span className="shared-corner">
-                                      <Globe2 size={13} />
-                                    </span>
-                                  )}
-                                </button>
-                                <div className="asset-info">
-                                  <div>
-                                    <h3>{a.name}</h3>
-                                    <span
-                                      className={"status " + statusClass(a)}
-                                    >
-                                      {a.status}
-                                    </span>
-                                  </div>
-                                  <p>{a.description}</p>
-                                  <div className="asset-actions">
-                                    <ActionDropdown label={'Actions for ' + a.name} actions={assetActions(a)}/>
-                                    <button
-                                      onClick={() =>
-                                        addNode(
-                                          a.category === "Character"
-                                            ? "character"
-                                            : a.category === "Environment" ||
-                                                a.category === "Element"
-                                              ? "element"
-                                              : "scene",
-                                          a.id,
-                                        )
-                                      }
-                                    >
-                                      <Plus size={13} />
-                                      To canvas
-                                    </button>
-                                    {["image", "video"].includes(a.kind) && (
-                                      <button onClick={() => addToSequence(a)}>
-                                        <Film size={13} />
-                                        To sequence
-                                      </button>
-                                    )}
-                                    <IconButton
-                                      label={"Edit " + a.name}
-                                      onClick={() => setSelectedAsset(a.id)}
-                                    >
-                                      <ArrowUpRight size={15} />
-                                    </IconButton>
-                                  </div>
-                                </div>
-                              </article></ActionMenu>
-                            ))}
-                          <button
-                            className="upload-tile"
-                            onClick={() =>
-                              pickUpload(
-                                stage === "characters"
-                                  ? "Character"
-                                  : stage === "elements"
-                                    ? "Element"
-                                    : "Reference",
-                              )
-                            }
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              void uploadFiles(
-                                e.dataTransfer.files,
-                                stage === "characters"
-                                  ? "Character"
-                                  : stage === "elements"
-                                    ? "Element"
-                                    : "Reference",
-                              );
+                          <ProjectAssetLibrary
+                            projectId={p.id}
+                            projectName={p.name}
+                            initialSource="generations"
+                            onUseAsset={(asset: DraggedAsset) => {
+                              const kind = asset.kind === 'gen' ? asset.gen.kind : asset.kind === 'upload' ? asset.upload.kind : 'image';
+                              const ref = asset.kind === 'gen' ? `generation:${asset.gen.id}` : asset.kind === 'upload' ? `upload:${asset.upload.id}` : `upload:${asset.uploadId}`;
+                              void leaveWorkspace(`/generate?${new URLSearchParams({ project: p.id, mode: kind === 'video' ? 'video' : kind === 'audio' ? 'audio' : 'images', ref })}`);
                             }}
-                          >
-                            <Plus size={28} />
-                            <strong>
-                              {stage === "characters"
-                                ? "Add a character"
-                                : stage === "elements"
-                                  ? "Add an element"
-                                  : "Add a reference"}
-                            </strong>
-                            <span>Drop files or choose from your device</span>
-                            <small>
-                              Images, video, audio, PDF · large files supported
-                            </small>
-                          </button>
-                        </div>
-                        {stage === "characters" &&
-                          p.assets.some((a) => a.id === "character") && (
-                            <div className="continuity-note">
-                              <Info size={18} />
-                              <div>
-                                <strong>
-                                  A continuity note, not a roadblock.
-                                </strong>
-                                <p>
-                                  The sample character’s inner layer differs
-                                  from the hero frame. Make a new wardrobe
-                                  version when you’re ready; your other work can
-                                  continue.
-                                </p>
-                              </div>
-                              <button
-                                onClick={() =>
-                                  void runGenie(
-                                    "Check the character wardrobe continuity across the sample takes",
-                                  )
-                                }
-                              >
-                                Ask Atomik
-                                <ArrowUpRight size={14} />
-                              </button>
-                            </div>
-                          )}
+                            onEdit={(asset: LibraryAsset) => void leaveWorkspace(libraryToolHref(p.id, asset, 'edit'))}
+                            onUpscale={(asset: LibraryAsset) => void leaveWorkspace(libraryToolHref(p.id, asset, 'upscale'))}
+                            onUsePrompt={(take) => void leaveWorkspace(`/generate?${new URLSearchParams({ project: p.id, mode: take.kind === 'image' ? 'images' : take.kind, promptFrom: take.id })}`)}
+                            onAddToProject={(asset: LibraryAsset) => {
+                              const next = projectAssetFromLibrary(asset);
+                              change(old => {
+                                if (old.id !== p.id) throw new Error('The project changed. Return to the original project.');
+                                if (old.assets.some(item => item.id === next.id)) return old;
+                                if (old.assets.length >= 500) throw new Error('The project asset limit was reached.');
+                                return { ...old, assets: [...old.assets, next] };
+                              });
+                              toast.success('Take added to this project.');
+                            }}
+                          />
+                        </section>
                       </div>
                     )}
                     {stage === "edit" && (
@@ -2255,7 +2216,7 @@ export default function Studio({
                               </span>
                               {!p.shots.length && (
                                 <div className="player-empty">
-                                  Add your first shot from Assets & takes.
+                                  Add your first shot from Takes.
                                 </div>
                               )}
                             </div>
@@ -3423,12 +3384,12 @@ export default function Studio({
           />
         )}
         {soulTarget&&soulTarget.draftId===p.id&&<SoulIdentityPanel key={storageKey+p.id+soulTarget.subjectType+(soulTarget.assetId??'')} project={p} scope={storageKey} enabled={signedIn&&ready&&!transitioning} subjectType={soulTarget.subjectType} assetId={soulTarget.assetId} onClose={()=>setSoulTarget(null)} onSettings={()=>void leaveWorkspace('/settings#engines')} onSave={()=>ensureSaved(soulTarget.draftId)} onUpload={files=>uploadFiles(files,soulTarget.subjectType==='character'?'Character':'Element')} onAttach={async(identity,assetId)=>{
-          if(pRef.current.id!==soulTarget.draftId||transitioningRef.current)throw new Error('Return to the original project before attaching this Soul ID.');
+          if(pRef.current.id!==soulTarget.draftId||transitioningRef.current)throw new Error('Return to the original project before attaching this identity.');
           const category=soulTarget.subjectType==='character'?'Character':'Element';
           const alreadyAttached=!assetId&&pRef.current.assets.find(asset=>asset.soulIdentityId===identity.id&&asset.category===category);
           if(!alreadyAttached){const asset=soulIdentityAsset(pRef.current,identity,category,assetId);change(previous=>({...previous,assets:assetId?previous.assets.map(existing=>existing.id===assetId?asset:existing):[...previous.assets,asset]}));}
-          if(!await ensureSaved(soulTarget.draftId))throw new Error('The Soul ID is attached on screen. Save this project before leaving to retain the binding.');
-          toast.success('Soul ID attached. Its original portrait is available on the canvas.');
+          if(!await ensureSaved(soulTarget.draftId))throw new Error('The identity is attached on screen. Save this project before leaving to retain the binding.');
+          toast.success('Identity attached. Its original portrait is available on the canvas.');
         }}/>}
         {generationTarget&&generationTarget.draftId===p.id&&<GenerationDialog scope={storageKey} target={generationTarget} project={p} onClose={()=>setGenerationTarget(null)} onSave={()=>ensureSaved(generationTarget.draftId)} onAsset={(id,fields)=>{if(pRef.current.id===generationTarget.draftId)updateAsset(id,fields);}} onQueued={(_id,kind,accepted)=>{if(pRef.current.id!==generationTarget.draftId||activeStorageKey.current!==storageKey)return;change(old=>({...old,nodes:old.nodes.map(node=>node.id===generationTarget.node.id&&!node.locked?{...node,...(kind?{mode:kind==='audio'?'Audio':kind==='video'?'Video':'Image'}:{}),...(accepted?{text:accepted.prompt}:{})}:node),...(accepted&&old.moleculr?{moleculr:{...old.moleculr,variants:old.moleculr.variants.map(variant=>variant.nodeId===generationTarget.node.id?{...variant,...(kind==='image'||kind==='video'?{kind}:{}),generation:accepted.options}:variant)}}:{})}));void ensureSaved(generationTarget.draftId,true).then(saved=>{if(saved)void jobs.refresh();});setAtomOpen(true);setAtomTab('runs');toast.success('Generation submitted. Follow its progress in Activity.');}}/>}
         {atomikTarget&&atomikTarget.draftId===p.id&&<AtomikRunDialog scope={storageKey} target={atomikTarget} project={p} models={jobs.models} onSave={()=>ensureSaved(atomikTarget.draftId)} onClose={()=>setAtomikTarget(null)} onQueued={()=>{if(pRef.current.id!==atomikTarget.draftId)return;setPrompt('');setAtomOpen(true);setAtomTab('runs');void jobs.refresh();toast.success(atomikTarget.role==='marketing'?'Atomik started. Campaign outputs are saved in Marketing.':'Atomik started. Results are saved in Genie.');}}/>}

@@ -1,13 +1,17 @@
 import { test, expect } from "@playwright/test";
 import {
+  MOLECULR_SECTIONS,
   PAGES,
+  PARTICL_STAGE_ALIASES,
   SUITES,
+  moleculrSection,
+  particlStage,
   roomForRoute,
   roomHref,
   suiteForRoute,
   suiteHref,
 } from "../../lib/suites";
-import { STAGES } from "../../lib/workbench/studio";
+import { STAGES, normalizeStage } from "../../lib/workbench/studio";
 
 test("suite links preserve the draft ID and validate each suite page independently", () => {
   const draft = "draft /?project=wrong";
@@ -21,6 +25,7 @@ test("suite links preserve the draft ID and validate each suite page independent
       expect(
         url.searchParams.get(suite.id === "particl" ? "stage" : "page"),
       ).toBe(page.id);
+      expect(url.hash).toBe("");
       expect(suiteForRoute(url.pathname, url.searchParams)).toBe(suite.id);
       expect(roomForRoute(url.pathname)).toBe("production");
       expect(url.pathname).toBe(suite.id === "particl" || suite.id === "moleculr" ? "/workbench" : `/${suite.id}`);
@@ -36,49 +41,80 @@ test("suite links preserve the draft ID and validate each suite page independent
   }
 });
 
-test("Particl retains persisted stage IDs and numbered docks use the brief sequence", () => {
+test("the four suites carry the 19 September names and the eight-stage Particl dock order", () => {
+  expect(SUITES.map((suite) => suite.name)).toEqual([
+    "Particl Production Studio",
+    "Atomik Super Agent",
+    "Moleculr Business Suite",
+    "Subatomik Viral Studio",
+  ]);
+  expect(SUITES.map((suite) => suite.id)).toEqual(["particl", "atomik", "moleculr", "subatomik"]);
   expect(PAGES.particl.map(page => page.id)).toEqual(STAGES.map(stage => stage.id));
   expect(PAGES.particl.map((page) => page.id)).toEqual([
     "brief",
-    "script",
-    "moodboard",
+    "storyboard",
     "characters",
-    "elements",
     "astra-blender",
     "canvas",
-    "storyboard",
     "assets",
     "edit",
     "export",
   ]);
   expect(PAGES.particl.map((page) => page.label)).toEqual([
-    "Brief",
-    "Script",
-    "Look",
-    "Cast",
-    "Elements",
+    "Brief & Script",
+    "Boards",
+    "Cast & Elements",
     "Astra blender",
     "Rig",
-    "Boards",
     "Takes",
-    "Edit",
+    "Edit & Sound",
     "Deliver",
   ]);
-  expect(PAGES.moleculr.map((page) => page.id)).toEqual([
-    "brand",
+  expect(STAGES.map((stage) => stage.label)).toEqual(PAGES.particl.map((page) => page.label));
+  expect(STAGES.find((stage) => stage.id === "brief")?.hint).toBe("Find the story and the production in it");
+  expect(PAGES.atomik.map((page) => page.id)).toEqual(["runs", "generate", "recipes", "approvals", "budget", "models"]);
+  expect(PAGES.subatomik.map((page) => page.id)).toEqual(["motion-transfer", "object-swap"]);
+});
+
+test("retired Particl stage IDs normalise to the stage that now holds their panel", () => {
+  expect(PARTICL_STAGE_ALIASES).toEqual({ script: "brief", moodboard: "storyboard", elements: "characters" });
+  for (const [alias, target] of Object.entries(PARTICL_STAGE_ALIASES)) {
+    expect(particlStage(alias)).toBe(target);
+    expect(normalizeStage(alias)).toBe(target);
+    expect(suiteHref("particl", "draft-id", alias)).toBe(`/workbench?project=draft-id&stage=${target}`);
+    expect(PAGES.particl.some((page) => page.id === alias)).toBe(false);
+  }
+  for (const stage of STAGES) {
+    expect(particlStage(stage.id)).toBe(stage.id);
+    expect(normalizeStage(stage.id)).toBe(stage.id);
+  }
+  for (const unknown of ["runs", "", "Brief", null, undefined]) {
+    expect(particlStage(unknown)).toBeNull();
+    expect(normalizeStage(unknown)).toBeNull();
+  }
+});
+
+test("Moleculr is one Marketing Studio page whose former pages are ordered in-page sections", () => {
+  expect(PAGES.moleculr).toEqual([{ id: "marketing", label: "Marketing Studio" }]);
+  expect(MOLECULR_SECTIONS.map((section) => section.id)).toEqual([
     "product",
+    "brand",
     "cast",
     "format",
     "variants",
     "design",
     "publish",
   ]);
-  expect(SUITES.map((suite) => suite.name)).toEqual([
-    "Particl Studio",
-    "Atomik Agent",
-    "Moleculr Business Suite",
-    "Subatomik",
-  ]);
+  for (const section of MOLECULR_SECTIONS) {
+    expect(moleculrSection(section.id)).toBe(section.id);
+    expect(suiteHref("moleculr", "draft-id", section.id)).toBe(
+      `/workbench?project=draft-id&suite=moleculr&page=marketing#${section.id}`,
+    );
+  }
+  expect(moleculrSection("marketing")).toBeNull();
+  expect(moleculrSection("brief")).toBeNull();
+  expect(suiteHref("moleculr", "draft-id")).toBe("/workbench?project=draft-id&suite=moleculr&page=marketing");
+  expect(suiteHref("moleculr", "draft-id", "marketing")).toBe(suiteHref("moleculr", "draft-id"));
 });
 
 test("room handoffs keep mapped-project generation behavior and collective-library context", () => {

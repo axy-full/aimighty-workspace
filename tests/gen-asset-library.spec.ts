@@ -301,7 +301,7 @@ test("Gen drags workspace assets into Seedance, Topaz and Astra source panels wi
     await expect(sourceToast).toBeVisible();
     await expect.poll(async () => {
       const toastBounds = await sourceToast.boundingBox();
-      const dockBounds = await page.getByRole("navigation", { name: "Particl Studio pages", exact: true }).boundingBox();
+      const dockBounds = await page.getByRole("navigation", { name: "Particl Production Studio pages", exact: true }).boundingBox();
       return !!toastBounds && !!dockBounds && toastBounds.y + toastBounds.height <= dockBounds.y;
     }).toBe(true);
   }

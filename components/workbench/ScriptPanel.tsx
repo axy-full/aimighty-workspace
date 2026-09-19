@@ -34,6 +34,7 @@ export function ScriptPanel({
   onBuild,
   onDevelop,
   onCrew,
+  embedded = false,
 }: {
   project: Project;
   onScript: (value: string) => void;
@@ -44,6 +45,8 @@ export function ScriptPanel({
   onBuild: (scenes: ScriptScene[]) => void;
   onDevelop: (scene: ScriptScene) => void;
   onCrew: () => void;
+  /** Rendered inside another scrolling stage (Brief & Script): no own scroll container. */
+  embedded?: boolean;
 }) {
   const adfilm = project.scriptFormat === "adfilm";
   const fileInput = useRef<HTMLInputElement>(null),
@@ -202,7 +205,7 @@ export function ScriptPanel({
     (a) => a.id === project.scriptSource?.assetId,
   );
   return (
-    <div className={"stage-scroll " + styles.panel}>
+    <div className={(embedded ? "script-embedded " : "stage-scroll ") + styles.panel} id={embedded ? "script" : undefined}>
       <header className={styles.header}>
         <div>
           <span className="eyebrow">SCRIPT & BREAKDOWN</span>

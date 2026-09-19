@@ -180,7 +180,7 @@ test('viewport draws only for changes, finishes orbit damping and restores overl
   await page.evaluate(() => { delete (document as unknown as { hidden?: boolean }).hidden; document.dispatchEvent(new Event('visibilitychange')); });
   await expect.poll(draws.count).toBeGreaterThan(before);
   await draws.idle();
-  await page.getByRole('navigation', { name: 'Particl Studio pages', exact: true }).getByRole('link', { name: 'Brief', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Particl Production Studio pages', exact: true }).getByRole('link', { name: 'Brief & Script', exact: true }).click();
   await expect(canvas).toHaveCount(0);
   await draws.idle();
 });

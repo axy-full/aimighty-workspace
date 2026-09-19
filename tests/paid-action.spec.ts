@@ -383,7 +383,7 @@ test("ordinary drafts belong to each account even inside the same workspace", as
       Reflect.set(window, "__privateDraftNavigation", value);
     }, sentinel);
     const models = page
-      .getByRole("navigation", { name: "Atomik Agent pages", exact: true })
+      .getByRole("navigation", { name: "Atomik Super Agent pages", exact: true })
       .getByRole("link", { name: "Models", exact: true });
     await expect(models).toBeVisible();
     await models.click();

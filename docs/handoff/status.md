@@ -97,5 +97,6 @@ Measured on the Vercel usage page for the current period: Blob data transfer 51 
 5. Done 19 September on the legacy workspace (see above); repeat on a non-legacy workspace once one exists, to exercise credit debiting.
 6. Backups and recovery: activate the backup workflow (environment, secrets, one manual capture, freshness), escrow `KEYRING_SECRET`, add an alerting channel and a paid-dispatch kill switch, then measure RPO/RTO on a staging restore.
 7. Long-form mastering design and host decision (needs a spend decision), then OCR durability and multilingual qualification, then provider qualification under explicit ceilings.
+8. Product restructure ordered 19 September: PR A (information architecture only: suite names, the eight-stage Particl dock with `script`/`moodboard`/`elements` as aliases, Moleculr collapsed to one Marketing Studio page with seven sections, the project selector first on home) is done on `feat/four-suites-ia`; PRs B+ (features) follow the inventory. See [docs/four-suite-workspace.md](../four-suite-workspace.md).
 
 Design decisions awaiting the owner: which palette declaration is the approved desktop appearance; whether the suite dock has replaced the supplied mobile tab-bar navigation; the exact suite tab labels.

@@ -66,7 +66,7 @@ test("studio context actions edit the right node, respect locks, support keyboar
   await signInLocally(page.request);
   const state = await fixture(page);
   await page.goto("/workbench");
-  await goStage(page, "Production canvas");
+  await goStage(page, "canvas");
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await page.locator(".mobile-node-viewbar").getByRole("tab", {name:"List",exact:true}).click();
   const nodeTarget = () => mobile
@@ -97,7 +97,7 @@ test("studio context actions edit the right node, respect locks, support keyboar
   await nodeTarget().click({button:"right",position:{x:12,y:12},timeout:8000});
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
-  await goStage(page, "Assets & takes");
+  await goStage(page, "assets");
   const asset=state.current().assets[0];
   const target=page.getByRole('article',{name:'Asset: '+asset.name,exact:true,includeHidden:true});
   const assetMenu=page.getByRole('menu',{name:asset.name+' actions',exact:true});
@@ -181,7 +181,7 @@ test("navigation waits for hydration and initial load, then accepts the first wo
     await route.fallback();
   });
   await page.goto("/workbench",{waitUntil:"commit"});
-  const workflow=page.getByRole("navigation",{name:"Particl Studio pages",exact:true}).getByRole("link",{name:"Deliver",exact:true});
+  const workflow=page.getByRole("navigation",{name:"Particl Production Studio pages",exact:true}).getByRole("link",{name:"Deliver",exact:true});
   await expect(workflow).toBeVisible();
   await expect(workflow).toBeDisabled();
   await expect(workflow).not.toHaveAttribute("href");
@@ -217,8 +217,8 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   await expect(page.locator(".project-bar")).toBeVisible();
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await openWorkbenchProject(page);
-  await expect(page.getByRole("navigation", { name: "Particl Studio pages", exact: true })).toBeVisible();
-  await goStage(page, "Brief & ideas");
+  await expect(page.getByRole("navigation", { name: "Particl Production Studio pages", exact: true })).toBeVisible();
+  await goStage(page, "brief");
   const title = `Browser production ${testInfo.project.name}`;
   await page.getByLabel("Project title", { exact: true }).fill(title);
   await expect.poll(() => state.current().name).toBe(title);
@@ -228,24 +228,24 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
     await expect(page.locator("[data-nextjs-dialog]")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   }
-  await goStage(page, "Script & breakdown");
+  await goStage(page, "brief");
   await page.getByLabel("Project screenplay", { exact: true }).fill("EXT. TEST DUNES - DAY\n\nMIRA walks into the light.");
   await expect(page.getByRole("region", { name: "Screenplay scene breakdown" }).getByRole("checkbox")).toHaveCount(1);
   await page.getByRole("button", { name: "Select all scenes", exact: true }).click();
   await page.getByRole("button", { name: "Build 1 scene nodes", exact: true }).click();
   await expect.poll(() => state.current().nodes.some(node => node.title.includes("TEST DUNES"))).toBeTruthy();
-  await goStage(page, "Assets & takes");
+  await goStage(page, "assets");
   await page.getByLabel("Upload project files", { exact: true }).setInputFiles({ name: "Uploaded reference.webp", mimeType: "image/webp", buffer: await readFile("public/campaign/hero.webp") });
   await expect.poll(() => state.current().assets.some(asset => asset.uploadId === "upload-browser")).toBeTruthy();
   const uploadToast = page.locator('[data-sonner-toast][data-front="true"]');
   await expect(uploadToast).toBeVisible();
   await expect.poll(async () => {
     const toastBounds = await uploadToast.boundingBox();
-    const navigationBounds = await page.getByRole("navigation", { name: "Particl Studio pages", exact: true }).boundingBox();
+    const navigationBounds = await page.getByRole("navigation", { name: "Particl Production Studio pages", exact: true }).boundingBox();
     return !!toastBounds && !!navigationBounds && toastBounds.y + toastBounds.height <= navigationBounds.y;
   }).toBe(true);
 
-  await goStage(page, "Production canvas");
+  await goStage(page, "canvas");
   if (mobile) {
     await page.locator(".mobile-node-viewbar").getByRole("tab", { name: "List", exact: true }).click();
     await page.locator(".mobile-node-list button").filter({ hasText: "Browser test shot" }).click();
@@ -306,13 +306,13 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   await expect.poll(() => state.current().plans.find(plan => plan.id === "plan-browser")?.applied).toBeTruthy();
 
   await page.reload();
-  await goStage(page, "Brief & ideas");
+  await goStage(page, "brief");
   await expect(page.getByLabel("Project title", { exact: true })).toHaveValue(title);
-  await goStage(page, "Delivery");
+  await goStage(page, "export");
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download package" }).click();
   expect((await download).suggestedFilename()).toMatch(/_editorial\.zip$/);
-  await goStage(page, "Production canvas");
+  await goStage(page, "canvas");
   await page.screenshot({ path: testInfo.outputPath("workbench.png"), fullPage: false });
   expect(errors).toEqual([]);
 });
@@ -354,7 +354,7 @@ test("switching drains final edits, failed saves retain work, and asset publishi
   await expect(page.locator(".project-switch")).toContainText("First production");
   await expect(page.locator(".save-label")).toContainText("Saved");
   delayNext = true;
-  await goStage(page, "Brief & ideas");
+  await goStage(page, "brief");
   await page.getByLabel("Project title", { exact: true }).fill("First edit in flight");
   await expect.poll(() => held).toBeTruthy();
   await page.getByLabel("Project title", { exact: true }).fill("Final edit before switch");
@@ -364,7 +364,7 @@ test("switching drains final edits, failed saves retain work, and asset publishi
   await expect(page.locator(".project-switch")).toContainText("Second production");
   expect(documents.get(first.id)?.name).toBe("Final edit before switch");
 
-  await goStage(page, "Assets & takes");
+  await goStage(page, "assets");
   await page.getByRole("button", { name: `Edit ${second.assets[0].name}`, exact: true }).click();
   const editor = page.getByRole("dialog");
   await editor.getByRole("button", { name: "Publish this version", exact: true }).click();
@@ -372,7 +372,7 @@ test("switching drains final edits, failed saves retain work, and asset publishi
   expect(documents.get(second.id)?.sharedAssets?.some(asset => asset.id === second.assets[0].id)).toBeTruthy();
   await editor.getByRole("button", { name: "Close", exact: true }).click();
 
-  await goStage(page, "Brief & ideas");
+  await goStage(page, "brief");
   failSaves = true;
   await page.getByLabel("Project title", { exact: true }).fill("Keep this unsaved work");
   await expect(page.locator(".save-banner")).toContainText("Test persistence unavailable");
@@ -382,7 +382,7 @@ test("switching drains final edits, failed saves retain work, and asset publishi
   await expect(page.locator(".save-banner")).toBeVisible();
   await expect(page.locator(".project-switch")).toContainText("Keep this unsaved work");
   expect(reads).toHaveLength(readsBeforeFailedSwitch);
-  await goStage(page, "Brief & ideas");
+  await goStage(page, "brief");
   await expect(page.getByLabel("Project title", { exact: true })).toHaveValue("Keep this unsaved work");
 });
 
@@ -414,7 +414,7 @@ test("a shared publication conflict preserves private edits and requires saving 
   await page.goto("/workbench");
   await expect(page.locator(".save-label")).toHaveText("Saved");
   latest = 2; // A second collaborator publishes while this tab is editing v1.
-  await goStage(page, "Assets & takes");
+  await goStage(page, "assets");
   await page.getByRole("button", { name: `Edit ${draft.assets[0].name}`, exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Publish this version", exact: true }).click();
   await expect.poll(() => attempts).toEqual([1]);
@@ -423,7 +423,7 @@ test("a shared publication conflict preserves private edits and requires saving 
   await expect(reload).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
   await page.screenshot({path:testInfo.outputPath('publication-conflict.png')});
-  await goStage(page, "Brief & ideas");
+  await goStage(page, "brief");
   failSaves = true;
   await page.getByLabel("Project title", { exact: true }).fill("My private changes survive");
   await expect(page.locator(".save-banner").filter({ hasText: "Keep the private edit on screen" })).toBeVisible();
@@ -439,7 +439,7 @@ test("a shared publication conflict preserves private edits and requires saving 
   await expect(page.getByLabel("Project title", { exact: true })).toHaveValue("My private changes survive");
   expect(draft.name).toBe("My private changes survive");
   expect(attempts).toEqual([1]); // Refresh never automatically republishes.
-  await goStage(page, "Assets & takes");
+  await goStage(page, "assets");
   await page.getByRole("button", { name: `Edit ${draft.assets[0].name}`, exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Publish this version", exact: true }).click();
   await expect.poll(() => attempts).toEqual([1, 2]);
@@ -555,7 +555,7 @@ test("node original downloads preserve source bytes independently of rendered ad
   node.assetId = source.id;
   node.operations = [{ id: 'bright-preview', kind: 'grade', enabled: true, values: { brightness: 150, contrast: 120, saturation: 30 } }];
   await page.goto('/workbench');
-  await goStage(page, 'Production canvas');
+  await goStage(page, 'canvas');
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await page.locator('.mobile-node-viewbar').getByRole('tab', { name: 'List', exact: true }).click();
   const target = mobile

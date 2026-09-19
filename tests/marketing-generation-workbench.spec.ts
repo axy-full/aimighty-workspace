@@ -244,7 +244,7 @@ async function fixture(page: Page, brokenMapping = false, campaign = false) {
 }
 async function openNode(page: Page) {
   const rig = page
-    .getByRole("navigation", { name: "Particl Studio pages", exact: true })
+    .getByRole("navigation", { name: "Particl Production Studio pages", exact: true })
     .getByRole("link", { name: "Rig", exact: true });
   await expect(rig).toBeEnabled();
   await expect(rig).toHaveAttribute("aria-current", "page");

@@ -14,7 +14,7 @@ const kode = Kode_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Particl Studio",
+  title: "Particl Production Studio",
   description: "particl studio — the studio's own room for making shots, and for knowing what they cost",
   manifest: "/manifest.json",
   // iOS ignores the manifest for home-screen icons — declare one explicitly.
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png?v=3" }],
   },
-  appleWebApp: { capable: true, title: "Particl Studio", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "Particl Production Studio", statusBarStyle: "black-translucent" },
 };
 
 export const viewport = {

@@ -47,7 +47,7 @@ function ProjectMarketingEntry() {
   );
   // The preference and query contain workbench draft IDs, not production IDs.
   const project = params.get("project") || remembered;
-  const href = suiteHref("moleculr", project);
+  const href = suiteHref("moleculr", project, "brand");
   function follow(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.defaultPrevented ||

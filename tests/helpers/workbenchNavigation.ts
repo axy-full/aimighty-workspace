@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { STAGES } from "../../lib/workbench/studio";
+import { STAGES, normalizeStage } from "../../lib/workbench/studio";
 import { PAGES } from "../../lib/suites";
 
 /** Phone Home uses workspace destinations; project workflow starts in a project. */
@@ -17,7 +17,7 @@ export async function openWorkbenchProject(page: Page) {
   ).toBeEnabled();
   await expect(
     page
-      .getByRole("navigation", { name: "Particl Studio pages", exact: true })
+      .getByRole("navigation", { name: "Particl Production Studio pages", exact: true })
       .getByRole("link", { name: "Rig", exact: true }),
   ).toBeEnabled();
   if (await page.locator(".studio-redesign.is-home").isVisible()) {
@@ -37,10 +37,12 @@ export async function openWorkbenchProject(page: Page) {
   }
 }
 
+/** Accepts a visible stage ID or label, or a retired alias (`script`, `moodboard`, `elements`). */
 export async function goWorkbenchStage(page: Page, idOrLabel: string) {
+  const resolved = normalizeStage(idOrLabel) ?? idOrLabel;
   const stage = STAGES.find(
     (value) =>
-      value.id === idOrLabel ||
+      value.id === resolved ||
       value.label === idOrLabel ||
       PAGES.particl.some(
         (page) => page.id === value.id && page.label === idOrLabel,
@@ -50,7 +52,7 @@ export async function goWorkbenchStage(page: Page, idOrLabel: string) {
   if (page.viewportSize()!.width < 760) await openWorkbenchProject(page);
   const label = PAGES.particl.find((value) => value.id === stage.id)!.label;
   const link = page
-    .getByRole("navigation", { name: "Particl Studio pages", exact: true })
+    .getByRole("navigation", { name: "Particl Production Studio pages", exact: true })
     .getByRole("link", { name: label, exact: true });
   await expect(link).toBeEnabled();
   await link.click();

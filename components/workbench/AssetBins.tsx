@@ -218,7 +218,7 @@ export function AssetBinPicker({
             </label>
           ))}
           {!project.bins?.length && (
-            <p>Create a bin in Assets & takes, then add this asset.</p>
+            <p>Create a bin in Takes, then add this asset.</p>
           )}
         </div>
         <button className="btn" onClick={onClose}>

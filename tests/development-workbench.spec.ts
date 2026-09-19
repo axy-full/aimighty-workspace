@@ -120,7 +120,7 @@ test('agentic screenplay and ad-film imports offer Claude and ChatGPT, persist r
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/workbench');
-  await goStage(page, 'Script & breakdown');
+  await goStage(page, 'brief');
   await page.locator('.stage-scroll').filter({ visible: true }).evaluate(element => { element.scrollTop = 0; });
   await page.screenshot({ path: info.outputPath('script-import-options.png'), fullPage: true });
   await expect(page.getByRole('group', { name: 'Script format', exact: true }).getByRole('button', { name: /^Screenplay/ })).toHaveAttribute('aria-pressed', 'true');
@@ -146,7 +146,7 @@ test('agentic screenplay and ad-film imports offer Claude and ChatGPT, persist r
   await panel.getByRole('button', { name: 'Add 1 scene node', exact: true }).click();
   await expect.poll(async () => (await f.current()).nodes.filter(node => node.developmentSource?.jobId === f.jobs[0].id).length).toBe(1);
   await page.reload();
-  await goStage(page, 'Script & breakdown');
+  await goStage(page, 'brief');
   panel = scopePanel(page, 'screenplay');
   await expect(panel.getByRole('button', { name: 'Add 0 scene nodes', exact: true })).toBeDisabled();
   await page.getByRole('group', { name: 'Script format', exact: true }).getByRole('button', { name: /^Ad-film script/ }).click();
@@ -194,7 +194,7 @@ test('idea development recovers the exact request after a lost response and relo
   test.skip(!['workbench-360x640', 'workbench-1440x900'].includes(info.project.name), 'bounded recovery browser coverage');
   const f = await fixture(page, { loseFirst: true });
   await page.goto('/workbench');
-  await goStage(page, 'Brief & ideas');
+  await goStage(page, 'brief');
   let panel = scopePanel(page, 'idea');
   await choose(page, panel, 'ChatGPT', 'GPT-5.5');
   await panel.getByRole('group', { name: /provider$/ }).scrollIntoViewIfNeeded();
@@ -215,7 +215,7 @@ test('idea development recovers the exact request after a lost response and relo
   const first = f.submissions[0];
   await expect(panel.getByRole('group', { name: /provider$/ }).getByRole('button').first()).toBeDisabled();
   await page.reload();
-  await goStage(page, 'Brief & ideas');
+  await goStage(page, 'brief');
   panel = scopePanel(page, 'idea');
   await expect(panel).toContainText('Recovery uses GPT-5.5 · High · up to 7 credits.');
   await panel.getByRole('button', { name: 'Recover development request', exact: true }).scrollIntoViewIfNeeded();
@@ -230,7 +230,7 @@ test('idea development recovers the exact request after a lost response and relo
   const applied = await f.current();
   expect(applied.developmentApplications).toEqual([`${f.jobs[0].id}:idea:0`]);
   await page.reload();
-  await goStage(page, 'Brief & ideas');
+  await goStage(page, 'brief');
   await expect(page.getByRole('textbox', { name: 'Creative direction', exact: true })).toHaveValue(applied.direction);
   await expect(scopePanel(page, 'idea').getByRole('button', { name: 'Add to creative direction', exact: true }).first()).toBeDisabled();
   expect(f.paid()).toBe(0);
@@ -238,7 +238,7 @@ test('idea development recovers the exact request after a lost response and relo
   await page.screenshot({ path: info.outputPath('agentic-idea-development.png'), fullPage: true });
   await page.evaluate(key => localStorage.setItem(key, '{malformed recovery record'), developmentPendingKey(f.scope, f.projectId));
   await page.reload();
-  await goStage(page, 'Brief & ideas');
+  await goStage(page, 'brief');
   panel = scopePanel(page, 'idea');
   await expect(panel).toContainText('Two reviewed cinematic directions.');
   await expect(panel).toContainText('new paid requests remain paused');
@@ -250,7 +250,7 @@ test('notifications remain interactive and model options stay above a live impor
   test.skip(info.project.name !== 'workbench-360x640', 'phone popup and notification overlap regression');
   const f = await fixture(page);
   await page.goto('/workbench');
-  await goStage(page, 'Script & breakdown');
+  await goStage(page, 'brief');
   await page.getByRole('group', { name: 'Script format', exact: true }).getByRole('button', { name: /^Ad-film script/ }).click();
   const panel = scopePanel(page, 'adfilm');
   await panel.getByRole('group', { name: /provider$/ }).getByRole('button', { name: /^ChatGPT/ }).click();

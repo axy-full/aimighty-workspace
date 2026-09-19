@@ -104,7 +104,7 @@ for (const rememberedOnly of [false, true]) {
     const entry = page
       .getByRole("link", { name: "Open Moleculr", exact: true })
       .filter({ visible: true });
-    const href = `/workbench?project=${state.draft.id}&suite=moleculr&page=brand`;
+    const href = `/workbench?project=${state.draft.id}&suite=moleculr&page=marketing#brand`;
     await expect(entry).toHaveAttribute("href", href);
     await expect(entry).toBeVisible();
     if (rememberedOnly) {
@@ -157,8 +157,9 @@ for (const rememberedOnly of [false, true]) {
     await expect(
       page
         .getByRole("navigation", { name: "Moleculr Business Suite pages", exact: true })
-        .getByRole("link", { name: "Brand", exact: true }),
+        .getByRole("link", { name: "Marketing Studio", exact: true }),
     ).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("section.moleculr-section#brand > h2 > button")).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator(".project-bar")).toContainText(state.draft.name);
     expect(state.paidRequests).toBe(0);
     expect(errors).toEqual([]);
