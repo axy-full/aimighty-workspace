@@ -49,6 +49,7 @@ async function serviceFixture() {
     mode: "accepted" as "accepted" | "uncertain" | "throw-after-claim", catalogueReads: 0, quoteCount: 0, importCount: 0, paidCount: 0, statusCount: 0, collectCount: 0,
     pollRaw: undefined as unknown, collectorError: undefined as unknown, submitBarrier: undefined as (() => Promise<void>) | undefined,
     originals: new Map<string, ConsumerVideoOriginal>(),
+    batchPaid: 0, batchItems: [] as unknown[], batchResult: null as null | { state: string; providerJobId?: string }[], presetChecks: [] as string[],
   };
   const deps: Record<string, unknown> = {
     "node:crypto": await import("node:crypto"),
@@ -63,6 +64,10 @@ async function serviceFixture() {
     "./generation-sources": await import("../../lib/higgsfield-consumer/generation-sources"),
     "./genjutsu-contract": await import("../../lib/higgsfield-consumer/genjutsu-contract"),
     "./video-service": await import("../../lib/higgsfield-consumer/video-service"),
+    "./presets": { requireConnectedPreset: async (_user: string, _access: unknown, presetId: string) => {
+      state.presetChecks.push(presetId);
+      if (presetId !== "preset-dolly") throw new (await import("../../lib/higgsfield-consumer/catalogue")).CatalogueError("parameter_invalid", "That motion preset is not offered by the connected account.");
+    } },
     "./video-contract": contract,
     "./video-original": {
       collectConsumerVideoOriginal: async (job: { id: string; userId: string; draftId: string; providerJobId: string; quoteCredits: number }, url: string) => {
@@ -121,6 +126,13 @@ async function serviceFixture() {
         return state.mode === "uncertain"
           ? { state: "uncertain", raw: { status: "submitted", unexpected_ref: "receipt-for-support" } }
           : { state: "accepted", providerJobId: state.providerJobId, raw: { results: [{ id: state.providerJobId, model: "nano_banana_2", type: "image" }] } };
+      },
+      submitConsumerGenerationBatch: async (_token: string, entries: { credits: number; params: unknown }[], wallet: string, options: { admit: () => Promise<void> }) => {
+        if (wallet !== state.wallet) throw new contract.ConsumerVideoError("workspace_changed");
+        state.batchItems = entries.map((entry) => entry.params);
+        await options.admit();
+        state.batchPaid++;
+        return { raw: { jobs: [] }, items: state.batchResult ?? entries.map(() => ({ state: "uncertain" })) };
       },
       readConsumerGenerationJob: async (_token: string, providerJobId: string, wallet: string, model: string, type: string) => {
         state.statusCount++;
@@ -297,4 +309,52 @@ test("a tool preset quotes through the same pipeline, records the tool and sourc
     expect(plain.tool).toBeNull();
     expect(plain.sources).toEqual([{ role: "image_references", kind: "image", name: "still.png" }]);
     expect((await f.service.consumerGenerationJobs(identity.userId, identity.draftId)).map((job) => job.tool?.name ?? null)).toEqual([null, "upscale_image"]);
+  }));
+
+test("A3: a motion preset reaches the provider only as preset_id of the preset model, checked against the live listing first", async () =>
+  fixture(async (f) => {
+    const preset: ConsumerGenerationInput = { type: "video", model: "higgsfield_preset", prompt: "", parameters: {}, medias: [{ role: "image", source: { uploadId: "still" } }], presetId: "preset-dolly" };
+    const quoted = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, preset, randomUUID());
+    expect(f.state.presetChecks).toEqual(["preset-dolly"]);
+    const stored = await f.jobs.getConsumerJob(scoped(quoted.id));
+    expect(JSON.parse(stored!.payloadJson).params).toMatchObject({ model: "higgsfield_preset", preset_id: "preset-dolly", count: 1, use_unlim: false });
+    // An unlisted preset is refused before any import or price.
+    const before = { imports: f.state.importCount, quotes: f.state.quoteCount };
+    await expect(f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...preset, presetId: "preset-unknown" }, randomUUID())).rejects.toMatchObject({ code: "parameter_invalid" });
+    // A preset on another model, or preset_id as a plain setting, never validates.
+    await expect(f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, presetId: "preset-dolly" }, randomUUID())).rejects.toMatchObject({ code: "parameter_reserved" });
+    await expect(f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...preset, presetId: undefined, parameters: { preset_id: "preset-dolly" } }, randomUUID())).rejects.toMatchObject({ code: "parameter_reserved" });
+    expect({ imports: f.state.importCount, quotes: f.state.quoteCount }).toEqual(before);
+  }));
+
+test("A4: one approval for the exact sum, one atomic durable claim per item, one paid batch call, per-item settlement", async () =>
+  fixture(async (f) => {
+    const quotes = [];
+    for (const prompt of ["First bottle.", "Second bottle.", "Third bottle."])
+      quotes.push(await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, prompt }, randomUUID()));
+    const ids = quotes.map((q) => q.id);
+    // A total that is not the exact sum, or another wallet, spends nothing.
+    await expect(f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, ids, { workspaceId: f.state.wallet, credits: 26 })).rejects.toMatchObject({ code: "approval_changed" });
+    await expect(f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, ids, { workspaceId: randomUUID(), credits: 27 })).rejects.toMatchObject({ code: "approval_changed" });
+    expect(f.state.batchPaid).toBe(0);
+    const accepted = randomUUID();
+    f.state.batchResult = [{ state: "accepted", providerJobId: accepted }, { state: "rejected" }, { state: "uncertain" }];
+    const views = await f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, ids, { workspaceId: f.state.wallet, credits: 27 });
+    expect(f.state.batchPaid).toBe(1);
+    expect(f.state.batchItems).toHaveLength(3);
+    expect(views.map((v) => v.status)).toEqual(["accepted", "failed", "uncertain"]);
+    expect(views[0].providerJobId).toBe(accepted);
+    expect(views[1].failureCode).toBe("submission_rejected");
+    expect(views[2].providerReceipt).toMatchObject({ batch_index: 2 });
+    // Nothing in the batch can be sent again, as a batch or on its own.
+    await expect(f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, ids, { workspaceId: f.state.wallet, credits: 27 })).rejects.toMatchObject({ code: "approval_changed" });
+    expect((await f.service.submitConsumerGenerationJob(scoped(ids[2]), { workspaceId: f.state.wallet, credits: 9 })).status).toBe("uncertain");
+    expect(f.state.batchPaid + f.state.paidCount).toBe(1);
+    // Capacity is checked for the whole batch before any claim: two more would exceed four active jobs.
+    const more = [];
+    for (const prompt of ["Fourth.", "Fifth.", "Sixth."])
+      more.push((await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, { ...request, prompt }, randomUUID())).id);
+    await expect(f.service.submitConsumerGenerationBatchJobs(identity.userId, identity.draftId, more, { workspaceId: f.state.wallet, credits: 27 })).rejects.toMatchObject({ code: "capacity" });
+    for (const id of more) expect((await f.jobs.getConsumerJob(scoped(id)))!.status).toBe("quoted");
+    expect(f.state.batchPaid).toBe(1);
   }));

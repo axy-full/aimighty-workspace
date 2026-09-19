@@ -61,6 +61,8 @@ export type AtomikLive = {
   priceLabel: (step: Step) => string;
   /** True for a step that runs on the connected account at its quoted price. */
   isConnected: (step: Step) => boolean;
+  /** What Continue approves for this step: its own price, or its whole batch's exact total. */
+  approveLabel: (step: Step) => string;
   /** That number as the workspace prints it: `24 cr`, or `$2.90`. */
   fmt: (n: number) => string;
   engineLabel: (id: string) => string;
@@ -148,6 +150,10 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
      the price on a button is. */
   const credits = useCallback((s: Step) => connectedMeta(s.params) ? 0 : money.inCredits ? whole(usdOf(s)) : usdOf(s), [money]);
   const isConnected = useCallback((s: Step) => connectedMeta(s.params) !== null, []);
+  const batchOf = useCallback((s: Step, steps: Step[]) => {
+    const id = connectedMeta(s.params)?.batch?.id;
+    return id ? steps.filter((o) => o.status === "proposed" && connectedMeta(o.params)?.batch?.id === id) : [s];
+  }, []);
   const priceLabel = useCallback((s: Step) => {
     const meta = connectedMeta(s.params);
     return meta ? `${meta.credits.toLocaleString("en-US")} connected cr` : money.price(credits(s));
@@ -196,6 +202,12 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const cap = production ? (money.inCredits ? production.capCredits ?? null : production.capUsd ?? null) : null;
   const spent = production ? (money.inCredits ? production.credits ?? 0 : production.spend ?? 0) : 0;
   const planning = loaded ? (money.inCredits ? whole(loaded.chat.textCostUsd) : loaded.chat.textCostUsd) : 0;
+  const approveLabel = useCallback((s: Step) => {
+    const members = batchOf(s, plan);
+    if (members.length < 2) return priceLabel(s);
+    const sum = members.reduce((a, o) => a + (connectedMeta(o.params)?.credits ?? 0), 0);
+    return `batch of ${members.length} · ${sum.toLocaleString("en-US")} connected cr`;
+  }, [batchOf, plan, priceLabel]);
   const connectedTotal = plan.reduce((a, s) => a + (connectedMeta(s.params)?.credits ?? 0), 0);
   const totals = { total, underCap: cap === null ? null : cap - spent - total, planning, connected: connectedTotal };
 
@@ -251,9 +263,14 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       const meta = connectedMeta(proposed.params);
       if (meta) {
         /* The exact connected credits and wallet this card shows; the server
-           checks them against the durable quote, claims once and submits once. */
+           checks them against the durable quote, claims once and submits once.
+           A batch is ONE approval for its waiting steps' exact summed total. */
+        const members = batchOf(proposed, loaded?.steps ?? []);
+        const body = members.length > 1
+          ? { action: "approve-batch", stepIds: members.map((m) => m.id), credits: members.reduce((a, m) => a + (connectedMeta(m.params)?.credits ?? 0), 0), workspaceId: meta.workspaceId }
+          : { action: "approve", credits: meta.credits, workspaceId: meta.workspaceId };
         const r = await fetch(`/api/atomik/steps/${encodeURIComponent(proposed.id)}/connected`, { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "approve", credits: meta.credits, workspaceId: meta.workspaceId }) });
+          body: JSON.stringify(body) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) { dispatched.current.delete(proposed.id); setError(j.error ?? "That step couldn't be started."); }
         return;
@@ -280,7 +297,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
       await refreshRef.current();
       setBusy(false);
     }
-  }, [busy, loaded]);
+  }, [busy, loaded, batchOf]);
 
   const stop = useCallback(async (step: Step) => {
     if (busy) return;
@@ -304,7 +321,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
-    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, isConnected, fmt, engineLabel,
+    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, isConnected, approveLabel, fmt, engineLabel,
     busy, error:paid.error??error, recoveryText, models, model, effort, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -312,7 +329,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
-  totals: { total: 0, underCap: null, planning: 0, connected: 0 }, credits: () => 0, priceLabel: () => "", isConnected: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
+  totals: { total: 0, underCap: null, planning: 0, connected: 0 }, credits: () => 0, priceLabel: () => "", isConnected: () => false, approveLabel: () => "", fmt: (n) => String(n), engineLabel: (id) => id,
   busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {},
 };
 

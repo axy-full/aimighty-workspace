@@ -15,6 +15,7 @@ import {
   mediaKindForRole,
   validateGenerationRequest,
   RESERVED_PARAMETERS,
+  takesPreset,
   type ConnectedModel,
   type ConnectedOutputType,
 } from "./catalogue";
@@ -24,8 +25,8 @@ export const CONNECTED_PREFIX = "connected:";
 export const isConnectedModelId = (id: string) => id.startsWith(CONNECTED_PREFIX);
 export const connectedModelId = (id: string) => (isConnectedModelId(id) ? id.slice(CONNECTED_PREFIX.length) : id);
 /** Never offered to the planner: game-pipeline-only audio (the provider forbids
- * standalone use) and the preset model, which needs a preset_id (slice A3). */
-export const PLANNER_EXCLUDED_MODELS = Object.freeze(["sonilo_music", "mirelo_text_to_audio", "inworld_text_to_speech", "higgsfield_preset"]);
+ * standalone use). */
+export const PLANNER_EXCLUDED_MODELS = Object.freeze(["sonilo_music", "mirelo_text_to_audio", "inworld_text_to_speech"]);
 export const plannerModels = (models: ConnectedModel[]) => models.filter((model) => !PLANNER_EXCLUDED_MODELS.includes(model.id));
 
 /** One line per model: id, name, output, and the settings it declares. */
@@ -40,6 +41,7 @@ export function connectedEngineLine(model: ConnectedModel): string {
   const roles = model.medias.flatMap((slot) => slot.roles.map((role) => `${role}${slot.required ? "*" : ""}`)).slice(0, 6);
   return [
     `  ${CONNECTED_PREFIX}${model.id} — ${model.name} (${model.outputType}, connected credits)`,
+    takesPreset(model) ? "preset* = a Motion presets id" : "",
     settings.length ? `settings ${settings.join(" ")}` : "",
     roles.length ? `files ${roles.join(" ")}` : "",
   ].filter(Boolean).join(". ").slice(0, 320);
@@ -54,6 +56,10 @@ export type RawConnectedProposal = {
   settings?: unknown;
   seconds?: unknown;
   ratio?: unknown;
+  /** A motion preset id (slice A3), for a model that takes one. */
+  preset?: unknown;
+  /** A label shared by proposals that should run together in one batch (slice A4). */
+  batch?: unknown;
 };
 export type ProposalFile = { uploadId?: string; genId?: string; kind: "image" | "video" | "audio" };
 export type ConnectedProposal =
@@ -71,7 +77,7 @@ const scalar = (value: unknown): value is string | number | boolean =>
  * `duration` / `aspect_ratio` when it declares them. Files the person
  * attached are placed on the first declared role of the matching kind.
  */
-export function buildConnectedProposal(raw: RawConnectedProposal, models: ConnectedModel[], files: ProposalFile[] = []): ConnectedProposal {
+export function buildConnectedProposal(raw: RawConnectedProposal, models: ConnectedModel[], files: ProposalFile[] = [], presets: { id: string; name: string }[] = []): ConnectedProposal {
   const title = String(raw.title ?? "").slice(0, 60) || "Connected step";
   const id = connectedModelId(String(raw.model ?? "").trim());
   const model = plannerModels(models).find((m) => m.id === id);
@@ -105,10 +111,17 @@ export function buildConnectedProposal(raw: RawConnectedProposal, models: Connec
     used.set(slot.name, (used.get(slot.name) ?? 0) + 1);
     medias.push({ role, source: file.genId ? { genId: file.genId } : { uploadId: file.uploadId! } });
   }
+  let presetId: string | undefined;
+  if (takesPreset(model)) {
+    const wanted = String(raw.preset ?? settings.preset_id ?? "").trim();
+    const preset = presets.find((p) => p.id === wanted);
+    if (!preset) return { ok: false, title, reason: presets.length ? "choose one of the listed motion presets" : "the connected account lists no motion presets" };
+    presetId = preset.id;
+  }
   const prompt = String(raw.prompt ?? "").trim().slice(0, 5000);
-  const input: ConsumerGenerationInput = { type, model: model.id, prompt, parameters, medias };
+  const input: ConsumerGenerationInput = { type, model: model.id, prompt, parameters, medias, ...(presetId ? { presetId } : {}) };
   try {
-    validateGenerationRequest(model, { type, model: model.id, prompt, parameters, medias: medias.map((m) => ({ role: m.role, kind: mediaKindForRole(m.role) })) });
+    validateGenerationRequest(model, { type, model: model.id, prompt, parameters, medias: medias.map((m) => ({ role: m.role, kind: mediaKindForRole(m.role) })), ...(presetId ? { presetId } : {}) });
   } catch (error) {
     return { ok: false, title, reason: error instanceof CatalogueError ? error.message.replace(/[“”]/g, "") : "its settings could not be validated" };
   }
@@ -128,7 +141,34 @@ export type ConnectedStepMeta = {
   workspaceId: string;
   workspaceName: string;
   quoteExpiresAt: number;
+  /** Set when the step runs with others in one batch call under one approval (A4). */
+  batch?: { id: string; size: number };
+  /** The motion preset's name, for display (A3). */
+  presetName?: string;
 };
+/** Items per batch: the workspace runs at most four connected jobs at once. */
+export const PLANNER_BATCH_SIZE = 4;
+const BATCHABLE: ConnectedOutputType[] = ["image", "video", "audio"];
+/**
+ * Groups priced proposals that share a batch label and output type into
+ * batches of 2–4 (in proposal order); anything else runs on its own.
+ */
+export function assignBatches(entries: { label: string | null; meta: ConnectedStepMeta }[], newId: () => string) {
+  const groups = new Map<string, { label: string | null; meta: ConnectedStepMeta }[]>();
+  for (const entry of entries) {
+    if (!entry.label || !BATCHABLE.includes(entry.meta.type)) continue;
+    const key = `${entry.meta.type}:${entry.meta.workspaceId}:${entry.label}`;
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  for (const members of groups.values())
+    for (let start = 0; start < members.length; start += PLANNER_BATCH_SIZE) {
+      const chunk = members.slice(start, start + PLANNER_BATCH_SIZE);
+      if (chunk.length < 2) continue;
+      const id = newId();
+      for (const member of chunk) member.meta.batch = { id, size: chunk.length };
+    }
+}
+export const batchLabel = (value: unknown) => (typeof value === "string" && /^[\w .-]{1,40}$/.test(value.trim()) ? value.trim() : value === true ? "batch" : null);
 export function connectedMeta(params: Record<string, unknown> | null | undefined): ConnectedStepMeta | null {
   const value = params?.connected;
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
