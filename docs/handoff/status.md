@@ -1,6 +1,6 @@
 # Particl status of record
 
-Updated 19 September 2026. This file is the running handover: what is released, what was verified and how, and what is next. It supersedes the status sections of older handover documents where they differ. Claims are limited to what was observed; "released" means the commit is serving www.particl.app, not that every path has been exercised live.
+Updated 19 September 2026 (night). This file is the running handover: what is released, what was verified and how, and what is next. It supersedes the status sections of older handover documents where they differ. Claims are limited to what was observed; "released" means the commit is serving www.particl.app, not that every path has been exercised live.
 
 ## Released
 
@@ -64,6 +64,23 @@ A read-only audit of eight areas was run against this checkout (Astra release, d
 - **Design:** `app/four-suites.css:2-19` re-declares the `--graphite-*` tokens after `app/globals.css`, so the rendered palette is four-suites.css while the only token unit test asserts globals.css; the supplied mobile navigation model is rendered but hidden by `four-suites.css:124-131` in favour of the project-bar grid and suite dock; suite tab labels read "Subatomik" and "Atomik Agent". These need the owner's confirmation before further design work.
 - **Long-form mastering** cannot run on any existing host (Sandbox 180 s / 4 GB, functions ≤300 s); it needs a separate CPU worker with a reviewed rate card and spend approval.
 - **Provider qualification** items (Cloud Genjutsu, connected Genjutsu, Marketing Studio Image, Soul) each need a paid rehearsal under an explicit ceiling; the marketing video rehearsal still runs in the provider's UGC mode.
+
+## Restructure and platform work merged 19 September (evening/night)
+
+| PR | What landed | Verification |
+| --- | --- | --- |
+| [PR203](https://github.com/axy-full/aimighty-workspace/pull/203) | Storage backend seam behind `lib/storage.ts`; Blob unchanged, R2 backend implemented but not selected (`docs/r2-storage-plan.md`) | 37 storage/upload specs, whole unit project, full CI |
+| [PR204](https://github.com/axy-full/aimighty-workspace/pull/204), [PR206](https://github.com/axy-full/aimighty-workspace/pull/206), [PR215](https://github.com/axy-full/aimighty-workspace/pull/215) | Native dispatch on Vercel (`POST /api/worker`, cron bearer, `worker_slots` 4/2 limits, 202 hand-off, cron as retry path); Inngest optional behind `DISPATCH_MODE=inngest`; dispatch outcome logging; durable `dispatch_log` on the owner's `/api/health` | **Worker path proven on `16c752c`:** Astra job `277dbf74` → `dispatch.recent` = `send: sent 202 (358 ms)`, then `run: finished-ok (83.6 s)`; job succeeded, $0.0067 compute. Inngest keys and both integrations can be removed. |
+| [PR205](https://github.com/axy-full/aimighty-workspace/pull/205), [PR211](https://github.com/axy-full/aimighty-workspace/pull/211) | `docs/four-suites-v2-plan.md` (owner brief mapped to the code and the authenticated 98-model catalogue) and `docs/rig-bug-inventory.md` (43 ranked defects) | docs |
+| [PR207](https://github.com/axy-full/aimighty-workspace/pull/207) | Subatomik defaults to connected credits; no billing toggle in the flow; approval safeguards kept | 40 + 60 browser tests, full CI |
+| [PR208](https://github.com/axy-full/aimighty-workspace/pull/208), [PR210](https://github.com/axy-full/aimighty-workspace/pull/210) | Atomik Super Agent: Generate (image/video/sound/3D over the live catalogue) and Tools (upscale image/video, background removal, extend canvas, deflicker, lip-sync), quote → approve → claim → receipt on the connected account | 21 + 26 unit, 172 regression, 15 + 25 browser at five viewports, full CI |
+| [PR209](https://github.com/axy-full/aimighty-workspace/pull/209) | Information architecture: four suite names; project selector first; Particl stages Brief & Script · Boards (Look folded in) · Cast & Elements · Astra blender · Rig · Takes (uploads + generations) · Edit & Sound · Deliver with `script`/`moodboard`/`elements` aliases; Moleculr as one Marketing Studio page; one label vocabulary | full workbench (471 + 97) and customer (94) suites locally, full CI; live check on `17f3496`: home order, suite names, eight-stage dock, `?stage=script` → `brief` |
+| [PR212](https://github.com/axy-full/aimighty-workspace/pull/212) | Edit & Sound: voice-over / sound effect / music generated into the timeline lanes (quote-first, idempotent), Dialogue task on the admission layer; Voice change and Dubbing deferred to C2 with endpoint facts | 57 unit, 5 + 14 browser, full CI |
+| [PR213](https://github.com/axy-full/aimighty-workspace/pull/213) | Cast & Elements identity-first: identity state on every card, Identity action, ready identity pre-selected as reference, gated-render notice; older LoRA trainer marked legacy; no provider names | 73 unit, 52 browser, full CI |
+| [PR214](https://github.com/axy-full/aimighty-workspace/pull/214) | Moleculr Marketing Studio: v2 template catalogue browser (Format) and Create with template (Variants) with fail-closed contract checks; synthetic fixture, first live run owed | 21 + 176 unit, 117 browser, full CI |
+| [PR216](https://github.com/axy-full/aimighty-workspace/pull/216) | Rig bug pass, workbench canvas: inventory items 1–4, 8–24, 26, 35, 43 fixed; legacy `/rig` board deferred to the owner | 16 unit, 28 + 8 + 52 browser; CI rerun pending on an unrelated account-security flake |
+
+Decisions recorded tonight: Inngest is not wanted (native dispatch replaces it); R2 pulled forward (buckets/token owed by the owner); design questions deferred to the Claude Design pass. Owed: the legacy `/rig` board decision (fix to workbench standards or retire); Inngest env/integration removal; paid qualifications under stated ceilings (Astra on a non-legacy workspace, identity render, Marketing v2 first run, one generation per output type); backups activation; the C2 audio endpoints; slice I3 (voice/dubbing/analysis on the connected account).
 
 ## Follow-up PRs merged 19 September (from the audit)
 
