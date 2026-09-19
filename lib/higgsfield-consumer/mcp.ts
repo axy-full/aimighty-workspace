@@ -88,6 +88,7 @@ import {
   type ConnectedToolset,
   type StatusExpectation,
 } from "./toolset";
+import { PLANNER_READ_TOOLS, type PlannerRead, type PlannerReadResult } from "./planner-reads";
 export const CATALOGUE_PAGE_LIMIT = 100;
 export const CATALOGUE_PAGES = 5;
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
@@ -272,6 +273,8 @@ type ConsumerSession = {
   /** Per-product status reads used when `job_status` is not advertised. */
   jobDisplay: (jobId: string) => Promise<Record<string, unknown>>;
   jobsWait: (jobId: string) => Promise<Record<string, unknown>>;
+  /** Only the fixed free reads of planner-reads.ts. */
+  plannerRead: (read: PlannerRead) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -724,6 +727,10 @@ async function withConsumerSession<T>(
       voiceToolStatus: async (tool, args) => (await post("tools/call", { name: requireVoiceTool(tool).status, arguments: args }))!,
       jobDisplay: async (jobId) => (await post("tools/call", { name: "job_display", arguments: statusArguments("job_display", jobId) }))!,
       jobsWait: async (jobId) => (await post("tools/call", { name: "jobs_wait", arguments: statusArguments("jobs_wait", jobId) }))!,
+      plannerRead: async (read) => {
+        if (!PLANNER_READ_TOOLS.includes(read.tool)) fail("unsupported_protocol");
+        return (await post("tools/call", { name: read.tool, arguments: read.args }))!;
+      },
     });
   } catch (error) {
     if (
@@ -2069,6 +2076,38 @@ export async function readConsumerVoiceToolJob(
     });
   } catch (error) {
     if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    return videoPreflightError(error);
+  }
+}
+
+/* ── Atomik planner context (slice A1) ────────────────────────────────── */
+/** The fixed free reads, each checked against our connection's advertised
+ * surface first. A read the connection does not offer, or one that fails, is
+ * reported as unavailable; one failure never stops the others. Nothing here
+ * prices, imports, generates or selects anything. */
+export async function readConnectedPlannerReads(accessToken: string, reads: PlannerRead[], options: Options = {}): Promise<PlannerReadResult[]> {
+  if (reads.some((read) => !PLANNER_READ_TOOLS.includes(read.tool))) throw new ConsumerVideoError("invalid_input");
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const { toolset } = await connectedToolset(session);
+      const results: PlannerReadResult[] = [];
+      for (const read of reads) {
+        if (!session.active() || checkTool(toolset, read.tool, read.args) !== "ok") {
+          results.push({ name: read.name, unavailable: true });
+          continue;
+        }
+        try {
+          const normalized = normalizeQualificationResult(await session.plannerRead(read), session.secrets);
+          results.push(normalized.isError ? { name: read.name, unavailable: true } : { name: read.name, value: normalized.result });
+        } catch (error) {
+          if (error instanceof ConsumerDiscoveryError && (error.code === "reconnect_required" || error.code === "rate_limited")) throw error;
+          results.push({ name: read.name, unavailable: true });
+        }
+      }
+      return results;
+    });
+  } catch (error) {
     return videoPreflightError(error);
   }
 }

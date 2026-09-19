@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { claimStep, getStep } from "@/lib/atomik";
+import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,12 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   const got = await requireRender();
   if (got.response) return got.response;
   const { id } = await ctx.params;
+
+  /* A connected-account step is approved at its exact connected price through
+     its own route, which quotes, claims and submits in one place. */
+  const pending = await getStep(id);
+  if (pending && connectedMeta(pending.params))
+    return NextResponse.json({ error: "Approve this step at its connected-credit price.", step: pending }, { status: 409 });
 
   const step = await claimStep(id);
   if (step) return NextResponse.json({ step });

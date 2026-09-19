@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePrice } from "@/lib/price";
 import { appConfirm } from "@/components/dialog";
 import type { Step, Engine } from "@/lib/atomik";
+import { connectedMeta } from "@/lib/higgsfield-consumer/planner-proposals";
 
 /**
  * The gate.
@@ -68,7 +69,8 @@ export default function ApprovalCard({
     return () => document.removeEventListener("keydown", onKey, true);
   }, [step, busy, onReject]);
 
-  const verb = step.kind === "audio" ? "audio" : step.kind === "image" ? "image" : "video";
+  const verb = step.kind === "audio" ? "audio" : step.kind === "image" ? "image" : step.kind === "3d" ? "3D" : "video";
+  const connected = connectedMeta(step.params);
 
   return (
     <div ref={cardRef} className="approve" role="group" aria-label={`Approve ${verb} generation`}>
@@ -141,7 +143,7 @@ export default function ApprovalCard({
             <>
               Approve
               <span className="approve-price">
-                {step.estCostUsd == null ? "priced at render" : price(step.estCostUsd, step.model)}
+                {connected ? `${connected.credits.toLocaleString("en-US")} connected cr` : step.estCostUsd == null ? "priced at render" : price(step.estCostUsd, step.model)}
               </span>
               <kbd>↵</kbd>
             </>
