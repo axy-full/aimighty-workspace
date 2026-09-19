@@ -13,7 +13,7 @@ export type PageId = ParticlPageId | AtomikPageId | MoleculrPageId | SubatomikPa
 
 export type View = "home" | "studio";
 export type SelKind = "shot" | "take" | "cast" | "page";
-export type RunStatus = "running" | "waiting" | "paused" | "done";
+export type RunStatus = "running" | "waiting" | "paused" | "done" | "failed";
 export type RigView = "list" | "graph";
 export type LibFilter = "All" | "Uploads" | "Generations";
 export type LibTab = "tools" | "media";

@@ -151,7 +151,7 @@ export async function loadActivity(
   fetcher: typeof fetch,
   ids: { projectId: string | null; productionId: string | null },
   now = Date.now(),
-): Promise<{ entries: ActivityEntry[][]; errors: string[] }> {
+): Promise<{ entries: ActivityEntry[][]; errors: string[]; rendering: { name: string } | null }> {
   const errors: string[] = [];
   const read = async <T,>(path: string): Promise<T | null> => {
     try {
@@ -172,7 +172,12 @@ export async function loadActivity(
     production ? read<{ runs: (ActivityPipelineRun & { context?: { projectId?: string } })[] }>(`/api/pipelines?projectId=${production}`) : null,
     draft ? read<{ jobs: ActivityAgentJob[] }>(`/api/workbench/atomik?projectId=${draft}`) : null,
   ]);
+  /* The newest job still in flight feeds the NEXT line's "Rendering …" clause. */
+  const live = (jobs?.generations ?? [])
+    .filter((job) => !["succeeded", "failed", "cancelled", "held"].includes(job.status))
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0];
   return {
+    rendering: live ? { name: nameOf(live) } : null,
     entries: [
       activityFromJobs(jobs?.generations ?? [], now),
       activityFromRuns(

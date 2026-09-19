@@ -1,5 +1,6 @@
 "use client";
 import { useEffect } from "react";
+import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { projectUploads, useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
 import { resolveKey, SHELL_BINDINGS, type KeyBinding, type ShellAction } from "@/lib/workspace/keys";
 import { PAGES } from "@/lib/workspace/pages";
@@ -28,7 +29,7 @@ export type ShellSeams = {
   bindings?: KeyBinding<unknown>[];
 };
 
-export function WorkspaceShell({ scope, initialAccount, seams = {} }: { scope: string; initialAccount: WorkspaceAccount | null; seams?: ShellSeams }) {
+export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }: { scope: string; initialAccount: WorkspaceAccount | null; seams?: ShellSeams; planBridge?: PlanBridge }) {
   const ws = useWorkspace();
   const { state, dispatch, go, selectProject } = ws;
   const account = useAccount(initialAccount);
@@ -74,6 +75,7 @@ export function WorkspaceShell({ scope, initialAccount, seams = {} }: { scope: s
   const reason = primaryAvailability(state, seams.onGenerate).reason;
 
   return (
+    <AtomikHost scope={scope} project={project} bridge={planBridge}>
     <div className="pxw" data-view={state.view}>
       <TopBar account={account} onOpenPalette={seams.onOpenPalette} />
       {state.view === "studio" ? (
@@ -100,6 +102,7 @@ export function WorkspaceShell({ scope, initialAccount, seams = {} }: { scope: s
       <AtomikPanel />
       <ToastHost />
     </div>
+    </AtomikHost>
   );
 }
 
