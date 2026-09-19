@@ -4,40 +4,45 @@ import { db } from "../db";
 import { currentTenant, requireTenant } from "../tenant";
 import { quotaVerdict, workspaceLimits } from "../limits";
 import { uploadReservationsReady } from "../uploadReservations";
-import { readVideoBytesLimited, storeVideoBytes } from "../storage";
+import { readOriginalBytesLimited, storeOriginalBytes, storeVideoBytes } from "../storage";
+import { astraTextureDimensions, validateAstraGlb } from "../astra-blender/glb";
 import { withRecoveryActivity } from "../recovery";
 import { workbenchReady, workbenchTransaction } from "../workbench/records";
 import {
   CONSUMER_VIDEO_BYTES,
-  fetchPublicConsumerVideoBytes,
+  fetchPublicConsumerOriginalBytes,
   type ProductFetchDependencies,
 } from "../workbench/product-fetch";
 import { consumerJobsReady, type ConsumerJob } from "./jobs";
-import { consumerVideoIdentity } from "./original-identity";
+import { consumerVideoIdentity, type ConsumerOriginalKind } from "./original-identity";
 
 export const CONSUMER_ORIGINAL_LEASE_MS = 180_000;
 export const CONSUMER_ORIGINAL_DEADLINE_MS = 90_000;
-type Metadata = { width: number; height: number; seconds: number };
+type Metadata = { width?: number; height?: number; seconds?: number; mime?: string };
+/** A retained connected-account original. Video receipts keep their original
+ * shape; image, audio and 3D receipts carry only the fields their kind has. */
 export type ConsumerVideoOriginal = {
   generationId: string;
   providerJobId: string;
   bytes: number;
   sha256: string;
-  width: number;
-  height: number;
-  seconds: number;
+  width?: number;
+  height?: number;
+  seconds?: number;
+  mime?: string;
   credits: number;
   creditUnit: "higgsfield_credits";
   asset: {
     generationId: string;
     url: string;
-    kind: "video";
-    mime: "video/mp4";
-    width: number;
-    height: number;
-    durationS: number;
+    kind: ConsumerOriginalKind;
+    mime: string;
+    width?: number;
+    height?: number;
+    durationS?: number;
   };
 };
+export type ConsumerOriginal = ConsumerVideoOriginal;
 export class ConsumerOriginalError extends Error {
   constructor(
     readonly code:
@@ -86,7 +91,7 @@ export function consumerOriginalGenerationId(
 /** Metadata/packet inspection only, never transcoding or fetching references. */
 export async function inspectConsumerVideoOriginal(
   bytes: Buffer,
-): Promise<Metadata> {
+): Promise<{ width: number; height: number; seconds: number; mime: "video/mp4" }> {
   if (!bytes.length || bytes.length > CONSUMER_VIDEO_BYTES)
     throw new ConsumerOriginalError("invalid_video");
   const { Input, BufferSource, MP4, EncodedPacketSink } =
@@ -123,7 +128,7 @@ export async function inspectConsumerVideoOriginal(
           width * height > 40_000_000
         )
           throw new ConsumerOriginalError("invalid_video");
-        return { width, height, seconds };
+        return { width, height, seconds, mime: "video/mp4" as const };
       })(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
@@ -138,6 +143,46 @@ export async function inspectConsumerVideoOriginal(
     clearTimeout(timer);
     input.dispose();
   }
+}
+
+const sniff = {
+  png: (b: Buffer) => b.length > 8 && b.readUInt32BE(0) === 0x89504e47,
+  jpeg: (b: Buffer) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  webp: (b: Buffer) => b.length > 12 && b.toString("latin1", 0, 4) === "RIFF" && b.toString("latin1", 8, 12) === "WEBP",
+  wav: (b: Buffer) => b.length > 12 && b.toString("latin1", 0, 4) === "RIFF" && b.toString("latin1", 8, 12) === "WAVE",
+  mp3: (b: Buffer) => b.length > 3 && (b.toString("latin1", 0, 3) === "ID3" || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0)),
+  ogg: (b: Buffer) => b.length > 4 && b.toString("latin1", 0, 4) === "OggS",
+  flac: (b: Buffer) => b.length > 4 && b.toString("latin1", 0, 4) === "fLaC",
+  m4a: (b: Buffer) => b.length > 12 && b.toString("latin1", 4, 8) === "ftyp",
+  glb: (b: Buffer) => b.length > 12 && b.readUInt32LE(0) === 0x46546c67,
+  zip: (b: Buffer) => b.length > 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04,
+};
+/** Byte-level identification only; the served type is what the bytes are, not
+ * what the provider's header claimed. GLB files must pass the Astra validator. */
+export async function inspectConsumerOriginal(kind: ConsumerOriginalKind, bytes: Buffer): Promise<Metadata> {
+  if (kind === "video") return inspectConsumerVideoOriginal(bytes);
+  if (!bytes.length || bytes.length > CONSUMER_VIDEO_BYTES) throw new ConsumerOriginalError("invalid_video");
+  try {
+    if (kind === "image") {
+      const mime = sniff.png(bytes) ? "image/png" : sniff.jpeg(bytes) ? "image/jpeg" : sniff.webp(bytes) ? "image/webp" : null;
+      if (!mime) throw new ConsumerOriginalError("invalid_video");
+      const { width, height } = astraTextureDimensions(bytes, mime);
+      return { width, height, mime };
+    }
+    if (kind === "audio") {
+      const mime = sniff.wav(bytes) ? "audio/wav" : sniff.ogg(bytes) ? "audio/ogg" : sniff.flac(bytes) ? "audio/flac" : sniff.m4a(bytes) ? "audio/mp4" : sniff.mp3(bytes) ? "audio/mpeg" : null;
+      if (!mime) throw new ConsumerOriginalError("invalid_video");
+      return { mime };
+    }
+    if (sniff.glb(bytes)) {
+      validateAstraGlb(bytes);
+      return { mime: "model/gltf-binary" };
+    }
+    if (sniff.zip(bytes)) return { mime: "application/zip" };
+  } catch {
+    throw new ConsumerOriginalError("invalid_video");
+  }
+  throw new ConsumerOriginalError("invalid_video");
 }
 
 async function currentJob(tx: Transaction, job: ConsumerJob) {
@@ -156,7 +201,7 @@ async function currentJob(tx: Transaction, job: ConsumerJob) {
     row.payload_json !== job.payloadJson ||
     Number(row.quote_credits) !== job.quoteCredits ||
     row.connection_generation !== job.connectionGeneration ||
-    row.workflow !== job.workflow || !["marketing-video", "genjutsu"].includes(job.workflow)
+    row.workflow !== job.workflow || !["marketing-video", "genjutsu", "generation"].includes(job.workflow)
   )
     throw new ConsumerOriginalError("not_found");
   return row;
@@ -191,14 +236,14 @@ function ownedGeneration(row: Row | undefined, job: ConsumerJob) {
     params.consumerProviderJobId !== job.providerJobId ||
     row.provider !== "higgsfield" ||
     row.model !== consumerVideoIdentity(job).model ||
-    row.kind !== "video" ||
+    row.kind !== consumerVideoIdentity(job).kind ||
     row.status !== "succeeded"
   )
     throw new ConsumerOriginalError("conflict");
 }
 
 /** Uses a server-written receipt, not merely user-controllable generation params. */
-export const RETAINED_CONSUMER_ORIGINAL_SQL = `g.status='succeeded' AND g.provider='higgsfield' AND g.model IN ('marketing_studio_video','hf_mult_motion_control','hf_mult_replace_object') AND g.kind='video' AND g.stored_url IS NOT NULL
+export const RETAINED_CONSUMER_ORIGINAL_SQL = `g.status='succeeded' AND g.provider='higgsfield' AND (g.model IN ('marketing_studio_video','hf_mult_motion_control','hf_mult_replace_object') OR json_extract(g.params,'$.task')='connected-generation') AND g.kind IN ('video','image','audio','model') AND g.stored_url IS NOT NULL
   AND json_extract(g.params,'$.consumerCreditUnit')='higgsfield_credits'
   AND EXISTS(SELECT 1 FROM consumer_video_originals o WHERE o.generation_id=g.id AND o.state='stored' AND o.receipt_json IS NOT NULL
     AND o.owner_id=g.created_by AND o.bytes=g.bytes AND o.job_id=json_extract(g.params,'$.consumerJobId')
@@ -220,23 +265,26 @@ function receipt(
   bytes: number,
   sha256: string,
   metadata: Metadata,
+  kind: ConsumerOriginalKind,
 ): ConsumerVideoOriginal {
+  const { mime, ...dimensions } = metadata;
   return {
     generationId,
     providerJobId: job.providerJobId!,
     bytes,
     sha256,
-    ...metadata,
+    ...dimensions,
+    ...(kind === "video" ? {} : { mime: mime! }),
     credits: job.quoteCredits,
     creditUnit: "higgsfield_credits",
     asset: {
       generationId,
       url: `/api/media/${generationId}`,
-      kind: "video",
-      mime: "video/mp4",
-      width: metadata.width,
-      height: metadata.height,
-      durationS: metadata.seconds,
+      kind,
+      mime: kind === "video" ? "video/mp4" : mime!,
+      ...(metadata.width !== undefined ? { width: metadata.width } : {}),
+      ...(metadata.height !== undefined ? { height: metadata.height } : {}),
+      ...(metadata.seconds !== undefined ? { durationS: metadata.seconds } : {}),
     },
   };
 }
@@ -259,7 +307,8 @@ export async function collectConsumerVideoOriginal(
   )
     throw new ConsumerOriginalError("not_found");
   await consumerJobsReady();
-  const identity = consumerVideoIdentity(job);
+  const identity = consumerVideoIdentity(job),
+    kind = identity.kind;
   await workbenchReady();
   await uploadReservationsReady();
   const generationId = consumerOriginalGenerationId(workspace.id, job.id),
@@ -343,7 +392,7 @@ export async function collectConsumerVideoOriginal(
           Number(prior.row.bytes) > 0
         ) {
           bytes = await bound(() =>
-            readVideoBytesLimited(generationId, Number(prior.row!.bytes)),
+            readOriginalBytesLimited(kind, generationId, Number(prior.row!.bytes)),
           );
           if (bytes) {
             if (
@@ -357,18 +406,19 @@ export async function collectConsumerVideoOriginal(
         if (!bytes) {
           bytes = (
             await bound(() =>
-              fetchPublicConsumerVideoBytes(
+              fetchPublicConsumerOriginalBytes(
                 verifiedOriginalUrl,
+                kind,
                 options.fetchDependencies,
               ),
             )
           ).bytes;
-          metadata = await bound(() => inspectConsumerVideoOriginal(bytes!));
+          metadata = await bound(() => inspectConsumerOriginal(kind, bytes!));
         }
         const sha256 = digest(bytes),
           size = bytes.length,
           limit = (await workspaceLimits()).storageBytes;
-        const result = receipt(job, generationId, size, sha256, metadata!);
+        const result = receipt(job, generationId, size, sha256, metadata!, kind);
         await workbenchTransaction(async (tx) => {
           await currentJob(tx, job);
           const row = await originalRow(tx, job.id);
@@ -409,7 +459,7 @@ export async function collectConsumerVideoOriginal(
           });
         });
         const stored = await bound(() =>
-          (options.store ?? storeVideoBytes)(generationId, bytes!),
+          (options.store ?? ((id: string, data: Buffer) => storeOriginalBytes(kind, id, data, result.asset.mime)))(generationId, bytes!),
         );
         if (
           stored.bytes !== size ||
@@ -452,18 +502,19 @@ export async function collectConsumerVideoOriginal(
           }
           const params = {
             ...identity.params,
-            duration: metadata!.seconds,
+            ...(metadata!.seconds !== undefined ? { duration: metadata!.seconds } : {}),
             ...(job.workflow === "genjutsu" ? { ratio: `${metadata!.width}:${metadata!.height}` } : {}),
             consumerJobId: job.id,
             consumerProviderJobId: job.providerJobId,
             consumerCredits: job.quoteCredits,
             consumerCreditUnit: "higgsfield_credits",
             originalSha256: sha256,
-            width: metadata!.width,
-            height: metadata!.height,
+            ...(metadata!.width !== undefined ? { width: metadata!.width } : {}),
+            ...(metadata!.height !== undefined ? { height: metadata!.height } : {}),
+            ...(job.workflow === "generation" ? { consumerOriginalMime: result.asset.mime } : {}),
           };
           await tx.execute({
-            sql: `INSERT INTO generations(id,project_id,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,kind,provider,bytes,billed_to) VALUES(?,?,?,?,?,'succeeded',?,NULL,?,?,?,'video','higgsfield',?,'higgsfield')`,
+            sql: `INSERT INTO generations(id,project_id,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,kind,provider,bytes,billed_to) VALUES(?,?,?,?,?,'succeeded',?,NULL,?,?,?,?,'higgsfield',?,'higgsfield')`,
             args: [
               generationId,
               projectId,
@@ -474,6 +525,7 @@ export async function collectConsumerVideoOriginal(
               job.userId,
               job.createdAt,
               Date.now(),
+              kind,
               size,
             ],
           });

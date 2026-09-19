@@ -4,10 +4,14 @@ import type { Client, Row, Transaction } from "@libsql/client";
 import { db, ready } from "@/lib/db";
 import { workbenchTransaction } from "@/lib/workbench/records";
 import { validateConsumerGenjutsuSources } from "./genjutsu-sources";
+import { validateConsumerGenerationSources } from "./generation-sources";
 import { columnInstaller } from "@/lib/schemaInitialization";
 
 export type ConsumerWorkflow =
-  "marketing-video" | "reference-match" | "virality" | "genjutsu";
+  "marketing-video" | "reference-match" | "virality" | "genjutsu" | "generation";
+export const CONSUMER_WORKFLOWS: readonly ConsumerWorkflow[] = Object.freeze([
+  "marketing-video", "reference-match", "virality", "genjutsu", "generation",
+]);
 export type ConsumerJobStatus =
   "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
 export type ConsumerJson =
@@ -258,10 +262,7 @@ export async function createConsumerJob(
   identifier(input.idempotencyKey, 128);
   const workspaceId = input.higgsfieldWorkspaceId ?? null;
   if (workspaceId !== null) identifier(workspaceId);
-  if (
-    !["marketing-video", "reference-match", "virality", "genjutsu"].includes(input.workflow)
-  )
-    invalid();
+  if (!CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
   if (
     !Number.isFinite(input.quoteCredits) ||
     input.quoteCredits < 0 ||
@@ -301,6 +302,7 @@ export async function createConsumerJob(
   return workbenchTransaction(async (tx) => {
     await requireDraft(tx, input);
     if(input.workflow === "genjutsu") await validateConsumerGenjutsuSources(tx, JSON.parse(payloadJson).input);
+    if(input.workflow === "generation") await validateConsumerGenerationSources(tx, JSON.parse(payloadJson).input);
     const previous = (
       await tx.execute({
         sql: "SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND idempotency_key=?",
@@ -388,7 +390,7 @@ export async function listConsumerRecoveryJobs(
   scope(input);
   const limit = input.limit ?? 25;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 ||
-      !["marketing-video", "reference-match", "virality", "genjutsu"].includes(input.workflow)) invalid();
+      !CONSUMER_WORKFLOWS.includes(input.workflow)) invalid();
   await consumerJobsReady();
   const rows = await workbenchTransaction(tx => tx.execute({
     sql: `SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND workflow=?
@@ -452,6 +454,7 @@ export async function claimConsumerDispatch(
     // remain accessible to their immutable owner for reconciliation.
     await requireDraft(tx, input);
     if(row.workflow === "genjutsu") await validateConsumerGenjutsuSources(tx, JSON.parse(String(row.payload_json)).input);
+    if(row.workflow === "generation") await validateConsumerGenerationSources(tx, JSON.parse(String(row.payload_json)).input);
     const now = Date.now();
     if (Number(row.quote_expires_at) <= now)
       throw new ConsumerJobError("quote_expired");
@@ -578,7 +581,7 @@ export async function reconcileConsumerReceipt(
   await consumerJobsReady();
   return workbenchTransaction(async tx => {
     const row = await requiredRow(tx, input);
-    if (row.provider_receipt !== expected || !row.dispatch_claim_hash || !["marketing-video", "genjutsu"].includes(String(row.workflow))) return null;
+    if (row.provider_receipt !== expected || !row.dispatch_claim_hash || !["marketing-video", "genjutsu", "generation"].includes(String(row.workflow))) return null;
     if (row.provider_job_id != null) {
       if (row.provider_job_id !== providerJobId) throw new ConsumerJobError("provider_job_conflict");
       return asJob(row);

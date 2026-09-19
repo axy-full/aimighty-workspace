@@ -427,6 +427,39 @@ export function fetchPublicProductImageBytes(
   return fetchPublicProductResource(value, imagePolicy, overrides);
 }
 
+const consumerPolicy = (accept: string, mimes: string[], noun: string): FetchPolicy => ({
+  limit: CONSUMER_VIDEO_BYTES,
+  deadlineMs: 60_000,
+  httpsOnly: true,
+  completeLength: true,
+  accept,
+  mimes,
+  contentError: `The original ${noun} must be an uncompressed response of a supported type.`,
+  sizeError: `The original ${noun} exceeds the 100 MB collection limit.`,
+  sizeCode: "video_too_large",
+});
+const consumerPolicies = {
+  video: videoPolicy,
+  image: consumerPolicy("image/png,image/jpeg,image/webp", ["image/png", "image/jpeg", "image/webp"], "image"),
+  audio: consumerPolicy(
+    "audio/mpeg,audio/wav,audio/x-wav,audio/ogg,audio/mp4,audio/aac,audio/flac,application/octet-stream;q=0.5",
+    ["audio/mpeg", "audio/wav", "audio/x-wav", "audio/ogg", "audio/mp4", "audio/aac", "audio/flac", "application/octet-stream"],
+    "audio",
+  ),
+  model: consumerPolicy(
+    "model/gltf-binary,application/zip,application/octet-stream;q=0.5",
+    ["model/gltf-binary", "application/zip", "application/octet-stream"],
+    "3D file",
+  ),
+} as const;
+/** Same fence as the video collector for image, audio and 3D originals. */
+export function fetchPublicConsumerOriginalBytes(
+  value: string,
+  kind: keyof typeof consumerPolicies,
+  overrides?: Partial<ProductFetchDependencies>,
+) {
+  return fetchPublicProductResource(value, consumerPolicies[kind], overrides);
+}
 /** A verified provider result URL only; no credentials or cookies are forwarded.
  * Container/track validation must follow before these bytes are retained. */
 export function fetchPublicConsumerVideoBytes(

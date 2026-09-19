@@ -32,6 +32,12 @@ const prefix = () => { const ws = currentTenant()?.workspace; return ws && !ws.l
 export const videoPath  = (genId: string) => `${prefix()}generations/${genId}.mp4`;
 export const imagePath  = (genId: string) => `${prefix()}generations/${genId}.png`;
 export const audioPath  = (genId: string) => `${prefix()}generations/${genId}.mp3`;
+/** 3D originals from the connected account (GLB, or a zip the provider returned). */
+export const modelPath  = (genId: string) => `${prefix()}generations/${genId}.glb`;
+export type OriginalKind = "video" | "image" | "audio" | "model";
+const originalExt: Record<OriginalKind, string> = { video: "mp4", image: "png", audio: "mp3", model: "glb" };
+const originalPath = (kind: OriginalKind, genId: string) =>
+  kind === "image" ? imagePath(genId) : kind === "audio" ? audioPath(genId) : kind === "model" ? modelPath(genId) : videoPath(genId);
 /** The photo set an identity was trained from, zipped for the trainer. */
 export const identityZipPath = (identityId: string) => `${prefix()}identities/${identityId}.zip`;
 export const uploadPath = (uploadId: string, ext: string) => `${prefix()}uploads/${uploadId}.${ext}`;
@@ -135,10 +141,11 @@ export async function readVideoBytes(genId: string): Promise<Buffer> {
 }
 
 /** Bounded private read for immutable consumer-original recovery. */
-export async function readVideoBytesLimited(genId: string, maximum: number): Promise<Buffer | null> {
+export const readVideoBytesLimited = (genId: string, maximum: number) => readOriginalBytesLimited("video", genId, maximum);
+export async function readOriginalBytesLimited(kind: OriginalKind, genId: string, maximum: number): Promise<Buffer | null> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId) || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 100 * 1024 * 1024) throw new Error("Invalid original video read.");
   if (!usingCloud()) {
-    const file = path.join(LOCAL_DIR, `${genId}.mp4`);
+    const file = path.join(LOCAL_DIR, `${genId}.${originalExt[kind]}`);
     try {
       if ((await stat(file)).size > maximum) throw new Error("Stored original exceeds its recorded length.");
       const bytes = await readFile(file);
@@ -146,7 +153,7 @@ export async function readVideoBytesLimited(genId: string, maximum: number): Pro
       return bytes;
     } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
   }
-  const found = await cloudBackend().get(videoPath(genId), { signal: AbortSignal.timeout(20_000) });
+  const found = await cloudBackend().get(originalPath(kind, genId), { signal: AbortSignal.timeout(20_000) });
   if (!found) return null;
   const reader = found.stream.getReader(), chunks: Uint8Array[] = [];
   let length = 0;
@@ -163,23 +170,26 @@ export async function readVideoBytesLimited(genId: string, maximum: number): Pro
 
 /** Store an already validated MP4 without changing a byte. Unlike mutable render
  * storage, this never overwrites a prior original: repeats must match its hash. */
-export async function storeVideoBytes(genId: string, bytes: Buffer): Promise<{url: string; bytes: number; sha256: string}> {
+export const storeVideoBytes = (genId: string, bytes: Buffer) => storeOriginalBytes("video", genId, bytes, "video/mp4");
+/** Immutable original storage for every connected-account output kind. The
+ * content type is what the provider served; the object path is fixed per kind. */
+export async function storeOriginalBytes(kind: OriginalKind, genId: string, bytes: Buffer, contentType: string): Promise<{url: string; bytes: number; sha256: string}> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId) || !bytes.length || bytes.length > 100 * 1024 * 1024) throw new Error("Invalid original video.");
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const verifyExisting = async () => {
-    const existing = await readVideoBytesLimited(genId, bytes.length);
+    const existing = await readOriginalBytesLimited(kind, genId, bytes.length);
     if (!existing || existing.length !== bytes.length || createHash("sha256").update(existing).digest("hex") !== sha256) throw new Error("The stored original could not be verified; it was not overwritten.");
   };
   await withRecoveryActivity("storage", async () => {
     if (usingCloud()) {
       // overwrite:false rejects with ObjectExistsError when the original is
       // already there; any failure to write leads to the same verification.
-      try { await cloudBackend().put(videoPath(genId), bytes, { contentType: "video/mp4", overwrite: false, signal: AbortSignal.timeout(30_000) }); }
+      try { await cloudBackend().put(originalPath(kind, genId), bytes, { contentType, overwrite: false, signal: AbortSignal.timeout(30_000) }); }
       catch { await verifyExisting(); }
       return;
     }
     await mkdir(LOCAL_DIR, { recursive: true });
-    const destination = path.join(LOCAL_DIR, `${genId}.mp4`), temporary = path.join(LOCAL_DIR, `.${genId}.${randomUUID()}.tmp`);
+    const destination = path.join(LOCAL_DIR, `${genId}.${originalExt[kind]}`), temporary = path.join(LOCAL_DIR, `.${genId}.${randomUUID()}.tmp`);
     try {
       await writeFile(temporary, bytes, { flag: "wx" });
       try { await link(temporary, destination); }
@@ -233,6 +243,11 @@ export async function readAudioBytes(genId: string): Promise<Buffer> {
   if (usingCloud()) return readCloud(audioPath(genId));
   return readFile(path.join(LOCAL_DIR, `${genId}.mp3`));
 }
+export async function readModelBytes(genId: string): Promise<Buffer> {
+  if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
+  if (usingCloud()) return readCloud(modelPath(genId));
+  return readFile(path.join(LOCAL_DIR, `${genId}.glb`));
+}
 
 /**
  * The zip a trainer learns a face from. Private like everything else; the
@@ -263,17 +278,17 @@ return await withRecoveryActivity('storage', async () => {
  * when the bytes are only passing through.
  */
 export async function openMediaStream(
-  genId: string, kind: "video" | "image" | "audio"
+  genId: string, kind: OriginalKind
 ): Promise<ReadableStream<Uint8Array>> {
   if (!/^[A-Za-z0-9_-]+$/.test(genId)) throw new Error("bad id");
-  const pathname = kind === "image" ? imagePath(genId) : kind === "audio" ? audioPath(genId) : videoPath(genId);
+  const pathname = originalPath(kind, genId);
   if (usingCloud()) {
     const found = await cloudBackend().get(pathname);
     if (!found) throw new Error("blob not found");
     return found.stream;
   }
   const { createReadStream } = await import("node:fs");
-  const local = path.join(LOCAL_DIR, `${genId}.${kind === "image" ? "png" : kind === "audio" ? "mp3" : "mp4"}`);
+  const local = path.join(LOCAL_DIR, `${genId}.${originalExt[kind]}`);
   const node = createReadStream(local);
   return new ReadableStream<Uint8Array>({
     start(controller) {

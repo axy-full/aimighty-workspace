@@ -1,5 +1,5 @@
 import { isGenjutsuModel } from "./genjutsuTypes";
-import { isConsumerVideoModel } from "./higgsfield-consumer/original-identity";
+import { isConsumerVideoModel, isConsumerOriginalParams } from "./higgsfield-consumer/original-identity";
 import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
@@ -39,7 +39,7 @@ export type Generation = {
   projectId: string | null;
   projectName: string | null;
   arkTaskId: string | null;
-  kind: "video" | "image" | "audio";
+  kind: "video" | "image" | "audio" | "model";
   reviewState: "" | "approved" | "picked" | "changes";
   reviewBy: string | null;
   pickedBy: string | null;
@@ -111,7 +111,7 @@ export function rowToGeneration(r: any): Generation {
   const params = JSON.parse(r.params || "{}");
   const providerCreditQuote: ProviderCreditQuote | null =
     /^gen_hfc_[a-f0-9]{40}$/.test(r.id) && r.provider === "higgsfield" &&
-    isConsumerVideoModel(r.model) && r.status === "succeeded" &&
+    (isConsumerVideoModel(r.model) || isConsumerOriginalParams(params)) && r.status === "succeeded" &&
     params.consumerCreditUnit === "higgsfield_credits" &&
     typeof params.consumerCredits === "number" && Number.isFinite(params.consumerCredits) && params.consumerCredits >= 0
       ? { provider: "higgsfield", unit: "higgsfield_credits", credits: params.consumerCredits, basis: "approved_quote" }
@@ -135,7 +135,7 @@ export function rowToGeneration(r: any): Generation {
     projectId: r.project_id ?? null,
     projectName: r.project_name ?? null,
     arkTaskId: r.ark_task_id ?? null,
-    kind: r.kind === "image" ? "image" : r.kind === "audio" ? "audio" : "video",
+    kind: r.kind === "image" ? "image" : r.kind === "audio" ? "audio" : r.kind === "model" ? "model" : "video",
     reviewState: r.review_state === "approved" ? "approved"
       : r.review_state === "picked" ? "picked"
       : r.review_state === "changes" ? "changes" : "",
@@ -249,7 +249,7 @@ export async function listGenerations(opts: {
     args.push(opts.status);
   }
   if (opts.kind === "image" || opts.kind === "video" || opts.kind === "audio") {
-    where.push(opts.kind === "image" ? "g.kind = 'image'" : opts.kind === "audio" ? "g.kind = 'audio'" : "g.kind NOT IN ('image','audio')");
+    where.push(opts.kind === "image" ? "g.kind = 'image'" : opts.kind === "audio" ? "g.kind = 'audio'" : "g.kind NOT IN ('image','audio','model')");
   }
   if (opts.identityId) {
     where.push("json_extract(g.params, '$.identity.id') = ?");
@@ -303,7 +303,7 @@ export async function syncGeneration(
   gen: Generation,
   options: { strict?: boolean } = {},
 ): Promise<Generation> {
-  if (gen.status === "succeeded" && gen.provider === "higgsfield" && isConsumerVideoModel(gen.model) && gen.storedUrl && await hasRetainedConsumerOriginal(gen.id)) return gen;
+  if (gen.status === "succeeded" && gen.provider === "higgsfield" && (isConsumerVideoModel(gen.model) || isConsumerOriginalParams(gen.params)) && gen.storedUrl && await hasRetainedConsumerOriginal(gen.id)) return gen;
 return await withRecoveryJob(requireTenant().id, gen.id, async () => {
 
   await deliverGenerationSettlement(gen.id);
@@ -649,7 +649,9 @@ export async function syncPending(
               },
               {
                 id: gen.id,
-                kind: gen.kind,
+                // Retained connected-account originals are never queued here;
+                // a 3D row cannot reach this path, so meter it as a still.
+                kind: gen.kind === "model" ? "image" : gen.kind,
                 engine: billedTo(gen.provider),
                 model: gen.model,
                 status: "failed",

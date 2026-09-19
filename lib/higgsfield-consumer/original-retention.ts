@@ -14,9 +14,11 @@ const pendingOriginalIds = `SELECT g.id FROM consumer_video_originals o
   WHERE j.status='accepted' AND j.dispatch_claim_hash IS NOT NULL
     AND ((j.workflow='marketing-video' AND g.model='marketing_studio_video') OR
       (j.workflow='genjutsu' AND g.model IN ('hf_mult_motion_control','hf_mult_replace_object')
+        AND g.model=json_extract(CASE WHEN json_valid(j.payload_json) THEN j.payload_json ELSE '{}' END,'$.params.model')) OR
+      (j.workflow='generation'
         AND g.model=json_extract(CASE WHEN json_valid(j.payload_json) THEN j.payload_json ELSE '{}' END,'$.params.model')))
     AND o.state='stored' AND o.receipt_json IS NOT NULL AND o.sha256 IS NOT NULL
-    AND g.status='succeeded' AND g.provider='higgsfield' AND g.kind='video'
+    AND g.status='succeeded' AND g.provider='higgsfield' AND g.kind IN ('video','image','audio','model')
     AND g.stored_url IS NOT NULL AND g.bytes=o.bytes
     AND json_extract(CASE WHEN json_valid(g.params) THEN g.params ELSE '{}' END,'$.consumerJobId')=o.job_id
     AND json_extract(CASE WHEN json_valid(g.params) THEN g.params ELSE '{}' END,'$.consumerProviderJobId')=o.provider_job_id
