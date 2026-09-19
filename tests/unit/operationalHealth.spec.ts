@@ -22,6 +22,7 @@ function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseD
     "@/lib/storage": { presignedReadUrl: async () => "https://private.example/probe?signature=SECRET" },
     "@/lib/mail": { mailConfigured: () => false, mailFrom: () => null },
     "@/lib/mock": { engineMock: () => false },
+    "@/lib/dispatch": { dispatchMode: () => "native" },
     "@vercel/blob": {
       put: async (key: string) => { writes.push(key); return { url: "https://private.example/" + key }; },
       del: async (url: string) => { deletes.push(url); if (options.cleanupFails) throw new Error("SECRET_TOKEN"); },
@@ -42,7 +43,7 @@ test("public health is read-only and explicitly does not claim storage verificat
   const f = healthFixture();
   const response = await f.get(new Request("https://example.test/api/health"));
   expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ ok: true, database: "ok", storageVerified: false });
+  expect(await response.json()).toMatchObject({ ok: true, database: "ok", storageVerified: false, dispatch: { mode: "native" } });
   expect(f.writes).toHaveLength(0);
 });
 

@@ -12,6 +12,7 @@ import { db, ready } from "@/lib/db";
 import { presignedReadUrl } from "@/lib/storage";
 import { mailConfigured, mailFrom } from "@/lib/mail";
 import { engineMock } from "@/lib/mock";
+import { dispatchMode } from "@/lib/dispatch";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -133,6 +134,7 @@ export const GET = recoveryRoute(async function GET(req: Request) {
          this is the database answer — which is the one that goes down. */
         ok,
         mock: engineMock(),
+        dispatch: { mode: dispatchMode() },
         database: database === "unreachable" ? "unreachable" : "ok",
         storage:
           storage === "blob-BROKEN"
@@ -152,6 +154,10 @@ export const GET = recoveryRoute(async function GET(req: Request) {
       {
         ok,
         mock: engineMock(),
+        /* Which dispatcher this deployment hands background work to
+           (lib/dispatch.ts): "native" is /api/worker on Vercel, "inngest"
+           only when DISPATCH_MODE asks for it, "inline" is the request's own after(). */
+        dispatch: { mode: dispatchMode() },
         workspace: { id: ctx!.workspace!.id, name: ctx!.workspace!.name },
         database,
         storage,

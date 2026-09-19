@@ -1,47 +1,59 @@
 import { Inngest } from "inngest";
 import { dispatchRender, recoverRenderDispatches } from "./renderDispatch";
+import { dispatchEvent, dispatchMode, type WorkerEvent } from "./dispatch";
+
+export { EVENTS } from "./dispatch";
 
 /**
  * Stills and audio return bytes synchronously. Dispatch intent and terminal
- * settlement are persisted independently of Inngest; a permanent paid claim
- * prevents duplicate vendor submission even after an ambiguous event send.
- * Completed produce steps can replay their small stored outcome. If a process
- * dies inside a paid call, its uncertain attempt is never purchased again.
+ * settlement are persisted independently of the dispatcher; a permanent paid
+ * claim prevents duplicate vendor submission even after an ambiguous event
+ * send. A completed produce step stores its small outcome on the row, so a
+ * later seal never pays again. If a process dies inside a paid call, its
+ * uncertain attempt is never purchased again.
+ *
+ * Inngest is one of three dispatch modes now (see lib/dispatch.ts); this
+ * client is only ever used when the deployment asks for it explicitly.
  */
 export const inngest = new Inngest({ id: "particl" });
 
-/** Every event this app sends, named in one place so senders can't drift. */
-export const EVENTS = {
-  /** Wiring check, triggered by hand from the dashboard. */
-  probe: "worker/probe",
-  /** A still or a piece of audio whose row already exists as "running". */
-  render: "render/requested",
-  astraRender: "astra-blender/render.requested",
-} as const;
-
 /**
- * Whether this deployment can actually reach Inngest.
+ * Whether Inngest is the dispatcher on this deployment.
  *
- * Both keys are set by the Inngest integration on Vercel, never by hand.
- * Locally neither exists and the dev server stands in for them, so this is
- * only ever consulted in production — where a missing key must read as
- * "not connected yet" rather than as an opaque 500 on a route nobody
- * recognises.
+ * True only in "inngest" mode: DISPATCH_MODE=inngest with both keys set. In
+ * every other case the /api/inngest route answers "not connected" and the
+ * app dispatches natively (production) or inline (development, mocks).
  */
 export function inngestConfigured(): boolean {
-  if (process.env.NODE_ENV !== "production") return true;
-  return Boolean(
-    process.env.INNGEST_SIGNING_KEY && process.env.INNGEST_EVENT_KEY,
-  );
+  return dispatchMode() === "inngest";
+}
+
+/**
+ * The send function for the current mode, or null when there is no queue
+ * and the caller should run the work inline.
+ *
+ * In native mode a refused hand-off (no 202) is surfaced as a throw so every
+ * caller's existing "send failed → false → inline fallback" path applies
+ * unchanged; dispatchEvent itself never throws.
+ */
+export function queueSender(): ((event: WorkerEvent) => Promise<unknown>) | null {
+  const mode = dispatchMode();
+  if (mode === "inngest") return (event) => inngest.send(event);
+  if (mode === "native")
+    return async (event) => {
+      if (!(await dispatchEvent(event)))
+        throw new Error("The native worker did not accept the event.");
+    };
+  return null;
 }
 
 /**
  * Hand a render to the worker, and say whether it was taken.
  *
  * A false answer is not a failure — it means this deployment has no queue
- * reachable right now (no keys, or the send itself failed), and the caller
- * should do the work inline the way it always did. That fallback is what
- * makes the queue safe to adopt: the worst case is the behaviour we had
+ * reachable right now (inline mode, or the send itself failed), and the
+ * caller should do the work inline the way it always did. That fallback is
+ * what makes the queue safe to adopt: the worst case is the behaviour we had
  * before it existed.
  *
  * Delivery intent is stored before sending. The cron can reconstruct an
@@ -51,13 +63,15 @@ export async function enqueueRender(
   genId: string,
   kind: "image" | "audio" | "video",
 ): Promise<boolean> {
-  if (!inngestConfigured()) return false;
-  return dispatchRender(genId, kind, (event) => inngest.send(event));
+  const send = queueSender();
+  if (!send) return false;
+  return dispatchRender(genId, kind, send);
 }
 
 export async function retryRenderDispatches(
   options: { limit?: number; deadlineAt?: number } = {},
 ) {
-  if (!inngestConfigured()) return { attempted: 0, failed: 0, deferred: 0 };
-  return recoverRenderDispatches((event) => inngest.send(event), options);
+  const send = queueSender();
+  if (!send) return { attempted: 0, failed: 0, deferred: 0 };
+  return recoverRenderDispatches(send, options);
 }

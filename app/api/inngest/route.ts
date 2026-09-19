@@ -1,18 +1,22 @@
 import type { NextRequest } from "next/server";
 import { serve } from "inngest/next";
 import { inngest, inngestConfigured } from "@/lib/inngest";
+import { dispatchMode } from "@/lib/dispatch";
 import { functions } from "@/lib/workers";
 import { developmentWorker } from "@/lib/workbench/development-worker";
 
 /**
- * The whole integration surface: one route, three verbs.
+ * The whole Inngest integration surface: one route, three verbs.
  *
  * PUT registers the functions with Inngest, GET reports what this
- * deployment serves, and POST is how Inngest asks a function to run. It is
- * the ONLY route in the app not behind requireUser, because the caller is
- * Inngest rather than a person — the signing key is what authenticates it,
- * which is why the key is required in production and this refuses to
- * pretend otherwise without one.
+ * deployment serves, and POST is how Inngest asks a function to run. Like
+ * /api/worker it is not behind requireUser, because the caller is Inngest
+ * rather than a person — the signing key is what authenticates it.
+ *
+ * Inngest is optional now (docs/native-dispatch.md): this route only
+ * answers when DISPATCH_MODE=inngest and both keys are present. Otherwise
+ * dispatch is native and this says so, rather than letting the library
+ * throw something nobody can act on.
  */
 
 export const dynamic = "force-dynamic";
@@ -21,19 +25,16 @@ export const maxDuration = 300;
 
 const handler = serve({ client: inngest, functions: [...functions, developmentWorker] });
 
-/**
- * A missing key is a setup step, not a crash. Say which one, in the same
- * voice the engines use on the Settings screen, rather than letting the
- * library throw something nobody can act on.
- */
 function notConfigured(): Response {
   return Response.json(
     {
       configured: false,
+      dispatch: { mode: dispatchMode() },
       error:
-        "Inngest isn't connected on this deployment. Add the Inngest integration " +
-        "from the Vercel marketplace — it sets INNGEST_EVENT_KEY and " +
-        "INNGEST_SIGNING_KEY on the project — then redeploy.",
+        "Inngest isn't the dispatcher on this deployment: background work is " +
+        `dispatched ${dispatchMode() === "native" ? "natively through /api/worker" : "inline"}. ` +
+        "To use Inngest instead, set DISPATCH_MODE=inngest and add INNGEST_EVENT_KEY " +
+        "and INNGEST_SIGNING_KEY (the Vercel marketplace integration sets both), then redeploy.",
     },
     { status: 503 }
   );

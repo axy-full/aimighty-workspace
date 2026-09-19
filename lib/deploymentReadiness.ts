@@ -76,10 +76,17 @@ export function deploymentReadiness(
     Boolean(env.CRON_SECRET),
     "CRON_SECRET for reconciliation, billing cycles and deletion retries",
   );
+  /* Background work is dispatched natively through /api/worker, which needs
+     the cron secret and the canonical origin (both checked above as well).
+     Inngest keys are only a requirement for a deployment that opts into it. */
   add(
     "jobs",
-    Boolean(env.INNGEST_EVENT_KEY && env.INNGEST_SIGNING_KEY),
-    "Inngest event and signing keys for durable jobs",
+    env.DISPATCH_MODE === "inngest"
+      ? Boolean(env.INNGEST_EVENT_KEY && env.INNGEST_SIGNING_KEY)
+      : Boolean(env.CRON_SECRET) && origin,
+    env.DISPATCH_MODE === "inngest"
+      ? "Inngest event and signing keys for durable jobs (DISPATCH_MODE=inngest)"
+      : "Native dispatch: CRON_SECRET and APP_ORIGIN for the /api/worker hand-off",
   );
   add(
     "generation",

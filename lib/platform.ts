@@ -231,6 +231,14 @@ const SCHEMA = [
      id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', email TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
      ip_hash TEXT NOT NULL DEFAULT '', mailed INTEGER NOT NULL DEFAULT 0, handled_at INTEGER, created_at INTEGER NOT NULL
    )`,
+  /* Native dispatch concurrency (lib/worker-slots.ts): one row per running
+     worker invocation, platform-wide so the 4 / 2-per-workspace ceilings hold
+     across every Vercel function instance. Rows expire with the function. */
+  `CREATE TABLE IF NOT EXISTS worker_slots (
+     id TEXT PRIMARY KEY, kind TEXT NOT NULL, workspace_id TEXT NOT NULL, job_id TEXT NOT NULL,
+     acquired_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_worker_slots_live ON worker_slots(kind, expires_at)`,
 ];
 
 export const now = () => Date.now();
