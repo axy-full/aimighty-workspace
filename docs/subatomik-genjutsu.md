@@ -27,13 +27,19 @@ Submission uses the standard generation credit reservation and idempotency bound
 
 Queued Cloud jobs can request cancellation. An HTTP 202 only means requested; Subatomik continues polling the existing job until cancellation is confirmed. It does not promise a refund or dispatch a replacement while the result is uncertain.
 
-## Connected Higgsfield account
+## Billing default and override
+
+The connected account is the silent default. When the workspace owner has a connected account, `/subatomik` generates with connected credits and shows no billing toggle; the page reads the owner's connection status from `/api/higgsfield/consumer/connection` on open. Members always use Particl workspace (Cloud) billing, as only the owner can spend the connected account's credits. Without a connection the page keeps the Cloud path and shows the connection prompt (Workspace settings → Engines); it does not offer a choice in the main flow.
+
+`?account=particl` is the explicit, unadvertised override to Particl workspace billing. It is linked from the small **Advanced** disclosure at the bottom of the page and is carried across the Motion Transfer / Object Swap pages by the dock. `?account=higgsfield` remains valid for older links and recreation URLs, but is not required for the default. Every approval-step disclosure is unchanged: originals are copied to the connected account at quote time (approved before the quote), the exact connected-credit price and wallet are approved before submission, and the account-wide shared-wallet caveat is shown on the quote. User-facing copy says "connected account" / "connected credits"; the provider is not named.
+
+## Connected account
 
 The authenticated `models_explore` catalogue advertises `hf_mult_motion_control` and `hf_mult_replace_object` with 480p/720p/1080p. The `generate_video` tool explicitly requires exactly one source media UUID with role `video` and ordered references with role `image`. URLs are not valid generation references. The website's 4–30-second source and 30-image limits apply to this path; remote URL imports are bounded to 50 MB per original.
 
 Reviewing a quote first imports the chosen tenant-owned originals through `media_import_url`. This transfer is disclosed before the action. Import receipts pin the connected owner, authorization generation, selected Higgsfield workspace, local original identity and returned media UUID. An uncertain import does not silently repeat. No private bearer token or signed media URL is included in saved generation parameters or public exports.
 
-The account route calls `generate_video` with `get_cost: true` for a quote and `use_unlim: false`. Approval binds the exact immutable input, wallet, credit amount and expiry. Submission has one durable dispatch claim; uncertain replies retain their recovery record and cannot create a second paid job. This uses **Higgsfield credits**, recorded separately from Particl's Cloud generation credits and USD costs. Switching connections is explicit and cannot change a pending job's billing identity.
+The account route calls `generate_video` with `get_cost: true` for a quote and `use_unlim: false`. Approval binds the exact immutable input, wallet, credit amount and expiry. Submission has one durable dispatch claim; uncertain replies retain their recovery record and cannot create a second paid job. This uses **connected credits** (Higgsfield credits in the ledger), recorded separately from Particl's Cloud generation credits and USD costs. Switching connections is explicit and cannot change a pending job's billing identity.
 
 Successful account outputs are copied byte-for-byte into authenticated Particl storage. The retained model, source, reference order, resolution, project and provider credit receipt remain attached. Collection, deletion protection, export, recovery and tenant purge use the same original-retention boundaries as Marketing Studio. Provider results that do not match the verified job identity fail closed for reconciliation.
 

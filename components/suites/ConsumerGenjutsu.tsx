@@ -534,7 +534,7 @@ export function ConsumerGenjutsu({
         throw Error("Choose a JPEG, PNG or WebP reference image.");
       if (file.size > 50 * 1024 * 1024)
         throw Error(
-          "Each connected Higgsfield original must be no larger than 50 MB.",
+          "Each original copied to the connected account must be no larger than 50 MB.",
         );
     },
     upload: async (file) => {
@@ -553,7 +553,7 @@ export function ConsumerGenjutsu({
         throw Error("Choose a video source or a still-image reference.");
       if (asset.bytes > 50 * 1024 * 1024)
         throw Error(
-          "Each connected Higgsfield original must be no larger than 50 MB.",
+          "Each original copied to the connected account must be no larger than 50 MB.",
         );
       if (asset.kind === "video") {
         if (asset.seconds !== null && (asset.seconds < 4 || asset.seconds > 30))
@@ -611,7 +611,7 @@ export function ConsumerGenjutsu({
       setDisclosed(false);
       setError("");
       setNotice(
-        "Unsubmitted quote request discarded. Originals already copied may remain in Higgsfield. A quote request does not authorize generation; saved generation attempts are unchanged.",
+        "Unsubmitted quote request discarded. Originals already copied may remain in the connected account. A quote request does not authorize generation; saved generation attempts are unchanged.",
       );
     } catch {
       setError(
@@ -717,7 +717,7 @@ export function ConsumerGenjutsu({
           );
         }
         setNotice(
-          "Originals copied to Higgsfield for this quote. Review its wallet and exact generation price.",
+          "Originals copied to the connected account for this quote. Review its wallet and exact connected-credit price.",
         );
       }
       if (action === "submit")
@@ -808,7 +808,7 @@ export function ConsumerGenjutsu({
         resolution: job.input.resolution,
       });
       setNotice(
-        "Originals and settings restored. Review a fresh Higgsfield quote before generating.",
+        "Originals and settings restored. Review a fresh connected-credit quote before generating.",
       );
       if (query.has("recreateConsumer"))
         router.replace(
@@ -936,13 +936,13 @@ export function ConsumerGenjutsu({
       <div className={styles.columns}>
         <section
           className={`suite-panel ${styles.creator}`}
-          aria-label="Connected Higgsfield Genjutsu"
+          aria-label="Connected account Genjutsu"
         >
           <div className="suite-section-heading">
             <div>
               <h2>{GENJUTSU_LABELS[variant]}</h2>
               <p>
-                Use the workspace owner’s Higgsfield account · 4–30 second
+                Uses the workspace owner’s connected account · 4–30 second
                 source · up to 30 images · up to 1080p.
               </p>
             </div>
@@ -967,8 +967,8 @@ export function ConsumerGenjutsu({
               </li>
               <li>
                 <strong>Review copying and cost.</strong> Approve copying the
-                selected files to your Higgsfield account for an exact quote,
-                then separately approve its wallet and generation price.
+                selected files to your connected account for an exact quote,
+                then separately approve its wallet and connected-credit price.
               </li>
               <li>
                 <strong>Compare and finish.</strong> Check the existing job,
@@ -982,16 +982,16 @@ export function ConsumerGenjutsu({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Higgsfield motion library
+                External motion library
               </a>{" "}
-              opens its external preset gallery. The gallery is not an embedded
-              Particl catalog.
+              opens the provider’s external preset gallery. The gallery is not
+              an embedded Particl catalog.
             </p>
           </details>
           <p className={styles.hint}>
-            Higgsfield credits are separate from Particl workspace billing. A
-            quote copies your selected originals to the connected Higgsfield
-            account; generation requires another explicit approval.
+            Connected credits are separate from Particl workspace billing. A
+            quote copies your selected originals to the connected account;
+            generation requires another explicit approval.
           </p>
           {!!quoteStorageError && (
             <p role="alert" className={styles.error}>
@@ -1035,8 +1035,8 @@ export function ConsumerGenjutsu({
               )}
               <p>
                 Discarding this unsubmitted quote allows a new request.
-                Originals already copied may remain in Higgsfield and a new
-                quote may copy them again. This copy request does not authorize
+                Originals already copied may remain in the connected account
+                and a new quote may copy them again. This copy request does not authorize
                 generation.
               </p>
               <button
@@ -1051,15 +1051,14 @@ export function ConsumerGenjutsu({
           )}
           {capability?.owner === false ? (
             <p>
-              Only this workspace’s owner can use its connected Higgsfield
-              account. Choose Particl workspace billing for the shared
-              generation workflow.
+              Only this workspace’s owner can use its connected account. The
+              shared generation workflow bills the Particl workspace instead.
             </p>
           ) : (
             <>
               {capability && !capability.connected && (
                 <p className={styles.hint}>
-                  Connect or reconnect Higgsfield in{" "}
+                  Connect or reconnect your account in{" "}
                   <a href="/settings#engines">Workspace settings</a>.
                 </p>
               )}
@@ -1290,8 +1289,8 @@ export function ConsumerGenjutsu({
                   disabled={blocked || !input.source || !capability?.connected}
                   onChange={(event) => setDisclosed(event.target.checked)}
                 />
-                Copy these selected originals to my connected Higgsfield account
-                to obtain this quote.
+                Copy these selected originals to my connected account to obtain
+                this quote.
               </label>
               <div className={styles.actions}>
                 <button
@@ -1337,7 +1336,7 @@ export function ConsumerGenjutsu({
                   aria-label="Connected Genjutsu quote"
                 >
                   <strong>
-                    {selected.quoteCredits} Higgsfield credits ·{" "}
+                    {selected.quoteCredits} connected credits ·{" "}
                     {selected.workspaceName}
                   </strong>
                   <small>Wallet {selected.workspaceId}</small>
@@ -1355,8 +1354,9 @@ export function ConsumerGenjutsu({
                     {selected.quoteExpiresAt > clock
                       ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.`
                       : "This quote expired."}{" "}
-                    Higgsfield’s active wallet is shared across connected
-                    clients; Particl checks it again before submission.
+                    The connected account’s active wallet is shared across its
+                    connected clients; Particl checks it again before
+                    submission.
                   </p>
                   <label className={styles.confirm}>
                     <input
@@ -1367,7 +1367,7 @@ export function ConsumerGenjutsu({
                       }
                       onChange={(event) => setApproved(event.target.checked)}
                     />
-                    Charge {selected.quoteCredits} Higgsfield credits to{" "}
+                    Charge {selected.quoteCredits} connected credits to{" "}
                     {selected.workspaceName} for this Genjutsu generation.
                   </label>
                   <button
@@ -1378,7 +1378,7 @@ export function ConsumerGenjutsu({
                   >
                     {busy === "submit"
                       ? "Submitting once…"
-                      : `Generate Genjutsu · ${selected.quoteCredits} Higgsfield credits`}
+                      : `Generate Genjutsu · ${selected.quoteCredits} connected credits`}
                   </button>
                 </div>
               )}
@@ -1437,10 +1437,10 @@ export function ConsumerGenjutsu({
       >
         <div className="suite-section-heading">
           <div>
-            <h2>Connected Higgsfield results</h2>
+            <h2>Connected account results</h2>
             <p>
               Your account’s saved Genjutsu jobs in this project. Active
-              submissions stay pinned; approved quotes use Higgsfield credits.
+              submissions stay pinned; approved quotes use connected credits.
             </p>
           </div>
         </div>
@@ -1474,7 +1474,7 @@ export function ConsumerGenjutsu({
                           ? "Original deleted"
                           : "Original unavailable"
                       : job.status}{" "}
-                    · {job.quoteCredits} Higgsfield credits
+                    · {job.quoteCredits} connected credits
                   </span>
                 </button>
               ))}

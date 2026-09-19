@@ -146,17 +146,47 @@ const price = (quote: AdmissionQuote) =>
     ? `${quote.price.toLocaleString()} cr`
     : `$${quote.price.toFixed(2)}`;
 
+type BillingAccount = "particl" | "higgsfield";
+type ConnectionStatus = { connected?: boolean; requiresReconnect?: boolean };
+
 export default function SubatomikWorkspace() {
   usePageTitle("Subatomik viral studio");
   const session = useSession(),
     query = useSearchParams(),
-    captured = useSuiteProject(),
-    router = useRouter();
+    captured = useSuiteProject();
   const projectId = query.get("project") || captured.projectId;
   const variant: GenjutsuVariant =
     query.get("page") === "object-swap" ? "object-swap" : "motion-transfer";
-  const account =
-    query.get("account") === "higgsfield" ? "higgsfield" : "particl";
+  // Billing is folded in silently: with a connected account the owner's
+  // connected credits are used by default. `?account=particl` is an explicit,
+  // unadvertised override to Particl workspace (Cloud) billing;
+  // `?account=higgsfield` remains valid for older links.
+  const requested = query.get("account");
+  const explicit: BillingAccount | null =
+    requested === "higgsfield"
+      ? "higgsfield"
+      : requested === "particl"
+        ? "particl"
+        : null;
+  const connection = useApi<ConnectionStatus>(
+    session.signedIn && session.owner && session.requestScope && !explicit
+      ? "/api/higgsfield/consumer/connection"
+      : null,
+    0,
+    session.requestScope,
+  );
+  const connected =
+    connection.data?.connected === true &&
+    connection.data.requiresReconnect !== true;
+  const account: BillingAccount | null = explicit
+    ? explicit
+    : !session.owner
+      ? "particl"
+      : connection.data || connection.error
+        ? connected
+          ? "higgsfield"
+          : "particl"
+        : null;
   const drafts = useApi<DraftResponse>(
     session.requestScope
       ? `/api/workbench/projects${projectId ? `?id=${encodeURIComponent(projectId)}` : ""}`
@@ -183,7 +213,7 @@ export default function SubatomikWorkspace() {
               new.
             </p>
           </div>
-          <span className="suite-badge">Higgsfield Genjutsu</span>
+          <span className="suite-badge">Genjutsu</span>
         </header>
         {!session.signedIn ? (
           <section className="suite-panel">
@@ -232,35 +262,9 @@ export default function SubatomikWorkspace() {
           </section>
         ) : (
           <>
-            <div
-              className={styles.billingChoice}
-              role="group"
-              aria-label="Genjutsu billing account"
-            >
-              <button
-                type="button"
-                aria-pressed={account === "particl"}
-                onClick={() =>
-                  router.replace(
-                    `${suiteHref("subatomik", project.id, variant)}&account=particl`,
-                  )
-                }
-              >
-                Particl workspace billing
-              </button>
-              <button
-                type="button"
-                aria-pressed={account === "higgsfield"}
-                onClick={() =>
-                  router.replace(
-                    `${suiteHref("subatomik", project.id, variant)}&account=higgsfield`,
-                  )
-                }
-              >
-                Connected Higgsfield credits
-              </button>
-            </div>
-            {account === "higgsfield" ? (
+            {account === null ? (
+              <p role="status">Checking the connected account…</p>
+            ) : account === "higgsfield" ? (
               <ConsumerGenjutsu
                 key={`${session.requestScope}:${project.id}:${variant}:consumer`}
                 project={project}
@@ -269,13 +273,54 @@ export default function SubatomikWorkspace() {
                 refreshProject={drafts.refresh}
               />
             ) : (
-              <Studio
-                key={`${session.requestScope}:${project.id}:${variant}:particl`}
-                project={project}
-                scope={session.requestScope}
-                variant={variant}
-                refreshProject={drafts.refresh}
-              />
+              <>
+                {session.owner && !explicit && (
+                  <p className={styles.hint} role="status">
+                    {connection.error
+                      ? "The connected account could not be checked, so this project bills the Particl workspace for now."
+                      : connection.data?.requiresReconnect
+                        ? "Reconnect your account in "
+                        : "No connected account yet. Connect one in "}
+                    {!connection.error && (
+                      <>
+                        <a href="/settings#engines">Workspace settings</a> to
+                        generate with connected credits. Until then this
+                        project bills the Particl workspace.
+                      </>
+                    )}
+                  </p>
+                )}
+                <Studio
+                  key={`${session.requestScope}:${project.id}:${variant}:particl`}
+                  project={project}
+                  scope={session.requestScope}
+                  variant={variant}
+                  refreshProject={drafts.refresh}
+                />
+              </>
+            )}
+            {account !== null && (
+              <details className={styles.advanced}>
+                <summary>Advanced</summary>
+                <p>
+                  {account === "higgsfield"
+                    ? "This project generates with the owner’s connected credits."
+                    : "This project bills the Particl workspace."}{" "}
+                  {account === "higgsfield" ? (
+                    <Link
+                      href={`${suiteHref("subatomik", project.id, variant)}&account=particl`}
+                    >
+                      Use Particl workspace billing instead
+                    </Link>
+                  ) : session.owner ? (
+                    <Link
+                      href={`${suiteHref("subatomik", project.id, variant)}&account=higgsfield`}
+                    >
+                      Use connected credits instead
+                    </Link>
+                  ) : null}
+                </p>
+              </details>
             )}
           </>
         )}
@@ -299,6 +344,11 @@ function Studio({
     query = useSearchParams(),
     upload = useUploadFile(),
     money = useMoney();
+  // Studio only renders on the explicit `?account=particl` override or when
+  // no account is connected; keep that override on in-page navigation.
+  const studioHref = (page: GenjutsuVariant) =>
+    suiteHref("subatomik", project.id, page) +
+    (query.get("account") === "particl" ? "&account=particl" : "");
   const draft = useDraft<CreativeDraft>(
       `subatomik:${project.id}:${variant}`,
       EMPTY,
@@ -519,7 +569,7 @@ function Studio({
       if (!live.current || token !== epoch.current || !writable.current) return;
       if (settings.variant !== variant) {
         router.replace(
-          `${suiteHref("subatomik", project.id, settings.variant)}&recreate=${encodeURIComponent(id)}`,
+          `${studioHref(settings.variant)}&recreate=${encodeURIComponent(id)}`,
         );
         return;
       }
@@ -557,7 +607,7 @@ function Studio({
         "Saved settings and original references restored. Review a fresh quote before generating another take.",
       );
       if (query.has("recreate"))
-        router.replace(suiteHref("subatomik", project.id, variant));
+        router.replace(studioHref(variant));
       sourcePicker.current
         ?.closest("section")
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -936,10 +986,10 @@ function Studio({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Higgsfield motion library <ArrowUpRight size={12} />
+                External motion library <ArrowUpRight size={12} />
               </a>{" "}
-              opens Higgsfield’s external preset gallery. Its presets are not an
-              embedded Particl catalog.
+              opens the provider’s external preset gallery. Its presets are not
+              an embedded Particl catalog.
             </p>
           </details>
           <fieldset disabled={blocked} className={styles.form}>

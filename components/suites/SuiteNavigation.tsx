@@ -154,8 +154,12 @@ export function SuiteDock({
 }) {
   const { follow, error } = useFollow(onNavigate);
   const query = useSearchParams();
+  // Subatomik defaults to the connected account; an explicit `account`
+  // value (the `particl` override, or an older `higgsfield` link) is carried
+  // across its pages so the choice survives navigation.
+  const account = suite === "subatomik" ? query.get("account") : null;
   const pageHref = (page: string) => suiteHref(suite, projectId, page) +
-    (suite === "subatomik" && query.get("account") === "higgsfield" ? "&account=higgsfield" : "");
+    (account === "higgsfield" || account === "particl" ? `&account=${account}` : "");
   const numbered = suite === "particl" || suite === "moleculr";
   return (
     <nav

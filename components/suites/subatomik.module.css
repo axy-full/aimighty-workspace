@@ -91,7 +91,8 @@
 .playbackOptions select {background:var(--graphite-control);border:1px solid var(--graphite-edge);border-radius:6px;color:var(--graphite-ink);padding:8px;min-height:36px;}
 .comparisonPlayer:fullscreen {background:#080809;padding:20px;overflow:auto;}
 .comparisonPlayer:fullscreen .compareStage {max-height:70dvh;}
-.billingChoice {display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 22px;}
-.billingChoice button {padding:11px 14px;min-height:44px;border:1px solid var(--graphite-edge);border-radius:8px;background:var(--graphite-panel);color:var(--graphite-body);font-size:12px;}
-.billingChoice button[aria-pressed=true] {border-color:#b985d2;background:#17111c;color:var(--graphite-ink);}
+.advanced {margin:22px 0 0;font-size:12px;color:var(--graphite-body);}
+.advanced summary {cursor:pointer;color:var(--graphite-muted);}
+.advanced p {margin:8px 0 0;}
+.advanced a {color:var(--graphite-ink);text-decoration:underline;}
 .receipt {max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;}
