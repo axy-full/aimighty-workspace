@@ -157,8 +157,9 @@ for (const rememberedOnly of [false, true]) {
     await expect(
       page
         .getByRole("navigation", { name: "Moleculr Business Suite pages", exact: true })
-        .getByRole("link", { name: "Brand", exact: true }),
+        .getByRole("link", { name: "Marketing Studio", exact: true }),
     ).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("section.moleculr-section#brand > h2 > button")).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator(".project-bar")).toContainText(state.draft.name);
     expect(state.paidRequests).toBe(0);
     expect(errors).toEqual([]);
