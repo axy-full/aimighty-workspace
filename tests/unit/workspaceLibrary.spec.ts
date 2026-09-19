@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { INITIAL_STATE, stepSelection, withLibFilter } from "../../lib/workspace/navigation";
-import { resolveKey, SHELL_BINDINGS } from "../../lib/workspace/keys";
+import { INITIAL_STATE, listFor, withLibFilter } from "../../lib/workspace/navigation";
+import { keyContextFor, resolveKey, stepSelection, WORKSPACE_BINDINGS } from "../../lib/workspace/keys";
 import { libraryEntries } from "../../lib/workspace/library";
 import type { AppState, SelectableItem } from "../../lib/workspace/types";
 import type { Generation } from "../../lib/jobs";
@@ -15,24 +15,31 @@ const takes: SelectableItem[] = [
 const onTakes = (over: Partial<AppState> = {}): AppState =>
   ({ ...INITIAL_STATE, view: "studio", page: "takes", selKind: "take", selId: "upload:b", lists: { shots: null, takes, cast: null }, ...over });
 
-test("← → walk only the visible list and stop at either end", () => {
+/** The shell's ← → step: the selection's own visible list, then the keys module. */
+const step = (state: AppState, delta: 1 | -1) =>
+  stepSelection(listFor(state.selKind, state.lists, state.libFilter) ?? [], state.selId, delta);
+
+test("← → walk only the visible list", () => {
   const uploads = withLibFilter(onTakes(), "Uploads");
   expect(uploads.selId).toBe("upload:b");
-  expect(stepSelection(uploads, 1)).toBe("upload:d");
-  expect(stepSelection({ ...uploads, selId: "upload:d" }, 1)).toBeNull();
-  expect(stepSelection(uploads, -1)).toBeNull();
-  expect(stepSelection(onTakes({ libFilter: "All" }), 1)).toBe("generation:c");
+  expect(step(uploads, 1)).toBe("upload:d");
+  /* The keys module wraps at the end of the visible list (04 "Keyboard"). */
+  expect(step({ ...uploads, selId: "upload:d" }, 1)).toBe("upload:b");
+  expect(step(onTakes({ libFilter: "All" }), 1)).toBe("generation:c");
   /* A selection outside the visible list starts from its first item. */
-  expect(stepSelection(onTakes({ libFilter: "Generations", selId: "upload:b" }), 1)).toBe("generation:a");
-  expect(stepSelection(onTakes({ lists: { shots: null, takes: null, cast: null } }), 1)).toBeNull();
+  expect(step(onTakes({ libFilter: "Generations", selId: "upload:b" }), 1)).toBe("generation:a");
+  expect(step(onTakes({ lists: { shots: null, takes: null, cast: null } }), 1)).toBeNull();
 });
 
-test("arrow keys are an item binding, never while typing and never on a page selection", () => {
-  const ctx = { state: onTakes(), pageCount: 8 };
-  const binding = resolveKey(SHELL_BINDINGS, { key: "ArrowRight" }, ctx);
-  expect(binding?.action({ key: "ArrowRight" }, ctx)).toEqual({ type: "step", delta: 1 });
-  expect(resolveKey(SHELL_BINDINGS, { key: "ArrowLeft", target: { tagName: "INPUT" } }, ctx)).toBeNull();
-  expect(resolveKey(SHELL_BINDINGS, { key: "ArrowLeft" }, { ...ctx, state: { ...ctx.state, selKind: "page" } })).toBeNull();
+test("arrow keys are an item binding, never while typing and never without a list", () => {
+  const state = onTakes();
+  const ctx = keyContextFor(state);
+  const binding = resolveKey(WORKSPACE_BINDINGS, { key: "ArrowRight" }, ctx);
+  expect(binding?.id).toBe("item");
+  expect(binding?.action({ key: "ArrowRight" }, ctx)).toEqual({ type: "item", step: 1 });
+  expect(resolveKey(WORKSPACE_BINDINGS, { key: "ArrowLeft", target: { tagName: "INPUT" } }, ctx)).toBeNull();
+  const empty = keyContextFor(onTakes({ lists: { shots: null, takes: null, cast: null } }));
+  expect(resolveKey(WORKSPACE_BINDINGS, { key: "ArrowLeft" }, empty)).toBeNull();
 });
 
 test("library entries: newest first, media only where the browser can show it", () => {
