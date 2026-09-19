@@ -1,3 +1,5 @@
+import { listFor } from "./navigation";
+import { PAGES } from "./pages";
 import type { AppState } from "./types";
 
 /**
@@ -32,6 +34,12 @@ export type KeyContext = {
   state: AppState;
   /** Pages in the active suite, for 1–9. */
   pageCount: number;
+  /** Length of the selection's visible list (shots, filtered takes, cast), for ← →. */
+  selectionCount?: number;
+  /** The shell has a Generate seam (G). */
+  canGenerate?: boolean;
+  /** The shell has a play seam (Space). */
+  canPlay?: boolean;
 };
 
 export type KeyBinding<A = unknown> = {
@@ -51,7 +59,13 @@ export type KeyBinding<A = unknown> = {
 export type ShellAction =
   | { type: "page"; index: number }
   | { type: "toggleInspector" }
-  | { type: "escape" };
+  | { type: "escape" }
+  | { type: "palette" }
+  | { type: "enterStudio" }
+  | { type: "item"; step: 1 | -1 }
+  | { type: "generate" }
+  | { type: "toggleAtomik" }
+  | { type: "play" };
 
 const plain = (event: KeyEventLike) => !event.metaKey && !event.ctrlKey && !event.altKey;
 
@@ -74,6 +88,90 @@ export const SHELL_BINDINGS: KeyBinding<ShellAction>[] = [
     action: () => ({ type: "escape" }),
   },
 ];
+
+/** Buttons and links answer Enter themselves; the home binding leaves them alone. */
+const activates = (target: KeyEventLike["target"]) => {
+  const tag = (target as KeyTarget)?.tagName?.toUpperCase();
+  return tag === "BUTTON" || tag === "A";
+};
+
+/**
+ * The full workspace keymap (04 "Keyboard"), in status-bar legend order.
+ * ⌘K / Ctrl+K is the one binding that works inside text fields; every other
+ * single key bails while typing (resolveKey). While the palette is open only
+ * ⌘K and Esc reach the shell — the palette's own input handles the rest.
+ */
+export const WORKSPACE_BINDINGS: KeyBinding<ShellAction>[] = [
+  {
+    id: "palette",
+    inInputs: true,
+    modified: true,
+    match: (e) => (e.metaKey === true || e.ctrlKey === true) && !e.altKey && e.key.toLowerCase() === "k",
+    action: () => ({ type: "palette" }),
+    hint: () => ({ key: "⌘K", label: "commands" }),
+  },
+  SHELL_BINDINGS[0],
+  {
+    id: "item",
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && (e.key === "ArrowLeft" || e.key === "ArrowRight") && (ctx.selectionCount ?? 0) > 0,
+    action: (e) => ({ type: "item", step: e.key === "ArrowRight" ? 1 : -1 }),
+    hint: (ctx) => ctx.state.view === "studio" && (ctx.selectionCount ?? 0) > 1 ? { key: "← →", label: "item" } : null,
+  },
+  {
+    id: "atomik",
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && e.key.toLowerCase() === "a",
+    action: () => ({ type: "toggleAtomik" }),
+    hint: (ctx) => ctx.state.view === "studio" ? { key: "A", label: "atomik" } : null,
+  },
+  {
+    id: "generate",
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && e.key.toLowerCase() === "g",
+    action: () => ({ type: "generate" }),
+    hint: (ctx) => ctx.state.view === "studio" && ctx.canGenerate ? { key: "G", label: "generate" } : null,
+  },
+  SHELL_BINDINGS[1],
+  {
+    id: "play",
+    match: (e, ctx) => ctx.state.view === "studio" && !ctx.state.palette && e.key === " " && ctx.canPlay === true,
+    action: () => ({ type: "play" }),
+    hint: (ctx) => ctx.state.view === "studio" && ctx.canPlay ? { key: "Space", label: "play" } : null,
+  },
+  {
+    id: "enter",
+    match: (e, ctx) => ctx.state.view === "home" && e.key === "Enter" && !activates(e.target),
+    action: () => ({ type: "enterStudio" }),
+  },
+  SHELL_BINDINGS[2],
+];
+
+/** The KeyContext for the current state: page count, the selection's visible list, live seams. */
+export function keyContextFor(state: AppState, live: { canGenerate?: boolean; canPlay?: boolean } = {}): KeyContext {
+  const list = state.view === "studio" ? listFor(state.selKind, state.lists, state.libFilter) : null;
+  return {
+    state,
+    pageCount: PAGES[state.suite].length,
+    selectionCount: list?.length ?? 0,
+    canGenerate: live.canGenerate === true,
+    canPlay: live.canPlay === true,
+  };
+}
+
+/** Legend order: stage, item, atomik, generate, inspector, play, then ⌘K commands last (04, status bar). */
+export function legendBindings(): KeyBinding<ShellAction>[] {
+  const [palette, ...rest] = WORKSPACE_BINDINGS;
+  return [...rest, palette];
+}
+
+/**
+ * ← / → over the selection's own visible list, wrapping at both ends
+ * (prototype onKey). An id not in the list starts from the first item.
+ */
+export function stepSelection(list: readonly { id: string }[], selId: string | null, step: 1 | -1): string | null {
+  if (!list.length) return null;
+  const at = list.findIndex((item) => item.id === selId);
+  if (at < 0) return list[0].id;
+  return list[(at + step + list.length) % list.length].id;
+}
 
 /** The first binding that claims the event, respecting the typing guard. */
 export function resolveKey<A>(bindings: KeyBinding<A>[], event: KeyEventLike, ctx: KeyContext): KeyBinding<A> | null {

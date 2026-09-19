@@ -1,13 +1,22 @@
 "use client";
-import { legend, SHELL_BINDINGS, type KeyBinding } from "@/lib/workspace/keys";
-import { getSuite, pageDef, PAGES } from "@/lib/workspace/pages";
+import { keyContextFor, legend, legendBindings, type KeyBinding } from "@/lib/workspace/keys";
+import { getSuite, pageDef } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Keycap } from "./ui";
 
 /** 28px. Project · suite · page, then the legend of keys that work today. */
-export function StatusBar({ projectName, bindings = SHELL_BINDINGS }: { projectName: string; bindings?: KeyBinding<unknown>[] }) {
+export function StatusBar({
+  projectName,
+  bindings = legendBindings() as KeyBinding<unknown>[],
+  live = {},
+}: {
+  projectName: string;
+  bindings?: KeyBinding<unknown>[];
+  /** Which seams exist, so the legend lists only keys that do something. */
+  live?: { canGenerate?: boolean; canPlay?: boolean };
+}) {
   const { state } = useWorkspace();
-  const hints = legend(bindings, { state, pageCount: PAGES[state.suite].length });
+  const hints = legend(bindings, keyContextFor(state, live));
   return (
     <div className="pxw-statusbar" data-row="status">
       <span className="pxw-status-text" data-testid="status-text">
