@@ -141,7 +141,7 @@ test("Cast renders cards from the draft and identities, inspects, walks with arr
     await page.setViewportSize({ width: 1440, height: 900 });
     await card(page, "up_lead").click();
     await page.waitForTimeout(400);
-    await page.screenshot({ path: "/private/tmp/ws-assets-shots/cast-1440x900.png" });
+    await page.screenshot({ path: info.outputPath("cast-1440x900.png") });
   }
 
   /* Use in Rig: Rig opens on the shot that cites this identity. */
