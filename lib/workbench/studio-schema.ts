@@ -98,6 +98,14 @@ const node = z.object({
   mode: z.string().max(100).optional(),
   status: z.enum(["draft", "review", "approved"]).optional(),
   activeInput: z.string().max(100).optional(),
+  /* Rig shot fields (optional; absent on every older draft). Shape only here:
+     the catalogue clamp lives in lib/workspace so a catalogue change can never
+     make an existing draft unsaveable. */
+  look: z.string().max(300).optional(),
+  engine: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\/:-]+$/).optional(),
+  durationS: z.number().int().min(1).max(60).optional(),
+  ratio: z.string().regex(/^(?:adaptive|auto|\d{1,2}(?:\.\d{1,2})?:\d{1,2})$/).optional(),
+  resolution: z.string().regex(/^[0-9A-Za-z]{1,12}$/).optional(),
   versions: z
     .array(
       z.object({
