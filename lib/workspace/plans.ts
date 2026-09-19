@@ -339,6 +339,7 @@ const refsOf = (input: Record<string, unknown>) => count(input.references);
 
 const GENJUTSU = "/api/higgsfield/consumer/genjutsu";
 const CONNECTED_GENERATION = "/api/higgsfield/consumer/generation";
+const SHORTS = "/api/higgsfield/consumer/shorts";
 
 const boards = (ctx: PlanContext) => bodies(ctx.request?.boards);
 const shots = (ctx: PlanContext) => bodies(ctx.request?.shots);
@@ -352,6 +353,11 @@ const genjutsuInput =
   };
 const motionInput = genjutsuInput("motion", "motion-transfer");
 const swapInput = genjutsuInput("swap", "object-swap");
+/** The Shorts page's current input, supplied through the page-request seam. */
+const shortsInput = (ctx: PlanContext): Record<string, unknown> | null => {
+  const value = ctx.request?.shorts;
+  return value && typeof value === "object" ? { ...value } : null;
+};
 const generationInput = (ctx: PlanContext): Record<string, unknown> | null => {
   const value = ctx.request?.generation;
   return value && typeof value === "object" ? { ...value } : null;
@@ -1233,6 +1239,37 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
       ),
       step("Submit", "dispatch", (ctx) => String(swapInput(ctx)?.resolution ?? ""), connectedDispatch(GENJUTSU, "object swap")),
       step("Follow the job", "file", "→ Object Swap", connectedStatus(GENJUTSU)),
+    ],
+  }),
+
+  shorts: plan("shorts", {
+    title: "Make a set of shorts",
+    line: "Restyles one project video into short clips, quotes the whole set live, and files every collected clip.",
+    priceLabel: "Quote at gate",
+    doneLine: (_ctx, io) => `Shorts ${String((io.job as ConsumerJob | undefined)?.status ?? "submitted")}`,
+    runnable: (ctx) => {
+      const project = needProject(ctx);
+      if (!project.ok) return project;
+      const input = shortsInput(ctx);
+      return hasSource(input) && !!input?.preset ? OK : notYet("Needs Shorts data: choose a source video and a style on Shorts first.");
+    },
+    steps: [
+      step(
+        "Resolve the source",
+        "read",
+        "yours",
+        local("request.shorts", (ctx) => ({ detail: String(shortsInput(ctx)?.aspectRatio ?? "") })),
+      ),
+      step(
+        "Approval gate",
+        "gate",
+        "live quote",
+        connectedGate(SHORTS, shortsInput, (input, job) =>
+          `${String(input.aspectRatio ?? "")}${input.aspectRatio ? ", " : ""}one price for the whole set of clips. The source is copied to the connected account at quote time; charged to its selected wallet${job.workspaceName ? ` (${job.workspaceName})` : ""}.`,
+        ),
+      ),
+      step("Submit", "dispatch", (ctx) => String(shortsInput(ctx)?.aspectRatio ?? ""), connectedDispatch(SHORTS, "set of shorts")),
+      step("Follow the session", "file", "→ Shorts", connectedStatus(SHORTS)),
     ],
   }),
 

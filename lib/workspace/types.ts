@@ -8,7 +8,7 @@ export type ParticlPageId =
 export type AtomikPageId =
   | "agent" | "runs" | "generate" | "recipes" | "builds" | "skills" | "models" | "approvals" | "budget";
 export type MoleculrPageId = "marketing";
-export type SubatomikPageId = "motion" | "swap" | "sources" | "compare" | "history";
+export type SubatomikPageId = "motion" | "swap" | "shorts" | "sources" | "compare" | "history";
 export type PageId = ParticlPageId | AtomikPageId | MoleculrPageId | SubatomikPageId;
 
 export type View = "home" | "studio";

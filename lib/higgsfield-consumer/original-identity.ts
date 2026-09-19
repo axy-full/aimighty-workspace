@@ -10,6 +10,7 @@ import { parseConsumerMarketingTemplateInput } from "./marketing-templates";
 import { MARKETING_TEMPLATE_PRODUCT_ROLE } from "./marketing-template-sources";
 import { parseConsumerVoiceToolInput } from "./voice-tools";
 import { VOICE_TOOL_SOURCE_ROLE } from "./voice-tool-sources";
+import { SHORTS_SOURCE_ROLE, parseConsumerShortsInput } from "./shorts-studio";
 export type ConsumerOriginalKind = "video" | "image" | "audio" | "model";
 export const CONSUMER_ORIGINAL_MIMES: Record<ConsumerOriginalKind, readonly string[]> = {
   video: ["video/mp4"],
@@ -114,6 +115,27 @@ export function consumerVideoIdentity(job: ConsumerJob) {
         ...(input.targetLanguage ? { targetLanguage: input.targetLanguage } : {}),
         ...(input.aspectRatio ? { aspectRatio: input.aspectRatio, resolution: input.resolution, durationSeconds: provider.duration_seconds } : {}),
         references: [{ ...input.source, role: VOICE_TOOL_SOURCE_ROLE, kind: "video" }],
+      } as Record<string, unknown>,
+    };
+  }
+  if (job.workflow === "shorts") {
+    const input = parseConsumerShortsInput(payload.input);
+    if (!object(provider) || provider.source_video_id === undefined || provider.preset_id !== input.preset.id.toLowerCase())
+      throw Error("The original short differs from its admission.");
+    return {
+      model: "shorts_studio",
+      kind: "video" as ConsumerOriginalKind,
+      prompt: "",
+      params: {
+        task: "connected-generation",
+        workflow: "shorts",
+        outputType: "video",
+        workbenchProjectId: job.draftId,
+        presetId: input.preset.id,
+        presetSource: input.preset.source,
+        ...(input.preset.name ? { presetName: input.preset.name } : {}),
+        aspectRatio: input.aspectRatio,
+        references: [{ ...input.source, role: SHORTS_SOURCE_ROLE, kind: "video" }],
       } as Record<string, unknown>,
     };
   }

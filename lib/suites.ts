@@ -79,6 +79,7 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
   subatomik: [
     { id: "motion-transfer", label: "Motion Transfer" },
     { id: "object-swap", label: "Object Swap" },
+    { id: "shorts", label: "Shorts" },
   ],
 };
 

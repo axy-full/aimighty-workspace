@@ -1,0 +1,122 @@
+{
+ "capturedAt": "2026-09-19",
+ "note": "Shorts Studio input schemas as a connected-account MCP session advertised them in tools/list on 19 September 2026 (descriptions abridged), plus the shape of one read-only shorts_studio_list_presets page (names from that read; preview URLs replaced by example.com). No create or status call was made; the session/status/job_ids shapes come from the tools' own descriptions.",
+ "tools": [
+  {
+   "name": "shorts_studio_list_presets",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "cursor": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  {
+   "name": "shorts_studio_create",
+   "description": "Start a Shorts Studio short: restyle one uploaded source video (4s-120s). PAID. Returns a session with empty job_ids; poll shorts_studio_status. Set get_cost=true with duration_seconds to estimate the credit cost without submitting a job.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "aspect_ratio": {
+      "type": "string",
+      "enum": [
+       "9:16",
+       "16:9"
+      ]
+     },
+     "duration_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 120
+     },
+     "get_cost": {
+      "type": "boolean"
+     },
+     "preset_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+     },
+     "preset_source": {
+      "type": "string",
+      "enum": [
+       "cms",
+       "user"
+      ]
+     },
+     "resolution": {
+      "type": "string",
+      "const": "720p"
+     },
+     "source_video_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+     }
+    }
+   }
+  },
+  {
+   "name": "shorts_studio_status",
+   "description": "Poll one Shorts Studio session. Returns {id, status, job_ids}. status='completed' means every clip job is terminal (not necessarily successful). Poll each job_id via job_status.",
+   "inputSchema": {
+    "type": "object",
+    "required": [
+     "session_id"
+    ],
+    "properties": {
+     "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+     }
+    }
+   }
+  }
+ ],
+ "presetsPage": {
+  "items": [
+   {
+    "id": "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f",
+    "name": "Bold Urban",
+    "thumbnail": {
+     "url": "https://cdn.example.com/a.mp4",
+     "type": "video"
+    },
+    "source": "preset",
+    "preset_source": "cms",
+    "video_medias": [],
+    "image_medias": []
+   },
+   {
+    "id": "a1075b8b-5b6b-4f3f-b62b-7f178ac84be7",
+    "name": "Green Contrast",
+    "thumbnail": {
+     "url": "https://cdn.example.com/b.mp4",
+     "type": "video"
+    },
+    "source": "preset",
+    "preset_source": "cms",
+    "video_medias": [],
+    "image_medias": []
+   },
+   {
+    "id": "a1914fcf-5b8c-4cab-9c21-6bb6c4f3e41a",
+    "name": "Claymation",
+    "thumbnail": {
+     "url": "https://cdn.example.com/c.mp4",
+     "type": "video"
+    },
+    "source": "preset",
+    "preset_source": "cms",
+    "video_medias": [],
+    "image_medias": []
+   }
+  ],
+  "next_cursor": ":8",
+  "has_more": true,
+  "can_create_preset": true
+ }
+}

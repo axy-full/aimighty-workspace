@@ -138,6 +138,26 @@ The Atomik chat planner (`lib/atomik.ts`, the rail and phone sheet) now works ov
 
 The quote card shows the priced length (`pricedSeconds`). Unverified until the first owner-approved run: that reframe jobs report through `job_status`. Optional start-image and edge-reference media are not offered. There is no Takes/Edit entry point for connected tools today, so Reframe lives on the Generate page only.
 
+## Shorts Studio (slice F4, Subatomik → Shorts)
+
+Subatomik has a third page, **Shorts** (`/subatomik?page=shorts`). It restyles ONE project video of 4–120 s into a set of short clips using a style preset, and runs only on the owner's connected account. Particl has no workspace-billed Shorts path. The contract (`lib/higgsfield-consumer/shorts-studio.ts`, pure) comes from the schemas advertised on 19 September (`tests/fixtures/connected-shorts-studio.json`):
+
+| Step | Tool / guard |
+| --- | --- |
+| Styles | `shorts_studio_list_presets {cursor?}`: a free read, following `next_cursor` for at most 5 pages, cached for 1 h per connection in memory. Only `{id, name, preset_source}` are kept. Preview media is dropped, so nothing from the provider's CDN is loaded. |
+| Validate | One project video (≤50 MB). The style `{id (uuid), source cms\|user}` and orientation 9:16 \| 16:9 come from the advertised enums. The duration is the stored original's `duration_s`, rounded up to hundredths, and must be 4–120 s. If it is missing or out of range, the request is refused before any provider call. |
+| Contract | `shorts_studio_create` must declare all six arguments plus `get_cost`, with enums/const/bounds admitting our values and no required argument we do not send. `shorts_studio_status` must take `session_id`. Otherwise the request fails with `contract_unverified`. |
+| Exact quote (before import) | `shorts_studio_create {duration_seconds, get_cost:true}`, the tool's cost-only form. `credits === credits_exact`. |
+| Import → re-price | `media_import_url` runs once per quote under the durable import claim. The cost form is priced again and must be unchanged (`quote_changed`). |
+| Approve → submit | Exact wallet + credits. Fresh wallet/contract/price/balance checks, one dispatch claim, then exactly one `shorts_studio_create {preset_id, preset_source, source_video_id, aspect_ratio, resolution:"720p", duration_seconds}`. Only one structured session UUID counts as acceptance; anything else stays `uncertain` and is never retried. |
+| Poll | `shorts_studio_status {session_id}` for exactly that session (≤20 unique clip ids, never the session id). Until the session is terminal the job stays `accepted` with progress. Once terminal, each clip is read with `job_status` (the exact clip id, type video). |
+| Collect (multi-clip) | Each completed clip goes through the same collector as every other original, keyed per clip (`<job>.clip-<index>`, its own generation id and receipt, `providerJobId` = the clip's job). Its `generations` row carries `consumerParentJobId`, `consumerParentProviderJobId`, `clipIndex`, the style and the source as `references` (lineage), and it is filed on the project's production. Collection is idempotent per clip. A poll starts no new download after 60 s and continues on the next poll. |
+| Settle once | When every clip is collected or reported failed, the job completes ONCE with `{session, clips[], settlement:{clips, collected, failed, credits}}`. If every clip failed, the job is `provider_failed`. A clip deleted from the library before settlement is settled as `deleted`. |
+
+The page lists each clip with Download and Save to project, plus **Save all N clips to project**, which files them as `<source> · short i of n (<style>)` under **Shorts**. The quote card states that one price covers the whole set whatever the clip count.
+
+Not covered: creating user styles (`shorts_studio_create_preset` stores public reference URLs on the provider), `shorts_studio_list_sessions` import of sessions started elsewhere, and cancellation (none advertised). Unverified until the first owner-approved run: that a `media_import_url` media id is accepted as the "uploaded video_input id" `source_video_id` expects (the same assumption Analyse video makes), and the exact session/clip envelopes, which come from the tools' descriptions. Unrecognised envelopes keep the job `accepted` and collect nothing.
+
 ## Not covered by I1/I2
 
 - Virality scoring (no non-submitting price for `brain_activity`).

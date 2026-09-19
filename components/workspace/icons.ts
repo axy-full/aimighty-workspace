@@ -1,7 +1,7 @@
 import {
   AudioLines, AudioWaveform, BadgeCheck, BookOpen, Bot, Box, Boxes, Clapperboard, CirclePlus, Columns2,
   Cpu, Diamond, Film, FileText, GitBranch, GitFork, Hammer, History, Image, Images, Layers, LayoutGrid,
-  ListChecks, Megaphone, MessageSquare, Mountain, Move, Music, Package, Palette, PersonStanding, Puzzle,
+  ListChecks, Megaphone, Smartphone, MessageSquare, Mountain, Move, Music, Package, Palette, PersonStanding, Puzzle,
   Replace, Rows2, ScanFace, Scissors, Send, Share, Shirt, SlidersHorizontal, Sparkles, Split, Square,
   Upload, User, Users, Wallet, Wand, Wind, type LucideIcon,
 } from "lucide-react";
@@ -14,7 +14,7 @@ export const PAGE_ICONS: Record<PageId, LucideIcon> = {
   agent: Bot, runs: ListChecks, generate: Sparkles, recipes: BookOpen, builds: Hammer, skills: Puzzle,
   models: Cpu, approvals: BadgeCheck, budget: Wallet,
   marketing: Megaphone,
-  motion: PersonStanding, swap: Replace, sources: Upload, compare: Columns2, history: History,
+  motion: PersonStanding, swap: Replace, shorts: Smartphone, sources: Upload, compare: Columns2, history: History,
 };
 
 /** Library tools by name; anything unnamed cycles the fallbacks. */

@@ -74,6 +74,7 @@ export const PAGES: Record<Suite, PageDef[]> = {
   subatomik: [
     page("subatomik", "motion", "Motion Transfer", "Motion Transfer", "Take the motion from a source video and recast it with your own cast, location and product."),
     page("subatomik", "swap", "Object Swap", "Object Swap", "Swap one element — a product, a garment, an object — and leave the rest of the shot exactly as filmed."),
+    page("subatomik", "shorts", "Shorts", "Shorts", "Restyle one video into a set of short clips; one quote covers the whole set."),
     page("subatomik", "sources", "Sources", "Sources", "Sources are your own originals."),
     page("subatomik", "compare", "Compare", "Compare", "Put the original and the result side by side, locked to the same clock."),
     page("subatomik", "history", "History", "History", "Every result is copied into private storage on completion."),
