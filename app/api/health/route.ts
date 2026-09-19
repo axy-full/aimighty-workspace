@@ -13,6 +13,7 @@ import { presignedReadUrl } from "@/lib/storage";
 import { mailConfigured, mailFrom } from "@/lib/mail";
 import { engineMock } from "@/lib/mock";
 import { dispatchMode } from "@/lib/dispatch";
+import { recentDispatches } from "@/lib/dispatch-log";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -156,8 +157,14 @@ export const GET = recoveryRoute(async function GET(req: Request) {
         mock: engineMock(),
         /* Which dispatcher this deployment hands background work to
            (lib/dispatch.ts): "native" is /api/worker on Vercel, "inngest"
-           only when DISPATCH_MODE asks for it, "inline" is the request's own after(). */
-        dispatch: { mode: dispatchMode() },
+           only when DISPATCH_MODE asks for it, "inline" is the request's own
+           after() — and the last ten hand-offs and worker runs from the
+           platform's dispatch_log, newest first, so a render's "send: sent
+           202" then "run: finished-ok" can be read here instead of in the
+           Vercel log viewer. Identifiers and outcomes only; signed-in only,
+           because it is a timeline of the studio's activity. Null means
+           the platform database could not answer. */
+        dispatch: { mode: dispatchMode(), recent: await recentDispatches(10).catch(() => null) },
         workspace: { id: ctx!.workspace!.id, name: ctx!.workspace!.name },
         database,
         storage,

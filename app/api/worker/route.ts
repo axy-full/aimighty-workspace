@@ -3,6 +3,7 @@ import { z } from "zod";
 import { WORKER_EVENT_NAMES, type WorkerEvent } from "@/lib/dispatch";
 import { runWorkerHandler, workerJobId } from "@/lib/worker-handlers";
 import { acquireSlot, releaseSlot, chainDispatch } from "@/lib/worker-slots";
+import { recordDispatch } from "@/lib/dispatch-log";
 import { recoveryFence, reserveRecoveryContinuation, withRecoveryJob } from "@/lib/recovery";
 
 /**
@@ -63,8 +64,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ maintenance: true }, { status: 503, headers: noStore });
 
   const slot = await acquireSlot({ kind: event.name, workspaceId, jobId });
-  if (!slot)
+  if (!slot) {
+    await recordDispatch({ eventId: event.id, name: event.name, phase: "run", outcome: "busy", workspaceId }).catch(() => {});
     return NextResponse.json({ accepted: false, reason: "busy" }, { status: 202, headers: noStore });
+  }
 
   let continuation: () => Promise<void>;
   try {
@@ -79,7 +82,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ accepted: true }, { status: 202, headers: noStore });
 }
 
-/** One event, one attempt, one slot; a fixed-shape log line, never a payload. */
+/** One event, one attempt, one slot; a fixed-shape log line and a dispatch_log row, never a payload. */
 async function runWorkerEvent(event: WorkerEvent, slotId: string): Promise<void> {
   const startedAt = Date.now();
   const jobId = workerJobId(event);
@@ -91,15 +94,24 @@ async function runWorkerEvent(event: WorkerEvent, slotId: string): Promise<void>
   } catch {
     ok = false;
   } finally {
+    const durationMs = Date.now() - startedAt;
     console[ok ? "info" : "error"](
       JSON.stringify({
         level: ok ? "info" : "error",
         event: "worker.finished",
         name: event.name,
         ok,
-        durationMs: Date.now() - startedAt,
+        durationMs,
       }),
     );
+    await recordDispatch({
+      eventId: event.id,
+      name: event.name,
+      phase: "run",
+      outcome: ok ? "finished-ok" : "finished-error",
+      durationMs,
+      workspaceId,
+    }).catch(() => {});
     await releaseSlot(slotId).catch(() => {});
   }
   await chainDispatch({ kind: event.name, workspaceId });

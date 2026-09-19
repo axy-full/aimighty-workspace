@@ -30,6 +30,7 @@ async function fixture(options: {
   slot?: boolean;
   reserveThrows?: boolean;
   handlerThrows?: boolean;
+  recorderThrows?: boolean;
   secret?: string | null;
   nodeEnv?: string;
 } = {}) {
@@ -37,7 +38,15 @@ async function fixture(options: {
   const handled: WorkerEvent[] = [], continuations: (() => Promise<void>)[] = [];
   const slots: { acquired: unknown[]; released: string[]; chained: unknown[] } = { acquired: [], released: [], chained: [] };
   const logs: string[] = [];
+  const recorded: Record<string, unknown>[] = [];
   const dependencies = {
+    "@/lib/dispatch-log": {
+      recordDispatch: async (input: Record<string, unknown>) => {
+        if (options.recorderThrows) throw new Error("dispatch_log unavailable");
+        recorded.push(input);
+        return true;
+      },
+    },
     "next/server": {
       NextResponse: Response,
       after: (fn: () => Promise<void>) => { continuations.push(fn); },
@@ -87,7 +96,7 @@ async function fixture(options: {
       console.error = original.error;
     }
   };
-  return { post, handled, slots, logs };
+  return { post, handled, slots, logs, recorded };
 }
 
 const event: WorkerEvent = { id: "render-ws_1-gen_1", name: "render/requested", data: { genId: "gen_1", kind: "image", workspaceId: "ws_1" } };
@@ -148,6 +157,11 @@ test("an accepted event answers 202 first, then runs the handler once under its 
   expect(line).toMatchObject({ event: "worker.finished", name: "render/requested", ok: true });
   expect(typeof line.durationMs).toBe("number");
   expect(Object.keys(line).sort()).toEqual(["durationMs", "event", "level", "name", "ok"]);
+  // The same fact, durably: one "run" row, identifiers and outcome only.
+  expect(f.recorded).toHaveLength(1);
+  expect(f.recorded[0]).toMatchObject({ eventId: event.id, name: "render/requested", phase: "run", outcome: "finished-ok", workspaceId: "ws_1" });
+  expect(typeof f.recorded[0].durationMs).toBe("number");
+  expect(Object.keys(f.recorded[0]).sort()).toEqual(["durationMs", "eventId", "name", "outcome", "phase", "workspaceId"]);
 
   const failing = await fixture({ handlerThrows: true });
   expect((await failing.post(event)).status).toBe(202);
@@ -155,6 +169,20 @@ test("an accepted event answers 202 first, then runs the handler once under its 
   expect(JSON.parse(failed)).toMatchObject({ ok: false, name: "render/requested" });
   expect(failed).not.toContain("SECRET");
   expect(failing.slots.released).toEqual(["slot-1"]);
+  expect(failing.recorded).toHaveLength(1);
+  expect(failing.recorded[0]).toMatchObject({ eventId: event.id, phase: "run", outcome: "finished-error", workspaceId: "ws_1" });
+  expect(JSON.stringify(failing.recorded)).not.toContain("SECRET");
+});
+
+test("a recorder that rejects never breaks the worker: the handler still runs, the slot is still released, busy still answers", async () => {
+  // The real recordDispatch swallows its own errors; the route guards the await as well, so the slot release in `finally` can never be skipped by the log.
+  const f = await fixture({ recorderThrows: true });
+  expect((await f.post(event)).status).toBe(202);
+  expect(f.handled).toEqual([event]);
+  expect(f.slots.released).toEqual(["slot-1"]);
+  expect(f.slots.chained).toHaveLength(1);
+  const busy = await fixture({ recorderThrows: true, slot: false });
+  expect(await (await busy.post(event)).json()).toEqual({ accepted: false, reason: "busy" });
 });
 
 test("a refused slot answers 202 accepted:false busy and does not run the handler", async () => {
@@ -165,4 +193,6 @@ test("a refused slot answers 202 accepted:false busy and does not run the handle
   expect(f.handled).toHaveLength(0);
   expect(f.slots.released).toHaveLength(0);
   expect(f.logs.find((l) => l.includes("worker.finished"))).toBeUndefined();
+  // Busy is recorded as a "run" row with no duration, so the health timeline shows the refusal.
+  expect(f.recorded).toEqual([{ eventId: event.id, name: "render/requested", phase: "run", outcome: "busy", workspaceId: "ws_1" }]);
 });

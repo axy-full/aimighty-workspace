@@ -82,6 +82,18 @@ export function dispatchMode(env: Environment = process.env): DispatchMode {
 
 export const DISPATCH_TIMEOUT_MS = 15_000;
 
+/** How one hand-off ended, in the same words the log line uses. */
+export type DispatchOutcome = "sent" | "refused" | "failed" | "unconfigured";
+
+export type DispatchResult = {
+  outcome: DispatchOutcome;
+  /** The worker route's HTTP status, when a response came back at all. */
+  status?: number;
+  durationMs?: number;
+  /** Why a `failed` hand-off failed: the error's name (TimeoutError, TypeError), never its message. */
+  reason?: string;
+};
+
 /**
  * Hand one event to this deployment's own worker route.
  *
@@ -97,19 +109,31 @@ export async function dispatchEvent(
   event: WorkerEvent,
   deps: { fetch?: typeof fetch; env?: Environment } = {},
 ): Promise<boolean> {
+  return (await dispatchEventDetailed(event, deps)).outcome === "sent";
+}
+
+/**
+ * The same hand-off, answering what happened rather than only whether it
+ * worked, so the sender can record the outcome durably (lib/dispatch-log.ts)
+ * without this module importing anything from the app.
+ */
+export async function dispatchEventDetailed(
+  event: WorkerEvent,
+  deps: { fetch?: typeof fetch; env?: Environment } = {},
+): Promise<DispatchResult> {
   const env = deps.env ?? process.env;
   const origin = dispatchOrigin(env);
   const secret = env.CRON_SECRET;
   // Fixed-shape lines only: the event carries identifiers, never a prompt,
   // a URL or a credential, so the log can say exactly why a hand-off fell
   // back without disclosing anything.
-  const report = (outcome: string, extra: Record<string, unknown> = {}) =>
+  const report = (outcome: DispatchOutcome, extra: Record<string, unknown> = {}) =>
     console[outcome === "sent" ? "info" : "error"](
       JSON.stringify({ level: outcome === "sent" ? "info" : "error", event: `dispatch.${outcome}`, name: event.name, ...extra }),
     );
   if (!origin || !secret) {
     report("unconfigured", { origin: Boolean(origin), secret: Boolean(secret) });
-    return false;
+    return { outcome: "unconfigured" };
   }
   const doFetch = deps.fetch ?? fetch;
   const startedAt = Date.now();
@@ -124,11 +148,14 @@ export async function dispatchEvent(
       signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
       cache: "no-store",
     });
-    const accepted = response.status === 202;
-    report(accepted ? "sent" : "refused", { status: response.status, durationMs: Date.now() - startedAt });
-    return accepted;
+    const durationMs = Date.now() - startedAt;
+    const outcome: DispatchOutcome = response.status === 202 ? "sent" : "refused";
+    report(outcome, { status: response.status, durationMs });
+    return { outcome, status: response.status, durationMs };
   } catch (error) {
-    report("failed", { reason: error instanceof Error ? error.name : "unknown", durationMs: Date.now() - startedAt });
-    return false;
+    const durationMs = Date.now() - startedAt;
+    const reason = error instanceof Error ? error.name : "unknown";
+    report("failed", { reason, durationMs });
+    return { outcome: "failed", reason, durationMs };
   }
 }

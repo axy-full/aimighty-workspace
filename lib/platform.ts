@@ -239,6 +239,15 @@ const SCHEMA = [
      acquired_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_worker_slots_live ON worker_slots(kind, expires_at)`,
+  /* Native dispatch outcomes (lib/dispatch-log.ts): one row per hand-off
+     attempt ("send") and per worker run ("run"), so /api/health can show
+     what happened to the last few events without the Vercel log viewer.
+     Identifiers and outcomes only; pruned after seven days on write. */
+  `CREATE TABLE IF NOT EXISTS dispatch_log (
+     id TEXT PRIMARY KEY, event_id TEXT NOT NULL, name TEXT NOT NULL, phase TEXT NOT NULL, outcome TEXT NOT NULL,
+     status INTEGER, duration_ms INTEGER, workspace_id TEXT, created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_dispatch_log_created ON dispatch_log(created_at)`,
 ];
 
 export const now = () => Date.now();
