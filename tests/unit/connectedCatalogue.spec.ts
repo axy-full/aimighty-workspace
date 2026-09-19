@@ -3,9 +3,12 @@ import { readFileSync } from "node:fs";
 import {
   CatalogueError,
   effectiveParameters,
+  GAME_PIPELINE_ONLY_MODELS,
   findCatalogueModel,
+  isStandaloneModel,
   listCatalogueModels,
   mediaKindForRole,
+  modelVoiceParameters,
   parseConnectedCatalogue,
   parseConnectedModel,
   validateGenerationRequest,
@@ -30,7 +33,10 @@ test("the captured models_explore catalogue parses into 98 typed models with pro
   expect(listCatalogueModels(catalogue, { type: "image" })).toHaveLength(34);
   expect(listCatalogueModels(catalogue, { type: "video" })).toHaveLength(41);
   expect(listCatalogueModels(catalogue, { type: "3d" })).toHaveLength(17);
-  expect(listCatalogueModels(catalogue, { type: "audio" })).toHaveLength(6);
+  // Six audio models are listed; three are reserved for the game pipeline.
+  expect(catalogue.models.filter((m) => m.outputType === "audio")).toHaveLength(6);
+  expect(listCatalogueModels(catalogue, { type: "audio" })).toHaveLength(3);
+  expect(listCatalogueModels(catalogue)).toHaveLength(95);
   for (const entry of catalogue.models) {
     expect(entry.name.toLowerCase()).not.toContain("higgsfield");
     expect(entry.description.toLowerCase()).not.toContain("higgsfield");
@@ -98,8 +104,8 @@ test("requests are validated against the model before any provider call; undecla
   expect(() => validateGenerationRequest(sam, { type: "3d", model: "sam_3_3d", prompt: "", parameters: {}, medias: [{ role: "image", kind: "image" }, { role: "image", kind: "image" }] })).toThrow(/at most 1 reference file/);
   expect(validateGenerationRequest(sam, { type: "3d", model: "sam_3_3d", prompt: "", parameters: { export_textured_glb: false, detection_threshold: 0.5 }, medias: [{ role: "image", kind: "image" }] })).toEqual({ export_textured_glb: false, detection_threshold: 0.5 });
   // Required parameters.
-  const music = model("sonilo_music");
-  expect(() => validateGenerationRequest(music, { type: "audio", model: "sonilo_music", prompt: "Warm piano", parameters: {}, medias: [] })).toThrow(/requires the setting “duration”/);
+  const speech = model("text2speech_v2");
+  expect(() => validateGenerationRequest(speech, { type: "audio", model: "text2speech_v2", prompt: "Hello", parameters: { voice_type: "preset", voice_id: "v1" }, medias: [] })).toThrow(/requires the setting “variant”/);
   // String arrays honour the declared cap.
   const ads = model("ms_image");
   expect(() => validateGenerationRequest(ads, { type: "image", model: "ms_image", prompt: "Poster", parameters: { product_ids: Array.from({ length: 5 }, () => media) }, medias: [] })).toThrow(/at most 4 values/);
@@ -157,4 +163,32 @@ test("malformed catalogue entries fail closed instead of relaxing constraints", 
   expect(parseConnectedCatalogue({ items: [entry], has_more: true, unlim: { available: true, remaining: 3, expires_at: "2026-10-01T00:00:00Z" } })).toMatchObject({ complete: false, unlim: { available: true, remaining: 3, expiresAt: "2026-10-01T00:00:00Z" } });
   const minimal = parseConnectedModel({ id: "x", output_type: "audio" }) satisfies ConnectedModel;
   expect(minimal).toMatchObject({ name: "x", parameters: [], medias: [], aspectRatios: [], supportsUnlim: false });
+});
+
+test("game-pipeline-only audio models are excluded from every standalone listing and lookup", () => {
+  // Names verified against the captured catalogue: each says "Game pipeline only."
+  expect([...GAME_PIPELINE_ONLY_MODELS]).toEqual(["sonilo_music", "mirelo_text_to_audio", "inworld_text_to_speech"]);
+  for (const id of GAME_PIPELINE_ONLY_MODELS) {
+    const entry = catalogue.models.find((m) => m.id === id)!;
+    expect(entry.outputType).toBe("audio");
+    expect(entry.description).toMatch(/game pipeline only/i);
+    expect(isStandaloneModel(entry)).toBe(false);
+    expect(findCatalogueModel(catalogue, id)).toBeNull();
+  }
+  const listed = listCatalogueModels(catalogue).map((m) => m.id);
+  for (const id of GAME_PIPELINE_ONLY_MODELS) expect(listed).not.toContain(id);
+  expect(listCatalogueModels(catalogue, { type: "audio" }).map((m) => m.id).sort()).toEqual(["qwen_audio_tts", "seed_audio", "text2speech_v2"]);
+  // A future model carrying the provider's wording is excluded too.
+  expect(isStandaloneModel({ id: "new_game_sfx", description: "Sound effects. Game pipeline only." })).toBe(false);
+  expect(isStandaloneModel({ id: "new_sfx", description: "Must be used only for the game-generation pipeline and not for standalone audio." })).toBe(false);
+  expect(isStandaloneModel({ id: "seed_audio", description: "Text-to-audio synthesis." })).toBe(true);
+});
+
+test("speech models that declare voice_type + voice_id are offered the connected voice picker", () => {
+  expect(modelVoiceParameters(model("text2speech_v2"))).toEqual({ kinds: ["preset", "element"], required: true });
+  expect(modelVoiceParameters(model("qwen_audio_tts"))).toEqual({ kinds: ["preset", "element"], required: true });
+  expect(modelVoiceParameters(model("seed_audio"))).toEqual({ kinds: ["preset", "element"], required: false });
+  expect(modelVoiceParameters(model("nano_banana_2"))).toBeNull();
+  // The picker fills a pair the catalogue validation accepts as declared settings.
+  expect(validateGenerationRequest(model("seed_audio"), { type: "audio", model: "seed_audio", prompt: "Hello there.", parameters: { voice_type: "preset", voice_id: "voice-1" }, medias: [] })).toEqual({ voice_type: "preset", voice_id: "voice-1" });
 });

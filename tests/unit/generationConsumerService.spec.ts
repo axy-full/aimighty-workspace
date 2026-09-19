@@ -156,6 +156,7 @@ test("the catalogue is read once per connection and every quote is validated aga
   fixture(async (f) => {
     const listing = await f.service.connectedGenerationCatalogue(identity.userId);
     expect(listing.models).toHaveLength(98);
+    // The cached listing keeps the raw catalogue; lookups refuse game-pipeline-only models.
     expect(f.state.catalogueReads).toBe(1);
     await f.service.connectedGenerationCatalogue(identity.userId);
     expect(f.state.catalogueReads).toBe(1);
@@ -164,6 +165,7 @@ test("the catalogue is read once per connection and every quote is validated aga
     for (const [bad, code] of [
       [{ ...request, parameters: { seed: 4 } }, "parameter_unknown"],
       [{ ...request, model: "not_in_catalogue" }, "model_unknown"],
+      [{ type: "audio", model: "sonilo_music", prompt: "Warm piano", parameters: { duration: 8 }, medias: [] }, "model_unknown"],
       [{ ...request, type: "video" }, "type_mismatch"],
       [{ ...request, medias: [{ role: "start_image", source: { uploadId: "still" } }] }, "media_role_unknown"],
     ] as const)

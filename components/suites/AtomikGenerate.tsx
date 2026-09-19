@@ -14,7 +14,9 @@ import {
   CONNECTED_OUTPUT_TYPES,
   CatalogueError,
   effectiveParameters,
+  isStandaloneModel,
   mediaKindForRole,
+  modelVoiceParameters,
   validateGenerationRequest,
   type ConnectedModel,
   type ConnectedOutputType,
@@ -24,7 +26,7 @@ import {
 import { consumerGenerationInputSchema, type ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { CONNECTED_TOOLS, connectedToolModels, connectedToolResultName, connectedToolRoles, findConnectedTool, validateToolRequest, type ConnectedToolName } from "@/lib/higgsfield-consumer/tools";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
-import { VOICE_TOOLS, findVoiceTool, type VoiceToolName } from "@/lib/higgsfield-consumer/voice-tools";
+import { VOICE_TOOLS, findVoiceTool, type ConnectedVoices, type VoiceToolName } from "@/lib/higgsfield-consumer/voice-tools";
 import { AtomikVoiceTools, parseVoiceJob, voiceEndpoint, type VoiceCapabilities, type VoiceToolsHandle } from "./AtomikVoiceTools";
 import styles from "./atomik-generate.module.css";
 
@@ -130,6 +132,26 @@ function ParameterField({ spec, value, onChange, disabled }: { spec: ConnectedPa
   return <label>{label}<input type="text" aria-label={label} disabled={disabled} maxLength={2000} value={typeof value === "string" ? value : ""} onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)} />{hint && <small>{hint}</small>}</label>;
 }
 
+/** The connected account's voices (cached `list_voices`) for a model that
+ * declares the `voice_type` + `voice_id` pair; choosing one sets both. */
+function VoicePicker({ kinds, required, voices, error, disabled, type, id, onChange, onRefresh }: {
+  kinds: ("preset" | "element")[]; required: boolean; voices: ConnectedVoices | null; error: string; disabled: boolean; type: string; id: string;
+  onChange: (next: { type: "preset" | "element"; id: string } | null) => void; onRefresh: () => void;
+}) {
+  const usable = voices?.voices.filter((voice) => kinds.includes(voice.type)) ?? [];
+  const presets = usable.filter((voice) => voice.type === "preset"), custom = usable.filter((voice) => voice.type === "element");
+  const value = type && id ? `${type}:${id}` : "";
+  const known = !value || usable.some((voice) => `${voice.type}:${voice.id}` === value);
+  return <div className={styles.settings} role="group" aria-label="Voice">
+    <label>Voice<select aria-label="Voice" disabled={disabled || !voices} value={known ? value : ""} onChange={(e) => { const [kind, ...rest] = e.target.value.split(":"); const voice = usable.find((v) => v.type === kind && v.id === rest.join(":")); onChange(voice ? { type: voice.type, id: voice.id } : null); }}>
+      <option value="">{voices ? (required ? "Choose a voice" : "Model default voice") : error ? "Voices unavailable" : "Reading voices…"}</option>
+      {presets.length > 0 && <optgroup label="Preset voices">{presets.map((voice) => <option key={`preset:${voice.id}`} value={`preset:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
+      {custom.length > 0 && <optgroup label="Your voices">{custom.map((voice) => <option key={`element:${voice.id}`} value={`element:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
+    </select><small>{error || (voices ? `${usable.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}${required ? " · Required" : ""}` : "The connected account’s voices are read once an hour.")}</small></label>
+    <button type="button" className="suite-button" disabled={disabled} onClick={onRefresh}><RefreshCw size={14} />Reload voices</button>
+  </div>;
+}
+
 /** Catalogue-driven generation on the workspace owner's connected account.
  * Opening only reads local records; the catalogue, quotes and status checks are explicit. */
 export function AtomikGenerate({ project, scope, refreshProject }: { project: Project; scope: string; refreshProject: () => Promise<void> }) {
@@ -150,9 +172,13 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
   const [voiceJobs, setVoiceJobs] = useState<Parameters<typeof AtomikVoiceTools>[0]["jobs"]>([]), [voiceRevision, setVoiceRevision] = useState(0);
   const voiceTool = findVoiceTool(input.voice);
   const tool = voiceTool ? null : findConnectedTool(input.tool);
-  const models = !catalogue ? [] : tool ? connectedToolModels(tool, catalogue) : catalogue.models.filter((m) => m.outputType === input.type);
+  // Game-pipeline-only models are never offered, even if a listing carries them.
+  const models = !catalogue ? [] : tool ? connectedToolModels(tool, catalogue) : catalogue.models.filter((m) => m.outputType === input.type && isStandaloneModel(m));
   const model = models.find((m) => m.id === input.model && m.outputType === input.type) ?? null;
-  const specs = model ? effectiveParameters(model) : [];
+  const voiceSpec = model && !tool ? modelVoiceParameters(model) : null;
+  // A voice-taking model gets the voice picker in place of two free-text settings.
+  const specs = model ? effectiveParameters(model).filter((spec) => !voiceSpec || (spec.name !== "voice_type" && spec.name !== "voice_id")) : [];
+  const [voices, setVoices] = useState<ConnectedVoices | null>(null), [voicesError, setVoicesError] = useState("");
   const toolRoles = tool && model ? (() => { try { return connectedToolRoles(tool, model); } catch { return null; } })() : null;
   const roles = toolRoles ? [toolRoles.source, ...toolRoles.extras.map((extra) => extra.role)] : model ? [...new Set(model.medias.flatMap((slot) => slot.roles))] : [];
   const role = roles.includes(activeRole) ? activeRole : roles[0] ?? "";
@@ -187,6 +213,25 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
     return result;
   }, [request]);
   const post = useCallback((body: Record<string, unknown>) => json(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), [json]);
+  const voicesPending = useRef(false);
+  const loadVoices = useCallback(async (refresh = false) => {
+    if (voicesPending.current) return;
+    const token = lifecycle.current; voicesPending.current = true; setVoicesError("");
+    try {
+      const result = await json(voiceEndpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "voices", ...(refresh ? { refresh: true } : {}) }) });
+      if (!live.current || lifecycle.current !== token) return;
+      const value = result.voices;
+      if (!record(value) || !Array.isArray(value.voices) || value.voices.length > 500) throw new Error("The connected account’s voices could not be read.");
+      const list = value.voices.flatMap((item) => record(item) && typeof item.id === "string" && item.id.length <= 200 && (item.type === "preset" || item.type === "element") && typeof item.name === "string"
+        ? [{ id: item.id, type: item.type as "preset" | "element", name: item.name.slice(0, 160), ...(typeof item.language === "string" ? { language: item.language.slice(0, 60) } : {}) }] : []);
+      setVoices({ voices: list, complete: value.complete !== false, fetchedAt: Number(value.fetchedAt) || Date.now() });
+    } catch (reason) { if (live.current && lifecycle.current === token) setVoicesError(reason instanceof Error ? reason.message : "The connected account’s voices could not be read."); }
+    finally { if (lifecycle.current === token) voicesPending.current = false; }
+  }, [json]);
+  // Voices are read only when a voice-taking model is chosen (cached an hour server-side).
+  const wantsVoices = !!voiceSpec && !voices && !voicesError && !!capability?.owner && capability.connected;
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (wantsVoices) void loadVoices(); }, [wantsVoices, loadVoices]);
   const parseCatalogue = (value: unknown): Catalogue => {
     if (!record(value) || !Array.isArray(value.models) || value.models.length > 400 || !record(value.unlim)) throw new Error("The connected catalogue could not be read.");
     return { models: value.models as ConnectedModel[], unlim: { available: value.unlim.available === true, remaining: typeof value.unlim.remaining === "number" ? value.unlim.remaining : null, expiresAt: typeof value.unlim.expiresAt === "string" ? value.unlim.expiresAt : null }, complete: value.complete !== false, fetchedAt: Number(value.fetchedAt) || Date.now() };
@@ -365,6 +410,10 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
               </div>}
             </>}
             {!tool && !voiceTool && <label>Prompt<textarea aria-label="Generate prompt" rows={5} maxLength={5000} value={input.prompt} onChange={(e) => change({ prompt: e.target.value })} /><small className={styles.hint}>{input.prompt.length}/5000</small></label>}
+            {!voiceTool && voiceSpec && <VoicePicker kinds={voiceSpec.kinds} required={voiceSpec.required} voices={voices} error={voicesError} disabled={!!busy}
+              type={typeof input.parameters.voice_type === "string" ? input.parameters.voice_type : ""} id={typeof input.parameters.voice_id === "string" ? input.parameters.voice_id : ""}
+              onRefresh={() => void loadVoices(true)}
+              onChange={(next) => { const parameters = { ...input.parameters }; delete parameters.voice_type; delete parameters.voice_id; if (next) { parameters.voice_type = next.type; parameters.voice_id = next.id; } change({ parameters }); }} />}
             {!voiceTool && specs.length > 0 && <div className={styles.settings} role="group" aria-label="Model settings">
               {specs.map((spec) => <ParameterField key={spec.name} spec={spec} value={input.parameters[spec.name]} disabled={!!busy} onChange={(next) => { const parameters = { ...input.parameters }; if (next === undefined) delete parameters[spec.name]; else parameters[spec.name] = next; change({ parameters }); }} />)}
             </div>}

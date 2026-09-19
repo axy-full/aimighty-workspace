@@ -69,6 +69,14 @@ async function fixture(page: Page, options: { connected?: boolean; unlim?: boole
         return json({ job, pollAfterSeconds: 15 });
       }
     }
+    if (path === "/api/higgsfield/consumer/audio-tools" && request.method() === "POST") {
+      const body = request.postDataJSON();
+      posts.push(body);
+      if (body.action === "voices")
+        return json({ voices: { voices: [{ id: "voice-nova", type: "preset", name: "Nova", language: "en-US" }, { id: "elem-1", type: "element", name: "My studio voice" }], complete: true, fetchedAt: Date.now() } });
+      unexpected.push(`voice ${body.action}`);
+      return json({ error: "No other mutation permitted." }, 409);
+    }
     if (path === "/api/workbench/projects") {
       expect(request.headers()["x-workbench-scope"]).toBe(scope);
       if (request.method() === "PUT") {
@@ -193,13 +201,26 @@ test("the Sound and Video workflows expose declared enum, number and toggle sett
   await workflows.getByRole("button", { name: "Sound", exact: true }).click();
   const model = panel.getByRole("combobox", { name: "Generate model", exact: true });
   await expect(model.locator("option", { hasText: "Audio 1.0 · unlimited-eligible" })).toHaveCount(1);
-  await model.selectOption("sonilo_music");
-  await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).fill("Warm piano over soft rain.");
-  await expect(panel.getByText("Score Music requires the setting “duration”.", { exact: true })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Get connected-credit quote", exact: true })).toBeDisabled();
+  // Game-pipeline-only models are never offered for standalone sound.
+  await expect(model.locator("option:not([value=''])")).toHaveCount(3);
+  for (const hidden of ["sonilo_music", "mirelo_text_to_audio", "inworld_text_to_speech"]) await expect(model.locator(`option[value="${hidden}"]`)).toHaveCount(0);
+  await model.selectOption("text2speech_v2");
+  await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).fill("Welcome to the studio.");
   const settings = panel.getByRole("group", { name: "Model settings", exact: true });
-  await settings.getByRole("spinbutton", { name: "duration", exact: true }).fill("8");
+  // Voice is chosen from the connected account's voices, not typed.
+  await expect(settings.getByRole("textbox", { name: "voice id", exact: true })).toHaveCount(0);
+  const voice = panel.getByRole("combobox", { name: "Voice", exact: true });
+  await expect(voice.locator("option", { hasText: "Nova · en-US" })).toHaveCount(1);
+  await expect(voice.locator("optgroup").nth(1)).toHaveAttribute("label", "Your voices");
+  await voice.selectOption("preset:voice-nova");
+  await expect(panel.getByText("requires the setting “variant”.", { exact: false })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Get connected-credit quote", exact: true })).toBeDisabled();
+  await settings.getByRole("combobox", { name: "variant", exact: true }).selectOption("minimax");
   await expect(panel.getByRole("button", { name: "Get connected-credit quote", exact: true })).toBeEnabled();
+  await panel.getByRole("button", { name: "Get connected-credit quote", exact: true }).click();
+  await expect(panel.getByLabel("Connected-credit quote", { exact: true })).toBeVisible();
+  expect(state.posts.filter((body) => body.action === "voices")).toHaveLength(1);
+  expect(state.posts.find((body) => body.action === "quote")!.input).toEqual({ type: "audio", model: "text2speech_v2", prompt: "Welcome to the studio.", parameters: { voice_type: "preset", voice_id: "voice-nova", variant: "minimax" }, medias: [] });
   await workflows.getByRole("button", { name: "Video", exact: true }).click();
   await model.selectOption("kling3_0");
   await expect(panel.getByLabel("Selected model", { exact: true })).toContainText("Unlimited-eligible");
@@ -210,7 +231,7 @@ test("the Sound and Video workflows expose declared enum, number and toggle sett
   await expect(panel.getByText("The setting “duration” must be at most 15.", { exact: true })).toBeVisible();
   await settings.getByRole("spinbutton", { name: "duration", exact: true }).fill("10");
   await panel.getByRole("button", { name: "Get connected-credit quote", exact: true }).click();
-  const quoted = state.posts.find((body) => body.action === "quote")!;
+  const quoted = state.posts.filter((body) => body.action === "quote")[1];
   expect(quoted.input).toEqual({ type: "video", model: "kling3_0", prompt: "Slow push in.", parameters: { sound: "off", duration: 10 }, medias: [] });
   await noOverflow(page);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
