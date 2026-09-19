@@ -138,7 +138,7 @@ test("Edit & Sound: assembly from the sequence, stems from the lanes, transport 
     await page.getByTestId("assembly").getByRole("button", { name: "Mix", exact: true }).click();
     await stem(page, "dialogue").getByRole("button", { name: "Replace" }).click();
     await page.waitForTimeout(400);
-    await page.screenshot({ path: "/private/tmp/ws-assets-shots/edit-1440x900.png" });
+    await page.screenshot({ path: info.outputPath("edit-1440x900.png") });
   }
   expect(errors).toEqual([]);
 });
