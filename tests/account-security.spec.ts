@@ -2,6 +2,19 @@ import { test, expect } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { totpAt } from "../lib/totp";
 
+/**
+ * The spec deliberately submits the PREVIOUS step's code to exercise the
+ * server's one-step drift tolerance. That tolerance is judged at POST time,
+ * so if the 30-second boundary passes between computing the code and the
+ * server reading it, the code is two steps old and is refused — the flake
+ * seen in CI at 360×640. Wait for a window with enough margin first.
+ */
+async function previousStepCode(secret: string, marginMs = 8_000): Promise<string> {
+  const remaining = 30_000 - (Date.now() % 30_000);
+  if (remaining < marginMs) await new Promise((resolve) => setTimeout(resolve, remaining + 250));
+  return totpAt(secret, Date.now() - 30_000);
+}
+
 test("account security enrolls a real authenticator, rotates sessions, requires MFA and rejects a reused recovery code", async ({
   page,
   browser,
@@ -25,7 +38,7 @@ test("account security enrolls a real authenticator, rotates sessions, requires 
       .inputValue();
     await page
       .getByLabel("Authenticator or recovery code", { exact: true })
-      .fill(totpAt(secret, Date.now() - 30_000));
+      .fill(await previousStepCode(secret));
     const enableResponse = page.waitForResponse(
       (r) =>
         r.url().endsWith("/api/account/security") &&
@@ -114,7 +127,7 @@ test("a lost recovery-code replacement response resumes the same set after reloa
     .inputValue();
   await page
     .getByLabel("Authenticator or recovery code", { exact: true })
-    .fill(totpAt(secret, Date.now() - 30_000));
+    .fill(await previousStepCode(secret));
   const response = page.waitForResponse(
     (r) =>
       r.url().endsWith("/api/account/security") &&
