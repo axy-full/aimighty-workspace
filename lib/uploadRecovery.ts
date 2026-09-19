@@ -38,7 +38,7 @@ export function isUploadReceipt(value: unknown): value is UploadedFile {
     typeof result.id === "string" &&
     /^[A-Za-z0-9_-]{1,128}$/.test(result.id) &&
     result.url === `/api/uploads/${encodeURIComponent(result.id)}` &&
-    ["image", "video", "file"].includes(result.kind)
+    ["image", "video", "audio", "file"].includes(result.kind)
   );
 }
 function validate(key: string, value: UploadEnvelope): UploadEnvelope {

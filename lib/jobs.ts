@@ -76,6 +76,8 @@ export type Generation = {
   version: number;
   /** Wall-clock time from submit to delivery — the basis for "where do we get stuck". */
   durationMs: number | null;
+  /** The stored original's own length in seconds (audio and video), when it could be read. */
+  durationS: number | null;
   provider: string;
   attempts: number;
   /** generate | edit | extend. */
@@ -177,6 +179,7 @@ export function rowToGeneration(r: any): Generation {
     shotTitle: r.shot_title ?? null,
     version: Number(r.version ?? 1),
     durationMs: r.duration_ms == null ? null : Number(r.duration_ms),
+    durationS: r.duration_s == null ? null : Number(r.duration_s),
     provider: r.provider ?? "byteplus",
     attempts: Number(r.attempts ?? 1),
     task: r.task ?? "generate",
@@ -572,6 +575,11 @@ export async function syncPending(
   results.attempted += native.attempted;
   results.failed += native.failed;
   results.deferred += native.deferred;
+  // Dubbing projects: submit the queued, ask after the submitted, collect the finished. Never resubmit.
+  const dubs = await (await import("./dubbing")).recoverDubbingJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += dubs.attempted;
+  results.failed += dubs.failed;
+  results.deferred += dubs.deferred;
   const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
@@ -596,6 +604,8 @@ export async function syncPending(
           });
           const gen = rowToGeneration(row);
           const params = JSON.parse(String(row.params || "{}"));
+          // A dubbing project's row is advanced by its own workflow above; it is neither a render nor an orphan.
+          if (gen.kind === "audio" && params.task === "dub") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

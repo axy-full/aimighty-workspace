@@ -1020,6 +1020,7 @@ export default function Studio({
         received.push({
           id: data.id,
           uploadId: data.id,
+          ...(typeof data.durationS === "number" && data.durationS > 0 ? { seconds: data.durationS } : {}),
           name: file.name,
           kind: file.type.startsWith("image/")
             ? "image"

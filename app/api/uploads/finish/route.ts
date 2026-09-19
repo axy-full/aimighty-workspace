@@ -3,6 +3,8 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { identifyImage } from "@/lib/imagemeta";
+import { identifyAudio } from "@/lib/audioMeta";
+import { inspectStoredUploadSeconds } from "@/lib/mediaSource.server";
 import { assembleChunks, streamAssembleUpload } from "@/lib/storage";
 import { storeReferenceUpload } from "@/lib/uploadIntake";
 import { abandonUpload, beginUploadFinish, completeUpload, planUploadObjects, prepareUpload, UploadError, uploadFailure, type FinishClaim } from "@/lib/uploadReservations";
@@ -28,11 +30,18 @@ export const POST = withTenant(async function POST(req: Request) {
     await planUploadObjects(claim, [{ id: claim.uploadId, ext }], claim.bytes);
     const stored = await streamAssembleUpload(claim.key, count, claim.uploadId, ext, "application/octet-stream", claim.bytes);
     if (stored.bytes !== claim.bytes) throw new UploadError("The upload bytes do not match its chunks.");
-    const meta = identifyImage(stored.headChunk), mime = meta?.mime ?? "application/octet-stream", kind = meta?.kind ?? "file";
+    const meta = identifyImage(stored.headChunk) ?? identifyAudio(stored.headChunk), mime = meta?.mime ?? "application/octet-stream", kind = meta?.kind ?? "file";
     const response = { id: claim.uploadId, filename, mime, kind, bytes: stored.bytes, sha256: stored.sha256, url: `/api/uploads/${claim.uploadId}` };
-    await prepareUpload(claim, { count, response, record: {
+    /* The original's own length, for the sound tools that price per minute.
+       The mp4 header says it when the moov box leads; otherwise (and for
+       every audio file) the bounded inspector reads it from the stored
+       bytes. Best effort: an unreadable length is backfilled on first use. */
+    let durationS = meta && "durationS" in meta ? meta.durationS : null;
+    if (durationS == null && (kind === "audio" || kind === "video"))
+      durationS = await inspectStoredUploadSeconds({ id: claim.uploadId, ext, kind, storedUrl: response.url, bytes: stored.bytes }).catch(() => null);
+    await prepareUpload(claim, { count, response: { ...response, durationS }, record: {
       id: claim.uploadId, filename, mime, kind, ext, bytes: stored.bytes, sha256: stored.sha256,
-      width: meta?.width ?? null, height: meta?.height ?? null, durationS: meta?.durationS ?? null, storedUrl: response.url,
+      width: meta && "width" in meta ? meta.width : null, height: meta && "height" in meta ? meta.height : null, durationS, storedUrl: response.url,
     } });
     return NextResponse.json(await completeUpload(claim));
   } catch (error) {

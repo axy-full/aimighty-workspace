@@ -17,7 +17,7 @@ test("the served worker list registers the Astra render function on its event wi
   const { functions, astraRender } = await import("../../lib/workers");
   const { EVENTS } = await import("../../lib/inngest");
   const ids = functions.map((fn) => fn.id());
-  expect(ids).toEqual(["worker-probe", "render", "astra-blender-render"]);
+  expect(ids).toEqual(["worker-probe", "render", "astra-blender-render", "audio-dubbing"]);
   expect(functions).toContain(astraRender);
 
   const opts = astraRender.opts as {

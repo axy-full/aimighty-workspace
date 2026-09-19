@@ -16,7 +16,7 @@ export type UploadedFile = {
   id: string;
   filename: string;
   mime: string;
-  kind: "image" | "video" | "file";
+  kind: "image" | "video" | "audio" | "file";
   bytes: number;
   width: number | null;
   height: number | null;

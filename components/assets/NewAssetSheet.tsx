@@ -180,7 +180,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
     try {
       for (const f of list) {
         const up = await uploadFile(f, "reference");
-        setRefs((prev) => prev.some((r) => r.uploadId === up.id) ? prev : [...prev, { uploadId: up.id, url: up.url, label: up.filename, kind: up.kind === "video" ? "video" : up.kind === "file" ? "audio" : "image" }]);
+        setRefs((prev) => prev.some((r) => r.uploadId === up.id) ? prev : [...prev, { uploadId: up.id, url: up.url, label: up.filename, kind: up.kind === "video" ? "video" : up.kind === "file" || up.kind === "audio" ? "audio" : "image" }]);
       }
     } catch (e) { toast((e as Error).message); }
     finally { setUploading(false); }

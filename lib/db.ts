@@ -882,6 +882,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
       await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
       await addColumn("uploads", `duration_s REAL`);
+      // The stored original's own length, read from its header at store time
+      // or lazily on first read (lib/mediaSource.server.ts); audio and video.
+      await addColumn("generations", `duration_s REAL`);
       for (const col of [
         // Reference uploads keep their master untouched; when a downstream
         // API can't accept the master, the derivative lives alongside it.

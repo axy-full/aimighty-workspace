@@ -186,10 +186,24 @@ export const ELEVENLABS_RATES = {
    *  and 10 voices per request, billed per character like text-to-speech. */
   dialogue: { modelId: "eleven_v3", creditsPerChar: 1, maxChars: 2000, maxVoices: 10 },
   /** POST /v1/speech-to-speech/{voice_id} — model eleven_multilingual_sts_v2,
-   *  $0.12 per minute of input audio. Facts only: the app does not call it
-   *  until PR C2 verifies the contract (see docs/four-suites-v2-plan.md). */
+   *  $0.12 per minute of input audio, whole minutes rounded up. Wired in
+   *  PR C2 (`lib/elevenlabs.ts` speechToSpeech); the first live call is a
+   *  qualification under a stated ceiling (docs/four-suites-v2-plan.md). */
   voiceChange: { modelId: "eleven_multilingual_sts_v2", usdPerMinute: 0.12 },
-  /** POST /v1/dubbing — $0.33 to $2.20 per minute by tier, an asynchronous
-   *  project with status and download calls. Not wired (PR C2). */
-  dubbing: { usdPerMinuteMin: 0.33, usdPerMinuteMax: 2.2 },
+  /** POST /v1/dubbing — an asynchronous project (status and download calls)
+   *  that charges ONE target language up front, per whole minute of source:
+   *  $0.33 (v1 with watermark), $0.50 (v1 without, the default), $2.20 (v2).
+   *  Only the two v1 modes are offered: the request field that selects v2
+   *  is not among the verified facts, so it is never sent. */
+  dubbing: {
+    usdPerMinuteMin: 0.33,
+    usdPerMinuteMax: 2.2,
+    modes: { "v1-watermark": 0.33, v1: 0.5, v2: 2.2 },
+    defaultMode: "v1",
+  },
 } as const;
+/** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
+export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
+export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;
+/** The modes the app submits: v2 has no verified request field, so it is priced but not offered. */
+export const OFFERED_DUBBING_MODES: readonly DubbingMode[] = ["v1", "v1-watermark"];

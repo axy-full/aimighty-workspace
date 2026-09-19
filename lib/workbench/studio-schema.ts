@@ -43,6 +43,7 @@ const asset = z.object({
   nodeId: z.string().max(100).optional(),
   parentId: z.string().optional(),
   mime: z.string().optional(),
+  seconds: z.number().finite().positive().max(86400).optional(),
 });
 const operation = z.object({
   id: z.string().max(100),

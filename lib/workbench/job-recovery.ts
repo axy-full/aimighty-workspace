@@ -3,8 +3,14 @@ import type { Asset, Project } from './studio';
 export type MediaJob = {
   id:string; status:string; kind:'image'|'video'|'audio'; shotId?:string; prompt:string;
   version?:number; model:string; error?:string; creditsBilled?:number; createdAt?:number;
-  params?:{ratio?:string; references?:Array<{uploadId?:string;genId?:string}>};
+  /** The team's name for it; a sound tool names its output after its source. */
+  title?:string|null;
+  /** The stored original's own length in seconds, when the server read it. */
+  durationS?:number|null;
+  params?:{ratio?:string; references?:Array<{uploadId?:string;genId?:string}>; task?:string; dubbingStatus?:string};
 };
+/** Sound tools file their output under the name the server gave it (source · dubbed (Language)), not the lane node's title. */
+const SOURCE_NAMED_TASKS=new Set(['dub','voiceChange']);
 export const activeMediaJob=(job:MediaJob)=>!['succeeded','failed','cancelled'].includes(job.status);
 
 /** Recover every missing asset that fits the persisted draft. A late take cannot
@@ -20,7 +26,8 @@ export function recoverMediaAssets(project:Project,jobs:MediaJob[]):Project {
     have.add(job.id);
     const nodeId=byShot.get(job.shotId!);const node=project.nodes.find(n=>n.id===nodeId);
     const refs=(job.params?.references??[]).flatMap(ref=>project.assets.filter(a=>ref.genId?a.generationId===ref.genId:!!ref.uploadId&&a.uploadId===ref.uploadId).map(a=>a.id));
-    assets.push({id:job.id,generationId:job.id,productionShotId:job.shotId,nodeId,name:(node?.title??'Generated take')+' · v'+(job.version??1),kind:job.kind,category:node?.type==='character'?'Character':'Shot',url:'/api/media/'+job.id,description:job.model,prompt:job.prompt,status:'Draft',locked:false,version:job.version??1,refs});
+    const name=job.title&&SOURCE_NAMED_TASKS.has(job.params?.task??'')?job.title.slice(0,200):(node?.title??'Generated take')+' · v'+(job.version??1);
+    assets.push({id:job.id,generationId:job.id,productionShotId:job.shotId,nodeId,name,kind:job.kind,category:node?.type==='character'?'Character':'Shot',url:'/api/media/'+job.id,description:job.model,prompt:job.prompt,status:'Draft',locked:false,version:job.version??1,refs,...(typeof job.durationS==='number'&&job.durationS>0?{seconds:job.durationS}:{})});
   }
   const completed=new Map(jobs.filter(job=>job.status==='succeeded'&&byShot.has(job.shotId??'')).map(job=>[job.id,{nodeId:byShot.get(job.shotId!)!,shotId:job.shotId!,kind:job.kind}]));
   const attached=new Set(project.nodes.map(node=>node.assetId).filter(Boolean));

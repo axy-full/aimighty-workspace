@@ -25,6 +25,8 @@ export const EVENTS = {
   render: "render/requested",
   astraRender: "astra-blender/render.requested",
   development: "workbench/development.requested",
+  /** A funded dubbing project to submit, ask after, or collect (lib/dubbing.ts). */
+  dubbing: "audio/dubbing.requested",
 } as const;
 
 export type WorkerEventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -33,6 +35,7 @@ export const WORKER_EVENT_NAMES = [
   EVENTS.render,
   EVENTS.astraRender,
   EVENTS.development,
+  EVENTS.dubbing,
 ] as const satisfies readonly WorkerEventName[];
 
 export type WorkerEvent = {

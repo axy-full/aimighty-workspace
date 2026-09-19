@@ -13,7 +13,7 @@ import {PARTICL_STAGE_ALIASES} from '../suites';
 export type Stage = 'brief' | 'script' | 'moodboard' | 'characters' | 'elements' | 'astra-blender' | 'canvas' | 'storyboard' | 'assets' | 'edit' | 'export';
 export type AssetKind = 'image' | 'video' | 'audio' | 'document' | 'link';
 export type AssetStatus = 'Draft' | 'Selected' | 'Continuity note';
-export type Asset = { id:string; name:string; kind:AssetKind; category:string; url:string; description:string; prompt:string; status:AssetStatus; locked:boolean; version:number; refs:string[]; parentId?:string; mime?:string; uploadId?:string; generationId?:string; soulIdentityId?:string; productionShotId?:string; nodeId?:string };
+export type Asset = { id:string; name:string; kind:AssetKind; category:string; url:string; description:string; prompt:string; status:AssetStatus; locked:boolean; version:number; refs:string[]; parentId?:string; mime?:string; uploadId?:string; generationId?:string; soulIdentityId?:string; productionShotId?:string; nodeId?:string; /** The stored original's own length in seconds (audio and video), when the server could read it. */ seconds?:number };
 export type NodeType = 'brief'|'moodboard'|'character'|'element'|'scene'|'note'|'media'|'generate'|'merge'|'grade'|'transform'|'audio'|'switch'|'review'|'output';
 export type NodeOperation = {id:string;kind:'direction'|'grade'|'transform'|'mask'|'mix';enabled:boolean;values:Record<string,number|string|boolean>};
 export type NodeVersion = {id:string;label:string;assetId?:string;text?:string;operations:NodeOperation[];savedAt:string};

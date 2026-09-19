@@ -1,4 +1,5 @@
 import { runAstraRender, reconcileAstraRender } from "./astra-blender/render-jobs";
+import { advanceDubbingJob } from "./dubbing";
 import { withRecoveryJob } from "./recovery";
 import { db, ready, now } from "./db";
 import { runWorkerProbe } from "./workerProbe";
@@ -24,6 +25,7 @@ import type { TenantWorkspace } from "./tenant";
 export type RenderKind = "image" | "audio" | "video";
 export type RenderEventData = { genId: string; kind: RenderKind; workspaceId: string };
 export type AstraEventData = { jobId: string; workspaceId: string };
+export type DubbingEventData = { jobId: string; workspaceId: string };
 export type DevelopmentEventData = { jobId: string; owner: string; workspaceId: string };
 export type ProbeEventData = {
   workspaceId: string;
@@ -191,6 +193,29 @@ export async function handleAstraRender(data: AstraEventData, deps: AstraDeps = 
   );
 }
 
+/* ── audio/dubbing.requested ──────────────────────────────────────── */
+
+export type DubbingDeps = { workspaceOf?: typeof workspaceOf; advance?: typeof advanceDubbingJob };
+const DUBBING_ID = /^dub_[a-f0-9]{32}$/;
+
+/**
+ * One step of the dubbing machine (lib/dubbing.ts): submit once, or ask
+ * after, or collect. Duplicate delivery is safe — the permanent submit
+ * claim purchases at most one vendor project, a poll is free, and a
+ * finished row is left alone. A thrown transport error ends this attempt;
+ * the ten-minute cron's recoverDubbingJobs asks again.
+ */
+export async function handleDubbing(data: DubbingEventData, deps: DubbingDeps = {}) {
+  const { jobId, workspaceId } = data;
+  if (!DUBBING_ID.test(jobId)) throw new Error("Invalid dubbing job event.");
+  return withRecoveryJob(workspaceId, jobId, async () =>
+    runInTenant(await (deps.workspaceOf ?? workspaceOf)(data), async () => {
+      const row = await (deps.advance ?? advanceDubbingJob)(jobId);
+      return { jobId, status: row?.status ?? "missing" };
+    }),
+  );
+}
+
 /* ── workbench/development.requested ──────────────────────────────── */
 
 export type DevelopmentDeps = {
@@ -305,6 +330,7 @@ export function workerJobId(event: WorkerEvent): string {
       return event.data.genId ?? "";
     case EVENTS.astraRender:
     case EVENTS.development:
+    case EVENTS.dubbing:
       return event.data.jobId ?? "";
     case EVENTS.probe:
       return event.data.probeId ?? "";
@@ -328,6 +354,8 @@ export async function runWorkerHandler(event: WorkerEvent): Promise<unknown> {
         owner: String(data.owner ?? ""),
         workspaceId: String(data.workspaceId ?? ""),
       });
+    case EVENTS.dubbing:
+      return handleDubbing({ jobId: String(data.jobId ?? ""), workspaceId: String(data.workspaceId ?? "") });
     case EVENTS.probe:
       return handleProbe(data as ProbeEventData);
   }
