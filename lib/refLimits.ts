@@ -45,7 +45,7 @@ export function ceilingProblem(
     : "";
 
   if (frames > 0 && images > 0) {
-    return `First/last frame and reference media can't be mixed — ModelArk treats them as separate modes.${alsoCast}`;
+    return `First/last frame and reference media can't be mixed — the video engine treats them as separate modes.${alsoCast}`;
   }
   if (images > model.maxReferenceImages) {
     return `${model.label} accepts at most ${model.maxReferenceImages} reference images (${images} attached).${alsoCast}`;

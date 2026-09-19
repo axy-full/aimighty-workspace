@@ -79,7 +79,7 @@ export function createAstraAgent(envelope: AstraAgentEnvelope, model: LanguageMo
         catch (error) { return { valid: false, error: (error as Error).message.slice(0, 2000) }; }
       } }) },
     prepareStep: ({ stepNumber, messages }) => {
-      if (stepNumber >= ASTRA_AGENT_STEPS || astraAgentInputTokens(envelope, messages) > envelope.inputTokenBudget) throw new Error('The Blender source exceeded its reviewed context budget. This attempt will not be repeated automatically.');
+      if (stepNumber >= ASTRA_AGENT_STEPS || astraAgentInputTokens(envelope, messages) > envelope.inputTokenBudget) throw new Error('The 3D source exceeded its reviewed context budget. This attempt will not be repeated automatically.');
       return stepNumber === ASTRA_AGENT_STEPS - 1 ? { toolChoice: 'none' as const, activeTools: [] } : {};
     },
     onStepFinish: async step => {
@@ -111,7 +111,7 @@ export async function runAstraAgent(envelope: AstraAgentEnvelope, auth: Record<s
     const scene = structuredClone(envelope.scene);
     scene.name = 'Astra scene proposal';
     const result = envelope.mode === 'native'
-      ? { summary: 'Mock native proposal; no provider was called.', steps: ['Prepared editable native source for review.'], sourceJson: JSON.stringify(envelope.native ?? { schemaVersion: 1, name: 'Native Blender scene', program: "import bpy\nbpy.context.scene.render.engine = 'CYCLES'\n", assetIds: [] }) }
+      ? { summary: 'Mock native proposal; no provider was called.', steps: ['Prepared editable native source for review.'], sourceJson: JSON.stringify(envelope.native ?? { schemaVersion: 1, name: 'Native 3D scene', program: "import bpy\nbpy.context.scene.render.engine = 'CYCLES'\n", assetIds: [] }) }
       : { summary: 'Mock Astra proposal; no provider was called.', steps: ['Preserved the scene and prepared a reviewable revision.'], sceneJson: JSON.stringify(scene) };
     return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: { cost: 0 } }) };
   }

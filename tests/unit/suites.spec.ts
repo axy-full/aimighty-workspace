@@ -64,7 +64,7 @@ test("the four suites carry the 19 September names and the eight-stage Particl d
     "Brief & Script",
     "Boards",
     "Cast & Elements",
-    "Astra blender",
+    "Astra",
     "Rig",
     "Takes",
     "Edit & Sound",

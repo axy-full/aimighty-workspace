@@ -16,7 +16,7 @@ const amount = (r: Row) => ({
 const vendors = () =>
   PROVIDERS.map((p) => ({
     id: p.id,
-    label: p.id === "google" ? "Google Gemini" : p.label,
+    label: p.label,
   }));
 
 /** Credits are the public accounting unit. Never read a vendor balance or

@@ -224,7 +224,7 @@ export const CATEGORIES: Category[] = [
   {
     key: "technique",
     label: "Technique",
-    hint: "Named moves the engine knows by name. The niche ones carry their own explanation, because ByteDance's guide says an unusual term only lands as [term + what actually happens].",
+    hint: "Named moves the engine knows by name. The niche ones carry their own explanation, because the engine's guide says an unusual term only lands as [term + what actually happens].",
     options: [
       { value: "oner", label: "One-shot", phrase: "shot as a single continuous take, no cuts",
         module: "The entire shot is one continuous take: no cuts, no hidden transitions, no jump in time or position at any point. The camera and the action run unbroken from first frame to last."  },

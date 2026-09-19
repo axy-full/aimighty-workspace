@@ -11,7 +11,7 @@ export function directOpenAIKey(model: string) { return model.startsWith('openai
 export function textVendor(model: string): TextVendor { return directOpenAIKey(model) ? 'openai' : 'gateway'; }
 /** Strip only the catalog owner. Aliases are never translated into another model. */
 export function openAIModelId(model: string) {
-  if (!model.startsWith('openai/') || !model.slice(7) || model.slice(7).includes('/')) throw new Error('Choose an exact OpenAI model ID.');
+  if (!model.startsWith('openai/') || !model.slice(7) || model.slice(7).includes('/')) throw new Error('Choose an exact language model ID.');
   return model.slice(7);
 }
 /** GPT-3.5 and the original GPT-4 family use Chat Completions. Modern models
@@ -26,7 +26,7 @@ export function assertTextProvider(model: string, auth?: Record<string, string>)
 export function openAIFetch(fetcher: typeof fetch): typeof fetch {
   return (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    if (url.origin !== 'https://api.openai.com' || !['/v1/responses', '/v1/chat/completions'].includes(url.pathname)) throw new Error('The OpenAI language endpoint is not supported.');
+    if (url.origin !== 'https://api.openai.com' || !['/v1/responses', '/v1/chat/completions'].includes(url.pathname)) throw new Error('The language endpoint is not supported.');
     return fetcher(input, { ...init, redirect: 'error' });
   };
 }
@@ -63,18 +63,18 @@ export function directTextCostUsd(model: CatalogModel, value: unknown): number |
 }
 
 function messages(value: unknown, responses: boolean) {
-  if (!Array.isArray(value) || !value.length) throw new Error('The direct OpenAI request needs messages.');
+  if (!Array.isArray(value) || !value.length) throw new Error('The direct language request needs messages.');
   return value.map((value) => {
     const item = record(value), role = item.role;
-    if (!['system', 'developer', 'user', 'assistant'].includes(String(role)) || item.tool_calls) throw new Error('Use the native agent transport for OpenAI tool calls.');
+    if (!['system', 'developer', 'user', 'assistant'].includes(String(role)) || item.tool_calls) throw new Error('Use the native agent transport for language tool calls.');
     if (typeof item.content === 'string') return { role, content: item.content };
-    if (!Array.isArray(item.content)) throw new Error('The direct OpenAI request has unsupported message content.');
+    if (!Array.isArray(item.content)) throw new Error('The direct language request has unsupported message content.');
     const content = item.content.map((part) => {
       const block = record(part);
       if (block.type === 'text' && typeof block.text === 'string') return { type: responses ? 'input_text' : 'text', text: block.text };
       const image = record(block.image_url);
       if (block.type === 'image_url' && typeof image.url === 'string' && role === 'user') return responses ? { type: 'input_image', image_url: image.url, ...(image.detail ? { detail: image.detail } : {}) } : { type: 'image_url', image_url: image };
-      throw new Error('The direct OpenAI request has unsupported message content.');
+      throw new Error('The direct language request has unsupported message content.');
     });
     // Assistant history in Responses uses a text string; the app never injects
     // provider reasoning or model-generated images into this raw-text path.
@@ -86,8 +86,8 @@ function messages(value: unknown, responses: boolean) {
 /** Adapt the app's bounded non-streaming chat wire format to the direct API.
  * Tool loops use @ai-sdk/openai instead; there is no transport retry here. */
 export function openAIDirectBody(input: Record<string, unknown>) {
-  if (typeof input.model !== 'string') throw new Error('The direct OpenAI request needs a model.');
-  if (input.stream || input.tools || input.functions || input.modalities) throw new Error('This OpenAI request needs its dedicated native transport.');
+  if (typeof input.model !== 'string') throw new Error('The direct language request needs a model.');
+  if (input.stream || input.tools || input.functions || input.modalities) throw new Error('This language request needs its dedicated native transport.');
   const responses = usesOpenAIResponses(input.model), model = openAIModelId(input.model);
   const options = record(record(input.providerOptions).openai);
   const effort = input.reasoning_effort ?? options.reasoningEffort;
@@ -104,7 +104,7 @@ export function openAIDirectBody(input: Record<string, unknown>) {
     const format = record(input.response_format);
     if (format.type === 'json_schema') body.text = { format: { type: 'json_schema', ...record(format.json_schema) } };
     else if (format.type === 'json_object') body.text = { format: { type: 'json_object' } };
-    else if (format.type && format.type !== 'text') throw new Error('This OpenAI response format is unsupported.');
+    else if (format.type && format.type !== 'text') throw new Error('This language response format is unsupported.');
   } else {
     if (input.response_format !== undefined) body.response_format = input.response_format;
     if (input.stop !== undefined) body.stop = input.stop;
@@ -128,12 +128,12 @@ function gatewayResponse(value: Record<string, unknown>) {
 }
 export async function openaiDirectPost(input: Record<string, unknown>, options: { timeoutMs?: number; fetch?: typeof fetch } = {}): Promise<GatewayReply> {
   const key = typeof input.model === 'string' ? directOpenAIKey(input.model) : null;
-  if (!key) throw new Error('OpenAI is not connected for this workspace.');
+  if (!key) throw new Error('The language account is not connected for this workspace.');
   const { endpoint, body } = openAIDirectBody(input);
   const response = await openAIFetch(options.fetch ?? recoveryFetch)(`${OPENAI_BASE()}/${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(options.timeoutMs ?? 120000) });
   const raw = await response.text();
   let result: Record<string, unknown>;
   try { result = record(JSON.parse(raw)); }
-  catch { return { ok: false, status: response.ok ? 502 : response.status, text: JSON.stringify({ provider: 'openai', error: { message: 'OpenAI returned an unreadable response. This request will not be retried automatically.' } }) }; }
+  catch { return { ok: false, status: response.ok ? 502 : response.status, text: JSON.stringify({ provider: 'openai', error: { message: 'The language account returned an unreadable response. This request will not be retried automatically.' } }) }; }
   return { ok: response.ok, status: response.status, text: JSON.stringify(response.ok && endpoint === 'responses' ? gatewayResponse(result) : { ...result, provider: 'openai' }) };
 }

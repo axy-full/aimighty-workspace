@@ -48,7 +48,7 @@ export const GET = withTenant(async function GET() {
       /** "key" for the vendor's own key, "gateway" for Vercel AI Gateway. */
       via: providerVia(p),
       /** Google only: where its adjustable safety thresholds sit. */
-      safety: p.id === "google" ? (safetyThreshold() ?? "Google default") : undefined,
+      safety: p.id === "google" ? (safetyThreshold() ?? "Engine default") : undefined,
       models: MODELS.filter((m) => m.provider === p.id && (!m.soulIdentity || soulCharacterGenerationEnabled()))
         .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
     })),

@@ -46,7 +46,7 @@ test('gatewayPost directly dispatches OpenAI without Gateway credentials and doe
   globalThis.fetch = async (url) => { calls.push(String(url)); return Response.json({ error: { message: 'Invalid unsupported setting.', type: 'invalid_request_error' } }, { status: 400 }); };
   await runInTenant(workspace({ openai: fakeKey }), async () => {
     const result = await gatewayChat({ model, system: 'Be concise.', user: 'Hello.' });
-    expect(result.ok).toBe(false); expect(result.status).toBe(400); expect(explainGatewayFailure(400, result.text)).toContain('OpenAI');
+    expect(result.ok).toBe(false); expect(result.status).toBe(400); expect(explainGatewayFailure(400, result.text)).toContain('language account');
   });
   expect(calls).toEqual(['https://api.openai.com/v1/responses']);
 });

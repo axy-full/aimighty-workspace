@@ -607,7 +607,7 @@ export function MoleculrWorkspace({
                   }}
                 >
                   <option value="image">
-                    Campaign image · Higgsfield Marketing Studio
+                    Campaign image · Marketing Studio
                   </option>
                   <option value="video">
                     Campaign video · Particl engines

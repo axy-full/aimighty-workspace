@@ -391,7 +391,7 @@ test("legacy owner and explicit BYOK owner can verify, but customers cannot prob
   const shared = await route.post(validScope);
   expect(shared.status).toBe(403);
   expect(await shared.json()).toEqual({
-    error: "Connect your own Higgsfield account to verify it.",
+    error: "Connect your own identity account to verify it.",
   });
   route.setStore({
     ...original,

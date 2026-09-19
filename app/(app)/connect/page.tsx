@@ -12,10 +12,10 @@ import Tokens from "@/components/Tokens";
  */
 
 const CLIENTS = [
-  { id: "claude-code", label: "Claude Code" },
-  { id: "claude-desktop", label: "Claude Desktop" },
-  { id: "claude-remote", label: "Claude (no install)" },
-  { id: "chatgpt", label: "ChatGPT" },
+  { id: "claude-code", label: "Terminal assistant" },
+  { id: "claude-desktop", label: "Desktop assistant" },
+  { id: "claude-remote", label: "Assistant (no install)" },
+  { id: "chatgpt", label: "Custom actions" },
   { id: "cli", label: "Command line" },
 ] as const;
 type ClientId = typeof CLIENTS[number]["id"];
@@ -41,7 +41,7 @@ export default function ConnectPage() {
       <div className="mx-auto w-full max-w-[720px]">
         <h1 className="h1 pt-6">Connect</h1>
         <p className="mt-3 max-w-[560px] text-[16px] leading-relaxed text-dim">
-          Point Claude, ChatGPT or a terminal at this workspace and let it write shots,
+          Point your assistant or a terminal at this workspace and let it write shots,
           wait for them, and pull the files down — without opening the app.
         </p>
 
@@ -71,14 +71,22 @@ export default function ConnectPage() {
 
         {client === "claude-code" && (
           <Guide
-            note="One command. Claude Code runs the little connector for you."
+            note="Your terminal assistant runs the little connector for you."
             steps={[
               { text: "Download the connector (once):", code: `curl -o ~/particl-mcp.mjs ${bridge}` },
-              { text: "Register it with Claude Code:", code:
-`claude mcp add particl \\
-  --env PARTICL_URL=${origin} \\
-  --env PARTICL_TOKEN=${key} \\
-  -- node ~/particl-mcp.mjs` },
+              { text: "Add it to your assistant’s MCP servers:", code:
+`{
+  "mcpServers": {
+    "particl": {
+      "command": "node",
+      "args": ["${"$HOME"}/particl-mcp.mjs"],
+      "env": {
+        "PARTICL_URL": "${origin}",
+        "PARTICL_TOKEN": "${key}"
+      }
+    }
+  }
+}` },
               { text: "Check it before relying on it:", code:
 `PARTICL_URL=${origin} PARTICL_TOKEN=${key} \\
   node ~/particl-mcp.mjs --check` },
@@ -88,10 +96,10 @@ export default function ConnectPage() {
 
         {client === "claude-desktop" && (
           <Guide
-            note="Settings → Developer → Edit Config, then restart Claude Desktop."
+            note="Settings → Developer → Edit Config, then restart the app."
             steps={[
               { text: "Download the connector (once):", code: `curl -o ~/particl-mcp.mjs ${bridge}` },
-              { text: "Add this to claude_desktop_config.json:", code:
+              { text: "Add this to the app’s MCP config file:", code:
 `{
   "mcpServers": {
     "particl": {
@@ -110,23 +118,23 @@ export default function ConnectPage() {
 
         {client === "claude-remote" && (
           <Guide
-            note="Nothing to download — this workspace is itself an MCP server. Add it as a custom connector wherever your Claude offers one (Settings → Connectors → Add custom connector)."
+            note="Nothing to download — this workspace is itself an MCP server. Add it as a custom connector wherever your assistant offers one (Settings → Connectors → Add custom connector)."
             steps={[
               { text: "Connector URL:", code: `${origin}/api/mcp` },
               { text: "Authentication — a bearer token:", code: key },
             ]}
-            after="Custom connectors aren't available on every Claude plan. If yours doesn't offer one, use the Claude Code or Claude Desktop route instead — same tools, same workspace."
+            after="Custom connectors aren't available on every plan. If yours doesn't offer one, use the terminal or desktop route instead — same tools, same workspace."
           />
         )}
 
         {client === "chatgpt" && (
           <Guide
-            note="ChatGPT reaches the workspace as a Custom GPT Action. Create a GPT (ChatGPT → Explore GPTs → Create), open Configure → Actions → Create new action."
+            note="Assistants with custom actions reach the workspace through its OpenAPI schema. Create a custom assistant, then open Configure → Actions → Create new action."
             steps={[
               { text: "Import the schema from this URL:", code: `${origin}/api/openapi` },
               { text: "Authentication → API Key → Bearer. Paste:", code: key },
             ]}
-            after="If your ChatGPT offers custom connectors (MCP) instead, point it at the same endpoint the Claude route uses — /api/mcp with the same bearer token."
+            after="If your assistant offers custom connectors (MCP) instead, point it at the same endpoint the no-install route uses — /api/mcp with the same bearer token."
           />
         )}
 
@@ -184,7 +192,7 @@ node ~/particl-mcp.mjs get gen_abc123 --save ./shot.mp4` },
           <ul className="mt-2 flex flex-col gap-2 text-[14px] leading-relaxed text-dim">
             <li>· Every render spends real credit at the rates the Usage page shows. The
               ceiling on the token is what bounds it.</li>
-            <li>· Prompts are auto-refined with ByteDance&apos;s recipe, exactly as in the app.
+            <li>· Prompts are auto-refined with the engine&apos;s own recipe, exactly as in the app.
               Start a prompt with <span className="font-mono text-[13px] text-blue">raw:</span> to
               send your exact words.</li>
             <li>· Revoking a token stops whatever is using it on its next request.</li>

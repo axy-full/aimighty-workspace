@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 type Reader = Pick<Client, "execute">;
 export const CONSUMER_ORIGINAL_PENDING_MESSAGE =
-  "This original is still being finalized. Check the saved Higgsfield job before deleting it.";
+  "This original is still being finalized. Check the saved connected-account job before deleting it.";
 
 // Both records are server-written. Generation params alone cannot retain an
 // unrelated file. Keep the original between its storage commit and the separate

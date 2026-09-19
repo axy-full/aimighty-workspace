@@ -17,7 +17,7 @@ export const byteplus: EngineAdapter = {
       { audio: p.generateAudio, task: req.task.id, fps60: p.fps60 })?.net ?? null;
   },
   async render(req) {
-    if (req.kind !== "video") throw new Error("ModelArk renders video.");
+    if (req.kind !== "video") throw new Error("The video engine renders video.");
     const ref = await submitTask(req.model.id, req.prompt, req.params, req.references);
     return { handle: { provider: "byteplus", ref, model: req.model.id } };
   },

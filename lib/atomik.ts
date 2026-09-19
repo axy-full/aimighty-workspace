@@ -360,7 +360,7 @@ export async function engines(): Promise<Engine[]> {
     supportsAudio: Boolean(m.supportsAudio),
   }));
   out.push({
-    id: "elevenlabs", label: "ElevenLabs", kind: "audio", own: true,
+    id: "elevenlabs", label: "Voice, sound and music", kind: "audio", own: true,
     note: "voice, sound effects and music",
     ratios: [], resolutions: [], durations: [], supportsAudio: true,
   });
@@ -438,7 +438,7 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
 
   if (!gatewayReachable() && !vendorKey('openai')) {
     throw new Error(
-      "Atomik needs the Vercel AI Gateway. Set AI_GATEWAY_API_KEY, or run on Vercel with OIDC."
+      "Atomik needs the model gateway. Set AI_GATEWAY_API_KEY, or run on the host with OIDC."
     );
   }
 

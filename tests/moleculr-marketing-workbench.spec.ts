@@ -96,7 +96,7 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
         models: [
           {
             id: "higgsfield/marketing-studio-image",
-            label: "Higgsfield Marketing Studio Image",
+            label: "Marketing Studio Image",
             kind: "image",
             family: "gptimage",
             resolutions: ["2k", "4k"],
@@ -136,7 +136,7 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
   ).toBeVisible();
   await page.getByRole("link", { name: "Variants", exact: true }).click();
   const panel = page.getByRole("region", {
-    name: "Higgsfield Marketing Studio images",
+    name: "Marketing Studio images",
   });
   await expect(
     panel.getByRole("button", { name: "Review campaign image" }),

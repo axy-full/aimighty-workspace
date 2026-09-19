@@ -51,18 +51,18 @@ export type ProviderDef = {
 
 export const PROVIDERS: ProviderDef[] = [
   {
-    id: "higgsfield", label: "Higgsfield", serves: "Images, identities and Genjutsu video",
+    id: "higgsfield", label: "Connected identity account", serves: "Images, identities and video transforms",
     envKey: "HF_CREDENTIALS", baseUrlEnv: "HF_BASE_URL", defaultBaseUrl: "https://api.higgsfield.ai",
     docs: "https://console.higgsfield.ai/models/soul-id/api-reference",
     // Conservative Particl admission limits, not a claim about the vendor's maximums.
     limits: { maxImageBytes: 20 * 1024 * 1024, maxVideoBytes: 200 * 1024 * 1024, maxRequestBytes: 1024 * 1024,
       minImagePx: 64, maxImagePx: 8192, minAspect: 0.25, maxAspect: 4, imageFormats: ["jpeg", "jpg", "png", "webp"] },
-    rateLimit: "Account limits are managed in Higgsfield. An uncertain paid submission is reconciled without resubmitting.",
+    rateLimit: "Account limits are managed in the connected account. An uncertain paid submission is reconciled without resubmitting.",
     billsFailures: false,
   },
   {
     id: "byteplus",
-    label: "BytePlus ModelArk",
+    label: "Connected video account",
     serves: "Video",
     envKey: "ARK_API_KEY",
     baseUrlEnv: "ARK_BASE_URL",
@@ -78,13 +78,13 @@ export const PROVIDERS: ProviderDef[] = [
       maxAspect: 2.5,
       imageFormats: ["jpeg", "jpg", "png", "webp", "bmp", "tiff", "gif"],
     },
-    rateLimit: "Per-key concurrency and RPM set in the ModelArk console; a 429 " +
+    rateLimit: "Per-key concurrency and RPM set in the provider console; a 429 " +
                "or 'rate' error is retried with backoff rather than failed.",
     billsFailures: false,
   },
   {
     id: "google",
-    label: "Google Gemini",
+    label: "Connected image account",
     serves: "Images",
     envKey: "GEMINI_API_KEY",
     baseUrlEnv: "GEMINI_BASE_URL",
@@ -103,13 +103,13 @@ export const PROVIDERS: ProviderDef[] = [
       maxAspect: 4,
       imageFormats: ["jpeg", "jpg", "png", "webp", "heic", "heif"],
     },
-    rateLimit: "Per-project RPM and daily quotas set in Google AI Studio; a 429 " +
+    rateLimit: "Per-project RPM and daily quotas set in the provider console; a 429 " +
                "or RESOURCE_EXHAUSTED is retried with backoff rather than failed.",
     billsFailures: false,
   },
   {
     id: "elevenlabs",
-    label: "ElevenLabs",
+    label: "Connected audio account",
     serves: "Sound",
     envKey: "ELEVENLABS_API_KEY",
     baseUrlEnv: "ELEVENLABS_BASE_URL",
@@ -133,8 +133,8 @@ export const PROVIDERS: ProviderDef[] = [
   },
   {
     id: "fal",
-    label: "fal.ai",
-    serves: "Kling 3.0 · Topaz Astra · Characters",
+    label: "Connected render account",
+    serves: "Kinetic 3.0 · Upscale 2 · Characters",
     envKey: "FAL_KEY",
     baseUrlEnv: "FAL_BASE_URL",
     defaultBaseUrl: "https://queue.fal.run",
@@ -166,7 +166,7 @@ export const PROVIDERS: ProviderDef[] = [
      * It is also the one vendor here whose balance we can simply ask for,
      * which is why it needs no top-ups recorded by hand. */
     id: "vercel",
-    label: "Vercel AI Gateway",
+    label: "Connected model gateway",
     serves: "Thinking",
     envKey: "AI_GATEWAY_API_KEY",
     baseUrlEnv: "AI_GATEWAY_BASE_URL",
@@ -177,7 +177,7 @@ export const PROVIDERS: ProviderDef[] = [
       minImagePx: 0, maxImagePx: 0, minAspect: 0, maxAspect: 0,
       imageFormats: [],
     },
-    rateLimit: "Per-account limits set by Vercel; a 429 is retried with backoff.",
+    rateLimit: "Per-account limits set by the gateway; a 429 is retried with backoff.",
     billsFailures: false,
   },
 ];

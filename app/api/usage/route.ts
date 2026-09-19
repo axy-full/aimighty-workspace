@@ -211,7 +211,7 @@ export const GET = withTenant(async function GET() {
         ? anchor.check.balanceCredits - anchor.sinceCredits
         : addedCredits - spentCredits,
       id: p.id,
-      label: p.id === "google" ? "Google Gemini" : p.label,
+      label: p.label,
       serves: p.serves,
       via: providerVia(p),
       configured: providerConfigured(p),
@@ -258,11 +258,11 @@ export const GET = withTenant(async function GET() {
           : null,
       note: p.id === "vercel"
         ? `Every text call: Atomik's ${atomikChats === 1 ? "conversation" : "conversations"} and the prompt writer. ` +
-          "Stills bill here too while the gateway is the door to Google."
+          "Stills bill here too while the gateway is the route to the image engine."
         : p.id === "google"
-        ? "Stills, when they go direct on GEMINI_API_KEY. While the Vercel AI Gateway is the door, they bill to Vercel instead."
-        : p.id === "byteplus" ? "Seedance video and ByteDance's own prompt writer."
-        : p.id === "fal" ? "Identity training and identity stills. fal publishes no balance over the API."
+        ? "Stills, when they go direct on GEMINI_API_KEY. While the model gateway is the route, they bill to the gateway instead."
+        : p.id === "byteplus" ? "Motion video and the engine's own prompt writer."
+        : p.id === "fal" ? "Identity training and identity stills. This account publishes no balance over the API."
         : "Voice, sound effects and music. Billed in the plan's credits; the plan's own counter is the authority.",
       models: byModel.rows.filter((m: any) => String(m.provider ?? "byteplus") === p.id).map((m: any) => ({
         model: m.model, label: label(m.model), n: Number(m.n), spend: Number(m.spend), tokens: Number(m.tokens),

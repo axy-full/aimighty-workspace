@@ -18,7 +18,7 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
   const unexpected: string[] = [], external: string[] = [], errors: string[] = [];
   let connection: Connection = { connected: !options.reconnect, requiresReconnect: !!options.reconnect };
   let statusError = !!options.initialError;
-  let connectResult: { status: number; json: unknown } = { status: 503, json: { error: "Higgsfield authorization is not configured on this deployment." } };
+  let connectResult: { status: number; json: unknown } = { status: 503, json: { error: "The connected account authorization is not configured on this deployment." } };
   let discoveryRelease: (() => void) | undefined;
   let discoveryGate: Promise<void> | undefined;
   const verificationJob = { id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", status: "quoted", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", workspaceName: "Test studio", quoteCredits: 75, quoteExpiresAt: Date.now() + 300000, providerJobId: null as string | null, providerReceipt: null as Record<string, unknown> | null, result: null as unknown, originalAvailable: false as boolean | undefined, originalAvailability: "not_collected" as string | undefined };
@@ -115,7 +115,7 @@ async function fixture(page: Page, options: { owner?: boolean; initialError?: bo
     releaseDiscovery: () => discoveryRelease?.(),
   };
 }
-const consumerCard = (page: Page) => page.locator("section").filter({ has: page.getByRole("heading", { name: "Higgsfield · Marketing account", exact: true }) });
+const consumerCard = (page: Page) => page.locator("section").filter({ has: page.getByRole("heading", { name: "Connected video account", exact: true }) });
 
 test("owner checks scoped consumer definitions explicitly, then disconnects without starting any media work", async ({ page }, info) => {
   const state = await fixture(page);
@@ -133,7 +133,7 @@ test("owner checks scoped consumer definitions explicitly, then disconnects with
   await expect(card.getByText("2 tools advertised by the connected account. Availability still needs workflow qualification.")).toBeVisible();
   await expect(card.getByRole("status")).toHaveText("Available tool definitions checked. No generation, upload or scoring was started.");
   await card.getByText("Connection diagnostics", { exact: true }).click();
-  const definitions = card.getByLabel("Higgsfield workflow definitions");
+  const definitions = card.getByLabel("Connected workflow definitions");
   await expect(definitions).toContainText('"marketing_video"');
   expect(JSON.parse((await definitions.textContent())!).tools[1].description).toBe('<img src="https://untrusted.example.com/tracker.png">');
   await expect(card.locator("img")).toHaveCount(0);
@@ -141,7 +141,7 @@ test("owner checks scoped consumer definitions explicitly, then disconnects with
   await card.getByRole("button",{name:"Check account options and pricing",exact:true}).click();
   await expect(card.getByRole("status")).toHaveText("Account options and available pricing checked. No workspace was switched and no paid job was started.");
   await card.getByText("Account capability diagnostics",{exact:true}).click();
-  const qualification = card.getByLabel("Higgsfield account capabilities");
+  const qualification = card.getByLabel("Connected account capabilities");
   expect(JSON.parse((await qualification.textContent())!).results[0].result.note).toBe('<img src="https://untrusted.example.com/cost.png">');
   await expect(card.locator("img")).toHaveCount(0);
   await card.getByRole("button", { name: "Check analysis model definitions", exact: true }).scrollIntoViewIfNeeded();
@@ -149,13 +149,13 @@ test("owner checks scoped consumer definitions explicitly, then disconnects with
   await card.getByRole("button", { name: "Check analysis model definitions", exact: true }).click();
   await expect(card.getByRole("status")).toHaveText("Analysis model definitions checked. No video was uploaded and no scoring job was started.");
   await card.getByText("Analysis model diagnostics", { exact: true }).click();
-  const analysis = card.getByLabel("Higgsfield analysis model definitions");
+  const analysis = card.getByLabel("Connected analysis model definitions");
   expect(JSON.parse((await analysis.textContent())!).results.map((read: { arguments: { model_id: string } }) => read.arguments.model_id)).toEqual(["brain_activity", "virality_predictor"]);
   await expect(card.locator("img")).toHaveCount(0);
   await card.screenshot({ path: info.outputPath("higgsfield-consumer-discovery.png") });
   await card.getByRole("button", { name: "Disconnect marketing account", exact: true }).click();
-  await expect(card.getByRole("status")).toHaveText("Higgsfield consumer connection removed from this Particl workspace.");
-  await expect(card.getByRole("button", { name: "Connect Higgsfield account", exact: true })).toBeEnabled();
+  await expect(card.getByRole("status")).toHaveText("Connected account removed from this Particl workspace.");
+  await expect(card.getByRole("button", { name: "Connect account", exact: true })).toBeEnabled();
   await expect(card.getByRole("button", { name: "Check available workflows", exact: true })).toHaveCount(0);
   await expect(definitions).toHaveCount(0);
   await expect(qualification).toHaveCount(0);
@@ -164,7 +164,7 @@ test("owner checks scoped consumer definitions explicitly, then disconnects with
     "POST /api/higgsfield/consumer/capabilities", "POST /api/higgsfield/consumer/qualification", "POST /api/higgsfield/consumer/analysis-qualification", "DELETE /api/higgsfield/consumer/connection",
   ]);
   await page.reload();
-  await expect(consumerCard(page).getByRole("button", { name: "Connect Higgsfield account", exact: true })).toBeEnabled();
+  await expect(consumerCard(page).getByRole("button", { name: "Connect account", exact: true })).toBeEnabled();
   expect(state.calls.filter((call) => call.method !== "GET")).toHaveLength(4);
   expect(state.unexpected).toEqual([]);
   expect(state.external).toEqual([]);
@@ -176,20 +176,20 @@ test("status and reconnect errors require explicit retries and reject unexpected
   await page.goto("/settings?higgsfield=authorization_failed#engines");
   const card = consumerCard(page);
   await expect(card.getByText("Connection status temporarily unavailable.", { exact: true })).toBeVisible();
-  await expect(card.getByRole("button", { name: "Connect Higgsfield account", exact: true })).toBeDisabled();
-  await expect(card.getByText(/The Higgsfield connection was not completed/)).toBeVisible();
+  await expect(card.getByRole("button", { name: "Connect account", exact: true })).toBeDisabled();
+  await expect(card.getByText(/The account connection was not completed/)).toBeVisible();
   state.setStatusError(false);
   await card.getByRole("button", { name: "Retry connection status", exact: true }).click();
-  await expect(card.getByText("Reconnect your Higgsfield account to restore access.", { exact: true })).toBeVisible();
+  await expect(card.getByText("Reconnect your account to restore access.", { exact: true })).toBeVisible();
   await expect(card.getByRole("button", { name: "Check available workflows", exact: true })).toHaveCount(0);
   expect(state.calls.filter((call) => call.method !== "GET")).toHaveLength(0);
-  await card.getByRole("button", { name: "Connect Higgsfield account", exact: true }).click();
-  await expect(card.getByText("Higgsfield authorization is not configured on this deployment.", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Connect account", exact: true }).click();
+  await expect(card.getByText("The connected account authorization is not configured on this deployment.", { exact: true })).toBeVisible();
   expect(state.calls.filter((call) => call.path.endsWith("/connect"))).toHaveLength(1);
-  await expect(card.getByText(/The Higgsfield connection was not completed/)).toHaveCount(0);
+  await expect(card.getByText(/The account connection was not completed/)).toHaveCount(0);
   state.setConnectResult({ status: 200, json: { url: "https://untrusted.example.com/oauth/authorize" } });
-  await card.getByRole("button", { name: "Connect Higgsfield account", exact: true }).click();
-  await expect(card.getByText("Higgsfield returned an unexpected sign-in address.", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Connect account", exact: true }).click();
+  await expect(card.getByText("The connected account returned an unexpected sign-in address.", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/settings\?higgsfield=authorization_failed#engines$/);
   await card.screenshot({ path: info.outputPath("higgsfield-consumer-reconnect.png") });
   expect(state.calls.filter((call) => call.path.endsWith("/connect"))).toHaveLength(2);
@@ -204,7 +204,7 @@ test("member settings do not mount owner consumer connection controls or load ow
   await page.goto("/settings#engines");
   await expect(page.getByRole("heading", { name: "Available engines", exact: true })).toBeVisible();
   await expect(consumerCard(page)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Higgsfield account|Disconnect marketing account|Check available workflows/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Connect account|Reconnect account|Disconnect marketing account|Check available workflows/ })).toHaveCount(0);
   expect(state.calls).toEqual([]);
   expect(state.unexpected).toEqual([]);
   expect(state.external).toEqual([]);
@@ -221,16 +221,16 @@ test("verification quotes are inert until exact wallet approval; accepted jobs s
   const submit = panel.getByRole("button", { name: "Run verification · 75 credits", exact: true });
   await expect(submit).toBeDisabled();
   expect(state.videoActions.map(x => x.action)).toEqual(["quote-rehearsal"]);
-  await panel.getByRole("checkbox", { name: "Charge 75 Higgsfield credits to Test studio for this one test.", exact: true }).check();
+  await panel.getByRole("checkbox", { name: "Charge 75 connected credits to Test studio for this one test.", exact: true }).check();
   await submit.evaluate(element => { (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click(); });
-  await expect(panel.getByText(/Higgsfield accepted the video request/)).toBeVisible();
+  await expect(panel.getByText(/The connected account accepted the video request/)).toBeVisible();
   expect(state.videoActions.filter(x => x.action === "submit")).toEqual([{ action: "submit", id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test", workspaceId: "73834e6d-e147-4a22-826a-d60776d59b61", credits: 75 }]);
   await page.reload();
   await expect(panel.getByRole("button", { name: "Check verification result", exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: /Run verification|Get verification quote/ })).toHaveCount(0);
   await panel.getByRole("button", { name: "Check verification result", exact: true }).click();
   await panel.getByText("Verification result details", { exact: true }).click();
-  await expect(panel.getByLabel("Higgsfield verification result")).toContainText('"status": "running"');
+  await expect(panel.getByLabel("Connected account verification result")).toContainText('"status": "running"');
   await expect(panel.getByRole("button", { name: /Check again in/ })).toBeDisabled();
   await expect(panel.locator("img")).toHaveCount(0);
   await panel.screenshot({ path: info.outputPath("higgsfield-verification.png") });
@@ -271,11 +271,11 @@ test("saved uncertain submission recovers its provider receipt after reload thro
   await expect(panel.getByRole("button", { name: /Run verification|Get verification quote/ })).toHaveCount(0);
   expect(state.videoActions.map(action => action.action)).toEqual(["quote-rehearsal", "submit"]);
   await panel.getByText("Verification result details", { exact: true }).click();
-  await expect(panel.getByLabel("Higgsfield verification result")).toContainText('"results"');
-  await expect(panel.getByLabel("Higgsfield verification result")).toContainText("40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061");
+  await expect(panel.getByLabel("Connected account verification result")).toContainText('"results"');
+  await expect(panel.getByLabel("Connected account verification result")).toContainText("40bcf565-b2c7-4c2a-81ca-bcf5e1d9e061");
   await recover.click();
-  await expect(panel.getByText(/Higgsfield accepted the video request/)).toBeVisible();
-  await expect(panel.getByLabel("Higgsfield verification result")).toContainText('"status": "running"');
+  await expect(panel.getByText(/The connected account accepted the video request/)).toBeVisible();
+  await expect(panel.getByLabel("Connected account verification result")).toContainText('"status": "running"');
   await expect(panel.getByRole("button", { name: /Check again in/ })).toBeDisabled();
   await expect(panel.getByRole("button", { name: /Run verification|Get verification quote|Check saved submission/ })).toHaveCount(0);
   expect(state.videoActions).toEqual([
@@ -301,7 +301,7 @@ test("completed verification retains its verified local original and download af
   await expect(preview).toHaveCount(0);
   expect(state.videoActions).toEqual([]);
   await panel.getByText("Verification result details", { exact: true }).click();
-  const details = panel.getByLabel("Higgsfield verification result", { exact: true });
+  const details = panel.getByLabel("Connected account verification result", { exact: true });
   await expect(details).toContainText('"status": "pending"');
   await panel.getByRole("button", { name: "Check verification result", exact: true }).click();
   await expect(panel.getByRole("status")).toHaveText("Verification: completed");
@@ -368,7 +368,7 @@ for (const availability of ["deleted", undefined] as const) test(`management hid
   await expect(panel.getByRole("link", { name: "Download original video", exact: true })).toHaveCount(0);
   await expect(panel.getByText(availability ? /The original video was deleted from the library/ : /The original video is unavailable/)).toBeVisible();
   await panel.getByText("Verification result details", { exact: true }).click();
-  expect(JSON.parse((await panel.getByLabel("Higgsfield verification result").textContent())!)).toEqual({ original: verifiedOriginal });
+  expect(JSON.parse((await panel.getByLabel("Connected account verification result").textContent())!)).toEqual({ original: verifiedOriginal });
   expect(state.mediaRequests).not.toContain(`/api/media/${originalGenerationId}?download=1`);
   expect(state.videoActions).toEqual([{ action: "status", id: "a811e162-cf6c-4073-8fe8-99e4dbb23547", draftId: "hf-verification-test" }]);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);

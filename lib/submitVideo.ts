@@ -91,7 +91,7 @@ async function rememberSubmission(
 ): Promise<void> {
   await writeSubmission(async () => {
     if (isGenjutsuModel(job.model.id)) {
-      if (!out.higgsfieldHandle || out.higgsfieldHandle.model !== job.model.id || out.higgsfieldHandle.ref !== out.taskId) throw new Error("The Genjutsu receipt is incomplete.");
+      if (!out.higgsfieldHandle || out.higgsfieldHandle.model !== job.model.id || out.higgsfieldHandle.ref !== out.taskId) throw new Error("The transform receipt is incomplete.");
       const saved = await db().execute({ sql: `UPDATE generations SET status=CASE WHEN status IN ('succeeded','cancelled') THEN status ELSE 'running' END,
         attempts=1,queue_ms=?,submit_ms=?,error=NULL,params=json_set(params,'$.higgsfieldVideoHandle',json(?),'$.producedOutcome',json(?)),updated_at=?
         WHERE id=? AND deleted=0 AND (json_extract(params,'$.higgsfieldVideoHandle.ref') IS NULL OR json_extract(params,'$.higgsfieldVideoHandle.ref')=?)`,

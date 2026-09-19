@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, X, Search, SlidersHorizontal, Sparkles } from "lucide-react";
 import { Popover, Select } from "radix-ui";
 import styles from "./ModelPicker.module.css";
+import { displayModelName } from "@/lib/models";
 
 export type EffortOption = { value: string; label: string; description?: string };
 export type ThinkingModel = {
@@ -11,21 +12,20 @@ export type ThinkingModel = {
   description?: string; owner?: string; band?: string; released?: number;
 };
 
-const PROVIDERS = ["Claude", "OpenAI", "Gemini"] as const;
+const PROVIDERS = ["Sage", "Forge", "Prism"] as const;
 const DEFAULT_EFFORT: EffortOption = { value: "auto", label: "Provider default", description: "Use this model’s standard reasoning settings." };
 
 function providerOf(model: ThinkingModel) {
-  if (model.id.startsWith("anthropic/")) return "Claude";
-  if (model.id.startsWith("openai/")) return "OpenAI";
-  if (model.id.startsWith("google/")) return "Gemini";
-  return model.owner || "Other models";
+  if (model.id.startsWith("anthropic/")) return "Sage";
+  if (model.id.startsWith("openai/")) return "Forge";
+  if (model.id.startsWith("google/")) return "Prism";
+  return "Other models";
 }
 
 export function thinkingModelName(id: string, models: ThinkingModel[] = []) {
   if (id === "auto") return "Auto";
-  const known = models.find(model => model.id === id);
-  if (known) return known.name.replace(/^(Anthropic|OpenAI|Google):\s*/i, "");
-  return id.split("/").at(-1)!.replace(/-/g, " ").replace(/\b(gpt|o[134])\b/gi, word => word.toUpperCase()).replace(/\b\w/g, letter => letter.toUpperCase());
+  void models;
+  return displayModelName(id);
 }
 
 export function effortLabel(value = "auto", model?: ThinkingModel) {
@@ -49,7 +49,7 @@ export function ModelPicker({ value, models, onPick, disabled, label = "Thinking
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const visible = uniqueModels.filter(model => (provider === "All" || providerOf(model) === provider)
-      && `${model.id} ${model.name} ${providerOf(model)}`.toLowerCase().includes(needle));
+      && `${model.id} ${model.name} ${displayModelName(model.id)} ${providerOf(model)}`.toLowerCase().includes(needle));
     const names = [...new Set([...PROVIDERS, ...visible.map(providerOf)])];
     return names.map(name => ({ name, models: visible.filter(model => providerOf(model) === name).sort((a, b) => (b.released ?? 0) - (a.released ?? 0) || thinkingModelName(a.id, uniqueModels).localeCompare(thinkingModelName(b.id, uniqueModels), undefined, { numeric: true })) })).filter(group => group.models.length);
   }, [query, provider, uniqueModels]);
@@ -85,7 +85,7 @@ export function ModelPicker({ value, models, onPick, disabled, label = "Thinking
     <Popover.Trigger asChild>
       <button type="button" id={id} aria-label={label} title={`${label}: ${name}`} disabled={disabled}
         className={`${styles.trigger} ${compact ? styles.compact : ""}`}>
-        {selectedProvider ? <span className={styles.providerMark} aria-hidden="true">{selectedProvider === "OpenAI" ? "O" : selectedProvider.charAt(0)}</span> : <Sparkles size={14} aria-hidden="true" />}
+        {selectedProvider ? <span className={styles.providerMark} aria-hidden="true">{selectedProvider.charAt(0)}</span> : <Sparkles size={14} aria-hidden="true" />}
         <span className={styles.triggerName}>{name}</span><ChevronDown size={13} aria-hidden="true" />
       </button>
     </Popover.Trigger>
@@ -110,7 +110,7 @@ export function ModelPicker({ value, models, onPick, disabled, label = "Thinking
             }} />
           <span className={styles.escape} aria-hidden="true">esc</span>
         </div>
-        <div className={styles.providers} role="group" aria-label="Filter thinking models by provider">
+        <div className={styles.providers} role="group" aria-label="Filter thinking models by family">
           {["All", ...PROVIDERS.filter(name => uniqueModels.some(model => providerOf(model) === name))].map(name => <button type="button" key={name} aria-pressed={provider === name}
             onClick={() => { setProvider(name); setActiveId(""); search.current?.focus(); }}>{name}</button>)}
         </div>
@@ -127,7 +127,7 @@ export function ModelPicker({ value, models, onPick, disabled, label = "Thinking
             <div className={styles.groupHeading}><span>{group.name}</span><span>{group.models.length}</span></div>
             {group.models.map(row)}
           </div>)}
-          {!options.length && <div className={styles.empty}>No models found.<span>Try a model name or another provider.</span></div>}
+          {!options.length && <div className={styles.empty}>No models found.<span>Try a model name or another family.</span></div>}
         </div>
         <div className={styles.footer}>Model and effort are included in your estimate.</div>
       </Popover.Content>

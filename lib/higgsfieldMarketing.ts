@@ -115,7 +115,7 @@ export async function marketingJson(
   ) {
     await response.body?.cancel();
     throw new MarketingError(
-      "Higgsfield returned an unusable response.",
+      "The connected account returned an unusable response.",
       503,
       "invalid_response",
     );
@@ -138,7 +138,7 @@ export async function marketingJson(
   } catch {
     await reader.cancel().catch(() => {});
     throw new MarketingError(
-      "Higgsfield returned an unusable response.",
+      "The connected account returned an unusable response.",
       503,
       "invalid_response",
     );
@@ -168,12 +168,12 @@ async function readCall(url: string, body?: unknown) {
         const status = response.status;
         throw new MarketingError(
           status === 401 || status === 403
-            ? "This Higgsfield connection cannot access Marketing Studio."
+            ? "This connected account cannot access Marketing Studio."
             : status === 404
               ? "Marketing Studio is unavailable for this connection."
               : status === 429
-                ? "Higgsfield is rate limiting requests. Try again shortly."
-                : "Higgsfield pricing or presets are temporarily unavailable.",
+                ? "The connected account is rate limiting requests. Try again shortly."
+                : "Marketing pricing or presets are temporarily unavailable.",
           status === 429 ? 429 : 503,
           status === 401 || status === 403
             ? "authentication_rejected"
@@ -188,7 +188,7 @@ async function readCall(url: string, body?: unknown) {
     } catch (error) {
       if (error instanceof MarketingError) throw error;
       throw new MarketingError(
-        "Higgsfield pricing or presets could not be reached.",
+        "Marketing pricing or presets could not be reached.",
       );
     }
   });
@@ -284,7 +284,7 @@ export async function listMarketingPresets(
       })),
     });
     throw new MarketingError(
-      "Higgsfield returned an unusable preset page.",
+      "The connected account returned an unusable preset page.",
       503,
       "invalid_response",
     );
@@ -316,7 +316,7 @@ export async function requireMarketingPreset(settings: MarketingSettings) {
   ).rows[0];
   if (!row)
     throw new MarketingError(
-      "Refresh presets and choose one available to this Higgsfield connection.",
+      "Refresh presets and choose one available to this connected account.",
       409,
       "preset_unavailable",
     );
@@ -371,7 +371,7 @@ export async function estimateMarketingInput(
       : NaN;
   if (!Number.isFinite(usd) || usd <= 0)
     throw new MarketingError(
-      "Higgsfield did not return a positive USD estimate. Nothing was submitted.",
+      "The connected account did not return a positive USD estimate. Nothing was submitted.",
       503,
       "price_unavailable",
     );

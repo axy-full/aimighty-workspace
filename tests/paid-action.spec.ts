@@ -257,7 +257,7 @@ test("Atomik chat recovers its original message and conversation after reload", 
   await signInLocally(page.request);
   let creates = 0;
   const sends: { key: string | undefined; body: unknown }[] = [];
-  const model = { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision:true, efforts:[{value:"high",label:"High"}] };
+  const model = { id: "anthropic/claude-sonnet-4.6", name: "Sage 4.6", vision:true, efforts:[{value:"high",label:"High"}] };
   const loaded = {
     chat: {
       id: "chat-browser",
@@ -308,7 +308,7 @@ test("Atomik chat recovers its original message and conversation after reload", 
   await page.goto("/atomik/ideas");
   await page.getByRole("button", { name: "Ask Atomik →", exact: true }).click();
   await page.getByRole("button", {name:"Chat thinking model",exact:true}).click();
-  await page.getByRole("option", {name:"Claude Sonnet 4.6",exact:true}).click();
+  await page.getByRole("option", {name:"Sage 4.6",exact:true}).click();
   await page.getByRole("combobox", {name:"Chat reasoning effort",exact:true}).click();
   await page.getByRole("option", {name:"High",exact:true}).click();
   await page

@@ -65,7 +65,7 @@ export function mockCompletion(kind: "prompt" | "turn" | "idea" | "scene" | "sho
     : kind === "scene" ? JSON.stringify({ title: "Mocked scene", secs: 6, prose: "Mocked: the scene, rewritten — the same beat, one clear action, the cast where they were." })
     : kind === "shots" ? JSON.stringify({ shots: [
         { title: "Mocked establishing", description: "The street at dawn, wet from the night, the first light along the rooftops.", planned: 5, setup: { shot: "evs", time: "dawn", move: "static" }, cast: [], engine: "seedance", why: "standard video" },
-        { title: "Mocked splash", description: "The bicycle cuts through a flooded gutter, water fanning off the front wheel.", planned: 4, setup: { shot: "cu", move: "track" }, cast: [], engine: "kling", why: "water: water, cloth and physics go to Kling" },
+        { title: "Mocked splash", description: "The bicycle cuts through a flooded gutter, water fanning off the front wheel.", planned: 4, setup: { shot: "cu", move: "track" }, cast: [], engine: "kling", why: "water: water, cloth and physics go to Kinetic 3.0" },
       ] })
     : lastUser.slice(0, 2000) || "A mocked prompt.";
   return {

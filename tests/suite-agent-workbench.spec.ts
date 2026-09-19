@@ -17,8 +17,8 @@ async function fixture(page: Page, lostResponse = false, googleOnly = false) {
   const submissions: Submission[] = [], quotes: Submission[] = [], headers: string[] = [], forbidden: string[] = [];
   const models = [
     { id: 'openai/gpt-fixture', name: 'OpenAI: GPT Fixture', vision: true, efforts: [{ value: 'auto', label: 'Provider default' }, { value: 'medium', label: 'Medium' }] },
-    { id: 'anthropic/claude-fixture', name: 'Anthropic: Claude Fixture', vision: true, efforts: [{ value: 'auto', label: 'Provider default' }, { value: 'medium', label: 'Medium' }] },
-    { id: 'google/gemini-fixture', name: 'Google: Gemini Fixture', vision: true },
+    { id: 'anthropic/claude-fixture', name: 'Anthropic: Sage fixture', vision: true, efforts: [{ value: 'auto', label: 'Provider default' }, { value: 'medium', label: 'Medium' }] },
+    { id: 'google/gemini-fixture', name: 'Google: Prism fixture', vision: true },
   ].filter(model => !googleOnly || model.id.startsWith('google/'));
   function complete() {
     const input = submissions.at(-1)!;
@@ -78,8 +78,8 @@ test('suite agent quotes supported models once, keeps captured scope, and adds e
   const dialog = page.getByRole('dialog', { name: 'Campaign agent' });
   await dialog.getByLabel('Atomik request', { exact: true }).fill('A revised request without any suite prefix.');
   await dialog.getByRole('button', { name: 'Atomik request model', exact: true }).click();
-  await expect(page.getByRole('option', { name: 'Gemini Fixture', exact: true })).toHaveCount(0);
-  await page.getByRole('option', { name: 'Claude Fixture', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Prism fixture', exact: true })).toHaveCount(0);
+  await page.getByRole('option', { name: 'Sage fixture', exact: true }).click();
   await dialog.getByRole('combobox', { name: 'Atomik request effort', exact: true }).click();
   await page.getByRole('option', { name: 'Medium', exact: true }).click();
   const run = dialog.getByRole('button', { name: 'Run · 7 cr estimated', exact: true });
@@ -144,7 +144,7 @@ test('suite planning stays unavailable when only unsupported models are connecte
   const panel = await openAgent(page);
   await panel.getByLabel('Creative request').fill('Prepare an original campaign.');
   await expect(panel.getByRole('button', { name: 'Review agent quote' })).toBeDisabled();
-  await expect(panel.getByText('Connect a priced Claude or OpenAI model in Workspace → Engines.')).toBeVisible();
+  await expect(panel.getByText('Connect a priced thinking model in Workspace → Engines.')).toBeVisible();
   expect(state.quotes).toEqual([]);
   expect(state.submissions).toEqual([]);
 });

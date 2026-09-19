@@ -129,8 +129,8 @@ async function toRefContent(ref: Reference) {
     if (!usingBlob()) {
       throw new Error(
         ref.fromGeneration
-          ? "Editing and extension need the deployed workspace — ModelArk fetches the source video by URL, which local storage can't provide."
-          : "Reference videos need the deployed workspace — ModelArk fetches them by URL, which local storage can't provide."
+          ? "Editing and extension need the deployed workspace — the video engine fetches the source video by URL, which local storage can't provide."
+          : "Reference videos need the deployed workspace — the video engine fetches them by URL, which local storage can't provide."
       );
     }
     // Editing and extension point at a render we already hold, which lives
@@ -273,7 +273,7 @@ export async function submitTask(
   const size = Buffer.byteLength(payload, "utf8");
   if (size > IMAGE_LIMITS.maxRequestBytes) {
     throw new Error(
-      `Request body is ${(size / 1048576).toFixed(1)} MB, over ModelArk's 64 MB limit. ` +
+      `Request body is ${(size / 1048576).toFixed(1)} MB, over the video engine's 64 MB limit. ` +
       `Remove a reference or use a smaller original — media is never re-compressed to fit.`
     );
   }
@@ -307,9 +307,9 @@ async function arkFetch(url: string, init: RequestInit, timeoutMs: number): Prom
   } catch (e) {
     const err = e as Error;
     if (err.name === "TimeoutError" || err.name === "AbortError") {
-      throw new Error(`ModelArk did not answer within ${Math.round(timeoutMs / 1000)}s.`);
+      throw new Error(`The video engine did not answer within ${Math.round(timeoutMs / 1000)}s.`);
     }
-    throw new Error(`Could not reach ModelArk: ${err.message}`);
+    throw new Error(`Could not reach the video engine: ${err.message}`);
   }
 }
 
@@ -322,7 +322,7 @@ function parseArk<T>(text: string, what: string): T {
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Error(`ModelArk sent an unreadable ${what} response: ${text.slice(0, 200)}`);
+    throw new Error(`The video engine sent an unreadable ${what} response: ${text.slice(0, 200)}`);
   }
 }
 

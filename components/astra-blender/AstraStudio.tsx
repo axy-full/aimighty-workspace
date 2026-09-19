@@ -27,14 +27,14 @@ export function AstraStudio({ project, scope, enabled, onChange, onSave, onApply
       if (/\.glb$/i.test(file.name)) validateAstraGlb(new Uint8Array(await file.arrayBuffer()));
       else if (!/\.blend$/i.test(file.name) && !/^image\/(png|jpeg|webp)$/.test(file.type)) throw new Error('Choose an uncompressed .blend, embedded GLB, PNG, JPEG or WebP image.');
       const result = await uploadFile(file, 'reference', undefined, { scope });
-      const asset: Asset = { id: 'astra-' + result.id, uploadId: result.id, name: result.filename, url: result.url, mime: result.mime, kind: result.kind === 'image' ? 'image' : 'document', category: 'Astra blender', description: 'Original asset uploaded for a 3D scene.', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] };
+      const asset: Asset = { id: 'astra-' + result.id, uploadId: result.id, name: result.filename, url: result.url, mime: result.mime, kind: result.kind === 'image' ? 'image' : 'document', category: 'Astra', description: 'Original asset uploaded for a 3D scene.', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] };
       // Uploads remain in the shared library even if the project was changed or
       // its save fails; the parent guards this patch against a switched project.
       onAsset(asset);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
-  return <div className="stage-scroll"><div className={styles.toolbar}><p>3D scene building · project assets · GPT-6 Astra</p><label className={styles.button}><Upload size={14}/>{busy ? 'Uploading…' : 'Upload image, GLB or .blend'}<input aria-label="Upload Astra asset" type="file" accept=".blend,.glb,image/png,image/jpeg,image/webp" disabled={!enabled || busy} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void upload(file); }} /></label></div>{error && <p className={styles.error} role="alert">{error}</p>}
+  return <div className="stage-scroll"><div className={styles.toolbar}><p>3D scene building · project assets · Astra</p><label className={styles.button}><Upload size={14}/>{busy ? 'Uploading…' : 'Upload image, GLB or .blend'}<input aria-label="Upload Astra asset" type="file" accept=".blend,.glb,image/png,image/jpeg,image/webp" disabled={!enabled || busy} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void upload(file); }} /></label></div>{error && <p className={styles.error} role="alert">{error}</p>}
     <AstraBlenderWorkspace project={project} onChange={onChange} assetPreviews={previews}
       assistant={<><AstraAgentPanel key={scope + project.id} project={project} scope={scope} enabled={enabled} onSave={onSave} onApply={onApply} /><AstraNativeSourcePanel project={project} enabled={enabled} onChange={onChange} onSave={onSave} /></>}
       exportPanel={<><AstraRenderPanel key={`render-${scope}-${project.id}`} project={project} scope={scope} enabled={enabled} onSave={onSave} onRefreshProject={onRefreshProject} /><AstraExportPanel key={scope + project.id} project={project} scope={scope} enabled={enabled} onSave={onSave} /></>} />

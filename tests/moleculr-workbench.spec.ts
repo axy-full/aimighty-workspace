@@ -322,7 +322,7 @@ test("suite navigation waits for hydration and project initialization, then foll
   expect(state.mutations).toEqual([]);
 });
 
-test("suite navigation includes Astra blender in order, retains every prior stage and blocks leaving unsaved work", async ({
+test("suite navigation includes Astra in order, retains every prior stage and blocks leaving unsaved work", async ({
   page,
 }, info) => {
   await fixture(page, true);
@@ -337,7 +337,7 @@ test("suite navigation includes Astra blender in order, retains every prior stag
     ["Brief & Script", "brief"],
     ["Boards", "storyboard"],
     ["Cast & Elements", "characters"],
-    ["Astra blender", "astra-blender"],
+    ["Astra", "astra-blender"],
     ["Rig", "canvas"],
     ["Takes", "assets"],
     ["Edit & Sound", "edit"],
@@ -382,7 +382,7 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
     /Brief & Script$/,
     /Boards$/,
     /Cast & Elements$/,
-    /Astra blender$/,
+    /Astra$/,
     /Rig$/,
     /Takes$/,
     /Edit & Sound$/,

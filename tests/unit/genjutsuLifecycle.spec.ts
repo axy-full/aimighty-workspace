@@ -48,7 +48,7 @@ test("Genjutsu quote uses only documented estimate POST and rejects unusable pri
   globalThis.fetch=async(url,init)=>{requests.push(String(url));expect(init).toMatchObject({method:"POST",redirect:"error",headers:{Authorization:"Key fixture:key"}});expect(JSON.parse(String(init?.body))).toEqual(input);return Response.json({usd:"2.043",credits:"32.68"});};
   expect(await estimateGenjutsuInput(GENJUTSU_MODELS["object-swap"],input)).toBe(2.043);
   expect(requests).toEqual(["https://api.higgsfield.ai/estimate/higgsfiled/genjutsu/object-swap/v1.0"]);
-  for(const usd of [0,"0","NaN","-2",null,"1e5",2]) {globalThis.fetch=async()=>Response.json({usd});await expect(estimateGenjutsuInput(GENJUTSU_MODELS["motion-transfer"],input)).rejects.toThrow(/live Genjutsu price/);}
+  for(const usd of [0,"0","NaN","-2",null,"1e5",2]) {globalThis.fetch=async()=>Response.json({usd});await expect(estimateGenjutsuInput(GENJUTSU_MODELS["motion-transfer"],input)).rejects.toThrow(/live transform price/);}
   globalThis.fetch=async()=>new Response("provider secret must never escape",{status:503});
   await expect(estimateGenjutsuInput(GENJUTSU_MODELS["motion-transfer"],input)).rejects.toThrow(/Nothing was submitted/);
 });

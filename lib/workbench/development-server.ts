@@ -124,7 +124,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   catch (error) { throw new DevelopmentError((error as Error).message); }
   const models = await deps.models(), menu = developmentModels(models);
   const model = models.find(model => model.id === input.model && menu.some(entry => entry.id === model.id));
-  if (!model) throw new DevelopmentError('Choose an available Claude or ChatGPT model with confirmed pricing.', 422);
+  if (!model) throw new DevelopmentError('Choose an available thinking model with confirmed pricing.', 422);
   const reasoning = atomikReasoningRequest(model, input.effort, 4000);
   const estimates = chunks.flatMap(chunk => DEVELOPMENT_STAGES.map(stage => {
     const base = Buffer.byteLength(promptFor(snapshot, input, chunk) + developmentInstructions(input.kind, stage), 'utf8') + 2048;

@@ -63,8 +63,8 @@ test("an engine-scoped rule is that engine's dialect: picked for its family only
   expect(rulesBlock(rules, "video", "writer")).toBe("Every video. Typo scope.");
   expect(rulesBlock(rules, "image", "writer", "kling-3")).toBe("Kling only. Typo scope.");
   const digest = writerRulesByScope(DEFAULT_RULES);
-  expect(digest).toContain("Kling: Kling reads one plain paragraph");
-  expect(digest).toContain("Nano Banana: Nano Banana wants the one scene");
+  expect(digest).toContain("Kinetic: Kinetic 3.0 reads one plain paragraph");
+  expect(digest).toContain("Image: Image 2 wants the one scene");
   expect(digest).not.toContain("No lettering"); // a prompt rule is the render's job, not the writer's
   expect(rulesBlock(DEFAULT_RULES, "image", "prompt", "nano-banana")).toContain("No lettering");
 });

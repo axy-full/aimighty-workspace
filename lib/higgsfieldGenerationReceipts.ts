@@ -22,7 +22,7 @@ async function receiptsReady() {
 export async function saveHiggsfieldGenerationReceipt(id: string, handle: RenderHandle, fingerprint: string) {
   if (handle.provider !== "higgsfield" || !supported(handle.model) ||
       !fingerprint || handle.credentialFingerprint !== fingerprint || !handle.ref)
-    throw new Error("The accepted Higgsfield request does not match its admitted connection.");
+    throw new Error("The accepted connected-account request does not match its admitted connection.");
   await receiptsReady();
   const saved = await platformDb().execute({
     sql: `INSERT INTO higgsfield_generation_receipts(id,workspace_id,handle_json,credential_fingerprint,updated_at)
@@ -31,7 +31,7 @@ export async function saveHiggsfieldGenerationReceipt(id: string, handle: Render
         AND credential_fingerprint=excluded.credential_fingerprint RETURNING id`,
     args: [id, requireTenant().id, JSON.stringify(handle), fingerprint, now()],
   });
-  if (!saved.rows.length) throw new Error("A different Higgsfield request receipt already exists for this generation.");
+  if (!saved.rows.length) throw new Error("A different connected-account request receipt already exists for this generation.");
 }
 
 /** A receipt is complete only after the exact terminal bill was delivered. */
@@ -60,7 +60,7 @@ export async function restoreHiggsfieldGenerationReceipt(id: string): Promise<vo
   if (!receipt) return;
   const row = (await db().execute({ sql: `SELECT params,status,model FROM generations
     WHERE id=? AND provider='higgsfield' AND model IN (?,?,?,?) AND deleted=0`, args: [id, ...receiptModels] })).rows[0];
-  if (!row) throw new Error("An accepted Higgsfield request has no recoverable generation record.");
+  if (!row) throw new Error("An accepted connected-account request has no recoverable generation record.");
   const params = JSON.parse(String(row.params));
   const handle = JSON.parse(String(receipt.handle_json)) as RenderHandle;
   const key = isGenjutsuModel(String(row.model)) ? "higgsfieldVideoHandle" : "higgsfieldStillHandle";
@@ -68,7 +68,7 @@ export async function restoreHiggsfieldGenerationReceipt(id: string): Promise<vo
       handle.credentialFingerprint !== receipt.credential_fingerprint || handle.provider !== "higgsfield" ||
       !supported(handle.model) || handle.model !== row.model || !handle.ref ||
       (params[key] && params[key].ref !== handle.ref))
-    throw new Error("The saved Higgsfield acknowledgement does not match its original admission.");
+    throw new Error("The saved connected-account acknowledgement does not match its original admission.");
   if (await settleHiggsfieldGenerationReceipt(id)) return;
   // A prior ambiguous failure may have ended the execution slot. Only an exact
   // independent acknowledgement permits reopening it for GET-only collection.

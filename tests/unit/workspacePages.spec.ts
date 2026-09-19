@@ -31,7 +31,7 @@ test("stage tabs are short, titles are full", () => {
   const byId = Object.fromEntries(ALL_PAGES.map((p) => [p.id, p]));
   expect([byId.brief.label, byId.brief.title]).toEqual(["Brief", "Brief & Script"]);
   expect([byId.cast.label, byId.cast.title]).toEqual(["Cast", "Cast & Elements"]);
-  expect([byId.astra.label, byId.astra.title]).toEqual(["Astra", "Astra blender"]);
+  expect([byId.astra.label, byId.astra.title]).toEqual(["Astra", "Astra"]);
   expect([byId.edit.label, byId.edit.title]).toEqual(["Edit", "Edit & Sound"]);
 });
 

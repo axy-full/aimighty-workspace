@@ -84,13 +84,13 @@ function refusal(text: string | null): Error {
     ? "The adjustable safety thresholds are already off, so this is the layer no setting turns off."
     : t
       ? `The adjustable thresholds are set to ${t} on this deployment, so this may be one of them — ` +
-        "GOOGLE_SAFETY_THRESHOLD=OFF turns all four down. Google keeps one filter behind them that no setting reaches."
-      : "This deployment sends no thresholds, so Google's own defaults applied — " +
-        "GOOGLE_SAFETY_THRESHOLD=OFF turns the adjustable four down. Google keeps one filter behind them that no setting reaches.";
+        "GOOGLE_SAFETY_THRESHOLD=OFF turns all four down. The image engine keeps one filter behind them that no setting reaches."
+      : "This deployment sends no thresholds, so the image engine's own defaults applied — " +
+        "GOOGLE_SAFETY_THRESHOLD=OFF turns the adjustable four down. The image engine keeps one filter behind them that no setting reaches.";
   return new Error(
-    "Google's built-in image filter declined this one. " + where +
+    "The image engine's built-in filter declined this one. " + where +
     " Nothing was charged — reword the prompt or drop a reference and try again." +
-    (text ? ` Google said: ${text.slice(0, 300)}` : "")
+    (text ? ` The image engine said: ${text.slice(0, 300)}` : "")
   );
 }
 
@@ -137,8 +137,8 @@ export async function generateImage(opts: {
   const door = stillsDoor();
   if (!door) {
     throw new Error(
-      `${opts.model.label} needs a door to Google: run on Vercel (or set AI_GATEWAY_API_KEY) ` +
-      "for the gateway, or set GEMINI_API_KEY for Google directly."
+      `${opts.model.label} needs a route to the image engine: run on the host (or set AI_GATEWAY_API_KEY) ` +
+      "for the gateway, or set GEMINI_API_KEY for the image engine directly."
     );
   }
   if (door === "gateway") return viaGateway(opts);
@@ -260,7 +260,7 @@ async function viaGoogle(opts: {
   model: ModelDef; prompt: string; ratio: string; size: string; references: Reference[];
 }): Promise<ImageResult> {
   const key = vendorKey("gemini");
-  if (!key) throw new Error("Google Gemini isn't connected for this workspace.");
+  if (!key) throw new Error("The image account isn't connected for this workspace.");
   const input: Record<string, unknown>[] = [{ type: "text", text: opts.prompt.trim() }];
   for (const ref of opts.references) {
     const { mime, b64 } = await refPayload(ref);
@@ -306,13 +306,13 @@ async function viaGoogle(opts: {
   }
   let j: InteractionResponse;
   try { j = JSON.parse(raw) as InteractionResponse; }
-  catch { throw new Error(`Gemini returned non-JSON (${res.status}): ${raw.slice(0, 300)}`); }
+  catch { throw new Error(`The image engine returned non-JSON (${res.status}): ${raw.slice(0, 300)}`); }
   if (!res.ok) {
     const msg = j.error?.message ?? raw.slice(0, 400);
     if (res.status === 400 && /API key|api_key|invalid.*key/i.test(msg)) {
-      throw new Error("Google rejected the GEMINI_API_KEY on this deployment. Check it in Vercel → Environment Variables and redeploy.");
+      throw new Error("The image engine rejected the GEMINI_API_KEY on this deployment. Check it in the deployment's environment variables and redeploy.");
     }
-    throw new Error(`Gemini request failed (${res.status}): ${msg}`);
+    throw new Error(`Image engine request failed (${res.status}): ${msg}`);
   }
 
   // Prefer the convenience field; otherwise the LAST image block across the

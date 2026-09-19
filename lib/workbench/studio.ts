@@ -30,7 +30,7 @@ export const STAGES: {id:Stage; label:string; hint:string}[] = [
  {id:'brief',label:'Brief & Script',hint:'Find the story and the production in it'},
  {id:'storyboard',label:'Boards',hint:'Define the visual world and plan every frame'},
  {id:'characters',label:'Cast & Elements',hint:'Keep identity consistent and build a reusable world'},
- {id:'astra-blender',label:'Astra blender',hint:'Shape your scene with GPT-6 Astra'},
+ {id:'astra-blender',label:'Astra',hint:'Shape your scene with Astra'},
  {id:'canvas',label:'Rig',hint:'Bring it all together'},
  {id:'assets',label:'Takes',hint:'Select the right take'},
  {id:'edit',label:'Edit & Sound',hint:'Shape the story'},

@@ -35,7 +35,7 @@ export const POST = withTenant(
         {
           error: known
             ? error.message
-            : "The Higgsfield connection is temporarily unavailable.",
+            : "The connected account is temporarily unavailable.",
           code:
             error instanceof ConsumerOAuthError ? error.code : "unavailable",
         },

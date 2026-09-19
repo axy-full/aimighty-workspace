@@ -54,6 +54,6 @@ export const POST = withTenant(async (request: Request) => {
     return Response.json({ scene, script: compileAstraBlender(scene, bindings, { exportGlb: true, portableAssets: true }), files }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     const status = error instanceof AtomikError ? error.status : error instanceof z.ZodError || error instanceof SyntaxError ? 400 : 500;
-    return Response.json({ error: status === 500 ? 'The Blender export could not be prepared. Save the scene and try again.' : (error as Error).message }, { status });
+    return Response.json({ error: status === 500 ? 'The 3D export could not be prepared. Save the scene and try again.' : (error as Error).message }, { status });
   }
 });

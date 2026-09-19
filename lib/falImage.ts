@@ -37,7 +37,7 @@ export async function renderFalStill(opts: {
   const source = opts.references.find((r) => r.kind === "image");
   if (!source) throw new Error("Pick the still to work on.");
   if (tool === "upscale")
-    throw new Error("Topaz must use the durable image queue.");
+    throw new Error("Upscaling must use the durable image queue.");
   const costUsd =
     estimateImageCostUsd(opts.model.id, "adaptive", 0)?.net ?? null;
   if (engineMock())
@@ -58,7 +58,7 @@ export async function renderFalStill(opts: {
     { timeoutMs: 180_000 },
   );
   const url = out?.image?.url;
-  if (!url) throw new Error("fal.ai finished but returned no image.");
+  if (!url) throw new Error("The render service finished but returned no image.");
   return {
     bytes: await fetchBytes(url),
     mime: out.image?.content_type ?? "image/png",
@@ -74,10 +74,10 @@ export async function submitTopazImage(opts: {
 }) {
   const source = opts.references[0];
   if (!source || opts.references.length !== 1 || !opts.topaz)
-    throw new Error("Review an original image and Topaz settings first.");
+    throw new Error("Review an original image and upscale settings first.");
   const output = await inspectTopazImage(source, opts.topaz);
   if (output.resolution !== opts.size)
-    throw new Error("The Topaz output size changed. Review the upscale again.");
+    throw new Error("The upscale output size changed. Review the upscale again.");
   let url: string;
   if (!source.fromGeneration && /^https?:\/\//.test(source.storedUrl)) {
     // Legacy browser-direct originals can have a random Blob suffix. Read the

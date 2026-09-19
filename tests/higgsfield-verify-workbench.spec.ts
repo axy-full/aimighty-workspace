@@ -33,11 +33,11 @@ async function fixture(page: Page, legacy = false) {
     if (route.request().method() === 'POST') throw new Error('Connection verification must not start training or generation.');
     return route.fallback();
   });
-  const card = () => page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Higgsfield · Soul ID',exact:true})});
+  const card = () => page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Connected identity account',exact:true})});
   return { card, checks:()=>checks, saves:()=>saves, reply:(value:unknown,code=200)=>{result=value;status=code;}, useOwnWithoutKey:()=>{mode='own';saved=false;} };
 }
 
-test('Higgsfield verification is manual, scoped and invalidated by credential edits, with safe success and error results', async ({page},info) => {
+test('The connected account verification is manual, scoped and invalidated by credential edits, with safe success and error results', async ({page},info) => {
   test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'bounded connection UI coverage');
   const f = await fixture(page);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
@@ -56,13 +56,13 @@ test('Higgsfield verification is manual, scoped and invalidated by credential ed
   expect(f.checks()).toBe(1);
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({path:info.outputPath('higgsfield-verification-success.png'),animations:'disabled'});
-  await card.getByRole('textbox',{name:'Higgsfield API key ID',exact:true}).fill('replacement-id');
+  await card.getByRole('textbox',{name:'Identity account API key ID',exact:true}).fill('replacement-id');
   await expect(card.getByText('Authentication verified',{exact:true})).toHaveCount(0);
   await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeDisabled();
-  await card.getByLabel('Higgsfield API key secret',{exact:true}).fill('replacement-secret');
-  await card.getByRole('button',{name:'Save Higgsfield connection',exact:true}).click();
-  await expect(card.getByRole('textbox',{name:'Higgsfield API key ID',exact:true})).toHaveValue('');
-  await expect(card.getByLabel('Higgsfield API key secret',{exact:true})).toHaveValue('');
+  await card.getByLabel('Identity account API key secret',{exact:true}).fill('replacement-secret');
+  await card.getByRole('button',{name:'Save identity account',exact:true}).click();
+  await expect(card.getByRole('textbox',{name:'Identity account API key ID',exact:true})).toHaveValue('');
+  await expect(card.getByLabel('Identity account API key secret',{exact:true})).toHaveValue('');
   expect(f.saves()).toBe(1);expect(f.checks()).toBe(1);
   await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeEnabled();
   f.reply({configured:true,auth:'rejected',readyIdentityAvailable:false,error:'authentication_rejected',estimates:{'720p':{status:'skipped',error:'authentication_rejected'},'1080p':{status:'skipped',error:'authentication_rejected'}}});
@@ -82,18 +82,18 @@ test('legacy platform connections can be checked without credential fields and e
   const f=await fixture(page,true);
   f.reply({...verified,readyIdentityAvailable:false,estimates:{'720p':{status:'skipped',error:'no_ready_identity'},'1080p':{status:'skipped',error:'no_ready_identity'}}});
   await page.goto('/settings#engines');const card=f.card();
-  await expect(card).toContainText('This workspace uses the platform’s Higgsfield connection.');
-  await expect(card.getByRole('textbox',{name:'Higgsfield API key ID',exact:true})).toHaveCount(0);
+  await expect(card).toContainText('This workspace uses the platform’s identity account.');
+  await expect(card.getByRole('textbox',{name:'Identity account API key ID',exact:true})).toHaveCount(0);
   await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeEnabled();
   expect(f.checks()).toBe(0);
   await card.getByRole('button',{name:'Verify connection',exact:true}).click();
   await expect(card.getByRole('status')).toContainText('Authentication verified');
-  await expect(card).toContainText('720p: Not checked — No ready Soul identity was found in the first results page.');
+  await expect(card).toContainText('720p: Not checked — No ready identity was found in the first results page.');
   await expect(card).toContainText('No training or generation was started.');
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({path:info.outputPath('higgsfield-legacy-verification.png'),animations:'disabled'});
   f.useOwnWithoutKey();await page.reload();
   await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toBeDisabled();
-  await expect(card).toContainText('Save your own Higgsfield connection to verify it.');
+  await expect(card).toContainText('Save your own identity account to verify it.');
   expect(f.checks()).toBe(1);
 });

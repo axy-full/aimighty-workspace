@@ -53,7 +53,7 @@ async function fixture(page: Page, options: { owner?: boolean; connected?: boole
         expect(job).toBeTruthy();
         if (body.action === 'submit') {
           expect(body).toEqual({ action: 'submit', draftId: project.id, id: job.id, workspaceId: wallet, credits: 75 });
-          if (options.refuseSubmit) return json({ code: 'quote_changed', error: 'The Higgsfield price changed. Request a new quote.' }, 409);
+          if (options.refuseSubmit) return json({ code: 'quote_changed', error: 'The connected-account price changed. Request a new quote.' }, 409);
           if (options.loseBeforeAdmission) return route.abort('connectionreset');
           job.status = options.loseSubmit ? 'uncertain' : 'accepted';
           job.providerReceipt = { response: { results: [{ id: providerId, model: 'marketing_studio_video', type: 'video', status: 'pending' }] } };
@@ -102,13 +102,13 @@ test('an older accepted video remains recoverable after more than 25 newer quote
   const oldest = historyJob(1, 'accepted');
   state.jobs.push(oldest, ...Array.from({ length: 30 }, (_, index) => historyJob(index + 2)));
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
   const card = panel.locator('article').filter({ has: page.getByText('Saved campaign 1.', { exact: true }) });
   await expect(card.getByRole('button', { name: 'Check video result', exact: true })).toBeEnabled();
   await expect(panel.locator('article')).toHaveCount(25);
   // Exercise the local merge as well as the server's capped history response.
   for (let index = 0; index < 26; index++) {
-    await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
+    await panel.getByRole('button', { name: 'Get video quote', exact: true }).click();
     await expect.poll(() => state.posts.filter(body => body.action === 'quote').length).toBe(index + 1);
   }
   await expect(card.getByRole('button', { name: 'Check video result', exact: true })).toBeEnabled();
@@ -129,8 +129,8 @@ test('an attempted quote missing from recent history remains guarded until its e
   const attemptKey = `particl-consumer-video:${encodeURIComponent(state.scope)}:${encodeURIComponent(state.project.id)}:attempts`;
   await page.addInitScript(({ key, id }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify([id])); }, { key: attemptKey, id: oldest.id });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
-  const quote = panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true });
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
+  const quote = panel.getByRole('button', { name: 'Get video quote', exact: true });
   await expect(quote).toBeDisabled();
   await expect(panel.getByRole('button', { name: 'Recover earlier submission', exact: true })).toBeEnabled();
   expect(state.posts).toEqual([]);
@@ -160,8 +160,8 @@ test('a fast browser clock cannot release an attempted quote before authoritativ
   await page.addInitScript(({ key, id }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify([id])); }, { key: attemptKey, id: job.id });
   await page.clock.setFixedTime(new Date(Date.now() + 86400000));
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
-  const quote = panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true });
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
+  const quote = panel.getByRole('button', { name: 'Get video quote', exact: true });
   await expect(panel.getByText('Submission needs reconciliation', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => Date.now())).toBeGreaterThan(Number(job.quoteExpiresAt));
   expect(viewJob(job).quoteExpired).toBe(false);
@@ -183,7 +183,7 @@ for (const availability of ['deleted', undefined] as const) test(`a ${availabili
   const job = { ...historyJob(1, 'completed'), result: { original }, originalAvailable: true as boolean | undefined, originalAvailability: 'available' as string | undefined };
   state.jobs.push(job);
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
   await expect(panel.getByText('Original ready', { exact: true })).toBeVisible();
   await expect(panel.getByRole('link', { name: 'Download original', exact: true })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Add original to project', exact: true })).toBeEnabled();
@@ -210,55 +210,55 @@ for (const availability of ['deleted', undefined] as const) test(`a ${availabili
 test('native campaign video requires a matching exact quote, recovers a lost acknowledgement and attaches only the collected original', async ({ page }, info) => {
   const state = await fixture(page, { loseSubmit: true });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
-  await expect(panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true })).toBeEnabled();
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
+  await expect(panel.getByRole('button', { name: 'Get video quote', exact: true })).toBeEnabled();
   expect(state.posts).toEqual([]);
-  const format = panel.getByLabel('Higgsfield video creative format', { exact: true });
+  const format = panel.getByLabel('Video creative format', { exact: true });
   await expect(format).toHaveValue('product_showcase');
   expect(await format.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual([
     'ugc', 'ugc_how_to', 'ugc_unboxing', 'product_showcase', 'product_review', 'tv_spot', 'wild_card', 'ugc_virtual_try_on', 'virtual_try_on',
   ]);
   await expect(panel.getByText('UGC and try-on formats may introduce a presenter or model. Review generated dialogue and commercial claims before publishing.')).toBeVisible();
   await format.selectOption('tv_spot');
-  await panel.getByLabel('Higgsfield video prompt', { exact: true }).fill('A warm, considered bottle reveal.');
-  await panel.getByLabel('Higgsfield video duration').selectOption('12');
-  await panel.getByLabel('Higgsfield video resolution').selectOption('1080p');
-  await panel.getByLabel('Higgsfield video aspect ratio').selectOption('9:16');
+  await panel.getByLabel('Video prompt', { exact: true }).fill('A warm, considered bottle reveal.');
+  await panel.getByLabel('Video duration').selectOption('12');
+  await panel.getByLabel('Video resolution').selectOption('1080p');
+  await panel.getByLabel('Video aspect ratio').selectOption('9:16');
   await panel.getByLabel('Generate audio', { exact: true }).uncheck();
-  await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
-  await expect(panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true })).toBeDisabled();
+  await panel.getByRole('button', { name: 'Get video quote', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true })).toBeDisabled();
   expect(state.posts[0]).toMatchObject({ action: 'quote', input: { prompt: 'A warm, considered bottle reveal.', duration: 12, resolution: '1080p', aspectRatio: '9:16', generateAudio: false, mode: 'tv_spot' } });
-  await expect(panel.getByLabel('Higgsfield video quote').getByText('Creative format · TV spot', { exact: true })).toBeVisible();
-  await panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.').check();
-  await expect(panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true })).toBeEnabled();
+  await expect(panel.getByLabel('Video quote').getByText('Creative format · TV spot', { exact: true })).toBeVisible();
+  await panel.getByLabel('Charge 75 connected credits to Brand wallet for this video.').check();
+  await expect(panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true })).toBeEnabled();
   await format.selectOption('ugc_unboxing');
-  await expect(panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.')).not.toBeChecked();
+  await expect(panel.getByLabel('Charge 75 connected credits to Brand wallet for this video.')).not.toBeChecked();
   await expect(panel.getByText('The prompt or settings changed. Request a new quote before generating.')).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true })).toBeDisabled();
   expect(state.posts).toHaveLength(1);
   // Returning to the old settings must not silently restore paid approval.
   await format.selectOption('tv_spot');
-  await expect(panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.')).not.toBeChecked();
-  await expect(panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true })).toBeDisabled();
+  await expect(panel.getByLabel('Charge 75 connected credits to Brand wallet for this video.')).not.toBeChecked();
+  await expect(panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true })).toBeDisabled();
   await format.selectOption('ugc_unboxing');
-  await panel.getByLabel('Higgsfield video prompt', { exact: true }).fill('A closer, warmer bottle reveal.');
+  await panel.getByLabel('Video prompt', { exact: true }).fill('A closer, warmer bottle reveal.');
   await expect(panel.getByText('The prompt or settings changed. Request a new quote before generating.')).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true })).toBeDisabled();
-  await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true })).toBeDisabled();
+  await panel.getByRole('button', { name: 'Get video quote', exact: true }).click();
   expect(state.posts[1]).toMatchObject({ action: 'quote', input: { mode: 'ugc_unboxing' } });
-  await expect(panel.getByLabel('Higgsfield video quote').getByText('Creative format · UGC · unboxing', { exact: true })).toBeVisible();
-  await panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.').check();
+  await expect(panel.getByLabel('Video quote').getByText('Creative format · UGC · unboxing', { exact: true })).toBeVisible();
+  await panel.getByLabel('Charge 75 connected credits to Brand wallet for this video.').check();
   await panel.scrollIntoViewIfNeeded();
-  if ((page.viewportSize()?.width ?? 1440) < 600) await panel.locator('[aria-label="Higgsfield video quote"]').scrollIntoViewIfNeeded();
+  if ((page.viewportSize()?.width ?? 1440) < 600) await panel.locator('[aria-label="Video quote"]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('consumer-campaign-video-quote.png') });
-  await panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
+  await panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
   await expect(panel.getByRole('alert')).toBeVisible();
   expect(state.posts.filter(body => body.action === 'submit')).toHaveLength(1);
   await page.reload();
-  await expect(panel.getByLabel('Higgsfield video prompt', { exact: true })).toHaveValue('A closer, warmer bottle reveal.');
+  await expect(panel.getByLabel('Video prompt', { exact: true })).toHaveValue('A closer, warmer bottle reveal.');
   await expect(format).toHaveValue('ugc_unboxing');
   await expect(panel.getByRole('button', { name: 'Recover saved video request', exact: true })).toBeEnabled();
-  await expect(panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Get video quote', exact: true })).toBeDisabled();
   expect(state.posts.filter(body => body.action === 'submit')).toHaveLength(1);
   await panel.getByRole('button', { name: 'Recover saved video request', exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Add original to project', exact: true })).toBeEnabled();
@@ -276,9 +276,9 @@ test('native campaign video requires a matching exact quote, recovers a lost ack
 test('nonowner sees the capability boundary and makes no consumer API requests', async ({ page }) => {
   const state = await fixture(page, { owner: false });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
   await expect(panel.getByText(/The workspace owner can use this connected account/)).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Get Higgsfield video quote' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Get video quote' })).toHaveCount(0);
   expect(state.consumerReads).toEqual([]); expect(state.posts).toEqual([]);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });
@@ -296,19 +296,19 @@ for (const status of ['quoted', 'uncertain'] as const) test(`legacy ${status} vi
     if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify(value));
   }, { key: storageKey, value: input });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
-  const format = panel.getByLabel('Higgsfield video creative format', { exact: true });
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
+  const format = panel.getByLabel('Video creative format', { exact: true });
   await expect(format).toHaveValue('');
   await expect(format.locator('option:checked')).toHaveText('UGC (provider default)');
-  await expect(panel.locator('[aria-label="Saved Higgsfield video jobs"] article').getByText(/UGC \(provider default\) · 15s/)).toBeVisible();
+  await expect(panel.locator('[aria-label="Saved video jobs"] article').getByText(/UGC \(provider default\) · 15s/)).toBeVisible();
   await page.reload();
   await expect(format).toHaveValue('');
   expect(state.posts).toEqual([]);
   if (status === 'quoted') {
     await panel.getByRole('button', { name: 'Review this saved quote', exact: true }).click();
-    await expect(panel.getByLabel('Higgsfield video quote').getByText('Creative format · UGC (provider default)', { exact: true })).toBeVisible();
-    await panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.').check();
-    await panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true }).click();
+    await expect(panel.getByLabel('Video quote').getByText('Creative format · UGC (provider default)', { exact: true })).toBeVisible();
+    await panel.getByLabel('Charge 75 connected credits to Brand wallet for this video.').check();
+    await panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true }).click();
     await expect(panel.getByRole('button', { name: 'Check video result', exact: true })).toBeEnabled();
     expect(state.posts.map(body => body.action)).toEqual(['submit']);
   } else {
@@ -326,19 +326,19 @@ for (const status of ['quoted', 'uncertain'] as const) test(`legacy ${status} vi
 test('disconnected owner can review connection guidance without a quote or submission', async ({ page }) => {
   const state = await fixture(page, { connected: false });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
   await expect(panel.getByRole('link', { name: /Workspace settings/ })).toHaveAttribute('href', '/settings#engines');
-  await expect(panel.getByRole('button', { name: 'Get Higgsfield video quote' })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Get video quote' })).toBeDisabled();
   expect(state.posts).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });
 
 test('completed provider URL without a verified local original cannot attach or load remote media', async ({ page }) => {
   const state = await fixture(page, { unsafeResult: true });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
-  await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
-  await panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.').check();
-  await panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
+  await panel.getByRole('button', { name: 'Get video quote', exact: true }).click();
+  await panel.getByLabel('Charge 75 connected credits to Brand wallet for this video.').check();
+  await panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true }).click();
   await panel.getByRole('button', { name: 'Check video result', exact: true }).click();
   await expect(panel.getByText(/The original video is unavailable/)).toBeVisible();
   await expect(panel.getByText("Completed · original unavailable", { exact: true })).toBeVisible();
@@ -354,14 +354,14 @@ test('completed provider URL without a verified local original cannot attach or 
 test('definite preflight refusal permits a new reviewed quote without retrying the submission', async ({ page }) => {
   const state = await fixture(page, { refuseSubmit: true });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
-  await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
-  await panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.').check();
-  await panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true }).click();
-  await expect(panel.getByRole('alert')).toHaveText('The Higgsfield price changed. Request a new quote.');
-  await expect(panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true })).toBeEnabled();
-  await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
-  await expect(panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true })).toBeDisabled();
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
+  await panel.getByRole('button', { name: 'Get video quote', exact: true }).click();
+  await panel.getByLabel('Charge 75 connected credits to Brand wallet for this video.').check();
+  await panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true }).click();
+  await expect(panel.getByRole('alert')).toHaveText('The connected-account price changed. Request a new quote.');
+  await expect(panel.getByRole('button', { name: 'Get video quote', exact: true })).toBeEnabled();
+  await panel.getByRole('button', { name: 'Get video quote', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true })).toBeDisabled();
   expect(state.posts.map(body => body.action)).toEqual(['quote', 'submit', 'quote']);
   expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });
@@ -369,19 +369,19 @@ test('definite preflight refusal permits a new reviewed quote without retrying t
 test('lost request with an unclaimed quote remains guarded until an explicit read confirms its expiry', async ({ page }) => {
   const state = await fixture(page, { loseBeforeAdmission: true });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Higgsfield Marketing Video', exact: true });
-  await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
-  await panel.getByLabel('Charge 75 Higgsfield credits to Brand wallet for this video.').check();
-  await panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Marketing Video', exact: true });
+  await panel.getByRole('button', { name: 'Get video quote', exact: true }).click();
+  await panel.getByLabel('Charge 75 connected credits to Brand wallet for this video.').check();
+  await panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true }).click();
   await expect(panel.getByRole('alert')).toBeVisible();
   await page.reload();
-  await expect(panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Get video quote', exact: true })).toBeDisabled();
   await expect(panel.getByRole('button', { name: 'Recover saved video request', exact: true })).toHaveCount(0);
   state.jobs[0].quoteExpiresAt = Date.now() - 1000;
   await panel.getByRole('button', { name: 'Refresh saved video jobs', exact: true }).click();
-  await expect(panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true })).toBeEnabled();
-  await panel.getByRole('button', { name: 'Get Higgsfield video quote', exact: true }).click();
-  await expect(panel.getByRole('button', { name: 'Generate video · 75 Higgsfield credits', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Get video quote', exact: true })).toBeEnabled();
+  await panel.getByRole('button', { name: 'Get video quote', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'Generate video · 75 connected credits', exact: true })).toBeDisabled();
   expect(state.posts.map(body => body.action)).toEqual(['quote', 'submit', 'quote']);
   expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });

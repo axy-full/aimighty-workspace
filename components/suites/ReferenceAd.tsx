@@ -438,7 +438,7 @@ export function ReferenceAd({
       )}
       <p className="suite-footnote">
         The original remains unchanged. Video matching uses a compatible Particl
-        engine, such as Seedance, with separate source limits and generation
+        engine, such as Motion 2.5, with separate source limits and generation
         approval. This analysis does not assign a virality score.
       </p>
       {problem && <p role="alert">{problem}</p>}

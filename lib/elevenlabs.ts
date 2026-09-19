@@ -51,7 +51,7 @@ export const SPEECH_MODELS: SpeechModel[] = [
   },
   {
     id: "eleven_v3",
-    label: "Eleven v3",
+    label: "Voice v3",
     creditsPerChar: 1,
     alpha: true,
     note: "The most expressive. Direct it with tags in the text: [whispers], [laughs], [sighs].",
@@ -133,14 +133,14 @@ function explain(status: number, json: unknown): string {
     typeof j.detail === "string" ? { message: j.detail } : (j.detail ?? {});
   const msg = d.message ?? j.message ?? "";
   if (status === 401)
-    return `ElevenLabs rejected the key (401)${msg ? ` — ${msg}` : ""}.`;
+    return `The audio service rejected the key (401)${msg ? ` — ${msg}` : ""}.`;
   if (status === 402 || d.status === "quota_exceeded")
-    return `ElevenLabs credits are used up for this billing cycle${msg ? ` — ${msg}` : ""}.`;
+    return `Audio credits are used up for this billing cycle${msg ? ` — ${msg}` : ""}.`;
   if (status === 422)
-    return `ElevenLabs refused the request: ${msg || "invalid input"}.`;
+    return `The audio service refused the request: ${msg || "invalid input"}.`;
   if (status === 429)
-    return "ElevenLabs is at its concurrency limit. Try again when a slot is available.";
-  return `ElevenLabs returned ${status}${msg ? `: ${msg}` : ""}.`;
+    return "The audio service is at its concurrency limit. Try again when a slot is available.";
+  return `The audio service returned ${status}${msg ? `: ${msg}` : ""}.`;
 }
 
 /** A received provider rejection can release the reservation; transport failures cannot. */
@@ -176,10 +176,10 @@ async function elevenFetch(
     const err = e as Error;
     if (err.name === "TimeoutError" || err.name === "AbortError") {
       throw new Error(
-        `ElevenLabs did not answer within ${Math.round(timeoutMs / 1000)}s. The outcome is unconfirmed; this request will not be submitted again automatically.`,
+        `The audio service did not answer within ${Math.round(timeoutMs / 1000)}s. The outcome is unconfirmed; this request will not be submitted again automatically.`,
       );
     }
-    throw new Error(`Could not reach ElevenLabs: ${err.message}`);
+    throw new Error(`Could not reach the audio service: ${err.message}`);
   }
 }
 
@@ -596,7 +596,7 @@ export async function submitDubbing(opts: {
   try { json = text ? JSON.parse(text) : null; } catch { json = { message: text.slice(0, 300) }; }
   if (!res.ok) throw new ElevenLabsError(res.status, explain(res.status, json));
   const j = (json ?? {}) as { dubbing_id?: string; expected_duration_sec?: number };
-  if (!j.dubbing_id || typeof j.dubbing_id !== "string") throw new Error("ElevenLabs accepted the dubbing request without a project id. The outcome is unconfirmed.");
+  if (!j.dubbing_id || typeof j.dubbing_id !== "string") throw new Error("The audio service accepted the dubbing request without a project id. The outcome is unconfirmed.");
   return { dubbingId: j.dubbing_id, expectedDurationSec: Number.isFinite(Number(j.expected_duration_sec)) ? Number(j.expected_duration_sec) : null };
 }
 
@@ -624,7 +624,7 @@ export async function downloadDubbedAudio(dubbingId: string, languageCode: strin
   }
   const declared = Number(res.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) { await res.body?.cancel(); throw new Error("The dubbed audio exceeds the download limit."); }
-  if (!res.body) throw new Error("ElevenLabs returned an empty dubbed track.");
+  if (!res.body) throw new Error("The audio service returned an empty dubbed track.");
   const reader = res.body.getReader(), chunks: Buffer[] = [];
   let total = 0;
   try {

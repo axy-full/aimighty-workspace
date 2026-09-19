@@ -9,7 +9,7 @@ export const vercel: EngineAdapter = {
   kinds: ["text", "image"],
   configured: () => gatewayReachable(),
   estimate: () => null,
-  async render() { throw new Error("The gateway thinks; stills through it are rendered by the Google adapter."); },
+  async render() { throw new Error("The gateway thinks; stills through it are rendered by the image adapter."); },
   run: (req) => gatewayPost(req.body, { auth: req.auth, timeoutMs: req.timeoutMs, mock: req.mock }),
   chat: (req) => gatewayChat(req),
   /** enhance(prompt, targetEngine, setup, cast, rules): the writer, told the target engine's dialect, with what the compiler knows as its style block. */

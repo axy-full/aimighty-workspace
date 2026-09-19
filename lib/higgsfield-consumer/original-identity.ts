@@ -115,7 +115,7 @@ export function consumerVideoIdentity(job: ConsumerJob) {
     };
   }
   if (job.workflow !== "genjutsu" || !object(provider))
-    throw Error("Invalid Genjutsu original payload.");
+    throw Error("Invalid transform original payload.");
   const input = parseConsumerGenjutsuInput(payload.input),
     model = CONSUMER_GENJUTSU_MODELS[input.variant];
   if (provider.model !== model)

@@ -450,10 +450,10 @@ test("thinking model library groups and searches every provider, and effort surv
   await fixture(page);
   const efforts = [{ value: "low", label: "Low", description: "Faster planning" }, { value: "high", label: "High", description: "More time for complex planning" }];
   const models = [
-    { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6", vision: true, efforts },
-    { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts },
-    { id: "openai/gpt-5.5", name: "GPT-5.5", vision: true, efforts },
-    { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview", vision: true, efforts },
+    { id: "anthropic/claude-opus-4.6", name: "Sage 4.6 Max", vision: true, efforts },
+    { id: "anthropic/claude-sonnet-4.6", name: "Sage 4.6", vision: true, efforts },
+    { id: "openai/gpt-5.5", name: "Forge 5.5", vision: true, efforts },
+    { id: "google/gemini-3.1-pro-preview", name: "Prism 3.1 Pro Preview", vision: true, efforts },
     ...Array.from({length:24}, (_, i) => ({ id:`openai/test-${i}`, name:`OpenAI archived model ${i}`, vision:false, efforts:[] })),
   ];
   const quotes: Record<string, unknown>[] = [];
@@ -481,24 +481,24 @@ test("thinking model library groups and searches every provider, and effort surv
   await modelTrigger.click();
   const picker = page.getByRole("dialog", {name:"Choose a thinking model",exact:true});
   await expect(picker).toBeVisible();
-  await expect(picker.getByRole("group", {name:"Claude",exact:true})).toHaveCount(1);
-  await expect(picker.getByRole("group", {name:"OpenAI",exact:true})).toHaveCount(1);
-  await expect(picker.getByRole("group", {name:"Gemini",exact:true})).toHaveCount(1);
+  await expect(picker.getByRole("group", {name:"Sage",exact:true})).toHaveCount(1);
+  await expect(picker.getByRole("group", {name:"Forge",exact:true})).toHaveCount(1);
+  await expect(picker.getByRole("group", {name:"Prism",exact:true})).toHaveCount(1);
   await expect(picker.getByRole("option")).toHaveCount(models.length + 1);
   await expect.poll(async () => {
     const bounds = await picker.boundingBox(), viewport = page.viewportSize()!;
     return !!bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width + 1 && bounds.y + bounds.height <= viewport.height + 1;
   }).toBe(true);
   await page.screenshot({path:testInfo.outputPath("thinking-model-library.png")});
-  await picker.getByRole("button", {name:"Gemini",exact:true}).click();
+  await picker.getByRole("button", {name:"Prism",exact:true}).click();
   await expect(picker.getByRole("option")).toHaveCount(1);
   await picker.getByRole("button", {name:"All",exact:true}).click();
   const search = picker.getByRole("combobox", {name:"Search thinking models",exact:true});
-  await search.fill("claude");
+  await search.fill("claude-sonnet");
   await search.press("ArrowDown");
   await search.press("Enter");
   await expect(picker).not.toBeVisible();
-  await expect(modelTrigger).toContainText("Claude Sonnet 4.6");
+  await expect(modelTrigger).toContainText("Sage 4.6");
   await expect(modelTrigger).toBeFocused();
   await modelTrigger.click();
   await picker.getByRole("combobox", {name:"Search thinking models",exact:true}).fill("no-model-matches-this");
@@ -510,7 +510,7 @@ test("thinking model library groups and searches every provider, and effort surv
   await page.getByLabel("Ask Atomik", {exact:true}).fill("Plan a cinematic studio sequence with the selected references");
   await page.getByRole("button", {name:"Run Atomik",exact:true}).click();
   const confirmation = page.getByRole("dialog", {name:"Plan with Genie",exact:true});
-  await expect(confirmation.getByRole("button", {name:"Atomik request model",exact:true})).toContainText("Claude Sonnet 4.6");
+  await expect(confirmation.getByRole("button", {name:"Atomik request model",exact:true})).toContainText("Sage 4.6");
   await expect(confirmation.getByRole("combobox", {name:"Atomik request effort",exact:true})).toContainText("High");
   await expect(confirmation.getByRole("button", {name:"Run · 8 cr estimated",exact:true})).toBeEnabled();
   await confirmation.getByRole("combobox", {name:"Atomik request effort",exact:true}).click();

@@ -19,7 +19,7 @@ export const elevenlabs: EngineAdapter = {
     return usdForCredits(credits, null);
   },
   async render(req) {
-    if (req.kind !== "audio") throw new Error("ElevenLabs renders sound.");
+    if (req.kind !== "audio") throw new Error("The audio service renders sound.");
     const p = req.params;
     if (req.task === "voiceChange") {
       /* The source's bytes are read through the storage backend at render

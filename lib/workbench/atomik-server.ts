@@ -266,14 +266,14 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 });
 
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
-  if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('Astra blender uses GPT-6 Astra and the saved 3D scene. Start this request from Astra blender.', 422);
+  if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('Astra uses its own model and the saved 3D scene. Start this request from Astra.', 422);
   if (input.referenceAd && input.suite) throw new AtomikError('Reference-ad analysis is a separate bounded review, not a suite-agent run.', 422);
   if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new AtomikError('Save this project to link its budget before starting Atomik.', 409);
   const astraScene = input.astraBlender ? project.astraBlender ?? createAstraScene('product') : null;
   if (astraScene && createHash('sha256').update(serializeAstraScene(astraScene)).digest('hex') !== input.astraBlender!.sceneDigest) throw new AtomikError('The scene changed since this request was prepared. Close the quote and review a new request for the latest scene.', 422);
-  if (input.astraBlender?.mode === 'native' && createHash('sha256').update(serializeAstraNative(project.astraNative)).digest('hex') !== input.astraBlender.nativeDigest) throw new AtomikError('The native Blender source changed. Review a new quote for the latest source.', 422);
+  if (input.astraBlender?.mode === 'native' && createHash('sha256').update(serializeAstraNative(project.astraNative)).digest('hex') !== input.astraBlender.nativeDigest) throw new AtomikError('The native 3D source changed. Review a new quote for the latest source.', 422);
   const referenceIds = input.astraBlender?.referenceIds ?? input.refs;
   if (input.astraBlender && referenceIds.some(id => ![...project.assets, ...(project.sharedAssets ?? [])].some(asset => asset.id === id && asset.kind === 'image'))) throw new AtomikError('Choose project images or rendered previews as Astra visual references.', 422);
   const references = await loadAtomikReferences(project, referenceIds, owner, input.videoFrames, {}, input.referenceAd);

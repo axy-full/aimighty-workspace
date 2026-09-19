@@ -291,7 +291,7 @@ function UsageContent() {
           aria-pressed={tab === "higgsfield"}
           onClick={() => setTab("higgsfield")}
         >
-          My Higgsfield activity
+          My connected-account activity
         </button>
       </div>
       {tab === "higgsfield" && <ConsumerCreditActivity />}

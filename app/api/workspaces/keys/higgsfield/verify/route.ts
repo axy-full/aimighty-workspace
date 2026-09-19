@@ -15,7 +15,7 @@ export const POST = withTenant(
     // legacy studio owner may verify the deployment's Secret configuration.
     if (!workspace.legacy && !workspace.keys.higgsfield)
       return Response.json(
-        { error: "Connect your own Higgsfield account to verify it." },
+        { error: "Connect your own identity account to verify it." },
         { status: 403, headers },
       );
     try {

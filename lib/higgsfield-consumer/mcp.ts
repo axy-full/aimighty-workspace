@@ -175,16 +175,16 @@ export type ConsumerDiscoveryCode =
 
 const ERRORS: Record<ConsumerDiscoveryCode, string> = {
   reconnect_required:
-    "Reconnect your Higgsfield account before discovering tools.",
-  rate_limited: "Higgsfield is limiting discovery requests. Try again later.",
-  provider_unavailable: "Higgsfield tool discovery is temporarily unavailable.",
-  provider_error: "Higgsfield could not complete tool discovery.",
-  redirect_refused: "Higgsfield discovery attempted an unsupported redirect.",
-  timeout: "Higgsfield tool discovery did not finish within the time limit.",
-  protocol_error: "Higgsfield returned an unusable discovery response.",
+    "Reconnect your account before discovering tools.",
+  rate_limited: "The connected account is limiting discovery requests. Try again later.",
+  provider_unavailable: "Tool discovery is temporarily unavailable.",
+  provider_error: "The connected account could not complete tool discovery.",
+  redirect_refused: "Discovery attempted an unsupported redirect.",
+  timeout: "Tool discovery did not finish within the time limit.",
+  protocol_error: "The connected account returned an unusable discovery response.",
   unsupported_protocol:
-    "Higgsfield requested an unsupported discovery protocol.",
-  catalog_limit: "The Higgsfield tool catalogue exceeds the discovery limit.",
+    "The connected account requested an unsupported discovery protocol.",
+  catalog_limit: "The tool catalogue exceeds the discovery limit.",
 };
 
 export class ConsumerDiscoveryError extends Error {
@@ -878,7 +878,7 @@ async function qualificationObservations(
               error: {
                 code: "tool_error",
                 message:
-                  "Higgsfield could not complete this read-only check. Its redacted response is included for inspection.",
+                  "The connected account could not complete this read-only check. Its redacted response is included for inspection.",
               },
             }
           : {}),
@@ -930,7 +930,7 @@ const uncertainSubmission = (
   error: {
     code: "submission_uncertain",
     message:
-      "Higgsfield may have accepted this video. Keep its reservation and do not submit it again.",
+      "The connected account may have accepted this video. Keep its reservation and do not submit it again.",
   },
 });
 function videoReadResult(

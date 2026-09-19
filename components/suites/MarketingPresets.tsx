@@ -165,17 +165,17 @@ export function MarketingPresets({
   return (
     <section
       className={`suite-panel ${styles.panel}`}
-      aria-label="Higgsfield Marketing Studio images"
+      aria-label="Marketing Studio images"
     >
       <div className="suite-section-heading">
         <div>
           <h2>Campaign images</h2>
           <p>
-            Render your creative direction, or use an available Higgsfield Ads
+            Render your creative direction, or use an available Ads
             preset. Provider presets are separate from Moleculr creative briefs.
           </p>
         </div>
-        <span className="suite-badge">Higgsfield · Image</span>
+        <span className="suite-badge">Connected · Image</span>
       </div>
       <div className={styles.modes} aria-label="Campaign image approach">
         <button
@@ -249,7 +249,7 @@ export function MarketingPresets({
                 <Sparkles size={16} />
                 <span>
                   {item.name}
-                  <small>Higgsfield Ads preset</small>
+                  <small>Ads preset</small>
                 </span>
                 {item.id === settings.presetId && <Check size={15} />}
               </button>

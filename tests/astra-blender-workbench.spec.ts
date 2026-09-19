@@ -26,9 +26,9 @@ async function fixture(page: Page, withAssets = false) {
     shotMappings: {},
     astraBlender: createAstraScene('product'),
     assets: withAssets ? [
-      { id: 'triangle', name: 'Triangle model', kind: 'document', mime: 'model/gltf-binary', uploadId: 'astra-model', url: '/api/uploads/astra-model', category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
-      { id: 'unsafe', name: 'External model', kind: 'document', mime: 'model/gltf-binary', uploadId: 'astra-unsafe', url: '/api/uploads/astra-unsafe', category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
-      { id: 'image', name: 'Image plane', kind: 'image', mime: 'image/png', uploadId: 'astra-image', url: '/api/uploads/astra-image', category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
+      { id: 'triangle', name: 'Triangle model', kind: 'document', mime: 'model/gltf-binary', uploadId: 'astra-model', url: '/api/uploads/astra-model', category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
+      { id: 'unsafe', name: 'External model', kind: 'document', mime: 'model/gltf-binary', uploadId: 'astra-unsafe', url: '/api/uploads/astra-unsafe', category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
+      { id: 'image', name: 'Image plane', kind: 'image', mime: 'image/png', uploadId: 'astra-image', url: '/api/uploads/astra-image', category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
     ] : [],
   };
   let revision = 1;
@@ -51,7 +51,7 @@ async function fixture(page: Page, withAssets = false) {
       }
       return route.fulfill({ json: { project, revision, projects: [{ id: project.id, name: project.name }], productions: [] } });
     }
-    if (path === '/api/workbench/atomik' && request.method() === 'GET') return route.fulfill({ json: { models: [{ id: 'openai/gpt-6-astra', name: 'GPT-6 Astra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value })) }], jobs: [] } });
+    if (path === '/api/workbench/atomik' && request.method() === 'GET') return route.fulfill({ json: { models: [{ id: 'openai/gpt-6-astra', name: 'Astra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value })) }], jobs: [] } });
     if (path === '/api/workbench/development') return route.fulfill({ json: { models: [], jobs: [] } });
     if (path === '/api/jobs') return route.fulfill({ json: { generations: [], nextCursor: null } });
     if (path === '/api/engines' || path === '/api/workbench/engines') return route.fulfill({ json: { models: [], vendors: [] } });
@@ -62,7 +62,7 @@ async function fixture(page: Page, withAssets = false) {
     return route.fulfill({ json: { jobs: [] } });
   });
   await page.goto('/workbench?project=astra-browser-study&stage=astra-blender');
-  const workspace = page.getByRole('region', { name: 'Astra blender', exact: true });
+  const workspace = page.getByRole('region', { name: 'Astra', exact: true });
   await expect(workspace).toBeVisible();
   return { workspace, paidRequests, assetReads, get project() { return project; } };
 }

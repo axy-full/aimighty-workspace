@@ -143,7 +143,7 @@ function validateReferences(
   const videos = refs.filter((r) => r.role === "reference_video");
 
   if (frames.length && (images.length || videos.length)) {
-    return "First/last frame and reference media can't be mixed — ModelArk treats them as separate modes.";
+    return "First/last frame and reference media can't be mixed — the video engine treats them as separate modes.";
   }
   if (frames.length) {
     if (frames.some((r) => r.kind === "video"))
@@ -257,17 +257,17 @@ export async function executeGenerationAdmission(
     }
     const genjutsu = isGenjutsuModel(modelId);
     if (genjutsu) {
-      if (!options.checkpoint) return admissionReply({ error: "Review a live Genjutsu quote before submitting this take." }, { status: 400 });
+      if (!options.checkpoint) return admissionReply({ error: "Review a live transform quote before submitting this take." }, { status: 400 });
       if (body.task !== "genjutsu" || prompt.length > GENJUTSU_LIMITS.maxPromptChars || !GENJUTSU_RESOLUTIONS.includes(body.resolution) ||
           Boolean(body.sourceGenId) === Boolean(body.sourceUploadId) || !/^[A-Za-z0-9_-]{1,160}$/.test(String(body.sourceGenId || body.sourceUploadId)))
-        return admissionReply({ error: "Choose one original video, a Genjutsu operation and 480p or 720p output." }, { status: 400 });
+        return admissionReply({ error: "Choose one original video, a transform operation and 480p or 720p output." }, { status: 400 });
       if (body.references != null && (!Array.isArray(body.references) || body.references.length > GENJUTSU_LIMITS.maxImages || body.references.some((ref: unknown) => {
         if (!ref || typeof ref !== "object" || Array.isArray(ref)) return true;
         const r = ref as Record<string, unknown>;
         return Boolean(r.uploadId) === Boolean(r.genId) || !/^[A-Za-z0-9_-]{1,160}$/.test(String(r.uploadId || r.genId)) || r.role !== "reference_image" ||
           Object.keys(r).some(k => !["uploadId", "genId", "role"].includes(k));
       }))) return admissionReply({ error: "Choose up to eight original still references using saved media identities." }, { status: 400 });
-      if (typeof body.workbenchProjectId !== "string" || !body.projectId) return admissionReply({ error: "Save and select a project before using Genjutsu." }, { status: 400 });
+      if (typeof body.workbenchProjectId !== "string" || !body.projectId) return admissionReply({ error: "Save and select a project before using transforms." }, { status: 400 });
       const draft = await readDraft(got.user.id, body.workbenchProjectId);
       if (!draft || draft.project.productionProjectId !== body.projectId) return admissionReply({ error: "This saved project is unavailable in the current account." }, { status: 409 });
     }
@@ -365,7 +365,7 @@ export async function executeGenerationAdmission(
     if (modelId === ASTRA_MODEL) {
       try { astra = astraSettings(body.astra); }
       catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
-      if (prompt) return admissionReply({error:"Astra uses its detail controls. Text-directed video edits use the Seedance edit model."},{status:400});
+      if (prompt) return admissionReply({error:"Astra uses its detail controls. Text-directed video edits use the Motion 2.5 edit model."},{status:400});
     }
     if (task.locked) {
       /* An engine that cannot do the task must say so here, not drop the
@@ -542,7 +542,7 @@ export async function executeGenerationAdmission(
           sourceSeconds = genjutsuSource.seconds;
           sourceRatio = `${genjutsuSource.width}:${genjutsuSource.height}`;
           sourceResolution = `${Math.min(genjutsuSource.width,genjutsuSource.height)}p`;
-        } catch { return admissionReply({ error: "Genjutsu needs a readable original video between 1 and 30 seconds, no larger than 200 MB." }, { status: 400 }); }
+        } catch { return admissionReply({ error: "Transform needs a readable original video between 1 and 30 seconds, no larger than 200 MB." }, { status: 400 }); }
       }
       if (
         task.forceRatio === "adaptive" &&
@@ -815,7 +815,7 @@ export async function executeGenerationAdmission(
         ordered.get(ref.genId ? `generation:${ref.genId}` : `upload:${ref.uploadId}`)!);
     }
     if (genjutsu && (references.length !== (body.references?.length ?? 0) || references.some(r => r.kind !== "image" || r.role !== "reference_image")))
-      return admissionReply({ error: "Genjutsu reference slots accept still images only." }, { status: 400 });
+      return admissionReply({ error: "Transform reference slots accept still images only." }, { status: 400 });
     const knownInputSeconds = videoReferenceSeconds(referenceDurations);
     if (knownInputSeconds == null)
       return admissionReply(
@@ -1779,7 +1779,7 @@ export async function executeGenerationAdmission(
     }
 
     if (genjutsu && body.maxCredits == null)
-      return admissionReply({ error: "Confirm the quoted Genjutsu credit ceiling before generating." }, { status: 400 });
+      return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
     await withMediaSources(storedParams, (tx) =>

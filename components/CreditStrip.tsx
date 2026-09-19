@@ -16,7 +16,7 @@ type Vendor = {
 type Summary = { vendors?: Vendor[] };
 
 const SHORT: Record<string, string> = {
-  byteplus: "ModelArk", google: "Google Gemini", fal: "fal.ai", elevenlabs: "ElevenLabs",
+  byteplus: "Video account", google: "Image account", fal: "Render account", elevenlabs: "Audio account",
 };
 
 export default function CreditStrip({ vendor, className = "" }: { vendor: string; className?: string }) {

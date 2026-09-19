@@ -35,7 +35,7 @@ export function deploymentReadiness(
   add(
     "storage",
     Boolean(env.BLOB_READ_WRITE_TOKEN),
-    "Private Vercel Blob storage",
+    "Private blob storage",
   );
   add(
     "mail",

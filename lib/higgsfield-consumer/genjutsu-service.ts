@@ -134,7 +134,7 @@ export async function quoteConsumerGenjutsu(
   if (!(await readDraft(userId, draftId)))
     throw new ConsumerVideoServiceError(
       "project_missing",
-      "Save this project before requesting a Higgsfield quote.",
+      "Save this project before requesting a quote.",
       404,
     );
   const access = await connected(userId);
@@ -175,7 +175,7 @@ export async function quoteConsumerGenjutsu(
       payload: {
         input: { ...quote.input },
         params: quote.params,
-        workspaceName: quote.workspace.name ?? "Higgsfield workspace",
+        workspaceName: quote.workspace.name ?? "connected workspace",
       },
       quoteCredits: quote.credits,
       quoteExpiresAt: Date.now() + QUOTE_LIFETIME_MS,
@@ -214,7 +214,7 @@ async function ownedGenjutsu(input: ConsumerJobScope) {
   )
     throw new ConsumerVideoServiceError(
       "not_found",
-      "This Genjutsu job is not available.",
+      "This transform job is not available.",
       404,
     );
   return job;

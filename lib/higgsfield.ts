@@ -28,7 +28,7 @@ export function higgsfieldCredentials(): {
   const split = value?.indexOf(":") ?? -1;
   if (!value || split < 1 || split === value.length - 1 || /\s/.test(value))
     throw new Error(
-      "Add a Higgsfield API key ID and secret before using Soul ID.",
+      "Add an identity account API key ID and secret before using identities.",
     );
   return {
     keyId: value.slice(0, split),
@@ -58,7 +58,7 @@ export function higgsfieldHeaders(): Record<string, string> {
 export class HiggsfieldHttpError extends Error {
   constructor(
     public readonly status: number,
-    message = `Higgsfield returned HTTP ${status}.`,
+    message = `The identity account returned HTTP ${status}.`,
   ) {
     super(message);
     this.name = "HiggsfieldHttpError";
@@ -72,11 +72,11 @@ export function higgsfieldSubmissionRejected(error: unknown): boolean {
 }
 function reference(value: unknown): SoulReference {
   if (!value || typeof value !== "object")
-    throw new Error("Higgsfield returned an unreadable Soul ID response.");
+    throw new Error("The identity account returned an unreadable identity response.");
   const r = value as Record<string, unknown>;
   if (typeof r.id !== "string" || !UUID.test(r.id))
     throw new Error(
-      "Higgsfield returned an incomplete Soul ID response. The paid request must not be repeated.",
+      "The identity account returned an incomplete identity response. The paid request must not be repeated.",
     );
   // A valid UUID is durable proof of acceptance even if status is absent or
   // newer than this client. Keep it and poll; never turn it into another POST.
@@ -100,7 +100,7 @@ export async function createSoulReference(
     imageUrls.length > 40
   )
     throw new Error(
-      "Soul ID needs a name and between 1 and 40 still references.",
+      "An identity needs a name and between 1 and 40 still references.",
     );
   if (
     imageUrls.some((url) => {
@@ -111,7 +111,7 @@ export async function createSoulReference(
       }
     })
   )
-    throw new Error("Soul ID requires signed HTTPS image references.");
+    throw new Error("An identity requires signed HTTPS image references.");
   if (process.env.ENGINE_MOCK === "1")
     return { id: randomUUID(), status: "queued" };
   // No retries: even a timeout can mean the provider accepted and billed the request.
@@ -133,7 +133,7 @@ export async function createSoulReference(
   return reference(await response.json());
 }
 export async function getSoulReference(id: string): Promise<SoulReference> {
-  if (!UUID.test(id)) throw new Error("Invalid stored Soul ID handle.");
+  if (!UUID.test(id)) throw new Error("Invalid stored identity handle.");
   if (process.env.ENGINE_MOCK === "1") return { id, status: "completed" };
   const response = await recoveryFetch(`${BASE}/${id}`, {
     headers: higgsfieldHeaders(),
@@ -144,11 +144,11 @@ export async function getSoulReference(id: string): Promise<SoulReference> {
   if (!response.ok) throw new HiggsfieldHttpError(response.status);
   const result = reference(await response.json());
   if (result.id !== id)
-    throw new Error("Higgsfield returned a different Soul ID handle.");
+    throw new Error("The identity account returned a different identity handle.");
   return result;
 }
 export async function deleteSoulReference(id: string): Promise<void> {
-  if (!UUID.test(id)) throw new Error("Invalid stored Soul ID handle.");
+  if (!UUID.test(id)) throw new Error("Invalid stored identity handle.");
   if (process.env.ENGINE_MOCK === "1") return;
   const response = await recoveryFetch(`${BASE}/${id}`, {
     method: "DELETE",

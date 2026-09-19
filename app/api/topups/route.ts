@@ -13,7 +13,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const amount = Number(body.amountUsd ?? 0) || 0;
   const credits = body.credits == null || body.credits === "" ? null : Math.round(Number(body.credits));
   if ((!Number.isFinite(amount) || amount === 0) && !(credits && Number.isFinite(credits)))
-    return NextResponse.json({ error: "A non-zero amount is required — dollars, or credits for ElevenLabs" }, { status: 400 });
+    return NextResponse.json({ error: "A non-zero amount is required — dollars, or credits for the audio service" }, { status: 400 });
 
   const provider = PROVIDERS.some((p) => p.id === body.provider) ? String(body.provider) : "byteplus";
   await db().execute({

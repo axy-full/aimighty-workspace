@@ -61,10 +61,10 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
   await page.getByRole("button", { name: "Engine", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Choose a model" })
-    .getByRole("button", { name: /Topaz Image Upscale/ })
+    .getByRole("button", { name: /Image Upscale/ })
     .click();
   const panel = page.getByRole("region", {
-    name: "Topaz Image Upscale",
+    name: "Image Upscale",
     exact: true,
   });
   await expect(

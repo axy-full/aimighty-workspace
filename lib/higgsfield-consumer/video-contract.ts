@@ -45,19 +45,19 @@ export type ConsumerVideoErrorCode =
 const messages: Record<ConsumerVideoErrorCode, string> = {
   invalid_input: "Review the video prompt, references and settings.",
   invalid_workspace:
-    "Higgsfield did not return one selected billing workspace.",
+    "The connected account did not return one selected billing workspace.",
   workspace_changed:
-    "The selected Higgsfield billing workspace changed. Request a new quote.",
-  invalid_quote: "Higgsfield did not return a usable exact credit quote.",
-  quote_changed: "The Higgsfield price changed. Request a new quote.",
+    "The selected connected-account billing workspace changed. Request a new quote.",
+  invalid_quote: "The connected account did not return a usable exact credit quote.",
+  quote_changed: "The connected-account price changed. Request a new quote.",
   unapproved_adjustment:
-    "Higgsfield changed a requested setting. Review a new quote before continuing.",
+    "The connected account changed a requested setting. Review a new quote before continuing.",
   insufficient_credits:
-    "The selected Higgsfield workspace has insufficient credits.",
-  invalid_job: "Higgsfield did not return the requested job.",
-  provider_error: "Higgsfield could not complete this request.",
+    "The selected connected workspace has insufficient credits.",
+  invalid_job: "The connected account did not return the requested job.",
+  provider_error: "The connected account could not complete this request.",
   preflight_unavailable:
-    "Higgsfield could not verify the submission prerequisites. No video was submitted.",
+    "The connected account could not verify the submission prerequisites. No video was submitted.",
 };
 /** These errors are raised only before a paid POST, or during a read. */
 export class ConsumerVideoError extends Error {

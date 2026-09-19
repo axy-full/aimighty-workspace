@@ -28,22 +28,22 @@ type ErrorCode =
   | "unavailable";
 const messages: Record<ErrorCode, string> = {
   configuration:
-    "The Higgsfield connection is not configured for this deployment.",
+    "The account connection is not configured for this deployment.",
   invalid_state:
     "This connection attempt expired or was already used. Start again in workspace settings.",
   session_changed:
     "Your browser session or workspace changed. Start the connection again in the intended workspace.",
-  authorization_denied: "Higgsfield authorization was not approved.",
+  authorization_denied: "Account authorization was not approved.",
   authorization_failed:
-    "Higgsfield could not complete this connection. Start again in workspace settings.",
+    "The connected account could not complete this connection. Start again in workspace settings.",
   reconnect_required:
-    "Reconnect Higgsfield in workspace settings before continuing.",
+    "Reconnect the account in workspace settings before continuing.",
   connection_changed:
-    "The Higgsfield connection changed. Request a new quote before starting a new job; existing jobs require their original connection.",
+    "The account connection changed. Request a new quote before starting a new job; existing jobs require their original connection.",
   connection_busy:
-    "The Higgsfield connection is refreshing. Try again shortly.",
+    "The account connection is refreshing. Try again shortly.",
   unavailable:
-    "The Higgsfield connection is temporarily unavailable. Try again shortly.",
+    "The connected account is temporarily unavailable. Try again shortly.",
 };
 export class ConsumerOAuthError extends Error {
   constructor(

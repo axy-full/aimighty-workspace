@@ -97,7 +97,7 @@ function problem(error: unknown) {
           error.code === "quote_expired"
             ? "This quote expired. Request a fresh quote before generating."
             : error.code === "capacity"
-              ? "Four Higgsfield jobs are already active or awaiting reconciliation."
+              ? "Four connected-account jobs are already active or awaiting reconciliation."
               : "This job changed or is unavailable. Refresh before continuing.",
       },
       { status: error.status, headers },
@@ -119,13 +119,13 @@ function problem(error: unknown) {
     );
   if (error instanceof SyntaxError)
     return Response.json(
-      { error: "Send a valid JSON Genjutsu request." },
+      { error: "Send a valid JSON transform request." },
       { status: 400, headers },
     );
   return Response.json(
     {
       error:
-        "Higgsfield could not complete this request. Check the saved job before trying again.",
+        "The connected account could not complete this request. Check the saved job before trying again.",
     },
     { status: 503, headers },
   );
@@ -175,7 +175,7 @@ export const POST = withTenant(
       const parsed = requestSchema.safeParse(raw);
       if (!parsed.success)
         return Response.json(
-          { error: "Review the Genjutsu request." },
+          { error: "Review the transform request." },
           { status: 400, headers },
         );
       const body = parsed.data;

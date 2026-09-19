@@ -53,12 +53,12 @@ export async function mintGatewayKey(
   const j: any = await res.json().catch(() => ({}));
   if (!res.ok)
     throw new Error(
-      `Vercel answered ${res.status}${j?.error?.message ? `: ${j.error.message}` : ""}`,
+      `The host answered ${res.status}${j?.error?.message ? `: ${j.error.message}` : ""}`,
     );
   const key = j?.apiKeyString ?? j?.apiKey?.apiKeyString ?? null;
   const id = j?.id ?? j?.apiKey?.id ?? null;
   if (typeof key !== "string" || !key || typeof id !== "string" || !id)
-    throw new Error("Vercel's answer carried no key.");
+    throw new Error("The host's answer carried no key.");
   return { id, key };
 }
 
@@ -77,5 +77,5 @@ export async function revokeGatewayKey(id: string): Promise<void> {
     },
   );
   if (!res.ok && res.status !== 404)
-    throw new Error(`Vercel answered ${res.status} revoking the key.`);
+    throw new Error(`The host answered ${res.status} revoking the key.`);
 }

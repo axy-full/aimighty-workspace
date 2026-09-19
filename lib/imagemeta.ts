@@ -210,20 +210,20 @@ export const IMAGE_LIMITS = {
 
 export function validateImage(meta: ImageMeta, bytes: number): string | null {
   if (bytes > IMAGE_LIMITS.maxBytes) {
-    return `Image is ${(bytes / 1048576).toFixed(1)} MB — ModelArk's limit is 30 MB.`;
+    return `Image is ${(bytes / 1048576).toFixed(1)} MB — the video engine's limit is 30 MB.`;
   }
   const { width: w, height: h } = meta;
   if (w == null || h == null) return null; // unknown dims (heic/tiff) — let Ark decide
 
   if (w < IMAGE_LIMITS.minSide || h < IMAGE_LIMITS.minSide) {
-    return `${w}×${h} is below ModelArk's 300px minimum.`;
+    return `${w}×${h} is below the video engine's 300px minimum.`;
   }
   if (w > IMAGE_LIMITS.maxSide || h > IMAGE_LIMITS.maxSide) {
-    return `${w}×${h} exceeds ModelArk's 6000px maximum.`;
+    return `${w}×${h} exceeds the video engine's 6000px maximum.`;
   }
   const ratio = w / h;
   if (ratio < IMAGE_LIMITS.minRatio || ratio > IMAGE_LIMITS.maxRatio) {
-    return `Aspect ratio ${ratio.toFixed(2)} is outside ModelArk's accepted 0.4–2.5.`;
+    return `Aspect ratio ${ratio.toFixed(2)} is outside the video engine's accepted 0.4–2.5.`;
   }
   return null;
 }
@@ -236,10 +236,10 @@ export const VIDEO_LIMITS = {
 
 export function validateVideo(meta: ImageMeta, bytes: number): string | null {
   if (bytes > VIDEO_LIMITS.maxBytes) {
-    return `Video is ${(bytes / 1048576).toFixed(0)} MB — ModelArk's limit is 200 MB.`;
+    return `Video is ${(bytes / 1048576).toFixed(0)} MB — the video engine's limit is 200 MB.`;
   }
   if (meta.durationS != null && meta.durationS < VIDEO_LIMITS.minSeconds) {
-    return `Video is ${meta.durationS.toFixed(1)}s — ModelArk needs at least 2 seconds.`;
+    return `Video is ${meta.durationS.toFixed(1)}s — the video engine needs at least 2 seconds.`;
   }
   // Per-model duration ceilings and counts are enforced at submit, where the
   // engine is known. Resolution/fps limits are left to Ark — failed

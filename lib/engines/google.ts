@@ -13,7 +13,7 @@ export const google: EngineAdapter = {
     return estimateImageCostUsd(req.model.id, req.size, req.references.length)?.net ?? null;
   },
   async render(req) {
-    if (req.kind !== "image") throw new Error("Nano Banana renders stills.");
+    if (req.kind !== "image") throw new Error("Image 2 renders stills.");
     const img = await generateImage({ model: req.model, prompt: req.prompt, ratio: req.ratio, size: req.size, references: req.references });
     return { produced: { bytes: img.bytes, mime: img.mime, costUsd: img.costUsd ?? null, totalTokens: img.totalTokens ?? null, via: img.via } };
   },

@@ -40,7 +40,7 @@ export async function gatewayAuth(): Promise<Record<string, string>> {
   } catch { /* not on Vercel and no pulled token — the env value stands */ }
   if (!token) {
     throw new Error(
-      "Vercel AI Gateway is unreachable from here: set AI_GATEWAY_API_KEY, or run on Vercel with OIDC enabled."
+      "The model gateway is unreachable from here: set AI_GATEWAY_API_KEY, or run on the host with OIDC enabled."
     );
   }
   return { Authorization: `Bearer ${token}` };
@@ -50,20 +50,20 @@ export async function gatewayAuth(): Promise<Record<string, string>> {
 export function explainGatewayFailure(status: number, text: string): string | null {
   try {
     const reply = JSON.parse(text);
-    if (reply.provider === 'openai') return status === 401 ? 'OpenAI rejected the connected API key. Check the OpenAI connection.' : status === 429 ? 'OpenAI reached its rate or usage limit. Check the connected OpenAI account.' : `OpenAI could not complete this request (${status}). ${typeof reply.error?.message === 'string' ? reply.error.message.slice(0, 400) : ''}`;
+    if (reply.provider === 'openai') return status === 401 ? 'The language account rejected the connected API key. Check the language account.' : status === 429 ? 'The language account reached its rate or usage limit. Check the connected language account.' : `The language account could not complete this request (${status}). ${typeof reply.error?.message === 'string' ? reply.error.message.slice(0, 400) : ''}`;
   } catch { /* Other gateway responses retain their existing explanation. */ }
   if (status === 403 && /free tier|RestrictedModels/i.test(text)) {
-    return "Vercel AI Gateway is on its free tier, which does not include this model. " +
-           "Add credits under Vercel → AI Gateway and it will work from then on.";
+    return "The model gateway is on its free tier, which does not include this model. " +
+           "Add credits under the gateway's billing settings and it will work from then on.";
   }
   if (status === 402 || /insufficient.*credit|credit.*exhaust/i.test(text)) {
-    return "Vercel AI Gateway has run out of credit. Top it up under Vercel → AI Gateway.";
+    return "The model gateway has run out of credit. Top it up under the gateway's billing settings.";
   }
   if (status === 401) {
-    return "Vercel AI Gateway rejected this deployment's credentials." +
+    return "The model gateway rejected this deployment's credentials." +
       (vendorKey("gateway")
         ? " Ask the platform to check it."
-        : " On Vercel the OIDC identity is fresh on every request; locally, a token from `vercel env pull` expires after twelve hours.");
+        : " On the host the OIDC identity is fresh on every request; locally, a token from an environment pull expires after twelve hours.");
   }
   return null;
 }

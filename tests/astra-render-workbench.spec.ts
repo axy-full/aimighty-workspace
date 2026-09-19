@@ -16,7 +16,7 @@ async function outputPanel(workspace: Locator) {
   await expect(workspace).toBeVisible();
   const mobile = workspace.getByRole('navigation', { name: '3D workspace panels' });
   await (await mobile.isVisible() ? mobile : workspace.getByRole('navigation', { name: 'Inspector panels' })).getByRole('button', { name: 'Output', exact: true }).click();
-  const panel = workspace.getByRole('region', { name: 'Native Blender renders', exact: true });
+  const panel = workspace.getByRole('region', { name: 'Native 3D renders', exact: true });
   await expect(panel).toBeVisible();
   return panel;
 }
@@ -25,10 +25,10 @@ async function fixture(page: Page, options: { unavailable?: boolean; loseRespons
   await signInLocally(page.request);
   const me = await page.request.get('/api/me').then((response) => response.json());
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
-  let project: Project = { ...newProject('Astra native render study'), id: 'astra-native-render-study', productionProjectId: 'astra-render-production', shotMappings: {}, astraBlender: createAstraScene('product'), astraNative: { schemaVersion: 1, name: 'Bevel material study', program: 'import bpy\n# Reviewed Blender program fixture\n', assetIds: [] } };
+  let project: Project = { ...newProject('Astra native render study'), id: 'astra-native-render-study', productionProjectId: 'astra-render-production', shotMappings: {}, astraBlender: createAstraScene('product'), astraNative: { schemaVersion: 1, name: 'Bevel material study', program: 'import bpy\n# Reviewed 3D runtime program fixture\n', assetIds: [] } };
   let revision = 1;
   let jobs: AstraRenderJob[] = [];
-  const runtime = options.unavailable ? { ...READY, configured: false, reason: 'Connect a Blender snapshot and sandbox account before starting native jobs.' } : READY;
+  const runtime = options.unavailable ? { ...READY, configured: false, reason: 'Connect a 3D runtime snapshot and sandbox account before starting native jobs.' } : READY;
   const quotes: AstraRenderRequest[] = [], submissions: string[] = [], cancellations: string[] = [], forbidden: string[] = [], headers: string[] = [];
   const bytes: Record<string, Buffer> = { preview: await readFile('public/fixtures/still.png'), blend: Buffer.from('BLENDER-v500-fixture'), glb: Buffer.from('glTF-fixture') };
   await page.route('**/api/**', async (route) => {
@@ -72,15 +72,15 @@ async function fixture(page: Page, options: { unavailable?: boolean; loseRespons
     return json({});
   });
   await page.goto(`/workbench?project=${project.id}&stage=astra-blender`);
-  const workspace = page.getByRole('region', { name: 'Astra blender', exact: true });
+  const workspace = page.getByRole('region', { name: 'Astra', exact: true });
   const panel = await outputPanel(workspace);
-  await expect(panel.getByText(options.unavailable ? 'Runtime setup required' : 'Blender 5.0 · Ready', { exact: true })).toBeVisible();
+  await expect(panel.getByText(options.unavailable ? 'Runtime setup required' : '3D runtime 5.0 · Ready', { exact: true })).toBeVisible();
   return { workspace, panel, scope, quotes, submissions, cancellations, forbidden, headers, bytes,
     get project() { return project; }, get jobs() { return jobs; },
     complete() {
       const artifacts = (['preview', 'blend', 'glb'] as const).map((kind) => ({ kind, assetId: `asset-${kind}`, uploadId: `astra-render-${kind}`, url: `/api/uploads/astra-render-${kind}`, filename: kind === 'preview' ? 'preview.png' : `scene.${kind}`, mime: kind === 'preview' ? 'image/png' : kind === 'blend' ? 'application/x-blender' : 'model/gltf-binary', bytes: bytes[kind].length }));
       jobs[0] = { ...jobs[0], status: 'succeeded', billedCredits: 8, costUsd: .08, assetsRegistered: true, artifacts, updatedAt: Date.now() };
-      const assets: Asset[] = artifacts.map((artifact) => ({ id: artifact.assetId, uploadId: artifact.uploadId, url: artifact.url, mime: artifact.mime, name: artifact.filename, kind: artifact.kind === 'preview' ? 'image' : 'document', category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] }));
+      const assets: Asset[] = artifacts.map((artifact) => ({ id: artifact.assetId, uploadId: artifact.uploadId, url: artifact.url, mime: artifact.mime, name: artifact.filename, kind: artifact.kind === 'preview' ? 'image' : 'document', category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] }));
       project = { ...project, assets: [...project.assets, ...assets] }; revision++;
     },
   };
@@ -88,7 +88,7 @@ async function fixture(page: Page, options: { unavailable?: boolean; loseRespons
 
 async function review(page: Page, panel: Locator) {
   await panel.getByRole('button', { name: 'Review render quote', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Run native Blender render', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Run native 3D render', exact: true });
   await expect(dialog.getByRole('button', { name: 'Start render · up to 12 cr', exact: true })).toBeEnabled();
   return dialog;
 }
@@ -144,11 +144,11 @@ test('native render cancellation updates the durable job and remains cancelled a
   expect(state.cancellations).toEqual(['render-fixture-1']); expect(state.submissions).toHaveLength(1); expect(state.forbidden).toEqual([]);
 });
 
-test('unconfigured native Blender explains setup and cannot submit a render', async ({ page }) => {
+test('unconfigured native 3D explains setup and cannot submit a render', async ({ page }) => {
   const state = await fixture(page, { unavailable: true });
   await expect(state.panel.getByRole('button', { name: 'Review render quote', exact: true })).toBeDisabled();
-  await expect(state.panel.getByText('Connect a Blender snapshot and sandbox account before starting native jobs.', { exact: true })).toBeVisible();
-  await expect(state.workspace.getByRole('button', { name: 'Download Blender package', exact: true })).toBeEnabled();
+  await expect(state.panel.getByText('Connect a 3D runtime snapshot and sandbox account before starting native jobs.', { exact: true })).toBeVisible();
+  await expect(state.workspace.getByRole('button', { name: 'Download 3D package', exact: true })).toBeEnabled();
   expect(state.quotes).toEqual([]); expect(state.submissions).toEqual([]); expect(state.forbidden).toEqual([]);
 });
 

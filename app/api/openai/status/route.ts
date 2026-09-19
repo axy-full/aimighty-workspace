@@ -6,5 +6,5 @@ export const GET = withTenant(async () => {
   const auth = await requireOwner();
   if (auth.response) return auth.response;
   const connection = await openAIConnection(true);
-  return Response.json({ ...connection, astraAvailable: connection.models.includes('gpt-6-astra'), route: 'OpenAI direct', generationTested: false }, { headers: { 'Cache-Control': 'private, no-store' } });
+  return Response.json({ ...connection, astraAvailable: connection.models.includes('gpt-6-astra'), route: 'Language account, direct', generationTested: false }, { headers: { 'Cache-Control': 'private, no-store' } });
 });

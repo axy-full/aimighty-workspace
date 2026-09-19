@@ -146,7 +146,7 @@ function parseJob(value: unknown, draftId: string): Job {
     )
   )
     throw Error(
-      "The saved Genjutsu job could not be verified. Refresh saved jobs before continuing.",
+      "The saved transform job could not be verified. Refresh saved jobs before continuing.",
     );
   return {
     ...value,
@@ -189,8 +189,8 @@ function original(job: Job): Asset | null {
     url: asset.url,
     kind: "video",
     mime: "video/mp4",
-    name: `${GENJUTSU_LABELS[job.input.variant]} · ${job.input.prompt.slice(0, 80) || "Genjutsu take"}`,
-    category: "Genjutsu",
+    name: `${GENJUTSU_LABELS[job.input.variant]} · ${job.input.prompt.slice(0, 80) || "Transform take"}`,
+    category: "Transform",
     description: `${GENJUTSU_LABELS[job.input.variant]} · ${job.input.resolution}`,
     prompt: job.input.prompt,
     status: "Draft",
@@ -398,7 +398,7 @@ export function ConsumerGenjutsu({
         throw new RequestError(
           typeof value?.error === "string"
             ? value.error
-            : "The saved Genjutsu request could not be read. Refresh before continuing.",
+            : "The saved transform request could not be read. Refresh before continuing.",
           response.status,
           typeof value?.code === "string" ? value.code : undefined,
         );
@@ -438,7 +438,7 @@ export function ConsumerGenjutsu({
         value.jobs.length > 25 ||
         !object(value.connection)
       )
-        throw Error("Saved Genjutsu jobs could not be verified.");
+        throw Error("Saved transform jobs could not be verified.");
       const saved = value.jobs.map((job) => parseJob(job, project.id));
       confirmAttempts(saved);
       setJobs(retain(saved, attemptIds.current));
@@ -936,7 +936,7 @@ export function ConsumerGenjutsu({
       <div className={styles.columns}>
         <section
           className={`suite-panel ${styles.creator}`}
-          aria-label="Connected account Genjutsu"
+          aria-label="Connected account transform"
         >
           <div className="suite-section-heading">
             <div>
@@ -1006,7 +1006,7 @@ export function ConsumerGenjutsu({
           {(quoteAttempt || quoteStorageError) && (
             <div
               className={styles.quote}
-              aria-label="Saved Genjutsu quote request"
+              aria-label="Saved transform quote request"
             >
               <strong>Original-copy request needs recovery</strong>
               {quoteAttempt && (
@@ -1029,7 +1029,7 @@ export function ConsumerGenjutsu({
                     }
                     onClick={() => void act("quote")}
                   >
-                    Recover saved Genjutsu quote
+                    Recover saved transform quote
                   </button>
                 </>
               )}
@@ -1071,7 +1071,7 @@ export function ConsumerGenjutsu({
               <fieldset className={styles.form} disabled={blocked}>
                 <div
                   className={styles.source}
-                  aria-label="Connected Genjutsu source drop area"
+                  aria-label="Connected transform source drop area"
                   onDragOver={receiver.onDragOver}
                   onDrop={(event) => receiver.onDrop(event, "source")}
                 >
@@ -1082,7 +1082,7 @@ export function ConsumerGenjutsu({
                   {input.source ? (
                     <>
                       <video
-                        aria-label="Connected Genjutsu source preview"
+                        aria-label="Connected transform source preview"
                         src={input.source.url}
                         controls
                         playsInline
@@ -1118,7 +1118,7 @@ export function ConsumerGenjutsu({
                     ref={videoPicker}
                     type="file"
                     accept=".mp4,.mov,.webm,video/*"
-                    aria-label="Upload connected Genjutsu source video"
+                    aria-label="Upload connected transform source video"
                     onChange={(event) => {
                       if (event.target.files)
                         void receiver.useFiles(event.target.files, "source");
@@ -1145,7 +1145,7 @@ export function ConsumerGenjutsu({
                 </div>
                 <div
                   className={styles.source}
-                  aria-label="Connected Genjutsu reference drop area"
+                  aria-label="Connected transform reference drop area"
                   onDragOver={receiver.onDragOver}
                   onDrop={(event) => receiver.onDrop(event, "reference")}
                 >
@@ -1230,7 +1230,7 @@ export function ConsumerGenjutsu({
                     ref={imagePicker}
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
-                    aria-label="Upload connected Genjutsu reference images"
+                    aria-label="Upload connected transform reference images"
                     onChange={(event) => {
                       if (event.target.files)
                         void receiver.useFiles(event.target.files, "reference");
@@ -1241,7 +1241,7 @@ export function ConsumerGenjutsu({
                 <label>
                   Creative direction · optional
                   <textarea
-                    aria-label="Connected Genjutsu creative direction"
+                    aria-label="Connected transform creative direction"
                     rows={5}
                     maxLength={5000}
                     value={input.prompt}
@@ -1267,7 +1267,7 @@ export function ConsumerGenjutsu({
                 <label>
                   Output quality
                   <select
-                    aria-label="Connected Genjutsu output quality"
+                    aria-label="Connected transform output quality"
                     value={input.resolution}
                     onChange={(event) =>
                       change({
@@ -1301,7 +1301,7 @@ export function ConsumerGenjutsu({
                 >
                   {busy === "quote"
                     ? "Copying originals and reading price…"
-                    : "Get connected Genjutsu quote"}
+                    : "Get connected transform quote"}
                 </button>
                 <button
                   type="button"
@@ -1310,7 +1310,7 @@ export function ConsumerGenjutsu({
                   onClick={() => void refresh()}
                 >
                   <RefreshCw size={14} />
-                  Refresh saved Genjutsu jobs
+                  Refresh saved transform jobs
                 </button>
               </div>
               {unresolved && (
@@ -1327,13 +1327,13 @@ export function ConsumerGenjutsu({
                   disabled={blocked}
                   onClick={() => void act("status", null, missing[0])}
                 >
-                  Recover earlier Genjutsu submission
+                  Recover earlier transform submission
                 </button>
               )}
               {selected?.status === "quoted" && (
                 <div
                   className={styles.quote}
-                  aria-label="Connected Genjutsu quote"
+                  aria-label="Connected transform quote"
                 >
                   <strong>
                     {selected.quoteCredits} connected credits ·{" "}
@@ -1368,7 +1368,7 @@ export function ConsumerGenjutsu({
                       onChange={(event) => setApproved(event.target.checked)}
                     />
                     Charge {selected.quoteCredits} connected credits to{" "}
-                    {selected.workspaceName} for this Genjutsu generation.
+                    {selected.workspaceName} for this transform generation.
                   </label>
                   <button
                     type="button"
@@ -1378,7 +1378,7 @@ export function ConsumerGenjutsu({
                   >
                     {busy === "submit"
                       ? "Submitting once…"
-                      : `Generate Genjutsu · ${selected.quoteCredits} connected credits`}
+                      : `Generate transform · ${selected.quoteCredits} connected credits`}
                   </button>
                 </div>
               )}
@@ -1397,7 +1397,7 @@ export function ConsumerGenjutsu({
         </section>
         <aside
           className={`suite-panel ${styles.library}`}
-          aria-label="Connected Genjutsu workspace assets"
+          aria-label="Connected transform workspace assets"
         >
           <div className="suite-section-heading">
             <div>
@@ -1408,7 +1408,7 @@ export function ConsumerGenjutsu({
           <label className={styles.search}>
             Search assets
             <input
-              aria-label="Search connected Genjutsu assets"
+              aria-label="Search connected transform assets"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -1433,13 +1433,13 @@ export function ConsumerGenjutsu({
       </div>
       <section
         className={`suite-panel ${styles.results}`}
-        aria-label="Connected Genjutsu project results"
+        aria-label="Connected transform project results"
       >
         <div className="suite-section-heading">
           <div>
             <h2>Connected account results</h2>
             <p>
-              Your account’s saved Genjutsu jobs in this project. Active
+              Your account’s saved transform jobs in this project. Active
               submissions stay pinned; approved quotes use connected credits.
             </p>
           </div>
@@ -1450,7 +1450,7 @@ export function ConsumerGenjutsu({
               ? "Loading saved jobs…"
               : !capability
                 ? "Saved job history is unavailable. Refresh saved jobs to try again."
-                : "No saved connected Genjutsu jobs in this project."}
+                : "No saved connected transform jobs in this project."}
           </p>
         ) : (
           <>
@@ -1520,7 +1520,7 @@ export function ConsumerGenjutsu({
                     >
                       {clock < (nextPoll[selected.id] ?? 0)
                         ? `Check again in ${Math.ceil(((nextPoll[selected.id] ?? 0) - clock) / 1000)}s`
-                        : "Check saved Genjutsu result"}
+                        : "Check saved transform result"}
                     </button>
                   )}
                   {output && (

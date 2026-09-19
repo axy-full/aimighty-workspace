@@ -122,7 +122,7 @@ test("Generate picks a catalogue model, quotes in connected credits, approves th
   const model = panel.getByRole("combobox", { name: "Generate model", exact: true });
   await model.selectOption("nano_banana_2");
   const selected = panel.getByLabel("Selected model", { exact: true });
-  await expect(selected.getByText("Nano Banana 2", { exact: true })).toBeVisible();
+  await expect(selected.getByText("Image 2", { exact: true })).toBeVisible();
   await expect(selected).toContainText("auto · 1:1 · 3:2");
   await expect(selected).toContainText("image_references, mask");
   // Settings are generated from the model's declared parameters.
@@ -143,7 +143,7 @@ test("Generate picks a catalogue model, quotes in connected credits, approves th
   await quoteButton.click();
   const quote = panel.getByLabel("Connected-credit quote", { exact: true });
   await expect(quote.getByText("9 connected credits · Studio wallet", { exact: true })).toBeVisible();
-  await expect(quote).toContainText("Image · Nano Banana 2 · resolution 2k · aspect ratio 1:1 · 1 reference file");
+  await expect(quote).toContainText("Image · Image 2 · resolution 2k · aspect ratio 1:1 · 1 reference file");
   await noOverflow(page);
   const quoted = state.posts.find((body) => body.action === "quote")!;
   expect(quoted.input).toEqual({ type: "image", model: "nano_banana_2", prompt: "A plain bottle on a clean studio background.", parameters: { resolution: "2k", aspect_ratio: "1:1" }, medias: [{ role: "image_references", source: { uploadId: "still-original" } }] });
@@ -192,10 +192,10 @@ test("the Sound and Video workflows expose declared enum, number and toggle sett
   const workflows = panel.getByRole("group", { name: "Generate workflow", exact: true });
   await workflows.getByRole("button", { name: "Sound", exact: true }).click();
   const model = panel.getByRole("combobox", { name: "Generate model", exact: true });
-  await expect(model.locator("option", { hasText: "Seed Audio 1.0 · unlimited-eligible" })).toHaveCount(1);
+  await expect(model.locator("option", { hasText: "Audio 1.0 · unlimited-eligible" })).toHaveCount(1);
   await model.selectOption("sonilo_music");
   await panel.getByRole("textbox", { name: "Generate prompt", exact: true }).fill("Warm piano over soft rain.");
-  await expect(panel.getByText("Sonilo Music requires the setting “duration”.", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Score Music requires the setting “duration”.", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Get connected-credit quote", exact: true })).toBeDisabled();
   const settings = panel.getByRole("group", { name: "Model settings", exact: true });
   await settings.getByRole("spinbutton", { name: "duration", exact: true }).fill("8");

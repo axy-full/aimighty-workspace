@@ -191,8 +191,8 @@ export function CreativeTemplateBrowser({
           )}
           <p className={styles.note}>
             These are original Moleculr creative briefs, rendered by the engine
-            you review. The live Higgsfield Ads presets are a separate catalog
-            below; Higgsfield’s complete website template library is not
+            you review. The live Ads presets are a separate catalog
+            below; the connected account’s complete website template library is not
             connected.
           </p>
         </>
