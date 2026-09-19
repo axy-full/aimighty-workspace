@@ -9,6 +9,7 @@ export type {MarketingBrief} from './marketing-brief';
 import {validateColor, type ColorGrade} from './color';
 import {validateAudio, type AudioClip} from './audio';
 import type {ScriptSource, SceneReview} from './screenplay';
+import {PARTICL_STAGE_ALIASES} from '../suites';
 export type Stage = 'brief' | 'script' | 'moodboard' | 'characters' | 'elements' | 'astra-blender' | 'canvas' | 'storyboard' | 'assets' | 'edit' | 'export';
 export type AssetKind = 'image' | 'video' | 'audio' | 'document' | 'link';
 export type AssetStatus = 'Draft' | 'Selected' | 'Continuity note';
@@ -20,12 +21,24 @@ export type CanvasNode = {id:string; title:string; type:NodeType; assetId?:strin
 export type Shot = {id:string; name:string; assetId:string; duration:number; sourceIn:number; note:string};
 export type Plan = {astraNative?:AstraNativeProposal;astraBlender?:AstraProposal;referenceAdAnalysis?:import('./reference-ad-analysis').ReferenceAdAnalysis;suiteAgent?:SuiteAgentPlan;id:string; request:string; model:string; depth:string; effort?:string; intent:string; summary:string; steps:string[]; applied:boolean; refs:string[]; role?:string};
 export type Project = {astraNative?:AstraNativeSource;astraBlender?:AstraScene;moleculr?:MoleculrBrief;marketingBrief?:MarketingBrief;bins?:AssetBin[];colorGrade?:ColorGrade;productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; audioClips?:AudioClip[]; clipAudio?:boolean; script?:string;scriptFormat?:'screenplay'|'adfilm';scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>;developmentApplications?:string[]; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[]};
+/** The visible production stages, in dock order. Retired IDs stay in `Stage` as aliases (see `normalizeStage`). */
 export const STAGES: {id:Stage; label:string; hint:string}[] = [
- {id:'brief',label:'Brief & ideas',hint:'Find the story'}, {id:'script',label:'Script & breakdown',hint:'Find the production in the story'}, {id:'moodboard',label:'Moodboard',hint:'Define the visual world'},
- {id:'characters',label:'Characters',hint:'Keep identity consistent'}, {id:'elements',label:'Elements',hint:'Build a reusable world'},
+ {id:'brief',label:'Brief & Script',hint:'Find the story and the production in it'},
+ {id:'storyboard',label:'Boards',hint:'Define the visual world and plan every frame'},
+ {id:'characters',label:'Cast & Elements',hint:'Keep identity consistent and build a reusable world'},
  {id:'astra-blender',label:'Astra blender',hint:'Shape your scene with GPT-6 Astra'},
- {id:'canvas',label:'Production canvas',hint:'Bring it all together'}, {id:'storyboard',label:'Storyboards',hint:'Plan every frame'}, {id:'assets',label:'Assets & takes',hint:'Select the right take'},
- {id:'edit',label:'Edit & sound',hint:'Shape the story'}, {id:'export',label:'Delivery',hint:'Ready for the next room'}];
+ {id:'canvas',label:'Rig',hint:'Bring it all together'},
+ {id:'assets',label:'Takes',hint:'Select the right take'},
+ {id:'edit',label:'Edit & Sound',hint:'Shape the story'},
+ {id:'export',label:'Deliver',hint:'Ready for the next room'}];
+/** Former stage IDs (`script`, `moodboard`, `elements`) open the visible stage that now holds their panel. */
+export const STAGE_ALIASES = PARTICL_STAGE_ALIASES as Record<string, Stage>;
+export function normalizeStage(value: string | null | undefined): Stage | null {
+ if (!value) return null;
+ if (STAGES.some(stage => stage.id === value)) return value as Stage;
+ return STAGE_ALIASES[value] ?? null;
+}
+export function isVisibleStage(value: Stage): boolean { return STAGES.some(stage => stage.id === value); }
 export function uid(prefix='id') {return prefix+'-'+crypto.randomUUID().slice(0,8)}
 export function seedProject():Project {const p:Project={
  id:'dune-studies',name:'Dune Studies',description:'Fashion film · Concept 01',script:'EXT. MIRRORED DUNES - LATE AFTERNOON\n\nCaramel dunes stretch into the distance. A monumental chrome sphere reflects the empty horizon. Hold for four seconds.\n\nEXT. MIRRORED DUNES - CONTINUOUS\n\nMIRA, wearing an ivory tailored suit and long scarf, enters the frame. She approaches the sphere. Fabric catches the wind. Six seconds.\n\nMIRA\nWhat if the world saw you differently?\n\nEXT. MIRROR SPHERE - LATE AFTERNOON\n\nHer reflection moves across the surface. The camera holds. Five seconds. Leave room for the end line.',

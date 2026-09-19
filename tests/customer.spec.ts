@@ -825,7 +825,7 @@ test("mobile suite tabs preserve unsaved settings confirmation", async ({
     name: "Discard unsaved changes?",
     exact: true,
   });
-  const openSuite = () => page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Particl Studio", exact: true }).click();
+  const openSuite = () => page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Particl Production Studio", exact: true }).click();
 
   await openSuite();
   await expect(confirm).toBeVisible();

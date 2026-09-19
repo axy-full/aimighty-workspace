@@ -6,10 +6,24 @@ The September 2026 four-suite design brief reorganizes the existing application.
 
 | Suite | Pages | Existing implementation |
 | --- | --- | --- |
-| Particl | Brief, Script, Look, Cast, Elements, Rig, Boards, Takes, Edit, Deliver | The ten workbench stages, with their original stage IDs and project save/recovery behavior. |
-| Atomik | Runs, Recipes, Approvals, Budget, Models | Durable pipelines, exact saved-plan cloning, per-stage priced approvals, settled job accounting, project caps, existing thinking model and effort controls. |
-| Moleculr | Product, Cast, Format, Variants, Publish | Project references, Soul identities, Marketing Studio, the existing generation dialog, original takes, edit and delivery tools. |
-| Subatomik viral studio | Motion Transfer, Object Swap, Creative Directions, History | Genjutsu through Cloud and connected-account routes, shared originals, reviewed quotes, frame extraction, comparison, recreation and editorial handoffs. See [the Genjutsu contract](subatomik-genjutsu.md). |
+| Particl Production Studio | Brief & Script, Boards, Cast & Elements, Astra blender, Rig, Takes, Edit & Sound, Deliver | The workbench stages, with their original stage IDs and project save/recovery behavior. Eight visible stages since the 19 September restructure (PR A); see the alias table below. |
+| Atomik Super Agent | Runs, Recipes, Approvals, Budget, Models | Durable pipelines, exact saved-plan cloning, per-stage priced approvals, settled job accounting, project caps, existing thinking model and effort controls. |
+| Moleculr Business Suite | Marketing Studio (one page with the sections Product, Brand, Cast, Format, Variants, Design, Publish) | Project references, Soul identities, Marketing Studio, the existing generation dialog, original takes, edit and delivery tools. |
+| Subatomik Viral Studio | Motion Transfer, Object Swap, Creative Directions, History | Genjutsu through Cloud and connected-account routes, shared originals, reviewed quotes, frame extraction, comparison, recreation and editorial handoffs. See [the Genjutsu contract](subatomik-genjutsu.md). |
+
+### Particl stage order and retired stage IDs (PR A, 19 September 2026)
+
+The dock shows exactly, in this order: Brief & Script, Boards, Cast & Elements, Astra blender, Rig, Takes, Edit & Sound, Deliver. No engine feature changed and no panel was removed; three stages were merged into their neighbours and keep their IDs as aliases so saved projects, agent tools and old links continue to work:
+
+| Retired stage ID | Opens | Where its panel lives now |
+| --- | --- | --- |
+| `script` | `brief` (Brief & Script) | The script panel, development flow and OCR import render under the brief on the same stage. |
+| `moodboard` | `storyboard` (Boards) | The Look panel is a collapsible "Look" section at the top of Boards. |
+| `elements` | `characters` (Cast & Elements) | Cast is listed first, then Elements, each with its own upload tile and identity control. |
+
+`?stage=script`, `?stage=moodboard` and `?stage=elements` normalise client-side (`normalizeStage` in `lib/workbench/studio.ts`, `PARTICL_STAGE_ALIASES` in `lib/suites.ts`) and the URL is rewritten to the visible stage. Takes lists project uploads and the project's generations together (the same library component Make uses, scoped to the project) and keeps the "All workspace assets" link. The Soul ID control is labelled "Identity" in the studio; the identity component and API are unchanged.
+
+Moleculr's single page is `page=marketing`. Former page links (`page=brand`, `page=product`, …) normalise to `page=marketing#<section>`; `suiteHref("moleculr", id, "brand")` produces that form. The home route lists the project selector (recent projects, open a saved project, new project) before the suite cards and the brief textarea.
 
 The shared shell includes a suite selector, project context, credits and account access, All assets, a resizable Atomik rail, and the appropriate bottom page dock. Particl retains its Projects, Production, Make, Library and Workspace room rail. Billing and account security use the same navigation without changing authentication or payments. The home route presents the four suites and saved projects instead of redirecting to the workbench.
 

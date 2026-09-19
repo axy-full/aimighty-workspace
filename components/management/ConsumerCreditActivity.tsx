@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { suiteHref } from "@/lib/suites";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import type {
@@ -107,7 +108,7 @@ export default function ConsumerCreditActivity() {
                   {project.available ? (
                     <Link
                       className="management-link"
-                      href={`/workbench?project=${encodeURIComponent(project.draftId)}&suite=moleculr&page=variants`}
+                      href={suiteHref("moleculr", project.draftId, "variants")}
                     >
                       {project.name || "Untitled project"}
                     </Link>

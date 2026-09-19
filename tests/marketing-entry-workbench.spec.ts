@@ -104,7 +104,7 @@ for (const rememberedOnly of [false, true]) {
     const entry = page
       .getByRole("link", { name: "Open Moleculr", exact: true })
       .filter({ visible: true });
-    const href = `/workbench?project=${state.draft.id}&suite=moleculr&page=brand`;
+    const href = `/workbench?project=${state.draft.id}&suite=moleculr&page=marketing#brand`;
     await expect(entry).toHaveAttribute("href", href);
     await expect(entry).toBeVisible();
     if (rememberedOnly) {

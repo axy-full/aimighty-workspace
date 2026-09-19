@@ -386,3 +386,29 @@
 .collective-assets-link strong { font-size:13px; font-weight:600; }
 .collective-assets-link p { font-size:11px; color:var(--graphite-muted); margin:4px 0 0; }
 @media(max-width:759px) { .collective-assets-link { align-items:stretch; flex-direction:column; } }
+
+/* Four-suite information architecture (PR A): merged stages keep every panel reachable. */
+.brief-script { margin-top:28px; border-top:1px solid var(--graphite-line); }
+.script-embedded { min-width:0; }
+.look-section { margin:0 0 18px; border:1px solid var(--graphite-edge); border-radius:8px; background:var(--graphite-card); }
+.look-section > summary { display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; list-style:none; font-size:13px; font-weight:600; }
+.look-section > summary::-webkit-details-marker { display:none; }
+.look-section > summary small { flex:1; font-weight:400; color:var(--graphite-muted); font-size:11px; }
+.look-section[open] > summary { border-bottom:1px solid var(--graphite-line); }
+.look-section[open] > summary > svg:last-child { transform:rotate(180deg); }
+.look-section-body { padding:12px 14px 18px; }
+.storyboard-embedded { min-width:0; }
+.library-group { margin-top:6px; }
+.library-group + .library-group { margin-top:28px; padding-top:22px; border-top:1px solid var(--graphite-line); }
+.library-group .stage-context .btn { margin-left:auto; }
+.takes-generations { margin-top:32px; padding-top:22px; border-top:1px solid var(--graphite-line); }
+.takes-generations > .section-heading { margin-bottom:12px; }
+.moleculr-sections-nav { position:sticky; top:0; z-index:2; display:flex; flex-wrap:wrap; gap:6px; margin:0 0 18px; padding:8px 0; background:var(--graphite-panel, #0b0b0d); }
+.moleculr-sections-nav a { padding:6px 11px; border:1px solid var(--graphite-edge); border-radius:999px; font-size:12px; color:inherit; text-decoration:none; }
+.moleculr-sections-nav a[aria-current="location"] { border-color:currentColor; }
+.moleculr-section { scroll-margin-top:64px; }
+.moleculr-section + .moleculr-section { margin-top:36px; padding-top:28px; border-top:1px solid var(--graphite-line); }
+.moleculr-section > h2 { margin:0; font-size:22px; font-weight:500; letter-spacing:-.02em; }
+.moleculr-section-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:6px 0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.moleculr-section-toggle[aria-expanded="true"] > svg { transform:rotate(180deg); }
+.moleculr-section-body { margin-top:14px; }

@@ -158,10 +158,10 @@ test("leaving the selected project while extracting cannot upload or attach a st
   await expect.poll(() => f.captures).toBe(1);
   await expect(page.getByRole("button", { name: "Remove source", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toBeDisabled();
-  await page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Atomik Agent", exact: true }).click();
+  await page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Atomik Super Agent", exact: true }).click();
   await expect(page).toHaveURL(/\/atomik\?/);
   f.release();
-  await expect(page.getByRole("region", { name: "Atomik Agent suite", exact: true }).getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Atomik Super Agent suite", exact: true }).getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
   await expect(page.getByLabel("Genjutsu source preview")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Extract start frame", exact: true })).toHaveCount(0);
   expect(f.writes).toEqual([]); expect(f.filings).toEqual([]); expect(f.errors).toEqual([]);

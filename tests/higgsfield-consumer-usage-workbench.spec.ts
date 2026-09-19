@@ -95,7 +95,7 @@ test("Higgsfield quote commitments load only on demand and stay separate from do
   await expect(panel).toContainText(/not an invoice|not a provider invoice/i);
   await expect(panel).toContainText(/live balance/i);
   await expect(panel.getByText("Bottle campaign", { exact: true })).toBeVisible();
-  await expect(panel.getByRole("link", { name: "Bottle campaign", exact: true })).toHaveAttribute("href", "/workbench?project=bottle-campaign&suite=moleculr&page=variants");
+  await expect(panel.getByRole("link", { name: "Bottle campaign", exact: true })).toHaveAttribute("href", "/workbench?project=bottle-campaign&suite=moleculr&page=marketing#variants");
   await expect(panel.getByText("Deleted or unavailable project", { exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: /deleted/i })).toHaveCount(0);
   await expect(standardSpend(page)).toHaveCount(0);

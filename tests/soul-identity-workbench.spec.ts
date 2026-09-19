@@ -60,13 +60,13 @@ async function fixture(page: Page, options: {realSoul?:boolean} = {}) {
   return {scope,project,current,identities,submissions,uploaded,generationId,image,requests:()=>requests,setConfigured:(value:boolean)=>{configured=value;}};
 }
 
-test('Soul ID training recovers the exact paid request and binds ready portraits across Characters and Elements', async ({page}, info) => {
+test('Soul ID training recovers the exact paid request and binds ready portraits across Cast & Elements', async ({page}, info) => {
   test.skip(!['workbench-360x640','workbench-1440x900'].includes(info.project.name),'bounded phone and desktop coverage');
   const f = await fixture(page);
   const errors:string[]=[]; page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/workbench');
-  await goWorkbenchStage(page,'Characters');
-  await page.getByRole('button',{name:'Soul ID',exact:true}).click();
+  await goWorkbenchStage(page,'characters');
+  await page.getByRole('button',{name:'Identity',exact:true}).click();
   let panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
   await expect(panel.getByText('No Soul IDs yet.',{exact:false})).toBeVisible();
   await expect(panel).toContainText('Props, products and worlds stay as ordinary image references.');
@@ -90,8 +90,8 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   expect(f.requests()).toBe(1);
   expect(JSON.parse(f.submissions[0].body).references).toEqual([{uploadId:f.uploaded.id},{genId:f.generationId},{uploadId:alternate.id}]);
   await page.reload();
-  await goWorkbenchStage(page,'Characters');
-  await page.getByRole('button',{name:'Soul ID',exact:true}).click();
+  await goWorkbenchStage(page,'characters');
+  await page.getByRole('button',{name:'Identity',exact:true}).click();
   panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
   await expect(panel.getByText('Mira trained likeness · 3 portraits · 250 credits',{exact:true})).toBeVisible();
   await panel.getByRole('button',{name:'Recover training request',exact:true}).click();
@@ -108,14 +108,14 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   await expect(panel).toHaveCount(0);
   await expect.poll(async()=> (await f.current()).assets.find(asset=>asset.soulIdentityId==='soul-local-browser'&&asset.category==='Character')).toMatchObject({url:f.uploaded.url,uploadId:f.uploaded.id,refs:[]});
   await page.reload();
-  await goWorkbenchStage(page,'Characters');
+  await goWorkbenchStage(page,'characters');
   await expect(page.getByRole('article',{name:'Asset: Mira trained likeness',exact:true})).toBeVisible();
-  await goWorkbenchStage(page,'Elements');
-  await page.getByRole('button',{name:'Soul ID',exact:true}).click();
+  await goWorkbenchStage(page,'elements');
+  await page.getByRole('button',{name:'Element identity',exact:true}).click();
   panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
   await panel.getByRole('button',{name:'Use in Elements',exact:true}).click();
   await expect(panel).toHaveCount(0);
-  const element=page.getByRole('article',{name:'Asset: Mira trained likeness',exact:true});
+  const element=page.getByRole('region',{name:'Elements',exact:true}).getByRole('article',{name:'Asset: Mira trained likeness',exact:true});
   await element.getByRole('button',{name:'To canvas',exact:true}).click();
   await expect.poll(async()=>{const p=await f.current(); const bound=p.assets.find(asset=>asset.soulIdentityId==='soul-local-browser'&&asset.category==='Element'); return p.nodes.some(node=>node.type==='element'&&node.assetId===bound?.id);}).toBe(true);
   const draft=await page.request.get(`/api/workbench/projects?id=${f.project.id}`,{headers:{'X-Workbench-Scope':f.scope}}).then(response=>response.json());
@@ -135,7 +135,7 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   });
   const generationBodies:Record<string,unknown>[]=[];
   await page.route(/\/api\/generate$/,route=>{generationBodies.push(route.request().postDataJSON());return route.fulfill({status:202,headers:{'Idempotency-Status':'complete'},json:{id:'gen-soul-test-sink',status:'queued'}});});
-  await page.reload();await goWorkbenchStage(page,'Production canvas');
+  await page.reload();await goWorkbenchStage(page,'canvas');
   if(page.viewportSize()!.width<760){await page.locator('.mobile-node-viewbar').getByRole('tab',{name:'List',exact:true}).click();await page.locator('.mobile-node-list button').filter({hasText:'Soul character shot'}).click();}
   else {const node=page.getByRole('article',{name:'Generate node: Soul character shot',exact:true});await node.focus();await node.press('Enter');}
   await page.getByRole('button',{name:'Generate take',exact:true}).click();
@@ -162,8 +162,8 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
 test('Soul ID submits through the real mock backend and saves a usable local binding',async({page},info)=>{
   test.skip(info.project.name!=='workbench-1440x900','one full local mock integration');
   const f=await fixture(page,{realSoul:true});
-  await page.goto('/workbench');await goWorkbenchStage(page,'Characters');
-  await page.getByRole('button',{name:'Soul ID',exact:true}).click();
+  await page.goto('/workbench');await goWorkbenchStage(page,'characters');
+  await page.getByRole('button',{name:'Identity',exact:true}).click();
   const panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
   await expect(panel.getByText('No Soul IDs yet.',{exact:false})).toBeVisible();
   await panel.getByRole('textbox',{name:'Soul ID name',exact:true}).fill('Mock trained actor');
@@ -195,8 +195,8 @@ test('Soul IDs still load when recovery storage is malformed, while training fai
   f.identities.push({id:'soul-ready',projectId:f.project.id,name:'Saved identity',description:'',subjectType:'character',references:[{uploadId:f.uploaded.id}],status:'ready',previewUrl:f.uploaded.url,createdAt:1,updatedAt:1,creditsBilled:250,error:null});
   await page.addInitScript(key=>localStorage.setItem(key,'broken-record'),paidActionStorageKey(f.scope,'workbench',`soul-identity:${f.project.id}`));
   await page.goto('/workbench');
-  await goWorkbenchStage(page,'Elements');
-  await page.getByRole('button',{name:'Soul ID',exact:true}).click();
+  await goWorkbenchStage(page,'elements');
+  await page.getByRole('button',{name:'Element identity',exact:true}).click();
   const panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
   await expect(panel).toContainText('The saved request cannot be read.');
   await expect(panel.getByRole('article',{name:'Soul ID: Saved identity',exact:true})).toBeVisible();
@@ -219,7 +219,7 @@ test('ordinary generation keeps a regular image engine as default when Soul is a
     const base={kind:'image',resolutions:['1080p'],ratios:['16:9'],durations:[],maxReferenceVideos:0};
     return route.fulfill({json:{models:[{...base,id:'hf-soul-character',label:'Higgsfield Soul Character',maxReferenceImages:0,soulIdentity:true},{...base,id:'gemini-3-pro-image',label:'Nano Banana Pro',maxReferenceImages:8}]}});
   });
-  await page.goto('/workbench');await goWorkbenchStage(page,'Production canvas');
+  await page.goto('/workbench');await goWorkbenchStage(page,'canvas');
   const node=page.getByRole('article',{name:'Generate node: Ordinary image shot',exact:true});await node.focus();await node.press('Enter');
   await page.getByRole('button',{name:'Generate take',exact:true}).click();
   const generation=page.getByRole('dialog',{name:'Generate a new take',exact:true});
@@ -237,9 +237,9 @@ test('Soul training limits copied metadata without changing the original asset',
   draft.project.assets[0].name=name;draft.project.assets[0].description=description;
   const saved=await page.request.put('/api/workbench/projects',{headers,data:{project:draft.project,revision:draft.revision}});
   expect(saved.ok(),await saved.text()).toBe(true);
-  await page.goto('/workbench');await goWorkbenchStage(page,'Characters');
+  await page.goto('/workbench');await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:`Actions for ${name}`,exact:true}).click();
-  await page.getByRole('menuitem',{name:'Attach Soul ID',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Attach identity',exact:true}).click();
   const panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
   await expect(panel.getByRole('textbox',{name:'Soul ID name',exact:true})).toHaveValue(name.slice(0,100));
   await expect(panel.getByRole('textbox',{name:'Soul ID continuity notes',exact:true})).toHaveValue(description.slice(0,1000));

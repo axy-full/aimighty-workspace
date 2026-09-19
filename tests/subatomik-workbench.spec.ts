@@ -390,7 +390,7 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
   const f = await fixture(page);
   await page.goto("/subatomik?project=viral-draft&page=motion-transfer&account=particl");
   await expect(
-    page.getByRole("heading", { name: "Subatomik viral studio", exact: true }),
+    page.getByRole("heading", { name: "Subatomik Viral Studio", exact: true }),
   ).toBeVisible();
   await expect(
     page
@@ -904,7 +904,7 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
       exact: true,
     }),
   ).not.toBeChecked();
-  const modeDock = page.getByRole("navigation", { name: "Subatomik pages", exact: true });
+  const modeDock = page.getByRole("navigation", { name: "Subatomik Viral Studio pages", exact: true });
   await expect(modeDock.getByRole("link", { name: "Object Swap", exact: true })).toHaveAttribute("href", "/subatomik?project=viral-draft&page=object-swap&account=higgsfield");
   await modeDock.getByRole("link", { name: "Object Swap", exact: true }).click();
   await expect(page).toHaveURL("/subatomik?project=viral-draft&page=object-swap&account=higgsfield");

@@ -94,7 +94,7 @@ test('Library and Production navigation retain the selected project',async({page
  await page.getByRole('navigation',{name:'Rooms',exact:true}).getByRole('link',{name:'Production',exact:true}).click();
  await expect(page).toHaveURL(new RegExp('/workbench\\?project='+f.id+'&stage=brief'));
  await expect(page.locator('#project-name')).toHaveValue('Project first fixture');
- await expect(page.getByRole('navigation',{name:'Particl Studio pages',exact:true}).getByRole('link',{name:'Brief',exact:true})).toHaveAttribute('aria-current','page');expect(f.errors).toEqual([]);
+ await expect(page.getByRole('navigation',{name:'Particl Production Studio pages',exact:true}).getByRole('link',{name:'Brief',exact:true})).toHaveAttribute('aria-current','page');expect(f.errors).toEqual([]);
 });
 
 test('Atomik remains resizable inside the project library',async({page},info)=>{

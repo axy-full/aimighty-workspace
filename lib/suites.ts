@@ -11,13 +11,13 @@ export const SUITES: {
 }[] = [
   {
     id: "particl",
-    name: "Particl Studio",
+    name: "Particl Production Studio",
     description: "The production studio",
     color: "#D7D9DE",
   },
   {
     id: "atomik",
-    name: "Atomik Agent",
+    name: "Atomik Super Agent",
     description: "The production agent",
     color: "#F0B23E",
   },
@@ -27,21 +27,44 @@ export const SUITES: {
     description: "Build and grow your brand",
     color: "#5CC8B4",
   },
-  { id: "subatomik", name: "Subatomik", description: "Subatomik viral studio", color: "#D48CF5" },
+  {
+    id: "subatomik",
+    name: "Subatomik Viral Studio",
+    description: "The viral studio",
+    color: "#D48CF5",
+  },
+];
+
+/**
+ * Retired Particl stage IDs. Saved projects, old links and agent tools may
+ * still name them; each one opens the visible stage that now holds its panel.
+ */
+export const PARTICL_STAGE_ALIASES: Record<string, string> = {
+  script: "brief",
+  moodboard: "storyboard",
+  elements: "characters",
+};
+
+/** Moleculr keeps every former page as an in-page section of Marketing Studio. */
+export const MOLECULR_SECTIONS: SuitePage[] = [
+  { id: "product", label: "Product" },
+  { id: "brand", label: "Brand" },
+  { id: "cast", label: "Cast" },
+  { id: "format", label: "Format" },
+  { id: "variants", label: "Variants" },
+  { id: "design", label: "Design" },
+  { id: "publish", label: "Publish" },
 ];
 
 export const PAGES: Record<SuiteId, SuitePage[]> = {
   particl: [
-    { id: "brief", label: "Brief" },
-    { id: "script", label: "Script" },
-    { id: "moodboard", label: "Look" },
-    { id: "characters", label: "Cast" },
-    { id: "elements", label: "Elements" },
+    { id: "brief", label: "Brief & Script" },
+    { id: "storyboard", label: "Boards" },
+    { id: "characters", label: "Cast & Elements" },
     { id: "astra-blender", label: "Astra blender" },
     { id: "canvas", label: "Rig" },
-    { id: "storyboard", label: "Boards" },
     { id: "assets", label: "Takes" },
-    { id: "edit", label: "Edit" },
+    { id: "edit", label: "Edit & Sound" },
     { id: "export", label: "Deliver" },
   ],
   atomik: [
@@ -52,20 +75,24 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
     { id: "budget", label: "Budget" },
     { id: "models", label: "Models" },
   ],
-  moleculr: [
-    { id: "brand", label: "Brand" },
-    { id: "product", label: "Product" },
-    { id: "cast", label: "Cast" },
-    { id: "format", label: "Format" },
-    { id: "variants", label: "Variants" },
-    { id: "design", label: "Design" },
-    { id: "publish", label: "Publish" },
-  ],
+  moleculr: [{ id: "marketing", label: "Marketing Studio" }],
   subatomik: [
     { id: "motion-transfer", label: "Motion Transfer" },
     { id: "object-swap", label: "Object Swap" },
   ],
 };
+
+/** Resolve a Particl stage ID or one of its retired aliases to a visible stage. */
+export function particlStage(page: string | null | undefined): string | null {
+  if (!page) return null;
+  if (PAGES.particl.some((item) => item.id === page)) return page;
+  return PARTICL_STAGE_ALIASES[page] ?? null;
+}
+
+/** Resolve a Moleculr page or former page to its Marketing Studio section. */
+export function moleculrSection(page: string | null | undefined): string | null {
+  return page && MOLECULR_SECTIONS.some((item) => item.id === page) ? page : null;
+}
 
 /** Project always identifies the workbench draft, never its production mapping. */
 export function suiteHref(
@@ -73,15 +100,18 @@ export function suiteHref(
   projectId?: string | null,
   page?: string,
 ) {
+  const section = suite === "moleculr" ? moleculrSection(page) : null;
   const selected =
-    PAGES[suite].find((item) => item.id === page)?.id ?? PAGES[suite][0].id;
+    (suite === "particl" ? particlStage(page) : null) ??
+    PAGES[suite].find((item) => item.id === page)?.id ??
+    PAGES[suite][0].id;
   const query = new URLSearchParams(projectId ? { project: projectId } : {});
   if (suite === "particl") query.set("stage", selected);
   else {
     if (suite === "moleculr") query.set("suite", suite);
     query.set("page", selected);
   }
-  return `${suite === "particl" || suite === "moleculr" ? "/workbench" : `/${suite}`}?${query}`;
+  return `${suite === "particl" || suite === "moleculr" ? "/workbench" : `/${suite}`}?${query}${section ? `#${section}` : ""}`;
 }
 
 export function roomHref(room: RoomId, projectId?: string | null) {

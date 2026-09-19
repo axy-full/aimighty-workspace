@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
   Check,
+  ChevronDown,
   Download,
   ImagePlus,
   Plus,
@@ -27,6 +28,7 @@ import { CreativeTemplateBrowser } from "./CreativeTemplateBrowser";
 import { ReferenceAd } from "./ReferenceAd";
 import { ConsumerMarketingVideo } from "./ConsumerMarketingVideo";
 import { EMPTY_REFERENCE_AD } from "@/lib/workbench/reference-ad";
+import { MOLECULR_SECTIONS } from "@/lib/suites";
 import {
   DEFAULT_CREATIVE,
   creativeTemplate,
@@ -37,8 +39,10 @@ export function MoleculrWorkspace({
   project,
   scope,
   page,
+  section = null,
   enabled,
   marketing,
+  design = null,
   onChange,
   onPage,
   onUpload,
@@ -59,8 +63,12 @@ export function MoleculrWorkspace({
   project: Project;
   scope: string;
   page: string;
+  /** The Marketing Studio section a link or route asked for (`marketing#brand`). */
+  section?: string | null;
   enabled: boolean;
   marketing: ReactNode;
+  /** The poster designer, rendered inside the Design section. */
+  design?: ReactNode;
   onChange: (brief: MoleculrBrief) => void;
   onPage: (page: string) => void;
   onUpload: (category: string) => void;
@@ -128,16 +136,14 @@ export function MoleculrWorkspace({
           : values,
     );
   };
-  const title =
-    {
-      brand: "Build a brand worth knowing.",
-      product: "The product, precisely.",
-      cast: "Give the campaign a character.",
-      format: "Find the right expression.",
-      variants: "One idea. Considered variations.",
-      publish: "Ready for the next screen.",
-      design: "Every layer, considered.",
-    }[page] ?? "Your marketing studio.";
+  // One section is open at a time, like the former pages; anchors and links still name every section.
+  const [openSection, setOpenSection] = useState(section ?? MOLECULR_SECTIONS[0].id);
+  useEffect(() => {
+    if (!section) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- A route hash or a section link chooses the open section.
+    setOpenSection(section);
+    document.getElementById(section)?.scrollIntoView({ block: "start" });
+  }, [section]);
   return (
     <div
       className={`suite-workspace moleculr-workspace ${creativeStyles.workspace}`}
@@ -149,73 +155,40 @@ export function MoleculrWorkspace({
             <i className="suite-dot" style={{ background: "#5CC8B4" }} />
             Moleculr Business Suite / {project.name}
           </span>
-          <h1>{title}</h1>
+          <h1>Your marketing studio.</h1>
           <p>
-            Brand strategy, products, cast and campaign assets stay connected to
-            this project.
+            Product, brand, cast, format, variants, design and publishing stay
+            together on one page, connected to this project.
           </p>
         </div>
         <button className="suite-button" onClick={onAgent}>
-          Ask Atomik Agent <ArrowUpRight size={15} />
+          Ask Atomik Super Agent <ArrowUpRight size={15} />
         </button>
       </header>
-      {page === "brand" && (
-        <>
-          <section className="suite-panel">
-            <div className="suite-section-heading">
-              <div>
-                <h2>Brand direction</h2>
-                <p>
-                  Define what the brand stands for, who it serves and what makes
-                  its offer distinctive. Develop positioning and campaigns with
-                  the project’s approved facts and references.
-                </p>
-              </div>
-              <span className="suite-badge">Saved with project</span>
-            </div>
-            <div className="suite-step-row">
-              {[
-                ["Position", "Audience, offer and the reason to choose you."],
-                [
-                  "Express",
-                  "Tone, visual language and consistent brand assets.",
-                ],
-                [
-                  "Produce",
-                  "Campaign images, films and reviewable variations.",
-                ],
-              ].map(([label, text]) => (
-                <div key={label}>
-                  <strong>{label}</strong>
-                  <span>{text}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-          <BrandKitEditor
-            project={project}
-            brief={brief}
-            scope={scope}
-            enabled={enabled}
-            onChange={onChange}
-            onUpload={() => onUpload("Brand")}
-            onSave={onSave}
-            onImportRemote={onImportRemote}
-          />
-          <div className="suite-marketing-tools">{marketing}</div>
-          <footer className="suite-panel-footer">
-            <span>
-              Strategy and approved product claims guide the creative work.
-            </span>
-            <button className="suite-primary" onClick={() => onPage("product")}>
-              Build the product library
-              <ArrowUpRight size={15} />
-            </button>
-          </footer>
-        </>
-      )}
-      {page === "product" && (
-        <>
+      <nav className="moleculr-sections-nav" aria-label="Marketing Studio sections">
+        {MOLECULR_SECTIONS.map((item) => (
+          <a
+            key={item.id}
+            href={`#${item.id}`}
+            aria-current={openSection === item.id ? "location" : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              onPage(item.id);
+            }}
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+      <section className="moleculr-section" id="product" aria-labelledby="moleculr-product-title">
+        <h2 id="moleculr-product-title">
+          <button type="button" className="moleculr-section-toggle" aria-expanded={openSection === "product"} aria-controls="moleculr-product-body" onClick={() => onPage("product")}>
+            <span>The product, precisely.</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </h2>
+        {openSection === "product" && (
+          <div id="moleculr-product-body" className="moleculr-section-body">
           <ProductProfileEditor
             key={`${scope}:${project.id}:${brief.activeProductId ?? "draft"}`}
             project={project}
@@ -289,9 +262,81 @@ export function MoleculrWorkspace({
               </button>
             </footer>
           </section>
-        </>
-      )}
-      {page === "cast" && (
+          </div>
+        )}
+      </section>
+      <section className="moleculr-section" id="brand" aria-labelledby="moleculr-brand-title">
+        <h2 id="moleculr-brand-title">
+          <button type="button" className="moleculr-section-toggle" aria-expanded={openSection === "brand"} aria-controls="moleculr-brand-body" onClick={() => onPage("brand")}>
+            <span>Build a brand worth knowing.</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </h2>
+        {openSection === "brand" && (
+          <div id="moleculr-brand-body" className="moleculr-section-body">
+          <section className="suite-panel">
+            <div className="suite-section-heading">
+              <div>
+                <h2>Brand direction</h2>
+                <p>
+                  Define what the brand stands for, who it serves and what makes
+                  its offer distinctive. Develop positioning and campaigns with
+                  the project’s approved facts and references.
+                </p>
+              </div>
+              <span className="suite-badge">Saved with project</span>
+            </div>
+            <div className="suite-step-row">
+              {[
+                ["Position", "Audience, offer and the reason to choose you."],
+                [
+                  "Express",
+                  "Tone, visual language and consistent brand assets.",
+                ],
+                [
+                  "Produce",
+                  "Campaign images, films and reviewable variations.",
+                ],
+              ].map(([label, text]) => (
+                <div key={label}>
+                  <strong>{label}</strong>
+                  <span>{text}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <BrandKitEditor
+            project={project}
+            brief={brief}
+            scope={scope}
+            enabled={enabled}
+            onChange={onChange}
+            onUpload={() => onUpload("Brand")}
+            onSave={onSave}
+            onImportRemote={onImportRemote}
+          />
+          <div className="suite-marketing-tools">{marketing}</div>
+          <footer className="suite-panel-footer">
+            <span>
+              Strategy and approved product claims guide the creative work.
+            </span>
+            <button className="suite-primary" onClick={() => onPage("product")}>
+              Build the product library
+              <ArrowUpRight size={15} />
+            </button>
+          </footer>
+          </div>
+        )}
+      </section>
+      <section className="moleculr-section" id="cast" aria-labelledby="moleculr-cast-title">
+        <h2 id="moleculr-cast-title">
+          <button type="button" className="moleculr-section-toggle" aria-expanded={openSection === "cast"} aria-controls="moleculr-cast-body" onClick={() => onPage("cast")}>
+            <span>Give the campaign a character.</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </h2>
+        {openSection === "cast" && (
+          <div id="moleculr-cast-body" className="moleculr-section-body">
         <section className="suite-panel">
           <div className="suite-section-heading">
             <div>
@@ -394,9 +439,18 @@ export function MoleculrWorkspace({
             </button>
           </footer>
         </section>
-      )}
-      {page === "format" && (
-        <>
+          </div>
+        )}
+      </section>
+      <section className="moleculr-section" id="format" aria-labelledby="moleculr-format-title">
+        <h2 id="moleculr-format-title">
+          <button type="button" className="moleculr-section-toggle" aria-expanded={openSection === "format"} aria-controls="moleculr-format-body" onClick={() => onPage("format")}>
+            <span>Find the right expression.</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </h2>
+        {openSection === "format" && (
+          <div id="moleculr-format-body" className="moleculr-section-body">
           <CreativeTemplateBrowser
             brief={brief}
             enabled={enabled}
@@ -501,10 +555,18 @@ export function MoleculrWorkspace({
             onSettings={(settings) => set("marketing", settings)}
             onConfigure={onGenerate}
           />
-        </>
-      )}
-      {page === "variants" && (
-        <>
+          </div>
+        )}
+      </section>
+      <section className="moleculr-section" id="variants" aria-labelledby="moleculr-variants-title">
+        <h2 id="moleculr-variants-title">
+          <button type="button" className="moleculr-section-toggle" aria-expanded={openSection === "variants"} aria-controls="moleculr-variants-body" onClick={() => onPage("variants")}>
+            <span>One idea. Considered variations.</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </h2>
+        {openSection === "variants" && (
+          <div id="moleculr-variants-body" className="moleculr-section-body">
           {media === "video" && <ReferenceAd project={project} scope={scope} onSave={onSave} enabled={enabled} value={brief.referenceAd ?? EMPTY_REFERENCE_AD} onChange={referenceAd => onChange({ ...brief, referenceAd })}/>}
           <section className="suite-panel">
             <div className="suite-section-heading">
@@ -724,10 +786,31 @@ export function MoleculrWorkspace({
           )}
           {media === "video" && <ConsumerMarketingVideo key={`${scope}:${project.id}`} project={project} scope={scope} enabled={enabled} onSave={onSave} onAsset={onConsumerVideoAsset}/>}
           <OutputGallery assets={outputs} onSequence={onSequence} />
-        </>
-      )}
-      {page === "publish" && (
-        <>
+          </div>
+        )}
+      </section>
+      <section className="moleculr-section" id="design" aria-labelledby="moleculr-design-title">
+        <h2 id="moleculr-design-title">
+          <button type="button" className="moleculr-section-toggle" aria-expanded={openSection === "design"} aria-controls="moleculr-design-body" onClick={() => onPage("design")}>
+            <span>Every layer, considered.</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </h2>
+        {openSection === "design" && (
+          <div id="moleculr-design-body" className="moleculr-section-body">
+        {design}
+          </div>
+        )}
+      </section>
+      <section className="moleculr-section" id="publish" aria-labelledby="moleculr-publish-title">
+        <h2 id="moleculr-publish-title">
+          <button type="button" className="moleculr-section-toggle" aria-expanded={openSection === "publish"} aria-controls="moleculr-publish-body" onClick={() => onPage("publish")}>
+            <span>Ready for the next screen.</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </h2>
+        {openSection === "publish" && (
+          <div id="moleculr-publish-body" className="moleculr-section-body">
           <section className="suite-panel">
             <div className="suite-section-heading">
               <div>
@@ -747,7 +830,7 @@ export function MoleculrWorkspace({
             <div className="suite-delivery-actions">
               <button className="suite-format" onClick={() => onStage("edit")}>
                 <Video size={19} />
-                <strong>Edit & sound</strong>
+                <strong>Edit & Sound</strong>
                 <span>Sequence, grade, mix and finish your campaign.</span>
               </button>
               <button
@@ -765,8 +848,9 @@ export function MoleculrWorkspace({
             </p>
           </section>
           <OutputGallery assets={outputs} onSequence={onSequence} />
-        </>
-      )}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

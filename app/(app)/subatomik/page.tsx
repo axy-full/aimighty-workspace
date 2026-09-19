@@ -1,4 +1,4 @@
 import SubatomikWorkspace from "@/components/suites/SubatomikWorkspace";
 
-export const metadata = { title: "Subatomik · Particl", description: "Subatomik viral studio" };
+export const metadata = { title: "Subatomik Viral Studio · Particl", description: "Subatomik Viral Studio" };
 export default function Page() { return <SubatomikWorkspace />; }

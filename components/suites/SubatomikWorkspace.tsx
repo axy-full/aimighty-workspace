@@ -150,7 +150,7 @@ type BillingAccount = "particl" | "higgsfield";
 type ConnectionStatus = { connected?: boolean; requiresReconnect?: boolean };
 
 export default function SubatomikWorkspace() {
-  usePageTitle("Subatomik viral studio");
+  usePageTitle("Subatomik Viral Studio");
   const session = useSession(),
     query = useSearchParams(),
     captured = useSuiteProject();
@@ -207,7 +207,7 @@ export default function SubatomikWorkspace() {
               <i className="suite-dot" style={{ background: "#D48CF5" }} />
               Subatomik{project ? ` / ${project.name}` : ""}
             </span>
-            <h1>Subatomik viral studio</h1>
+            <h1>Subatomik Viral Studio</h1>
             <p>
               Rework a movement. Recast a subject. Make a familiar frame feel
               new.

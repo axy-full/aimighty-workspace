@@ -267,7 +267,7 @@ test("Moleculr saves product and cast, configures video, preserves original refe
     .click();
   await expect(page).toHaveURL(/stage=export/);
   await expect(
-    page.getByRole("navigation", { name: "Particl Studio pages" }),
+    page.getByRole("navigation", { name: "Particl Production Studio pages" }),
   ).toBeVisible();
   await page.reload();
   await expect.poll(() => state.saves.length).toBeGreaterThan(0);
@@ -313,10 +313,10 @@ test("suite navigation waits for hydration and project initialization, then foll
   await expect(suite).toBeDisabled();
   releaseProject();
   await expect(suite).toBeEnabled();
-  await expect(suite).toHaveAttribute("href", "/workbench?project=suite-test&suite=moleculr&page=brand");
+  await expect(suite).toHaveAttribute("href", "/workbench?project=suite-test&suite=moleculr&page=marketing");
   await expect(room).toBeEnabled();
   await suite.click();
-  await expect(page).toHaveURL(/project=suite-test&suite=moleculr&page=brand/);
+  await expect(page).toHaveURL(/project=suite-test&suite=moleculr&page=marketing/);
   await page.getByRole("link", { name: "Product", exact: true }).click();
   await expect(page.getByRole("heading", { name: "The product, precisely." })).toBeVisible();
   expect(state.mutations).toEqual([]);
@@ -328,22 +328,19 @@ test("suite navigation includes Astra blender in order, retains every prior stag
   await fixture(page, true);
   await page.goto("/workbench?project=suite-test&stage=brief");
   await expect(
-    page.getByRole("navigation", { name: "Particl Studio pages" }),
+    page.getByRole("navigation", { name: "Particl Production Studio pages" }),
   ).toBeVisible();
   const links = page
-    .getByRole("navigation", { name: "Particl Studio pages" })
+    .getByRole("navigation", { name: "Particl Production Studio pages" })
     .getByRole("link");
   const stages = [
-    ["Brief", "brief"],
-    ["Script", "script"],
-    ["Look", "moodboard"],
-    ["Cast", "characters"],
-    ["Elements", "elements"],
+    ["Brief & Script", "brief"],
+    ["Boards", "storyboard"],
+    ["Cast & Elements", "characters"],
     ["Astra blender", "astra-blender"],
     ["Rig", "canvas"],
-    ["Boards", "storyboard"],
     ["Takes", "assets"],
-    ["Edit", "edit"],
+    ["Edit & Sound", "edit"],
     ["Deliver", "export"],
   ] as const;
   await expect(links).toHaveCount(stages.length);
@@ -373,6 +370,99 @@ test("suite navigation includes Astra blender in order, retains every prior stag
   await page.screenshot({ path: info.outputPath("particl-brief.png") });
 });
 
+test("retired stage IDs, the home project selector and the Marketing Studio sections follow the 19 September information architecture", async ({
+  page,
+}, info) => {
+  const state = await fixture(page);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const dock = page.getByRole("navigation", { name: "Particl Production Studio pages", exact: true });
+  await page.goto("/workbench?project=suite-test&stage=brief");
+  await expect(dock.getByRole("link")).toHaveText([
+    /Brief & Script$/,
+    /Boards$/,
+    /Cast & Elements$/,
+    /Astra blender$/,
+    /Rig$/,
+    /Takes$/,
+    /Edit & Sound$/,
+    /Deliver$/,
+  ]);
+  for (const [alias, target, label] of [
+    ["script", "brief", "Brief & Script"],
+    ["moodboard", "storyboard", "Boards"],
+    ["elements", "characters", "Cast & Elements"],
+  ] as const) {
+    await page.goto(`/workbench?project=suite-test&stage=${alias}`);
+    await expect(dock.getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveURL(new RegExp(`[?&]stage=${target}(&|$)`));
+    await expect(dock.getByRole("link", { name: alias, exact: true })).toHaveCount(0);
+  }
+  await page.goto("/workbench?project=suite-test&stage=script");
+  await expect(page.getByLabel("Project title", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Script format", exact: true })).toBeVisible();
+  await expect(page.locator(".stage-scroll").filter({ visible: true })).toHaveCount(1);
+  await page.goto("/workbench?project=suite-test&stage=moodboard");
+  const look = page.locator("details.look-section");
+  await expect(look).toBeVisible();
+  await expect(page.getByText("LOOK DEVELOPMENT", { exact: true })).toBeHidden();
+  await look.locator("summary").click();
+  await expect(page.getByText("LOOK DEVELOPMENT", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Find the frame. Feel the rhythm." })).toBeVisible();
+  await page.goto("/workbench?project=suite-test&stage=elements");
+  await expect(page.getByRole("region", { name: "Cast", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Elements", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Identity", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Element identity", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Soul ID", exact: true })).toHaveCount(0);
+  await page.goto("/workbench?project=suite-test&stage=assets");
+  await expect(page.getByRole("region", { name: "Project generations", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "All workspace assets" })).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "What are we making?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open a saved project", exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => {
+      const projects = document.querySelector(".suite-home-projects")!,
+        cards = document.querySelector(".suite-home-cards")!,
+        brief = document.querySelector(".suite-home-brief")!;
+      const before = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return [before(projects, cards), before(cards, brief)];
+    }),
+  ).toEqual([true, true]);
+  await page.goto("/workbench?project=suite-test&suite=moleculr&page=brand");
+  await expect(page).toHaveURL(/suite=moleculr&page=marketing#brand$/);
+  const moleculrDock = page.getByRole("navigation", { name: "Moleculr Business Suite pages", exact: true });
+  await expect(moleculrDock.getByRole("link")).toHaveCount(1);
+  await expect(moleculrDock.getByRole("link", { name: "Marketing Studio", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "Marketing Studio sections", exact: true }).getByRole("link")).toHaveText([
+    "Product",
+    "Brand",
+    "Cast",
+    "Format",
+    "Variants",
+    "Design",
+    "Publish",
+  ]);
+  for (const id of ["product", "brand", "cast", "format", "variants", "design", "publish"]) {
+    await expect(page.locator(`section.moleculr-section#${id}`)).toHaveCount(1);
+  }
+  await expect(page.getByRole("heading", { name: "The product, precisely." })).toBeVisible();
+  const expanded = (id: string) => page.locator(`section.moleculr-section#${id} > h2 > button`);
+  await expect(expanded("brand")).toHaveAttribute("aria-expanded", "true");
+  await expect(expanded("product")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("region", { name: "Brand kit", exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Marketing Studio sections", exact: true }).getByRole("link", { name: "Variants", exact: true }).click();
+  await expect(page).toHaveURL(/suite=moleculr&page=marketing#variants$/);
+  await expect(expanded("variants")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("region", { name: "Brand kit", exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(expanded("variants")).toHaveAttribute("aria-expanded", "true");
+  await page.screenshot({ path: info.outputPath("marketing-studio-sections.png") });
+  expect(state.mutations).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("four-suite home and legacy Subatomic redirect preserve project without inference", async ({
   page,
 }, info) => {
@@ -400,7 +490,7 @@ test("four-suite home and legacy Subatomic redirect preserve project without inf
     page.getByRole("navigation", { name: "Suites", exact: true }),
   ).toBeInViewport();
   await expect(
-    page.getByRole("navigation", { name: "Particl Studio pages" }),
+    page.getByRole("navigation", { name: "Particl Production Studio pages" }),
   ).toBeInViewport();
   await page.goto("/subatomic?project=suite-test&page=trends");
   await expect(page).toHaveURL(/\/subatomik\?project=suite-test&page=motion-transfer/);
@@ -410,7 +500,7 @@ test("four-suite home and legacy Subatomic redirect preserve project without inf
       .getByRole("link"),
   ).toHaveCount(4);
   await expect(
-    page.getByRole("navigation", { name: "Subatomik pages", exact: true }),
+    page.getByRole("navigation", { name: "Subatomik Viral Studio pages", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: info.outputPath("subatomik-redirect.png") });
   expect(state.mutations).toEqual([]);

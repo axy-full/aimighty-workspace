@@ -101,7 +101,7 @@ const amount = (value: number | null, unit: string = "cr") =>
 /** Content only: the common shell owns suite navigation, project context and the rail. */
 export default function AtomikSuite({
   pageOverride,
-  heading = "Atomik Agent",
+  heading = "Atomik Super Agent",
   pageTitle,
 }: Props) {
   const session = useSession(),
