@@ -15,9 +15,12 @@ import { parseConsumerVideoInput, consumerVideoAcknowledgement, consumerVideoOri
 import { collectConsumerVideoOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 
+/** The owner-approved verification run. Its creative mode is explicit:
+ * without one the provider defaults to UGC, which staged a presenter in the
+ * 18 September rehearsal despite the no-people prompt. */
 export const MARKETING_VIDEO_REHEARSAL: ConsumerVideoInput = {
   prompt: "A plain reusable bottle on a clean studio background. A short product demo with no people, logos or text.",
-  duration: 15, resolution: "720p", aspectRatio: "16:9", generateAudio: true,
+  duration: 15, resolution: "720p", aspectRatio: "16:9", generateAudio: true, mode: "product_showcase",
 };
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 export class ConsumerVideoServiceError extends Error {
