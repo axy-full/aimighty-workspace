@@ -19,7 +19,7 @@ import { studioRequest } from './GenerationDialog';
 import { ModelPicker, EffortPicker, effortLabel, thinkingModelName, type ThinkingModel } from '@/components/atomik/ModelPicker';
 
 export type AtomikRunTarget = { astraBlender?: AstraRequest; referenceAd?:ReferenceAnalysisSource; suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
-type Quote = { estimateCredits: number; model: string; effort?: string; key: string };
+type Quote = { estimateCredits: number; model: string; effort?: string; screenplay?: { chars: number; includedChars: number; truncated: boolean }; key: string };
 
 export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued }: {
   target: AtomikRunTarget;
@@ -210,6 +210,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
         </div>
         <p className="muted small-copy">{astraBlender ? (astraBlender.mode === 'native' ? 'Includes the saved scene, native Blender source, project brief and selected image references. Review the Python revision before applying it. Native execution has a separate render quote.' : 'Includes the saved 3D scene and project brief. Review and apply the scene proposal before export. No Blender render is started by this request.') : referenceAd ? REFERENCE_AD_LIMITATION + ' Includes the saved campaign brief. Each sampled frame is priced in the estimate.' : <>Includes the saved {role === 'marketing' ? 'campaign brief, project brief, ' : 'brief, '}script, uploaded TXT and actual image references. Selected videos contribute three sampled stills. Images are read as 512px review copies; audio, PDFs and links supply descriptions only.</>}</p>
         {shownQuote && !pending && <p className="small-copy">{thinkingModelName(shownQuote.model, models)} · {effortLabel(shownQuote.effort ?? effort, models.find(option => option.id === shownQuote.model))} · up to {shownQuote.estimateCredits} cr reserved</p>}
+        {shownQuote?.screenplay?.truncated && !pending && <p className="small-copy" role="status">Reads the first {shownQuote.screenplay.includedChars.toLocaleString()} of {shownQuote.screenplay.chars.toLocaleString()} screenplay characters at this depth; the rest is not seen. Use Development in Script &amp; breakdown for the whole screenplay.</p>}
         {pending && <p className="small-copy">Original estimate: up to {atomikPendingInput(pending).maxCredits} cr · {effortLabel(atomikPendingInput(pending).effort, models.find(option => option.id === model))}.</p>}
         {!pending && !readyFrames && !frameState?.error && <p className="small-copy" role="status">Preparing visual references before the estimate…</p>}
         {!pending && frameState?.key === referenceKey && frameState.error && <p className="save-problem" role="alert">{frameState.error}</p>}

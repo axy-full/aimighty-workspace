@@ -7,7 +7,7 @@ import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
 import { db, ready } from '../../lib/db';
 import { seedProject } from '../../lib/workbench/studio';
 import { CREW } from '../../lib/workbench/crew';
-import { atomikContext, atomikModels, atomikResponseFormat, atomikRequestSchema, atomikSystem, listAtomikJobs, prepareAtomikJob, quoteAtomikJob, runAtomikJob, type AtomikDependencies } from '../../lib/workbench/atomik-server';
+import { atomikContext, atomikModels, atomikResponseFormat, atomikRequestSchema, atomikSystem, listAtomikJobs, prepareAtomikJob, quoteAtomikJob, runAtomikJob, type AtomikDependencies, screenplayWindow } from '../../lib/workbench/atomik-server';
 import type { MeterEvent } from '../../lib/meter';
 import type { CatalogModel } from '../../lib/catalog';
 import { textCostUsd } from '../../lib/catalog';
@@ -195,6 +195,26 @@ test('a quote reveals the reserved credit amount without starting or saving a pa
     expect(h.events).toHaveLength(0);
     expect(await listAtomikJobs('owner', input.projectId)).toEqual([]);
     await expect(prepareAtomikJob({ ...input, maxCredits: 0 }, 'owner', undefined, h.deps)).rejects.toThrow('estimate changed');
+    expect(h.reservations()).toBe(0);
+  });
+});
+
+test('a quote states how much of a long screenplay this depth reads instead of shortening it silently', async () => {
+  await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
+    const { project, input } = await fixture();
+    const h = harness();
+    const short = await quoteAtomikJob(input, 'owner', h.deps);
+    expect(short.screenplay).toEqual({ chars: project.script?.length ?? 0, includedChars: project.script?.length ?? 0, truncated: false });
+    const long = { ...project, script: 'INT. CORRIDOR - NIGHT\nMira counts the doors.\n'.repeat(400) };
+    await db().execute({ sql: 'UPDATE workbench_projects SET body=? WHERE key=?', args: [JSON.stringify(long), 'owner:' + project.id] });
+    const quote = await quoteAtomikJob(input, 'owner', h.deps);
+    expect(long.script.length).toBeGreaterThan(8000);
+    expect(quote.screenplay).toEqual({ chars: long.script.length, includedChars: 8000, truncated: true });
+    expect(screenplayWindow(long, 'Deep')).toEqual({ chars: long.script.length, includedChars: long.script.length, truncated: false });
+    const context = JSON.parse(atomikContext(long, input));
+    expect(context.project.screenplayTruncated).toBe(true);
+    expect(context.project.screenplay).toHaveLength(8000);
+    expect(h.calls()).toBe(0);
     expect(h.reservations()).toBe(0);
   });
 });
