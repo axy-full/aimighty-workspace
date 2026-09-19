@@ -128,7 +128,16 @@ export async function catalog(force = false): Promise<CatalogModel[]> {
   if (!vendorKey('openai') || engineMock()) return models;
   const direct = await openAIConnection(force);
   const allowed = new Set(direct.models);
-  return models.filter(model => model.owner === 'openai' ? direct.verified && allowed.has(model.id.slice('openai/'.length)) : gatewayReachable());
+  return models.filter(model => {
+    if (model.owner !== 'openai') return gatewayReachable();
+    // Text goes to OpenAI directly, so a text model must be one the key can
+    // list, and nothing stands in for a missing id. Image, speech and the
+    // other media types still run through the Gateway and follow its
+    // reachability like every other vendor's; a restricted or failing key
+    // must not empty those menus.
+    if (model.type !== 'language') return gatewayReachable();
+    return direct.verified && allowed.has(model.id.slice('openai/'.length));
+  });
 }
 
 export async function byType(type: CatalogType): Promise<CatalogModel[]> {
