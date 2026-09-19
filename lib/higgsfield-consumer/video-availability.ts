@@ -47,8 +47,8 @@ export async function consumerOriginalAvailability(
   ).rows;
   const byId = new Map(rows.map((row) => [String(row.job_id), row]));
   for (const job of completed) {
-    let model: string;
-    try { model = consumerVideoIdentity(job).model; } catch { continue; }
+    let model: string, kind: string;
+    try { ({ model, kind } = consumerVideoIdentity(job)); } catch { continue; }
     const original = job.resultManifest!.original as Record<
         string,
         ConsumerJson
@@ -81,34 +81,19 @@ export async function consumerOriginalAvailability(
     if (!saved || !record(original.asset) || !record(saved.asset)) continue;
     const savedAsset = saved.asset,
       originalAsset = original.asset;
+    const sameKeys = (left: Record<string, unknown>, right: Record<string, unknown>) =>
+      Object.keys(left).length === Object.keys(right).length &&
+      Object.keys(left).every((key) => key === "asset" ? true : left[key] === right[key]);
     if (
-      ![
-        "generationId",
-        "providerJobId",
-        "sha256",
-        "bytes",
-        "width",
-        "height",
-        "seconds",
-        "credits",
-        "creditUnit",
-      ].every((key) => saved[key] === original[key]) ||
-      ![
-        "generationId",
-        "url",
-        "kind",
-        "mime",
-        "width",
-        "height",
-        "durationS",
-      ].every((key) => savedAsset[key] === originalAsset[key]) ||
+      !sameKeys(saved, original) ||
+      !sameKeys(savedAsset, originalAsset) ||
       originalAsset.url !== `/api/media/${generationId}` ||
       originalAsset.generationId !== generationId ||
       row.gen_id !== generationId ||
       row.gen_owner !== job.userId ||
       row.gen_provider !== "higgsfield" ||
       row.gen_model !== model ||
-      row.gen_kind !== "video" ||
+      row.gen_kind !== kind ||
       row.gen_status !== "succeeded" ||
       params?.consumerJobId !== job.id ||
       params.consumerProviderJobId !== job.providerJobId ||

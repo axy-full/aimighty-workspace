@@ -1,7 +1,8 @@
 import {
-  readVideoBytes, readImageBytes, readAudioBytes, openMediaStream,
-  presignedReadUrl, videoPath, imagePath, audioPath, usingBlob,
+  readVideoBytes, readImageBytes, readAudioBytes, readModelBytes, openMediaStream,
+  presignedReadUrl, videoPath, imagePath, audioPath, modelPath, usingBlob,
 } from "@/lib/storage";
+import { CONSUMER_ORIGINAL_MIMES } from "@/lib/higgsfield-consumer/original-identity";
 import { getGeneration } from "@/lib/jobs";
 import { downloadFilename } from "@/lib/downloadName";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -36,12 +37,19 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
 
   const gen = await getGeneration(id).catch(() => null);
   if (!gen || gen.status !== "succeeded") return new Response("Not found", { status: 404 });
-  const kind: "video" | "image" | "audio" =
-    gen?.kind === "image" ? "image" : gen?.kind === "audio" ? "audio" : "video";
+  const kind: "video" | "image" | "audio" | "model" =
+    gen?.kind === "image" ? "image" : gen?.kind === "audio" ? "audio" : gen?.kind === "model" ? "model" : "video";
   const isImage = kind === "image";
   const isAudio = kind === "audio";
-  const contentType = isImage ? "image/png" : isAudio ? "audio/mpeg" : "video/mp4";
-  const ext = isImage ? "png" : isAudio ? "mp3" : "mp4";
+  const isModel = kind === "model";
+  // A connected-account original keeps the type the provider served (JPEG,
+  // WAV, zip …); the server-written receipt is the only source of that value.
+  const originalMime = typeof gen.params.consumerOriginalMime === "string" && CONSUMER_ORIGINAL_MIMES[kind].includes(gen.params.consumerOriginalMime)
+    ? gen.params.consumerOriginalMime : null;
+  const contentType = originalMime ?? (isImage ? "image/png" : isAudio ? "audio/mpeg" : isModel ? "model/gltf-binary" : "video/mp4");
+  const ext = contentType === "application/zip" ? "zip" : contentType === "image/jpeg" ? "jpg" : contentType === "image/webp" ? "webp"
+    : /wav/.test(contentType) ? "wav" : contentType === "audio/ogg" ? "ogg" : contentType === "audio/flac" ? "flac" : contentType === "audio/mp4" || contentType === "audio/aac" ? "m4a"
+    : isImage ? "png" : isAudio ? "mp3" : isModel ? "glb" : "mp4";
   const wantsDownload = new URL(req.url).searchParams.get("download") === "1";
 
   if (wantsDownload) {
@@ -71,7 +79,7 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
 
   if (usingBlob()) {
     try {
-      const signed = await presignedReadUrl(isImage ? imagePath(id) : isAudio ? audioPath(id) : videoPath(id), 6);
+      const signed = await presignedReadUrl(isImage ? imagePath(id) : isAudio ? audioPath(id) : isModel ? modelPath(id) : videoPath(id), 6);
       if (wantsStream) {
         const range = req.headers.get("range");
         const upstream = await fetch(signed, {
@@ -104,7 +112,7 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
      bytes directly, Range and all. */
   let buf: Buffer;
   try {
-    buf = isImage ? await readImageBytes(id) : isAudio ? await readAudioBytes(id) : await readVideoBytes(id);
+    buf = isImage ? await readImageBytes(id) : isAudio ? await readAudioBytes(id) : isModel ? await readModelBytes(id) : await readVideoBytes(id);
   } catch {
     return new Response("Not found", { status: 404 });
   }

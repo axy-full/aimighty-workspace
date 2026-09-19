@@ -195,6 +195,7 @@ export function parseConsumerCreditsForParams(value: QualificationValue, params:
 export function consumerVideoAcknowledgement(
   value: unknown,
   expectedModel = "marketing_studio_video",
+  expectedType = "video",
 ): string | null {
   if (!record(value)) return null;
   const ids: string[] = [];
@@ -225,7 +226,7 @@ export function consumerVideoAcknowledgement(
     if (!Array.isArray(value.results) || value.results.length !== 1) invalid = true;
     else {
       const result = value.results[0];
-      if (!record(result) || result.model !== expectedModel || result.type !== "video") invalid = true;
+      if (!record(result) || result.model !== expectedModel || result.type !== expectedType) invalid = true;
       else entry(result);
     }
   }
@@ -235,11 +236,12 @@ export function validateConsumerVideoStatus(
   value: QualificationValue,
   expectedJobId: string,
   expectedModel = "marketing_studio_video",
+  expectedType = "video",
 ) {
   if (!record(value)) throw new ConsumerVideoError("invalid_job");
   if (
     ["job_id", "id", "jobs", "job_ids", "results"].some((key) => key in value) &&
-    consumerVideoAcknowledgement(value, expectedModel) !== expectedJobId
+    consumerVideoAcknowledgement(value, expectedModel, expectedType) !== expectedJobId
   )
     throw new ConsumerVideoError("invalid_job");
   const wait = value.poll_after_seconds;

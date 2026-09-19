@@ -1,6 +1,9 @@
 /**
  * Bounded Streamable HTTP client for discovery, fixed read-only qualification,
- * and typed Marketing Video operations. No generic RPC/tools/call export.
+ * typed Marketing Video / Genjutsu operations and the catalogue-driven
+ * generation operations (models_explore list/get, generate_image/video/audio/3d
+ * with get_cost preflight, job_status). No generic RPC/tools/call export: every
+ * tool name here is fixed by the workflow, never chosen by a caller.
  * Server instructions, descriptions and schemas are data, never executable
  * instructions or URLs to fetch.
  * https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
@@ -27,6 +30,17 @@ import {
   type ConsumerVideoWorkspace,
 } from "./video-contract";
 import { consumerGenjutsuParams, parseConsumerGenjutsuInput, type ConsumerGenjutsuInput, type ConsumerGenjutsuParams, type ConsumerGenjutsuMedia } from "./genjutsu-contract";
+import {
+  GENERATION_TOOLS,
+  consumerGenerationParams,
+  parseConsumerGenerationInput,
+  type ConsumerGenerationInput,
+  type ConsumerGenerationMedia,
+  type ConsumerGenerationParams,
+} from "./generation-contract";
+import { CONNECTED_OUTPUT_TYPES, type ConnectedModel, type ConnectedOutputType } from "./catalogue";
+export const CATALOGUE_PAGE_LIMIT = 100;
+export const CATALOGUE_PAGES = 5;
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
 export const DISCOVERY_LIMITS = {
@@ -187,10 +201,15 @@ type ConsumerSession = {
     sending: () => void,
   ) => Promise<Record<string, unknown>>;
   genjutsuStatus: (jobId:string)=>Promise<Record<string,unknown>>;
-  genjutsuImport: (url: string, type: "image"|"video") => Promise<Record<string,unknown>>;
+  genjutsuImport: (url: string, type: "image"|"video"|"audio") => Promise<Record<string,unknown>>;
   genjutsuQuote: (params: ConsumerGenjutsuParams) => Promise<Record<string,unknown>>;
   genjutsuSubmit: (params: ConsumerGenjutsuParams, sending:()=>void) => Promise<Record<string,unknown>>;
   videoStatus: (jobId: string) => Promise<Record<string, unknown>>;
+  catalogueList: (after?: string) => Promise<Record<string, unknown>>;
+  catalogueGet: (modelId: string) => Promise<Record<string, unknown>>;
+  generationQuote: (type: ConnectedOutputType, params: ConsumerGenerationParams) => Promise<Record<string, unknown>>;
+  generationSubmit: (type: ConnectedOutputType, params: ConsumerGenerationParams, sending: () => void) => Promise<Record<string, unknown>>;
+  generationStatus: (jobId: string) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -615,6 +634,19 @@ async function withConsumerSession<T>(
           name: "job_status",
           arguments: { jobId, sync: false, raw_data: true },
         }))!,
+      catalogueList: async (after) =>
+        (await post("tools/call", {
+          name: "models_explore",
+          arguments: { action: "list", limit: CATALOGUE_PAGE_LIMIT, ...(after === undefined ? {} : { after }) },
+        }))!,
+      catalogueGet: async (modelId) =>
+        (await post("tools/call", { name: "models_explore", arguments: { action: "get", model_id: modelId } }))!,
+      generationQuote: async (type, params) =>
+        (await post("tools/call", { name: generationTool(type), arguments: { params: { ...params, get_cost: true } } }))!,
+      generationSubmit: async (type, params, sending) =>
+        (await post("tools/call", { name: generationTool(type), arguments: { params: { ...params, get_cost: false } } }, sending))!,
+      generationStatus: async (jobId) =>
+        (await post("tools/call", { name: "job_status", arguments: { jobId, sync: false, raw_data: false } }))!,
     });
   } catch (error) {
     if (
@@ -1220,6 +1252,203 @@ export async function readConsumerGenjutsuJob(
         };
       },
     );
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+
+/* ── Catalogue-driven generation (Atomik "Generate" workflows) ─────────── */
+function generationTool(type: ConnectedOutputType) {
+  if (!CONNECTED_OUTPUT_TYPES.includes(type)) throw new ConsumerVideoError("invalid_input");
+  return GENERATION_TOOLS[type];
+}
+const CURSOR = /^[\x21-\x7e]{1,4096}$/;
+/** Read-only: the whole `models_explore list` catalogue, following the
+ * provider's page token up to a fixed page count. The merged raw envelope is
+ * returned for catalogue.ts to parse; nothing here is executed or priced. */
+export async function readConnectedCatalogue(
+  accessToken: string,
+  options: Options = {},
+): Promise<{ items: unknown[]; has_more: boolean; unlim: unknown }> {
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const items: unknown[] = [];
+      const seen = new Set<string>();
+      let after: string | undefined, unlim: unknown, hasMore = false;
+      for (let page = 0; page < CATALOGUE_PAGES; page++) {
+        if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+        const raw = videoReadResult(session, await session.catalogueList(after));
+        if (!object(raw) || !Array.isArray(raw.items) || items.length + raw.items.length > 400)
+          throw new ConsumerVideoError("provider_error");
+        items.push(...raw.items);
+        if (page === 0) unlim = raw.unlim;
+        hasMore = raw.has_more === true;
+        const next = raw.next_page_token;
+        if (!hasMore || next === undefined || next === null) break;
+        if (typeof next !== "string" || !CURSOR.test(next) || seen.has(next)) throw new ConsumerVideoError("provider_error");
+        seen.add(next);
+        after = next;
+      }
+      return { items, has_more: hasMore, unlim };
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+/** Read-only `models_explore get` for one model id; returns the raw entry. */
+export async function readConnectedModel(accessToken: string, modelId: string, options: Options = {}): Promise<unknown> {
+  if (!/^[A-Za-z0-9_.-]{1,80}$/.test(modelId)) throw new ConsumerVideoError("invalid_input");
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const raw = videoReadResult(session, await session.catalogueGet(modelId));
+      if (!object(raw)) throw new ConsumerVideoError("provider_error");
+      return object(raw.model) ? raw.model : raw;
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+export type ConsumerGenerationQuote = {
+  input: ConsumerGenerationInput;
+  params: ConsumerGenerationParams;
+  workspace: ConsumerVideoWorkspace;
+  credits: number;
+};
+/** Imports each application-authorized reference once (the resolve hook owns
+ * the durable claim), then prices the validated request with get_cost:true.
+ * Nothing here submits a generation. */
+export async function getConsumerGenerationQuote(
+  accessToken: string,
+  model: ConnectedModel,
+  value: ConsumerGenerationInput,
+  sources: { url: string; type: "image" | "video" | "audio"; role: string }[],
+  options: Options & {
+    resolveMedia: (index: number, workspaceId: string, perform: () => Promise<string>) => Promise<string>;
+  },
+): Promise<ConsumerGenerationQuote> {
+  const input = parseConsumerGenerationInput(value);
+  if (
+    sources.length !== input.medias.length ||
+    sources.some((s, i) => s.role !== input.medias[i].role || !safeImportUrl(s.url) || !["image", "video", "audio"].includes(s.type))
+  )
+    throw new ConsumerVideoError("invalid_input");
+  // Validate against the catalogue before any provider call, paid or not.
+  consumerGenerationParams(model, input, input.medias.map((media) => ({ value: "00000000-0000-4000-8000-000000000000", role: media.role })));
+  try {
+    return await withConsumerSession(accessToken, options, 150_000, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      const medias: ConsumerGenerationMedia[] = [];
+      for (let i = 0; i < sources.length; i++) {
+        if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+        const source = sources[i];
+        let mediaId: string;
+        try {
+          mediaId = await options.resolveMedia(i, workspace.id, async () => {
+            const raw = videoReadResult(session, await session.genjutsuImport(source.url, source.type));
+            if (
+              !object(raw) ||
+              typeof raw.media_id !== "string" ||
+              (raw.type !== undefined && raw.type !== source.type) ||
+              (raw.error != null && raw.error !== "") ||
+              (raw.warning != null && raw.warning !== "")
+            )
+              throw new ConsumerVideoError("provider_error");
+            return consumerVideoJobId(raw.media_id);
+          });
+        } catch (error) {
+          throw new ConsumerAdmissionStopped(error);
+        }
+        medias.push({ value: mediaId, role: source.role });
+      }
+      const params = consumerGenerationParams(model, input, medias);
+      const credits = parseConsumerCreditsForParams(
+        videoReadResult(session, await session.generationQuote(input.type, params)),
+        { ...params, get_cost: true },
+      );
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, workspace.id);
+      return { input, params, workspace: current, credits };
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    return videoPreflightError(error);
+  }
+}
+/** Fresh wallet/price checks, durable admission, then exactly one paid call. */
+export async function submitConsumerGeneration(
+  accessToken: string,
+  model: ConnectedModel,
+  input: ConsumerGenerationInput,
+  value: ConsumerGenerationParams,
+  expectedWorkspaceId: string,
+  expectedCredits: number,
+  options: Options & { admit: () => Promise<void> },
+): Promise<ConsumerVideoSubmission> {
+  const checked = consumerGenerationParams(model, input, value.medias);
+  if (!sameConsumerValue(checked, value)) throw new ConsumerVideoError("invalid_input");
+  const params = checked, expected = videoWorkspaceId(expectedWorkspaceId);
+  if (!Number.isFinite(expectedCredits) || expectedCredits <= 0 || typeof options.admit !== "function")
+    throw new ConsumerVideoError("invalid_input");
+  let attempted = false;
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(workspace, expected);
+      const credits = parseConsumerCreditsForParams(
+        videoReadResult(session, await session.generationQuote(input.type, params)),
+        { ...params, get_cost: true },
+      );
+      if (credits !== expectedCredits) throw new ConsumerVideoError("quote_changed");
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, expected);
+      if (current.credits < credits) throw new ConsumerVideoError("insufficient_credits");
+      try {
+        await options.admit();
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+      const reply = await session.generationSubmit(input.type, params, () => {
+        attempted = true;
+      });
+      const raw = normalizeQualificationResult(reply, session.secrets).result;
+      const providerJobId = consumerVideoAcknowledgement(raw, params.model, input.type);
+      return providerJobId ? { state: "accepted", providerJobId, raw } : uncertainSubmission(raw);
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (attempted) return uncertainSubmission();
+    return videoPreflightError(error);
+  }
+}
+/** Read-only status of one acknowledged generation job (normalized envelope). */
+export async function readConsumerGenerationJob(
+  accessToken: string,
+  jobId: string,
+  expectedWorkspaceId: string,
+  model: string,
+  type: ConnectedOutputType,
+  options: Options = {},
+) {
+  consumerVideoJobId(jobId);
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  if (!/^[A-Za-z0-9_.-]{1,80}$/.test(model) || !CONNECTED_OUTPUT_TYPES.includes(type)) throw new ConsumerVideoError("invalid_input");
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      const raw = videoReadResult(session, await session.generationStatus(jobId));
+      if (object(raw) && object(raw.generation)) {
+        const generation = raw.generation;
+        if (("id" in generation && consumerVideoJobId(generation.id) !== jobId) ||
+            ("model" in generation && generation.model !== model) ||
+            ("type" in generation && generation.type !== type))
+          throw new ConsumerVideoError("invalid_job");
+      }
+      return { jobId, raw, ...validateConsumerVideoStatus(raw, jobId, model, type) };
+    });
   } catch (error) {
     return videoPreflightError(error);
   }

@@ -18,7 +18,7 @@ export type LibraryAsset =
 
 /** Classification is for the library only; it never changes serving MIME or engine eligibility. */
 export function libraryKind(asset: LibraryAsset): LibraryKind {
-  if (asset.origin === "generation") return asset.value.kind;
+  if (asset.origin === "generation") return asset.value.kind === "model" ? "file" : asset.value.kind;
   const upload = asset.value;
   if (upload.kind === "image" || upload.kind === "video") return upload.kind;
   if (/\.(?:wav|wave|mp3|aif|aiff|flac|m4a|ogg|opus)$/i.test(upload.filename)) return "audio";

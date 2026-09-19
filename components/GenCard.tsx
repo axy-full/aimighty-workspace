@@ -16,7 +16,7 @@ export type Gen = {
   id: string;
   projectId: string | null;
   projectName: string | null;
-  kind?: "video" | "image" | "audio";
+  kind?: "video" | "image" | "audio" | "model";
   reviewState?: "" | "approved" | "picked" | "changes";
   pickedBy?: string | null;
   pickedAt?: number | null;

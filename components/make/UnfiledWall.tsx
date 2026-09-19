@@ -185,7 +185,7 @@ function ScopedWall({
                 onClick={() => setSelected(take.id)}
                 aria-label={`Preview ${take.title || kindLabel(take) + " take"}`}
               >
-                {finished && take.kind !== "audio" ? (
+                {finished && take.kind !== "audio" && take.kind !== "model" ? (
                   <LazyMedia
                     url={mediaUrl(take)}
                     kind={take.kind}

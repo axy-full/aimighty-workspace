@@ -5,6 +5,7 @@ import type { PipelineSpec } from "@/lib/pipeline/schema";
 
 export const ATOMIK_PAGES = [
   "runs",
+  "generate",
   "recipes",
   "approvals",
   "budget",
