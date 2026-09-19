@@ -68,12 +68,14 @@ import {
   VoiceToolError,
   consumerVoiceToolAcknowledgement,
   consumerVoiceToolParams,
+  consumerVoiceToolParamsFromStored,
   consumerVoiceToolPollAfter,
   parseConnectedVoicesPage,
   parseConsumerVoiceToolInput,
   requireVoiceTool,
   voiceToolArgumentShape,
   voiceToolArguments,
+  voiceToolCostParams,
   type ConsumerVoiceToolInput,
   type ConsumerVoiceToolParams,
   type VoiceToolName,
@@ -1966,7 +1968,7 @@ async function verifiedVoiceToolShape(session: ConsumerSession, tool: VoiceToolN
 async function voiceToolPrice(session: ConsumerSession, tool: VoiceToolName, params: ConsumerVoiceToolParams, shape: VoiceToolShape) {
   if (!shape.getCost)
     throw new ConsumerAdmissionStopped(new VoiceToolError("price_unknown", `The connected account advertises no price preflight for ${requireVoiceTool(tool).label}, and no catalogue entry prices it. Nothing was sent.`));
-  const sent = voiceToolArguments(params, shape, true);
+  const sent = voiceToolArguments(voiceToolCostParams(tool, params), shape, true);
   const raw = videoReadResult(session, await session.voiceToolCreate(tool, sent));
   return parseConsumerCreditsForParams(raw, shape.nested ? (sent.params as Record<string, unknown>) : sent);
 }
@@ -1977,18 +1979,21 @@ async function voiceToolPrice(session: ConsumerSession, tool: VoiceToolName, par
 export async function getConsumerVoiceToolQuote(
   accessToken: string,
   value: ConsumerVoiceToolInput,
-  source: { url: string; type: "video" },
+  source: { url: string; type: "video"; durationSeconds?: number },
   options: Options & { resolveMedia: (workspaceId: string, perform: () => Promise<string>) => Promise<string> },
 ): Promise<ConsumerVoiceToolQuote> {
   const input = parseConsumerVoiceToolInput(value);
   if (!safeImportUrl(source.url) || source.type !== "video") throw new ConsumerVideoError("invalid_input");
-  const placeholder = consumerVoiceToolParams(input, "00000000-0000-4000-8000-000000000000");
+  const context = source.durationSeconds === undefined ? {} : { durationSeconds: source.durationSeconds };
+  const placeholder = consumerVoiceToolParams(input, "00000000-0000-4000-8000-000000000000", context);
+  // A tool whose cost form needs no media (reframe) is priced before the import.
+  const priceFirst = Boolean(requireVoiceTool(input.tool).costArguments);
   try {
     return await withConsumerSession(accessToken, options, 150_000, async (session) => {
       if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
       const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
       const shape = await verifiedVoiceToolShape(session, input.tool, placeholder);
-      if (!shape.getCost) await voiceToolPrice(session, input.tool, placeholder, shape);
+      const early = !shape.getCost || priceFirst ? await voiceToolPrice(session, input.tool, placeholder, shape) : null;
       await requireConnectedTools(session, importCalls([source]));
       let mediaId: string;
       try {
@@ -2002,8 +2007,9 @@ export async function getConsumerVoiceToolQuote(
       } catch (error) {
         throw new ConsumerAdmissionStopped(error);
       }
-      const params = consumerVoiceToolParams(input, mediaId);
+      const params = consumerVoiceToolParams(input, mediaId, context);
       const credits = await voiceToolPrice(session, input.tool, params, shape);
+      if (early !== null && credits !== early) throw new ConsumerVideoError("quote_changed");
       const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
       matchingWorkspace(current, workspace.id);
       return { input, params, shape, workspace: current, credits, priceSource: "get_cost" };
@@ -2023,8 +2029,7 @@ export async function submitConsumerVoiceTool(
   expectedCredits: number,
   options: Options & { admit: () => Promise<void> },
 ): Promise<ConsumerVideoSubmission> {
-  const mediaId = value.video_id ?? value.video_input_id;
-  const params = consumerVoiceToolParams(input, typeof mediaId === "string" ? mediaId : "");
+  const params = consumerVoiceToolParamsFromStored(input, value);
   if (!sameConsumerValue(params, value)) throw new ConsumerVideoError("invalid_input");
   const expected = videoWorkspaceId(expectedWorkspaceId);
   if (!Number.isFinite(expectedCredits) || expectedCredits <= 0 || typeof options.admit !== "function") throw new ConsumerVideoError("invalid_input");

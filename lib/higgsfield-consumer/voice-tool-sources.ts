@@ -8,6 +8,7 @@
  */
 import type { Transaction } from "@libsql/client";
 import type { ConsumerGenerationInput } from "./generation-contract";
+import { db, ready } from "@/lib/db";
 import { describeConsumerGenerationSources, resolveConsumerGenerationImport, resolveConsumerGenerationSources, validateConsumerGenerationSources } from "./generation-sources";
 import { parseConsumerVoiceToolInput } from "./voice-tools";
 
@@ -22,6 +23,8 @@ export function voiceToolReferenceRequest(value: unknown): ConsumerGenerationInp
     parameters: {
       ...(input.voice ? { voice_id: input.voice.id, voice_type: input.voice.type } : {}),
       ...(input.targetLanguage ? { target_language: input.targetLanguage } : {}),
+      ...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),
+      ...(input.resolution ? { resolution: input.resolution } : {}),
     },
     medias: [{ role: VOICE_TOOL_SOURCE_ROLE, source: input.source }],
   };
@@ -34,9 +37,13 @@ export async function describeConsumerVoiceToolSource(value: unknown) {
   const [source] = await describeConsumerGenerationSources(voiceToolReferenceRequest(value));
   return { kind: source.kind, name: source.name };
 }
-export async function resolveConsumerVoiceToolSource(value: unknown): Promise<{ url: string; type: "video" }> {
-  const [source] = await resolveConsumerGenerationSources(voiceToolReferenceRequest(value));
-  return { url: source.url, type: "video" };
+export async function resolveConsumerVoiceToolSource(value: unknown): Promise<{ url: string; type: "video"; durationSeconds?: number }> {
+  const request = voiceToolReferenceRequest(value);
+  await ready();
+  // The stored duration (never the browser's) prices a reframe.
+  const [validated] = await validateConsumerGenerationSources(db(), request);
+  const [source] = await resolveConsumerGenerationSources(request);
+  return { url: source.url, type: "video", ...(validated.durationS === null ? {} : { durationSeconds: validated.durationS }) };
 }
 /** One import claim per quote; success is reused, an unconfirmed attempt never repeats. */
 export const resolveConsumerVoiceToolImport = (

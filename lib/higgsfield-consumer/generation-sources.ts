@@ -28,6 +28,8 @@ export type GenerationSource = {
   bytes: number;
   /** Upload filename or generation title/prompt; labels tool results. */
   name: string;
+  /** Stored duration in seconds (videos/audio), null when not recorded. */
+  durationS: number | null;
 };
 const uploadKind = (row: Record<string, unknown>): ConnectedMediaKind | null => {
   if (row.kind === "image" || row.kind === "video") return row.kind;
@@ -72,6 +74,7 @@ export async function validateConsumerGenerationSources(
       mime: fromGeneration ? { video: "video/mp4", image: "image/png", audio: "audio/mpeg" }[kind] : String(row.mime),
       bytes,
       name: String((fromGeneration ? row.title || row.prompt : row.filename) || id).replace(/\p{Cc}/gu, "").trim().slice(0, 160) || id,
+      durationS: typeof row.duration_s === "number" && Number.isFinite(row.duration_s) && row.duration_s > 0 ? row.duration_s : null,
     });
   }
   return sources;

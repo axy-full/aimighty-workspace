@@ -26,6 +26,8 @@ async function fixture(run: (f: Awaited<ReturnType<typeof serviceFixture>>) => P
     await f.database.db().execute("INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('owner-draft','owner','draft','Campaign','{}',1,0)");
     await f.database.db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('clip','Hero take.mp4','video/mp4','mp4',4000,'fixture','/api/uploads/clip','video',0)");
     await f.database.db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('still','still.png','image/png','png',1000,'fixture','/api/uploads/still','image',0)");
+    await f.database.db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at,duration_s) VALUES('wide','Launch cut.mp4','video/mp4','mp4',4000,'fixture','/api/uploads/wide','video',0,12.341)");
+    await f.database.db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at,duration_s) VALUES('long','Long cut.mp4','video/mp4','mp4',4000,'fixture','/api/uploads/long','video',0,75)");
     return run(f);
   });
 }
@@ -93,16 +95,18 @@ async function serviceFixture(options: { analysis?: boolean }) {
     },
     "./mcp": {
       readConnectedVoices: async () => { state.voiceReads++; return { items: [{ voice_id: "voice-nova", voice_type: "preset", name: "Nova", preview_url: "https://cdn.example.com/a.mp3" }], complete: true }; },
-      getConsumerVoiceToolQuote: async (_token: string, input: ConsumerVoiceToolInput, source: { url: string; type: string }, options: { resolveMedia: (wallet: string, perform: () => Promise<string>) => Promise<string> }) => {
+      getConsumerVoiceToolQuote: async (_token: string, input: ConsumerVoiceToolInput, source: { url: string; type: string; durationSeconds?: number }, options: { resolveMedia: (wallet: string, perform: () => Promise<string>) => Promise<string> }) => {
         state.quoteCount++;
-        expect(source).toEqual({ url: "https://fixtures.particl.invalid/uploads/clip.mp4", type: "video" });
+        if (input.tool === "reframe") expect(source).toEqual({ url: "https://fixtures.particl.invalid/uploads/wide.mp4", type: "video", durationSeconds: 12.341 });
+        else expect(source).toEqual({ url: "https://fixtures.particl.invalid/uploads/clip.mp4", type: "video" });
         if (!state.priced) throw new tools.VoiceToolError("price_unknown", "No price. Nothing was sent.");
         const mediaId = await options.resolveMedia(state.wallet, async () => { state.importCount++; return state.mediaId; });
         const nested = input.tool !== "video_analysis";
-        return { input, params: tools.consumerVoiceToolParams(input, mediaId), shape: { nested, getCost: true }, workspace: { id: state.wallet, name: "Fixture wallet", credits: 100 }, credits: state.credits, priceSource: "get_cost" };
+        return { input, params: tools.consumerVoiceToolParams(input, mediaId, { durationSeconds: source.durationSeconds }), shape: { nested, getCost: true }, workspace: { id: state.wallet, name: "Fixture wallet", credits: 100 }, credits: state.credits, priceSource: "get_cost" };
       },
       submitConsumerVoiceTool: async (_token: string, input: ConsumerVoiceToolInput, params: Record<string, string>, shape: { nested: boolean }, wallet: string, credits: number, options: { admit: () => Promise<void> }) => {
-        expect(params).toEqual(tools.consumerVoiceToolParams(input, state.mediaId));
+        expect(params).toEqual(tools.consumerVoiceToolParamsFromStored(input, params));
+        expect(tools.consumerVoiceToolParamsFromStored(input, params)).toMatchObject(input.tool === "reframe" ? { medias: [{ role: "video", value: state.mediaId }] } : {});
         expect(shape.nested).toBe(input.tool !== "video_analysis");
         if (wallet !== state.wallet) throw new contract.ConsumerVideoError("workspace_changed");
         if (credits !== state.credits) throw new contract.ConsumerVideoError("quote_changed");
@@ -116,7 +120,7 @@ async function serviceFixture(options: { analysis?: boolean }) {
       },
       readConsumerVoiceToolJob: async (_token: string, providerJobId: string, wallet: string, tool: string) => {
         state.statusCount++;
-        expect(providerJobId).toBe(state.providerJobId); expect(["voice_change", "dubbing", "video_analysis"]).toContain(tool);
+        expect(providerJobId).toBe(state.providerJobId); expect(["voice_change", "dubbing", "video_analysis", "reframe"]).toContain(tool);
         if (wallet !== state.wallet) throw new contract.ConsumerVideoError("workspace_changed");
         return { raw: state.pollRaw ?? { generation: { id: providerJobId, type: "video", status: "processing" } }, pollAfterSeconds: 20 };
       },
@@ -270,3 +274,30 @@ test("with the analysis flag on, an analysis is quoted, submitted and completed 
     expect(failed.job.status).toBe("failed");
     expect(failed.providerStatus).toEqual({ status: "Video too long" });
   }, { analysis: true }));
+
+test("reframe prices the stored source duration, refuses an unknown or over-long one before the provider, and files the collected video", async () =>
+  fixture(async (f) => {
+    const reframe: ConsumerVoiceToolInput = { tool: "reframe", source: { uploadId: "wide" }, aspectRatio: "9:16", resolution: "720p" };
+    for (const [bad, code] of [
+      [{ ...reframe, source: { uploadId: "long" } }, "invalid_input"],
+      [{ ...reframe, source: { uploadId: "clip" } }, "invalid_input"],
+      [{ ...reframe, aspectRatio: undefined }, "invalid_input"],
+    ] as const)
+      await expect(f.service.quoteConsumerVoiceTool(identity.userId, identity.draftId, bad as ConsumerVoiceToolInput, randomUUID()), JSON.stringify(bad)).rejects.toMatchObject({ code });
+    expect(f.state.quoteCount).toBe(0);
+    const quote = await f.service.quoteConsumerVoiceTool(identity.userId, identity.draftId, reframe, randomUUID());
+    expect(quote).toMatchObject({ status: "quoted", quoteCredits: 12, pricedSeconds: 12.35, tool: { name: "reframe", label: "Reframe", suffix: "reframed", output: "video" }, source: { kind: "video", name: "Launch cut.mp4" } });
+    const stored = await f.jobs.getConsumerJob(scoped(quote.id));
+    expect(JSON.parse(stored!.payloadJson).params).toEqual({ medias: [{ role: "video", value: f.state.mediaId }], aspect_ratio: "9:16", duration_seconds: 12.35, resolution: "720p" });
+    expect(stored!.originalAssetIds).toEqual(["upload:wide"]);
+    const submitted = await f.service.submitConsumerVoiceToolJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: 12 });
+    expect(submitted.status).toBe("accepted");
+    expect(f.state.paidCount).toBe(1);
+    f.state.pollRaw = completed(f);
+    const polled = await f.service.pollConsumerVoiceTool(scoped(quote.id));
+    expect(polled.job).toMatchObject({ status: "completed", originalAvailable: true });
+    expect(f.state.collectCount).toBe(1);
+    // A second submit of the same job never pays again.
+    await f.service.submitConsumerVoiceToolJob(scoped(quote.id), { workspaceId: f.state.wallet, credits: 12 });
+    expect(f.state.paidCount).toBe(1);
+  }));

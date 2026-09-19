@@ -12,13 +12,19 @@
  * import or paid call (`price_unknown`). Analyse video additionally stays
  * behind `capabilities.analysis` (off) because its report schema is unverified.
  *
+ * Reframe (slice F1) shares this typed-tool pipeline: one project video in,
+ * one video out, `job_status` polling. Unlike the voice tools it advertises a
+ * `get_cost` form that needs only `duration_seconds` + `resolution`, so it is
+ * priced BEFORE the source is imported; the duration is read from the stored
+ * original, never from the browser.
+ *
  * Pure (no database, no network) so the browser form and the server share it.
  */
 import { z } from "zod";
 import { consumerMediaIdentitySchema, type ConsumerMediaIdentity } from "./genjutsu-contract";
 import { ConsumerVideoError } from "./video-contract";
 
-export const VOICE_TOOL_NAMES = ["voice_change", "dubbing", "video_analysis"] as const;
+export const VOICE_TOOL_NAMES = ["voice_change", "dubbing", "video_analysis", "reframe"] as const;
 export type VoiceToolName = (typeof VOICE_TOOL_NAMES)[number];
 /** ISO-639-3 codes exactly as the `dubbing` tool's `target_language` enum advertised them. */
 export const DUBBING_LANGUAGES = Object.freeze([
@@ -32,6 +38,10 @@ export type DubbingLanguage = (typeof DUBBING_LANGUAGES)[number]["code"];
 const LANGUAGE_CODES = DUBBING_LANGUAGES.map((entry) => entry.code) as [DubbingLanguage, ...DubbingLanguage[]];
 export const dubbingLanguageName = (code: string) => DUBBING_LANGUAGES.find((entry) => entry.code === code)?.name ?? code;
 export const VOICE_TYPES = ["preset", "element"] as const;
+/** The `reframe` tool's advertised enums and duration bound (19 September 2026). */
+export const REFRAME_ASPECT_RATIOS = ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"] as const;
+export const REFRAME_RESOLUTIONS = ["480p", "720p", "1080p"] as const;
+export const REFRAME_MAX_SECONDS = 60;
 export type VoiceType = (typeof VOICE_TYPES)[number];
 
 export type VoiceTool = {
@@ -46,11 +56,16 @@ export type VoiceTool = {
   /** A dubbed/revoiced video is collected as an original; a report is filed as a note. */
   output: "video" | "report";
   suffix: string;
+  /** Where the Generate page offers it: the Voice group or the Tools group. */
+  group: "voice" | "tools";
+  /** The arguments the advertised `get_cost` form needs; absent = all of them. */
+  costArguments?: readonly string[];
 };
 export const VOICE_TOOLS: readonly VoiceTool[] = Object.freeze([
-  { name: "voice_change", label: "Change voice", description: "Replace the spoken voice in a project video with a voice from the connected account, keeping the timing and picture.", create: "voice_change", status: "job_status", arguments: ["video_id", "voice_id", "voice_type"], output: "video", suffix: "voice changed" },
-  { name: "dubbing", label: "Dub", description: "Translate a project video’s speech into another language, re-voice it and lip-sync the result.", create: "dubbing", status: "job_status", arguments: ["video_id", "target_language"], output: "video", suffix: "dubbed" },
-  { name: "video_analysis", label: "Analyse video", description: "Ask the connected account for a scene-by-scene report on a project video. Shorter clips give the most reliable report.", create: "video_analysis_create", status: "video_analysis_status", arguments: ["video_input_id"], output: "report", suffix: "analysed" },
+  { name: "voice_change", label: "Change voice", description: "Replace the spoken voice in a project video with a voice from the connected account, keeping the timing and picture.", create: "voice_change", status: "job_status", arguments: ["video_id", "voice_id", "voice_type"], output: "video", suffix: "voice changed", group: "voice" },
+  { name: "dubbing", label: "Dub", description: "Translate a project video’s speech into another language, re-voice it and lip-sync the result.", create: "dubbing", status: "job_status", arguments: ["video_id", "target_language"], output: "video", suffix: "dubbed", group: "voice" },
+  { name: "video_analysis", label: "Analyse video", description: "Ask the connected account for a scene-by-scene report on a project video. Shorter clips give the most reliable report.", create: "video_analysis_create", status: "video_analysis_status", arguments: ["video_input_id"], output: "report", suffix: "analysed", group: "voice" },
+  { name: "reframe", label: "Reframe", description: "Expand a project video (up to 60 s) to a new aspect ratio, filling the new edges and keeping the source content.", create: "reframe", status: "job_status", arguments: ["medias", "aspect_ratio", "duration_seconds", "resolution"], output: "video", suffix: "reframed", group: "tools", costArguments: ["duration_seconds", "resolution"] },
 ]);
 export const VOICE_TOOL_STATUS_ARGUMENT = "video_analyze_id";
 export function findVoiceTool(name: string): VoiceTool | null {
@@ -82,12 +97,17 @@ export const consumerVoiceToolInputSchema = z
     voice: z.object({ id: voiceId, type: z.enum(VOICE_TYPES), name: z.string().max(160).optional() }).strict().optional(),
     /** Dub: the target language code. */
     targetLanguage: z.enum(LANGUAGE_CODES).optional(),
+    /** Reframe: the target canvas and output resolution. */
+    aspectRatio: z.enum(REFRAME_ASPECT_RATIOS).optional(),
+    resolution: z.enum(REFRAME_RESOLUTIONS).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    const needsVoice = value.tool === "voice_change", needsLanguage = value.tool === "dubbing";
+    const needsVoice = value.tool === "voice_change", needsLanguage = value.tool === "dubbing", reframe = value.tool === "reframe";
     if (needsVoice !== Boolean(value.voice)) ctx.addIssue({ code: "custom", message: needsVoice ? "Choose a voice." : "This tool takes no voice." });
     if (needsLanguage !== Boolean(value.targetLanguage)) ctx.addIssue({ code: "custom", message: needsLanguage ? "Choose a target language." : "This tool takes no language." });
+    if (reframe !== Boolean(value.aspectRatio)) ctx.addIssue({ code: "custom", message: reframe ? "Choose a target aspect ratio." : "This tool takes no aspect ratio." });
+    if (reframe !== Boolean(value.resolution)) ctx.addIssue({ code: "custom", message: reframe ? "Choose a resolution." : "This tool takes no resolution." });
   });
 export type ConsumerVoiceToolInput = z.infer<typeof consumerVoiceToolInputSchema>;
 export function parseConsumerVoiceToolInput(value: unknown): ConsumerVoiceToolInput {
@@ -95,17 +115,42 @@ export function parseConsumerVoiceToolInput(value: unknown): ConsumerVoiceToolIn
   if (!parsed.success) throw new ConsumerVideoError("invalid_input");
   return parsed.data;
 }
-export type ConsumerVoiceToolParams = Record<string, string>;
+export type ConsumerVoiceToolParams = Record<string, string | number | { role: string; value: string }[]>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A stored source duration as the reframe tool takes it: (0, 60] seconds,
+ * rounded up to hundredths so the priced duration never undercounts. */
+export function reframeDurationSeconds(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) throw new VoiceToolError("invalid_input", "This video has no stored duration. Re-upload it before reframing.");
+  const seconds = Math.ceil(value * 100) / 100;
+  if (seconds > REFRAME_MAX_SECONDS) throw new VoiceToolError("invalid_input", `Reframe takes videos up to ${REFRAME_MAX_SECONDS} seconds.`);
+  return seconds;
+}
 /** Exactly the declared arguments for the tool, from a validated input and a
- * completed import's media id. Never carries prompt, count, model or presets. */
-export function consumerVoiceToolParams(value: unknown, mediaId: string): ConsumerVoiceToolParams {
+ * completed import's media id (plus, for reframe, the stored source duration).
+ * Never carries prompt, count, model or presets. */
+export function consumerVoiceToolParams(value: unknown, mediaId: string, context: { durationSeconds?: number } = {}): ConsumerVoiceToolParams {
   const input = parseConsumerVoiceToolInput(value);
   if (!UUID.test(mediaId)) throw new ConsumerVideoError("invalid_input");
   const id = mediaId.toLowerCase();
   if (input.tool === "voice_change") return { video_id: id, voice_id: input.voice!.id, voice_type: input.voice!.type };
   if (input.tool === "dubbing") return { video_id: id, target_language: input.targetLanguage! };
+  if (input.tool === "reframe")
+    return { medias: [{ role: "video", value: id }], aspect_ratio: input.aspectRatio!, duration_seconds: reframeDurationSeconds(context.durationSeconds), resolution: input.resolution! };
   return { video_input_id: id };
+}
+/** Rebuilds the params from a stored snapshot (media id and, for reframe, the
+ * priced duration) so a submit re-derives exactly what was quoted. */
+export function consumerVoiceToolParamsFromStored(value: unknown, stored: ConsumerVoiceToolParams): ConsumerVoiceToolParams {
+  const medias = stored.medias;
+  const mediaId = Array.isArray(medias) && medias.length === 1 && medias[0]?.role === "video" ? medias[0].value : stored.video_id ?? stored.video_input_id;
+  const duration = stored.duration_seconds;
+  return consumerVoiceToolParams(value, typeof mediaId === "string" ? mediaId : "", typeof duration === "number" ? { durationSeconds: duration } : {});
+}
+/** The arguments sent with `get_cost:true`: the tool's advertised cost form
+ * when it has one (reframe: duration + resolution, no media), else all. */
+export function voiceToolCostParams(tool: VoiceToolName, params: ConsumerVoiceToolParams): ConsumerVoiceToolParams {
+  const keys = requireVoiceTool(tool).costArguments;
+  return keys ? Object.fromEntries(keys.map((key) => [key, params[key]])) : params;
 }
 export const consumerVoiceToolSourceKey = (source: ConsumerMediaIdentity) => (source.genId ? `generation:${source.genId}` : `upload:${source.uploadId}`);
 
@@ -126,9 +171,15 @@ export function voiceToolArgumentShape(inputSchema: unknown, sent: ConsumerVoice
     if (!keys.every((key) => key in properties)) return null;
     if (required.some((key) => !keys.includes(key))) return null;
     for (const key of keys) {
-      const declared = properties[key];
-      if (object(declared) && Array.isArray(declared.enum) && !declared.enum.includes(sent[key])) return null;
-      if (object(declared) && typeof declared.const === "string" && declared.const !== sent[key]) return null;
+      const declared = properties[key], value = sent[key];
+      if (object(declared) && Array.isArray(declared.enum) && !declared.enum.includes(value)) return null;
+      if (object(declared) && typeof declared.const === "string" && declared.const !== value) return null;
+      if (typeof value === "number" && object(declared)) {
+        if (declared.type !== undefined && declared.type !== "number" && declared.type !== "integer") return null;
+        if (typeof declared.maximum === "number" && value > declared.maximum) return null;
+        if (typeof declared.exclusiveMinimum === "number" && value <= declared.exclusiveMinimum) return null;
+      }
+      if (Array.isArray(value) && object(declared) && (declared.type !== "array" || (typeof declared.maxItems === "number" && value.length > declared.maxItems))) return null;
     }
     return { getCost: "get_cost" in properties };
   };
@@ -314,7 +365,8 @@ export function parseConnectedVoices(raw: unknown, fetchedAt = Date.now()): Conn
 }
 
 /** "<source name without extension> · voice changed" / "· dubbed (French)" / "· analysed". */
-export function voiceToolResultName(tool: VoiceTool, sourceName: string, input?: Pick<ConsumerVoiceToolInput, "targetLanguage">) {
+export function voiceToolResultName(tool: VoiceTool, sourceName: string, input?: Pick<ConsumerVoiceToolInput, "targetLanguage" | "aspectRatio">) {
   const base = sourceName.replace(/\.[A-Za-z0-9]{1,5}$/, "").trim().slice(0, 100) || "Source";
+  if (tool.name === "reframe" && input?.aspectRatio) return `${base} · ${tool.suffix} (${input.aspectRatio})`;
   return tool.name === "dubbing" && input?.targetLanguage ? `${base} · ${tool.suffix} (${dubbingLanguageName(input.targetLanguage)})` : `${base} · ${tool.suffix}`;
 }

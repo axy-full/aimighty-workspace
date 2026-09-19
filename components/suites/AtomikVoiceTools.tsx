@@ -9,6 +9,9 @@ import { draftRequest, writeDraft } from "@/lib/workbench/draft-request";
 import type { Asset, Project } from "@/lib/workbench/studio";
 import {
   DUBBING_LANGUAGES,
+  REFRAME_ASPECT_RATIOS,
+  REFRAME_MAX_SECONDS,
+  REFRAME_RESOLUTIONS,
   consumerVoiceToolInputSchema,
   dubbingLanguageName,
   findVoiceTool,
@@ -23,14 +26,16 @@ import styles from "./atomik-generate.module.css";
 export const voiceEndpoint = "/api/higgsfield/consumer/audio-tools";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
-export type VoiceCapabilities = { voice: boolean; dubbing: boolean; analysis: boolean; languages: { code: string; name: string }[] };
+export type VoiceCapabilities = { voice: boolean; dubbing: boolean; analysis: boolean; reframe: boolean; languages: { code: string; name: string }[] };
 export type VoiceSource = { id: string; origin: "upload" | "generation"; kind: "video"; name: string; url: string };
-type Draft = { source: VoiceSource | null; voiceId: string; voiceType: "preset" | "element"; voiceName: string; language: string };
-const empty: Draft = { source: null, voiceId: "", voiceType: "preset", voiceName: "", language: "" };
+type AspectRatio = (typeof REFRAME_ASPECT_RATIOS)[number];
+type Resolution = (typeof REFRAME_RESOLUTIONS)[number];
+type Draft = { source: VoiceSource | null; voiceId: string; voiceType: "preset" | "element"; voiceName: string; language: string; aspectRatio: AspectRatio | ""; resolution: Resolution };
+const empty: Draft = { source: null, voiceId: "", voiceType: "preset", voiceName: "", language: "", aspectRatio: "", resolution: "720p" };
 type Job = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
   input: ConsumerVoiceToolInput; tool: { name: VoiceToolName; label: string; suffix: string; output: "video" | "report" }; source: { kind: string; name: string };
-  priceSource: "get_cost"; workspaceId: string; workspaceName: string; quoteCredits: number; creditUnit: "higgsfield_credits"; quoteExpiresAt: number;
+  priceSource: "get_cost"; pricedSeconds?: number; workspaceId: string; workspaceName: string; quoteCredits: number; creditUnit: "higgsfield_credits"; quoteExpiresAt: number;
   quoteExpired?: boolean; providerJobId: string | null; result?: unknown; providerReceipt?: unknown; originalAvailable?: boolean; originalAvailability?: string; createdAt: number;
 };
 class RequestError extends Error {
@@ -53,6 +58,8 @@ function draft(value: unknown): Draft {
     voiceType: value.voiceType === "element" ? "element" : "preset",
     voiceName: typeof value.voiceName === "string" ? value.voiceName.slice(0, 160) : "",
     language: DUBBING_LANGUAGES.some((entry) => entry.code === value.language) ? String(value.language) : "",
+    aspectRatio: REFRAME_ASPECT_RATIOS.includes(value.aspectRatio as AspectRatio) ? (value.aspectRatio as AspectRatio) : "",
+    resolution: REFRAME_RESOLUTIONS.includes(value.resolution as Resolution) ? (value.resolution as Resolution) : "720p",
   };
 }
 export function parseVoiceJob(value: unknown, draftId: string): Job {
@@ -65,7 +72,8 @@ export function parseVoiceJob(value: unknown, draftId: string): Job {
       !record(value.tool) || !findVoiceTool(String(value.tool.name)) || !record(value.source) || typeof value.source.name !== "string")
     throw new Error("The saved voice job could not be verified. Refresh before continuing.");
   const tool = findVoiceTool(String(value.tool.name))!;
-  return { ...value, tool: { name: tool.name, label: tool.label, suffix: tool.suffix, output: tool.output }, source: { kind: String(value.source.kind), name: value.source.name.slice(0, 160) }, input: consumerVoiceToolInputSchema.parse(value.input) } as Job;
+  const pricedSeconds = typeof value.pricedSeconds === "number" && Number.isFinite(value.pricedSeconds) && value.pricedSeconds > 0 && value.pricedSeconds <= REFRAME_MAX_SECONDS ? value.pricedSeconds : undefined;
+  return { ...value, pricedSeconds, tool: { name: tool.name, label: tool.label, suffix: tool.suffix, output: tool.output }, source: { kind: String(value.source.kind), name: value.source.name.slice(0, 160) }, input: consumerVoiceToolInputSchema.parse(value.input) } as Job;
 }
 /** Only the service's collected local original can become a project asset. */
 function originalAsset(job: Job): (Asset & { mime: string }) | null {
@@ -76,7 +84,7 @@ function originalAsset(job: Job): (Asset & { mime: string }) | null {
       typeof original.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(original.sha256) || typeof original.bytes !== "number" || original.bytes <= 0 ||
       asset.generationId !== original.generationId || typeof asset.mime !== "string" || asset.url !== `/api/media/${original.generationId}` || asset.kind !== "video") return null;
   const name = voiceToolResultName(findVoiceTool(job.tool.name)!, job.source.name, job.input);
-  return { id: original.generationId, generationId: original.generationId, url: asset.url, kind: "video", mime: asset.mime, name, category: "Voice",
+  return { id: original.generationId, generationId: original.generationId, url: asset.url, kind: "video", mime: asset.mime, name, category: job.tool.name === "reframe" ? "Tools" : "Voice",
     description: `${job.tool.label} · ${settingsSummary(job)} · ${job.quoteCredits} connected credits`, prompt: "", status: "Draft", version: 1, locked: false, refs: [] };
 }
 function report(job: Job): VideoAnalysisReport | null {
@@ -100,8 +108,9 @@ function reportAsset(job: Job): Asset | null {
   return { id: `analysis_${job.providerJobId}`, url: `/api/workbench/media/analysis/${job.providerJobId}`, kind: "document", mime: "text/plain", name: voiceToolResultName(findVoiceTool(job.tool.name)!, job.source.name),
     category: "Voice", description: lines.join("\n").slice(0, 8000), prompt: "", status: "Draft", version: 1, locked: false, refs: [] };
 }
-const settingsSummary = (job: Pick<Job, "input">) =>
-  job.input.voice ? `voice ${job.input.voice.name || job.input.voice.id}` : job.input.targetLanguage ? `into ${dubbingLanguageName(job.input.targetLanguage)}` : "scene-by-scene report";
+const settingsSummary = (job: Pick<Job, "input"> & { pricedSeconds?: number }) =>
+  job.input.voice ? `voice ${job.input.voice.name || job.input.voice.id}` : job.input.targetLanguage ? `into ${dubbingLanguageName(job.input.targetLanguage)}`
+    : job.input.aspectRatio ? `to ${job.input.aspectRatio} at ${job.input.resolution}${job.pricedSeconds ? ` · ${job.pricedSeconds.toLocaleString("en-US")} s` : ""}` : "scene-by-scene report";
 export type VoiceToolsHandle = { addSource: (asset: GenInputAsset) => void };
 
 /** Change voice, Dub and (when enabled) Analyse video on the connected account,
@@ -128,15 +137,17 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
     source: input.source ? (input.source.origin === "upload" ? { uploadId: input.source.id } : { genId: input.source.id }) : { uploadId: "" },
     ...(tool === "voice_change" ? { voice: { id: input.voiceId, type: input.voiceType, ...(input.voiceName ? { name: input.voiceName } : {}) } } : {}),
     ...(tool === "dubbing" ? { targetLanguage: input.language as ConsumerVoiceToolInput["targetLanguage"] } : {}),
+    ...(tool === "reframe" ? { aspectRatio: (input.aspectRatio || undefined) as ConsumerVoiceToolInput["aspectRatio"], resolution: input.resolution } : {}),
   };
   const validation = !input.source ? `${definition.label} needs one video from this project.`
     : tool === "voice_change" && !input.voiceId ? "Choose a voice from the connected account."
     : tool === "dubbing" && !input.language ? "Choose the language to dub into."
+    : tool === "reframe" && !input.aspectRatio ? "Choose the target aspect ratio."
     : consumerVoiceToolInputSchema.safeParse(normalized).success ? "" : "Review the source file and settings.";
   const selected = jobs.find((job) => job.id === selectedId);
   const matches = !!selected && JSON.stringify(selected.input) === JSON.stringify(normalized);
   const unresolved = jobs.some((job) => ["dispatching", "uncertain"].includes(job.status) || (job.status === "quoted" && attempts.includes(job.id)));
-  const enabled = tool === "video_analysis" ? capabilities?.analysis === true : tool === "dubbing" ? capabilities?.dubbing !== false : capabilities?.voice !== false;
+  const enabled = tool === "video_analysis" ? capabilities?.analysis === true : tool === "dubbing" ? capabilities?.dubbing !== false : tool === "reframe" ? capabilities?.reframe === true : capabilities?.voice !== false;
   const ready = capability.owner && capability.connected && !capability.suspended && !busy && enabled;
   const canQuote = ready && !validation && !unresolved && disclosed;
   const canSubmit = ready && selected?.status === "quoted" && matches && approved && selected.quoteExpiresAt > clock && !attempts.includes(selected.id);
@@ -252,6 +263,13 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
         {presets.length > 0 && <optgroup label="Preset voices">{presets.map((voice) => <option key={`preset:${voice.id}`} value={`preset:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
         {custom.length > 0 && <optgroup label="Your voices">{custom.map((voice) => <option key={`element:${voice.id}`} value={`element:${voice.id}`}>{voice.name}{voice.language ? ` · ${voice.language}` : ""}</option>)}</optgroup>}
       </select><small className={styles.hint}>{voices ? `${voices.voices.length} voices${voices.complete ? "" : " (partial listing)"} · read ${new Date(voices.fetchedAt).toLocaleTimeString()}` : "The connected account’s voices are read once an hour."}</small></label>}
+      {tool === "reframe" && <label>Target aspect ratio<select aria-label="Target aspect ratio" value={input.aspectRatio} onChange={(e) => change({ aspectRatio: e.target.value as AspectRatio | "" })}>
+        <option value="">Choose an aspect ratio</option>
+        {REFRAME_ASPECT_RATIOS.map((ratio) => <option key={ratio} value={ratio}>{ratio}</option>)}
+      </select></label>}
+      {tool === "reframe" && <label>Resolution<select aria-label="Resolution" value={input.resolution} onChange={(e) => change({ resolution: e.target.value as Resolution })}>
+        {REFRAME_RESOLUTIONS.map((resolution) => <option key={resolution} value={resolution}>{resolution}</option>)}
+      </select><small className={styles.hint}>Priced for the video’s stored length, up to {REFRAME_MAX_SECONDS} s.</small></label>}
       {tool === "dubbing" && <label>Target language<select aria-label="Target language" value={input.language} onChange={(e) => change({ language: e.target.value })}>
         <option value="">Choose a language</option>
         {languages.map((entry) => <option key={entry.code} value={entry.code}>{entry.name} · {entry.code}</option>)}
@@ -284,8 +302,8 @@ export function AtomikVoiceTools({ project, scope, tool, capability, capabilitie
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     <section className={styles.jobs} aria-label="Saved voice jobs">
-      <h3 className={styles.hint}>Voice jobs</h3>
-      {!jobs.length ? <p className="suite-footnote">No saved voice jobs yet.</p> : jobs.map((job) => {
+      <h3 className={styles.hint}>Voice and reframe jobs</h3>
+      {!jobs.length ? <p className="suite-footnote">No saved voice or reframe jobs yet.</p> : jobs.map((job) => {
         const original = originalAsset(job), note = reportAsset(job), analysis = report(job);
         const saved = (original && project.assets.some((asset) => asset.generationId === original.generationId)) || (note && project.assets.some((asset) => asset.id === note.id));
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
