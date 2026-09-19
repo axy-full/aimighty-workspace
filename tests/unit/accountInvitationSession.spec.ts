@@ -45,13 +45,24 @@ async function fixture(id: string, enrolled = true) {
       action: "begin",
     });
     secret = started.setup!.secret;
-    const enabled = await security.changeAccountSecurity({
-      accountId: account.id,
-      session,
-      password,
-      action: "enable",
-      code: totpAt(secret, Date.now() - 30_000),
-    });
+    // Pin the clock for enrolment, as accountSecurity.spec does: a
+    // previous-step code computed just before a 30 s boundary is two steps
+    // old by the time the server checks it, and enrolment then refuses it.
+    const clock = Date.now,
+      enrollmentAt = clock();
+    Date.now = () => enrollmentAt;
+    let enabled: Awaited<ReturnType<typeof security.changeAccountSecurity>>;
+    try {
+      enabled = await security.changeAccountSecurity({
+        accountId: account.id,
+        session,
+        password,
+        action: "enable",
+        code: totpAt(secret, enrollmentAt - 30_000),
+      });
+    } finally {
+      Date.now = clock;
+    }
     session = enabled.session!;
   }
   return { p, auth, account, session, workspace, secret };
