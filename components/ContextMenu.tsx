@@ -75,7 +75,7 @@ export async function renameProject(projectId: string, current: string): Promise
 }
 
 /** Ask for a name and save it. Empty clears the name; Cancel changes nothing. */
-export async function renameClip(genId: string, current: string): Promise<void> {
+export async function renameClip(genId: string, current: string, scope: string | null | undefined): Promise<void> {
   const next = await appPrompt(
     current ? "Rename clip" : "Name this clip",
     current, "Hero close-up",
@@ -83,7 +83,7 @@ export async function renameClip(genId: string, current: string): Promise<void> 
   );
   if (next === null || next.trim() === current) return;
   const res = await fetch(`/api/jobs/${genId}`, {
-    method: "PATCH", headers: { "Content-Type": "application/json" },
+    method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope ?? "visitor" },
     body: JSON.stringify({ title: next }),
   });
   if (!res.ok) { await appAlert("Could not save the name"); return; }
@@ -162,7 +162,7 @@ export default function ContextMenu() {
         items.push(
           {
             kind: "item", label: title ? "Rename…" : "Name this clip…",
-            action: () => renameClip(id, title),
+            action: () => renameClip(id, title, scopeRef.current),
           },
           {
             kind: "item", label: "Copy prompt", disabled: !promptText,

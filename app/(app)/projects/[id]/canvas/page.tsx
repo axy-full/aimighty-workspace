@@ -53,7 +53,7 @@ const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2)
 export default function CanvasPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const search = useSearchParams();
-  const { signedIn } = useSession();
+  const { signedIn, requestScope } = useSession();
   const { projects, selection, setSelection } = useProject();
   const money = useMoney();
   const project = projects.find((p) => p.id === id) ?? null;
@@ -139,7 +139,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
   }
 
   async function approve(g: Gen) {
-    await fetch(`/api/jobs/${g.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reviewState: "approved" }) });
+    await fetch(`/api/jobs/${g.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope ?? "visitor" }, body: JSON.stringify({ reviewState: "approved" }) });
     refresh(); refreshShots();
   }
 
@@ -217,7 +217,7 @@ export default function CanvasPage({ params }: { params: Promise<{ id: string }>
                             const a = readDraggedAsset(e);
                             if (!a || a.gen.kind === "audio") return;
                             e.preventDefault();
-                            await fetch(`/api/jobs/${encodeURIComponent(a.gen.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shotId: c.shot.id }) });
+                            await fetch(`/api/jobs/${encodeURIComponent(a.gen.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": requestScope ?? "visitor" }, body: JSON.stringify({ shotId: c.shot.id }) });
                             refresh(); refreshShots();
                           }}>
                           <span className="cv-tile-well">
