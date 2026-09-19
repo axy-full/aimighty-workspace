@@ -106,7 +106,7 @@ export default function AtomikSheet() {
           <>
             <button type="button" onClick={() => a.approve(step)} disabled={a.busy} data-continue=""
               className="flex h-[52px] w-full items-center justify-between rounded-mobile bg-action hover:bg-action-hover px-[16px] text-[15px] font-semibold leading-none text-on-action disabled:opacity-60">
-              Continue<span className="ui-mono ui-mono-cost text-on-primary-cost">{a.priceLabel(step)}</span>
+              Continue<span className="ui-mono ui-mono-cost text-on-primary-cost">{a.approveLabel(step)}</span>
             </button>
             <span className="flex gap-[8px]">
               {!a.isConnected(step) && <button type="button" className={`${secondary} text-ink`} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setEngineMenu({ x: r.left, y: Math.max(16, r.top - 266), step }); }}>Change engine</button>}

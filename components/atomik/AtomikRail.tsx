@@ -125,7 +125,7 @@ function CurrentCard({ placement }: { placement: "card" | "rail" }) {
         ) : (
           <>
             <Button variant="primary" placement={placement} cost={cost} busy={a.busy} busyLabel="Starting…" onClick={() => a.approve(step)}>
-              {placement === "rail" ? `Continue · ${step.title}` : "Continue"}{connected ? ` · ${a.priceLabel(step)}` : ""}
+              {placement === "rail" ? `Continue · ${step.title}` : "Continue"}{connected ? ` · ${a.approveLabel(step)}` : ""}
             </Button>
             <span className="flex gap-[6px]">
               {!connected && <Button placement="card" className="flex-1" onClick={() => setPicking(true)}>Change engine</Button>}
@@ -209,7 +209,7 @@ function Expanded({size}:{size:ReturnType<typeof useAtomikSize>}) {
       </Mono>
       {checkpoint && (
         <Button variant="primary" placement="rail" cost={a.isConnected(checkpoint) ? undefined : a.credits(checkpoint)} busy={a.busy} busyLabel="Starting…" onClick={() => a.approve(checkpoint)}>
-          Continue · {checkpoint.title}{a.isConnected(checkpoint) ? ` · ${a.priceLabel(checkpoint)}` : ""}
+          Continue · {checkpoint.title}{a.isConnected(checkpoint) ? ` · ${a.approveLabel(checkpoint)}` : ""}
         </Button>
       )}
       <div className="flex gap-[8px] pt-[8px]"><ChatComposer inputHeight={46} /></div>

@@ -484,6 +484,46 @@ export async function claimConsumerDispatch(
   });
 }
 
+/**
+ * One durable dispatch claim per item of a batch, taken atomically: every job
+ * must still be a fresh "generation" quote of this owner and draft, and the
+ * workspace must have capacity for all of them, or none is claimed. Like a
+ * single claim it has no expiry: a crash after it may have submitted.
+ */
+export async function claimConsumerDispatchBatch(
+  inputs: ConsumerJobScope[],
+): Promise<{ job: ConsumerJob; claimToken: string }[] | null> {
+  if (!Array.isArray(inputs) || inputs.length < 2 || inputs.length > CONSUMER_ACTIVE_LIMIT) invalid();
+  inputs.forEach(jobScope);
+  if (new Set(inputs.map((input) => input.id)).size !== inputs.length) invalid();
+  await consumerJobsReady();
+  return workbenchTransaction(async (tx) => {
+    const now = Date.now();
+    for (const input of inputs) {
+      const row = await requiredRow(tx, input);
+      if (row.status !== "quoted" || row.workflow !== "generation") return null;
+      await requireDraft(tx, input);
+      await validateConsumerGenerationSources(tx, JSON.parse(String(row.payload_json)).input);
+      if (Number(row.quote_expires_at) <= now) throw new ConsumerJobError("quote_expired");
+    }
+    const active = Number(
+      (await tx.execute("SELECT COUNT(*) AS count FROM higgsfield_consumer_jobs WHERE status IN ('dispatching','accepted','uncertain')")).rows[0].count,
+    );
+    if (active + inputs.length > CONSUMER_ACTIVE_LIMIT) throw new ConsumerJobError("capacity", 429);
+    const claims: { job: ConsumerJob; claimToken: string }[] = [];
+    for (const input of inputs) {
+      const claimToken = randomUUID();
+      const changed = await tx.execute({
+        sql: "UPDATE higgsfield_consumer_jobs SET status='dispatching',dispatch_claim_hash=?,updated_at=? WHERE id=? AND user_id=? AND draft_id=? AND status='quoted' AND quote_expires_at>?",
+        args: [hash(claimToken), now, input.id, input.userId, input.draftId, now],
+      });
+      if (changed.rowsAffected !== 1) throw new ConsumerJobError("idempotency_conflict");
+      claims.push({ job: asJob(await requiredRow(tx, input)), claimToken });
+    }
+    return claims;
+  });
+}
+
 type DispatchInput = ConsumerJobScope & { claimToken: string };
 function dispatchInput(input: DispatchInput) {
   jobScope(input);

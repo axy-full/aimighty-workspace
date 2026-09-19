@@ -79,7 +79,7 @@ test("A1: the planner's account reads are fixed, free, checked against the surfa
 });
 
 test("A2: a connected proposal becomes exactly the validated catalogue request, or a plain reason", () => {
-  expect(models.some((m) => ["sonilo_music", "mirelo_text_to_audio", "inworld_text_to_speech", "higgsfield_preset"].includes(m.id))).toBe(false);
+  expect(models.some((m) => ["sonilo_music", "mirelo_text_to_audio", "inworld_text_to_speech"].includes(m.id))).toBe(false);
   expect(connectedEngineLine(models.find((m) => m.id === "kling3_0")!)).toMatch(/^ {2}connected:kling3_0 — .*\(video, connected credits\)/);
   const ok = buildConnectedProposal({ kind: "video", title: "Push in", prompt: "A slow push in.", model: "connected:kling3_0", settings: { sound: "off", resolution: "4k", prompt: "x" }, seconds: 5, ratio: "9:16" }, models,
     [{ uploadId: "still", kind: "image" }]);
@@ -114,7 +114,7 @@ async function plannerService() {
   const state = {
     steps: new Map<string, FakeStep>(),
     jobs: new Map<string, { id: string; workflow: string; status: string; quoteCredits: number; quoteExpiresAt: number }>(),
-    quotes: 0, submits: 0, polls: 0, submitError: null as null | Error, pollView: null as null | Record<string, unknown>, price: 42,
+    quotes: 0, submits: 0, polls: 0, batchSubmits: [] as { ids: string[]; approval: unknown }[], batchStates: null as null | string[], submitError: null as null | Error, pollView: null as null | Record<string, unknown>, price: 42,
   };
   const view = (job: { id: string; status: string; quoteCredits: number; quoteExpiresAt: number }, extra: Record<string, unknown> = {}) =>
     ({ id: job.id, status: job.status, quoteCredits: job.quoteCredits, workspaceId: wallet, workspaceName: "Wallet", quoteExpiresAt: job.quoteExpiresAt, result: null, failureCode: null, ...extra });
@@ -159,6 +159,15 @@ async function plannerService() {
         expect(approval).toEqual({ credits: job.quoteCredits, workspaceId: wallet });
         job.status = "accepted";
         return view(job);
+      },
+      submitConsumerGenerationBatchJobs: async (_user: string, _draft: string, ids: string[], approval: { credits: number; workspaceId: string }) => {
+        if (state.submitError) throw state.submitError;
+        state.batchSubmits.push({ ids, approval });
+        return ids.map((id, i) => {
+          const job = state.jobs.get(id)!;
+          job.status = state.batchStates?.[i] ?? "accepted";
+          return view(job, job.status === "failed" ? { failureCode: "submission_rejected" } : {});
+        });
       },
       pollConsumerGeneration: async (scope: { id: string }) => {
         state.polls++;
@@ -226,4 +235,34 @@ test("A2: an expired quote is re-priced for a fresh approval, a refusal before s
   const planner = (await g.service.connectedPlanner("owner", null))!;
   expect(await planner.quote({ kind: "video", title: "Push in", prompt: "x", model: "connected:kling3_0" }, [])).toMatchObject({ ok: false });
   expect(g.state.quotes).toBe(0);
+});
+
+test("A4: a batch is ONE approval for the exact sum of its waiting steps; each step settles on its own and a refused item is not billed", async () => {
+  const f = await plannerService();
+  const planner = (await f.service.connectedPlanner("owner", "production"))!;
+  const ids: string[] = [];
+  for (const [i, prompt] of ["One.", "Two.", "Three."].entries()) {
+    const quote = await planner.quote({ kind: "video", title: `Take ${i}`, prompt, model: "connected:kling3_0", settings: { sound: "off" }, seconds: 5, batch: "takes" }, []);
+    const meta = { ...(quote as { ok: true; meta: ConnectedStepMeta }).meta, batch: { id: "abat_1", size: 3 } };
+    const id = `astp_${i}`;
+    f.state.steps.set(id, { id, status: "proposed", model: "connected:kling3_0", params: { connected: meta }, genId: null, error: null, kind: "video" });
+    ids.push(id);
+  }
+  await expect(f.service.approveConnectedBatch("owner", ids, { credits: 42 * 3 - 1, workspaceId: f.wallet })).rejects.toMatchObject({ code: "approval_changed" });
+  await expect(f.service.approveConnectedBatch("owner", ids.slice(0, 1), { credits: 42, workspaceId: f.wallet })).rejects.toMatchObject({ code: "invalid_batch" });
+  expect(f.state.batchSubmits).toEqual([]);
+  // Refused before sending: every step goes back to waiting, unbilled.
+  f.state.submitError = Object.assign(new Error("capacity"), { code: "capacity" });
+  await expect(f.service.approveConnectedBatch("owner", ids, { credits: 126, workspaceId: f.wallet })).rejects.toMatchObject({ code: "capacity", status: 429 });
+  expect(ids.map((id) => f.state.steps.get(id)!.status)).toEqual(["proposed", "proposed", "proposed"]);
+  f.state.submitError = null;
+  f.state.batchStates = ["accepted", "failed", "uncertain"];
+  const result = await f.service.approveConnectedBatch("owner", ids, { credits: 126, workspaceId: f.wallet });
+  expect(f.state.batchSubmits).toHaveLength(1);
+  expect(f.state.batchSubmits[0].approval).toEqual({ credits: 126, workspaceId: f.wallet });
+  expect(result.steps.map((s) => s?.status)).toEqual(["running", "failed", "running"]);
+  expect(f.state.steps.get(ids[1])!.error).toMatch(/not billed/);
+  expect(f.state.steps.get(ids[2])!.error).toMatch(/never sent again/);
+  await expect(f.service.approveConnectedBatch("owner", ids, { credits: 126, workspaceId: f.wallet })).rejects.toMatchObject({ code: "already_claimed" });
+  expect(f.state.batchSubmits).toHaveLength(1);
 });

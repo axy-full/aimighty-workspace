@@ -76,7 +76,10 @@ export const CATALOGUE_LIMITS = {
   tags: 64,
   jsonBytes: 1_048_576,
 } as const;
-/** Provider parameters the workflow owns; a request cannot set them itself. */
+/** Provider parameters the workflow owns; a request cannot set them itself.
+ * `preset_id` stays reserved as a SETTING: it is carried only by a request's
+ * own `presetId`, only for a model that declares it, and the service checks
+ * the value against the connected account's live `presets_show` listing. */
 export const RESERVED_PARAMETERS = Object.freeze([
   "model",
   "prompt",
@@ -340,7 +343,12 @@ export type GenerationRequest = {
   prompt: string;
   parameters: Record<string, GenerationParameterValue>;
   medias: GenerationMediaRequest[];
+  /** A motion preset from presets_show; only for a model declaring preset_id. */
+  presetId?: string;
 };
+export const PRESET_ID = /^[A-Za-z0-9_.:-]{1,80}$/;
+/** Whether a model takes a motion preset (declares preset_id). */
+export const takesPreset = (model: ConnectedModel) => model.parameters.some((p) => p.name === "preset_id");
 function reject(code: CatalogueErrorCode, message: string): never {
   throw new CatalogueError(code, message);
 }
@@ -406,6 +414,13 @@ export function validateGenerationRequest(
       reject("parameter_unknown", `${model.name} does not declare a setting named “${name}”.`);
     checkParameter(declaration!, value);
     params[name] = Array.isArray(value) ? [...value] : value;
+  }
+  if (request.presetId !== undefined) {
+    if (!takesPreset(model))
+      reject("parameter_reserved", `${model.name} does not take a motion preset.`);
+    if (typeof request.presetId !== "string" || !PRESET_ID.test(request.presetId))
+      reject("parameter_invalid", "Choose a motion preset from the connected account.");
+    params.preset_id = request.presetId;
   }
   for (const declaration of declarations.values())
     if (declaration.required && !(declaration.name in params))

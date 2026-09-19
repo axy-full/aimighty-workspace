@@ -16,6 +16,8 @@ import {
   listConsumerRecoveryJobs,
   readConsumerJobAfterAdmissions,
   claimConsumerDispatch,
+  claimConsumerDispatchBatch,
+  markConsumerFailed,
   markConsumerAccepted,
   markConsumerUncertain,
   claimConsumerPoll,
@@ -31,6 +33,7 @@ import {
 import {
   getConsumerGenerationQuote,
   submitConsumerGeneration,
+  submitConsumerGenerationBatch,
   readConsumerGenerationJob,
   readConnectedCatalogue,
 } from "./mcp";
@@ -59,6 +62,7 @@ import { sameConsumerValue } from "./video-contract";
 import { collectConsumerVideoOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
+import { requireConnectedPreset } from "./presets";
 
 const QUOTE_LIFETIME_MS = 5 * 60_000;
 type Snapshot = {
@@ -155,6 +159,8 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
   // Catalogue validation precedes source resolution, imports and pricing.
   consumerGenerationParams(model, normalized, normalized.medias.map((media) => ({ value: PLACEHOLDER_MEDIA, role: media.role })));
   const access = await connected(userId);
+  // A motion preset must be one the connected account lists right now.
+  if (normalized.presetId !== undefined) await requireConnectedPreset(userId, access, normalized.presetId);
   const described = await describeConsumerGenerationSources(normalized);
   const sources = await resolveConsumerGenerationSources(normalized);
   const quote = await getConsumerGenerationQuote(access.accessToken, model, normalized, sources, {
@@ -305,4 +311,64 @@ export async function consumerGenerationJobs(userId: string, draftId: string) {
   const jobs = await listConsumerRecoveryJobs({ userId, draftId, workflow: "generation", limit: 25 });
   const availability = await consumerOriginalAvailability(jobs);
   return jobs.map((job) => presentGeneration(job, availability.get(job.id)!, observedAt));
+}
+
+/**
+ * ONE approval for the exact summed credits of 2–4 quoted generation jobs of
+ * one output type (the workspace's active-job capacity bounds a batch), then
+ * one durable claim per item taken atomically, then one paid batch call.
+ * Each item settles on its own: accepted and polled like a single job,
+ * explicitly refused (failed, unbilled), or uncertain (kept, never resent).
+ */
+export async function submitConsumerGenerationBatchJobs(
+  userId: string,
+  draftId: string,
+  ids: string[],
+  approval: { workspaceId: string; credits: number },
+) {
+  if (!Array.isArray(ids) || ids.length < 2 || new Set(ids).size !== ids.length)
+    throw new ConsumerVideoServiceError("invalid_batch", "Choose at least two quoted steps for one batch.", 400);
+  const jobs = await Promise.all(ids.map((id) => ownedGeneration({ userId, draftId, id })));
+  if (jobs.some((job) => job.status !== "quoted"))
+    throw new ConsumerVideoServiceError("approval_changed", "A step in this batch already ran or changed. Review the batch again.");
+  const snapshots = jobs.map((job) => JSON.parse(job.payloadJson) as Snapshot);
+  const total = jobs.reduce((sum, job) => sum + (job.quoteCredits ?? 0), 0);
+  if (jobs.some((job) => job.higgsfieldWorkspaceId !== approval.workspaceId || job.connectionGeneration !== jobs[0].connectionGeneration) || total !== approval.credits)
+    throw new ConsumerVideoServiceError("approval_changed", "Review this batch’s wallet and exact credit total again.");
+  if (snapshots.some((snapshot) => snapshot.input.type !== snapshots[0].input.type))
+    throw new ConsumerVideoServiceError("invalid_batch", "A batch runs one kind of output.", 400);
+  if (jobs.some((job) => job.quoteExpiresAt <= Date.now())) throw new ConsumerJobError("quote_expired");
+  const entries = await Promise.all(jobs.map(async (job, i) => {
+    const input = parseConsumerGenerationInput(snapshots[i].input);
+    return { model: await requireModel(userId, input), input, params: snapshots[i].params, credits: job.quoteCredits! };
+  }));
+  const access = await connected(userId, jobs[0].connectionGeneration);
+  let claims: { job: ConsumerJob; claimToken: string }[] | null = null;
+  let result: Awaited<ReturnType<typeof submitConsumerGenerationBatch>>;
+  try {
+    result = await submitConsumerGenerationBatch(access.accessToken, entries, approval.workspaceId, {
+      admit: async () => {
+        await connected(userId, jobs[0].connectionGeneration);
+        claims = await claimConsumerDispatchBatch(ids.map((id) => ({ userId, draftId, id })));
+        if (!claims) throw new ConsumerVideoServiceError("already_submitted", "A step in this batch already has a submission. Refresh its status.");
+      },
+    });
+  } catch (error) {
+    const held = claims as { job: ConsumerJob; claimToken: string }[] | null;
+    if (!held) throw error;
+    // Claimed: the batch may have reached the connected account.
+    for (const [i, claim] of held.entries()) await markConsumerUncertain({ userId, draftId, id: ids[i], claimToken: claim.claimToken });
+    return Promise.all(ids.map(async (id) => consumerGenerationView(await ownedGeneration({ userId, draftId, id }))));
+  }
+  const held = claims as { job: ConsumerJob; claimToken: string }[] | null;
+  if (!held) throw new ConsumerVideoServiceError("not_admitted", "No paid request was admitted.");
+  const serialized = result.raw === undefined ? null : JSON.stringify(result.raw);
+  const response = serialized === null ? null : Buffer.byteLength(serialized) > 48000 ? { truncated: true, preview: serialized.slice(0, 20000) } : (result.raw as ConsumerJson);
+  for (const [i, item] of result.items.entries()) {
+    const scope = { userId, draftId, id: ids[i], claimToken: held[i].claimToken };
+    if (item.state === "accepted") await markConsumerAccepted({ ...scope, providerJobId: item.providerJobId });
+    else if (item.state === "rejected") await markConsumerFailed(scope);
+    else await markConsumerUncertain({ ...scope, providerReceipt: { batch_index: i, ...(response === null ? {} : { response }) } });
+  }
+  return Promise.all(ids.map(async (id) => consumerGenerationView(await ownedGeneration({ userId, draftId, id }))));
 }

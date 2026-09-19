@@ -7,6 +7,7 @@
 import { z } from "zod";
 import {
   CONNECTED_OUTPUT_TYPES,
+  PRESET_ID,
   MEDIA_ROLE,
   MODEL_ID,
   PROMPT_LIMIT,
@@ -44,6 +45,9 @@ export const consumerGenerationInputSchema = z
     /** Present when a media tool preset produced the request; the chosen
      * model must be the request's model. Never sent to the provider. */
     tool: z.object({ name: z.enum(CONNECTED_TOOL_NAMES), model: z.string().regex(MODEL_ID) }).strict().optional(),
+    /** A motion preset id from the connected account's presets_show listing;
+     * only for a model that declares preset_id (checked by the catalogue). */
+    presetId: z.string().regex(PRESET_ID).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -90,6 +94,7 @@ export function consumerGenerationParams(
     prompt: checked.prompt,
     parameters: checked.parameters,
     medias: checked.medias.map((media) => ({ role: media.role, kind: mediaKindForRole(media.role) })),
+    ...(checked.presetId === undefined ? {} : { presetId: checked.presetId }),
   };
   const settings = checked.tool
     ? validateToolRequest(requireConnectedTool(checked.tool.name), model, request)
@@ -177,3 +182,59 @@ export const GENERATION_OUTPUT_KIND: Record<ConnectedOutputType, "image" | "vide
   audio: "audio",
   "3d": "model",
 };
+
+/* ── Batch submission (slice A4) ──────────────────────────────────────── */
+/** The connected account's headless batch tools: 1–12 independent requests,
+ * one job each, no price preflight inside a batch (each item is quoted with
+ * its single tool first). There is no 3D batch tool. */
+export const GENERATION_BATCH_TOOLS: Partial<Record<ConnectedOutputType, string>> = {
+  image: "generate_image_batch",
+  video: "generate_video_batch",
+  audio: "generate_audio_batch",
+};
+export const BATCH_LIMIT = 12;
+/** The batch request: the approved single-item params, minus get_cost, in index order. */
+export const consumerBatchRequests = (items: ConsumerGenerationParams[]) =>
+  items.map((params, index) => ({ index, params: { ...params } }));
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * The job id the account acknowledged for each index; "rejected" for an index
+ * it explicitly refused (an error and no job id: nothing was created, nothing
+ * is billed); null for an index it did not clearly answer (that item stays
+ * uncertain and is never sent again). An entry naming another model or output
+ * type, a duplicate id or a duplicate index makes the whole reply unusable.
+ */
+export function consumerBatchAcknowledgement(
+  value: unknown,
+  items: { model: string; type: ConnectedOutputType }[],
+): (string | "rejected" | null)[] {
+  const out: (string | "rejected" | null)[] = items.map(() => null);
+  if (!record(value)) return out;
+  const list = [value.jobs, value.results, value.requests].find(Array.isArray) as unknown[] | undefined;
+  if (!list || list.length > BATCH_LIMIT) return out;
+  const seenIds = new Set<string>(), seenIndexes = new Set<number>();
+  for (const entry of list) {
+    if (!record(entry)) return items.map(() => null);
+    const index = entry.index;
+    if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 || index >= items.length || seenIndexes.has(index)) return items.map(() => null);
+    seenIndexes.add(index);
+    const ids = ["job_id", "id", "jobId"].map((key) => entry[key]).filter((id) => id !== undefined);
+    const nested = record(entry.job) ? [entry.job.id, entry.job.job_id].filter((id) => id !== undefined) : [];
+    const all = [...ids, ...nested];
+    const refused = typeof entry.error === "string" ? entry.error.trim() !== "" : record(entry.error);
+    if (!all.length && refused) {
+      out[index] = "rejected";
+      continue;
+    }
+    if (!all.length || all.some((id) => typeof id !== "string" || !UUID_RE.test(id))) continue;
+    const unique = new Set(all.map((id) => (id as string).toLowerCase()));
+    if (unique.size !== 1) continue;
+    if (("model" in entry && entry.model !== items[index].model) || ("type" in entry && entry.type !== items[index].type)) return items.map(() => null);
+    if (refused) continue;
+    const id = [...unique][0];
+    if (seenIds.has(id)) return items.map(() => null);
+    seenIds.add(id);
+    out[index] = id;
+  }
+  return out;
+}

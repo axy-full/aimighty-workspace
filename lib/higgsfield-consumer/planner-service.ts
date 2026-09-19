@@ -41,6 +41,7 @@ import {
   pollConsumerGeneration,
   quoteConsumerGeneration,
   submitConsumerGenerationJob,
+  submitConsumerGenerationBatchJobs,
   type ConsumerGenerationView,
 } from "./generation-service";
 import { getConsumerJob } from "./jobs";
@@ -118,7 +119,7 @@ export async function connectedPlanner(userId: string, productionId: string | nu
     contextText: context.lines.map((line) => `  ${line}`).join("\n"),
     context,
     quote: async (raw, files) => {
-      const built: ConnectedProposal = buildConnectedProposal(raw, models, files);
+      const built: ConnectedProposal = buildConnectedProposal(raw, models, files, context.presets);
       if (!built.ok) return built;
       if (!draftId) return { ok: false, title: built.title, reason: "save this production's project in Studio so results have somewhere to file" };
       if (context.balance !== null && context.balance <= 0) return { ok: false, title: built.title, reason: "the connected account has no credits" };
@@ -139,6 +140,7 @@ export async function connectedPlanner(userId: string, productionId: string | nu
             workspaceId: view.workspaceId,
             workspaceName: view.workspaceName,
             quoteExpiresAt: view.quoteExpiresAt,
+            ...(built.input.presetId ? { presetName: context.presets.find((p) => p.id === built.input.presetId)?.name || built.input.presetId } : {}),
           },
         };
       } catch (error) {
@@ -243,4 +245,56 @@ export async function connectedEngineModels(user: { id: string; owner?: boolean 
   } catch {
     return null;
   }
+}
+
+/**
+ * ONE approval for a batch (A4): every still-waiting step of the batch, at the
+ * exact summed connected credits the card showed. Expired quotes are re-priced
+ * and returned for a new approval (nothing sent). All steps are claimed, then
+ * one durable claim per item and one paid batch call; each step settles on
+ * its own, and an item the account refuses is failed and not billed.
+ */
+export async function approveConnectedBatch(userId: string, stepIds: string[], approval: { credits: number; workspaceId: string }) {
+  if (stepIds.length < 2 || new Set(stepIds).size !== stepIds.length)
+    throw new ConnectedStepError("invalid_batch", "Choose the steps of one batch.", 400);
+  const loaded = await Promise.all(stepIds.map((id) => requireConnectedStep(id)));
+  const batchId = loaded[0].meta.batch?.id;
+  if (!batchId || loaded.some(({ meta }) => meta.batch?.id !== batchId || meta.draftId !== loaded[0].meta.draftId || meta.type !== loaded[0].meta.type))
+    throw new ConnectedStepError("invalid_batch", "Those steps are not one batch.", 400);
+  if (loaded.some(({ step }) => step.status !== "proposed"))
+    throw new ConnectedStepError("already_claimed", "A step in this batch is already running. Review the batch again.", 409);
+  const total = loaded.reduce((sum, { meta }) => sum + meta.credits, 0);
+  if (total !== approval.credits || loaded.some(({ meta }) => meta.workspaceId !== approval.workspaceId))
+    throw new ConnectedStepError("approval_changed", "The batch total or wallet changed. Review it again.", 409);
+  const jobs = await Promise.all(loaded.map(({ meta }) => getConsumerJob({ userId, draftId: meta.draftId, id: meta.jobId })));
+  if (jobs.some((job, i) => !job || job.workflow !== "generation" || (job.status === "quoted" && job.quoteCredits !== loaded[i].meta.credits)))
+    throw new ConnectedStepError("approval_changed", "A price in this batch changed. Review it again.", 409);
+  if (jobs.some((job) => job!.status === "quoted" && job!.quoteExpiresAt <= Date.now())) {
+    const refreshed: Step[] = [];
+    for (const [i, { step, meta }] of loaded.entries())
+      refreshed.push(jobs[i]!.quoteExpiresAt <= Date.now() ? await requote(userId, step, meta) : step);
+    throw new ConnectedStepError("quote_refreshed", "A quote in this batch expired, so it was priced again. Approve the new total to continue.", 409, refreshed[0]);
+  }
+  if (jobs.some((job) => job!.status !== "quoted"))
+    throw new ConnectedStepError("approval_changed", "A step in this batch already ran. Review it again.", 409);
+  const claimed: string[] = [];
+  for (const id of stepIds) {
+    if (await claimStep(id)) claimed.push(id);
+    else {
+      for (const back of claimed) await patchStep(back, { status: "proposed" });
+      throw new ConnectedStepError("already_claimed", "A step in this batch is already running.", 409);
+    }
+  }
+  let views: ConsumerGenerationView[];
+  try {
+    views = await submitConsumerGenerationBatchJobs(userId, loaded[0].meta.draftId, loaded.map(({ meta }) => meta.jobId), approval);
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    const reason = code === "capacity" ? "the connected account already has jobs running; a batch needs room for all of its steps" : neutralReason(error instanceof Error ? error.message : "the connected account refused it");
+    for (const id of stepIds) await patchStep(id, { status: "proposed", error: `Not sent, not billed: ${reason}` });
+    throw new ConnectedStepError(code === "capacity" ? "capacity" : "not_sent", `Not sent, not billed: ${reason}`, code === "capacity" ? 429 : 409, await getStep(stepIds[0]));
+  }
+  const steps = [];
+  for (const [i, id] of stepIds.entries()) steps.push((await settle(id, views[i])).step);
+  return { steps, jobs: views };
 }

@@ -32,6 +32,10 @@ import {
 import { consumerGenjutsuParams, parseConsumerGenjutsuInput, type ConsumerGenjutsuInput, type ConsumerGenjutsuParams, type ConsumerGenjutsuMedia } from "./genjutsu-contract";
 import {
   GENERATION_TOOLS,
+  GENERATION_BATCH_TOOLS,
+  BATCH_LIMIT,
+  consumerBatchAcknowledgement,
+  consumerBatchRequests,
   consumerGenerationParams,
   parseConsumerGenerationInput,
   type ConsumerGenerationInput,
@@ -273,6 +277,8 @@ type ConsumerSession = {
   /** Per-product status reads used when `job_status` is not advertised. */
   jobDisplay: (jobId: string) => Promise<Record<string, unknown>>;
   jobsWait: (jobId: string) => Promise<Record<string, unknown>>;
+  /** One paid batch call; the tool is fixed by the output type. */
+  generationBatch: (type: ConnectedOutputType, requests: { index: number; params: ConsumerGenerationParams }[], sending: () => void) => Promise<Record<string, unknown>>;
   /** Only the fixed free reads of planner-reads.ts. */
   plannerRead: (read: PlannerRead) => Promise<Record<string, unknown>>;
 };
@@ -727,6 +733,11 @@ async function withConsumerSession<T>(
       voiceToolStatus: async (tool, args) => (await post("tools/call", { name: requireVoiceTool(tool).status, arguments: args }))!,
       jobDisplay: async (jobId) => (await post("tools/call", { name: "job_display", arguments: statusArguments("job_display", jobId) }))!,
       jobsWait: async (jobId) => (await post("tools/call", { name: "jobs_wait", arguments: statusArguments("jobs_wait", jobId) }))!,
+      generationBatch: async (type, requests, sending) => {
+        const tool = GENERATION_BATCH_TOOLS[type];
+        if (!tool) fail("unsupported_protocol");
+        return (await post("tools/call", { name: tool, arguments: { requests } }, sending))!;
+      },
       plannerRead: async (read) => {
         if (!PLANNER_READ_TOOLS.includes(read.tool)) fail("unsupported_protocol");
         return (await post("tools/call", { name: read.tool, arguments: read.args }))!;
@@ -2108,6 +2119,80 @@ export async function readConnectedPlannerReads(accessToken: string, reads: Plan
       return results;
     });
   } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+
+/* ── Batch generation (slice A4) ──────────────────────────────────────── */
+export type ConsumerBatchItemResult =
+  | { state: "accepted"; providerJobId: string }
+  | { state: "rejected" }
+  | { state: "uncertain" };
+export type ConsumerBatchSubmission = { raw?: QualificationValue; items: ConsumerBatchItemResult[] };
+/**
+ * 2–12 already-quoted requests of one output type in ONE paid batch call.
+ * Before it: every item's single-tool price is read again and must equal the
+ * credits approved for it, the wallet must be unchanged and hold the sum, and
+ * the caller's admission (one durable claim per item) must succeed. Never
+ * retried. An unclear reply leaves the unanswered items uncertain.
+ */
+export async function submitConsumerGenerationBatch(
+  accessToken: string,
+  entries: { model: ConnectedModel; input: ConsumerGenerationInput; params: ConsumerGenerationParams; credits: number }[],
+  expectedWorkspaceId: string,
+  options: Options & { admit: () => Promise<void> },
+): Promise<ConsumerBatchSubmission> {
+  if (!Array.isArray(entries) || entries.length < 2 || entries.length > BATCH_LIMIT || typeof options.admit !== "function") throw new ConsumerVideoError("invalid_input");
+  const type = entries[0].input.type;
+  const batchTool = GENERATION_BATCH_TOOLS[type];
+  if (!batchTool || entries.some((entry) => entry.input.type !== type || !Number.isFinite(entry.credits) || entry.credits <= 0)) throw new ConsumerVideoError("invalid_input");
+  const params = entries.map((entry) => {
+    const checked = consumerGenerationParams(entry.model, entry.input, entry.params.medias);
+    if (!sameConsumerValue(checked, entry.params)) throw new ConsumerVideoError("invalid_input");
+    return checked;
+  });
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  const total = entries.reduce((sum, entry) => sum + entry.credits, 0);
+  const requests = consumerBatchRequests(params);
+  let attempted = false;
+  const unsure = (raw?: QualificationValue): ConsumerBatchSubmission => ({ ...(raw === undefined ? {} : { raw }), items: entries.map(() => ({ state: "uncertain" as const })) });
+  try {
+    return await withConsumerSession(accessToken, options, 150_000, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      await requireConnectedTools(session, [
+        WALLET_READ,
+        ...params.map((p) => ({ name: generationTool(type), args: { params: { ...p, get_cost: true } } })),
+        { name: batchTool, args: { requests } },
+      ]);
+      matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      for (const [i, p] of params.entries()) {
+        if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+        const credits = parseConsumerCreditsForParams(videoReadResult(session, await session.generationQuote(type, p)), { ...p, get_cost: true });
+        if (credits !== entries[i].credits) throw new ConsumerVideoError("quote_changed");
+      }
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, expected);
+      if (current.credits < total) throw new ConsumerVideoError("insufficient_credits");
+      try {
+        await options.admit();
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+      const reply = await session.generationBatch(type, requests, () => {
+        attempted = true;
+      });
+      const normalized = normalizeQualificationResult(reply, session.secrets), raw = normalized.result;
+      if (normalized.isError) return unsure(raw);
+      const acks = consumerBatchAcknowledgement(raw, params.map((p) => ({ model: p.model, type })));
+      return {
+        raw,
+        items: acks.map((ack): ConsumerBatchItemResult => (ack === null ? { state: "uncertain" } : ack === "rejected" ? { state: "rejected" } : { state: "accepted", providerJobId: ack })),
+      };
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (attempted) return unsure();
     return videoPreflightError(error);
   }
 }
