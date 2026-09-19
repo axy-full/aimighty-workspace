@@ -1,0 +1,257 @@
+import { test, expect, type Page } from "@playwright/test";
+import { createClient } from "@libsql/client";
+import { randomUUID } from "node:crypto";
+import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
+
+/**
+ * /workspace Rig (workspace redesign, Rig track). Real local routes against
+ * an ENGINE_MOCK server: the draft is saved through PUT /api/workbench/projects,
+ * quotes come from the engines and quote routes, and Generate dispatches a
+ * mocked render through POST /api/generate. Nothing here is intercepted.
+ * Desktop asserts the page; phones assert the existing redirect.
+ */
+
+const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
+const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const ENGINE = "dreamina-seedance-2-5-260628";
+
+/* Test fixtures only. */
+function shot(id: string, title: string, note: string, y: number, extra: Partial<CanvasNode> = {}): CanvasNode {
+  return {
+    id, title, type: "scene", x: 100, y, width: 344, linked: [], role: "Director", status: "draft", mode: "Video",
+    operations: [{ id: `op-${id}`, kind: "direction", enabled: true, values: { note } }],
+    engine: ENGINE, durationS: 5, ratio: "16:9", resolution: "720p", ...extra,
+  };
+}
+
+async function seeded(page: Page) {
+  const signed = await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((r) => r.json());
+  const scope = `particl-active-${me.workspace.id}-${me.id}`;
+  const db = createClient({ url: localPlatformDbUrl() });
+  try {
+    await db.execute({
+      sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,kind,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
+      args: [randomUUID(), signed.workspace.id, 2000, "Local mock Rig fixture", "admin", "test", Date.now()],
+    });
+  } finally {
+    db.close();
+  }
+  const project: Project = {
+    ...newProject(`Rig fixture ${randomUUID().slice(0, 6)}`),
+    nodes: [
+      shot("rig-a", "Opening wide", "Wide. Hold still.", 100),
+      shot("rig-b", "The encounter", "She enters. The landscape becomes a reflection.", 500, { look: "Warm daylight" }),
+      shot("rig-c", "Departure", "Wide again.", 900, { durationS: 8 }),
+    ],
+  };
+  const saved = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { project, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBeTruthy();
+  await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
+  return { project, scope };
+}
+
+const rigUrl = (id: string, sel?: string) => `/workspace?project=${id}&suite=particl&page=rig${sel ? `&sel=shot:${sel}` : ""}`;
+const row = (page: Page, name: string | RegExp) => page.getByTestId("rig-list").getByRole("button", { name });
+
+async function savedDraft(page: Page, scope: string, id: string) {
+  return (await page.request.get(`/api/workbench/projects?id=${id}`, { headers: { "X-Workbench-Scope": scope } }).then((r) => r.json())).project as Project;
+}
+
+/** Header rows never clip; the list scrolls inside the content pane instead of squeezing a column. */
+async function assertNoClipping(page: Page) {
+  const problems = await page.evaluate(() => {
+    const out: string[] = [];
+    const inspector = document.querySelector('[data-testid="inspector"]')?.getBoundingClientRect() ?? null;
+    for (const row of Array.from(document.querySelectorAll<HTMLElement>("[data-row]"))) {
+      const name = row.dataset.row!;
+      if (["project", "page", "crumbs"].includes(name) && row.scrollWidth > row.clientWidth + 0.5) out.push(`${name}: ${row.scrollWidth} > ${row.clientWidth}`);
+      for (const child of Array.from(row.children) as HTMLElement[]) {
+        const rect = child.getBoundingClientRect();
+        if (rect.width && inspector && ["project", "page", "crumbs"].includes(name) && rect.right > inspector.left + 0.5) out.push(`${name}: ${child.className} under the Inspector`);
+      }
+    }
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(".pxw-rig-row, .pxw-rig-head"))) {
+      if (el.scrollWidth > el.clientWidth + 0.5) out.push(`rig row overflows: ${el.scrollWidth} > ${el.clientWidth}`);
+      const shotCell = el.querySelector<HTMLElement>(".pxw-rig-shot")!;
+      if (shotCell.getBoundingClientRect().width < 219.5) out.push(`SHOT column below its 220px floor: ${shotCell.getBoundingClientRect().width}`);
+    }
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-testid="page-title"], [data-testid="project-title"]')))
+      if (el.scrollWidth > el.clientWidth + 0.5) out.push(`${el.dataset.testid} truncated`);
+    if (document.documentElement.scrollWidth > innerWidth + 1) out.push(`document scrolls horizontally`);
+    /* From 1440 up the whole shell fits: the Inspector is fully on screen. */
+    const studio = document.querySelector<HTMLElement>(".pxw-studio")!;
+    if (innerWidth >= 1440 && studio.scrollWidth > studio.clientWidth + 0.5) out.push(`studio row scrolls at ${innerWidth}: ${studio.scrollWidth}`);
+    const body = document.querySelector<HTMLElement>(".pxw-inspector-body");
+    if (body && body.scrollWidth > body.clientWidth + 0.5) out.push(`Inspector content overflows: ${body.scrollWidth} > ${body.clientWidth}`);
+    return out;
+  });
+  expect(problems).toEqual([]);
+}
+
+test("phones keep the existing phone surface", async ({ page }, info) => {
+  test.skip(!PHONE.includes(info.project.name), "phone viewports");
+  const { project } = await seeded(page);
+  await page.goto(rigUrl(project.id));
+  await expect(page).toHaveURL(new RegExp(`/workbench\\?project=${project.id}$`));
+  await expect(page.locator(".pxw")).toHaveCount(0);
+});
+
+test("shot list, selection, edits that persist and a live estimate", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const { project, scope } = await seeded(page);
+  await page.goto(rigUrl(project.id));
+
+  /* The list renders from the saved draft, in draft order, with derived status. */
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("rig-list").locator(".pxw-rig-row")).toHaveCount(3);
+  await expect(page.locator(".pxw-rig-row .pxw-rig-name")).toHaveText(["Opening wide", "The encounter", "Departure"]);
+  await expect(page.locator(".pxw-rig-row .pxw-rig-num")).toHaveText(["01", "02", "03"]);
+  await expect(page.locator(".pxw-rig-row .pxw-rig-engine").first()).toHaveText("2.5");
+  await expect(page.locator(".pxw-rig-row .pxw-rig-dur")).toHaveText(["5s", "5s", "8s"]);
+  /* Priced and resolved: every shot reads Ready once its live quote lands. */
+  await expect(page.locator('.pxw-rig-row[data-status="ready"]')).toHaveCount(3);
+  await expect(page.getByTestId("page-sub")).toHaveText("3 shots · 0 approved");
+  await expect(page.locator(".pxw-crumb")).toHaveText("Main composition");
+  /* No vendor names anywhere a person reads. */
+  await expect(page.locator(".pxw")).not.toContainText(/Seedance|Kling|Gemini|Nano Banana/);
+
+  /* Selecting a shot drives the Inspector and the URL. */
+  await row(page, /The encounter/).click();
+  await expect(row(page, /The encounter/)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("inspector-title")).toHaveText("The encounter");
+  await expect(page).toHaveURL(/[?&]sel=shot%3Arig-b(&|$)/);
+  await expect(page.getByRole("textbox", { name: "Direction note" })).toHaveValue("She enters. The landscape becomes a reflection.");
+
+  /* ←/→ walk the shots. */
+  await page.locator("body").press("ArrowRight");
+  await expect(page.getByTestId("inspector-title")).toHaveText("Departure");
+  await page.locator("body").press("ArrowLeft");
+  await expect(page.getByTestId("inspector-title")).toHaveText("The encounter");
+
+  /* Typing in the name field never fires G or I. */
+  const generations: string[] = [];
+  page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/generate") generations.push(request.url()); });
+  const name = page.getByRole("textbox", { name: "Name" });
+  await name.fill("");
+  await name.pressSequentially("Green light, inside");
+  await expect(name).toHaveValue("Green light, inside");
+  await expect(page.getByTestId("inspector")).toBeVisible();
+  await expect(page.locator(".pxw-gen")).toHaveCount(0);
+  expect(generations).toEqual([]);
+  await expect(row(page, /Green light, inside/)).toBeVisible();
+
+  /* Duration moves the estimate. */
+  const estimate = page.getByTestId("shot-estimate").locator(".pxw-insp-estimate-value");
+  await expect(estimate).toHaveText(/^\d[\d,]* cr$/);
+  const before = Number((await estimate.textContent())!.replace(/\D/g, ""));
+  await expect(page.getByTestId("shot-estimate")).toContainText(/[\d,]+ tokens · billed on settle/);
+  await page.getByRole("button", { name: "Longer" }).click();
+  await page.getByRole("button", { name: "Longer" }).click();
+  await expect(page.getByTestId("shot-duration")).toHaveText("7s");
+  await expect.poll(async () => Number((await estimate.textContent())!.replace(/\D/g, ""))).toBeGreaterThan(before);
+  await expect(page.locator(".pxw-rig-row").nth(1).locator(".pxw-rig-dur")).toHaveText("7s");
+
+  /* Edits persist through the revision-checked draft save. */
+  await expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved");
+  await expect.poll(async () => {
+    const saved = await savedDraft(page, scope, project.id);
+    const node = saved.nodes.find((n) => n.id === "rig-b");
+    return [node?.title, node?.durationS];
+  }).toEqual(["Green light, inside", 7]);
+  await page.reload();
+  await expect(page.getByTestId("inspector-title")).toHaveText("Green light, inside");
+  await expect(page.getByTestId("shot-duration")).toHaveText("7s");
+
+  /* Add shot creates a real node through the same save. */
+  await page.getByRole("button", { name: "+ Add shot" }).click();
+  await expect(page.getByTestId("rig-list").locator(".pxw-rig-row")).toHaveCount(4);
+  await expect(page.getByTestId("page-sub")).toHaveText("4 shots · 0 approved");
+  await expect.poll(async () => (await savedDraft(page, scope, project.id)).nodes.filter((n) => n.type === "scene").length).toBe(4);
+  await expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved");
+
+  /* Another window saves first: the next save is refused, and Rig reloads the saved version instead of overwriting it. */
+  const other = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } }).then((r) => r.json()) as { project: Project; revision: number };
+  other.project.nodes = other.project.nodes.map((n) => (n.id === "rig-a" ? { ...n, title: "Renamed elsewhere" } : n));
+  expect((await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: other })).ok()).toBeTruthy();
+  await page.getByRole("textbox", { name: "Direction note" }).fill("A stale edit");
+  await expect(page.getByRole("status").filter({ hasText: "This project changed elsewhere" })).toBeVisible();
+  await expect(row(page, /Renamed elsewhere/)).toBeVisible();
+  const kept = await savedDraft(page, scope, project.id);
+  expect(kept.nodes.find((n) => n.id === "rig-a")!.title).toBe("Renamed elsewhere");
+  expect(JSON.stringify(kept)).not.toContain("A stale edit");
+
+  expect(errors).toEqual([]);
+});
+
+test("Generate re-quotes, dispatches a mocked render, files a take, and still works after Takes → Rig", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
+  test.setTimeout(180_000);
+  const { project, scope } = await seeded(page);
+  const sent: { path: string; body: Record<string, unknown> }[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "POST" && (path === "/api/generate" || path === "/api/generate/quote")) sent.push({ path, body: request.postDataJSON() });
+  });
+  await page.goto(rigUrl(project.id, "rig-a"));
+  await expect(page.getByTestId("inspector-title")).toHaveText("Opening wide");
+
+  /* The exact live quote is on the button. */
+  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]* cr$/ });
+  await expect(header).toBeEnabled();
+  const credits = Number((await header.textContent())!.replace(/.*· /, "").replace(/\D/g, ""));
+  await expect(page.getByRole("button", { name: `Generate take · ${credits.toLocaleString("en-US")} cr` })).toBeEnabled();
+
+  await header.click();
+  const strip = page.locator(".pxw-gen");
+  await expect(strip).toBeVisible();
+  await expect(strip).toContainText("Opening wide · Motion 2.5");
+  await expect.poll(() => sent.map((s) => s.path)).toEqual(["/api/generate/quote", "/api/generate"]);
+  /* Same body quoted and sent; the approved ceiling and fingerprint ride along. */
+  const [quoted, dispatched] = sent.map((s) => s.body);
+  expect(quoted.maxCredits).toBeUndefined();
+  expect(dispatched).toMatchObject({ model: ENGINE, duration: 5, ratio: "16:9", resolution: "720p", refine: false, maxCredits: credits });
+  expect(dispatched.quoteFingerprint).toMatch(/^[a-f0-9]{64}$/);
+  const rest = { ...dispatched };
+  delete rest.maxCredits;
+  delete rest.quoteFingerprint;
+  expect(rest).toEqual(quoted);
+
+  /* The real job finishes; the take is filed and shows as a version. */
+  await expect(page.getByRole("status").filter({ hasText: /Opening wide rendered/ })).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("button", { name: /^Versions/ }).click();
+  await expect(page.locator('.pxw-insp-version[data-state="rendered"]')).toHaveCount(1, { timeout: 30_000 });
+  await expect.poll(async () => {
+    const library = await page.request.get(`/api/workbench/library?projectId=${project.id}&source=generations`, { headers: { "X-Workbench-Scope": scope } }).then((r) => r.json());
+    return (library.generations ?? []).filter((g: { status: string }) => g.status === "succeeded").length;
+  }, { timeout: 30_000 }).toBe(1);
+  await expect.poll(async () => (await savedDraft(page, scope, project.id)).assets.filter((a) => a.nodeId === "rig-a" && a.generationId).length, { timeout: 30_000 }).toBe(1);
+  /* A finished take is filed for review; the shot is not auto-approved. */
+  await expect(page.getByTestId("page-sub")).toHaveText("3 shots · 0 approved");
+
+  /* Takes → Rig: selection repair leaves a shot selected and G still generates. */
+  const tabs = page.getByRole("navigation", { name: "Pages" });
+  await tabs.getByRole("button", { name: /Takes/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await tabs.getByRole("button", { name: /Rig/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · / })).toBeEnabled();
+  await page.locator("body").press("g");
+  await expect.poll(() => sent.filter((s) => s.path === "/api/generate").length, { timeout: 30_000 }).toBe(2);
+  await expect(page.locator(".pxw-gen")).toBeVisible();
+});
+
+test("no clipping at 1200, 1440 and 1920 with a shot selected", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop project resizes through all three");
+  const { project } = await seeded(page);
+  for (const size of [{ width: 1200, height: 800 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(size);
+    await page.goto(rigUrl(project.id, "rig-b"));
+    await expect(page.getByTestId("inspector-title")).toHaveText("The encounter");
+    await expect(page.locator('.pxw-rig-row[data-status="ready"]')).toHaveCount(3);
+    await assertNoClipping(page);
+  }
+});

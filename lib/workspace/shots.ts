@@ -164,7 +164,7 @@ export function rigShots(project: Project, jobs: readonly RigJob[] = [], options
 }
 
 /** "6 shots · 1 approved" — counted from the list, never stored. */
-export function rigSubtitle(shots: readonly Pick<RigShot, "status">[]): string {
+export function rigSubtitle(shots: readonly { status?: string }[]): string {
   const n = shots.length, approved = shots.filter((s) => s.status === "approved").length;
   return `${n.toLocaleString("en-US")} ${n === 1 ? "shot" : "shots"} · ${approved.toLocaleString("en-US")} approved`;
 }

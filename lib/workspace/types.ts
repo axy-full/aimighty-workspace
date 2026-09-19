@@ -48,7 +48,15 @@ export type SelectableLists = {
 };
 
 export type Run = { page: PageId; i: number; status: RunStatus; approved: boolean };
-export type Generation = { id: string; pct: number; name: string; meta: string };
+export type Generation = {
+  id: string;
+  pct: number;
+  name: string;
+  meta: string;
+  /** The job's own phase when a real job drives the strip ("Failed · not billed"). */
+  label?: string;
+  tone?: "blue" | "green" | "red";
+};
 
 /** 04-interactions-and-state.md, minus the fixture arrays. */
 export interface AppState {

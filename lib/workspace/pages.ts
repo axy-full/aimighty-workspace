@@ -1,4 +1,5 @@
 import { SUITES as BASE_SUITES, PARTICL_STAGE_ALIASES } from "@/lib/suites";
+import { rigSubtitle } from "./shots";
 import type { AppState, PageId, SelKind, Suite } from "./types";
 
 /* ── Suites ───────────────────────────────────────────────────────────────
@@ -242,7 +243,7 @@ export function subtitle(state: Pick<AppState, "page" | "lists">, data: Subtitle
   const { shots, takes, cast } = state.lists;
   switch (state.page) {
     case "rig":
-      return shots ? `${plural(shots.length, "shot")} · ${shots.filter((s) => s.status === "approved").length.toLocaleString("en-US")} approved` : "";
+      return shots ? rigSubtitle(shots) : "";
     case "takes":
       return takes ? plural(takes.length, "asset") : "";
     case "cast":

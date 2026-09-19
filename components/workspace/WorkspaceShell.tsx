@@ -12,7 +12,7 @@ import { GenerationStrip } from "./GenerationStrip";
 import { Home } from "./Home";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
-import { PageHeader, primaryAvailability } from "./PageHeader";
+import { PageHeader, primaryAvailability, type GenerateStatus } from "./PageHeader";
 import { Palette } from "./Palette";
 import { ProjectHeader } from "./ProjectHeader";
 import { PAGE_BODIES } from "./pages/registry";
@@ -29,6 +29,8 @@ export type ShellSeams = {
   onGenerate?: () => void;
   /** Play / pause the preview (Space). Absent: Space is left to the browser. */
   onTogglePlay?: () => void;
+  /** The live quote on Generate and anything blocking it. */
+  generate?: GenerateStatus;
   /** Extra key bindings, checked after the shell's own. */
   bindings?: KeyBinding<unknown>[];
 };
@@ -116,7 +118,8 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
 
   const uploads = projectUploads(project);
   const Body = PAGE_BODIES[state.page];
-  const reason = primaryAvailability(state, seams.onGenerate).reason;
+  const availability = primaryAvailability(state, seams.onGenerate, seams.generate);
+  const reason = availability.reason ?? (state.page === "rig" ? seams.generate?.notice ?? null : null);
 
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
@@ -129,7 +132,7 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
             <Library uploads={uploads} />
             <main className="pxw-main" data-screen-label={state.page}>
               <ProjectHeader project={project} loading={data.status === "loading"} />
-              <PageHeader project={project} onGenerate={seams.onGenerate} />
+              <PageHeader project={project} onGenerate={seams.onGenerate} generate={seams.generate} />
               <Breadcrumb projectName={projectName || "Project"} reason={reason} />
               <div className="pxw-content" data-testid="content">
                 <Body page={state.page} project={project} />

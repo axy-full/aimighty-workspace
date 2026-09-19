@@ -3,6 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPlanBridge } from "@/lib/workspace/atomik-host";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { WorkspaceProvider } from "@/lib/workspace/state";
+import { RigProvider, RigSeams } from "./rig/RigProvider";
 import { WorkspaceShell } from "./WorkspaceShell";
 
 /**
@@ -37,7 +38,9 @@ export default function WorkspaceApp({ scope, initialAccount }: { scope: string;
   if (device !== "desktop") return null;
   return (
     <WorkspaceProvider initialSearch={window.location.search} plans={bridge.source}>
-      <WorkspaceShell scope={scope} initialAccount={initialAccount} planBridge={bridge} />
+      <RigProvider scope={scope}>
+        <RigSeams>{(seams) => <WorkspaceShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
+      </RigProvider>
     </WorkspaceProvider>
   );
 }

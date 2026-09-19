@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import type { Project } from "@/lib/workbench/studio";
 import { pageDef } from "@/lib/workspace/pages";
 import type { PageId } from "@/lib/workspace/types";
+import { RigPage } from "../rig/RigPage";
 import { Kicker } from "../ui";
 
 /** Everything a page body receives from the shell. */
@@ -53,6 +54,7 @@ function placeholder(id: PageId): ComponentType<PageBodyProps> {
 }
 
 /** Page id → body. Later PRs replace an entry with the real page. */
-export const PAGE_BODIES: Record<PageId, ComponentType<PageBodyProps>> = Object.fromEntries(
-  (Object.keys(COMING) as PageId[]).map((id) => [id, placeholder(id)]),
-) as Record<PageId, ComponentType<PageBodyProps>>;
+export const PAGE_BODIES: Record<PageId, ComponentType<PageBodyProps>> = {
+  ...(Object.fromEntries((Object.keys(COMING) as PageId[]).map((id) => [id, placeholder(id)])) as Record<PageId, ComponentType<PageBodyProps>>),
+  rig: RigPage,
+};
