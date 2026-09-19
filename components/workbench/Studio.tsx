@@ -180,6 +180,7 @@ import {ModelPicker,EffortPicker,thinkingModelName,effortLabel} from '@/componen
 import {uploadWorkbench} from '@/lib/workbench/upload';
 import {AssetPreview} from './AssetPreview';
 import {SoundMix} from './SoundMix';
+import {SoundGenerate} from './SoundGenerate';
 import {AssetBins,AssetBinPicker} from './AssetBins';
 import {EditVersions} from './EditVersions';
 import {applyEdit,type EditVersion} from '@/lib/workbench/editorial';
@@ -2511,7 +2512,7 @@ export default function Studio({
                               ))}
                             </div>
                           </div>
-                          <div data-mobile-sound-panel style={mobile?undefined:{display:"contents"}}><SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/></div>
+                          <div data-mobile-sound-panel style={mobile?undefined:{display:"contents"}}><SoundGenerate key={'gen:'+p.id+storageKey} scope={storageKey} project={p} frame={frame} jobs={jobs.mediaJobs} enabled={ready&&signedIn&&!transitioning} onChange={change} onPause={()=>setPlaying(false)} onSave={refresh=>ensureSaved(p.id,refresh)} onQueued={()=>void jobs.refresh()}/><SoundMix key={p.id+storageKey} project={p} frame={frame} playing={playing} onChange={change} onPause={()=>setPlaying(false)} onUpload={()=>pickUpload('Audio')}/></div>
                         </div>
                       </div>
                     )}
