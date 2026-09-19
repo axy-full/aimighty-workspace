@@ -122,7 +122,7 @@ test("Takes renders the project library, filters, walks the visible list and ins
     await page.getByRole("group", { name: "Library view" }).getByRole("button", { name: "Tools" }).click();
     await card(page, "generation:gen_approved").click();
     await page.waitForTimeout(400);
-    await page.screenshot({ path: "/private/tmp/ws-assets-shots/takes-1440x900.png" });
+    await page.screenshot({ path: info.outputPath("takes-1440x900.png") });
   }
   expect(errors).toEqual([]);
 });
