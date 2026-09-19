@@ -10,7 +10,7 @@ Each source section has three separately persisted phases: draft, critique and r
 
 Screenplays retain the existing one-million-character source limit. Source segments cover the entire script, including any preamble; long scenes can span several sections. Returned scene IDs and source offsets must exactly match their assigned segments. Offsets are JavaScript string indices, matching the stored source and canvas extraction. Idea results contain distinct treatments, a recommendation, visual direction and review notes. Script results contain beats, proposed shots, cast, props, locations, sound and production requirements.
 
-Inngest runs persisted phases independently. If queue dispatch is unavailable, a bounded after-response continuation and authenticated resume requests advance unstarted phases. A started phase with an unknown outcome is never automatically resubmitted. Completed results are paginated by source section; the complete JSON export assembles those pages in the browser so long results do not exceed API response limits.
+The worker (native `/api/worker`, or Inngest when opted in — docs/native-dispatch.md) runs persisted phases independently; a native invocation hands the remainder to a fresh one after about 240 seconds under the same reservation. If queue dispatch is unavailable, a bounded after-response continuation and authenticated resume requests advance unstarted phases. A started phase with an unknown outcome is never automatically resubmitted. Completed results are paginated by source section; the complete JSON export assembles those pages in the browser so long results do not exceed API response limits.
 
 ## Review and application
 
