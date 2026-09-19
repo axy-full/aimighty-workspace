@@ -58,6 +58,7 @@ async function serviceFixture() {
     "./video-availability": await import("../../lib/higgsfield-consumer/video-availability"),
     "./generation-contract": generation,
     "./catalogue": await import("../../lib/higgsfield-consumer/catalogue"),
+    "./tools": await import("../../lib/higgsfield-consumer/tools"),
     "./catalogue-cache": await import("../../lib/higgsfield-consumer/catalogue-cache"),
     "./generation-sources": await import("../../lib/higgsfield-consumer/generation-sources"),
     "./genjutsu-contract": await import("../../lib/higgsfield-consumer/genjutsu-contract"),
@@ -265,4 +266,35 @@ test("polling collects the verified original once, records failure from the prov
     expect(failed.job.failureCode).toBe("provider_failed");
     expect(failed.providerStatus).toEqual({ status: "failed" });
     expect(f.state.collectCount).toBe(2);
+  }));
+
+test("a tool preset quotes through the same pipeline, records the tool and source names on the job, and refuses a missing or extra source before any import", async () =>
+  fixture(async (f) => {
+    const upscale: ConsumerGenerationInput = {
+      type: "image", model: "bytedance_image_upscale", prompt: "", parameters: { resolution: "2k" },
+      medias: [{ role: "image_references", source: { uploadId: "still" } }], tool: { name: "upscale_image", model: "bytedance_image_upscale" },
+    };
+    for (const [bad, code] of [
+      [{ ...upscale, medias: [] }, "tool_source"],
+      [{ ...upscale, medias: [{ role: "image_references", source: { uploadId: "still" } }, { role: "image_references", source: { uploadId: "other" } }] }, "tool_source"],
+      [{ ...upscale, model: "nano_banana_2", tool: { name: "upscale_image", model: "nano_banana_2" } }, "tool_model"],
+      [{ ...upscale, parameters: { resolution: "8k" } }, "parameter_invalid"],
+      [{ ...upscale, tool: { name: "lip_sync", model: "bytedance_image_upscale" } }, "tool_model"],
+    ] as const)
+      await expect(f.service.quoteConsumerGeneration(identity.userId, identity.draftId, bad as ConsumerGenerationInput, randomUUID()), code).rejects.toMatchObject({ code });
+    expect(f.state.quoteCount).toBe(0);
+    expect(f.state.importCount).toBe(0);
+    const quoted = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, upscale, randomUUID());
+    expect(quoted).toMatchObject({ status: "quoted", quoteCredits: 9, model: { id: "bytedance_image_upscale", outputType: "image" },
+      tool: { name: "upscale_image", label: "Upscale image", model: "bytedance_image_upscale", suffix: "upscaled" }, sources: [{ role: "image_references", kind: "image", name: "still.png" }] });
+    expect(f.state.importCount).toBe(1);
+    const stored = JSON.parse((await f.jobs.getConsumerJob(scoped(quoted.id)))!.payloadJson);
+    expect(stored.params).toEqual({ resolution: "2k", model: "bytedance_image_upscale", medias: [{ value: f.state.mediaId, role: "image_references" }], count: 1, use_unlim: false });
+    expect(stored.params).not.toHaveProperty("tool");
+    expect(stored.input.tool).toEqual({ name: "upscale_image", model: "bytedance_image_upscale" });
+    // Plain generations carry no tool and still list their source names.
+    const plain = await f.service.quoteConsumerGeneration(identity.userId, identity.draftId, request, randomUUID());
+    expect(plain.tool).toBeNull();
+    expect(plain.sources).toEqual([{ role: "image_references", kind: "image", name: "still.png" }]);
+    expect((await f.service.consumerGenerationJobs(identity.userId, identity.draftId)).map((job) => job.tool?.name ?? null)).toEqual([null, "upscale_image"]);
   }));

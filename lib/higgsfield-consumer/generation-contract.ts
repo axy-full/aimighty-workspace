@@ -16,6 +16,7 @@ import {
   type ConnectedModel,
   type ConnectedOutputType,
 } from "./catalogue";
+import { CONNECTED_TOOL_NAMES, requireConnectedTool, validateToolRequest } from "./tools";
 import { consumerMediaIdentitySchema, consumerMediaKey } from "./genjutsu-contract";
 import { ConsumerVideoError, consumerVideoAcknowledgement } from "./video-contract";
 
@@ -40,12 +41,17 @@ export const consumerGenerationInputSchema = z
           .strict(),
       )
       .max(MEDIA_LIMIT),
+    /** Present when a media tool preset produced the request; the chosen
+     * model must be the request's model. Never sent to the provider. */
+    tool: z.object({ name: z.enum(CONNECTED_TOOL_NAMES), model: z.string().regex(MODEL_ID) }).strict().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
     const keys = value.medias.map((media) => consumerMediaKey(media.source));
     if (new Set(keys).size !== keys.length)
       ctx.addIssue({ code: "custom", message: "Choose distinct reference files." });
+    if (value.tool && value.tool.model !== value.model)
+      ctx.addIssue({ code: "custom", message: "The tool's model must be the request's model." });
   });
 export type ConsumerGenerationInput = z.infer<typeof consumerGenerationInputSchema>;
 export type ConsumerGenerationMedia = { value: string; role: string };
@@ -78,13 +84,16 @@ export function consumerGenerationParams(
   medias: ConsumerGenerationMedia[],
 ): ConsumerGenerationParams {
   const checked = parseConsumerGenerationInput(input);
-  const settings = validateGenerationRequest(model, {
+  const request = {
     type: checked.type,
     model: checked.model,
     prompt: checked.prompt,
     parameters: checked.parameters,
     medias: checked.medias.map((media) => ({ role: media.role, kind: mediaKindForRole(media.role) })),
-  });
+  };
+  const settings = checked.tool
+    ? validateToolRequest(requireConnectedTool(checked.tool.name), model, request)
+    : validateGenerationRequest(model, request);
   if (
     medias.length !== checked.medias.length ||
     medias.some((media, i) => !z.uuid().safeParse(media.value).success || media.role !== checked.medias[i].role)

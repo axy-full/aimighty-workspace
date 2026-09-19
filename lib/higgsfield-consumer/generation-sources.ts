@@ -26,6 +26,8 @@ export type GenerationSource = {
   ext: string;
   mime: string;
   bytes: number;
+  /** Upload filename or generation title/prompt; labels tool results. */
+  name: string;
 };
 const uploadKind = (row: Record<string, unknown>): ConnectedMediaKind | null => {
   if (row.kind === "image" || row.kind === "video") return row.kind;
@@ -69,9 +71,15 @@ export async function validateConsumerGenerationSources(
       ext,
       mime: fromGeneration ? { video: "video/mp4", image: "image/png", audio: "audio/mpeg" }[kind] : String(row.mime),
       bytes,
+      name: String((fromGeneration ? row.title || row.prompt : row.filename) || id).replace(/\p{Cc}/gu, "").trim().slice(0, 160) || id,
     });
   }
   return sources;
+}
+/** Role, kind and display name of each validated source, for job snapshots. */
+export async function describeConsumerGenerationSources(input: ConsumerGenerationInput) {
+  await ready();
+  return (await validateConsumerGenerationSources(db(), input)).map((source) => ({ role: source.role, kind: source.kind, name: source.name }));
 }
 export async function resolveConsumerGenerationSources(input: ConsumerGenerationInput) {
   await ready();
