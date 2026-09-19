@@ -6,6 +6,7 @@ import type { Asset, CanvasNode, Project } from "../workbench/studio";
 import { engineLabel, type ShotSettings } from "./engines";
 import { isShotNode, jobUnbilled, liveJob, ShotPatchError } from "./shots";
 import { vendorNameIn } from "./vendor-names";
+import { neutralModelText } from "../vendorNames";
 
 /**
  * Pure helpers behind the workspace Rig: adding a shot, what feeds it, its
@@ -191,5 +192,7 @@ const LABELS = MODELS.map((m) => [m.label, engineLabel(m.id).long] as const).sor
 export function neutralCopy(message: string, fallback = "The engine could not take this request. Nothing was charged."): string {
   let text = message;
   for (const [label, neutral] of LABELS) text = text.split(label).join(neutral);
+  /* Catalogue labels are already neutral (#231); vendor family names in server copy take the product's one renamer. */
+  text = neutralModelText(text);
   return vendorNameIn(text) ? fallback : text;
 }
