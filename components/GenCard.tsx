@@ -8,6 +8,7 @@ import LazyMedia from "./LazyMedia";
 import { ParticlSpinner } from "./ParticlMark";
 import { IconDown, IconTrash, IconAudio } from "./Icons";
 import { useMoney } from "@/lib/price";
+import { useSession } from "@/lib/session";
 import { failureKind, failureCopy } from "@/lib/jobState";
 import type { ProviderCreditQuote } from "@/lib/providerCreditQuote";
 
@@ -70,6 +71,7 @@ export default function GenCard({
   onOpen?: () => void;
 }) {
   const money = useMoney();
+  const { requestScope } = useSession();
   const url = gen.storedUrl ?? gen.sourceUrl;
   const p = gen.params as { resolution?: string; ratio?: string; duration?: number };
   const done = gen.status === "succeeded" && Boolean(url);
@@ -88,7 +90,7 @@ export default function GenCard({
 
   async function remove() {
     if (!(await appConfirm(`Delete ${gen.title || clipId(gen.id)}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
-    await fetch(`/api/jobs/${gen.id}`, { method: "DELETE" });
+    await fetch(`/api/jobs/${gen.id}`, { method: "DELETE", headers: { "X-Workbench-Scope": requestScope ?? "visitor" } });
     onChanged?.();
   }
 

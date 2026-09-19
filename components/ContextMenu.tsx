@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useProject } from "@/lib/projectContext";
+import { useSession } from "@/lib/session";
 import { appAlert, appConfirm, appPrompt } from "./dialog";
 import { announceChange } from "@/lib/changes";
 import { confirmDeleteProject } from "@/lib/deleteProject";
@@ -92,9 +93,13 @@ export async function renameClip(genId: string, current: string): Promise<void> 
 export default function ContextMenu() {
   const [menu, setMenu] = useState<{ x: number; y: number; items: Item[] } | null>(null);
   const ctx = useProject();
+  const { requestScope } = useSession();
   const projectsRef = useRef(ctx.projects);
   const ctxRef = useRef(ctx);
-  useEffect(() => { projectsRef.current = ctx.projects; ctxRef.current = ctx; }, [ctx]);
+  // The menu is wired once; the captured scope is read through a ref so a
+  // workspace change after mount is what the server sees, not the first one.
+  const scopeRef = useRef(requestScope);
+  useEffect(() => { projectsRef.current = ctx.projects; ctxRef.current = ctx; scopeRef.current = requestScope; }, [ctx, requestScope]);
 
   // A long-press opens the menu while the finger is still down; the lift-off
   // click that follows must not immediately dismiss it (or press an item).
@@ -190,7 +195,7 @@ export default function ContextMenu() {
             kind: "item", label: "Delete clip", danger: true,
             action: async () => {
               if (!(await appConfirm(`Delete clip ${label}?`, "Its cost stays on the ledger.", { confirmLabel: "Delete", danger: true }))) return;
-              const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+              const res = await fetch(`/api/jobs/${id}`, { method: "DELETE", headers: { "X-Workbench-Scope": scopeRef.current ?? "visitor" } });
               if (!res.ok) { await appAlert("The clip wasn't deleted", `The server answered ${res.status}.`); return; }
               announceChange();
             },
