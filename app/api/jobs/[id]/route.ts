@@ -36,6 +36,10 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
 export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
+  // Renames, approvals and moves between shots or projects are project
+  // writes; a tab whose account or workspace changed must not make them.
+  const scopeProblem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
+  if (scopeProblem) return NextResponse.json({ error: scopeProblem }, { status: 409 });
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));

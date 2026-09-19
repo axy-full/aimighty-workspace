@@ -119,6 +119,7 @@ async function routes(initial: TenantWorkspace) {
     jobs: load<typeof import("../../app/api/jobs/route")>("app/api/jobs/route.ts", dependencies).GET,
     job: load<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", dependencies).GET,
     jobDelete: load<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", dependencies).DELETE,
+    jobPatch: load<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", dependencies).PATCH,
     productions: load<typeof import("../../app/api/productions/route")>("app/api/productions/route.ts", dependencies).GET,
     shots: load<typeof import("../../app/api/shots/route")>("app/api/shots/route.ts", dependencies).GET,
     readCount: () => reads,
@@ -217,23 +218,28 @@ test("all library reads enforce real authentication, MFA and captured workspace 
   for (const call of calls({ "X-Workbench-Scope": `particl-active-${first.id}-member` })) expect((await call()).status).toBe(200);
 });
 
-test("a generation delete from a browser session is refused without the captured workspace scope", async () => {
+test("generation writes from a browser session are refused without the captured workspace scope", async () => {
   const ws = workspace("delete-scope");
   await seed(ws, ["private-delete"]);
   const api = await routes(ws);
-  const attempt = (headers: Record<string, string> = {}) =>
-    api.jobDelete(new Request("https://studio.test/api/jobs/private-delete", { method: "DELETE", headers }), { params: Promise.resolve({ id: "private-delete" }) });
+  const ctx = { params: Promise.resolve({ id: "private-delete" }) };
+  const attempts = (headers: Record<string, string> = {}) => [
+    () => api.jobDelete(new Request("https://studio.test/api/jobs/private-delete", { method: "DELETE", headers }), ctx),
+    () => api.jobPatch(new Request("https://studio.test/api/jobs/private-delete", { method: "PATCH", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ title: "Renamed" }) }), ctx),
+  ];
   api.signIn(false);
-  expect((await attempt()).status).toBe(401);
+  for (const call of attempts()) expect((await call()).status).toBe(401);
   api.signIn(true); api.switch(ws); api.mfa(true);
   // No header at all, and a header captured for another workspace, both stop
-  // before the deletion transaction (its dependencies are stubbed out here).
-  expect((await attempt()).status).toBe(409);
-  expect((await attempt({ "X-Workbench-Scope": "particl-active-somewhere-else-member" })).status).toBe(409);
+  // before any write (the deletion transaction's dependencies are stubbed).
+  for (const call of attempts()) expect((await call()).status).toBe(409);
+  for (const call of attempts({ "X-Workbench-Scope": "particl-active-somewhere-else-member" })) expect((await call()).status).toBe(409);
   const { runInTenant } = await import("../../lib/tenant");
   const { db } = await import("../../lib/db");
   await runInTenant(ws, async () => {
-    expect((await db().execute("SELECT COUNT(*) AS n FROM generations WHERE id='private-delete'")).rows[0].n).toBe(1);
+    const row = (await db().execute("SELECT title FROM generations WHERE id='private-delete'")).rows[0];
+    expect(row).toBeTruthy();
+    expect(row.title).not.toBe("Renamed");
   });
   expect(api.readCount()).toBe(0);
 });

@@ -186,7 +186,7 @@ export default function Theatre({
   const title = gen.title || filing;
 
   async function rename() {
-    await renameClip(gen!.id, gen!.title ?? "");
+    await renameClip(gen!.id, gen!.title ?? "", requestScope);
     onChanged();
   }
 
