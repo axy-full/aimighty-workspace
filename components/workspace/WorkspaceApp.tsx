@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { createPlanBridge } from "@/lib/workspace/atomik-host";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { WorkspaceProvider } from "@/lib/workspace/state";
 import { WorkspaceShell } from "./WorkspaceShell";
@@ -28,13 +29,15 @@ export function phoneSurfaceHref(search: string) {
 
 export default function WorkspaceApp({ scope, initialAccount }: { scope: string; initialAccount: WorkspaceAccount | null }) {
   const device = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
+  /* The live plan source: filled by the Atomik host once a project's engine exists. */
+  const [bridge] = useState(createPlanBridge);
   useEffect(() => {
     if (device === "phone") window.location.replace(phoneSurfaceHref(window.location.search));
   }, [device]);
   if (device !== "desktop") return null;
   return (
-    <WorkspaceProvider initialSearch={window.location.search}>
-      <WorkspaceShell scope={scope} initialAccount={initialAccount} />
+    <WorkspaceProvider initialSearch={window.location.search} plans={bridge.source}>
+      <WorkspaceShell scope={scope} initialAccount={initialAccount} planBridge={bridge} />
     </WorkspaceProvider>
   );
 }

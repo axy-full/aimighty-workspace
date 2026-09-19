@@ -478,16 +478,64 @@
 /* ── Atomik panel ──────────────────────────────────────────────────── */
 
 .pxw .pxw-catcher { position: fixed; inset: 0; z-index: 54; }
-.pxw .pxw-atomik-panel { position: fixed; top: 58px; right: 14px; width: 396px; max-height: calc(100dvh - 78px); overflow: auto; background: var(--pxw-card); border: 1px solid var(--pxw-overlay-border); border-radius: 15px; box-shadow: var(--pxw-shadow-atomik); z-index: 55; }
+.pxw .pxw-atomik-panel { position: fixed; top: 58px; right: 14px; width: 396px; max-height: calc(100dvh - 78px); overflow: auto; background: var(--pxw-overlay-panel); border: 1px solid var(--pxw-overlay-border); border-radius: 15px; box-shadow: var(--pxw-shadow-atomik); z-index: 55; }
 .pxw .pxw-atomik-panel-head { display: flex; align-items: center; gap: 9px; padding: 14px 16px 0; }
 .pxw .pxw-atomik-panel-head > .pxw-dot { width: 7px; height: 7px; }
 .pxw .pxw-atomik-panel-name { font-family: var(--pxw-mono); font-size: 10px; letter-spacing: 0.13em; color: var(--pxw-atomik-gold); }
 .pxw .pxw-atomik-panel-state { font-family: var(--pxw-mono); font-size: 10px; letter-spacing: 0.08em; color: var(--pxw-label-floor); }
 .pxw .pxw-atomik-close { font-size: 15px; color: var(--pxw-dimmer); line-height: 1; padding: 2px 4px; }
 .pxw .pxw-atomik-close:hover { color: var(--pxw-primary); }
-.pxw .pxw-atomik-panel-body { padding: 12px 16px 16px; }
+.pxw .pxw-atomik-panel-body { padding: 12px 16px 4px; }
 .pxw .pxw-atomik-plan-title { font-size: 15.5px; font-weight: 600; letter-spacing: -0.016em; margin-top: 6px; }
 .pxw .pxw-atomik-plan-line { font-size: 12.5px; color: var(--pxw-muted); line-height: 1.5; margin-top: 5px; text-wrap: pretty; }
+.pxw .pxw-atomik-plan-line { margin-bottom: 0; }
+.pxw .pxw-atomik-reason { margin: 9px 0 0; font-size: 12px; line-height: 1.45; color: var(--pxw-amber-ink); }
+.pxw .pxw-atomik-elsewhere { display: flex; align-items: center; gap: 8px; width: calc(100% - 32px); margin: 10px 16px 0; padding: 8px 11px; border-radius: 10px; background: var(--pxw-amber-tint); border: 1px solid rgba(255, 159, 10, 0.28); font-size: 12px; color: var(--pxw-amber-ink); }
+.pxw .pxw-atomik-elsewhere > .pxw-dot { width: 6px; height: 6px; }
+.pxw .pxw-atomik-elsewhere > span:nth-child(2) { flex: 1; min-width: 0; }
+.pxw .pxw-atomik-elsewhere-go { font-weight: 560; }
+.pxw .pxw-atomik-steps { list-style: none; margin: 0; padding: 12px 16px 0; }
+.pxw .pxw-atomik-step { display: flex; align-items: center; gap: 11px; padding: 7px 0; }
+.pxw .pxw-atomik-mark { width: 17px; height: 17px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-family: var(--pxw-mono); font-size: 9px; background: transparent; color: var(--pxw-faintest); border: 1px solid var(--pxw-dashed); }
+.pxw .pxw-atomik-step-label { flex: 1; min-width: 0; font-size: 13px; color: var(--pxw-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-atomik-step-meta { font-family: var(--pxw-mono); font-size: 10.5px; white-space: nowrap; color: var(--pxw-label-floor); }
+.pxw .pxw-atomik-step-meta[data-gate] { color: var(--pxw-atomik-gold-ink); }
+.pxw .pxw-atomik-step[data-tone="done"] .pxw-atomik-mark { background: rgba(52, 199, 89, 0.16); color: var(--pxw-green); border-color: rgba(52, 199, 89, 0.3); }
+.pxw .pxw-atomik-step[data-tone="done"] .pxw-atomik-step-label { color: var(--pxw-dim); }
+.pxw .pxw-atomik-step[data-tone="now"] .pxw-atomik-mark { background: rgba(10, 132, 255, 0.18); color: var(--pxw-blue-ink); border-color: rgba(10, 132, 255, 0.38); }
+.pxw .pxw-atomik-step[data-tone="now"] .pxw-atomik-step-label { color: var(--pxw-primary); }
+.pxw .pxw-atomik-step[data-tone="gate"] .pxw-atomik-mark { background: rgba(255, 159, 10, 0.12); color: var(--pxw-amber-ink); border-color: rgba(255, 159, 10, 0.3); }
+.pxw .pxw-atomik-step[data-tone="failed"] .pxw-atomik-mark { background: var(--pxw-red-tint); color: var(--pxw-red-ink); border-color: rgba(255, 69, 58, 0.34); }
+.pxw .pxw-gate { margin: 12px 16px 0; padding: 12px 13px; border-radius: 11px; background: rgba(255, 159, 10, 0.08); border: 1px solid rgba(255, 159, 10, 0.28); }
+.pxw .pxw-gate-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pxw .pxw-gate-title { font-size: 12.5px; font-weight: 560; color: var(--pxw-amber-ink); }
+.pxw .pxw-gate-price { font-family: var(--pxw-mono); font-size: 13px; font-weight: 620; color: var(--pxw-amber-ink); }
+.pxw .pxw-gate-line { font-size: 12px; color: #b09c7e; line-height: 1.5; margin-top: 6px; text-wrap: pretty; }
+.pxw .pxw-gate-notice { font-size: 12px; color: var(--pxw-amber-ink); line-height: 1.45; margin-top: 8px; }
+.pxw .pxw-gate-actions { display: flex; gap: 8px; margin-top: 11px; }
+.pxw .pxw-gate-decline { flex: 1; text-align: center; padding: 8px; border-radius: 9px; background: var(--pxw-control); border: 1px solid var(--pxw-control-border); font-size: 12.5px; }
+.pxw .pxw-gate-decline:hover:not(:disabled) { background: var(--pxw-control-hover); }
+.pxw .pxw-gate-approve { flex: 1.4; text-align: center; padding: 8px; border-radius: 9px; background: var(--pxw-amber); color: #1a1200; font-size: 12.5px; font-weight: 620; white-space: nowrap; }
+.pxw .pxw-gate-approve:disabled { opacity: 0.55; }
+.pxw .pxw-atomik-error { margin: 12px 16px 0; padding: 10px 12px; border-radius: 10px; background: var(--pxw-red-tint); border: 1px solid rgba(255, 69, 58, 0.3); font-size: 12px; line-height: 1.45; color: var(--pxw-red-ink); }
+.pxw .pxw-atomik-foot { display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
+.pxw .pxw-atomik-price { font-family: var(--pxw-mono); font-size: 11px; color: var(--pxw-label-floor); white-space: nowrap; }
+.pxw .pxw-atomik-price[data-paid] { color: var(--pxw-atomik-gold-ink); }
+.pxw .pxw-atomik-run { display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 15px; border-radius: 10px; font-size: 13px; font-weight: 570; background: var(--pxw-blue); color: #fff; white-space: nowrap; }
+.pxw .pxw-atomik-run:hover:not(:disabled) { background: var(--pxw-blue-hover); }
+.pxw .pxw-atomik-run[data-busy] { background: var(--pxw-toggle-on); color: var(--pxw-body); }
+.pxw .pxw-atomik-run:disabled { background: var(--pxw-toggle-on); color: var(--pxw-dimmer); }
+.pxw .pxw-atomik-run .pxw-atomik-run-key { font-size: 10px; border: none; padding: 0; color: inherit; opacity: 0.6; }
+.pxw .pxw-activity { border-top: 1px solid var(--pxw-card-border); padding: 13px 16px 15px; }
+.pxw .pxw-activity > .pxw-kicker { display: block; margin-bottom: 9px; }
+.pxw .pxw-activity-row { display: flex; align-items: baseline; gap: 10px; padding: 4px 0; }
+.pxw .pxw-activity-label { flex: 1; min-width: 0; font-size: 12.5px; color: var(--pxw-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-activity-meta { font-family: var(--pxw-mono); font-size: 10px; color: var(--pxw-faintest); white-space: nowrap; }
+.pxw .pxw-activity-empty { font-size: 12px; color: var(--pxw-dimmer); }
+.pxw .pxw-run-chip { background: var(--pxw-control); color: var(--pxw-body); border-color: var(--pxw-control-border); }
+.pxw .pxw-run-chip:hover { background: var(--pxw-control-hover); }
+.pxw .pxw-run-chip[data-tone="running"] { background: rgba(240, 178, 62, 0.1); color: var(--pxw-atomik-panel-gold); border-color: rgba(240, 178, 62, 0.4); }
+.pxw .pxw-run-chip[data-tone="waiting"] { background: var(--pxw-amber-tint-strong); color: var(--pxw-amber-ink); border-color: rgba(255, 159, 10, 0.42); font-weight: 580; }
 
 /* ── Home ──────────────────────────────────────────────────────────── */
 

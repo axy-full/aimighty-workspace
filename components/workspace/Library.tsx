@@ -1,7 +1,9 @@
 "use client";
 import type { Asset } from "@/lib/workbench/studio";
 import { libraryCount, libraryFor } from "@/lib/workspace/pages";
-import { agentDot, nextSentence } from "@/lib/workspace/next";
+import { nextLine } from "@/lib/workspace/activity";
+import { useAtomik } from "@/lib/workspace/atomik-host";
+import { agentDot } from "@/lib/workspace/next";
 import { useWorkspace } from "@/lib/workspace/state";
 import { formatCount } from "@/lib/workspace/format";
 import { toolIcon } from "./icons";
@@ -9,10 +11,17 @@ import { IconTile, Kicker, Segmented } from "./ui";
 
 /** 274px. Tools per page, Media from the project's own uploads, NEXT footer. */
 export function Library({ uploads }: { uploads: Asset[] }) {
-  const { state, dispatch, plans } = useWorkspace();
+  const { state, dispatch } = useWorkspace();
+  const atomik = useAtomik();
   const groups = libraryFor(state.page);
   const total = libraryCount(groups);
-  const plan = plans(state.page);
+  const run = atomik.runFor(state.page);
+  const next = nextLine(atomik.state, {
+    page: state.page,
+    rendering: atomik.rendering,
+    readyShots: (state.lists.shots ?? []).filter((shot) => shot.status === "ready" || shot.status === "queued"),
+  });
+  const dot = run?.status === "waiting" ? "var(--pxw-amber)" : run?.status === "running" ? "var(--pxw-blue)" : agentDot(state);
   return (
     <aside className="pxw-library" aria-label="Library">
       <div className="pxw-library-head">
@@ -76,10 +85,10 @@ export function Library({ uploads }: { uploads: Asset[] }) {
       </div>
       <button type="button" className="pxw-next" onClick={() => dispatch({ type: "patch", patch: { agentOpen: true } })}>
         <span className="pxw-next-head">
-          <span className="pxw-dot" style={{ background: agentDot(state) }} aria-hidden="true" />
+          <span className="pxw-dot" style={{ background: dot }} aria-hidden="true" />
           <Kicker>Next</Kicker>
         </span>
-        <span className="pxw-next-text" data-testid="library-next">{nextSentence(state, plan)}</span>
+        <span className="pxw-next-text" data-testid="library-next">{next}</span>
       </button>
     </aside>
   );

@@ -2,6 +2,8 @@
 import type { Project } from "@/lib/workbench/studio";
 import { suiteHref } from "@/lib/suites";
 import { generateAvailability, type Availability } from "@/lib/workspace/navigation";
+import { useAtomik } from "@/lib/workspace/atomik-host";
+import { runChip } from "@/lib/workspace/atomik-view";
 import { agentDot } from "@/lib/workspace/next";
 import { pageDef, pageViews, primaryAction, subtitle } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -17,19 +19,15 @@ export function primaryAvailability(state: ReturnType<typeof useWorkspace>["stat
 
 /** 60px. Title + derived sub, views, Run with Atomik, primary, Inspector. */
 export function PageHeader({ project, onGenerate }: { project: Project | null; onGenerate?: () => void }) {
-  const { state, dispatch, setLibFilter, plans } = useWorkspace();
+  const { state, dispatch, setLibFilter } = useWorkspace();
   const def = pageDef(state.page);
   const views = pageViews(state.page);
   const action = primaryAction(state.page);
   const availability = primaryAvailability(state, onGenerate);
-  const plan = plans(state.page);
-  const run = state.run && state.run.page === state.page ? state.run : null;
-  const waiting = run?.status === "waiting";
-  const running = run?.status === "running";
-  const chipLabel = waiting
-    ? plan?.gatePrice ? `Approve ${plan.gatePrice}` : "Approve"
-    : running ? "Pause run" : run?.status === "done" ? "Run again" : run ? "Resume run" : "Run with Atomik";
-  const openAgent = () => dispatch({ type: "patch", patch: { agentOpen: true } });
+  const atomik = useAtomik();
+  const run = atomik.runFor(state.page);
+  const chip = runChip(run);
+  const startRun = () => atomik.start(state.page);
   const projectId = project?.id ?? state.projectId;
   return (
     <div className="pxw-page-head" data-row="page">
@@ -50,15 +48,12 @@ export function PageHeader({ project, onGenerate }: { project: Project | null; o
       <button
         type="button"
         className="pxw-run-chip"
-        onClick={openAgent}
-        style={{
-          background: waiting ? "rgba(255,159,10,.14)" : running ? "rgba(240,178,62,.1)" : "var(--pxw-control)",
-          color: waiting ? "var(--pxw-amber-ink)" : running ? "var(--pxw-atomik-panel-gold)" : "var(--pxw-body)",
-          borderColor: waiting || running ? "rgba(240,178,62,.4)" : "var(--pxw-control-border)",
-        }}
+        data-tone={chip.tone}
+        data-testid="run-chip"
+        onClick={startRun}
       >
-        <span className="pxw-dot" style={{ background: agentDot(state) }} aria-hidden="true" />
-        <span>{chipLabel}</span>
+        <span className="pxw-dot" style={{ background: chip.tone === "waiting" ? "var(--pxw-amber)" : chip.tone === "running" ? "var(--pxw-blue)" : agentDot(state) }} aria-hidden="true" />
+        <span>{chip.label}</span>
       </button>
       {action.kind === "generate" ? (
         <Button
@@ -73,7 +68,7 @@ export function PageHeader({ project, onGenerate }: { project: Project | null; o
           <span>{action.label}</span>
         </Button>
       ) : action.kind === "run-stage" ? (
-        <Button variant="primary" keyHint={action.key} onClick={openAgent}>
+        <Button variant="primary" keyHint={action.key} onClick={startRun}>
           <span>{action.label}</span>
         </Button>
       ) : (

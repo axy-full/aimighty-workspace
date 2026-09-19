@@ -1,32 +1,34 @@
 "use client";
+import { useAtomik } from "@/lib/workspace/atomik-host";
+import { agentButton, type AgentLook } from "@/lib/workspace/atomik-view";
 import { formatCredits, initialsOf } from "@/lib/workspace/format";
 import { getSuite, SUITES } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { Keycap } from "./ui";
 
-/** idle / running / waiting / open, from state.run and state.agentOpen. */
-export function atomikButtonLook(state: ReturnType<typeof useWorkspace>["state"], stepCount: number | null) {
-  const run = state.run && state.run.page === state.page ? state.run : null;
-  const waiting = run?.status === "waiting";
-  const running = run?.status === "running";
-  const open = state.agentOpen;
+/** idle / running / waiting / open, from the engine's run (anywhere in the project) and agentOpen. */
+export function atomikButtonLook(look: AgentLook, gen: boolean) {
+  const open = look.status === "open";
+  const { waiting, running } = look;
   return {
-    status: open ? "open" : waiting ? "waiting" : running ? "running" : "idle",
+    status: look.status,
     bg: open ? "rgba(240,178,62,.14)" : waiting ? "rgba(255,159,10,.14)" : "var(--pxw-control)",
     border: open || waiting ? "rgba(240,178,62,.42)" : "var(--pxw-control-border)",
     color: open || waiting ? "var(--pxw-atomik-panel-gold)" : "var(--pxw-secondary)",
-    dot: waiting ? "var(--pxw-amber)" : running || state.gen ? "var(--pxw-blue)" : "var(--pxw-atomik-gold)",
-    badge: waiting ? "1 approval" : running ? (stepCount ? `${run!.i}/${stepCount}` : "running") : "ready",
+    dot: waiting ? "var(--pxw-amber)" : running || gen ? "var(--pxw-blue)" : "var(--pxw-atomik-gold)",
+    badge: look.badge,
     badgeColor: waiting ? "var(--pxw-amber-ink)" : running ? "var(--pxw-blue-soft-ink)" : "var(--pxw-faintest)",
     caret: open ? "▲" : "▼",
   };
 }
 
 export function TopBar({ account, onOpenPalette }: { account: WorkspaceAccount | null; onOpenPalette?: () => void }) {
-  const { state, dispatch, home, switchSuite, plans } = useWorkspace();
+  const { state, dispatch, home, switchSuite } = useWorkspace();
+  const atomik = useAtomik();
   const suite = getSuite(state.suite);
-  const look = atomikButtonLook(state, plans(state.page)?.steps?.length ?? null);
+  const run = atomik.state.run;
+  const look = atomikButtonLook(agentButton(run, run ? atomik.plan(run.page) : null, state.agentOpen), Boolean(state.gen));
   const workspace = account?.workspace ?? null;
   return (
     <header className="pxw-topbar" data-row="topbar">
@@ -54,6 +56,7 @@ export function TopBar({ account, onOpenPalette }: { account: WorkspaceAccount |
         className="pxw-atomik-btn"
         data-atomik-state={look.status}
         aria-expanded={state.agentOpen}
+        data-testid="atomik-button"
         onClick={() => dispatch({ type: "patch", patch: { agentOpen: !state.agentOpen } })}
         style={{ background: look.bg, borderColor: look.border }}
       >
