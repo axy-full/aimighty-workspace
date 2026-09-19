@@ -144,7 +144,7 @@ async function productionFor(
   ).rows[0];
   if (!draft)
     throw new SoulIdentityError(
-      "Save this production before training its Soul ID, using the account that owns the draft.",
+      "Save this production before training its identity, using the account that owns the draft.",
       404,
     );
   const productionId: unknown = JSON.parse(
@@ -160,7 +160,7 @@ async function productionFor(
     ).rows.length
   )
     throw new SoulIdentityError(
-      "Save this production before training its Soul ID.",
+      "Save this production before training its identity.",
       409,
     );
   return productionId;
@@ -248,7 +248,7 @@ export async function listSoulIdentities(
 ): Promise<SoulIdentity[]> {
   await soulIdentitiesReady();
   const owner = currentTenant()?.user?.id;
-  if (!owner) throw new SoulIdentityError("Sign in to view Soul IDs.", 401);
+  if (!owner) throw new SoulIdentityError("Sign in to view identities.", 401);
   // A new unsaved draft can view configuration and terms before its first save.
   if (
     projectId &&
@@ -299,7 +299,7 @@ function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
     /[\u0000-\u001f]/.test(value.name)
   )
     throw new SoulIdentityError(
-      "Give this Soul ID a name of 1–100 characters.",
+      "Give this identity a name of 1–100 characters.",
     );
   if (value.subjectType !== "character" && value.subjectType !== "element")
     throw new SoulIdentityError(
@@ -345,7 +345,7 @@ function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
       seen.has(`${key}:${id}`)
     )
       throw new SoulIdentityError(
-        "Each Soul ID reference must be a different existing still.",
+        "Each identity reference must be a different existing still.",
       );
     seen.add(`${key}:${id}`);
   }
@@ -356,7 +356,7 @@ function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
       value.maxCredits < (quote.trainingCredits ?? 0))
   )
     throw new SoulIdentityError(
-      "The Soul ID quote changed. Review its current credit price before training.",
+      "The identity quote changed. Review its current credit price before training.",
       409,
     );
   if (
@@ -364,7 +364,7 @@ function cleanInput(value: CreateSoulIdentityInput): CreateSoulIdentityInput {
     (!Number.isFinite(value.maxUsd) || value.maxUsd < SOUL_TRAINING_USD)
   )
     throw new SoulIdentityError(
-      "The Soul ID quote changed. Review its current price before training.",
+      "The identity quote changed. Review its current price before training.",
       409,
     );
   return {
@@ -395,7 +395,7 @@ async function verifiedPaths(
         !row.stored_url
       )
         throw new SoulIdentityError(
-          "Soul ID accepts stored JPEG, PNG or WebP stills only.",
+          "Identity training accepts stored JPEG, PNG or WebP stills only.",
         );
       paths.push(uploadPath(ref.uploadId, String(row.ext)));
     } else {
@@ -434,7 +434,7 @@ async function saveReceipt(row: Row, outcome: SoulReference) {
         current.provider_reference_id !== outcome.id ||
         current.credential_fingerprint !== row.credential_fingerprint)
     )
-      throw new Error("Soul ID receipt identity mismatch.");
+      throw new Error("Identity receipt mismatch.");
     await tx.execute({
       sql: `INSERT INTO soul_training_receipts(id,workspace_id,provider_reference_id,provider_status,credential_fingerprint,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET provider_status=CASE WHEN soul_training_receipts.settled_at IS NULL THEN excluded.provider_status ELSE soul_training_receipts.provider_status END,updated_at=excluded.updated_at`,
       args: [
@@ -491,7 +491,7 @@ async function finishKnown(row: Row, result: SoulReference): Promise<void> {
       SOUL_TRAINING_USD,
       terminal ? (state === "ready" ? "succeeded" : "failed") : null,
       state === "failed"
-        ? "Higgsfield could not train this identity. Its accepted training request remains charged."
+        ? "The identity trainer could not train this identity. Its accepted training request remains charged."
         : null,
       now(),
       String(row.id),
@@ -533,15 +533,15 @@ export async function createSoulIdentity(
   const value = cleanInput(input);
   const owner = currentTenant()?.user?.id;
   if (!owner || owner !== claim.userId)
-    throw new SoulIdentityError("Sign in to create a Soul ID.", 401);
+    throw new SoulIdentityError("Sign in to create an identity.", 401);
   if (!higgsfieldConfigured())
     throw new SoulIdentityError(
-      "Higgsfield Soul ID is not configured for this workspace.",
+      "Identity training is not configured for this workspace.",
       503,
     );
   if (process.env.ENGINE_MOCK !== "1" && !usingBlob())
     throw new SoulIdentityError(
-      "Private cloud storage is required for Soul ID training.",
+      "Private cloud storage is required for identity training.",
       503,
     );
   await soulIdentitiesReady();
@@ -631,7 +631,7 @@ export async function createSoulIdentity(
       await assertMeterFunding(id, "higgsfield");
       if (higgsfieldCredentialFingerprint() !== fingerprint)
         throw new Error(
-          "The Higgsfield account changed before this training started.",
+          "The identity trainer account changed before this training started.",
         );
       const claimToken = randomUUID();
       const won = await db().execute({
@@ -654,7 +654,7 @@ export async function createSoulIdentity(
         await failUnsent(
           row,
           paidClaim
-            ? "Higgsfield rejected this training request. No training charge was recorded."
+            ? "The identity trainer rejected this training request. No training charge was recorded."
             : "Training did not start. Check the workspace configuration and prepare a new request.",
           paidClaim,
         );
@@ -662,7 +662,7 @@ export async function createSoulIdentity(
         await db().execute({
           sql: "UPDATE soul_identities SET status='uncertain',error=?,updated_at=? WHERE id=? AND status='submitting'",
           args: [
-            "Higgsfield may have accepted this paid training request. Its reservation is retained; do not start it again. Contact support to reconcile the provider request.",
+            "The identity trainer may have accepted this paid training request. Its reservation is retained; do not start it again. Contact support to reconcile the provider request.",
             now(),
             id,
           ],
@@ -734,7 +734,7 @@ export async function syncSoulIdentity(
       await db().execute({
         sql: "UPDATE soul_identities SET error=?,last_polled_at=? WHERE id=?",
         args: [
-          "Restore the original Higgsfield account to check this identity. Its training reservation is retained.",
+          "Restore the original identity trainer account to check this identity. Its training reservation is retained.",
           now(),
           id,
         ],
@@ -751,14 +751,14 @@ export async function syncSoulIdentity(
           String(row.provider_reference_id),
         );
         if (result.id !== row.provider_reference_id)
-          throw new Error("Soul ID handle mismatch.");
+          throw new Error("Identity handle mismatch.");
         await saveReceipt(row, result);
         await finishKnown(row, result);
       } catch {
         await db().execute({
           sql: "UPDATE soul_identities SET error=? WHERE id=? AND status IN ('training','uncertain','submitting')",
           args: [
-            "Higgsfield status is temporarily unavailable. The accepted training request will be checked again; no new request is sent.",
+            "The identity trainer’s status is temporarily unavailable. The accepted training request will be checked again; no new request is sent.",
             id,
           ],
         });
@@ -815,7 +815,7 @@ export async function requireReadySoulIdentity(
   const row = await rawIdentity(id);
   if (!row || !(await canRead(row)))
     throw new SoulIdentityError(
-      "This Soul ID is not available in this workspace.",
+      "This identity is not available in this workspace.",
       404,
     );
   if (workbenchProjectId) {
@@ -826,7 +826,7 @@ export async function requireReadySoulIdentity(
     );
     if (productionProjectId != null && mapped !== productionProjectId)
       throw new SoulIdentityError(
-        "The Soul ID production mapping changed.",
+        "The identity production mapping changed.",
         409,
       );
     productionProjectId = mapped;
@@ -835,19 +835,19 @@ export async function requireReadySoulIdentity(
     row.production_project_id != null &&
     row.production_project_id !== productionProjectId
   )
-    throw new SoulIdentityError("Choose a Soul ID from this production.", 409);
+    throw new SoulIdentityError("Choose an identity from this production.", 409);
   if (
     row.status !== "ready" ||
     row.settled_at == null ||
     !row.provider_reference_id
   )
     throw new SoulIdentityError(
-      "This Soul ID is not ready. Wait for its training and accounting to finish.",
+      "This identity is not ready. Wait for its training and accounting to finish.",
       409,
     );
   if (row.credential_fingerprint !== higgsfieldCredentialFingerprint())
     throw new SoulIdentityError(
-      "This Soul ID belongs to a different Higgsfield account. Restore its original credentials.",
+      "This identity belongs to a different trainer account. Restore its original credentials.",
       409,
     );
   return {
@@ -889,7 +889,7 @@ export async function purgeSoulIdentities(): Promise<void> {
     )
   )
     throw new SoulIdentityError(
-      "Soul ID training must be reconciled before this workspace can be purged.",
+      "Identity training must be reconciled before this workspace can be purged.",
       409,
     );
   for (const row of rows) {
@@ -899,7 +899,7 @@ export async function purgeSoulIdentities(): Promise<void> {
         row.credential_fingerprint !== higgsfieldCredentialFingerprint()
       )
         throw new SoulIdentityError(
-          "Restore the original Higgsfield account before purging its identities.",
+          "Restore the original identity trainer account before purging its identities.",
           409,
         );
       await deleteSoulReference(String(row.provider_reference_id));

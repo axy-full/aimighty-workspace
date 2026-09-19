@@ -19,9 +19,11 @@ export default function QueueStrip({ gens, onOpen }: { gens: Gen[]; onOpen: (id:
   const money = useMoney();
   const { signedIn, rates } = useSession();
   const counts = queueCounts(gens);
-  /* Training is asynchronous and belongs here too (brief 1.3). The live read
-     is deliberately unsynced: the Studio asks fal how a training is going,
-     this only asks our own rows what is in flight. */
+  /* LEGACY (four-suites PR F): these rows are the older LoRA identity trainer
+     behind /api/identities. Cast & Elements now runs on the identity system
+     (/api/soul/identities); this strip only reads what is still in flight so
+     an accepted training is never orphaned. The live read is deliberately
+     unsynced: it only asks our own rows what is in flight. */
   const { data: ids } = useApi<{ identities: TrainingRow[] }>(signedIn ? "/api/identities?live=1" : null, 15_000);
   const trainings = inTraining(ids?.identities ?? []);
   /* A training row carries whichever unit its workspace pays in — credits
@@ -70,7 +72,7 @@ export default function QueueStrip({ gens, onOpen }: { gens: Gen[]; onOpen: (id:
       <span className="queue-jobs">
         {/* A training is the Studio's work, not the wall's: its chip opens the Studio. */}
         {trainings.map((t) => (
-          <Link key={t.id} href="/studio" className="queue-job is-live" title="Training an identity on fal.ai — it joins the cast when it finishes">
+          <Link key={t.id} href="/studio" className="queue-job is-live" title="Training an identity — it joins the cast when it finishes">
             {`@${t.name}${priceOf(t)} · training`}
           </Link>
         ))}

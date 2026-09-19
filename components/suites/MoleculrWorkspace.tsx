@@ -342,7 +342,7 @@ export function MoleculrWorkspace({
             <div>
               <h2>Campaign cast</h2>
               <p>
-                Reuse project characters and Soul identities. Select up to six.
+                Reuse project characters and identities. Select up to six.
               </p>
             </div>
             <button
@@ -383,8 +383,8 @@ export function MoleculrWorkspace({
                     onClick={() => onIdentity(asset.id)}
                   >
                     {asset.soulIdentityId
-                      ? "Open Soul identity"
-                      : "Create Soul identity"}{" "}
+                      ? "Open identity"
+                      : "Create identity"}{" "}
                     <ArrowUpRight size={13} />
                   </button>
                 </article>
@@ -399,7 +399,7 @@ export function MoleculrWorkspace({
                 disabled={!enabled}
                 onClick={() => onIdentity()}
               >
-                Create a Soul identity
+                Create an identity
               </button>
             </div>
           )}

@@ -67,18 +67,18 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   await page.goto('/workbench');
   await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:'Identity',exact:true}).click();
-  let panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
-  await expect(panel.getByText('No Soul IDs yet.',{exact:false})).toBeVisible();
+  let panel=page.getByRole('dialog',{name:'Identity',exact:true});
+  await expect(panel.getByText('No identities yet.',{exact:false})).toBeVisible();
   await expect(panel).toContainText('Props, products and worlds stay as ordinary image references.');
-  await panel.getByRole('textbox',{name:'Soul ID name',exact:true}).fill('Mira trained likeness');
-  await panel.getByRole('textbox',{name:'Soul ID continuity notes',exact:true}).fill('Consistent short dark bob and natural expression.');
+  await panel.getByRole('textbox',{name:'Identity name',exact:true}).fill('Mira trained likeness');
+  await panel.getByRole('textbox',{name:'Identity continuity notes',exact:true}).fill('Consistent short dark bob and natural expression.');
   await panel.getByRole('checkbox',{name:'Use portrait Mira original',exact:true}).check();
   await panel.getByRole('checkbox',{name:'Use portrait Mira generated still',exact:true}).check();
   const finished=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/uploads/finish'&&response.request().method()==='POST');
-  await panel.getByLabel('Upload Soul ID portraits',{exact:true}).setInputFiles({name:'Mira alternate.webp',mimeType:'image/webp',buffer:await sharp(f.image).modulate({brightness:0.95}).webp().toBuffer()});
+  await panel.getByLabel('Upload identity portraits',{exact:true}).setInputFiles({name:'Mira alternate.webp',mimeType:'image/webp',buffer:await sharp(f.image).modulate({brightness:0.95}).webp().toBuffer()});
   const alternate=await (await finished).json();
   await expect(panel.getByRole('checkbox',{name:'Use portrait Mira alternate.webp',exact:true})).toBeChecked();
-  const submit=panel.getByRole('button',{name:'Train Soul ID · 250 credits',exact:true});
+  const submit=panel.getByRole('button',{name:'Train identity · 250 credits',exact:true});
   await expect(submit).toBeDisabled();
   await panel.getByRole('checkbox',{name:/I have the rights and consent/}).check();
   await expect(submit).toBeEnabled();
@@ -92,7 +92,7 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   await page.reload();
   await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:'Identity',exact:true}).click();
-  panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
+  panel=page.getByRole('dialog',{name:'Identity',exact:true});
   await expect(panel.getByText('Mira trained likeness · 3 portraits · 250 credits',{exact:true})).toBeVisible();
   await panel.getByRole('button',{name:'Recover training request',exact:true}).click();
   await expect(panel.getByRole('button',{name:'Recover training request',exact:true})).toHaveCount(0);
@@ -100,7 +100,7 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   expect(f.submissions[1]).toEqual(f.submissions[0]);
   expect(f.submissions[0].key).toBeTruthy();
   f.identities[0].status='ready';
-  await panel.getByRole('button',{name:'Refresh Soul IDs',exact:true}).click();
+  await panel.getByRole('button',{name:'Refresh identities',exact:true}).click();
   await expect(panel.getByRole('status')).toContainText('Ready');
   await panel.evaluate(element=>{element.scrollTop=0;});
   await page.screenshot({path:info.outputPath('soul-id-ready.png')});
@@ -112,7 +112,7 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   await expect(page.getByRole('article',{name:'Asset: Mira trained likeness',exact:true})).toBeVisible();
   await goWorkbenchStage(page,'elements');
   await page.getByRole('button',{name:'Element identity',exact:true}).click();
-  panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
+  panel=page.getByRole('dialog',{name:'Identity',exact:true});
   await panel.getByRole('button',{name:'Use in Elements',exact:true}).click();
   await expect(panel).toHaveCount(0);
   const element=page.getByRole('region',{name:'Elements',exact:true}).getByRole('article',{name:'Asset: Mira trained likeness',exact:true});
@@ -141,8 +141,8 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   await page.getByRole('button',{name:'Generate take',exact:true}).click();
   const generation=page.getByRole('dialog',{name:'Generate a new take',exact:true});
   await expect(generation.getByRole('combobox',{name:'Generation engine',exact:true})).toHaveValue('hf-soul-character');
-  await expect(generation.getByRole('combobox',{name:'Soul identity',exact:true})).toHaveValue('soul-local-browser');
-  const strength=generation.getByRole('slider',{name:'Soul likeness strength',exact:true});await strength.focus();await strength.press('Home');for(let n=0;n<13;n++)await strength.press('ArrowRight');
+  await expect(generation.getByRole('combobox',{name:'Identity',exact:true})).toHaveValue('soul-local-browser');
+  const strength=generation.getByRole('slider',{name:'Identity likeness strength',exact:true});await strength.focus();await strength.press('Home');for(let n=0;n<13;n++)await strength.press('ArrowRight');
   await expect(strength).toHaveValue('0.65');
   await expect(generation).toHaveCSS('z-index','101');
   await generation.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>undefined)));});
@@ -164,14 +164,14 @@ test('Soul ID submits through the real mock backend and saves a usable local bin
   const f=await fixture(page,{realSoul:true});
   await page.goto('/workbench');await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:'Identity',exact:true}).click();
-  const panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
-  await expect(panel.getByText('No Soul IDs yet.',{exact:false})).toBeVisible();
-  await panel.getByRole('textbox',{name:'Soul ID name',exact:true}).fill('Mock trained actor');
+  const panel=page.getByRole('dialog',{name:'Identity',exact:true});
+  await expect(panel.getByText('No identities yet.',{exact:false})).toBeVisible();
+  await panel.getByRole('textbox',{name:'Identity name',exact:true}).fill('Mock trained actor');
   await panel.getByRole('checkbox',{name:'Use portrait Mira original',exact:true}).check();
   await expect(panel).toContainText('Accepted training requests are billed even if training later fails.');
   await panel.getByRole('checkbox',{name:/I have the rights and consent/}).check();
   const accepted=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/soul/identities'&&response.request().method()==='POST');
-  await panel.getByRole('button',{name:/^Train Soul ID · /}).click();
+  await panel.getByRole('button',{name:/^Train identity · /}).click();
   const response=await accepted;expect(response.ok(),await response.text()).toBe(true);
   const body=await response.json();expect(body.identity.id).toBeTruthy();expect(body.identity).not.toHaveProperty('providerReferenceId');
   await expect(panel.getByRole('button',{name:'Use in Characters',exact:true})).toBeVisible({timeout:20000});
@@ -197,12 +197,12 @@ test('Soul IDs still load when recovery storage is malformed, while training fai
   await page.goto('/workbench');
   await goWorkbenchStage(page,'elements');
   await page.getByRole('button',{name:'Element identity',exact:true}).click();
-  const panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
+  const panel=page.getByRole('dialog',{name:'Identity',exact:true});
   await expect(panel).toContainText('The saved request cannot be read.');
-  await expect(panel.getByRole('article',{name:'Soul ID: Saved identity',exact:true})).toBeVisible();
-  await expect(panel.getByText('Connect Higgsfield to train a Soul ID',{exact:true})).toBeVisible();
+  await expect(panel.getByRole('article',{name:'Identity: Saved identity',exact:true})).toBeVisible();
+  await expect(panel.getByText('Connect an identity trainer',{exact:true})).toBeVisible();
   await panel.getByRole('button',{name:'New identity',exact:true}).click();
-  await expect(panel.getByRole('button',{name:'Train Soul ID · 250 credits',exact:true})).toBeDisabled();
+  await expect(panel.getByRole('button',{name:'Train identity · 250 credits',exact:true})).toBeDisabled();
   expect(f.requests()).toBe(0);
 });
 
@@ -225,7 +225,7 @@ test('ordinary generation keeps a regular image engine as default when Soul is a
   const generation=page.getByRole('dialog',{name:'Generate a new take',exact:true});
   await expect(generation.getByRole('combobox',{name:'Generation engine',exact:true})).toHaveValue('gemini-3-pro-image');
   await expect(generation.getByRole('button',{name:'Generate · 3 cr estimated',exact:true})).toBeEnabled();
-  await expect(generation.getByRole('combobox',{name:'Soul identity',exact:true})).toHaveCount(0);
+  await expect(generation.getByRole('combobox',{name:'Identity',exact:true})).toHaveCount(0);
 });
 
 test('Soul training limits copied metadata without changing the original asset',async({page},info)=>{
@@ -240,11 +240,11 @@ test('Soul training limits copied metadata without changing the original asset',
   await page.goto('/workbench');await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:`Actions for ${name}`,exact:true}).click();
   await page.getByRole('menuitem',{name:'Attach identity',exact:true}).click();
-  const panel=page.getByRole('dialog',{name:'Soul ID',exact:true});
-  await expect(panel.getByRole('textbox',{name:'Soul ID name',exact:true})).toHaveValue(name.slice(0,100));
-  await expect(panel.getByRole('textbox',{name:'Soul ID continuity notes',exact:true})).toHaveValue(description.slice(0,1000));
-  await expect(panel.getByRole('textbox',{name:'Soul ID name',exact:true})).toHaveAttribute('maxlength','100');
-  await expect(panel.getByRole('textbox',{name:'Soul ID continuity notes',exact:true})).toHaveAttribute('maxlength','1000');
+  const panel=page.getByRole('dialog',{name:'Identity',exact:true});
+  await expect(panel.getByRole('textbox',{name:'Identity name',exact:true})).toHaveValue(name.slice(0,100));
+  await expect(panel.getByRole('textbox',{name:'Identity continuity notes',exact:true})).toHaveValue(description.slice(0,1000));
+  await expect(panel.getByRole('textbox',{name:'Identity name',exact:true})).toHaveAttribute('maxlength','100');
+  await expect(panel.getByRole('textbox',{name:'Identity continuity notes',exact:true})).toHaveAttribute('maxlength','1000');
   await panel.getByRole('button',{name:'Close',exact:true}).click();
   expect((await f.current()).assets[0]).toMatchObject({name,description});
   expect(f.requests()).toBe(0);

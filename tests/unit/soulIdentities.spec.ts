@@ -398,7 +398,7 @@ test("ready identity bindings require the original provider account and exact au
     try {
       await expect(
         requireReadySoulIdentity(identity.id, production, project),
-      ).rejects.toThrow(/different Higgsfield account/);
+      ).rejects.toThrow(/different trainer account/);
     } finally {
       process.env.ENGINE_MOCK = "1";
       delete process.env.HF_CREDENTIALS;

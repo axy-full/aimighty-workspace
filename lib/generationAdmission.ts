@@ -286,14 +286,14 @@ export async function executeGenerationAdmission(
     let soulBinding: Awaited<ReturnType<typeof requireReadySoulIdentity>> | undefined;
     let soulStrength: number | undefined;
     if (model.soulIdentity) {
-      if (!soulCharacterGenerationEnabled()) return admissionReply({ error: "Soul Character generation awaits provider access and confirmed pricing." }, { status: 503 });
-      if (typeof body.soulIdentityId !== "string" || !body.soulIdentityId) return admissionReply({ error: "Choose a ready Soul identity before generating." }, { status: 400 });
+      if (!soulCharacterGenerationEnabled()) return admissionReply({ error: "Identity rendering awaits verified provider access and confirmed pricing." }, { status: 503 });
+      if (typeof body.soulIdentityId !== "string" || !body.soulIdentityId) return admissionReply({ error: "Choose a ready identity before generating." }, { status: 400 });
       soulStrength = body.soulStrength ?? 1;
       if (typeof soulStrength !== "number" || !Number.isFinite(soulStrength) || soulStrength < 0 || soulStrength > 1) return admissionReply({ error: "Soul likeness strength must be between 0 and 1." }, { status: 400 });
       try { soulBinding = await requireReadySoulIdentity(body.soulIdentityId, body.projectId ? String(body.projectId) : undefined, body.workbenchProjectId ? String(body.workbenchProjectId) : undefined); }
-      catch (error) { return admissionReply({ error: error instanceof Error ? error.message : "That Soul identity is unavailable." }, { status: 400 }); }
+      catch (error) { return admissionReply({ error: error instanceof Error ? error.message : "That identity is unavailable." }, { status: 400 }); }
     } else if (body.soulIdentityId != null) {
-      return admissionReply({ error: "This engine cannot use a trained Soul identity. Choose Soul Character or use the reference image." }, { status: 400 });
+      return admissionReply({ error: "This engine cannot use a trained identity. Choose the identity engine or use the reference image." }, { status: 400 });
     }
     // No key, no row: better a 400 now than a "running" render that fails later.
     const vendor = getProvider(model.provider);
@@ -1037,7 +1037,7 @@ export async function executeGenerationAdmission(
       const estStillUsd = marketingUsd ?? (trained
         ? RENDER_USD_PER_MP
         : (estimateImageCostUsd(modelId, size, stillRefs.length)?.net ?? 0));
-      if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Soul Character has no confirmed price for this size." }, { status: 503 });
+      if (model.soulIdentity && (!Number.isFinite(estStillUsd) || estStillUsd <= 0)) return admissionReply({ error: "Identity rendering has no confirmed price for this size." }, { status: 503 });
       if (
         body.maxCredits != null &&
         billCredits(estStillUsd, modelId) > body.maxCredits

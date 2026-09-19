@@ -12,7 +12,7 @@ export const GET = withTenant(
     const { id } = await params;
     const found = await getSoulIdentity(id);
     if (!found)
-      return Response.json({ error: "Soul ID not found." }, { status: 404 });
+      return Response.json({ error: "Identity not found." }, { status: 404 });
     return Response.json(
       { identity: (await syncSoulIdentity(id)) ?? found },
       { headers: { "Cache-Control": "private, no-store" } },
