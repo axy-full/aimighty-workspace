@@ -10,6 +10,7 @@ import { withGenerationRequest, SpendReservationError } from "@/lib/generationRe
 import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, paidTextQuoteResponse, requestMaxCredits } from "@/lib/paidText";
 import { cleanAttachments } from "@/lib/attachments";
 import { connectedPlannerFor } from "@/lib/higgsfield-consumer/planner-service";
+import { RecipeError, recipeForMessage } from "@/lib/higgsfield-consumer/recipes-service";
 
 export const dynamic = "force-dynamic";
 /* A bounded 270s provider attempt has enough time for reasoning before this route ends. */
@@ -86,14 +87,16 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     /* The owner's connected account: read-only context and priced proposals.
        The quote and the turn it prices see the same (cached) context. */
     const connected = await connectedPlannerFor(got.user, got.token, loaded.chat.projectId);
-    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, context, model: b.model, effort, rules, connected,
+    /* `/name brief` runs a recipe from the connected account (A5 + A6). */
+    const recipe = await recipeForMessage(got.user, got.token, text);
+    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, context, model: b.model, effort, rules, connected, recipe,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
     const maxCredits = requestMaxCredits(b.maxCredits, b.effort !== undefined);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
-    await runTurn(id, { context, model: b.model, effort, maxCredits, rules, connected });
+    await runTurn(id, { context, model: b.model, effort, maxCredits, rules, connected, recipe });
   } catch (e) {
-    if (!quoteOnly) await patchChat(id, { status: "failed" });
-    const known = e instanceof PaidTextError || e instanceof SpendReservationError;
+    if (!quoteOnly && !(e instanceof RecipeError)) await patchChat(id, { status: "failed" });
+    const known = e instanceof PaidTextError || e instanceof SpendReservationError || e instanceof RecipeError;
     return NextResponse.json(
       { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: await getChat(id) },
       { status: known ? e.status : 502 },

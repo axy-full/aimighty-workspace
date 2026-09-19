@@ -46,6 +46,8 @@ import styles from "./atomik-suite.module.css";
 import { SuiteAgentPanel } from "./SuiteAgentPanel";
 import { AtomikGenerate } from "./AtomikGenerate";
 import { providerDisplayName } from "@/lib/vendorNames";
+import { setAtomikRail } from "@/lib/atomikRail";
+import type { ConnectedRecipe } from "@/lib/higgsfield-consumer/workflows";
 
 type Drafts = {
   project: Project | null;
@@ -725,6 +727,43 @@ function SaveRecipe({ run }: { run: PublicPipelineRun }) {
     </button>
   );
 }
+/** The connected account's workflow bundles as recipes (A5 + A6): run one
+ * from the Atomik composer as `/name brief`; every paid step it plans is
+ * priced for approval like any other. */
+function ConnectedRecipes() {
+  const atomik = useAtomik();
+  const { data } = useApi<{ recipes: ConnectedRecipe[] }>("/api/atomik/recipes");
+  const recipes = data?.recipes ?? [];
+  if (!recipes.length) return null;
+  return (
+    <section className={styles.panel} aria-label="Connected recipes">
+      <h2>Connected recipes</h2>
+      <p className={styles.note}>
+        Workflows from the connected account. Type /name and a brief in Atomik; each paid step is priced before it runs.
+      </p>
+      <div className={styles.recipeGrid}>
+        {recipes.map((recipe) => (
+          <article key={recipe.name} className={styles.panel}>
+            <h3>/{recipe.name}</h3>
+            <p>{recipe.description}</p>
+            <div className={styles.actions}>
+              <button
+                disabled={atomik.busy || !!atomik.recoveryText}
+                onClick={() => {
+                  atomik.setDraftText(`/${recipe.name} `);
+                  setAtomikRail("expanded");
+                }}
+              >
+                Use in Atomik
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Recipes({
   runs,
   busy,
@@ -778,6 +817,7 @@ function Recipes({
           </article>
         ))}
       </div>
+      <ConnectedRecipes />
       {!recipes.length && (
         <div className={styles.empty}>
           <h2>No saved recipes yet</h2>
