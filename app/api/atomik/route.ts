@@ -8,6 +8,7 @@ import { writerRulesByScope } from "@/lib/platformLayer";
 import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
 import { menuFor, priceLabel, type CatalogModel } from "@/lib/catalog";
 import { connectedEngineModels, connectedPlannerFor } from "@/lib/higgsfield-consumer/planner-service";
+import { RecipeError, recipeForMessage } from "@/lib/higgsfield-consumer/recipes-service";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +77,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
     const projectId = typeof body.projectId === "string" ? body.projectId : null;
     const connected = await connectedPlannerFor(auth.user, auth.token, projectId);
-    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, connected,
+    const recipe = await recipeForMessage(auth.user, auth.token, text);
+    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, connected, recipe,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
       context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
@@ -89,5 +91,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     agentMode: body.agentMode === "auto" ? "auto" : ("ask" as AgentMode),
   });
   return NextResponse.json({ id });
-  } catch (error) { return paidTextFailure(error); }
+  } catch (error) {
+    if (error instanceof RecipeError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return paidTextFailure(error);
+  }
 });

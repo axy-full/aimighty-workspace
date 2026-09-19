@@ -136,7 +136,8 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const setThinkingModel = useCallback((value: string) => { if (!paid.pending && !busy) setSelection({ scope: composerScope, model: value, effort: "auto" }); }, [composerScope, paid.pending, busy]);
   const setReasoningEffort = useCallback((value: string) => { if (!paid.pending && !busy) setSelection({ scope: composerScope, model, effort: value }); }, [composerScope, model, paid.pending, busy]);
   const { quote, error: quoteError, loading: quoting } = useAtomikQuote(activeId ? `/api/atomik/${encodeURIComponent(activeId)}` : "/api/atomik",
-    !paid.pending && draftText.trim() ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
+    /* A bare `/name` is still being typed: nothing to price until a brief follows. */
+    !paid.pending && draftText.trim() && !/^\/[a-z0-9-]*$/.test(draftText.trim()) ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
 
   /* The latest refresh, for the flows that await it after their writes —
      bound in an effect, since a ref may not change during render. */
