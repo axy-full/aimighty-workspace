@@ -63,6 +63,14 @@ const LIMITS = {
   Considered: { maxTokens: 1800, contextChars: 32000, steps: 8 },
   Deep: { maxTokens: 3200, contextChars: 48000, steps: 12 },
 } as const;
+/** How much of the saved screenplay a planning call at this depth actually
+ * reads. The window is half the depth's context budget; anything beyond it is
+ * not seen, and the quote says so rather than letting the plan imply a full
+ * read. Whole-screenplay work belongs to the staged Development flow. */
+export function screenplayWindow(project: Pick<Project, 'script'>, depth: AtomikRequest['depth']) {
+  const chars = project.script?.length ?? 0, includedChars = Math.min(chars, LIMITS[depth].contextChars / 2);
+  return { chars, includedChars, truncated: chars > includedChars };
+}
 const boundedSetting = (key: string, fallback: number, ceiling: number) => {
   const value = Number(process.env[key]);
   return Number.isFinite(value) && value > 0 ? Math.min(value, ceiling) : fallback;
@@ -191,7 +199,7 @@ export function atomikContext(project: Project, input: AtomikRequest, uploadedTe
       } } : {}),
       ...(project.marketingBrief ? { marketingBrief: project.marketingBrief } : {}),
       deliverables: project.deliverables.slice(0, 1500), direction: project.direction.slice(0, cap / 6),
-      screenplay: (project.script ?? '').slice(0, cap / 2), screenplayTruncated: (project.script?.length ?? 0) > cap / 2,
+      screenplay: (project.script ?? '').slice(0, cap / 2), screenplayTruncated: screenplayWindow(project, input.depth).truncated,
       fps: project.fps, aspect: project.aspect },
     selectedReferences: refs.map(a => ({ id: a!.id, name: a!.name, kind: a!.kind, version: a!.version,
       description: a!.description.slice(0, 1000), referenceUrl: a!.kind === 'link' ? a!.url : undefined, prompt: a!.prompt.slice(0, 1800),
@@ -351,7 +359,8 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
 export async function quoteAtomikJob(input: AtomikRequest, owner: string, overrides?: Partial<AtomikDependencies>) {
   const compiled = await compileAtomikRequest(input, owner, withDependencies(overrides));
   return { estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimateUsd, model: compiled.model.id,
-    depth: input.depth, effort: input.effort ?? 'auto', visualCount: compiled.visualCount, maxTokens: compiled.maxTokens, quoteOnly: true };
+    depth: input.depth, effort: input.effort ?? 'auto', visualCount: compiled.visualCount, maxTokens: compiled.maxTokens,
+    screenplay: screenplayWindow(compiled.project, input.depth), quoteOnly: true };
 }
 
 /** Persist the immutable request first. Only its first claimant may schedule work. */
