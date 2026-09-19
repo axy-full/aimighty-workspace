@@ -9,8 +9,6 @@ import { newProject, type Asset, type CanvasNode, type Project } from "@/lib/wor
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import { formatCredits } from "@/lib/workspace/cost";
 import { engineLabel, shotEngine } from "@/lib/workspace/engines";
-import type { KeyBinding } from "@/lib/workspace/keys";
-import { rigBindings } from "@/lib/workspace/rig-keys";
 import { rigPlanRequests, shotRequestInput, type NamedShotBody } from "@/lib/workspace/rig-requests";
 import { addShotNode, dispatchGate, dispatchQuoteQuery, generationPhase, neutralCopy, referenceRole, shotReferenceAssets } from "@/lib/workspace/rig";
 import { rigShots, ShotPatchError, shotPatch, type RigShot, type ShotPatch } from "@/lib/workspace/shots";
@@ -479,12 +477,10 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
 /** The shell's Generate seams, fed by the Rig. */
 export function RigSeams({ children }: { children: (seams: ShellSeams) => ReactNode }) {
-  const { generate, select, quote: live, blocked, notice } = useRig();
-  const { dispatch } = useWorkspace();
-  const bindings = useMemo(
-    () => rigBindings({ generate, select }, (playing) => dispatch({ type: "patch", patch: { playing } })) as KeyBinding<unknown>[],
-    [generate, select, dispatch],
-  );
+  const { generate, quote: live, blocked, notice } = useRig();
+  const { state, dispatch } = useWorkspace();
+  /* G, ← / → and Space are the shell's one keymap (#233); the Rig only feeds its seams. */
+  const onTogglePlay = useCallback(() => dispatch({ type: "patch", patch: { playing: !state.playing } }), [dispatch, state.playing]);
   const quote = live?.state === "ready" && live.credits !== null ? formatCredits(live.credits) : null;
-  return <>{children({ onGenerate: generate, bindings, generate: { quote, blocked, notice } })}</>;
+  return <>{children({ onGenerate: generate, onTogglePlay, generate: { quote, blocked, notice } })}</>;
 }

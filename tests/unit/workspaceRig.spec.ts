@@ -8,13 +8,9 @@ import {
   relativeAge, shotInputs, shotPreviewAsset, shotReferenceAssets, shotVersions, stepDuration,
 } from "../../lib/workspace/rig";
 import { rigShots, ShotPatchError } from "../../lib/workspace/shots";
-import { rigBindings } from "../../lib/workspace/rig-keys";
-import { resolveKey } from "../../lib/workspace/keys";
-import { INITIAL_STATE } from "../../lib/workspace/navigation";
 import { vendorNameIn } from "../../lib/workspace/vendor-names";
 import { rigPlanRequests, shotRequestInput } from "../../lib/workspace/rig-requests";
 import { generationBrief } from "../../lib/workbench/node-graph";
-import type { AppState } from "../../lib/workspace/types";
 
 const SD25 = "dreamina-seedance-2-5-260628";
 
@@ -164,33 +160,6 @@ test("the request body is GenerationDialog's: quote body plus the approved ceili
     .toMatchObject({ soulIdentityId: "id", soulStrength: 1, workbenchProjectId: "wb" });
 });
 
-test("Rig keys: G generates and ←/→ walk shots on Rig only, never while typing; Space toggles play", () => {
-  const calls: string[] = [];
-  let playing: boolean | null = null;
-  const bindings = rigBindings({ generate: () => calls.push("generate"), select: (id) => calls.push("select:" + id) }, (p) => { playing = p; });
-  const shots = [{ id: "a", name: "A" }, { id: "b", name: "B" }];
-  const state: AppState = { ...INITIAL_STATE, view: "studio", page: "rig", selKind: "shot", selId: "a", lists: { shots, takes: null, cast: null } };
-  const ctx = { state, pageCount: 8 };
-  const press = (key: string, target: { tagName: string } | null = { tagName: "BODY" }, c = ctx) => {
-    const binding = resolveKey(bindings, { key, target }, c);
-    binding?.action({ key, target }, c);
-    return binding?.id ?? null;
-  };
-  expect(press("g")).toBe("rig-generate");
-  expect(press("G")).toBe("rig-generate");
-  expect(press("g", { tagName: "INPUT" })).toBeNull();
-  expect(press("g", { tagName: "TEXTAREA" })).toBeNull();
-  expect(press("g", { tagName: "SELECT" })).toBeNull();
-  expect(press("g", null, { ...ctx, state: { ...state, page: "takes" } })).toBeNull();
-  expect(resolveKey(bindings, { key: "g", metaKey: true }, ctx)).toBeNull();
-  expect(press("ArrowRight")).toBe("rig-arrows");
-  expect(press("ArrowLeft", null, { ...ctx, state: { ...state, selId: "b" } })).toBe("rig-arrows");
-  expect(press("ArrowRight", null, { ...ctx, state: { ...state, selId: "b" } })).toBe("rig-arrows");
-  expect(press(" ")).toBe("rig-play");
-  expect(playing).toBe(true);
-  expect(press(" ", { tagName: "INPUT" })).toBeNull();
-  expect(calls).toEqual(["generate", "generate", "select:b", "select:a", "select:b"]);
-});
 
 test("plan requests: one GenerationDialog body per ready, mapped shot whose references are saved", () => {
   const base = fixture();
