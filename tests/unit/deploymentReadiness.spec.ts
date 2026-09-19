@@ -12,6 +12,11 @@ test("platform configuration can defer Stripe without claiming operational verif
   expect(core.verified).toBe(false);
   expect(core.checks.find((check) => check.id === "billing")).toMatchObject({ required: false, ready: false });
   expect(deploymentReadiness(env).ready).toBe(false);
+  // Native dispatch needs the cron secret and origin, not the Inngest keys; the keys only matter when opted in.
+  const native = { ...env, INNGEST_EVENT_KEY: undefined, INNGEST_SIGNING_KEY: undefined };
+  expect(deploymentReadiness(native, { includeBilling: false }).checks.find((c) => c.id === "jobs")).toMatchObject({ ready: true });
+  expect(deploymentReadiness({ ...native, DISPATCH_MODE: "inngest" }, { includeBilling: false }).checks.find((c) => c.id === "jobs")).toMatchObject({ ready: false });
+  expect(deploymentReadiness({ ...env, DISPATCH_MODE: "inngest" }, { includeBilling: false }).ready).toBe(true);
 });
 
 test("production readiness rejects sandbox billing, local storage/database, mocks and missing provisioning", () => {

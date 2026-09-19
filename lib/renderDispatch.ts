@@ -4,6 +4,7 @@ import type { Client } from "@libsql/client";
 import { db, now, ready } from "./db";
 import { requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
+import { dispatchMode } from "./dispatch";
 
 const boot = new WeakMap<Client, Promise<void>>();
 export async function renderDispatchReady(): Promise<void> {
@@ -39,12 +40,18 @@ export type RenderDispatchEvent = {
   data: { genId: string; kind: "image" | "audio" | "video"; workspaceId: string };
 };
 
+/** What params.$.worker records: which dispatcher owns the row while it runs. */
+export function renderWorkerTag(): "native" | "inngest" {
+  return dispatchMode() === "inngest" ? "inngest" : "native";
+}
+
 /** Lease only the cheap event delivery. The permanent paid claim is never reset. */
 export async function dispatchRender(
   genId: string,
   kind: "image" | "audio" | "video",
   send: (event: RenderDispatchEvent) => Promise<unknown>,
   timeoutMs = 5_000,
+  worker: "native" | "inngest" = renderWorkerTag(),
 ): Promise<boolean> {
 return await withRecoveryJob(requireTenant().id, genId, async () => {
 
@@ -86,8 +93,8 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
           args: [now(), genId, token],
         },
         {
-          sql: `UPDATE generations SET params=json_set(params,'$.worker','inngest','$.workerDispatchedAt',COALESCE(json_extract(params,'$.workerDispatchedAt'),?)) WHERE id=? AND status IN ('queued','running')`,
-          args: [now(), genId],
+          sql: `UPDATE generations SET params=json_set(params,'$.worker',?,'$.workerDispatchedAt',COALESCE(json_extract(params,'$.workerDispatchedAt'),?)) WHERE id=? AND status IN ('queued','running')`,
+          args: [worker, now(), genId],
         },
       ],
       "write",

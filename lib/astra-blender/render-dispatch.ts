@@ -1,16 +1,19 @@
-import { inngest, inngestConfigured, EVENTS } from '../inngest';
+import { queueSender, EVENTS } from '../inngest';
 import { requireTenant } from '../tenant';
 import { withRecoveryJob } from '../recovery';
 import { pendingAstraRenders, reconcileAstraRender, runAstraRender, deferAstraRenderDispatch } from './render-jobs';
 /** Duplicate event delivery is safe: only the permanent queued->starting claim can purchase compute. */
-export async function enqueueAstraRender(jobId: string) { if (!inngestConfigured())
-    return false; try {
-    await inngest.send({ id: `astra-${jobId}`, name: EVENTS.astraRender, data: { jobId, workspaceId: requireTenant().id } });
-    return true;
+export async function enqueueAstraRender(jobId: string) {
+    const send = queueSender();
+    if (!send) return false;
+    try {
+        await send({ id: `astra-${jobId}`, name: EVENTS.astraRender, data: { jobId, workspaceId: requireTenant().id } });
+        return true;
+    }
+    catch {
+        return false;
+    }
 }
-catch {
-    return false;
-} }
 export async function recoverAstraRenders(options: {
     limit?: number;
     deadlineAt?: number;

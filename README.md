@@ -204,6 +204,11 @@ Required environment variables in Vercel:
 | `TURSO_DATABASE_URL` | Turso database |
 | `TURSO_AUTH_TOKEN` | Turso database |
 | `BLOB_READ_WRITE_TOKEN` | injected automatically when a Blob store is attached |
+| `CRON_SECRET` | any long random string; authenticates `/api/cron/sync` and the app's own `/api/worker` (native background dispatch, `docs/native-dispatch.md`) |
+| `APP_ORIGIN` | the canonical HTTPS origin, e.g. `https://www.particl.app`; where `/api/worker` is reached |
+
+Inngest is optional: without `DISPATCH_MODE=inngest` and its two keys, background
+work is dispatched natively on Vercel.
 
 With `BLOB_READ_WRITE_TOKEN` set, uploads go browser → Blob directly and the
 database and media live in the cloud. Without it everything falls back to the

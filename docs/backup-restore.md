@@ -14,7 +14,7 @@ shell arguments, logs, CI artifacts or the repository.
 
 The platform and tenant databases are separate physical databases. A consistent
 backup needs an explicit maintenance window: stop incoming mutations, disable
-scheduled sync/purge and Inngest delivery, drain or fence workers, and pause
+scheduled sync/purge and worker dispatch (native `/api/worker`, or Inngest if opted in), drain or fence workers, and pause
 provisioning and uploads. Keep them stopped until capture finishes. The
 `quiesced: true` assertion records the operator's confirmation; it is **not** a
 maintenance switch and the tool cannot fence deployed applications for you.
@@ -204,7 +204,7 @@ node --test tests/ops/*.test.mjs
 ```
 
 The confirmation is a protected operational assertion, **not an application pause
-switch**. This implementation does not automatically pause Vercel, Inngest or
+switch**. This implementation does not automatically pause Vercel, the native worker, Inngest or
 external writers. Do not activate the schedule until an operator or maintenance
 orchestrator actually fences them for the window and refreshes this record. An
 old permanent `true` setting is rejected. Read-only database preflight checks
@@ -342,7 +342,7 @@ key and assume an old archive will decrypt.
 
 Do **not** call `/api/cron/sync` to inspect a restored database. In addition to
 status polling, it releases held jobs and runs pending destructive purges. Do not
-start Inngest with restored events before ownership has been reconciled.
+start the worker (native or Inngest) with restored events before ownership has been reconciled.
 
 | Report disposition                                                             | Operator action                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

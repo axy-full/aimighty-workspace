@@ -1,22 +1,24 @@
-import { runAstraRender, reconcileAstraRender } from "./astra-blender/render-jobs";
-import { withRecoveryJob } from "./recovery";
 import { inngest, EVENTS } from "./inngest";
-import { ready } from "./db";
-import { runWorkerProbe } from "./workerProbe";
-import { loadJob, produce, seal, failJob } from "./renderWork";
-import { submitVideoRow, failVideoDispatch } from "./submitVideo";
-import { runInTenant } from "./tenant";
-import { getWorkspace, legacyWorkspace } from "./platform";
+import { withRecoveryJob } from "./recovery";
+import {
+  handleAstraRender,
+  handleProbe,
+  renderFailed,
+  renderProduce,
+  renderSeal,
+  renderSubmitVideo,
+  workspaceOf,
+  type RenderEventData,
+} from "./worker-handlers";
 
-/** The workspace an event belongs to; the studio's original one for events that predate workspaces. */
-async function workspaceOf(data: { workspaceId?: string }) {
-  const ws = data.workspaceId
-    ? await getWorkspace(String(data.workspaceId))
-    : await legacyWorkspace();
-  if (!ws || ws.deletedAt)
-    throw new Error("No active workspace for this event.");
-  return ws;
-}
+/**
+ * The Inngest functions, for deployments that opt into DISPATCH_MODE=inngest.
+ *
+ * Their bodies live in lib/worker-handlers.ts and are shared with the native
+ * /api/worker route; what this file adds is Inngest's step memoisation,
+ * retries and concurrency around those bodies. Ids, triggers, concurrency
+ * and retry counts are the registration contract and stay as they were.
+ */
 
 /** A scoped deployment probe proves DB/storage access without spending on a model. */
 export const probe = inngest.createFunction(
@@ -27,7 +29,7 @@ export const probe = inngest.createFunction(
   },
   async ({ event, step }) =>
     step.run("verify-scoped-database-and-storage", () =>
-      runWorkerProbe({
+      handleProbe({
         workspaceId: String(event.data.workspaceId ?? ""),
         probeId: String(event.data.probeId ?? ""),
         ...(event.data.expectedDeployment
@@ -47,9 +49,8 @@ export const probe = inngest.createFunction(
  * costs money — it calls the vendor and writes the bytes to storage — and
  * Inngest MEMOISES a completed step, so if `record` fails and the run is
  * retried, produce replays from cache rather than paying Google or
- * ElevenLabs a second time. An ordinary retry queue cannot do that, and for
- * a synchronous vendor it is the difference between a retry costing nothing
- * and a retry costing the price of the render.
+ * ElevenLabs a second time. (produce also stores its outcome on the row,
+ * which is what the native route and the cron rely on instead.)
  *
  * Idempotency comes from the row itself: loadJob returns null for anything
  * already terminal, so an at-least-once delivery of an event whose render
@@ -68,75 +69,51 @@ export const render = inngest.createFunction(
        ends it. Without this the render would sit at "running" until the
        cron's long backstop noticed, hours later. */
     onFailure: async ({ event, error }) => {
-      const data = (event.data.event?.data ?? {}) as {
-        genId?: string;
-        workspaceId?: string;
-        kind?: string;
-      };
-      const genId = String(data.genId ?? "");
-      if (genId)
-        await withRecoveryJob(String(data.workspaceId ?? ""), genId, async () =>
-          runInTenant(await workspaceOf(data), () =>
-            data.kind === "video"
-              ? failVideoDispatch(genId, error.message)
-              : failJob(genId, error.message),
-          ),
-        );
+      const data = (event.data.event?.data ?? {}) as Partial<RenderEventData>;
+      await renderFailed(
+        {
+          genId: String(data.genId ?? ""),
+          kind: data.kind === "video" ? "video" : data.kind === "audio" ? "audio" : "image",
+          workspaceId: String(data.workspaceId ?? ""),
+        },
+        error.message,
+      );
     },
   },
   async ({ event, step }) => {
-    const genId = String(event.data.genId);
-    const workspaceId = String(event.data.workspaceId ?? "");
-    const ws = await withRecoveryJob(workspaceId, genId, () =>
-      workspaceOf(event.data as { workspaceId?: string }),
-    );
+    const data: RenderEventData = {
+      genId: String(event.data.genId),
+      kind: event.data.kind === "video" ? "video" : event.data.kind === "audio" ? "audio" : "image",
+      workspaceId: String(event.data.workspaceId ?? ""),
+    };
+    const ws = await withRecoveryJob(data.workspaceId, data.genId, () => workspaceOf(data));
 
-    if (event.data.kind === "video") {
-      return step.run("submit-video", () =>
-        withRecoveryJob(workspaceId, genId, () =>
-          runInTenant(ws, async () => {
-            await workspaceOf(event.data as { workspaceId?: string });
-            await ready();
-            return { genId, ...(await submitVideoRow(genId)) };
-          }),
-        ),
-      );
-    }
+    if (data.kind === "video")
+      return step.run("submit-video", () => renderSubmitVideo(data, ws));
 
-    const produced = await step.run("produce", async () =>
-      withRecoveryJob(workspaceId, genId, () =>
-        runInTenant(ws, async () => {
-          await workspaceOf(event.data as { workspaceId?: string });
-          await ready();
-          const job = await loadJob(genId);
-          // Already finished, or gone. Nothing to do, and nothing to pay for.
-          if (!job) return null;
-          const out = await produce(job);
-          return out ? { job, out } : null;
-        }),
-      ),
-    );
+    const produced = await step.run("produce", () => renderProduce(data, ws));
+    if (!produced) return { genId: data.genId, skipped: true };
 
-    if (!produced) return { genId, skipped: true };
-
-    await step.run("record", async () =>
-      withRecoveryJob(workspaceId, genId, () =>
-        runInTenant(ws, async () => {
-          await workspaceOf(event.data as { workspaceId?: string });
-          await ready();
-          await seal(produced.job, produced.out);
-          return { sealed: true };
-        }),
-      ),
-    );
-
-    return { genId, ok: true };
+    await step.run("record", () => renderSeal(data, ws, produced));
+    return { genId: data.genId, ok: true };
   },
 );
 
 export const astraRender = inngest.createFunction(
- {id:"astra-blender-render",name:"Render Astra Blender",triggers:[{event:EVENTS.astraRender}],concurrency:[{limit:4},{limit:2,key:"event.data.workspaceId"}],retries:2},
- async ({event,step})=>step.run("render-persist-and-account",()=>withRecoveryJob(String(event.data.workspaceId),String(event.data.jobId),async()=>runInTenant(await workspaceOf(event.data),async()=>{await runAstraRender(String(event.data.jobId));await reconcileAstraRender(String(event.data.jobId));return{jobId:String(event.data.jobId)};}))),
+  {
+    id: "astra-blender-render",
+    name: "Render Astra Blender",
+    triggers: [{ event: EVENTS.astraRender }],
+    concurrency: [{ limit: 4 }, { limit: 2, key: "event.data.workspaceId" }],
+    retries: 2,
+  },
+  async ({ event, step }) =>
+    step.run("render-persist-and-account", () =>
+      handleAstraRender({
+        jobId: String(event.data.jobId),
+        workspaceId: String(event.data.workspaceId),
+      }),
+    ),
 );
 
 /** Everything the route serves. Workers are added here as they are written. */
