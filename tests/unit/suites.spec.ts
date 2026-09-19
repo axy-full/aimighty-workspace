@@ -72,7 +72,7 @@ test("the four suites carry the 19 September names and the eight-stage Particl d
   ]);
   expect(STAGES.map((stage) => stage.label)).toEqual(PAGES.particl.map((page) => page.label));
   expect(STAGES.find((stage) => stage.id === "brief")?.hint).toBe("Find the story and the production in it");
-  expect(PAGES.atomik.map((page) => page.id)).toEqual(["runs", "recipes", "approvals", "budget", "models"]);
+  expect(PAGES.atomik.map((page) => page.id)).toEqual(["runs", "generate", "recipes", "approvals", "budget", "models"]);
   expect(PAGES.subatomik.map((page) => page.id)).toEqual(["motion-transfer", "object-swap"]);
 });
 
