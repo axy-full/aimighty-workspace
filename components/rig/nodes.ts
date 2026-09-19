@@ -52,6 +52,19 @@ export function outputDotTop(n: BoardNode): number {
 /** A shot node's full height, border to border. */
 export const shotHeight = (n: BoardNode): number => BORDER + SHOT_HEAD_H + 8 + n.inputs.length * SLOT_ROW_H + 6 + SHOT_FOOT_H + BORDER;
 
+/** Any node's full height, border to border — the same rows `Node` renders, for fitting the board into the viewport. */
+export function nodeHeight(n: BoardNode): number {
+  const BUTTON = 8 + 40 + 10;                                  // the Generate / Again button under a well, with its margins
+  switch (n.kind) {
+    case "asset": return BORDER + HEAD_H + n.ports.length * PORT_ROW_H + BORDER;
+    case "shot": return shotHeight(n);
+    case "prompt": case "note": return BORDER + HEAD_H + 96 + 10 + BORDER;
+    case "image": return BORDER + HEAD_H + 8 + n.inputs.length * INPUT_ROW_H + 8 + VARIANT_H * 2 + 6 + BUTTON + BORDER;
+    case "video": return BORDER + HEAD_H + 8 + n.inputs.length * INPUT_ROW_H + MOTION_H + 8 + WELL_H + BUTTON + BORDER;
+    default: return BORDER + HEAD_H + 8 + n.inputs.length * INPUT_ROW_H + 8 + WELL_H + BUTTON + BORDER;
+  }
+}
+
 /** The centre of a node's output dot, in board coordinates — a dot sits on the node's right edge (`right:-5px`), so the wire leaves from the edge itself. */
 export function outputPoint(n: BoardNode): { x: number; y: number } {
   return { x: n.x + NODE_W[n.kind], y: n.y + BORDER + outputDotTop(n) + DOT / 2 };

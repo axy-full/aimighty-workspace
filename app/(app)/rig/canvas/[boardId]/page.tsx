@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { useMoney } from "@/lib/price";
@@ -28,8 +28,9 @@ import { useAtomikRail } from "@/lib/atomikRail";
 import NewAssetSheet from "@/components/assets/NewAssetSheet";
 import {
   KIND_TAG, KIND_WORD, KINDS, NODE_W, TAKES_DOT_LEFT, isGen,
-  outputDotTop, outputPoint, portPoint, wirePath, wireMid, endpoints, newNode, nid,
+  outputDotTop, outputPoint, portPoint, wirePath, wireMid, endpoints, newNode, nid, nodeHeight,
 } from "@/components/rig/nodes";
+import { zoomAround, wheelFactor, panBy, stepZoom, resetZoom, fitView, pinchView, distance, midpoint, viewKey, loadView, saveView, DEFAULT_VIEW, type View, type Point } from "@/lib/viewport";
 
 /**
  * Rig · Canvas (design/particl-v2/README.md §8; board 6a), value for value.
@@ -54,6 +55,15 @@ import {
  * its next version through the ordinary generate route; `Save as recipe`
  * turns the board's generate nodes into stages.
  *
+ * Zoom and pan (docs/change-request-1.md §6): a `wheel` with ctrl/⌘ (a
+ * trackpad pinch, ⌘-scroll) zooms about the cursor and a plain wheel pans;
+ * both call `preventDefault` first, on a native non-passive listener, so
+ * the browser never zooms or scrolls the page. Touch: pinch to zoom,
+ * one finger on empty board to pan. `⌘0` fits, `⌘=` / `⌘-` step; the
+ * `+ / − / fit` cluster bottom-right shows the percentage. 25%–200%,
+ * remembered per board per user (`lib/viewport.ts`). The transform is on
+ * the board group, so text stays crisp and wire endpoints stay exact.
+ *
  * Below 768 (design/particl-v2-mobile, board M5) the Rig is read-and-run:
  * the board built on a desktop is shown as one stack down one wire
  * (`components/rig/PhoneBoard.tsx`), a slot opens its inspector sheet, and
@@ -73,7 +83,7 @@ function Canvas() {
   const { boardId } = useParams<{ boardId: string }>();
   const search = useSearchParams();
   const router = useRouter();
-  const { signedIn, rates, models, name: myName } = useSession();
+  const { signedIn, rates, models, name: myName, email: myEmail } = useSession();
   const money = useMoney();
   const toast = useToast();
   const { engines, engineLabel } = useAtomik();
@@ -117,10 +127,20 @@ function Canvas() {
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null);
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
   const [wiring, setWiring] = useState<Wiring | null>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  /* The view is remembered per board per user; the first render reads it back. */
+  const viewStorageKey = viewKey(myEmail ?? "visitor", boardId);
+  const [view, setView] = useState<View>(() => loadView(viewStorageKey) ?? DEFAULT_VIEW);
+  const pan = view.pan, zoom = view.zoom;
+  const viewRef = useRef(view);
+  useLayoutEffect(() => { viewRef.current = view; }, [view]);
+  useEffect(() => { if (!wantsNew) saveView(viewStorageKey, view); }, [view, viewStorageKey, wantsNew]);
   const [running, setRunning] = useState<Set<string>>(new Set());
-  const surface = useRef<HTMLDivElement>(null);
+  const surface = useRef<HTMLElement | null>(null);
+  const wheelOff = useRef<(() => void) | null>(null);
+  /* Touch: the fingers on the board and the pinch they make; set in the capture phase, read by every other handler. */
+  const fingers = useRef(new Map<number, Point>());
+  const pinch = useRef<{ view: View; dist: number; mid: Point } | null>(null);
+
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef<Board | null>(null);
   useEffect(() => { latest.current = shownBoard; }, [shownBoard]);
@@ -175,19 +195,74 @@ function Canvas() {
     return node;
   }, [pan, zoom, commit, engineOf, engineLabel]);
 
+  /* A point in surface pixels — what zoomAround and fitView measure from. */
+  const surfacePoint = (clientX: number, clientY: number): Point => { const r = surface.current?.getBoundingClientRect() ?? { left: 0, top: 0 }; return { x: clientX - r.left, y: clientY - r.top }; };
+  const surfaceCentre = (): Point => { const r = surface.current?.getBoundingClientRect(); return r ? { x: r.width / 2, y: r.height / 2 } : { x: 0, y: 0 }; };
+  const fit = useCallback(() => {
+    const b = latest.current; const r = surface.current?.getBoundingClientRect();
+    if (!b || !r) return;
+    setView(fitView(b.nodes.map((n) => ({ x: n.x, y: n.y, w: NODE_W[n.kind], h: nodeHeight(n) })), { w: r.width, h: r.height }));
+  }, []);
+  /* The wheel. preventDefault comes first — a pinch (ctrl/⌘ + wheel) must never reach the browser's own
+     zoom and a wheel over the board must never move the page — then ctrl/⌘ zooms about the cursor and a
+     plain wheel pans. The one thing decided before it: a plain wheel over a sheet, a menu or a text field
+     mounted inside the board keeps its native scroll and is left alone. Attached natively with
+     `passive: false` (React's root wheel listener is passive, so preventDefault there is ignored), from a
+     callback ref, so it is on the board the moment the board mounts — the board renders after a loader,
+     which a run-once effect would miss. Functional updates: rapid wheel events never read a stale view. */
+  const surfaceRef = useCallback((el: HTMLElement | null) => {
+    wheelOff.current?.(); wheelOff.current = null;
+    surface.current = el;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const pinch = e.ctrlKey || e.metaKey;
+      if (!pinch && (e.target as Element | null)?.closest?.('[role="dialog"], [role="menu"], textarea, input, select')) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      if (pinch) { const at = { x: e.clientX - r.left, y: e.clientY - r.top }, f = wheelFactor(e.deltaY, e.deltaMode); setView((v) => zoomAround(v, at, f)); }
+      else { const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1, dx = e.deltaX * k, dy = e.deltaY * k; setView((v) => panBy(v, dx, dy)); }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    wheelOff.current = () => el.removeEventListener("wheel", onWheel);
+  }, []);
+  useEffect(() => () => { wheelOff.current?.(); wheelOff.current = null; }, []);
+  /* Touch: two fingers pinch (zoom about where they started, then follow their midpoint) — seen in the
+     capture phase so a pinch that begins on a node still counts; one finger on empty board pans. */
+  const onTouchCapture = (e: RPointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fingers.current.size === 2) {
+      const [a, b] = [...fingers.current.values()].map((p) => surfacePoint(p.x, p.y));
+      pinch.current = { view: viewRef.current, dist: distance(a, b), mid: midpoint(a, b) };
+      setDrag(null); setWiring(null);
+    }
+  };
+  const onTouchMoveCapture = (e: RPointerEvent) => {
+    if (e.pointerType !== "touch" || !fingers.current.has(e.pointerId)) return;
+    fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.current && fingers.current.size >= 2) {
+      const [a, b] = [...fingers.current.values()].slice(0, 2).map((p) => surfacePoint(p.x, p.y));
+      setView(pinchView(pinch.current, distance(a, b), midpoint(a, b)));
+    }
+  };
+  const onTouchEndCapture = (e: RPointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    fingers.current.delete(e.pointerId);
+    if (fingers.current.size < 2) pinch.current = null;
+  };
   const onSurfaceDown = (e: RPointerEvent) => {
     if (e.button !== 0) return;
     if (tool === "note") { const p = toBoardXY(e); addNode("note", p.x, p.y); setTool("select"); return; }
     setSelected(null); setSelectedWire(null); setAddMenu(null);
-    if (tool === "hand" || e.altKey) {
+    if (tool === "hand" || e.altKey || e.pointerType === "touch") {
       const start = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-      const move = (ev: PointerEvent) => setPan({ x: ev.clientX - start.x, y: ev.clientY - start.y });
-      const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-      window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+      const move = (ev: PointerEvent) => { if (pinch.current) return; setView((v) => ({ ...v, pan: { x: ev.clientX - start.x, y: ev.clientY - start.y } })); };
+      const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
+      window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
     }
   };
   const onNodeDown = (n: BoardNode) => (e: RPointerEvent) => {
-    if (e.button !== 0 || tool === "hand") return;
+    if (e.button !== 0 || tool === "hand" || pinch.current) return;
     e.stopPropagation();
     setSelected(n.id); setSelectedWire(null); setAddMenu(null);
     if (tool === "wire" && n.kind !== "note") { const p = toBoardXY(e); setWiring({ from: { nodeId: n.id, portId: "out" }, x: p.x, y: p.y }); return; }
@@ -207,7 +282,7 @@ function Canvas() {
 
   /* Wiring: from an output dot to a slot dot. The dot is the target, so the wire lands on the slot, not the node. */
   const startWire = (nodeId: string, portId: string) => (e: RPointerEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || pinch.current) return;
     e.stopPropagation(); e.preventDefault();
     const p = toBoardXY(e);
     setWiring({ from: { nodeId, portId }, x: p.x, y: p.y });
@@ -221,7 +296,7 @@ function Canvas() {
   }, [wiring, toBoardXY]);
   const landWire = (toNode: BoardNode, slotId: string) => (e: RPointerEvent) => {
     const b = latest.current;
-    if (!wiring || !b) return;
+    if (!wiring || !b || pinch.current) return;
     e.stopPropagation();
     if (wiring.from.nodeId === toNode.id) { setWiring(null); return; }
     const from = b.nodes.find((n) => n.id === wiring.from.nodeId);
@@ -352,6 +427,9 @@ function Canvas() {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setAddMenu({ x: 76 + 16, y: 56 + 44 + 16 + 36 + 6 }); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === "0") { e.preventDefault(); fit(); }
+      else if ((e.metaKey || e.ctrlKey) && (e.key === "=" || e.key === "+")) { e.preventDefault(); setView((v) => stepZoom(v, 1, surfaceCentre())); }
+      else if ((e.metaKey || e.ctrlKey) && (e.key === "-" || e.key === "_")) { e.preventDefault(); setView((v) => stepZoom(v, -1, surfaceCentre())); }
       else if (e.key === "Escape") { setAddMenu(null); setWiring(null); }
       else if ((e.key === "Backspace" || e.key === "Delete") && selected) { e.preventDefault(); removeNode(selected); }
     };
@@ -424,10 +502,11 @@ function Canvas() {
         </>} />
       <div className="grid min-h-0 flex-1 grid-cols-[56px_minmax(0,1fr)_300px]">
         <RigStrip />
-        <section ref={surface} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
-          aria-label="Board"
+        <section ref={surfaceRef} onPointerDown={onSurfaceDown} onContextMenu={(e) => { e.preventDefault(); setAddMenu({ x: e.clientX, y: e.clientY }); }}
+          onPointerDownCapture={onTouchCapture} onPointerMoveCapture={onTouchMoveCapture} onPointerUpCapture={onTouchEndCapture} onPointerCancelCapture={onTouchEndCapture}
+          aria-label="Board" data-zoom={zoom}
           className={`relative min-w-0 overflow-hidden ${tool === "hand" ? "cursor-grab" : tool === "wire" ? "cursor-crosshair" : ""}`}
-          style={{ backgroundImage: "radial-gradient(rgba(245,246,248,.07) 1px, transparent 1px)", backgroundSize: "24px 24px", backgroundPosition: `${pan.x}px ${pan.y}px` }}>
+          style={{ touchAction: "none", backgroundImage: "radial-gradient(rgba(245,246,248,.07) 1px, transparent 1px)", backgroundSize: `${24 * zoom}px ${24 * zoom}px`, backgroundPosition: `${pan.x}px ${pan.y}px` }}>
           <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
             <Wires board={b} selected={selectedWire} onSelect={setSelectedWire} wiring={wiring} />
             {b.nodes.map((n) => (
@@ -450,10 +529,18 @@ function Canvas() {
               <button key={t} type="button" aria-pressed={tool === t} onClick={() => setTool(t)} className={`rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none ${tool === t ? "bg-selected text-ink" : "text-ink-body"}`}>{t[0].toUpperCase() + t.slice(1)}</button>
             ))}
             <span className="mx-[6px] h-[18px] w-px bg-border-mid" />
-            <button type="button" onClick={() => setZoom((z) => (z >= 1 ? 0.75 : z >= 0.75 ? 0.5 : 1))} className="ui-mono ui-mono-cost px-[10px] py-[8px] text-ink-body">{Math.round(zoom * 100)}%</button>
-            <button type="button" onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} className="rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none text-ink-body">Fit</button>
+            <button type="button" onClick={() => setView((v) => resetZoom(v, surfaceCentre()))} title="Zoom to 100%" className="ui-mono ui-mono-cost px-[10px] py-[8px] text-ink-body">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={fit} className="rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none text-ink-body">Fit</button>
             <span className="mx-[6px] h-[18px] w-px bg-border-mid" />
             <button type="button" onClick={runUnrun} disabled={!unrun.length} className="ui-mono ui-mono-cost px-[12px] py-[8px] text-ink-body disabled:opacity-60">Run unrun · {fmt(unrunCost)}</button>
+          </div>
+          {/* CR1 §6: the zoom cluster — − · the percentage · + · fit — bottom-right. */}
+          <div className="absolute bottom-[16px] right-[16px] z-[4] flex items-center gap-[2px] rounded-pill border border-[rgba(245,246,248,.12)] bg-card p-[4px]" role="group" aria-label="Zoom" onPointerDown={(e) => e.stopPropagation()}>
+            <button type="button" onClick={() => setView((v) => stepZoom(v, -1, surfaceCentre()))} aria-label="Zoom out" className="flex h-[28px] w-[28px] items-center justify-center rounded-pill text-[15px] leading-none text-ink-body">−</button>
+            <button type="button" onClick={() => setView((v) => resetZoom(v, surfaceCentre()))} title="Zoom to 100%" className="ui-mono ui-mono-cost min-w-[44px] px-[6px] py-[8px] text-center text-ink" data-zoom-readout="">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={() => setView((v) => stepZoom(v, 1, surfaceCentre()))} aria-label="Zoom in" className="flex h-[28px] w-[28px] items-center justify-center rounded-pill text-[15px] leading-none text-ink-body">+</button>
+            <span className="mx-[4px] h-[18px] w-px bg-border-mid" />
+            <button type="button" onClick={fit} aria-label="Fit the board" className="rounded-pill px-[12px] py-[8px] text-[12.5px] font-medium leading-none text-ink-body">Fit</button>
           </div>
           {addMenu && <Menu x={addMenu.x} y={addMenu.y} title="Add node" items={addItems} onClose={() => setAddMenu(null)} />}
           <NewAssetSheet open={assetSheet} from="rig" onClose={() => setAssetSheet(false)} onCreated={() => refreshElements()} />
