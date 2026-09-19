@@ -14,7 +14,6 @@ import { newProject } from "../lib/workbench/studio";
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
-const SHOTS = "/private/tmp/ws-agent-shots";
 
 /* Test fixtures only — the app reads these from the real projects route. */
 const primary = { ...newProject("Coastal light study"), id: "ws-atomik-a", description: "Product film · Spot 02", aspect: "16:9", fps: 24 };
@@ -141,7 +140,7 @@ test("a paid plan stops at its gate; Not now dispatches nothing", async ({ page 
   expect(mock.quoteCalls).toBe(1);
   expect(mock.dispatches).toEqual([]);
   expect(mock.paidRequests).toEqual([]);
-  if (info.project.name === "workbench-1440x900") await page.screenshot({ path: `${SHOTS}/atomik-gate-waiting.png` });
+  if (info.project.name === "workbench-1440x900") await page.screenshot({ path: info.outputPath("atomik-gate-waiting.png") });
 
   /* The waiting surfaces: amber chip with the live price, "1 approval" badge; the header never clips. */
   await page.keyboard.press("Escape");
