@@ -44,6 +44,11 @@
 .result { display: grid; gap: 10px; min-width: 0; }
 .result img, .result video { display: block; width: 100%; max-height: 360px; object-fit: contain; background: #000; border-radius: 8px; }
 .result audio { width: 100%; }
+.figures { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0; }
+.figures div { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--graphite-edge); border-radius: 8px; min-width: 0; }
+.figures dt { color: var(--graphite-muted); font-size: 11px; overflow-wrap: anywhere; }
+.figures dd { margin: 0; font-size: 16px; color: var(--graphite-ink); }
+.jobs h3 { margin: 0; font-weight: 500; }
 .error, .notice { padding: 12px; margin: 14px 0; border: 1px solid var(--graphite-edge); background: var(--graphite-panel); border-radius: 8px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .error { border-color: #694949; color: #f0b9b9; }
 .hint { margin: 0; color: var(--graphite-muted); font-size: 12px; line-height: 1.65; }

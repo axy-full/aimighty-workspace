@@ -6,12 +6,13 @@ import { workbenchTransaction } from "@/lib/workbench/records";
 import { validateConsumerGenjutsuSources } from "./genjutsu-sources";
 import { validateConsumerGenerationSources } from "./generation-sources";
 import { validateConsumerMarketingTemplateSources } from "./marketing-template-sources";
+import { validateConsumerVoiceToolSources } from "./voice-tool-sources";
 import { columnInstaller } from "@/lib/schemaInitialization";
 
 export type ConsumerWorkflow =
-  "marketing-video" | "reference-match" | "virality" | "genjutsu" | "generation" | "marketing-template";
+  "marketing-video" | "reference-match" | "virality" | "genjutsu" | "generation" | "marketing-template" | "voice-tool";
 export const CONSUMER_WORKFLOWS: readonly ConsumerWorkflow[] = Object.freeze([
-  "marketing-video", "reference-match", "virality", "genjutsu", "generation", "marketing-template",
+  "marketing-video", "reference-match", "virality", "genjutsu", "generation", "marketing-template", "voice-tool",
 ]);
 export type ConsumerJobStatus =
   "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
@@ -305,6 +306,7 @@ export async function createConsumerJob(
     if(input.workflow === "genjutsu") await validateConsumerGenjutsuSources(tx, JSON.parse(payloadJson).input);
     if(input.workflow === "generation") await validateConsumerGenerationSources(tx, JSON.parse(payloadJson).input);
     if(input.workflow === "marketing-template") await validateConsumerMarketingTemplateSources(tx, JSON.parse(payloadJson).input);
+    if(input.workflow === "voice-tool") await validateConsumerVoiceToolSources(tx, JSON.parse(payloadJson).input);
     const previous = (
       await tx.execute({
         sql: "SELECT * FROM higgsfield_consumer_jobs WHERE user_id=? AND draft_id=? AND idempotency_key=?",
@@ -458,6 +460,7 @@ export async function claimConsumerDispatch(
     if(row.workflow === "genjutsu") await validateConsumerGenjutsuSources(tx, JSON.parse(String(row.payload_json)).input);
     if(row.workflow === "generation") await validateConsumerGenerationSources(tx, JSON.parse(String(row.payload_json)).input);
     if(row.workflow === "marketing-template") await validateConsumerMarketingTemplateSources(tx, JSON.parse(String(row.payload_json)).input);
+    if(row.workflow === "voice-tool") await validateConsumerVoiceToolSources(tx, JSON.parse(String(row.payload_json)).input);
     const now = Date.now();
     if (Number(row.quote_expires_at) <= now)
       throw new ConsumerJobError("quote_expired");
@@ -584,7 +587,7 @@ export async function reconcileConsumerReceipt(
   await consumerJobsReady();
   return workbenchTransaction(async tx => {
     const row = await requiredRow(tx, input);
-    if (row.provider_receipt !== expected || !row.dispatch_claim_hash || !["marketing-video", "genjutsu", "generation", "marketing-template"].includes(String(row.workflow))) return null;
+    if (row.provider_receipt !== expected || !row.dispatch_claim_hash || !["marketing-video", "genjutsu", "generation", "marketing-template", "voice-tool"].includes(String(row.workflow))) return null;
     if (row.provider_job_id != null) {
       if (row.provider_job_id !== providerJobId) throw new ConsumerJobError("provider_job_conflict");
       return asJob(row);

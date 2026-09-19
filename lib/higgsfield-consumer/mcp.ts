@@ -58,6 +58,23 @@ import {
   type MarketingTemplateCategory,
   type MarketingTemplateCosts,
 } from "./marketing-templates";
+import {
+  VOICES_LIMITS,
+  VOICE_TOOL_STATUS_ARGUMENT,
+  VoiceToolError,
+  consumerVoiceToolAcknowledgement,
+  consumerVoiceToolParams,
+  consumerVoiceToolPollAfter,
+  parseConnectedVoicesPage,
+  parseConsumerVoiceToolInput,
+  requireVoiceTool,
+  voiceToolArgumentShape,
+  voiceToolArguments,
+  type ConsumerVoiceToolInput,
+  type ConsumerVoiceToolParams,
+  type VoiceToolName,
+  type VoiceToolShape,
+} from "./voice-tools";
 export const CATALOGUE_PAGE_LIMIT = 100;
 export const CATALOGUE_PAGES = 5;
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
@@ -233,6 +250,10 @@ type ConsumerSession = {
   templateCosts: () => Promise<Record<string, unknown>>;
   templateCreate: (args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
   templateStatus: (args: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  voicesList: (cursor?: string) => Promise<Record<string, unknown>>;
+  /** Only the fixed voice/dubbing/analysis create tools; the name is resolved from the workflow, never a caller. */
+  voiceToolCreate: (tool: VoiceToolName, args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
+  voiceToolStatus: (tool: VoiceToolName, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -678,6 +699,10 @@ async function withConsumerSession<T>(
       templateCosts: async () => (await post("tools/call", { name: MARKETING_TEMPLATE_TOOLS.costs, arguments: {} }))!,
       templateCreate: async (args, sending) => (await post("tools/call", { name: MARKETING_TEMPLATE_TOOLS.create, arguments: args }, sending))!,
       templateStatus: async (args) => (await post("tools/call", { name: MARKETING_TEMPLATE_TOOLS.status, arguments: args }))!,
+      voicesList: async (cursor) =>
+        (await post("tools/call", { name: "list_voices", arguments: { size: VOICES_LIMITS.pageSize, ...(cursor === undefined ? {} : { cursor }) } }))!,
+      voiceToolCreate: async (tool, args, sending) => (await post("tools/call", { name: requireVoiceTool(tool).create, arguments: args }, sending))!,
+      voiceToolStatus: async (tool, args) => (await post("tools/call", { name: requireVoiceTool(tool).status, arguments: args }))!,
     });
   } catch (error) {
     if (
@@ -1722,6 +1747,190 @@ export async function readConsumerMarketingTemplateJob(
       if (!args) throw new ConsumerAdmissionStopped(unverified("status"));
       const raw = videoReadResult(session, await session.templateStatus(args));
       const wait = consumerMarketingTemplatePollAfter(raw);
+      return { jobId, raw, ...(wait === undefined ? {} : { pollAfterSeconds: wait }) };
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    return videoPreflightError(error);
+  }
+}
+
+/* ── Voice, dubbing and analysis tools (Atomik Generate, slice I3) ────── */
+/** Read-only: the whole `list_voices` listing, following the provider's
+ * cursor up to a fixed page count. Items are returned raw for voice-tools.ts
+ * to parse; nothing here is executed or priced. */
+export async function readConnectedVoices(accessToken: string, options: Options = {}): Promise<{ items: unknown[]; complete: boolean }> {
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const items: unknown[] = [];
+      const seen = new Set<string>();
+      let cursor: string | undefined, more = false;
+      for (let page = 0; page < VOICES_LIMITS.pages; page++) {
+        if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+        let parsed: ReturnType<typeof parseConnectedVoicesPage>;
+        try {
+          parsed = parseConnectedVoicesPage(videoReadResult(session, await session.voicesList(cursor)));
+        } catch {
+          throw new ConsumerVideoError("provider_error");
+        }
+        if (items.length + parsed.items.length > VOICES_LIMITS.voices) throw new ConsumerVideoError("provider_error");
+        items.push(...parsed.items);
+        more = parsed.next !== null && parsed.items.length > 0;
+        if (!more) break;
+        if (seen.has(parsed.next!)) throw new ConsumerVideoError("provider_error");
+        seen.add(parsed.next!);
+        cursor = parsed.next!;
+      }
+      return { items, complete: !more };
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+export type ConsumerVoiceToolQuote = {
+  input: ConsumerVoiceToolInput;
+  params: ConsumerVoiceToolParams;
+  shape: VoiceToolShape;
+  workspace: ConsumerVideoWorkspace;
+  credits: number;
+  /** The only price source these tools can have: their own advertised get_cost form. */
+  priceSource: "get_cost";
+};
+const voiceUnverified = (tool: VoiceToolName, what: "create" | "status") =>
+  new VoiceToolError("contract_unverified", `The connected account's ${requireVoiceTool(tool).label} ${what} tool does not advertise the arguments this workflow sends. Nothing was submitted.`);
+async function verifiedVoiceToolShape(session: ConsumerSession, tool: VoiceToolName, params: ConsumerVoiceToolParams) {
+  const definition = requireVoiceTool(tool);
+  const shape = voiceToolArgumentShape((await sessionToolSchemas(session, [definition.create])).get(definition.create), params);
+  if (!shape) throw new ConsumerAdmissionStopped(voiceUnverified(tool, "create"));
+  return shape;
+}
+async function voiceToolPrice(session: ConsumerSession, tool: VoiceToolName, params: ConsumerVoiceToolParams, shape: VoiceToolShape) {
+  if (!shape.getCost)
+    throw new ConsumerAdmissionStopped(new VoiceToolError("price_unknown", `The connected account advertises no price preflight for ${requireVoiceTool(tool).label}, and no catalogue entry prices it. Nothing was sent.`));
+  const sent = voiceToolArguments(params, shape, true);
+  const raw = videoReadResult(session, await session.voiceToolCreate(tool, sent));
+  return parseConsumerCreditsForParams(raw, shape.nested ? (sent.params as Record<string, unknown>) : sent);
+}
+/** Verifies the create tool's advertised arguments and that it declares a
+ * get_cost preflight BEFORE the source is imported (a tool with no price
+ * makes no remote mutation at all), imports the project video once (the
+ * resolve hook owns the durable claim), then prices without submitting. */
+export async function getConsumerVoiceToolQuote(
+  accessToken: string,
+  value: ConsumerVoiceToolInput,
+  source: { url: string; type: "video" },
+  options: Options & { resolveMedia: (workspaceId: string, perform: () => Promise<string>) => Promise<string> },
+): Promise<ConsumerVoiceToolQuote> {
+  const input = parseConsumerVoiceToolInput(value);
+  if (!safeImportUrl(source.url) || source.type !== "video") throw new ConsumerVideoError("invalid_input");
+  const placeholder = consumerVoiceToolParams(input, "00000000-0000-4000-8000-000000000000");
+  try {
+    return await withConsumerSession(accessToken, options, 150_000, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      const shape = await verifiedVoiceToolShape(session, input.tool, placeholder);
+      if (!shape.getCost) await voiceToolPrice(session, input.tool, placeholder, shape);
+      let mediaId: string;
+      try {
+        mediaId = await options.resolveMedia(workspace.id, async () => {
+          const raw = videoReadResult(session, await session.genjutsuImport(source.url, "video"));
+          if (!object(raw) || typeof raw.media_id !== "string" || (raw.type !== undefined && raw.type !== "video") ||
+              (raw.error != null && raw.error !== "") || (raw.warning != null && raw.warning !== ""))
+            throw new ConsumerVideoError("provider_error");
+          return consumerVideoJobId(raw.media_id);
+        });
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      const params = consumerVoiceToolParams(input, mediaId);
+      const credits = await voiceToolPrice(session, input.tool, params, shape);
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, workspace.id);
+      return { input, params, shape, workspace: current, credits, priceSource: "get_cost" };
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    return videoPreflightError(error);
+  }
+}
+/** Fresh wallet, contract and price checks, durable admission, then exactly one paid call. */
+export async function submitConsumerVoiceTool(
+  accessToken: string,
+  input: ConsumerVoiceToolInput,
+  value: ConsumerVoiceToolParams,
+  expectedShape: VoiceToolShape,
+  expectedWorkspaceId: string,
+  expectedCredits: number,
+  options: Options & { admit: () => Promise<void> },
+): Promise<ConsumerVideoSubmission> {
+  const mediaId = value.video_id ?? value.video_input_id;
+  const params = consumerVoiceToolParams(input, typeof mediaId === "string" ? mediaId : "");
+  if (!sameConsumerValue(params, value)) throw new ConsumerVideoError("invalid_input");
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  if (!Number.isFinite(expectedCredits) || expectedCredits <= 0 || typeof options.admit !== "function") throw new ConsumerVideoError("invalid_input");
+  let attempted = false;
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(workspace, expected);
+      const shape = await verifiedVoiceToolShape(session, input.tool, params);
+      if (shape.nested !== expectedShape.nested || shape.getCost !== expectedShape.getCost) throw new ConsumerAdmissionStopped(voiceUnverified(input.tool, "create"));
+      const credits = await voiceToolPrice(session, input.tool, params, shape);
+      if (credits !== expectedCredits) throw new ConsumerVideoError("quote_changed");
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, expected);
+      if (current.credits < credits) throw new ConsumerVideoError("insufficient_credits");
+      try {
+        await options.admit();
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+      const reply = await session.voiceToolCreate(input.tool, voiceToolArguments(params, shape, false), () => {
+        attempted = true;
+      });
+      const normalized = normalizeQualificationResult(reply, session.secrets), raw = normalized.result;
+      const providerJobId = normalized.isError ? null : consumerVoiceToolAcknowledgement(raw);
+      return providerJobId ? { state: "accepted", providerJobId, raw } : uncertainSubmission(raw);
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (attempted) return uncertainSubmission();
+    return videoPreflightError(error);
+  }
+}
+/** Read-only status of one acknowledged voice-tool job: `job_status`
+ * (normalized envelope) for revoiced/dubbed videos, `video_analysis_status`
+ * (its advertised identifier argument verified first) for analyses. */
+export async function readConsumerVoiceToolJob(
+  accessToken: string,
+  jobId: string,
+  expectedWorkspaceId: string,
+  tool: VoiceToolName,
+  options: Options = {},
+): Promise<{ jobId: string; raw: QualificationValue; pollAfterSeconds?: number }> {
+  consumerVideoJobId(jobId);
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  const definition = requireVoiceTool(tool);
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      let raw: QualificationValue;
+      if (definition.status === "job_status") {
+        raw = videoReadResult(session, await session.generationStatus(jobId));
+        if (object(raw) && object(raw.generation)) {
+          const generation = raw.generation;
+          if (("id" in generation && consumerVideoJobId(generation.id) !== jobId) || ("type" in generation && generation.type !== "video"))
+            throw new ConsumerVideoError("invalid_job");
+        }
+      } else {
+        const schema = (await sessionToolSchemas(session, [definition.status])).get(definition.status);
+        if (!voiceToolArgumentShape(schema, { [VOICE_TOOL_STATUS_ARGUMENT]: jobId })) throw new ConsumerAdmissionStopped(voiceUnverified(tool, "status"));
+        raw = videoReadResult(session, await session.voiceToolStatus(tool, { [VOICE_TOOL_STATUS_ARGUMENT]: jobId }));
+      }
+      const wait = consumerVoiceToolPollAfter(raw);
       return { jobId, raw, ...(wait === undefined ? {} : { pollAfterSeconds: wait }) };
     });
   } catch (error) {
