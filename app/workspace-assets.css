@@ -118,3 +118,44 @@
 :root:has(.pxw) .ps-dialog textarea { background: #0c0c0e; border: 1px solid #1e1e22; border-radius: 9px; padding: 8px 11px; color: #f5f5f7; font-size: 13px; }
 :root:has(.pxw) .ps-dialog button[type="submit"] { background: #0a84ff; color: #fff; border-radius: 10px; font-weight: 570; }
 :root:has(.pxw) .ps-dialog button[type="submit"]:disabled { background: #0e0e10; color: #7a7a80; }
+
+/* ── Edit & Sound: assembly and stem rows ──────────────────────────── */
+
+.pxw .pxw-edit { padding: 18px 20px 32px; min-width: 680px; }
+.pxw .pxw-assembly { display: flex; align-items: center; gap: 14px; padding: 13px 15px; border-radius: 13px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); margin-bottom: 18px; }
+.pxw .pxw-assembly-screen { position: relative; width: 112px; aspect-ratio: 16 / 9; flex: none; border-radius: 8px; overflow: hidden; background: var(--pxw-chip-inner); }
+.pxw .pxw-assembly-screen > video,
+.pxw .pxw-assembly-screen > img,
+.pxw .pxw-assembly-screen > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pxw .pxw-assembly-text { min-width: 0; }
+.pxw .pxw-assembly-title { font-size: 13.5px; font-weight: 560; white-space: nowrap; }
+.pxw .pxw-assembly-sub { font-size: 12px; color: var(--pxw-faint); margin-top: 3px; }
+.pxw .pxw-stem-wrap { margin-bottom: 9px; }
+.pxw .pxw-stem { display: flex; align-items: center; gap: 14px; padding: 13px 15px; border-radius: 12px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); }
+.pxw .pxw-stem[data-state="scored"] { border-color: rgba(52, 199, 89, 0.28); }
+.pxw .pxw-stem-bar { width: 5px; height: 36px; border-radius: 3px; flex: none; }
+.pxw .pxw-stem-name { width: 132px; flex: none; min-width: 0; }
+.pxw .pxw-stem-name > span:first-child { display: block; font-size: 13.5px; font-weight: 550; letter-spacing: -0.01em; }
+.pxw .pxw-stem-name > span:last-child { display: block; font-size: 11.5px; color: var(--pxw-faint); margin-top: 2px; }
+.pxw .pxw-stem-desc { flex: 1; min-width: 0; }
+.pxw .pxw-stem-desc > span:first-child { display: block; font-size: 12.5px; color: var(--pxw-muted); line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pxw .pxw-stem-chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.pxw .pxw-stem-chips > span { padding: 2px 8px; border-radius: 6px; background: var(--pxw-chip-inner); font-family: var(--pxw-mono); font-size: 10px; color: var(--pxw-muted); white-space: nowrap; }
+.pxw .pxw-stem-state { display: flex; align-items: center; gap: 6px; flex: none; font-size: 11.5px; color: var(--pxw-dimmer); white-space: nowrap; }
+.pxw .pxw-stem-state > .pxw-dot { width: 5px; height: 5px; }
+.pxw .pxw-stem-action { padding: 6px 13px; font-size: 12px; font-weight: 530; color: var(--pxw-body); }
+.pxw .pxw-stem-note { font-size: 12px; color: var(--pxw-faint); margin: 12px 0 0; }
+
+/* The existing sound panels (SoundGenerate, SoundMix) inside the workspace. */
+.pxw .pxw-sound-host { margin-top: 9px; border-radius: 12px; overflow: hidden; border: 1px solid var(--pxw-card-border); }
+.pxw .pxw-sound-host[hidden] { display: none; }
+.pxw .pxw-sound-host .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 6px 13px; border-radius: 9px; font-size: 12.5px; background: var(--pxw-control); border: 1px solid var(--pxw-control-border); color: var(--pxw-primary); white-space: nowrap; }
+.pxw .pxw-sound-host .btn:hover:not(:disabled) { background: var(--pxw-control-hover); }
+.pxw .pxw-sound-host .btn.primary { background: var(--pxw-blue); border-color: var(--pxw-blue); color: #fff; font-weight: 570; }
+.pxw .pxw-sound-host .btn.primary:hover:not(:disabled) { background: var(--pxw-blue-hover); }
+.pxw .pxw-sound-host .btn:disabled { opacity: 0.5; }
+.pxw .pxw-sound-host .eyebrow { font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.13em; color: var(--pxw-label-floor); }
+.pxw .pxw-sound-host select,
+.pxw .pxw-sound-host textarea,
+.pxw .pxw-sound-host input:not([type="checkbox"]):not([type="range"]) { background: var(--pxw-card); border: 1px solid var(--pxw-field-border); border-radius: 9px; padding: 7px 10px; font-size: 12.5px; color: var(--pxw-primary); }
+.pxw .pxw-sound-host select { appearance: auto; -webkit-appearance: auto; }

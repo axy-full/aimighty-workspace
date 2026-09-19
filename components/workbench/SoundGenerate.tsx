@@ -150,7 +150,13 @@ export function SoundGenerate({
   onPause,
   onSave,
   onQueued,
+  initialTask = "speech",
+  onRequest,
 }: {
+  /** The door to open on first render (Edit & Sound's stem rows open their own). */
+  initialTask?: SoundJobTask;
+  /** The form's current request — the exact body a submit would quote — or null while it is incomplete. */
+  onRequest?: (request: { task: SoundJobTask; body: Record<string, unknown>; text: string } | null) => void;
   scope: string;
   project: Project;
   frame: number;
@@ -161,7 +167,7 @@ export function SoundGenerate({
   onSave: (refresh?: boolean) => Promise<boolean>;
   onQueued: () => void;
 }) {
-  const [task, setTask] = useState<SoundJobTask>("speech");
+  const [task, setTask] = useState<SoundJobTask>(initialTask);
   const tool = isSoundTool(task) ? soundTool(task) : null;
   /** The generator the fields describe; a tool borrows the voice-over's shape. */
   const genTask: NodeAudioTask = isSoundTool(task) ? "speech" : task;
@@ -294,6 +300,13 @@ export function SoundGenerate({
           : text.trim() && (task !== "speech" || voiceId)),
   );
   const cost = pending?.credits ?? (quote?.key === bodyKey ? quote.credits : null);
+  const requestRef = useRef(onRequest);
+  useLayoutEffect(() => {
+    requestRef.current = onRequest;
+  }, [onRequest]);
+  useEffect(() => {
+    requestRef.current?.(ready && body ? { task, body, text: tool ? source?.name ?? "" : text.trim() } : null);
+  }, [ready, bodyKey, task]); // eslint-disable-line react-hooks/exhaustive-deps -- bodyKey stands for body
 
   /* Quote first: the button carries the price before anything is spent. */
   useEffect(() => {

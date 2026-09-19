@@ -6,6 +6,7 @@ import type { PageId } from "@/lib/workspace/types";
 import { RigPage } from "../rig/RigPage";
 import { Kicker } from "../ui";
 import { CastPage } from "./CastPage";
+import { EditPage } from "./EditPage";
 import { TakesPage } from "./TakesPage";
 
 /** Everything a page body receives from the shell. */
@@ -61,6 +62,7 @@ function placeholder(id: PageId): ComponentType<PageBodyProps> {
 const BUILT: Partial<Record<PageId, ComponentType<PageBodyProps>>> = {
   rig: RigPage,
   cast: CastPage,
+  edit: EditPage,
   takes: TakesPage,
 };
 
