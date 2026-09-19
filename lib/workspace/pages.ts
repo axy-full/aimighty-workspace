@@ -1,6 +1,7 @@
 import { SUITES as BASE_SUITES, PARTICL_STAGE_ALIASES } from "@/lib/suites";
 import { rigSubtitle } from "./shots";
 import { takesSubtitle } from "./takes";
+import { firstSentence, SPEC_PAGES } from "./spec-cards";
 import type { AppState, PageId, SelKind, Suite } from "./types";
 
 /* ── Suites ───────────────────────────────────────────────────────────────
@@ -48,38 +49,41 @@ export type PageDef = {
 const page = (suite: Suite, id: PageId, label: string, title: string, description: string): PageDef =>
   ({ id, suite, label, title, description });
 
+/** Spec-card pages: the home card reads the first sentence of the page's intro. */
+const lead = (id: PageId) => firstSentence(SPEC_PAGES[id]?.intro ?? "");
+
 export const PAGES: Record<Suite, PageDef[]> = {
   particl: [
-    page("particl", "brief", "Brief", "Brief & Script", "The brief, the script and the development passes read and write the same document."),
-    page("particl", "boards", "Boards", "Boards", "Boards follow the script."),
+    page("particl", "brief", "Brief", "Brief & Script", lead("brief")),
+    page("particl", "boards", "Boards", "Boards", lead("boards")),
     page("particl", "cast", "Cast", "Cast & Elements", "Groups references, builds each identity and binds it to the shots that cite it."),
-    page("particl", "astra", "Astra", "Astra", "Blocking before rendering."),
+    page("particl", "astra", "Astra", "Astra 3D", lead("astra")),
     page("particl", "rig", "Rig", "Rig", "Resolves references, quotes each shot and dispatches it to a video engine."),
     page("particl", "takes", "Takes", "Takes", "Compares versions against the director’s note and marks what is worth cutting with."),
     page("particl", "edit", "Edit", "Edit & Sound", "Assembles the approved takes, then writes dialogue, effects and music against the cut."),
-    page("particl", "deliver", "Deliver", "Deliver", "Delivery runs against the spec saved on the project."),
+    page("particl", "deliver", "Deliver", "Deliver", lead("deliver")),
   ],
   atomik: [
-    page("atomik", "agent", "Agent", "Agent", "Describe the outcome; the agent plans it against this project, prices it, and waits for you before anything paid runs."),
-    page("atomik", "runs", "Runs", "Runs", "Every agent action becomes a durable run."),
+    page("atomik", "agent", "Agent", "Agent", lead("agent")),
+    page("atomik", "runs", "Runs", "Runs", lead("runs")),
     page("atomik", "generate", "Generate", "Generate", "Image, video, sound and 3D workflows from the connected account’s catalogue, plus tools and voice."),
-    page("atomik", "recipes", "Recipes", "Recipes", "A recipe is a saved plan that reruns exactly — same steps, same inputs, same engines."),
-    page("atomik", "builds", "Builds", "Builds", "Describe a tool and the agent builds it — interface, data, sign-in and generation models wired in."),
-    page("atomik", "skills", "Skills", "Skills", "Skills are the tool packs the agent can reach."),
-    page("atomik", "models", "Models", "Models", "Thinking model and effort for planning; generation engines for output."),
-    page("atomik", "approvals", "Approvals", "Approvals", "Nothing paid happens without an approval."),
-    page("atomik", "budget", "Budget", "Budget", "Settled accounting, not estimates."),
+    page("atomik", "recipes", "Recipes", "Recipes", lead("recipes")),
+    page("atomik", "builds", "Builds", "Builds", lead("builds")),
+    page("atomik", "skills", "Skills", "Skills", lead("skills")),
+    page("atomik", "models", "Models", "Models", lead("models")),
+    page("atomik", "approvals", "Approvals", "Approvals", lead("approvals")),
+    page("atomik", "budget", "Budget", "Budget", lead("budget")),
   ],
   moleculr: [
-    page("moleculr", "marketing", "Marketing Studio", "Marketing Studio", "One studio: a product, who presents it, what it says and where it runs."),
+    page("moleculr", "marketing", "Marketing Studio", "Marketing Studio", lead("marketing")),
   ],
   subatomik: [
-    page("subatomik", "motion", "Motion Transfer", "Motion Transfer", "Take the motion from a source video and recast it with your own cast, location and product."),
-    page("subatomik", "swap", "Object Swap", "Object Swap", "Swap one element — a product, a garment, an object — and leave the rest of the shot exactly as filmed."),
+    page("subatomik", "motion", "Motion Transfer", "Motion Transfer", lead("motion")),
+    page("subatomik", "swap", "Object Swap", "Object Swap", lead("swap")),
     page("subatomik", "shorts", "Shorts", "Shorts", "Restyle one video into a set of short clips; one quote covers the whole set."),
-    page("subatomik", "sources", "Sources", "Sources", "Sources are your own originals."),
-    page("subatomik", "compare", "Compare", "Compare", "Put the original and the result side by side, locked to the same clock."),
-    page("subatomik", "history", "History", "History", "Every result is copied into private storage on completion."),
+    page("subatomik", "sources", "Sources", "Sources", lead("sources")),
+    page("subatomik", "compare", "Compare", "Compare", lead("compare")),
+    page("subatomik", "history", "History", "History", lead("history")),
   ],
 };
 
@@ -208,9 +212,14 @@ export const LIBRARY: Partial<Record<PageId, LibraryGroup[]>> = {
   ],
 };
 
-/** The spec-card groups a page shows; filled by the spec-card PR. */
+/** The spec-card groups a page shows (lib/workspace/spec-cards.ts). */
 export type SpecCardGroup = { title: string; cards: { name: string; chips: string[] }[] };
-export const SPEC_GROUPS: Partial<Record<PageId, SpecCardGroup[]>> = {};
+export const SPEC_GROUPS: Partial<Record<PageId, SpecCardGroup[]>> = Object.fromEntries(
+  Object.entries(SPEC_PAGES).map(([id, spec]) => [
+    id,
+    spec!.groups.map((group) => ({ title: group.title, cards: group.cards.map((card) => ({ name: card.name, chips: card.chips.length ? card.chips : [card.owner] })) })),
+  ]),
+);
 
 /** Every other page derives its tools from its spec-card groups. */
 export function libraryFor(id: PageId, specGroups: Partial<Record<PageId, SpecCardGroup[]>> = SPEC_GROUPS): LibraryGroup[] {

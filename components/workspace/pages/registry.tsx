@@ -4,6 +4,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { pageDef } from "@/lib/workspace/pages";
 import type { PageId } from "@/lib/workspace/types";
 import { RigPage } from "../rig/RigPage";
+import { SpecPage } from "../spec/SpecPage";
 import { Kicker } from "../ui";
 import { CastPage } from "./CastPage";
 import { EditPage } from "./EditPage";
@@ -58,7 +59,7 @@ function placeholder(id: PageId): ComponentType<PageBodyProps> {
   return Placeholder;
 }
 
-/** Built pages; every other id keeps its placeholder. */
+/** Built pages; every other id keeps its placeholder or its spec card. */
 const BUILT: Partial<Record<PageId, ComponentType<PageBodyProps>>> = {
   rig: RigPage,
   cast: CastPage,
@@ -66,7 +67,19 @@ const BUILT: Partial<Record<PageId, ComponentType<PageBodyProps>>> = {
   takes: TakesPage,
 };
 
+/** One component per page, so moving between two spec pages starts each fresh. */
+function specPage(id: PageId): ComponentType<PageBodyProps> {
+  function Spec(props: PageBodyProps) {
+    return <SpecPage {...props} />;
+  }
+  Spec.displayName = `SpecPage(${id})`;
+  return Spec;
+}
+
+/** Spec-card pages (03, "Spec-card template") with their working tools. */
+const SPEC_BODIES: PageId[] = ["brief", "boards", "astra", "deliver", "marketing", "motion", "swap", "sources", "compare", "history"];
+
 /** Page id → body. Later PRs replace an entry with the real page. */
 export const PAGE_BODIES: Record<PageId, ComponentType<PageBodyProps>> = Object.fromEntries(
-  (Object.keys(COMING) as PageId[]).map((id) => [id, BUILT[id] ?? placeholder(id)]),
+  (Object.keys(COMING) as PageId[]).map((id) => [id, BUILT[id] ?? (SPEC_BODIES.includes(id) ? specPage(id) : placeholder(id))]),
 ) as Record<PageId, ComponentType<PageBodyProps>>;

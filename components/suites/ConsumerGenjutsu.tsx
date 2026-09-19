@@ -267,11 +267,18 @@ export function ConsumerGenjutsu({
   scope,
   variant,
   refreshProject,
+  onInput,
 }: {
   project: Project;
   scope: string;
   variant: GenjutsuVariant;
   refreshProject: () => Promise<void>;
+  /**
+   * The exact quote input this form would send, whenever it could send it
+   * (owner, connected, originals disclosed, nothing unresolved), else null.
+   * A host (the /workspace Atomik plan) prices the same request.
+   */
+  onInput?: (input: ConsumerGenjutsuInput | null) => void;
 }) {
   const request = useScopedFetch(scope),
     upload = useUploadFile(),
@@ -579,6 +586,17 @@ export function ConsumerGenjutsu({
     !unresolved &&
     !!normalized &&
     disclosed;
+  const offered = canQuote && normalized ? consumerGenjutsuInputSchema.safeParse(normalized) : null;
+  const offeredInput = offered?.success ? offered.data : null;
+  const offeredKey = JSON.stringify(offeredInput);
+  const report = useRef(onInput);
+  useEffect(() => {
+    report.current = onInput;
+  }, [onInput]);
+  useEffect(() => {
+    report.current?.(offeredKey === "null" ? null : (JSON.parse(offeredKey) as ConsumerGenjutsuInput));
+  }, [offeredKey]);
+  useEffect(() => () => report.current?.(null), []);
   const canSubmit =
     !!capability?.owner &&
     capability.connected &&
@@ -1398,6 +1416,7 @@ export function ConsumerGenjutsu({
         <aside
           className={`suite-panel ${styles.library}`}
           aria-label="Connected transform workspace assets"
+          data-subatomik-section="sources"
         >
           <div className="suite-section-heading">
             <div>
@@ -1434,6 +1453,7 @@ export function ConsumerGenjutsu({
       <section
         className={`suite-panel ${styles.results}`}
         aria-label="Connected transform project results"
+        data-subatomik-section="history"
       >
         <div className="suite-section-heading">
           <div>

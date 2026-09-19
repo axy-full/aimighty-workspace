@@ -31,7 +31,7 @@ test("stage tabs are short, titles are full", () => {
   const byId = Object.fromEntries(ALL_PAGES.map((p) => [p.id, p]));
   expect([byId.brief.label, byId.brief.title]).toEqual(["Brief", "Brief & Script"]);
   expect([byId.cast.label, byId.cast.title]).toEqual(["Cast", "Cast & Elements"]);
-  expect([byId.astra.label, byId.astra.title]).toEqual(["Astra", "Astra"]);
+  expect([byId.astra.label, byId.astra.title]).toEqual(["Astra", "Astra 3D"]);
   expect([byId.edit.label, byId.edit.title]).toEqual(["Edit", "Edit & Sound"]);
 });
 
@@ -73,7 +73,9 @@ test("library: Rig matches the reference; other pages derive from spec groups", 
   expect(rig.map((g) => [g.title, g.items.length])).toEqual([["REFERENCES", 5], ["CREATE", 2], ["FINISH", 4], ["FLOW", 4]]);
   expect(libraryCount(rig)).toBe(15);
   expect(Object.keys(LIBRARY).sort()).toEqual(["cast", "edit", "rig", "takes"]);
-  expect(libraryFor("brief")).toEqual([]);
+  /* Spec pages derive theirs from the spec-card groups (lib/workspace/spec-cards.ts). */
+  expect(libraryFor("brief").map((g) => [g.title, g.items.length])).toEqual([["DOCUMENT", 4], ["AGENTIC", 3]]);
+  expect(libraryFor("brief", {})).toEqual([]);
   expect(libraryFor("brief", { brief: [{ title: "DOCUMENT", cards: [{ name: "Script", chips: ["v3", "6 scenes"] }] }] }))
     .toEqual([{ title: "DOCUMENT", items: [{ name: "Script", sub: "v3 · 6 scenes" }] }]);
 });
