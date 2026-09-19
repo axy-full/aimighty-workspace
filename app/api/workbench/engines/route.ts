@@ -19,9 +19,9 @@ export const GET = withTenant(async (req: Request) => {
     if (model.marketing) throw new MediaQuoteError("Marketing Studio needs a live quote for the complete prompt and settings. Request POST /api/generate/quote.", 409);
     if (model.soulIdentity) {
       const identityId = q.get('soulIdentityId');
-      if (!identityId) throw new MediaQuoteError('Connect a ready Soul identity from Characters or Elements to this node.');
+      if (!identityId) throw new MediaQuoteError('Attach a ready identity from Cast & Elements to this node.');
       try { await requireReadySoulIdentity(identityId, undefined, q.get('projectId') || undefined); }
-      catch (error) { throw new MediaQuoteError(error instanceof Error ? error.message : 'That Soul identity is unavailable.'); }
+      catch (error) { throw new MediaQuoteError(error instanceof Error ? error.message : 'That identity is unavailable.'); }
     }
     if (Number(q.get('unresolvedVideoRefs') || 0) > 0) throw new MediaQuoteError('Upload the bound reference video from your device before estimating this take.');
     const references = [...q.getAll('uploadId').map(uploadId => ({ uploadId })), ...q.getAll('genId').map(genId => ({ genId }))];

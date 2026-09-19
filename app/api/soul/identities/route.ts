@@ -70,7 +70,7 @@ export const POST = withTenant(
           );
         if (error instanceof SyntaxError)
           return Response.json(
-            { error: "Send a valid Soul ID request." },
+            { error: "Send a valid identity request." },
             { status: 400, headers },
           );
         throw error;

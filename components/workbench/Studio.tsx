@@ -154,7 +154,7 @@ import {
 } from "@/lib/workbench/studio-export";
 import {GenerationDialog,studioRequest,StudioRequestError,type GenerationTarget} from './GenerationDialog';
 import {SoulIdentityPanel} from './SoulIdentityPanel';
-import {soulIdentityAsset} from '@/lib/workbench/soul-identity';
+import {soulIdentityAsset,identityCardState,identityCardLabels,type SoulIdentity} from '@/lib/workbench/soul-identity';
 import {AtomikRunDialog,type AtomikRunTarget} from './AtomikRunDialog';
 import {MarketingStudioPanel} from './MarketingStudioPanel';
 import {SuiteSwitcher,RoomRail,SuiteDock} from '@/components/suites/SuiteNavigation';
@@ -422,6 +422,10 @@ export default function Studio({
   const [selectedNode, setSelectedNode] = useState<string | null>("scene");
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [soulTarget, setSoulTarget] = useState<{draftId:string;subjectType:'character'|'element';assetId?:string}|null>(null);
+  // Cast & Elements reads identity states (none / training / ready / failed)
+  // from the workspace list; the project only stores the binding ID.
+  const [identities, setIdentities] = useState<{projectId:string;list:SoulIdentity[]}|null>(null);
+  const [identityRefresh, setIdentityRefresh] = useState(0);
   const [dialog, setDialog] = useState<
     | "project"
     | "node"
@@ -533,6 +537,21 @@ export default function Studio({
   const activeStorageKey=useRef(storageKey);
   useLayoutEffect(()=>{activeStorageKey.current=storageKey;},[storageKey]);
   const jobs=useProductionJobs(p,ready&&signedIn&&!transitioning,change,storageKey);
+  const identityList = identities?.projectId === p.id ? identities.list : null;
+  const identitiesActive = !!identityList?.some(identity => identity.status === 'submitting' || identity.status === 'training');
+  useEffect(() => {
+    if (stage !== 'characters' || !signedIn || !ready || transitioning || soulTarget) return;
+    const projectId = p.id;
+    let active = true;
+    const read = () => {
+      studioRequest<{identities:SoulIdentity[]}>(`/api/soul/identities?${new URLSearchParams({projectId})}`, {headers:{'X-Workbench-Scope':storageKey},cache:'no-store'})
+        .then(data => { if (active) setIdentities({projectId, list:data.identities}); })
+        .catch(() => { /* Cards keep their last read; the panel reports load failures. */ });
+    };
+    read();
+    const timer = identitiesActive ? setInterval(read, 8_000) : null;
+    return () => { active = false; if (timer) clearInterval(timer); };
+  }, [stage, signedIn, ready, transitioning, soulTarget, p.id, storageKey, identitiesActive, identityRefresh]);
   const generatingNodeId=selectedNode&&jobs.mediaJobs.some(job=>['held','queued','running'].includes(job.status)&&job.shotId===p.shotMappings?.[selectedNode])?selectedNode:null;
   const flushSave = useCallback(() => {
     const captured=uncertainSave.current?.project??pendingSave.current;
@@ -1283,6 +1302,9 @@ export default function Studio({
               <span className="asset-kind">
                 {a.category}{a.soulIdentityId ? ' · Identity' : ''}
               </span>
+              {group && a.kind === 'image' && (() => { const state = identityCardState(a, identityList); return (
+                <span role="status" className={'identity-state is-' + state} aria-label={identityCardLabels[state]}>{identityCardLabels[state]}</span>
+              ); })()}
               <span className="asset-v">v{a.version}</span>
               {p.sharedAssetIds.includes(a.id) && (
                 <span className="shared-corner">
@@ -1317,6 +1339,12 @@ export default function Studio({
                   <button onClick={() => addToSequence(a)}>
                     <Film size={13} />
                     To sequence
+                  </button>
+                )}
+                {group && a.kind === 'image' && (
+                  <button aria-label={'Identity for ' + a.name} disabled={a.locked} onClick={() => setSoulTarget({draftId:p.id,subjectType:group === 'cast' ? 'character' : 'element',assetId:a.id})}>
+                    <UserRound size={13} />
+                    Identity
                   </button>
                 )}
                 <IconButton label={'Edit ' + a.name} onClick={() => setSelectedAsset(a.id)}>
@@ -1408,7 +1436,7 @@ export default function Studio({
             <section className="library-group" aria-label="Cast">
               <div className="stage-context">
                 <UserRound size={18} />
-                <p>Identity, wardrobe, expression and voice—kept together as reusable references.</p>
+                <p>Identity, wardrobe, expression and voice—kept together as reusable references. A ready identity is the default reference for every take of that character.</p>
                 <span className="small-tag">Versions stay editable</span>
               </div>
               {renderAssetGrid(view, 'cast')}
@@ -1432,7 +1460,7 @@ export default function Studio({
             <section className="library-group" aria-label="Elements">
               <div className="stage-context">
                 <Box size={18} />
-                <p>Locations, props, materials and looks. Build once and reference across shots.</p>
+                <p>Locations, props, materials and looks. Build once and reference across shots; a ready identity is the default reference for its element.</p>
                 <Button variant="outline" className="btn" onClick={() => setSoulTarget({draftId:p.id,subjectType:'element'})}><Box size={15}/>Element identity</Button>
               </div>
               {renderAssetGrid(view, 'elements')}
@@ -3383,7 +3411,7 @@ export default function Studio({
             }}
           />
         )}
-        {soulTarget&&soulTarget.draftId===p.id&&<SoulIdentityPanel key={storageKey+p.id+soulTarget.subjectType+(soulTarget.assetId??'')} project={p} scope={storageKey} enabled={signedIn&&ready&&!transitioning} subjectType={soulTarget.subjectType} assetId={soulTarget.assetId} onClose={()=>setSoulTarget(null)} onSettings={()=>void leaveWorkspace('/settings#engines')} onSave={()=>ensureSaved(soulTarget.draftId)} onUpload={files=>uploadFiles(files,soulTarget.subjectType==='character'?'Character':'Element')} onAttach={async(identity,assetId)=>{
+        {soulTarget&&soulTarget.draftId===p.id&&<SoulIdentityPanel key={storageKey+p.id+soulTarget.subjectType+(soulTarget.assetId??'')} project={p} scope={storageKey} enabled={signedIn&&ready&&!transitioning} subjectType={soulTarget.subjectType} assetId={soulTarget.assetId} onClose={()=>{setSoulTarget(null);setIdentityRefresh(value=>value+1);}} onSettings={()=>void leaveWorkspace('/settings#engines')} onSave={()=>ensureSaved(soulTarget.draftId)} onUpload={files=>uploadFiles(files,soulTarget.subjectType==='character'?'Character':'Element')} onAttach={async(identity,assetId)=>{
           if(pRef.current.id!==soulTarget.draftId||transitioningRef.current)throw new Error('Return to the original project before attaching this identity.');
           const category=soulTarget.subjectType==='character'?'Character':'Element';
           const alreadyAttached=!assetId&&pRef.current.assets.find(asset=>asset.soulIdentityId===identity.id&&asset.category===category);

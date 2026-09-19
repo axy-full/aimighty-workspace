@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { newProject, type Asset } from '../../lib/workbench/studio';
 import { projectSchema } from '../../lib/workbench/studio-schema';
-import { soulIdentityAsset, soulReferenceAssets, type SoulIdentity } from '../../lib/workbench/soul-identity';
+import { soulIdentityAsset, soulReferenceAssets, identityCardState, identityCardLabels, type SoulIdentity } from '../../lib/workbench/soul-identity';
 
 const portrait: Asset = { id:'portrait',name:'Mira portrait',kind:'image',category:'Character',url:'/api/uploads/portrait-original',uploadId:'portrait-original',description:'Portrait original',prompt:'Soft window light',status:'Draft',locked:false,version:1,refs:[] };
 const identity: SoulIdentity = { id:'soul-local',projectId:null,name:'Mira',description:'Same character across shots',subjectType:'character',references:[{uploadId:'portrait-original'}],status:'ready',previewUrl:'/api/uploads/portrait-original',createdAt:1,updatedAt:1,creditsBilled:250,error:null };
@@ -41,4 +41,16 @@ test('pending identities and locked or missing targets cannot change project bin
   expect(() => soulIdentityAsset(project,identity,'Character',portrait.id)).toThrow('Unlock');
   expect(() => soulIdentityAsset(project,identity,'Character','missing')).toThrow('no longer');
   expect(() => soulIdentityAsset(project,{...identity,references:[]},'Character')).toThrow('no original');
+});
+
+test('Cast & Elements cards read identity state from the workspace list, never from the binding alone', () => {
+  const list: SoulIdentity[] = [identity, {...identity,id:'soul-training',status:'training'}, {...identity,id:'soul-failed',status:'failed'}, {...identity,id:'soul-uncertain',status:'uncertain'}];
+  expect(identityCardState({soulIdentityId:undefined},list)).toBe('none');
+  expect(identityCardState({soulIdentityId:'soul-local'},list)).toBe('ready');
+  expect(identityCardState({soulIdentityId:'soul-training'},list)).toBe('training');
+  expect(identityCardState({soulIdentityId:'soul-failed'},list)).toBe('failed');
+  expect(identityCardState({soulIdentityId:'soul-uncertain'},list)).toBe('failed');
+  expect(identityCardState({soulIdentityId:'soul-local'},null)).toBe('unknown');
+  expect(identityCardState({soulIdentityId:'soul-elsewhere'},list)).toBe('unknown');
+  for (const label of Object.values(identityCardLabels)) expect(label).not.toMatch(/soul|higgsfield|fal\b/i);
 });

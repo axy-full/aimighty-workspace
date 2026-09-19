@@ -36,6 +36,11 @@ import Loader, { LOADER_SIZES } from "@/components/atomik/Loader";
  * its price. The foot: the mono consequence line, `Cancel` (46px, .14,
  * radius 12), and the primary `Create Iver · 12 CR` (46px, radius 12).
  *
+ * LEGACY trainer note (four-suites PR F): the train switch below still goes
+ * through the older LoRA trainer at /api/identities. It is reachable from
+ * Library, Rig canvas, Shots and Make, not from Cast & Elements, whose only
+ * engine is the identity system (/api/soul/identities).
+ *
  * Rules (§12): creating is free; learning costs; attributes are read from
  * references, never typed. A character exists the moment it has a name and
  * one picture. The face is the one thing that trains today — on the

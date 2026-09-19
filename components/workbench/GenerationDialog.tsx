@@ -182,7 +182,7 @@ export function GenerationDialog({
           setDuration(first.durations.includes(desiredDuration) ? desiredDuration : first.durations[0] || 5);
         } else if (!first && initialKind !== "audio")
           setError(hasBoundVideo ? "No configured video engine accepts these references. Connect a compatible engine or change the attached media before generating." : d.models.some(m => m.soulIdentity)
-            ? "Connect a ready Soul character to this node, or connect another image engine in Workspace settings."
+            ? "Attach a ready identity to this node, or connect another image engine in Workspace settings."
             : "No generation engine is configured for this workspace.");
         if (initial.pending && initial.pending.endpoint !== "/api/audio") {
           const restoredModel = d.models.find(m => m.id === JSON.parse(initial.pending!.body).model);
@@ -444,18 +444,23 @@ export function GenerationDialog({
           </div>}
           {kind !== "audio" && model?.soulIdentity && (
             <div className="generation-options">
-              <label className="field-label">Soul identity
-                <select aria-label="Soul identity" value={selectedSoulId} disabled={busy || !!pending} onChange={event => setSoulIdentityId(event.target.value)}>
-                  {!soulAssets.length && <option value="">Connect a Soul character to this node</option>}
+              <label className="field-label">Identity
+                <select aria-label="Identity" value={selectedSoulId} disabled={busy || !!pending} onChange={event => setSoulIdentityId(event.target.value)}>
+                  {!soulAssets.length && <option value="">Attach a ready identity to this node</option>}
                   {soulAssets.map(asset => <option key={asset.soulIdentityId} value={asset.soulIdentityId}>{asset.name}</option>)}
                 </select>
               </label>
               <label className="field-label">Likeness strength · {Math.round(soulStrength * 100)}%
-                <input aria-label="Soul likeness strength" type="range" min="0" max="1" step="0.05" value={soulStrength} disabled={busy || !!pending} onChange={event => setSoulStrength(Number(event.target.value))} />
+                <input aria-label="Identity likeness strength" type="range" min="0" max="1" step="0.05" value={soulStrength} disabled={busy || !!pending} onChange={event => setSoulStrength(Number(event.target.value))} />
               </label>
             </div>
           )}
-          {kind !== "audio" && soulAssets.length > 0 && !model?.soulIdentity && <p className="muted small-copy">This engine uses the character’s reference image. Choose Soul Character to use its trained likeness when that engine is available.</p>}
+          {kind !== "audio" && refs.length > 0 && <ul className="generation-references" aria-label="Bound references">
+            {refs.map(asset => <li key={asset.id} data-identity={asset.soulIdentityId ? "ready" : undefined}>{asset.name}{asset.soulIdentityId ? " · Identity" : ""}{asset.kind === "video" ? " · Video" : ""}</li>)}
+          </ul>}
+          {kind !== "audio" && soulAssets.length > 0 && !model?.soulIdentity && <p role="note" className="muted small-copy">{models.some(m => m.soulIdentity)
+            ? "This engine uses the identity’s portrait as its reference. Choose the identity engine to render its trained likeness."
+            : "Identity rendering is awaiting verification; this take uses the identity’s portrait as its reference."}</p>}
           {kind === "video" && <label className="field-label">First frame<select aria-label="Node first frame" value={firstFrameId} disabled={busy || !!pending} onChange={event => setFirstFrameId(event.target.value)}>
             <option value="">No first frame</option>{refs.filter(asset => asset.kind === "image").map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
           </select></label>}

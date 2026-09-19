@@ -19,6 +19,14 @@ import {
 } from "./generationSettlement";
 
 /**
+ * LEGACY — the older LoRA identity trainer (four-suites PR F, 19 Sep 2026).
+ * Cast & Elements and its navigation now use the identity system in
+ * `lib/soulIdentities.ts` and `/api/soul/identities`. These routes, rows and
+ * tests stay intact for accepted trainings and their renders; nothing in the
+ * Particl suite creates new ones from the stage. Remaining entry points:
+ * `components/assets/NewAssetSheet.tsx` (Library, Rig canvas, Shots, Make)
+ * and `components/QueueStrip.tsx` (the wall's in-flight strip).
+ *
  * Identities — a real face, learned.
  *
  * A cast character holds one still and the engines are asked to keep faith

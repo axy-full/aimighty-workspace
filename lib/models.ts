@@ -428,13 +428,13 @@ export const MODELS: ModelDef[] = [
   },
   {
     id: SOUL_CHARACTER_MODEL_ID,
-    label: "Soul Character", short: "SOUL ID", family: "soul", provider: "higgsfield",
+    label: "Identity render", short: "IDENTITY", family: "soul", provider: "higgsfield",
     kind: "image", billing: "image", soulIdentity: true, hidden: true, paramStyle: "fields",
     resolutions: ["720p", "1080p"], ratios: ["9:16", "16:9", "4:3", "3:4", "1:1", "2:3", "3:2"],
     durations: [], supportsAudio: false, supportsCameraFixed: false,
     maxReferenceImages: 0, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
-    use: "Generate a still with a trained Soul character.",
-    note: "Requires a completed Soul identity and a configured Soul Character connection.",
+    use: "Generate a still from a trained identity.",
+    note: "Requires a ready identity and a verified identity-rendering connection.",
   },
   {
     // Flux with a trained identity's LoRA — what an Identity renders through.

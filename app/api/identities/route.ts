@@ -1,3 +1,5 @@
+// LEGACY route (four-suites PR F): the older LoRA identity trainer. Kept for
+// accepted trainings and tests; Cast & Elements uses /api/soul/identities.
 import { NextResponse } from "next/server";
 import { allowanceCheck } from "@/lib/allowance";
 import { requireUser, withTenant } from "@/lib/auth";
