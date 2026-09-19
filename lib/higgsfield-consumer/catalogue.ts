@@ -447,13 +447,49 @@ export function validateGenerationRequest(
     reject("prompt_required", "Write a prompt or choose a reference file.");
   return params;
 }
+/**
+ * Models the provider reserves for its own game-generation pipeline. Their
+ * catalogue descriptions say they must not be used for standalone audio
+ * (19 September 2026: "Game pipeline only."), so no Particl surface offers,
+ * quotes or submits them. Matched by id and, for models added later, by the
+ * provider's own wording.
+ */
+export const GAME_PIPELINE_ONLY_MODELS = Object.freeze([
+  "sonilo_music",
+  "mirelo_text_to_audio",
+  "inworld_text_to_speech",
+]);
+const GAME_PIPELINE_ONLY = /\bgame(?:[- ]generation)? pipeline only\b|\bonly for the game[- ]generation pipeline\b/i;
+/** False for models that may only run inside the provider's game pipeline. */
+export function isStandaloneModel(model: Pick<ConnectedModel, "id" | "description">) {
+  return !GAME_PIPELINE_ONLY_MODELS.includes(model.id) && !GAME_PIPELINE_ONLY.test(model.description);
+}
+/** The models a standalone workflow may offer: every catalogue entry except
+ * the game-pipeline-only ones, optionally of one output type. */
 export function listCatalogueModels(
   catalogue: ConnectedCatalogue,
   filter: { type?: ConnectedOutputType } = {},
 ) {
-  return catalogue.models.filter((model) => !filter.type || model.outputType === filter.type);
+  return catalogue.models.filter(
+    (model) => isStandaloneModel(model) && (!filter.type || model.outputType === filter.type),
+  );
 }
+/** A standalone model by id; game-pipeline-only models are never found. */
 export function findCatalogueModel(catalogue: ConnectedCatalogue, id: string) {
-  return catalogue.models.find((model) => model.id === id) ?? null;
+  return catalogue.models.find((model) => model.id === id && isStandaloneModel(model)) ?? null;
+}
+/**
+ * A model that takes a connected-account voice declares the pair
+ * `voice_type` (options preset/element) and `voice_id` (text). The Sound
+ * workflow fills both from the cached `list_voices` picker instead of showing
+ * two free-text settings.
+ */
+export function modelVoiceParameters(model: ConnectedModel) {
+  const type = model.parameters.find((p) => p.name === "voice_type");
+  const id = model.parameters.find((p) => p.name === "voice_id");
+  if (!type || !id || type.type !== "string" || id.type !== "string") return null;
+  const kinds = (type.options ?? []).filter((o): o is "preset" | "element" => o === "preset" || o === "element");
+  if (!kinds.length) return null;
+  return { kinds, required: type.required || id.required };
 }
 

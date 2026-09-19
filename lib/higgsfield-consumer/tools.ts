@@ -10,6 +10,7 @@
  */
 import {
   CatalogueError,
+  isStandaloneModel,
   mediaKindForRole,
   validateGenerationRequest,
   type ConnectedCatalogue,
@@ -66,7 +67,7 @@ export function requireConnectedTool(name: string): ConnectedTool {
 export function connectedToolModels(tool: ConnectedTool, catalogue: Pick<ConnectedCatalogue, "models">): ConnectedModel[] {
   return tool.models.flatMap((id) => {
     const model = catalogue.models.find((entry) => entry.id === id);
-    if (!model || model.outputType !== tool.outputType) return [];
+    if (!model || !isStandaloneModel(model) || model.outputType !== tool.outputType) return [];
     try {
       connectedToolRoles(tool, model);
       return [model];
