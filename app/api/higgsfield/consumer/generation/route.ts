@@ -39,16 +39,26 @@ const submit = z
   .strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
 const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll]);
+/** Shared consumer error classes predate the product vocabulary; this surface
+ * speaks only of the connected account. */
+const neutral = (message: string) =>
+  message
+    .replace(/\b(?:the|your|The|Your) Higgsfield\b/g, "the connected account")
+    .replace(/\bHiggsfield(?:’s|'s)\b/g, "the connected account’s")
+    .replace(/\bHiggsfield\b/g, "the connected account")
+    .replace(/\bselected the connected account\b/g, "selected connected-account")
+    .replace(/\bthe connected account account\b/g, "the connected account")
+    .replace(/^the connected/, "The connected");
 function problem(error: unknown) {
   if (error instanceof CatalogueError || error instanceof ConsumerGenjutsuError)
-    return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
+    return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof ConsumerOriginalError)
-    return Response.json({ code: `original_${error.code}`, error: error.message }, {
+    return Response.json({ code: `original_${error.code}`, error: neutral(error.message) }, {
       status: error.code === "quota" ? 507 : error.code === "timeout" ? 504 : error.code === "storage_unavailable" ? 503 : error.code === "invalid_video" ? 422 : error.code === "not_found" ? 404 : 409,
       headers,
     });
   if (error instanceof ConsumerOAuthError || error instanceof ConsumerDiscoveryError || error instanceof ConsumerVideoServiceError)
-    return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
+    return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof ConsumerJobError)
     return Response.json({
       code: error.code,
@@ -57,7 +67,7 @@ function problem(error: unknown) {
         : "This job changed or is unavailable. Refresh before continuing.",
     }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError)
-    return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
+    return Response.json({ code: error.code, error: neutral(error.message) }, { status: error.status, headers });
   if (error instanceof AccountError && error.status === 429)
     return Response.json({ error: "Too many requests. Try again shortly." }, { status: 429, headers });
   if (error instanceof RequestBodyError)

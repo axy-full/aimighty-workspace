@@ -91,7 +91,7 @@ export function consumerOriginalGenerationId(
 /** Metadata/packet inspection only, never transcoding or fetching references. */
 export async function inspectConsumerVideoOriginal(
   bytes: Buffer,
-): Promise<{ width: number; height: number; seconds: number; mime: "video/mp4" }> {
+): Promise<{ width: number; height: number; seconds: number }> {
   if (!bytes.length || bytes.length > CONSUMER_VIDEO_BYTES)
     throw new ConsumerOriginalError("invalid_video");
   const { Input, BufferSource, MP4, EncodedPacketSink } =
@@ -128,7 +128,7 @@ export async function inspectConsumerVideoOriginal(
           width * height > 40_000_000
         )
           throw new ConsumerOriginalError("invalid_video");
-        return { width, height, seconds, mime: "video/mp4" as const };
+        return { width, height, seconds };
       })(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
@@ -160,7 +160,7 @@ const sniff = {
 /** Byte-level identification only; the served type is what the bytes are, not
  * what the provider's header claimed. GLB files must pass the Astra validator. */
 export async function inspectConsumerOriginal(kind: ConsumerOriginalKind, bytes: Buffer): Promise<Metadata> {
-  if (kind === "video") return inspectConsumerVideoOriginal(bytes);
+  if (kind === "video") return { ...(await inspectConsumerVideoOriginal(bytes)), mime: "video/mp4" };
   if (!bytes.length || bytes.length > CONSUMER_VIDEO_BYTES) throw new ConsumerOriginalError("invalid_video");
   try {
     if (kind === "image") {

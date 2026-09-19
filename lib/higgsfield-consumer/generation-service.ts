@@ -36,6 +36,7 @@ import {
 } from "./mcp";
 import {
   parseConsumerGenerationInput,
+  consumerGenerationParams,
   consumerGenerationAcknowledgement,
   consumerGenerationOriginalResult,
   consumerGenerationFailureResult,
@@ -53,6 +54,7 @@ import {
 import { loadConnectedCatalogue } from "./catalogue-cache";
 import { resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
 import { consumerMediaKey } from "./genjutsu-contract";
+import { sameConsumerValue } from "./video-contract";
 import { collectConsumerVideoOriginal } from "./video-original";
 import { consumerOriginalAvailability, type ConsumerOriginalAvailability } from "./video-availability";
 import { ConsumerVideoServiceError } from "./video-service";
@@ -130,7 +132,8 @@ async function requireModel(userId: string, input: ConsumerGenerationInput): Pro
   return model;
 }
 const sameInput = (a: unknown, b: ConsumerGenerationInput) =>
-  JSON.stringify(parseConsumerGenerationInput(a)) === JSON.stringify(b);
+  sameConsumerValue(parseConsumerGenerationInput(a), b);
+const PLACEHOLDER_MEDIA = "00000000-0000-4000-8000-000000000000";
 export async function quoteConsumerGeneration(userId: string, draftId: string, input: ConsumerGenerationInput, idempotencyKey: string) {
   const normalized = parseConsumerGenerationInput(input);
   const previous = await getConsumerJobByKey({ userId, draftId, idempotencyKey });
@@ -142,6 +145,8 @@ export async function quoteConsumerGeneration(userId: string, draftId: string, i
   if (!(await readDraft(userId, draftId)))
     throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
   const model = await requireModel(userId, normalized);
+  // Catalogue validation precedes source resolution, imports and pricing.
+  consumerGenerationParams(model, normalized, normalized.medias.map((media) => ({ value: PLACEHOLDER_MEDIA, role: media.role })));
   const access = await connected(userId);
   const sources = await resolveConsumerGenerationSources(normalized);
   const quote = await getConsumerGenerationQuote(access.accessToken, model, normalized, sources, {
