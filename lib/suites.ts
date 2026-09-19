@@ -46,6 +46,7 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
   ],
   atomik: [
     { id: "runs", label: "Runs" },
+    { id: "generate", label: "Generate" },
     { id: "recipes", label: "Recipes" },
     { id: "approvals", label: "Approvals" },
     { id: "budget", label: "Budget" },

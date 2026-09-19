@@ -46,11 +46,11 @@ import {
   CatalogueError,
   findCatalogueModel,
   listCatalogueModels,
-  loadConnectedCatalogue,
   type ConnectedCatalogue,
   type ConnectedModel,
   type ConnectedOutputType,
 } from "./catalogue";
+import { loadConnectedCatalogue } from "./catalogue-cache";
 import { resolveConsumerGenerationSources, resolveConsumerGenerationImport } from "./generation-sources";
 import { consumerMediaKey } from "./genjutsu-contract";
 import { collectConsumerVideoOriginal } from "./video-original";

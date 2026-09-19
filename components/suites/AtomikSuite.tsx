@@ -44,6 +44,7 @@ import {
 } from "./atomik-suite-data";
 import styles from "./atomik-suite.module.css";
 import { SuiteAgentPanel } from "./SuiteAgentPanel";
+import { AtomikGenerate } from "./AtomikGenerate";
 
 type Drafts = {
   project: Project | null;
@@ -172,6 +173,7 @@ export default function AtomikSuite({
       page={page}
       heading={heading}
       pageTitle={pageTitle}
+      refreshProject={drafts.refresh}
     />
   );
 }
@@ -181,11 +183,13 @@ function MappedAtomik({
   page,
   heading,
   pageTitle,
+  refreshProject,
 }: {
   project: Project;
   page: AtomikPage;
   heading: string;
   pageTitle?: string;
+  refreshProject: () => Promise<void>;
 }) {
   const session = useSession(),
     money = useMoney(),
@@ -388,6 +392,8 @@ function MappedAtomik({
           <p>
             {page === "runs"
               ? "Readable plans, approved stages, and recoverable production history."
+              : page === "generate"
+                ? "Image, video, sound and 3D workflows on the connected account, each quoted in connected credits before it runs."
               : page === "recipes"
                 ? "Reuse a saved plan with its exact context, models and checkpoints."
                 : page === "approvals"
@@ -500,6 +506,8 @@ function MappedAtomik({
             })
           }
         />
+      ) : page === "generate" ? (
+        <AtomikGenerate project={project} scope={session.requestScope ?? ""} refreshProject={refreshProject} />
       ) : page === "budget" ? (
         <Budget productionId={productionId} />
       ) : page === "models" ? (
