@@ -575,3 +575,18 @@
 .pxw .pxw-feature-state { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 11px; }
 .pxw .pxw-feature-state > .pxw-dot { width: 6px; height: 6px; }
 .pxw .pxw-feature-state-label { font-size: 11.5px; color: var(--pxw-dimmer); }
+
+/* ── ⌘K palette ────────────────────────────────────────────────────── */
+
+.pxw .pxw-palette { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.66); display: flex; align-items: flex-start; justify-content: center; padding-top: 14vh; z-index: 50; }
+.pxw .pxw-palette-catcher { position: absolute; inset: 0; }
+.pxw .pxw-palette-panel { position: relative; width: min(560px, 92vw); background: var(--pxw-palette-panel); border: 1px solid var(--pxw-overlay-border); border-radius: 15px; box-shadow: var(--pxw-shadow-palette); overflow: hidden; }
+.pxw .pxw-palette-input { display: block; width: 100%; padding: 16px 18px; background: transparent; border: none; border-bottom: 1px solid var(--pxw-card-border); font-size: 15px; outline: none; }
+.pxw .pxw-palette-input::placeholder { color: var(--pxw-faint); }
+.pxw .pxw-palette-list { max-height: 46vh; overflow: auto; padding: 7px; }
+.pxw .pxw-palette-row { display: flex; align-items: center; gap: 11px; width: 100%; padding: 10px 12px; border-radius: 10px; background: transparent; }
+.pxw .pxw-palette-row[aria-selected="true"] { background: var(--pxw-toggle-on); }
+.pxw .pxw-palette-group { font-family: var(--pxw-mono); font-size: 9.5px; letter-spacing: 0.09em; color: var(--pxw-label-floor); width: 70px; flex: none; white-space: nowrap; overflow: hidden; }
+.pxw .pxw-palette-label { flex: 1; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-palette-hint { font-size: 10px; flex: none; }
+.pxw .pxw-palette-empty { padding: 12px; font-size: 13px; color: var(--pxw-dimmer); }

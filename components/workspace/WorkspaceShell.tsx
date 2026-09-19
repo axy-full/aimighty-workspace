@@ -2,7 +2,8 @@
 import { useEffect } from "react";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { projectUploads, useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
-import { resolveKey, SHELL_BINDINGS, type KeyBinding, type ShellAction } from "@/lib/workspace/keys";
+import { keyContextFor, legendBindings, resolveKey, stepSelection, WORKSPACE_BINDINGS, type KeyBinding, type ShellAction } from "@/lib/workspace/keys";
+import { generateAvailability, listFor } from "@/lib/workspace/navigation";
 import { PAGES } from "@/lib/workspace/pages";
 import { useWorkspace } from "@/lib/workspace/state";
 import { AtomikPanel } from "./AtomikPanel";
@@ -12,6 +13,7 @@ import { Home } from "./Home";
 import { Inspector } from "./Inspector";
 import { Library } from "./Library";
 import { PageHeader, primaryAvailability } from "./PageHeader";
+import { Palette } from "./Palette";
 import { ProjectHeader } from "./ProjectHeader";
 import { PAGE_BODIES } from "./pages/registry";
 import { StageTabs } from "./StageTabs";
@@ -25,6 +27,8 @@ export type ShellSeams = {
   onOpenPalette?: () => void;
   /** Generate the selected shot. Absent: Generate is disabled with its reason. */
   onGenerate?: () => void;
+  /** Play / pause the preview (Space). Absent: Space is left to the browser. */
+  onTogglePlay?: () => void;
   /** Extra key bindings, checked after the shell's own. */
   bindings?: KeyBinding<unknown>[];
 };
@@ -37,32 +41,72 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
   const project = data.project;
   const projectName = project?.name ?? "";
 
-  /* Keyboard: the shell's bindings, guarded against typing. */
+  /* Keyboard (04 "Keyboard"): one keymap, guarded against typing; ⌘K is the exception. */
+  const onGenerate = seams.onGenerate;
+  const onTogglePlay = seams.onTogglePlay;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const ctx = { state: ws.state, pageCount: PAGES[ws.state.suite].length };
-      const shell = resolveKey(SHELL_BINDINGS, event, ctx);
+      const current = ws.state;
+      const ctx = keyContextFor(current, { canGenerate: Boolean(onGenerate), canPlay: Boolean(onTogglePlay) });
+      const shell = resolveKey(WORKSPACE_BINDINGS, event, ctx);
       if (shell) {
         const action = shell.action(event, ctx) as ShellAction;
-        if (action.type === "page") {
-          event.preventDefault();
-          const target = PAGES[ws.state.suite][action.index];
-          if (target) go(ws.state.suite, target.id);
-        } else if (action.type === "toggleInspector") {
-          event.preventDefault();
-          dispatch({ type: "toggleInspector" });
-        } else if (action.type === "escape") {
-          if (ws.state.palette) dispatch({ type: "patch", patch: { palette: false } });
-          else if (ws.state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
+        switch (action.type) {
+          case "palette":
+            event.preventDefault();
+            dispatch({ type: "patch", patch: { palette: !current.palette, query: "" } });
+            return;
+          case "escape":
+            if (current.palette) dispatch({ type: "patch", patch: { palette: false, query: "" } });
+            else if (current.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
+            return;
+          case "enterStudio":
+            event.preventDefault();
+            go(current.suite, current.page);
+            return;
+          case "page": {
+            event.preventDefault();
+            const target = PAGES[current.suite][action.index];
+            if (target) go(current.suite, target.id);
+            return;
+          }
+          case "item": {
+            const list = listFor(current.selKind, current.lists, current.libFilter) ?? [];
+            const next = stepSelection(list, current.selId, action.step);
+            if (!next) return;
+            event.preventDefault();
+            dispatch({ type: "patch", patch: { selId: next } });
+            ws.syncUrl();
+            return;
+          }
+          case "generate": {
+            event.preventDefault();
+            const availability = generateAvailability(current, Boolean(onGenerate));
+            if (availability.enabled) onGenerate?.();
+            else ws.toast(availability.reason);
+            return;
+          }
+          case "toggleAtomik":
+            event.preventDefault();
+            dispatch({ type: "patch", patch: { agentOpen: !current.agentOpen } });
+            return;
+          case "toggleInspector":
+            event.preventDefault();
+            dispatch({ type: "toggleInspector" });
+            return;
+          case "play":
+            event.preventDefault();
+            onTogglePlay?.();
+            return;
         }
-        return;
       }
+      if (current.palette) return;
       const extra = seams.bindings && resolveKey(seams.bindings, event, ctx);
       if (extra) extra.action(event, ctx);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [ws.state, go, dispatch, seams.bindings]);
+  }, [ws, go, dispatch, seams.bindings, onGenerate, onTogglePlay]);
 
   const openProject = (id: string) => {
     try { localStorage.setItem(scope, id); } catch { /* The URL still carries the project. */ }
@@ -77,7 +121,7 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
     <div className="pxw" data-view={state.view}>
-      <TopBar account={account} onOpenPalette={seams.onOpenPalette} />
+      <TopBar account={account} onOpenPalette={seams.onOpenPalette ?? (() => dispatch({ type: "patch", patch: { palette: true, query: "" } }))} />
       {state.view === "studio" ? (
         <>
           <StageTabs />
@@ -94,12 +138,17 @@ export function WorkspaceShell({ scope, initialAccount, seams = {}, planBridge }
             </main>
             {state.inspector ? <Inspector /> : null}
           </div>
-          <StatusBar projectName={projectName} bindings={[...SHELL_BINDINGS, ...(seams.bindings ?? [])] as KeyBinding<unknown>[]} />
+          <StatusBar
+            projectName={projectName}
+            bindings={[...legendBindings(), ...(seams.bindings ?? [])] as KeyBinding<unknown>[]}
+            live={{ canGenerate: Boolean(onGenerate), canPlay: Boolean(onTogglePlay) }}
+          />
         </>
       ) : (
         <Home projects={data.projects} project={project} status={data.status} error={data.error} onOpenProject={openProject} />
       )}
       <AtomikPanel />
+      <Palette onGenerate={onGenerate} />
       <ToastHost />
     </div>
     </AtomikHost>
