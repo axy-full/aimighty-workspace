@@ -44,3 +44,15 @@ Unit tests reuse the existing seams (transpile-and-inject `require`, `vm` mocks,
 ## Owner actions
 
 Create the Cloudflare account and two R2 buckets (production, preview), an API token scoped to those buckets (object read/write/list), and store `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` in Vercel per environment. Confirm the first backup capture has run before cutover. Nothing in this plan requires a custom domain or public bucket.
+
+## Backend selector
+
+Package 1 landed the seam: `lib/storage/backend.ts` (interface, selector, `resolveStored`), `lib/storage/blob.ts` (Vercel Blob, unchanged semantics) and `lib/storage/r2.ts` (S3 REST over `fetch` with SigV4 from `node:crypto`, no SDK). `lib/storage.ts` no longer names `@vercel/blob`; local disk stays inline there because its layout is not key-shaped.
+
+- `STORAGE_BACKEND=blob|r2|local`. Unset: `blob` when `BLOB_READ_WRITE_TOKEN` is set, otherwise `local`. Any other value throws at first use.
+- R2 reads `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`; the endpoint is `https://<account>.r2.cloudflarestorage.com` (override with `R2_ENDPOINT` for a rehearsal), region `auto`, path-style `/<bucket>/<key>`.
+- `usingBlob()` keeps meaning "a cloud backend is active" for its existing callers (true under `blob` and `r2`); `usingCloud()` and `backendKind()` are the new names and `lib/storage.ts` uses them internally.
+- An absolute `*.vercel-storage.com` URL in an old row always resolves to the Blob backend, whichever backend is selected, so those rows stay readable during the migration.
+- Recovery activities: the Blob backend keeps `blob-put`/`blob-delete`; R2 records `r2-put`/`r2-delete`. A conditional-write precondition failure (the key already exists) is a certain outcome and is not marked uncertain.
+
+**R2 is not yet used in production.** `lib/purge.ts`, `lib/storageCost.ts`, `app/api/health/route.ts`, `lib/deploymentReadiness.ts` and `scripts/ops/*` still call the Blob SDK directly (packages 3 and 4), downloads still stream through the routes (package 2), and no bucket, token or migration has run (package 5).

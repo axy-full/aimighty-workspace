@@ -1,14 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import ts from "typescript";
 import {
   currentTenant,
   runInTenant,
   type TenantWorkspace,
 } from "../../lib/tenant";
+import { loadIsolated } from "./storageSeam";
 
 test("cloud chunk assembly preserves each workspace's bytes and cleans up only its chunks", async () => {
   const objects = new Map<string, Buffer>();
@@ -41,31 +39,13 @@ test("cloud chunk assembly preserves each workspace's bytes and cleans up only i
   };
   // Exercise the real storage implementation with only the remote SDK replaced.
   // Local disk tests cannot expose a missing Blob workspace prefix.
-  const filename = path.resolve("lib/storage.ts");
-  const require = createRequire(filename);
-  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-      esModuleInterop: true,
-    },
-  }).outputText;
-  const loaded = { exports: {} as typeof import("../../lib/storage") };
-  const isolatedRequire = (name: string) =>
-    name === "@vercel/blob"
-      ? blob
-      : name === "./tenant"
-        ? { currentTenant }
-        : require(name);
   const previous = process.env.BLOB_READ_WRITE_TOKEN;
   process.env.BLOB_READ_WRITE_TOKEN = "local-sdk-fixture-no-network";
   try {
-    new Function("require", "module", "exports", compiled)(
-      isolatedRequire,
-      loaded,
-      loaded.exports,
-    );
-    const storage = loaded.exports;
+    const storage = loadIsolated<typeof import("../../lib/storage")>("lib/storage.ts", {
+      "@vercel/blob": blob,
+      "./tenant": { currentTenant },
+    });
     const workspaces = [
       { id: "studio-a", legacy: false },
       { id: "studio-b", legacy: false },
@@ -121,11 +101,7 @@ test("local staging separates the same account and session across tenants while 
   const { mkdtempSync, existsSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const dir = mkdtempSync(path.join(tmpdir(), "particl-local-chunks-"));
-  const filename = path.resolve("lib/storage.ts"), require = createRequire(filename);
-  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-  const loaded = { exports: {} as typeof import("../../lib/storage") };
-  new Function("require", "module", "exports", "process", compiled)((name: string) => name === "./tenant" ? { currentTenant } : require(name), loaded, loaded.exports, { ...process, cwd: () => dir, env: { ...process.env, BLOB_READ_WRITE_TOKEN: "" } });
-  const storage = loaded.exports;
+  const storage = loadIsolated<typeof import("../../lib/storage")>("lib/storage.ts", { "./tenant": { currentTenant } }, { process: { ...process, cwd: () => dir, env: { ...process.env, BLOB_READ_WRITE_TOKEN: "" } } });
   for (const ws of [{ id: "a", legacy: false }, { id: "b", legacy: false }, { id: "legacy", legacy: true }] as TenantWorkspace[]) {
     await runInTenant(ws, async () => { await storage.storeChunk("owner/session", 0, Buffer.from(ws.id)); });
   }

@@ -1,14 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { byteRange } from "../../lib/mediaRange";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import path from "node:path";
-import ts from "typescript";
 import {
   runInTenant,
   currentTenant,
   type TenantWorkspace,
 } from "../../lib/tenant";
+import { loadIsolated } from "./storageSeam";
 test("single byte ranges handle inclusive ends, suffixes and overshoot without integer overflow", () => {
   expect(byteRange(null, 100)).toBe(null);
   expect(byteRange("bytes=20-29", 100)).toEqual({
@@ -43,9 +40,7 @@ test("single byte ranges handle inclusive ends, suffixes and overshoot without i
     expect(() => byteRange(header, 100)).toThrow();
 });
 test("private Blob range reads stay scoped and reject a full or mismatched response instead of mislabeling bytes", async () => {
-  const filename = path.resolve("lib/storage.ts"),
-    require = createRequire(filename),
-    calls: { name: string; options: Record<string, unknown> }[] = [];
+  const calls: { name: string; options: Record<string, unknown> }[] = [];
   let matching = true,
     cancelled = false;
   const blob = {
@@ -64,27 +59,15 @@ test("private Blob range reads stay scoped and reject a full or mismatched respo
       };
     },
   };
-  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-      esModuleInterop: true,
-    },
-  }).outputText;
-  const mod = { exports: {} as typeof import("../../lib/storage") };
   const previous = process.env.BLOB_READ_WRITE_TOKEN;
   process.env.BLOB_READ_WRITE_TOKEN = "test-only-no-network";
   try {
-    new Function("require", "module", "exports", compiled)(
-      (name: string) =>
-        name === "@vercel/blob"
-          ? blob
-          : name === "./tenant"
-            ? { currentTenant }
-            : require(name),
-      mod,
-      mod.exports,
-    );
+    const mod = {
+      exports: loadIsolated<typeof import("../../lib/storage")>("lib/storage.ts", {
+        "@vercel/blob": blob,
+        "./tenant": { currentTenant },
+      }),
+    };
     await runInTenant(
       { id: "range-studio", legacy: false } as TenantWorkspace,
       async () => {
