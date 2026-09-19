@@ -75,6 +75,19 @@ import {
   type VoiceToolName,
   type VoiceToolShape,
 } from "./voice-tools";
+import { createHash } from "node:crypto";
+import {
+  cachedToolset,
+  checkTool,
+  invalidateToolset,
+  normalizeFallbackStatus,
+  resolveStatusTool,
+  statusArguments,
+  storeToolset,
+  toolsetFrom,
+  type ConnectedToolset,
+  type StatusExpectation,
+} from "./toolset";
 export const CATALOGUE_PAGE_LIMIT = 100;
 export const CATALOGUE_PAGES = 5;
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
@@ -224,6 +237,8 @@ type ConsumerSession = {
   protocolVersion: string;
   supportsTools: boolean;
   secrets: string[];
+  /** Cache scope of this connection's advertised toolset (a hash of the access token). */
+  toolsetKey: string;
   active: () => boolean;
   list: (cursor?: string) => Promise<Record<string, unknown>>;
   qualificationRead: (index: number) => Promise<Record<string, unknown>>;
@@ -254,6 +269,9 @@ type ConsumerSession = {
   /** Only the fixed voice/dubbing/analysis create tools; the name is resolved from the workflow, never a caller. */
   voiceToolCreate: (tool: VoiceToolName, args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
   voiceToolStatus: (tool: VoiceToolName, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /** Per-product status reads used when `job_status` is not advertised. */
+  jobDisplay: (jobId: string) => Promise<Record<string, unknown>>;
+  jobsWait: (jobId: string) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -634,6 +652,7 @@ async function withConsumerSession<T>(
         accessToken,
         ...(sessionId ? [sessionId] : []),
       ]),
+      toolsetKey: createHash("sha256").update(accessToken).digest("hex").slice(0, 48),
       active: () => !controller.signal.aborted && performance.now() < deadline,
       list: async (cursor) =>
         (await post("tools/list", cursor === undefined ? {} : { cursor }))!,
@@ -703,6 +722,8 @@ async function withConsumerSession<T>(
         (await post("tools/call", { name: "list_voices", arguments: { size: VOICES_LIMITS.pageSize, ...(cursor === undefined ? {} : { cursor }) } }))!,
       voiceToolCreate: async (tool, args, sending) => (await post("tools/call", { name: requireVoiceTool(tool).create, arguments: args }, sending))!,
       voiceToolStatus: async (tool, args) => (await post("tools/call", { name: requireVoiceTool(tool).status, arguments: args }))!,
+      jobDisplay: async (jobId) => (await post("tools/call", { name: "job_display", arguments: statusArguments("job_display", jobId) }))!,
+      jobsWait: async (jobId) => (await post("tools/call", { name: "jobs_wait", arguments: statusArguments("jobs_wait", jobId) }))!,
     });
   } catch (error) {
     if (
@@ -976,6 +997,7 @@ export async function getConsumerVideoQuote(
       async (session) => {
         if (!session.supportsTools)
           throw new ConsumerVideoError("provider_error");
+        await requireConnectedTools(session, [WALLET_READ, { name: "generate_video", args: { params: consumerVideoParams(input, true) } }]);
         const workspace = parseConsumerVideoWorkspace(
           videoReadResult(session, await session.videoWorkspaces()),
         );
@@ -1026,6 +1048,11 @@ export async function submitConsumerVideo(
       async (session) => {
         if (!session.supportsTools)
           throw new ConsumerVideoError("provider_error");
+        await requireConnectedTools(session, [
+          WALLET_READ,
+          { name: "generate_video", args: { params: consumerVideoParams(input, true) } },
+          { name: "generate_video", args: { params: consumerVideoParams(input, false) } },
+        ]);
         const workspace = parseConsumerVideoWorkspace(
           videoReadResult(session, await session.videoWorkspaces()),
         );
@@ -1093,7 +1120,9 @@ export async function readConsumerVideoJob(
           videoReadResult(session, await session.videoWorkspaces()),
         );
         matchingWorkspace(workspace, expected);
-        const raw = videoReadResult(session, await session.videoStatus(jobId));
+        // The Marketing Video collector qualifies only the raw_data envelope,
+        // which only job_status provides; without it the poll fails closed.
+        const raw = await readConnectedStatus(session, jobId, {}, { rawData: true });
         return { jobId, raw, ...validateConsumerVideoStatus(raw, jobId) };
       },
     );
@@ -1133,6 +1162,11 @@ export async function getConsumerGenjutsuQuote(
       async (session) => {
         if (!session.supportsTools)
           throw new ConsumerVideoError("provider_error");
+        await requireConnectedTools(session, [
+          WALLET_READ,
+          ...importCalls(sources),
+          { name: "generate_video", args: { params: { ...consumerGenjutsuParams(input, sources.map((_, i) => ({ value: IMPORT_PLACEHOLDER, role: i === 0 ? "video" : "image" }))), get_cost: true } } },
+        ]);
         const workspace = parseConsumerVideoWorkspace(
           videoReadResult(session, await session.videoWorkspaces()),
         );
@@ -1166,6 +1200,7 @@ export async function getConsumerGenjutsuQuote(
           medias.push({ value: mediaId, role: i === 0 ? "video" : "image" });
         }
         const params = consumerGenjutsuParams(input, medias);
+        await requireConnectedTools(session, [{ name: "generate_video", args: { params: { ...params, get_cost: true } } }]);
         const credits = parseConsumerCreditsForParams(
           videoReadResult(session, await session.genjutsuQuote(params)),
           { ...params, get_cost: true },
@@ -1228,6 +1263,11 @@ export async function submitConsumerGenjutsu(
       options,
       QUALIFICATION_LIMITS.timeoutMs,
       async (session) => {
+        await requireConnectedTools(session, [
+          WALLET_READ,
+          { name: "generate_video", args: { params: { ...params, get_cost: true } } },
+          { name: "generate_video", args: { params: { ...params, get_cost: false } } },
+        ]);
         const workspace = parseConsumerVideoWorkspace(
           videoReadResult(session, await session.videoWorkspaces()),
         );
@@ -1290,10 +1330,7 @@ export async function readConsumerGenjutsuJob(
           ),
           expected,
         );
-        const raw = videoReadResult(
-          session,
-          await session.genjutsuStatus(jobId),
-        );
+        const raw = await readConnectedStatus(session, jobId, { model, type: "video" });
         if (object(raw) && object(raw.generation)) {
           const generation = raw.generation;
           if (("id" in generation && consumerVideoJobId(generation.id) !== jobId) ||
@@ -1319,6 +1356,89 @@ function generationTool(type: ConnectedOutputType) {
   return GENERATION_TOOLS[type];
 }
 const CURSOR = /^[\x21-\x7e]{1,4096}$/;
+
+/* ── Connected toolset guard (P0) ─────────────────────────────────────── */
+/** The whole bounded tools/list of this connection. Schemas are data used only
+ * to verify the arguments we send; descriptions are not kept. */
+async function readSessionToolset(session: ConsumerSession): Promise<ConnectedToolset> {
+  const entries: { name: string; inputSchema: Record<string, unknown> }[] = [];
+  const names = new Set<string>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < DISCOVERY_LIMITS.pages; page++) {
+    if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+    const result = await session.list(cursor);
+    if (!Array.isArray(result.tools) || entries.length + result.tools.length > DISCOVERY_LIMITS.tools) throw new ConsumerVideoError("provider_error");
+    for (const entry of result.tools) {
+      if (!object(entry) || typeof entry.name !== "string" || !/^[\x21-\x7e]{1,128}$/.test(entry.name) || names.has(entry.name))
+        throw new ConsumerVideoError("provider_error");
+      try {
+        validateSchema(entry.inputSchema, session.secrets);
+      } catch {
+        throw new ConsumerVideoError("provider_error");
+      }
+      names.add(entry.name);
+      entries.push({ name: entry.name, inputSchema: entry.inputSchema as Record<string, unknown> });
+    }
+    const next = result.nextCursor;
+    if (next === undefined) return toolsetFrom(entries);
+    if (typeof next !== "string" || !CURSOR.test(next) || cursors.has(next)) throw new ConsumerVideoError("provider_error");
+    cursors.add(next);
+    cursor = next;
+  }
+  throw new ConsumerVideoError("provider_error");
+}
+/** The cached toolset (short TTL), or a fresh read on a cold cache or when asked. */
+async function connectedToolset(session: ConsumerSession, refresh = false) {
+  if (!refresh) {
+    const cached = cachedToolset(session.toolsetKey);
+    if (cached) return { toolset: cached, fresh: false };
+  }
+  const toolset = await readSessionToolset(session);
+  storeToolset(session.toolsetKey, toolset);
+  return { toolset, fresh: true };
+}
+type ToolCall = { name: string; args: Record<string, unknown> };
+/** Every listed call must be advertised by OUR connection with a schema that
+ * accepts exactly these arguments. A miss against a cached list re-reads the
+ * list once; a miss against a fresh list refuses before any spend or mutation. */
+async function requireConnectedTools(session: ConsumerSession, calls: ToolCall[]) {
+  const first = await connectedToolset(session);
+  let toolset = first.toolset;
+  const failure = (current: ConnectedToolset) => calls.map((call) => checkTool(current, call.name, call.args)).find((check) => check !== "ok");
+  let failed = failure(toolset);
+  if (failed && !first.fresh) {
+    toolset = (await connectedToolset(session, true)).toolset;
+    failed = failure(toolset);
+  }
+  if (failed) throw new ConsumerVideoError(failed === "missing" ? "tool_unavailable" : "tool_contract_changed");
+}
+/** Read-only status of one acknowledged job through the best advertised status
+ * tool: job_status (normalized, or raw_data when the collector needs it), else
+ * the per-product job_display / jobs_wait reads normalized to the same
+ * envelope. No advertised status tool → status_unavailable, nothing is sent. */
+async function readConnectedStatus(session: ConsumerSession, jobId: string, expected: StatusExpectation, options: { rawData?: boolean } = {}): Promise<QualificationValue> {
+  const first = await connectedToolset(session);
+  let tool = resolveStatusTool(first.toolset, jobId, options);
+  if (!tool && !first.fresh) {
+    tool = resolveStatusTool((await connectedToolset(session, true)).toolset, jobId, options);
+  }
+  if (!tool) throw new ConsumerVideoError("status_unavailable");
+  try {
+    if (tool === "job_status")
+      return videoReadResult(session, await (options.rawData ? session.videoStatus(jobId) : session.generationStatus(jobId)));
+    const raw = videoReadResult(session, await (tool === "job_display" ? session.jobDisplay(jobId) : session.jobsWait(jobId)));
+    return normalizeFallbackStatus(tool, raw, jobId, expected) as QualificationValue;
+  } catch (error) {
+    // A failed read may mean the surface changed under a cached list.
+    invalidateToolset(session.toolsetKey);
+    throw error;
+  }
+}
+const IMPORT_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
+const WALLET_READ: ToolCall = { name: "list_workspaces", args: {} };
+const importCalls = (sources: { url: string; type: string }[]): ToolCall[] =>
+  sources.map((source) => ({ name: "media_import_url", args: { url: source.url, type: source.type } }));
 /** Read-only: the whole `models_explore list` catalogue, following the
  * provider's page token up to a fixed page count. The merged raw envelope is
  * returned for catalogue.ts to parse; nothing here is executed or priced. */
@@ -1391,10 +1511,16 @@ export async function getConsumerGenerationQuote(
   )
     throw new ConsumerVideoError("invalid_input");
   // Validate against the catalogue before any provider call, paid or not.
-  consumerGenerationParams(model, input, input.medias.map((media) => ({ value: "00000000-0000-4000-8000-000000000000", role: media.role })));
+  const placeholder = consumerGenerationParams(model, input, input.medias.map((media) => ({ value: IMPORT_PLACEHOLDER, role: media.role })));
   try {
     return await withConsumerSession(accessToken, options, 150_000, async (session) => {
       if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      // Before any import (a remote mutation): the tools and argument shapes must be advertised.
+      await requireConnectedTools(session, [
+        WALLET_READ,
+        ...importCalls(sources),
+        { name: generationTool(input.type), args: { params: { ...placeholder, get_cost: true } } },
+      ]);
       const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
       const medias: ConsumerGenerationMedia[] = [];
       for (let i = 0; i < sources.length; i++) {
@@ -1420,6 +1546,7 @@ export async function getConsumerGenerationQuote(
         medias.push({ value: mediaId, role: source.role });
       }
       const params = consumerGenerationParams(model, input, medias);
+      await requireConnectedTools(session, [{ name: generationTool(input.type), args: { params: { ...params, get_cost: true } } }]);
       const credits = parseConsumerCreditsForParams(
         videoReadResult(session, await session.generationQuote(input.type, params)),
         { ...params, get_cost: true },
@@ -1451,6 +1578,11 @@ export async function submitConsumerGeneration(
   let attempted = false;
   try {
     return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      await requireConnectedTools(session, [
+        WALLET_READ,
+        { name: generationTool(input.type), args: { params: { ...params, get_cost: true } } },
+        { name: generationTool(input.type), args: { params: { ...params, get_cost: false } } },
+      ]);
       const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
       matchingWorkspace(workspace, expected);
       const credits = parseConsumerCreditsForParams(
@@ -1495,7 +1627,7 @@ export async function readConsumerGenerationJob(
   try {
     return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
       matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
-      const raw = videoReadResult(session, await session.generationStatus(jobId));
+      const raw = await readConnectedStatus(session, jobId, { model, type });
       if (object(raw) && object(raw.generation)) {
         const generation = raw.generation;
         if (("id" in generation && consumerVideoJobId(generation.id) !== jobId) ||
@@ -1652,6 +1784,7 @@ export async function getConsumerMarketingTemplateQuote(
       const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
       let mediaId: string | null = null;
       if (source) {
+        await requireConnectedTools(session, importCalls([source]));
         try {
           mediaId = await options.resolveMedia(workspace.id, async () => {
             const raw = videoReadResult(session, await session.genjutsuImport(source.url, "image"));
@@ -1831,6 +1964,7 @@ export async function getConsumerVoiceToolQuote(
       const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
       const shape = await verifiedVoiceToolShape(session, input.tool, placeholder);
       if (!shape.getCost) await voiceToolPrice(session, input.tool, placeholder, shape);
+      await requireConnectedTools(session, importCalls([source]));
       let mediaId: string;
       try {
         mediaId = await options.resolveMedia(workspace.id, async () => {
@@ -1919,7 +2053,7 @@ export async function readConsumerVoiceToolJob(
       matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
       let raw: QualificationValue;
       if (definition.status === "job_status") {
-        raw = videoReadResult(session, await session.generationStatus(jobId));
+        raw = await readConnectedStatus(session, jobId, { type: "video" });
         if (object(raw) && object(raw.generation)) {
           const generation = raw.generation;
           if (("id" in generation && consumerVideoJobId(generation.id) !== jobId) || ("type" in generation && generation.type !== "video"))

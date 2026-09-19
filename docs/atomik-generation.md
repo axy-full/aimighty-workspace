@@ -85,6 +85,15 @@ Pipeline, per tool: validate (`consumerVoiceToolInputSchema`: the tool, one sour
 
 Same limits as the workflows (≤50 MB per source, ≤100 MiB per original, four active connected-account jobs) and the same rate limits per owner (12 voice-list reads, 6 quotes, 6 submits, 30 status reads per minute).
 
+## Connected toolset guard (P0)
+
+The connected account's tool surface differs by OAuth client and changes over time. On 19 September our own client advertised 98 tools (with `job_status` and `marketing_studio_v2_*`); another client of the same account advertised 91 (neither of those; `job_display` and `jobs_wait` instead). `lib/higgsfield-consumer/toolset.ts` makes every flow check OUR connection's live `tools/list` first:
+
+- **Cache.** The bounded list (names + input schemas, descriptions dropped) is cached in memory per connection (hash of the access token) for 60 seconds. A miss against a cached list re-reads it once; a failed status read drops the cached list.
+- **Before spend.** Every quote (before any `media_import_url`), every submit (before the durable claim) checks that `list_workspaces`, `media_import_url` and the `generate_*` tool are advertised and that their schemas accept exactly the arguments we send (types, required keys, `additionalProperties:false`, forbidden `{"not":{}}` properties, enums/consts, numeric and array bounds, `anyOf`/`oneOf`; provider `pattern`s are never run). Otherwise the request is refused before any call with `tool_unavailable` or `tool_contract_changed` (409) — "Nothing was sent and no credits were spent." Marketing Video, Genjutsu and Generate are covered; Marketing templates and the voice tools already verified their create/status schemas and now also check the import tool.
+- **Status polls.** `job_status` when advertised; otherwise `job_display {id}`, then `jobs_wait {jobs:[{index:0,job_id}],timeout_seconds:0}` (an immediate snapshot, never a long poll). Their replies are rewritten into the normalized `{generation:{…}}` envelope only when the entry names exactly the acknowledged job id; a model or type the entry states must match (the collectors re-check); when the entry omits them the job is bound by its id alone. One HTTPS result URL is kept; anything else stays an inert diagnostic. With no status tool the poll is refused with `status_unavailable` (503) and the job stays saved. Marketing Video polls need `job_status`'s `raw_data` envelope, so on a surface without it they fail closed.
+- **Fixtures.** `tests/fixtures/connected-tools-91.json` (names verbatim; schemas verbatim for every tool Particl calls) and `connected-tools-98.json` (reconstructed: the 91 plus the tools our client is known to serve; two unidentified placeholders keep the count). Spec: `tests/unit/connectedToolset.spec.ts`.
+
 ## Not covered by I1/I2
 
 - Virality scoring (no non-submitting price for `brain_activity`).

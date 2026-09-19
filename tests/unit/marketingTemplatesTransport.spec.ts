@@ -1,4 +1,11 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync as readToolsFixture } from "node:fs";
+import { resetConnectedToolsetCache } from "../../lib/higgsfield-consumer/toolset";
+
+/** The rest of our connection's surface (wallet, import, status reads), minus the tools this spec controls. */
+const connectedTools98 = JSON.parse(readToolsFixture("tests/fixtures/connected-tools-98.json", "utf8")) as { tools: { name: string; inputSchema: Record<string, unknown> }[] };
+const surfaceBeside = (own: { name: string }[], controlled: string[]) => connectedTools98.tools.filter((tool) => !own.some((o) => o.name === tool.name) && !controlled.includes(tool.name));
+test.beforeEach(() => resetConnectedToolsetCache());
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
@@ -40,7 +47,7 @@ function fixtureSession(options: { create?: unknown; status?: unknown; change?: 
       return Response.json({ jsonrpc: "2.0", id: p.id, result: { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } } });
     if (p.method === "notifications/initialized") return new Response(null, { status: 202 });
     if (p.method === "tools/list")
-      return Response.json({ jsonrpc: "2.0", id: p.id, result: p.params?.cursor ? { tools: tools.slice(2) } : { tools: tools.slice(0, 2), nextCursor: "more" } });
+      return Response.json({ jsonrpc: "2.0", id: p.id, result: p.params?.cursor ? { tools: [...tools.slice(2), ...surfaceBeside(tools, ["marketing_studio_v2_presets", "marketing_studio_v2_costs", "marketing_studio_v2_create", "marketing_studio_v2_status"])] } : { tools: tools.slice(0, 2), nextCursor: "more" } });
     const changed = options.change?.(p, calls);
     if (changed instanceof Error) throw changed;
     const args = p.params.arguments;

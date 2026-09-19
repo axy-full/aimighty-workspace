@@ -1,0 +1,1694 @@
+{
+ "capturedAt": "2026-09-19",
+ "client": "another OAuth client of the same connected account (91 tools)",
+ "note": "Tool names exactly as advertised by tools/list on 19 September 2026. Input schemas are verbatim (descriptions dropped, a few uuid patterns abridged) for every tool Particl calls or plans to call; the others are recorded by name with a stub object schema (schemaCaptured:false). No job_status and no marketing_studio_v2_* on this client; job_display and jobs_wait are its status reads. Read-only capture; no tool was invoked for this fixture.",
+ "tools": [
+  {
+   "name": "animation_actions",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "apps_describe",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "apps_invoke",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "apps_search",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "balance",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {},
+    "type": "object"
+   }
+  },
+  {
+   "name": "cancel_trial_auto_renewal",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "create_voice",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "create_voice_from_confirmed_audio",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "create_website",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "deploy_website",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "dubbing",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Dubbing parameters.",
+      "properties": {
+       "target_language": {
+        "type": "string",
+        "enum": [
+         "eng",
+         "cmn",
+         "fra",
+         "hin",
+         "ita",
+         "jpn",
+         "kor",
+         "por",
+         "rus",
+         "tur",
+         "spa",
+         "deu",
+         "ara",
+         "pol",
+         "ind",
+         "fil",
+         "swe",
+         "fin"
+        ],
+        "description": "Target language code."
+       },
+       "video_id": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "description": "Source video. Confirmed uploaded video media_id or completed video job_id."
+       }
+      },
+      "required": [
+       "video_id",
+       "target_language"
+      ]
+     }
+    },
+    "required": [
+     "params"
+    ]
+   }
+  },
+  {
+   "name": "generate_3d",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "params": {
+      "anyOf": [
+       {
+        "additionalProperties": {},
+        "properties": {
+         "count": {
+          "default": 1,
+          "maximum": 4,
+          "minimum": 1,
+          "type": "integer"
+         },
+         "get_cost": {
+          "type": "boolean"
+         },
+         "medias": {
+          "items": {
+           "properties": {
+            "role": {
+             "type": "string"
+            },
+            "value": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "value",
+            "role"
+           ],
+           "type": "object"
+          },
+          "type": "array"
+         },
+         "model": {
+          "type": "string"
+         },
+         "prompt": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "model"
+        ],
+        "type": "object"
+       },
+       {
+        "type": "string"
+       }
+      ]
+     }
+    },
+    "required": [
+     "params"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_audio",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "params": {
+      "anyOf": [
+       {
+        "additionalProperties": {},
+        "properties": {
+         "count": {
+          "const": 1,
+          "default": 1,
+          "type": "number"
+         },
+         "duration": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+         },
+         "get_cost": {
+          "type": "boolean"
+         },
+         "medias": {
+          "items": {
+           "properties": {
+            "role": {
+             "type": "string"
+            },
+            "value": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "value",
+            "role"
+           ],
+           "type": "object"
+          },
+          "type": "array"
+         },
+         "model": {
+          "type": "string"
+         },
+         "prompt": {
+          "minLength": 1,
+          "type": "string"
+         },
+         "use_unlim": {
+          "type": "boolean"
+         },
+         "voice": {
+          "type": "string"
+         },
+         "voice_id": {
+          "type": "string"
+         },
+         "voice_type": {
+          "enum": [
+           "preset",
+           "element"
+          ],
+          "type": "string"
+         }
+        },
+        "required": [
+         "model",
+         "prompt"
+        ],
+        "type": "object"
+       },
+       {
+        "type": "string"
+       }
+      ]
+     }
+    },
+    "required": [
+     "params"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_audio_batch",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "requests": {
+      "items": {
+       "additionalProperties": false,
+       "properties": {
+        "index": {
+         "maximum": 9007199254740991,
+         "minimum": 0,
+         "type": "integer"
+        },
+        "params": {
+         "additionalProperties": {},
+         "properties": {
+          "count": {
+           "const": 1,
+           "default": 1,
+           "type": "number"
+          },
+          "duration": {
+           "exclusiveMinimum": 0,
+           "type": "number"
+          },
+          "get_cost": {
+           "not": {}
+          },
+          "medias": {
+           "items": {
+            "properties": {
+             "role": {
+              "type": "string"
+             },
+             "value": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "value",
+             "role"
+            ],
+            "type": "object"
+           },
+           "type": "array"
+          },
+          "model": {
+           "type": "string"
+          },
+          "prompt": {
+           "minLength": 1,
+           "type": "string"
+          },
+          "use_unlim": {
+           "type": "boolean"
+          },
+          "voice": {
+           "type": "string"
+          },
+          "voice_id": {
+           "type": "string"
+          },
+          "voice_type": {
+           "enum": [
+            "preset",
+            "element"
+           ],
+           "type": "string"
+          }
+         },
+         "required": [
+          "model",
+          "prompt"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "index",
+        "params"
+       ],
+       "type": "object"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+     }
+    },
+    "required": [
+     "requests"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_image",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "params": {
+      "anyOf": [
+       {
+        "additionalProperties": {},
+        "properties": {
+         "aspect_ratio": {
+          "type": "string"
+         },
+         "count": {
+          "default": 1,
+          "maximum": 4,
+          "minimum": 1,
+          "type": "integer"
+         },
+         "get_cost": {
+          "type": "boolean"
+         },
+         "medias": {
+          "items": {
+           "properties": {
+            "role": {
+             "type": "string"
+            },
+            "value": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "value",
+            "role"
+           ],
+           "type": "object"
+          },
+          "type": "array"
+         },
+         "model": {
+          "type": "string"
+         },
+         "prompt": {
+          "type": "string"
+         },
+         "use_unlim": {
+          "type": "boolean"
+         }
+        },
+        "required": [
+         "model"
+        ],
+        "type": "object"
+       },
+       {
+        "type": "string"
+       }
+      ]
+     }
+    },
+    "required": [
+     "params"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_image_batch",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "requests": {
+      "items": {
+       "additionalProperties": false,
+       "properties": {
+        "index": {
+         "maximum": 9007199254740991,
+         "minimum": 0,
+         "type": "integer"
+        },
+        "params": {
+         "additionalProperties": {},
+         "properties": {
+          "aspect_ratio": {
+           "type": "string"
+          },
+          "count": {
+           "const": 1,
+           "default": 1,
+           "type": "number"
+          },
+          "get_cost": {
+           "not": {}
+          },
+          "medias": {
+           "items": {
+            "properties": {
+             "role": {
+              "type": "string"
+             },
+             "value": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "value",
+             "role"
+            ],
+            "type": "object"
+           },
+           "type": "array"
+          },
+          "model": {
+           "type": "string"
+          },
+          "prompt": {
+           "type": "string"
+          },
+          "use_unlim": {
+           "type": "boolean"
+          }
+         },
+         "required": [
+          "model"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "index",
+        "params"
+       ],
+       "type": "object"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+     }
+    },
+    "required": [
+     "requests"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_video",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "params": {
+      "anyOf": [
+       {
+        "additionalProperties": {},
+        "properties": {
+         "aspect_ratio": {
+          "type": "string"
+         },
+         "count": {
+          "default": 1,
+          "maximum": 4,
+          "minimum": 1,
+          "type": "integer"
+         },
+         "declined_preset_id": {
+          "type": "string"
+         },
+         "duration": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+         },
+         "get_cost": {
+          "type": "boolean"
+         },
+         "medias": {
+          "items": {
+           "properties": {
+            "role": {
+             "type": "string"
+            },
+            "value": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "value",
+            "role"
+           ],
+           "type": "object"
+          },
+          "type": "array"
+         },
+         "model": {
+          "type": "string"
+         },
+         "preset_id": {
+          "type": "string"
+         },
+         "prompt": {
+          "type": "string"
+         },
+         "use_unlim": {
+          "type": "boolean"
+         }
+        },
+        "required": [
+         "model"
+        ],
+        "type": "object"
+       },
+       {
+        "type": "string"
+       }
+      ]
+     }
+    },
+    "required": [
+     "params"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_video_batch",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "requests": {
+      "items": {
+       "additionalProperties": false,
+       "properties": {
+        "index": {
+         "maximum": 9007199254740991,
+         "minimum": 0,
+         "type": "integer"
+        },
+        "params": {
+         "additionalProperties": {},
+         "properties": {
+          "aspect_ratio": {
+           "type": "string"
+          },
+          "count": {
+           "const": 1,
+           "default": 1,
+           "type": "number"
+          },
+          "declined_preset_id": {
+           "type": "string"
+          },
+          "duration": {
+           "maximum": 9007199254740991,
+           "minimum": -9007199254740991,
+           "type": "integer"
+          },
+          "get_cost": {
+           "not": {}
+          },
+          "medias": {
+           "items": {
+            "properties": {
+             "role": {
+              "type": "string"
+             },
+             "value": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "value",
+             "role"
+            ],
+            "type": "object"
+           },
+           "type": "array"
+          },
+          "model": {
+           "type": "string"
+          },
+          "preset_id": {
+           "type": "string"
+          },
+          "prompt": {
+           "type": "string"
+          },
+          "use_unlim": {
+           "type": "boolean"
+          }
+         },
+         "required": [
+          "model"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "index",
+        "params"
+       ],
+       "type": "object"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+     }
+    },
+    "required": [
+     "requests"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_explainer_presets",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "get_workflow_bundle_file",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "include_contents": {
+      "type": "boolean"
+     },
+     "path": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "workflow": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "workflow",
+     "path"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_workflow_instructions",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "workflow": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "job_display",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "jobs_wait",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "jobs": {
+      "items": {
+       "additionalProperties": false,
+       "properties": {
+        "index": {
+         "maximum": 9007199254740991,
+         "minimum": 0,
+         "type": "integer"
+        },
+        "job_id": {
+         "format": "uuid",
+         "type": "string"
+        }
+       },
+       "required": [
+        "index",
+        "job_id"
+       ],
+       "type": "object"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+     },
+     "timeout_seconds": {
+      "default": 15,
+      "maximum": 15,
+      "minimum": 0,
+      "type": "integer"
+     }
+    },
+    "required": [
+     "jobs"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "list_voices",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "cursor": {
+      "type": "string",
+      "description": "Pagination cursor (next_cursor from a previous list_voices result)."
+     },
+     "size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Max voices to return, default 20."
+     }
+    }
+   }
+  },
+  {
+   "name": "list_website_categories",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "list_websites",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "list_workspaces",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {},
+    "type": "object"
+   }
+  },
+  {
+   "name": "media_confirm",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "media_import_url",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "type": {
+      "enum": [
+       "auto",
+       "image",
+       "video",
+       "audio"
+      ],
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "media_upload",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "media_upload_widget",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "models_explore",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "action": {
+      "enum": [
+       "list",
+       "search",
+       "get",
+       "recommend"
+      ],
+      "type": "string"
+     },
+     "after": {
+      "type": "string"
+     },
+     "input": {
+      "enum": [
+       "text",
+       "image"
+      ],
+      "type": "string"
+     },
+     "limit": {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "model_id": {
+      "type": "string"
+     },
+     "query": {
+      "type": "string"
+     },
+     "type": {
+      "enum": [
+       "image",
+       "video",
+       "audio",
+       "3d"
+      ],
+      "type": "string"
+     },
+     "unlim": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "action"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "motion_control",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "outpaint_image",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "participate_in_contest",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "personal_clipper_create",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "personal_clipper_jobs",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "personal_clipper_status",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "presets_show",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {},
+    "type": "object"
+   }
+  },
+  {
+   "name": "publish_website",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "reframe",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "remove_background",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "rename_website",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "resolve_explainer_preset",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "sandbox_exec",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_create_project",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_get_artifact",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_get_blend",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_get_glb",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_get_operation",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_get_project",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_import_asset",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_list_projects",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_query_python",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_run_python",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_search_assets",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "scene_builder_3d_show_scene",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "select_workspace",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "shorts_studio_create",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "shorts_studio_create_preset",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "shorts_studio_list_presets",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "shorts_studio_list_sessions",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "shorts_studio_status",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "show_characters",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "action": {
+      "type": "string"
+     },
+     "cursor": {
+      "type": "number"
+     },
+     "images": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "medias": {
+      "items": {
+       "properties": {
+        "role": {
+         "const": "image",
+         "default": "image",
+         "type": "string"
+        },
+        "value": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "value"
+       ],
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "name": {
+      "type": "string"
+     },
+     "size": {
+      "default": 20,
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "soul_id": {
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "ready",
+       "training",
+       "failed"
+      ],
+      "type": "string"
+     },
+     "type": {
+      "default": "soul_2",
+      "enum": [
+       "soul",
+       "soul_2",
+       "soul_cinematic"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "show_generation_by_ids",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "jobs": {
+      "items": {
+       "additionalProperties": false,
+       "properties": {
+        "index": {
+         "maximum": 9007199254740991,
+         "minimum": 0,
+         "type": "integer"
+        },
+        "job_id": {
+         "format": "uuid",
+         "type": "string"
+        }
+       },
+       "required": [
+        "index",
+        "job_id"
+       ],
+       "type": "object"
+      },
+      "maxItems": 60,
+      "minItems": 1,
+      "type": "array"
+     }
+    },
+    "required": [
+     "jobs"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "show_generations",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "cursor": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^\\s*-?\\d+(\\.\\d+)?\\s*$",
+        "type": "string"
+       }
+      ]
+     },
+     "size": {
+      "anyOf": [
+       {
+        "default": 24,
+        "maximum": 100,
+        "minimum": 1,
+        "type": "integer"
+       },
+       {
+        "pattern": "^\\s*-?\\d+(\\.\\d+)?\\s*$",
+        "type": "string"
+       }
+      ]
+     },
+     "type": {
+      "enum": [
+       "image",
+       "video",
+       "audio",
+       "3d"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "show_marketing_studio_generations",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "show_marketing_studio_v2",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "show_medias",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "cursor": {
+      "type": "number"
+     },
+     "size": {
+      "default": 24,
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "type": {
+      "default": "image",
+      "enum": [
+       "image",
+       "video",
+       "audio"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "show_plans_and_credits",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "intent": {
+      "default": "general",
+      "enum": [
+       "upgrade",
+       "topup",
+       "auto_refill",
+       "trial",
+       "general"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "show_reference_elements",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "action": {
+      "enum": [
+       "list",
+       "get",
+       "create"
+      ],
+      "type": "string"
+     },
+     "category": {
+      "enum": [
+       "auto",
+       "character",
+       "environment",
+       "prop"
+      ],
+      "type": "string"
+     },
+     "cursor": {
+      "type": "number"
+     },
+     "description": {
+      "type": "string"
+     },
+     "element_id": {
+      "type": "string"
+     },
+     "medias": {
+      "items": {
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "type": {
+         "default": "media_input",
+         "enum": [
+          "media_input",
+          "image_job"
+         ],
+         "type": "string"
+        },
+        "url": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "id",
+        "url"
+       ],
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "name": {
+      "maxLength": 32,
+      "type": "string"
+     },
+     "size": {
+      "default": 27,
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "tiktok_accounts",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "tiktok_connect",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "tiktok_music_trending",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "tiktok_music_tune",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "tiktok_prepare_publish",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "tiktok_publish",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "tiktok_publish_status",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "tiktok_reconnect",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "transactions",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "upscale_image",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "upscale_video",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "video_analysis_create",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "video_input_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "description": "UUID of the uploaded source video (the media_id returned by the upload tool)."
+     },
+     "youtube_url": {
+      "type": "string",
+      "pattern": "^https:\\/\\/(?:(?:www\\.|m\\.)?youtube\\.com\\/|youtu\\.be\\/).+",
+      "description": "HTTPS YouTube video URL."
+     }
+    }
+   }
+  },
+  {
+   "name": "video_analysis_jobs",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "cursor": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Pagination cursor - unix timestamp of created_at from the previous page."
+     },
+     "size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Page size."
+     }
+    }
+   }
+  },
+  {
+   "name": "video_analysis_status",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "video_analyze_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "description": "UUID returned by video_analysis_create or video_analysis_jobs."
+     }
+    },
+    "required": [
+     "video_analyze_id"
+    ]
+   }
+  },
+  {
+   "name": "virality_predictor",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "create",
+       "preview"
+      ]
+     },
+     "params": {
+      "type": "object",
+      "additionalProperties": {},
+      "properties": {
+       "job_id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "medias": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "role": {
+           "type": "string",
+           "const": "video"
+          }
+         },
+         "required": [
+          "role",
+          "id"
+         ]
+        }
+       },
+       "model": {
+        "type": "string",
+        "const": "virality_predictor"
+       }
+      },
+      "required": [
+       "model"
+      ]
+     }
+    },
+    "required": [
+     "action",
+     "params"
+    ]
+   }
+  },
+  {
+   "name": "voice_change",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Voice change parameters.",
+      "properties": {
+       "video_id": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "description": "Source video. Confirmed uploaded video media_id or completed video job_id."
+       },
+       "voice_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Target voice id: a preset voice id (voice_type='preset') or a reference element id (voice_type='element')."
+       },
+       "voice_type": {
+        "type": "string",
+        "enum": [
+         "preset",
+         "element"
+        ],
+        "default": "preset",
+        "description": "Whether voice_id is a built-in preset voice ('preset') or a workspace reference element ('element')."
+       }
+      },
+      "required": [
+       "video_id",
+       "voice_id"
+      ]
+     }
+    },
+    "required": [
+     "params"
+    ]
+   }
+  },
+  {
+   "name": "website_db",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "website_repo_access",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "website_secrets",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  },
+  {
+   "name": "website_status",
+   "inputSchema": {
+    "type": "object"
+   },
+   "schemaCaptured": false
+  }
+ ]
+}

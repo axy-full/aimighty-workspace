@@ -1,4 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync as readToolsFixture } from "node:fs";
+import { resetConnectedToolsetCache } from "../../lib/higgsfield-consumer/toolset";
+
+const connectedTools98 = JSON.parse(readToolsFixture("tests/fixtures/connected-tools-98.json", "utf8")) as { tools: { name: string; inputSchema: Record<string, unknown> }[] };
+test.beforeEach(() => resetConnectedToolsetCache());
 import { randomUUID } from "node:crypto";
 import {
   getConsumerGenjutsuQuote,
@@ -55,6 +60,7 @@ function fixture(change?: (p: Packet, calls: Packet[]) => unknown) {
       });
     if (p.method === "notifications/initialized")
       return new Response(null, { status: 202 });
+    if (p.method === "tools/list") return Response.json({ jsonrpc: "2.0", id: p.id, result: { tools: connectedTools98.tools } });
     const changed = change?.(p, calls);
     if (changed instanceof Error) throw changed;
     const value =

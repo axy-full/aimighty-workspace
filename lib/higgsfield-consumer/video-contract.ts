@@ -41,7 +41,10 @@ export type ConsumerVideoErrorCode =
   | "insufficient_credits"
   | "invalid_job"
   | "provider_error"
-  | "preflight_unavailable";
+  | "preflight_unavailable"
+  | "tool_unavailable"
+  | "tool_contract_changed"
+  | "status_unavailable";
 const messages: Record<ConsumerVideoErrorCode, string> = {
   invalid_input: "Review the video prompt, references and settings.",
   invalid_workspace:
@@ -58,6 +61,13 @@ const messages: Record<ConsumerVideoErrorCode, string> = {
   provider_error: "The connected account could not complete this request.",
   preflight_unavailable:
     "The connected account could not verify the submission prerequisites. No video was submitted.",
+  // Connected toolset guard: neutral copy, shown as is by every surface.
+  tool_unavailable:
+    "The connected account does not currently offer this action. Nothing was sent and no credits were spent.",
+  tool_contract_changed:
+    "The connected account changed the settings this action accepts. Nothing was sent and no credits were spent.",
+  status_unavailable:
+    "The connected account does not currently offer a status check for this job. It stays saved; check again later.",
 };
 /** These errors are raised only before a paid POST, or during a read. */
 export class ConsumerVideoError extends Error {
@@ -74,9 +84,13 @@ export class ConsumerVideoError extends Error {
               "quote_changed",
               "unapproved_adjustment",
               "insufficient_credits",
+              "tool_unavailable",
+              "tool_contract_changed",
             ].includes(code)
           ? 409
-          : 502;
+          : code === "status_unavailable"
+            ? 503
+            : 502;
   }
 }
 export function parseConsumerVideoInput(
