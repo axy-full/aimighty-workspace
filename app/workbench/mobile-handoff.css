@@ -114,7 +114,6 @@
   .ps .ng-canvas-bottom .ng-zoom>.ng-tool[aria-label="Zoom in"] { order:-1; }
   .ps .ng-canvas-bottom .ng-canvas-tools { display:flex;flex-wrap:wrap;max-width:85px;gap:0; }
   .ps .ng-canvas-tools>.ng-tool:first-child,.ps .ng-canvas-tools>.ng-tool:nth-child(2) { display:grid; }
-  .ps .ng-canvas-tools>.ng-tool[aria-label="Undo"] { display:none; }
   .ps .ng-canvas-bottom .ng-tool { width:33px;height:34px;border-radius:4px; }
   .ps .ng-zoom>button:not(.ng-tool) { height:30px;min-width:33px;font-size:10px; }
   .ps .mobile-selected-node { bottom:14px;left:14px;right:14px;min-height:59px;padding:10px 13px;border-radius:13px; }

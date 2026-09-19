@@ -479,6 +479,8 @@ export default function Studio({
   const failedSave = useRef(false);
   const history = useRef<Project[]>([]);
   const future = useRef<Project[]>([]);
+  // Continuous edits (typing, a slider gesture, held arrow keys) share one history entry per key until settled.
+  const coalescing = useRef<string | null>(null);
   const loadToken = useRef(0);
   const drag = useRef<{
     kind: "pan" | "node";
@@ -513,27 +515,49 @@ export default function Studio({
       start: Math.max(0, at - (p.shots.at(-1)?.duration || 0)),
     };
   })();
+  /**
+   * `remember` is true for a discrete step, false for server-driven updates that must not be
+   * undoable, or a string key that coalesces consecutive edits into the entry already recorded.
+   * Project objects are immutable updates, so the previous reference is the snapshot; no clone.
+   */
   const change = useCallback(
-    (fn: (prev: Project) => Project, remember = true) => {
+    (fn: (prev: Project) => Project, remember: boolean | string = true) => {
       if(transitioningRef.current)return;
       const prev=pRef.current;
       const next=fn(prev);
       if(next===prev)return;
-      if(remember){history.current.push(structuredClone(prev));if(history.current.length>40)history.current.shift();future.current=[];}
+      if(remember){
+        const key=typeof remember==='string'?remember:null;
+        if(!key||coalescing.current!==key){history.current.push(prev);if(history.current.length>40)history.current.shift();}
+        coalescing.current=key;
+        future.current=[];
+      }
       pRef.current=next;
       setP(next);
     },
     [],
   );
+  const settle = useCallback(() => { coalescing.current = null; }, []);
+  // Bible version and shared snapshots are server state: a local step back must not offer a stale version to the next publish.
+  const withServerState=(entry:Project,current:Project):Project=>entry.bibleVersion===current.bibleVersion?entry:{...entry,bibleVersion:current.bibleVersion};
   const undo = useCallback(() => {
     if(transitioningRef.current)return;
-    const last=history.current.pop();
-    if(last&&last.id===pRef.current.id){future.current.push(pRef.current);pRef.current=last;setP(last);toast("Change undone");}
+    coalescing.current=null;
+    const last=history.current.at(-1);
+    if(!last){toast("Nothing to undo");return;}
+    if(last.id!==pRef.current.id)return;
+    history.current.pop();
+    const restored=withServerState(last,pRef.current);
+    future.current.push(pRef.current);pRef.current=restored;setP(restored);toast("Change undone");
   }, []);
   const redo = useCallback(() => {
     if(transitioningRef.current)return;
-    const next=future.current.pop();
-    if(next&&next.id===pRef.current.id){history.current.push(pRef.current);pRef.current=next;setP(next);}
+    coalescing.current=null;
+    const next=future.current.at(-1);
+    if(!next||next.id!==pRef.current.id)return;
+    future.current.pop();
+    const restored=withServerState(next,pRef.current);
+    history.current.push(pRef.current);pRef.current=restored;setP(restored);
   }, []);
   const activeStorageKey=useRef(storageKey);
   useLayoutEffect(()=>{activeStorageKey.current=storageKey;},[storageKey]);
@@ -775,7 +799,7 @@ export default function Studio({
   }, [signedIn]);
   useEffect(() => {
     const cb = (e: KeyboardEvent) => {
-      const editing = (e.target as HTMLElement)?.matches(
+      const editing = !!(e.target as HTMLElement)?.closest?.(
         'input,textarea,[contenteditable="true"]',
       );
       if ((e.metaKey || e.ctrlKey) && e.key === "j") {
@@ -784,7 +808,8 @@ export default function Studio({
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "z" && !editing) {
         e.preventDefault();
-        if(!(stage==='canvas'&&scope==='Shared production')){e.shiftKey ? redo() : undo();}
+        if(stage==='canvas'&&scope==='Shared production'){toast("Undo is unavailable in Shared view. Switch to My space to undo your edits.");}
+        else{e.shiftKey ? redo() : undo();}
       }
       if (e.key === "?" && !editing) setDialog("shortcuts");
       if (e.code === "Space" && !editing && !(e.target as HTMLElement)?.closest('button,a,select,[role="slider"]') && stage === "edit") {
@@ -974,8 +999,9 @@ export default function Studio({
       ).filter((a) => !assetIds.has(a.id)),
       ...project.assets.filter((a) => assetIds.has(a.id)),
     ]);
-    const next={...pRef.current,sharedNodeIds:sharedNodes.map(n=>n.id),sharedAssetIds:sharedAssets.map(a=>a.id),sharedNodes,sharedAssets};
-    pRef.current=next;setP(next);await publishBible(project.id);
+    // One consistent snapshot through the history model: the publish is a step, and it clears any redo path to a pre-publish project.
+    change(old=>old.id!==project.id?old:{...old,sharedNodeIds:sharedNodes.map(n=>n.id),sharedAssetIds:sharedAssets.map(a=>a.id),sharedNodes,sharedAssets});
+    await publishBible(project.id);
   }
   async function uploadFiles(
     files: FileList | File[] | null,
@@ -1966,10 +1992,12 @@ export default function Studio({
                           </div>
                         </div>
                         <ProductionGraph
+                          key={p.id}
                           onGenerate={(node,prompt,refs)=>{if(!transitioningRef.current)setGenerationTarget({node,prompt,refs,draftId:pRef.current.id});}}
                           generatingNodeId={generatingNodeId}
                           project={p}
                           onChange={change}
+                          onSettle={settle}
                           selectedId={selectedNode}
                           onSelect={setSelectedNode}
                           onAsset={setSelectedAsset}
