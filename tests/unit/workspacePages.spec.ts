@@ -22,7 +22,7 @@ test("page ids per suite match the architecture contract; Atomik keeps Generate"
   expect(PAGES.particl.map((p) => p.id)).toEqual(["brief", "boards", "cast", "astra", "rig", "takes", "edit", "deliver"]);
   expect(PAGES.atomik.map((p) => p.id)).toEqual(["agent", "runs", "generate", "recipes", "builds", "skills", "models", "approvals", "budget"]);
   expect(PAGES.moleculr.map((p) => p.id)).toEqual(["marketing"]);
-  expect(PAGES.subatomik.map((p) => p.id)).toEqual(["motion", "swap", "sources", "compare", "history"]);
+  expect(PAGES.subatomik.map((p) => p.id)).toEqual(["motion", "swap", "shorts", "sources", "compare", "history"]);
   expect(new Set(ALL_PAGES.map((p) => p.id)).size).toBe(ALL_PAGES.length);
   for (const p of ALL_PAGES) expect(p.description.length).toBeGreaterThan(0);
 });

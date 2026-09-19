@@ -16,7 +16,7 @@ export const WORKSPACE_PLAN_PAGES = {
   particl: ["brief", "boards", "cast", "astra", "rig", "takes", "edit", "deliver"],
   atomik: ["agent", "runs", "generate", "recipes", "builds", "skills", "models", "approvals", "budget"],
   moleculr: ["marketing"],
-  subatomik: ["motion", "swap", "sources", "compare", "history"],
+  subatomik: ["motion", "swap", "shorts", "sources", "compare", "history"],
 } as const satisfies Record<WorkspaceSuite, readonly string[]>;
 
 export type WorkspacePageId =
@@ -154,6 +154,8 @@ export type PlanRequest = {
   /** Subatomik: the connected-account form input (source, references, resolution, prompt). */
   motion?: Record<string, unknown>;
   swap?: Record<string, unknown>;
+  /** Subatomik Shorts: the Shorts input (source, preset, aspectRatio) as /api/higgsfield/consumer/shorts takes it. */
+  shorts?: Record<string, unknown>;
   /** Atomik Generate: the connected-account generation input. */
   generation?: Record<string, unknown>;
   /** Astra: the saved scene's digest (astraSceneDigest) and source. */

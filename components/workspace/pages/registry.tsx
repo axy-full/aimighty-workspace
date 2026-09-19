@@ -33,6 +33,7 @@ const COMING: Record<PageId, string> = {
   marketing: "Product, brand and cast, message and format, then variants and output.",
   motion: "A source video recast with your own cast, location and product.",
   swap: "One element replaced; the rest of the shot stays as filmed.",
+  shorts: "One video restyled into a set of short clips, each filed into the project.",
   sources: "Your originals, hashed and checked against what the models accept.",
   compare: "Original and result on one clock, split or wiped.",
   history: "Every result, retained in private storage, ready to recreate.",

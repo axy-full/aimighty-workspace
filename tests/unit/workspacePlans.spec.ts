@@ -44,7 +44,7 @@ function backend(options: { price?: () => number; hold?: (path: string, body: Re
       return body?.quoteOnly
         ? json({ estimatedCredits: price(), price: price(), unit: "cr" })
         : json({ id: `aud-${(job += 1)}`, status: "running", estimatedCredits: price() });
-    if (bare === "/api/higgsfield/consumer/genjutsu" || bare === "/api/higgsfield/consumer/generation") {
+    if (bare === "/api/higgsfield/consumer/genjutsu" || bare === "/api/higgsfield/consumer/generation" || bare === "/api/higgsfield/consumer/shorts") {
       if (method === "GET")
         return json({
           jobs: [
@@ -112,6 +112,7 @@ function fullRequest(): PlanRequest {
     variants: [{ name: "Variant 1", body: { model: "image-m", prompt: "hook", marketing: { quality: "high" } } }],
     motion: { source: { uploadId: "u1" }, references: [{ uploadId: "r1" }, { uploadId: "r2" }], resolution: "720p" },
     swap: { source: { uploadId: "u1" }, references: [{ uploadId: "r1" }], resolution: "720p", prompt: "swap it" },
+    shorts: { source: { uploadId: "u1" }, preset: { id: "7fa32a45-2f1e-45ed-8cc7-03296ddcf07f", source: "cms" }, aspectRatio: "9:16" },
     generation: { type: "image", model: "image-x", prompt: "a", parameters: {}, medias: [] },
     astra: { sourceDigest: "c".repeat(64) },
     development: { kind: "screenplay" },
@@ -151,11 +152,11 @@ function engineFor(ctx: PlanContext, clock = { now: 1_000_000 }) {
 /* ------------------------------------------------------------------ registry */
 
 const NOT_RUNNABLE = ["takes", "builds", "skills", "budget", "sources"].sort();
-const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap"] as const;
+const PAID_SIX = ["boards", "rig", "edit", "marketing", "motion", "swap", "shorts"] as const;
 
-test("the registry has exactly one plan for each of the 23 workspace pages", () => {
+test("the registry has exactly one plan for each of the 24 workspace pages", () => {
   const pages = Object.values(WORKSPACE_PLAN_PAGES).flat();
-  expect(pages).toHaveLength(23);
+  expect(pages).toHaveLength(24);
   expect([...PLAN_PAGES].sort()).toEqual([...pages].sort());
   for (const [suite, list] of Object.entries(WORKSPACE_PLAN_PAGES))
     for (const page of list) expect(PLANS[page].suite).toBe(suite);
@@ -511,4 +512,20 @@ test("activity merges real sources with this session's runs, newest first, with 
   const runs = loaded.entries[1];
   // Runs from another production are never shown.
   expect(runs.some((entry) => entry.label.includes("Other"))).toBe(false);
+});
+
+test("shorts: without Shorts data it refuses with a reason; with it, it quotes on the Shorts route and submits the exact approved wallet and credits", async () => {
+  const { fetcher, calls, dispatches } = backend();
+  const bare = { ...context(fetcher), request: { ...fullRequest(), shorts: undefined } };
+  const verdict = PLANS.shorts.runnable(bare);
+  expect(verdict).toEqual({ ok: false, reason: "Not runnable yet — Needs Shorts data: choose a source video and a style on Shorts first." });
+  const engine = engineFor(context(fetcher));
+  expect(engine.start("shorts")).toEqual({ ok: true, action: "started" });
+  await until(() => engine.getState().run?.status === "waiting", "waiting");
+  const quote = calls.find((call) => call.body?.action === "quote")!;
+  expect([quote.path, quote.body?.input]).toEqual(["/api/higgsfield/consumer/shorts", fullRequest().shorts]);
+  expect(dispatches()).toHaveLength(0);
+  expect(await engine.approve()).toEqual({ ok: true });
+  await until(() => ["done", "failed"].includes(engine.getState().run?.status ?? ""), "done");
+  expect(dispatches().map((call) => [call.path, call.body])).toEqual([["/api/higgsfield/consumer/shorts", { action: "submit", draftId: "draft-1", id: quote.body ? "q-1" : "", workspaceId: "wallet-1", credits: 18 }]]);
 });
