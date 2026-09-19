@@ -6,6 +6,8 @@ import {
 } from "./genjutsu-contract";
 import { GENERATION_OUTPUT_KIND, parseConsumerGenerationInput } from "./generation-contract";
 import { mediaKindForRole } from "./catalogue";
+import { parseConsumerMarketingTemplateInput } from "./marketing-templates";
+import { MARKETING_TEMPLATE_PRODUCT_ROLE } from "./marketing-template-sources";
 export type ConsumerOriginalKind = "video" | "image" | "audio" | "model";
 export const CONSUMER_ORIGINAL_MIMES: Record<ConsumerOriginalKind, readonly string[]> = {
   video: ["video/mp4"],
@@ -61,6 +63,32 @@ export function consumerVideoIdentity(job: ConsumerJob) {
           role: media.role,
           kind: mediaKindForRole(media.role),
         })),
+      } as Record<string, unknown>,
+    };
+  }
+  if (job.workflow === "marketing-template") {
+    const input = parseConsumerMarketingTemplateInput(payload.input);
+    const template = payload.template;
+    const kind = payload.outputKind;
+    if (
+      !object(provider) || provider.preset_id !== input.presetId ||
+      !object(template) || template.id !== input.presetId || typeof template.name !== "string" || typeof template.category !== "string" ||
+      (kind !== "image" && kind !== "video")
+    )
+      throw Error("The original template differs from its admission.");
+    return {
+      model: "marketing_studio_v2",
+      kind: kind as ConsumerOriginalKind,
+      prompt: input.prompt,
+      params: {
+        task: "connected-generation",
+        workflow: "marketing-template",
+        outputType: kind,
+        templateId: template.id,
+        templateName: template.name,
+        templateCategory: template.category,
+        workbenchProjectId: job.draftId,
+        references: input.productImage ? [{ ...input.productImage, role: MARKETING_TEMPLATE_PRODUCT_ROLE, kind: "image" }] : [],
       } as Record<string, unknown>,
     };
   }

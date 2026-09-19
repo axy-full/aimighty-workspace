@@ -39,6 +39,25 @@ import {
   type ConsumerGenerationParams,
 } from "./generation-contract";
 import { CONNECTED_OUTPUT_TYPES, type ConnectedModel, type ConnectedOutputType } from "./catalogue";
+import {
+  MARKETING_TEMPLATE_PAGE_SIZE,
+  MARKETING_TEMPLATE_PAGES,
+  MARKETING_TEMPLATE_TOOLS,
+  MARKETING_TEMPLATE_CATEGORIES,
+  MarketingTemplateError,
+  consumerMarketingTemplateParams,
+  consumerMarketingTemplateAcknowledgement,
+  parseConsumerMarketingTemplateInput,
+  consumerMarketingTemplatePollAfter,
+  marketingTemplateArgumentShape,
+  parseMarketingTemplatePage,
+  priceForTemplate,
+  type ConsumerMarketingTemplateInput,
+  type ConsumerMarketingTemplateParams,
+  type MarketingTemplate,
+  type MarketingTemplateCategory,
+  type MarketingTemplateCosts,
+} from "./marketing-templates";
 export const CATALOGUE_PAGE_LIMIT = 100;
 export const CATALOGUE_PAGES = 5;
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
@@ -210,6 +229,10 @@ type ConsumerSession = {
   generationQuote: (type: ConnectedOutputType, params: ConsumerGenerationParams) => Promise<Record<string, unknown>>;
   generationSubmit: (type: ConnectedOutputType, params: ConsumerGenerationParams, sending: () => void) => Promise<Record<string, unknown>>;
   generationStatus: (jobId: string) => Promise<Record<string, unknown>>;
+  templatePresets: (category: MarketingTemplateCategory, cursor?: string | number) => Promise<Record<string, unknown>>;
+  templateCosts: () => Promise<Record<string, unknown>>;
+  templateCreate: (args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
+  templateStatus: (args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -647,6 +670,14 @@ async function withConsumerSession<T>(
         (await post("tools/call", { name: generationTool(type), arguments: { params: { ...params, get_cost: false } } }, sending))!,
       generationStatus: async (jobId) =>
         (await post("tools/call", { name: "job_status", arguments: { jobId, sync: false, raw_data: false } }))!,
+      templatePresets: async (category, cursor) =>
+        (await post("tools/call", {
+          name: MARKETING_TEMPLATE_TOOLS.presets,
+          arguments: { category, size: MARKETING_TEMPLATE_PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) },
+        }))!,
+      templateCosts: async () => (await post("tools/call", { name: MARKETING_TEMPLATE_TOOLS.costs, arguments: {} }))!,
+      templateCreate: async (args, sending) => (await post("tools/call", { name: MARKETING_TEMPLATE_TOOLS.create, arguments: args }, sending))!,
+      templateStatus: async (args) => (await post("tools/call", { name: MARKETING_TEMPLATE_TOOLS.status, arguments: args }))!,
     });
   } catch (error) {
     if (
@@ -1450,6 +1481,251 @@ export async function readConsumerGenerationJob(
       return { jobId, raw, ...validateConsumerVideoStatus(raw, jobId, model, type) };
     });
   } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+
+/* ── Marketing Studio v2 templates (Moleculr "Create with template") ──── */
+/** The advertised input schemas of the named tools, read from this session's
+ * bounded tools/list. Schemas are data used only to verify our argument names. */
+async function sessionToolSchemas(session: ConsumerSession, names: readonly string[]) {
+  const found = new Map<string, Record<string, unknown>>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < DISCOVERY_LIMITS.pages && found.size < names.length; page++) {
+    if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+    const result = await session.list(cursor);
+    if (!Array.isArray(result.tools) || result.tools.length > DISCOVERY_LIMITS.tools) throw new ConsumerVideoError("provider_error");
+    for (const entry of result.tools) {
+      if (!object(entry) || typeof entry.name !== "string") throw new ConsumerVideoError("provider_error");
+      if (!names.includes(entry.name) || found.has(entry.name)) continue;
+      try {
+        validateSchema(entry.inputSchema, session.secrets);
+      } catch {
+        throw new ConsumerVideoError("provider_error");
+      }
+      found.set(entry.name, entry.inputSchema);
+    }
+    const next = result.nextCursor;
+    if (next === undefined) break;
+    if (typeof next !== "string" || !CURSOR.test(next) || cursors.has(next)) throw new ConsumerVideoError("provider_error");
+    cursors.add(next);
+    cursor = next;
+  }
+  return found;
+}
+const unverified = (what: string) =>
+  new MarketingTemplateError("contract_unverified", `The connected account's ${what} tool does not advertise the arguments this workflow sends. Nothing was submitted.`);
+/** Read-only: the whole presets feed for one category, following the
+ * provider's cursor up to a fixed page count. The merged items are returned
+ * for marketing-templates.ts to parse; nothing here is executed or priced. */
+export async function readMarketingTemplateCatalogue(
+  accessToken: string,
+  category: MarketingTemplateCategory = "all",
+  options: Options = {},
+): Promise<{ items: unknown[]; total: number | null; complete: boolean }> {
+  if (!MARKETING_TEMPLATE_CATEGORIES.includes(category)) throw new ConsumerVideoError("invalid_input");
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const items: unknown[] = [];
+      const seen = new Set<string>();
+      let cursor: string | number | undefined, total: number | null = null, more = false;
+      for (let page = 0; page < MARKETING_TEMPLATE_PAGES; page++) {
+        if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+        const raw = videoReadResult(session, await session.templatePresets(category, cursor));
+        let parsed: ReturnType<typeof parseMarketingTemplatePage>;
+        try {
+          parsed = parseMarketingTemplatePage(raw);
+        } catch {
+          throw new ConsumerVideoError("provider_error");
+        }
+        if (items.length + parsed.items.length > 1200) throw new ConsumerVideoError("provider_error");
+        items.push(...parsed.items);
+        if (page === 0) total = parsed.total;
+        more = !(parsed.hasMore === false || parsed.next === null || parsed.items.length === 0 || (total !== null && items.length >= total));
+        if (!more) break;
+        const key = String(parsed.next);
+        if (seen.has(key)) throw new ConsumerVideoError("provider_error");
+        seen.add(key);
+        cursor = parsed.next!;
+      }
+      return { items, total, complete: !more };
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+/** Read-only: the versioned pricing document, raw, for marketing-templates.ts. */
+export async function readMarketingTemplateCosts(accessToken: string, options: Options = {}): Promise<unknown> {
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const raw = videoReadResult(session, await session.templateCosts());
+      if (!object(raw)) throw new ConsumerVideoError("provider_error");
+      return raw;
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+export type ConsumerMarketingTemplateShape = { nested: boolean; getCost: boolean };
+export type ConsumerMarketingTemplateQuote = {
+  input: ConsumerMarketingTemplateInput;
+  params: ConsumerMarketingTemplateParams;
+  shape: ConsumerMarketingTemplateShape;
+  workspace: ConsumerVideoWorkspace;
+  credits: number;
+  /** Where the approved price came from: the tool's own get_cost preflight or the catalogue's cost table. */
+  priceSource: "get_cost" | "cost_table" | "catalogue";
+};
+const templateArguments = (params: ConsumerMarketingTemplateParams, shape: ConsumerMarketingTemplateShape, getCost: boolean | null) => {
+  const body: Record<string, unknown> = { ...params, ...(getCost === null ? {} : { get_cost: getCost }) };
+  return shape.nested ? { params: body } : body;
+};
+async function verifiedTemplateShape(session: ConsumerSession, params: ConsumerMarketingTemplateParams) {
+  const schemas = await sessionToolSchemas(session, [MARKETING_TEMPLATE_TOOLS.create]);
+  const shape = marketingTemplateArgumentShape(schemas.get(MARKETING_TEMPLATE_TOOLS.create), Object.keys(params));
+  if (!shape) throw new ConsumerAdmissionStopped(unverified("create"));
+  return shape;
+}
+async function templatePrice(
+  session: ConsumerSession,
+  template: MarketingTemplate,
+  costs: MarketingTemplateCosts | null,
+  params: ConsumerMarketingTemplateParams,
+  shape: ConsumerMarketingTemplateShape,
+): Promise<{ credits: number; priceSource: ConsumerMarketingTemplateQuote["priceSource"] }> {
+  if (shape.getCost) {
+    const sent = templateArguments(params, shape, true);
+    const raw = videoReadResult(session, await session.templateCreate(sent));
+    return { credits: parseConsumerCreditsForParams(raw, shape.nested ? (sent.params as Record<string, unknown>) : sent), priceSource: "get_cost" };
+  }
+  const priced = priceForTemplate(costs, template);
+  if (!priced) throw new ConsumerAdmissionStopped(new MarketingTemplateError("price_unknown", "The catalogue's cost table has no price for this template. Nothing was submitted."));
+  return { credits: priced.credits, priceSource: priced.source };
+}
+/** Imports the product original once (the resolve hook owns the durable
+ * claim), verifies the create tool's advertised arguments, then prices the
+ * request without submitting: get_cost when the tool declares it, otherwise
+ * the catalogue's versioned cost table. */
+export async function getConsumerMarketingTemplateQuote(
+  accessToken: string,
+  template: MarketingTemplate,
+  costs: MarketingTemplateCosts | null,
+  value: ConsumerMarketingTemplateInput,
+  source: { url: string; type: "image" } | null,
+  options: Options & { resolveMedia: (workspaceId: string, perform: () => Promise<string>) => Promise<string> },
+): Promise<ConsumerMarketingTemplateQuote> {
+  const input = parseConsumerMarketingTemplateInput(value);
+  if (input.presetId !== template.id || Boolean(input.productImage) !== (source !== null) || (source && (!safeImportUrl(source.url) || source.type !== "image")))
+    throw new ConsumerVideoError("invalid_input");
+  consumerMarketingTemplateParams(input, source ? "00000000-0000-4000-8000-000000000000" : null);
+  try {
+    return await withConsumerSession(accessToken, options, 150_000, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      let mediaId: string | null = null;
+      if (source) {
+        try {
+          mediaId = await options.resolveMedia(workspace.id, async () => {
+            const raw = videoReadResult(session, await session.genjutsuImport(source.url, "image"));
+            if (!object(raw) || typeof raw.media_id !== "string" || (raw.type !== undefined && raw.type !== "image") ||
+                (raw.error != null && raw.error !== "") || (raw.warning != null && raw.warning !== ""))
+              throw new ConsumerVideoError("provider_error");
+            return consumerVideoJobId(raw.media_id);
+          });
+        } catch (error) {
+          throw new ConsumerAdmissionStopped(error);
+        }
+      }
+      const params = consumerMarketingTemplateParams(input, mediaId);
+      const shape = await verifiedTemplateShape(session, params);
+      const { credits, priceSource } = await templatePrice(session, template, costs, params, shape);
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, workspace.id);
+      return { input, params, shape, workspace: current, credits, priceSource };
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    return videoPreflightError(error);
+  }
+}
+/** Fresh wallet, contract and price checks, durable admission, then exactly one paid call. */
+export async function submitConsumerMarketingTemplate(
+  accessToken: string,
+  template: MarketingTemplate,
+  costs: MarketingTemplateCosts | null,
+  input: ConsumerMarketingTemplateInput,
+  value: ConsumerMarketingTemplateParams,
+  expectedShape: ConsumerMarketingTemplateShape,
+  expectedWorkspaceId: string,
+  expectedCredits: number,
+  options: Options & { admit: () => Promise<void> },
+): Promise<ConsumerVideoSubmission> {
+  const params = consumerMarketingTemplateParams(input, value.product_image ?? null);
+  if (!sameConsumerValue(params, value) || template.id !== params.preset_id) throw new ConsumerVideoError("invalid_input");
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  if (!Number.isFinite(expectedCredits) || expectedCredits <= 0 || typeof options.admit !== "function") throw new ConsumerVideoError("invalid_input");
+  let attempted = false;
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      const workspace = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(workspace, expected);
+      const shape = await verifiedTemplateShape(session, params);
+      if (shape.nested !== expectedShape.nested || shape.getCost !== expectedShape.getCost) throw new ConsumerAdmissionStopped(unverified("create"));
+      const { credits } = await templatePrice(session, template, costs, params, shape);
+      if (credits !== expectedCredits) throw new ConsumerVideoError("quote_changed");
+      const current = parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces()));
+      matchingWorkspace(current, expected);
+      if (current.credits < credits) throw new ConsumerVideoError("insufficient_credits");
+      try {
+        await options.admit();
+      } catch (error) {
+        throw new ConsumerAdmissionStopped(error);
+      }
+      if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
+      const reply = await session.templateCreate(templateArguments(params, shape, shape.getCost ? false : null), () => {
+        attempted = true;
+      });
+      const normalized = normalizeQualificationResult(reply, session.secrets), raw = normalized.result;
+      const providerJobId = normalized.isError ? null : consumerMarketingTemplateAcknowledgement(raw);
+      return providerJobId ? { state: "accepted", providerJobId, raw } : uncertainSubmission(raw);
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
+    if (attempted) return uncertainSubmission();
+    return videoPreflightError(error);
+  }
+}
+const STATUS_ARGUMENTS = ["job_id", "id", "jobId"] as const;
+/** Read-only status of one acknowledged template job; the identifier argument
+ * name is taken from the status tool's advertised schema. */
+export async function readConsumerMarketingTemplateJob(
+  accessToken: string,
+  jobId: string,
+  expectedWorkspaceId: string,
+  options: Options = {},
+): Promise<{ jobId: string; raw: QualificationValue; pollAfterSeconds?: number }> {
+  consumerVideoJobId(jobId);
+  const expected = videoWorkspaceId(expectedWorkspaceId);
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      const schema = (await sessionToolSchemas(session, [MARKETING_TEMPLATE_TOOLS.status])).get(MARKETING_TEMPLATE_TOOLS.status);
+      let args: Record<string, unknown> | null = null;
+      for (const name of STATUS_ARGUMENTS) {
+        const shape = marketingTemplateArgumentShape(schema, [name]);
+        if (shape) { args = shape.nested ? { params: { [name]: jobId } } : { [name]: jobId }; break; }
+      }
+      if (!args) throw new ConsumerAdmissionStopped(unverified("status"));
+      const raw = videoReadResult(session, await session.templateStatus(args));
+      const wait = consumerMarketingTemplatePollAfter(raw);
+      return { jobId, raw, ...(wait === undefined ? {} : { pollAfterSeconds: wait }) };
+    });
+  } catch (error) {
+    if (error instanceof ConsumerAdmissionStopped) throw error.original;
     return videoPreflightError(error);
   }
 }
