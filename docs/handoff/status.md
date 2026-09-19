@@ -31,7 +31,22 @@ All checks below ran against www.particl.app on deployment `dpl_3JYXuZJg5ut6RkuR
 | Tenant/auth denial | unauthenticated GET of `/api/workbench/projects`, `/api/openai/status`, the Astra render route and the upload download → 401 |
 | `/api/inngest` | Unsigned GET → 401 `{"message":"Unauthorized"}` (the Inngest SDK 4.19.0 refusing an unsigned request, so both keys are present). Vercel request logs for `www.particl.app/api/inngest` show, at the moment `dpl_3JYXuZJg5ut6RkuRGjwVfA9Sdufv` went READY (18:24 UTC), **GET 200 → PUT 200 → POST 200** from Inngest: the PUT is the function registration and returns 200 only when its signature verifies against the deployment's `INNGEST_SIGNING_KEY`. The same GET+PUT pair follows every deploy on 18 September. The functions served at `d4a68a7` are `[probe, render, astraRender]` (`lib/workers.ts:143`), so `astra-blender-render` is registered with that environment. **Dashboard visibility is unresolved:** the Inngest login reachable from the browser (organisation `SensAI Studios LLP`, created ~12 hours before this check) has no apps, event types or runs and is not the environment the production keys belong to; the Vercel marketplace installation (created 4 September, 11 events / 28 executions this period) lives in another Inngest organisation. Do not sync the app into `SensAI Studios LLP`. |
 
-Not verified: a live OpenAI → proposal → native render → storage → settlement flow. That requires an explicitly approved spending ceiling (≈$0.10 compute per render at the documented iad1 card, plus one GPT-6 Astra proposal at its quoted credits) and should run in a non-legacy internal workspace so credit settlement is exercised.
+## Paid Astra qualification (19 September, owner-approved, ceiling $0.50)
+
+Run from the owner session on the legacy Aimighty workspace (the only workspace on the account), project Dune Studies, on deployed `89baffc`:
+
+| Step | Result |
+| --- | --- |
+| GPT-6 Astra proposal (`openai/gpt-6-astra`, medium effort, direct OpenAI) | job `wb_atomik_ff1a6c87-…` succeeded in ~40 s; proposal: body to #59402E / metalness 0.85 / roughness 0.36, key light warmed to #FFE6C9, 120-frame Z turntable; applied to the saved scene (2 keyframes). Quote reserved a $4.94 ceiling; **settled at $0.152885** metered USD; 0 credits (legacy workspace bills none). |
+| Native render (scene source, Blender 5.2.2 on the Vercel Sandbox snapshot, OIDC auth) | job `astra_render_e81db968…` running → saving at ~60 s → **succeeded at 98 s**; artifacts `scene.blend` 654,339 B, `preview.png` 1,173,284 B (1280×960, a Cycles still of the bronze product on the plinth), `scene.glb` 27,984 B; each downloads with 200; registered as three "Astra Blender" project assets (project revision 10). **Compute settled at $0.004832** against the $0.10 ceiling; 0 credits billed. |
+| Total | ≈ $0.158 of the $0.50 ceiling |
+
+What this proves: the deployed OpenAI direct → reviewed proposal → apply → quote → Sandbox render → Blob storage → library registration → USD settlement path. What it does not prove: credit debiting (needs a non-legacy workspace) and the Inngest worker path — see below.
+
+**Inngest finding from the same run:** Vercel request logs for 11:49–12:18 IST contain **no `/api/inngest` request**, so the render was not executed by the registered worker; it ran on the inline `after()` fallback of the render route (which is why it stayed within one request's budget). The deploy-time GET+PUT syncs do reach the deployment, but the event sent with the deployment's `INNGEST_EVENT_KEY` did not trigger a function. Two facts point at a key/organisation split: the Inngest organisation reachable from the GitHub login (`SensAI Studios LLP`) was created on 18 September and has no apps, and the Vercel marketplace installation (created 4 September, still counting events) is not connected to the `particlstudio` project (the project's `INNGEST_*` values were added by hand; `INNGEST_SERVE_ORIGIN` on 14 September). Resolution is an operator action: connect the marketplace installation to the project (or reinstall it while signed in to the intended Inngest organisation), let it write the keys, redeploy, then repeat one ~$0.005 render and confirm a `POST /api/inngest` in the logs.
+
+Also observed: one project GET timed out during the docs deploy cutover and raised the "Connection interrupted" banner; the retry recovered on its own.
+
 
 Production environment (names only): `ASTRA_BLENDER_SNAPSHOT_ID`, `ASTRA_BLENDER_RATE_CARD`, `OPENAI_API_KEY`, `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `INNGEST_SERVE_ORIGIN`, `BLOB_READ_WRITE_TOKEN`, `CRON_SECRET`, `KEYRING_SECRET`, Turso and provider keys. No `VERCEL_TOKEN`/`VERCEL_TEAM_ID`/`VERCEL_PROJECT_ID`: Sandbox control-plane auth relies on Vercel OIDC, which is enabled on the project (`oidcTokenConfig.enabled:true`, issuer mode `team`) and read by `@vercel/sandbox` through `VERCEL_OIDC_TOKEN`.
 
@@ -79,7 +94,7 @@ Measured on the Vercel usage page for the current period: Blob data transfer 51 
 
 1. Locate the Inngest organisation that owns the Vercel marketplace installation (the one with the 4 September keys) and confirm `Render Astra Blender` there; registration itself is already evidenced by the deploy-time PUT 200 in Vercel logs. Decide what to do with the empty `SensAI Studios LLP` organisation.
 2. Done 19 September (PR194–PR199) except: `recoveryDrain` coverage for the Astra branch; a Settings card to save a workspace OpenAI key (BYOK precedence exists only via API today); the staged whole-screenplay analysis.
-5. One approved paid Astra qualification in a non-legacy internal workspace (ceiling stated and approved first).
+5. Done 19 September on the legacy workspace (see above); repeat on a non-legacy workspace once one exists, to exercise credit debiting.
 6. Backups and recovery: activate the backup workflow (environment, secrets, one manual capture, freshness), escrow `KEYRING_SECRET`, add an alerting channel and a paid-dispatch kill switch, then measure RPO/RTO on a staging restore.
 7. Long-form mastering design and host decision (needs a spend decision), then OCR durability and multilingual qualification, then provider qualification under explicit ceilings.
 
