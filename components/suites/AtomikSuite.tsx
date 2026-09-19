@@ -29,6 +29,7 @@ import {
 } from "@/lib/pipeline/editor";
 import type { PublicPipelineRun } from "@/lib/pipeline/public";
 import type { Project } from "@/lib/workbench/studio";
+import type { ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { createMovieHandoff } from "@/lib/workbench/movie-handoff";
 import {
   atomikPage,
@@ -70,6 +71,12 @@ type Props = {
   pageOverride?: AtomikPage;
   heading?: string;
   pageTitle?: string;
+  /** Hosted inside another page's chrome (/workspace): no title block of its own. */
+  embedded?: boolean;
+  /** A host that routes its own pages opens another Atomik page through this instead of `?page=`. */
+  onPage?: (page: AtomikPage) => void;
+  /** Generate's current connected-account request (AtomikGenerate `onInput`). */
+  onGenerateInput?: (input: ConsumerGenerationInput | null) => void;
 };
 const providerNames: Record<string, string> = {
   byteplus: providerDisplayName("byteplus"),
@@ -106,6 +113,9 @@ export default function AtomikSuite({
   pageOverride,
   heading = "Atomik Super Agent",
   pageTitle,
+  embedded = false,
+  onPage,
+  onGenerateInput,
 }: Props) {
   const session = useSession(),
     search = useSearchParams(),
@@ -177,6 +187,9 @@ export default function AtomikSuite({
       heading={heading}
       pageTitle={pageTitle}
       refreshProject={drafts.refresh}
+      embedded={embedded}
+      onPage={onPage}
+      onGenerateInput={onGenerateInput}
     />
   );
 }
@@ -187,12 +200,18 @@ function MappedAtomik({
   heading,
   pageTitle,
   refreshProject,
+  embedded = false,
+  onPage,
+  onGenerateInput,
 }: {
   project: Project;
   page: AtomikPage;
   heading: string;
   pageTitle?: string;
   refreshProject: () => Promise<void>;
+  embedded?: boolean;
+  onPage?: (page: AtomikPage) => void;
+  onGenerateInput?: (input: ConsumerGenerationInput | null) => void;
 }) {
   const session = useSession(),
     money = useMoney(),
@@ -386,7 +405,7 @@ function MappedAtomik({
       aria-label={`${heading} suite`}
     >
       <header className={styles.header}>
-        <div>
+        {!embedded && <div>
           <p className={styles.suiteName}>
             <span />
             {heading} · {project.name}
@@ -405,7 +424,7 @@ function MappedAtomik({
                     ? "Recorded project spend and the cap applied to new work."
                     : "The models and routing your workspace actually uses."}
           </p>
-        </div>
+        </div>}
         <div className={styles.headerActions}>
           <Link href={studioHref}>Open Studio</Link>
           {(page === "runs" || page === "recipes") && (
@@ -500,17 +519,20 @@ function MappedAtomik({
               if (active.current) {
                 const params = new URLSearchParams(search.toString());
                 params.set("run", result.run.id);
-                params.set(
-                  "page",
-                  "runs",
-                );
-                router.push(`${pathname}?${params}`);
+                if (onPage) onPage("runs");
+                else {
+                  params.set(
+                    "page",
+                    "runs",
+                  );
+                  router.push(`${pathname}?${params}`);
+                }
               }
             })
           }
         />
       ) : page === "generate" ? (
-        <AtomikGenerate project={project} scope={session.requestScope ?? ""} refreshProject={refreshProject} />
+        <AtomikGenerate project={project} scope={session.requestScope ?? ""} refreshProject={refreshProject} onInput={onGenerateInput} />
       ) : page === "budget" ? (
         <Budget productionId={productionId} />
       ) : page === "models" ? (

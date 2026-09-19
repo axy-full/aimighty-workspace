@@ -18,6 +18,7 @@ const BoardsTool = dynamic(() => import("./tools/BoardsTool"), { ssr: false, loa
 const AstraTool = dynamic(() => import("./tools/AstraTool"), { ssr: false, loading: opening("the 3D scene") });
 const DeliverTool = dynamic(() => import("./tools/DeliverTool"), { ssr: false, loading: opening("the delivery") });
 const MarketingTool = dynamic(() => import("./tools/MarketingTool"), { ssr: false, loading: opening("Marketing Studio") });
+const AtomikTool = dynamic(() => import("./tools/AtomikTool"), { ssr: false, loading: opening("the agent") });
 const SubatomikTool = dynamic(() => import("./tools/SubatomikTool"), { ssr: false, loading: opening("the viral studio") });
 const Toaster = dynamic(() => import("@/components/workbench/ui/sonner").then((m) => m.Toaster), { ssr: false });
 
@@ -74,6 +75,14 @@ export function SpecTool({
     case "compare":
     case "history":
       return <SubatomikTool key={id} variant="motion-transfer" projectId={id} publish={null} />;
+    case "agent":
+    case "runs":
+    case "recipes":
+    case "approvals":
+    case "budget":
+    case "models":
+    case "generate":
+      return <AtomikTool key={id} page={page} project={project} onPage={(target) => go("atomik", target)} />;
     default:
       return null;
   }

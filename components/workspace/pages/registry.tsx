@@ -4,7 +4,9 @@ import type { Project } from "@/lib/workbench/studio";
 import { pageDef } from "@/lib/workspace/pages";
 import type { PageId } from "@/lib/workspace/types";
 import { RigPage } from "../rig/RigPage";
+import { useSession } from "@/lib/session";
 import { SpecPage } from "../spec/SpecPage";
+import { SpecTool } from "../spec/SpecTool";
 import { Kicker } from "../ui";
 import { CastPage } from "./CastPage";
 import { EditPage } from "./EditPage";
@@ -77,9 +79,25 @@ function specPage(id: PageId): ComponentType<PageBodyProps> {
 }
 
 /** Spec-card pages (03, "Spec-card template") with their working tools. */
-const SPEC_BODIES: PageId[] = ["brief", "boards", "astra", "deliver", "marketing", "motion", "swap", "sources", "compare", "history"];
+const SPEC_BODIES: PageId[] = [
+  "brief", "boards", "astra", "deliver",
+  "agent", "runs", "recipes", "builds", "skills", "models", "approvals", "budget",
+  "marketing",
+  "motion", "swap", "sources", "compare", "history",
+];
+
+/** Atomik Generate keeps its existing body (with its Tools and Voice groups), inside the shell. */
+function GenerateBody({ project }: PageBodyProps) {
+  return (
+    <div className="pxw-spec pxw-generate" data-page-body="generate">
+      <div className="pxw-embed">
+        <SpecTool page="generate" tool="generate" project={project} scope={useSession().requestScope ?? null} onProject={() => {}} />
+      </div>
+    </div>
+  );
+}
 
 /** Page id → body. Later PRs replace an entry with the real page. */
 export const PAGE_BODIES: Record<PageId, ComponentType<PageBodyProps>> = Object.fromEntries(
-  (Object.keys(COMING) as PageId[]).map((id) => [id, BUILT[id] ?? (SPEC_BODIES.includes(id) ? specPage(id) : placeholder(id))]),
+  (Object.keys(COMING) as PageId[]).map((id) => [id, BUILT[id] ?? (id === "generate" ? GenerateBody : SPEC_BODIES.includes(id) ? specPage(id) : placeholder(id))]),
 ) as Record<PageId, ComponentType<PageBodyProps>>;
