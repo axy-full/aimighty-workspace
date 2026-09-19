@@ -67,3 +67,42 @@ Read-only inventory of the workbench `canvas` stage ("Rig": `components/workbenc
 ## PR E plan
 
 Fix P1 and P2 in the workbench canvas first (1–4, 8–18), add unit tests for `arrangeGraph`, zoom clamps, `canConnect` kinds/arity, version labels, and a canvas browser spec that runs in the workbench suite at all five viewports (drag with pointer capture, wire drop outside the canvas, pinch-state reset, undo coalescing). The legacy /rig board (5–7, 29–33) either gets the workbench safeguards (`maxCredits`, claim, revision, cleanup) or is retired behind the workbench Rig; decide with the owner.
+
+## PR E status — workbench canvas (19 September 2026, branch `feat/rig-bug-pass`)
+
+Commits: **A** `893b6ae` (`lib/workbench/node-graph.ts`, `canvas-selection.ts`, unit specs) and **B** `0c8043a` (`Studio.tsx`, `production-graph.tsx`, `desk.css`, `mobile-handoff.css`, `tests/rig-workbench.spec.ts`). The legacy /rig board (5–7, 29–33) is untouched pending the owner's decision. Everything else keeps its appearance.
+
+| # | Status | Where |
+| --- | --- | --- |
+| 1 | Fixed (B) | `change(fn, remember)` takes a coalescing key: name, direction, tool notes, sliders and held arrow keys record one entry per field focus / gesture (`onSettle` on blur, `onValueCommit`, arrow keyup); the previous project reference is the snapshot, no `structuredClone` per tick. |
+| 2 | Fixed (B) | `publishSelection` computes the shared set from `old` inside `change()`: one snapshot, undoable, redo stack cleared. `publishBible` still applies the server's version outside history; undo/redo carry the current `bibleVersion` so a step back never offers a stale version. |
+| 3 | Fixed (B) | Ctrl/⌘+Z in Shared view toasts "Undo is unavailable in Shared view…"; the Undo tool and context item are labelled with the reason when read-only; `mobile-handoff.css` no longer hides the Undo tool on phones. |
+| 4 | Fixed (B) | `undo()`/`redo()` peek first and pop only when the entry belongs to the current project; an empty stack says "Nothing to undo". |
+| 5–7 | Deferred | Legacy /rig board — owner decision (safeguards vs retire). |
+| 8 | Fixed (B) | Output ports capture the pointer; release resolves the drop with `elementFromPoint`, otherwise resets `wire`/cursor wherever it happens (also on `pointercancel`/`lostpointercapture`). The wire help banner is `pointer-events:none` so it cannot sit over a drop target on short canvases. |
+| 9 | Fixed (B) | Window-level `pointerup`/`pointercancel` cleanup of the touch pointer map; a pinch only exists with two live pointers; no `viewport.current!`. |
+| 10 | Fixed (B) | Space is swallowed only when the target is not a button/link/checkbox/combobox/slider/switch/tab/menu item. |
+| 11 | Fixed (B) | Arrow nudges coalesce under one key until keyup. |
+| 12 | Fixed (A) | `arrangeGraph`: locked nodes take no slot, arranged nodes step below overlapping locked nodes, no depth cap, id-ordered DFS breaks cycles deterministically. Unit spec. |
+| 13 | Fixed (A+B) | `clampCanvasZoom(next, current)`: one domain [.25, 1.6]; a fit below the floor is stepped from relative to itself. Used by `zoomTo`/`zoomBy`, pinch, wheel, `focusNode`. `fitCanvasNodes` unchanged (overview may still go below the floor). |
+| 14 | Fixed (B) | Non-passive `wheel` listener on the viewport: always `preventDefault`; Ctrl/⌘ zooms anchored at the cursor (`zoomAround`), plain wheel pans. |
+| 15 | Fixed (A) | `NODE_INPUTS` (accepts any/media, max 100/2/1) + `nodeOutputKind`; messages name the node type and the rule. Unit spec. |
+| 16 | Fixed (A+B) | `nextVersionLabel` counts every save; `appendNodeVersion` reports the dropped version and the toast says so (save and restore). |
+| 17 | Fixed (A+B) | `describeRemoval` names the locked blocker ("Alpha feeds locked Gamma…") and reports "n of m nodes removed" for mixed selections. |
+| 18 | Fixed (B) | Image tools need a resolved still image at add time (dropdown items disabled, toast explains); `update()` refuses `assetId` on a switch and the Inputs tab shows a note instead of the picker. |
+| 19 | Fixed (B) | Add-node position is the viewport centre in world space clamped to the canvas limits, not to 0. |
+| 20 | Fixed (B) | Drag mode connects from the output port's `pointerup`; click mode from the input port's `onClick`; the canvas `pointerup` no longer hit-tests inputs; the post-drag click on the output port is suppressed. |
+| 21 | Fixed (A+B) | `previewRenderKey` (upstream sources, routing, tool stacks, asset urls) drives the effect; `renderNode` takes an `AbortSignal` and the effect aborts on cleanup. |
+| 22 | Fixed (B) | `onLostPointerCapture` on the canvas and node headers drops the draft; capture is released from the element that took it. |
+| 23 | Fixed (A+B) | Strict inequalities in `marqueeSelection`; collapsed `nodeHeight` is 48 to match the header; marquee border is `1/zoom` px. |
+| 24 | Fixed (B) | Marquee updates a pending local selection and announces once on release; keyboard/window listeners attach once via `useEffectEvent`. |
+| 25 | Deferred | Touch box-select entry (CSS import order) — layout change, outside this pass. |
+| 26 | Fixed (B) | `@media (min-width:760px) and (pointer:coarse)`: 44 px canvas tools, zoom readout and node menu, 44 px port hit area. |
+| 27, 28 | Deferred | Breakpoint stores and the phone dead strip — layout work, not bug-for-bug safe. |
+| 29–33 | Deferred | Legacy /rig board. |
+| 34 | Deferred | Bare letter shortcuts inside a Select type-ahead — the guard already skips `[role="listbox"]`; not reproduced. |
+| 35 | Fixed (B) | `Studio.tsx` editing check uses `closest`. |
+| 36–42 | Deferred | P4 items, out of scope for "keep Rig as it is". |
+| 43 | Fixed (B) | `<ProductionGraph key={p.id}>`. |
+
+Tests: `tests/unit/nodeGraph.spec.ts` (arrangeGraph locked/depth/cycles, canConnect kinds/arity, version labels, preview key), `tests/unit/canvasSelection.spec.ts` (zoom clamp/anchor, strict marquee, removal messages), `tests/rig-workbench.spec.ts` in the default workbench suite at all five viewports (wire drag released outside resets, single touch after an interrupted drag pans, per-field undo, publish clears redo, add-node in view, Space activates a button).

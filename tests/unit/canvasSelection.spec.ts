@@ -2,6 +2,10 @@ import { test, expect } from "@playwright/test";
 import { nodeHeight } from "../../lib/workbench/node-graph";
 import { type CanvasNode } from "../../lib/workbench/studio";
 import {
+  CANVAS_ZOOM_MAX,
+  CANVAS_ZOOM_MIN,
+  clampCanvasZoom,
+  describeRemoval,
   duplicateSelectedNodes,
   fitCanvasNodes,
   marqueeSelection,
@@ -10,6 +14,7 @@ import {
   removeSelectedNodes,
   selectionRect,
   toggleNodeSelection,
+  zoomAround,
 } from "../../lib/workbench/canvas-selection";
 const node = (id: string, fields: Partial<CanvasNode> = {}): CanvasNode => ({
   id,
@@ -145,4 +150,38 @@ test("duplicates keep a visible screen offset in a zoomed-out overview", () => {
   const result = duplicateSelectedNodes([original], [original.id], Math.max(40,24/zoom));
   expect((result.nodes[1].x-original.x)*zoom).toBe(24);
   expect((result.nodes[1].y-original.y)*zoom).toBe(24);
+});
+
+test("one zoom domain: steps clamp to the range but never jump up from an overview fit", () => {
+  expect(clampCanvasZoom(2)).toBe(CANVAS_ZOOM_MAX);
+  expect(clampCanvasZoom(0.1)).toBe(CANVAS_ZOOM_MIN);
+  expect(clampCanvasZoom(0.08 + 0.1, 0.08)).toBeCloseTo(0.18);
+  expect(clampCanvasZoom(0.08 - 0.1, 0.08)).toBe(0.08);
+  expect(clampCanvasZoom(NaN, 0.5)).toBe(0.5);
+  expect(clampCanvasZoom(0.5, NaN)).toBe(0.5);
+  const anchored = zoomAround({ x: 100, y: 50 }, { x: 20, y: 10 }, 0.5, 1);
+  // The world point under the anchor stays under it.
+  expect((100 - anchored.pan.x) / anchored.zoom).toBeCloseTo((100 - 20) / 0.5);
+  expect((50 - anchored.pan.y) / anchored.zoom).toBeCloseTo((50 - 10) / 0.5);
+});
+
+test("marquee edges that only touch a node do not select it", () => {
+  const nodes = [node("a", { x: 100, y: 100 })];
+  expect(marqueeSelection(nodes, { x: 0, y: 0 }, { x: 100, y: 100 })).toEqual([]);
+  expect(marqueeSelection(nodes, { x: 0, y: 0 }, { x: 101, y: 101 })).toEqual(["a"]);
+  expect(nodeHeight(node("c", { collapsed: true }))).toBe(48);
+});
+
+test("removal outcome names the locked blocker and reports partial removals honestly", () => {
+  const nodes = [
+    node("Alpha"),
+    node("Beta"),
+    node("Gamma", { locked: true, linked: ["Alpha"] }),
+  ];
+  expect(describeRemoval(nodes, ["Alpha"]).message).toBe("Alpha feeds locked Gamma. Unlock first to remove.");
+  expect(describeRemoval(nodes, ["Gamma"]).message).toBe("Gamma is locked. Unlock first to remove.");
+  expect(describeRemoval(nodes, ["Beta"]).message).toBe("Node removed. Use Undo to restore.");
+  const mixed = describeRemoval(nodes, ["Alpha", "Beta", "Gamma"]);
+  expect(mixed.removable).toEqual(["Beta"]);
+  expect(mixed.message).toBe("1 of 3 nodes removed. Alpha feeds locked Gamma. Gamma is locked. Use Undo to restore.");
 });

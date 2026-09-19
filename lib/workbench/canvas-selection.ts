@@ -2,6 +2,32 @@ import { type CanvasNode, uid } from "./studio";
 import { nodeHeight } from "./node-graph";
 
 export type CanvasPoint = { x: number; y: number };
+export const CANVAS_ZOOM_MIN = 0.25;
+export const CANVAS_ZOOM_MAX = 1.6;
+/**
+ * One zoom domain for every gesture. An overview fit may sit below the manual floor; from there
+ * a step, pinch or wheel moves relative to the current zoom instead of jumping to the floor.
+ */
+export function clampCanvasZoom(next: number, current = CANVAS_ZOOM_MIN) {
+  const floor = Math.min(CANVAS_ZOOM_MIN, Number.isFinite(current) && current > 0 ? current : CANVAS_ZOOM_MIN);
+  if (!Number.isFinite(next) || next <= 0) return Math.max(floor, Math.min(CANVAS_ZOOM_MAX, current));
+  return Math.max(floor, Math.min(CANVAS_ZOOM_MAX, next));
+}
+/** Keep the world point under `anchor` (viewport px) fixed while the zoom changes. */
+export function zoomAround(
+  anchor: CanvasPoint,
+  pan: CanvasPoint,
+  zoom: number,
+  next: number,
+) {
+  return {
+    zoom: next,
+    pan: {
+      x: anchor.x - ((anchor.x - pan.x) * next) / zoom,
+      y: anchor.y - ((anchor.y - pan.y) * next) / zoom,
+    },
+  };
+}
 /** Overview fit can go below the manual zoom floor on short or large canvases. */
 export function fitCanvasNodes(
   nodes: CanvasNode[],
@@ -27,7 +53,7 @@ export function selectionRect(start: CanvasPoint, end: CanvasPoint) {
     height: Math.abs(end.y - start.y),
   };
 }
-/** Intersection selection uses world coordinates, including collapsed node bounds. */
+/** Intersection selection uses world coordinates and the rendered node box; touching edges do not select. */
 export function marqueeSelection(
   nodes: CanvasNode[],
   start: CanvasPoint,
@@ -38,10 +64,10 @@ export function marqueeSelection(
   const hits = nodes
     .filter(
       (n) =>
-        n.x <= rect.x + rect.width &&
-        n.x + n.width >= rect.x &&
-        n.y <= rect.y + rect.height &&
-        n.y + nodeHeight(n) >= rect.y,
+        n.x < rect.x + rect.width &&
+        n.x + n.width > rect.x &&
+        n.y < rect.y + rect.height &&
+        n.y + nodeHeight(n) > rect.y,
     )
     .map((n) => n.id);
   return [
@@ -93,6 +119,55 @@ export function removableNodeIds(nodes: CanvasNode[], ids: string[]) {
   return nodes
     .filter((n) => ids.includes(n.id) && !n.locked && !protectedIds.has(n.id))
     .map((n) => n.id);
+}
+/** Why each selected node stays: it is locked, or a locked node depends on it. */
+export function removalBlockers(nodes: CanvasNode[], ids: string[]) {
+  const removable = new Set(removableNodeIds(nodes, ids));
+  return nodes
+    .filter((n) => ids.includes(n.id) && !removable.has(n.id))
+    .map((n) => ({
+      node: n,
+      lockedBy: n.locked
+        ? []
+        : nodes.filter((other) => other.locked && other.linked.includes(n.id)),
+    }));
+}
+/** One honest sentence for the removal outcome of a selection. */
+export function describeRemoval(nodes: CanvasNode[], ids: string[]) {
+  const removable = removableNodeIds(nodes, ids);
+  const blockers = removalBlockers(nodes, ids);
+  const reason = (b: { node: CanvasNode; lockedBy: CanvasNode[] }) =>
+    b.node.locked
+      ? b.node.title + " is locked."
+      : b.node.title +
+        " feeds locked " +
+        b.lockedBy.map((n) => n.title).join(" and ") +
+        ".";
+  if (!removable.length)
+    return {
+      removable,
+      message:
+        (blockers.length === 1
+          ? reason(blockers[0])
+          : blockers.map(reason).join(" ")) + " Unlock first to remove.",
+    };
+  if (!blockers.length)
+    return {
+      removable,
+      message:
+        (removable.length === 1 ? "Node removed." : "Nodes removed.") +
+        " Use Undo to restore.",
+    };
+  return {
+    removable,
+    message:
+      removable.length +
+      " of " +
+      ids.length +
+      " nodes removed. " +
+      blockers.map(reason).join(" ") +
+      " Use Undo to restore.",
+  };
 }
 export function removeSelectedNodes(nodes: CanvasNode[], ids: string[]) {
   const remove = new Set(removableNodeIds(nodes, ids));
