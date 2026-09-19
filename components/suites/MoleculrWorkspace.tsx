@@ -27,6 +27,7 @@ import { ProductProfileEditor } from "./ProductProfileEditor";
 import { CreativeTemplateBrowser } from "./CreativeTemplateBrowser";
 import { ReferenceAd } from "./ReferenceAd";
 import { ConsumerMarketingVideo } from "./ConsumerMarketingVideo";
+import { MarketingTemplateBrowser, MarketingTemplateCreator, TEMPLATE_ASSET_CATEGORY } from "./MarketingTemplates";
 import { EMPTY_REFERENCE_AD } from "@/lib/workbench/reference-ad";
 import { MOLECULR_SECTIONS } from "@/lib/suites";
 import {
@@ -59,6 +60,7 @@ export function MoleculrWorkspace({
   onReviewVariant,
   onPrepareVariants,
   onConsumerVideoAsset,
+  onTemplateAsset,
 }: {
   project: Project;
   scope: string;
@@ -90,6 +92,8 @@ export function MoleculrWorkspace({
   onReviewVariant?: (nodeId: string) => void;
   onPrepareVariants?: (kind: "image" | "video") => void;
   onConsumerVideoAsset?: (asset: Asset, draftId: string) => Promise<void>;
+  /** Files a collected template original (image or video) as a variant result. */
+  onTemplateAsset?: (asset: Asset, draftId: string) => Promise<void>;
 }) {
   const brief = project.moleculr ?? EMPTY_MOLECULR;
   const [hookIndex, setHookIndex] = useState(0);
@@ -105,7 +109,7 @@ export function MoleculrWorkspace({
       !!asset.soulIdentityId ||
       brief.castAssetIds.includes(asset.id),
   );
-  const outputs = [...new Map([...variantAssets(project, brief), ...project.assets.filter(asset => asset.category === "Campaign video")].map(asset => [asset.id, asset])).values()];
+  const outputs = [...new Map([...variantAssets(project, brief), ...project.assets.filter(asset => asset.category === "Campaign video" || asset.category === TEMPLATE_ASSET_CATEGORY)].map(asset => [asset.id, asset])).values()];
   const hooks = brief.hooks.filter((hook) => hook.trim());
   const selectedHook = hooks[hookIndex] ?? hooks[0] ?? "";
   const selectedCast =
@@ -555,6 +559,7 @@ export function MoleculrWorkspace({
             onSettings={(settings) => set("marketing", settings)}
             onConfigure={onGenerate}
           />
+          <MarketingTemplateBrowser key={`${scope}:${project.id}`} project={project} scope={scope} enabled={enabled} />
           </div>
         )}
       </section>
@@ -785,6 +790,7 @@ export function MoleculrWorkspace({
             />
           )}
           {media === "video" && <ConsumerMarketingVideo key={`${scope}:${project.id}`} project={project} scope={scope} enabled={enabled} onSave={onSave} onAsset={onConsumerVideoAsset}/>}
+          <MarketingTemplateCreator key={`template:${scope}:${project.id}`} project={project} scope={scope} enabled={enabled} onSave={onSave} onAsset={onTemplateAsset} />
           <OutputGallery assets={outputs} onSequence={onSequence} />
           </div>
         )}
