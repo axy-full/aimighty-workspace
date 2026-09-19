@@ -926,7 +926,7 @@ test("the main flow has no billing toggle; the connected default shows the exact
   await expect(page.getByRole("button", { name: /Connected .* credits/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toHaveCount(0);
   await expect(page.getByText(/Higgsfield/)).toHaveCount(0);
-  const dock = page.getByRole("navigation", { name: "Subatomik pages", exact: true });
+  const dock = page.getByRole("navigation", { name: "Subatomik Viral Studio pages", exact: true });
   await expect(dock.getByRole("link", { name: "Object Swap", exact: true })).toHaveAttribute(
     "href",
     "/subatomik?project=viral-draft&page=object-swap",
