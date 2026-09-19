@@ -1,13 +1,13 @@
 # Particl status of record
 
-Updated 18 September 2026 (evening). This file is the running handover: what is released, what was verified and how, and what is next. It supersedes the status sections of older handover documents where they differ. Claims are limited to what was observed; "released" means the commit is serving www.particl.app, not that every path has been exercised live.
+Updated 19 September 2026. This file is the running handover: what is released, what was verified and how, and what is next. It supersedes the status sections of older handover documents where they differ. Claims are limited to what was observed; "released" means the commit is serving www.particl.app, not that every path has been exercised live.
 
 ## Released
 
 | Item | Value |
 | --- | --- |
-| Released main | `d4a68a729c546638ad5cb3bf2f340ce60f5c0c04` — squash of [PR192](https://github.com/axy-full/aimighty-workspace/pull/192) "Add Astra Blender Studio and direct OpenAI integration" |
-| Production deployment | `dpl_3JYXuZJg5ut6RkuRGjwVfA9Sdufv` (READY; `/api/health` reports commit `d4a68a7`, `mock:false`, region `bom1`) |
+| Released main | `89baffc` (19 September) — `d4a68a7` (PR192 Astra Blender + direct OpenAI) followed by the seven follow-ups below, each squash-merged after its own complete CI |
+| Production deployment | `89baffc` serving www.particl.app on 19 September (`/api/health` from the owner session: commit `89baffc`, `ok:true`, cron succeeded 6 min earlier). PR192's own deployment was `dpl_3JYXuZJg5ut6RkuRGjwVfA9Sdufv` |
 | Complete CI on the merged revision | run [35378251410](https://github.com/axy-full/aimighty-workspace/actions/runs/35378251410) on `e577256` (the branch head that was squashed): unit ×3, core, browser-shards workbench ×4 and customer ×4, both `browser` gates — all green |
 | Previous released main | `3e0d20a` (PR191) |
 
@@ -50,7 +50,7 @@ A read-only audit of eight areas was run against this checkout (Astra release, d
 - **Long-form mastering** cannot run on any existing host (Sandbox 180 s / 4 GB, functions ≤300 s); it needs a separate CPU worker with a reviewed rate card and spend approval.
 - **Provider qualification** items (Cloud Genjutsu, connected Genjutsu, Marketing Studio Image, Soul) each need a paid rehearsal under an explicit ceiling; the marketing video rehearsal still runs in the provider's UGC mode.
 
-## Follow-up PRs opened 19 September (from the audit)
+## Follow-up PRs merged 19 September (from the audit)
 
 | PR | Concern | Local verification |
 | --- | --- | --- |
@@ -59,14 +59,26 @@ A read-only audit of eight areas was run against this checkout (Astra release, d
 | [PR196](https://github.com/axy-full/aimighty-workspace/pull/196) | Direct-OpenAI catalog gate applies to language models only; Gateway-served OpenAI image/speech entries follow Gateway reachability | tsc, eslint, new unit spec + catalogTextPricing; first CI attempt failed two unit shards because the spec mutated `process.env` at module load — fixed by scoping and restoring inside the test |
 | [PR197](https://github.com/axy-full/aimighty-workspace/pull/197) | Atomik quotes carry `screenplay {chars, includedChars, truncated}` and the run dialog states the window read at this depth | tsc, eslint, workbenchAtomik spec 35/35 |
 
-Each is one concern and branched from `d4a68a7`; merge in number order after its own complete CI. Still separate: `PATCH /api/jobs/[id]` scope, `recoveryDrain` coverage for the Astra branch.
+| [PR198](https://github.com/axy-full/aimighty-workspace/pull/198) | Generation PATCH (rename, review state, shot/project moves) requires the captured scope; renameClip, Theatre and the canvas page send it | tsc, eslint, asset-library unit spec 7/7 (PATCH + DELETE refusal case) |
+| [PR199](https://github.com/axy-full/aimighty-workspace/pull/199) | The Higgsfield Verify rehearsal names `product_showcase` instead of inheriting the provider's UGC presenter default; no paid call | tsc, eslint, consumer video contract + route specs 23/23 |
+
+All seven merged in number order (#193 `4c8464f`, #194 `7c21d57`, #195 `a3d89c6`, #196 `259e2cd`, #197 `97d5b80`, #198 `89baffc`, #199 `8c33e62`), each after a fully green run of `.github/workflows/verify.yml`. Re-checked on the deployed `89baffc` from the owner session: OpenAI status verified with `gpt-6-astra`; Astra runtime read 200 with the scope header and 409 without; original download 200 with attachment disposition. Still separate: `recoveryDrain` coverage for the Astra branch.
+
+## Decisions recorded 19 September
+
+Measured on the Vercel usage page for the current period: Blob data transfer 51 GB ($3.43), fast origin transfer 17 GB ($4.24, bytes streamed through functions including `/api/uploads` downloads), Blob storage 404 MB, function invocations 104K ($0.06), Sandbox $0.07; Inngest 11 events / 28 executions on the free plan.
+
+- **Inngest is kept.** Replacing it with a Turso jobs table plus the existing cron saves nothing today and removes what the audit relies on: off-request dispatch (no 300 s request ceiling for a 180 s paid VM), retries, and the platform-wide 4 / per-workspace 2 concurrency on native renders. The inline `after()` + cron path already exists as the degraded mode. Revisit if the Inngest bill exceeds roughly $50/month or the marketplace organisation cannot be recovered.
+- **Cloudflare R2 is planned, not started.** Zero egress removes both transfer lines only if private downloads redirect to short-lived signed URLs instead of streaming through functions. Sequence: backups and alerting first, then R2, then long-form mastering (so masters never migrate twice). Trigger: sustained egress above ~300 GB/month or mastering becoming the next item. The owner creates the account, bucket and scoped token and stores them in Vercel; the adapter goes behind `lib/storage.ts` with dual-read during cutover and SHA-256 verification of the copied originals.
+- The Vercel CLI on the development machine lost its token on 19 September (auth file emptied at 10:51, not by this work); deployment checks fall back to the signed-in browser session until `vercel login` is run again.
+- Stale pull requests from before the takeover remain open: #123–#131 (SOW surfaces, ark-video era) and dependabot #135–#141. They are not part of this line of work; close or park them explicitly.
+
+
 
 ## Next work, in order
 
 1. Locate the Inngest organisation that owns the Vercel marketplace installation (the one with the 4 September keys) and confirm `Render Astra Blender` there; registration itself is already evidenced by the deploy-time PUT 200 in Vercel logs. Decide what to do with the empty `SensAI Studios LLP` organisation.
-2. Post-release hardening PR (no behaviour change for users): gate per-poll Astra recovery on pending jobs; unit test that `functions` registers `astra-blender-render` with its trigger, concurrency and retries; cover the `astra_render_` branch of `lib/recoveryDrain.ts`; add `astra_render_jobs` to the backup preflight; fix the dead `workbench-1024x768` project name in `tests/suite-navigation-workbench.spec.ts`; make generation DELETE honour the captured scope.
-3. Direct OpenAI follow-ups: scope the `/v1/models` filter to language models; unit tests for `/api/openai/status` and the catalog intersection; a Settings card to save a workspace OpenAI key (BYOK precedence exists only via API today).
-4. Disclose Atomik-crew screenplay truncation in the quote and response, then plan the staged whole-screenplay analysis.
+2. Done 19 September (PR194–PR199) except: `recoveryDrain` coverage for the Astra branch; a Settings card to save a workspace OpenAI key (BYOK precedence exists only via API today); the staged whole-screenplay analysis.
 5. One approved paid Astra qualification in a non-legacy internal workspace (ceiling stated and approved first).
 6. Backups and recovery: activate the backup workflow (environment, secrets, one manual capture, freshness), escrow `KEYRING_SECRET`, add an alerting channel and a paid-dispatch kill switch, then measure RPO/RTO on a staging restore.
 7. Long-form mastering design and host decision (needs a spend decision), then OCR durability and multilingual qualification, then provider qualification under explicit ceilings.
