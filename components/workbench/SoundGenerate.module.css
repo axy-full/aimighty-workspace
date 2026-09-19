@@ -1,0 +1,186 @@
+.panel {
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--graphite-line);
+  background: var(--graphite-panel);
+  color: var(--graphite-ink);
+}
+.panel header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.panel h3 {
+  font-size: 15px;
+  margin: 2px 0 10px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+.panel p {
+  font-size: 11px;
+  color: var(--graphite-body);
+  line-height: 1.45;
+  margin: 8px 0 0;
+}
+.playhead {
+  font: 11px var(--graphite-mono);
+  color: var(--graphite-muted);
+  white-space: nowrap;
+}
+.tasks {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--graphite-segment);
+  margin: 4px 0 10px;
+  max-width: 420px;
+}
+.tasks button {
+  flex: 1;
+  min-height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--graphite-body);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 5px 4px;
+}
+.tasks button[aria-pressed="true"] {
+  background: var(--graphite-selected);
+  color: var(--graphite-ink);
+}
+.tasks button:focus-visible,
+.panel input:focus-visible,
+.panel select:focus-visible,
+.panel textarea:focus-visible {
+  outline: 2px solid var(--graphite-accent);
+  outline-offset: 2px;
+}
+.text {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--graphite-body);
+}
+.panel textarea,
+.panel select,
+.panel input[type="number"] {
+  border: 1px solid var(--graphite-edge);
+  background: var(--graphite-control);
+  color: var(--graphite-ink);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-height: 30px;
+  font: inherit;
+  font-size: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.panel textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.fields label {
+  display: grid;
+  gap: 4px;
+  color: var(--graphite-body);
+  font-size: 11px;
+  min-width: 0;
+  align-content: start;
+}
+.fields .check {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  align-self: end;
+  min-height: 30px;
+}
+.panel input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--graphite-accent);
+}
+.panel input[type="range"] {
+  accent-color: var(--graphite-accent);
+  min-height: 30px;
+  width: 100%;
+  cursor: pointer;
+}
+.voiceRow {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.voiceRow select {
+  flex: 1;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.panel button {
+  border: 1px solid var(--graphite-edge);
+  border-radius: 6px;
+  padding: 6px 10px;
+  min-height: 30px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.panel button:disabled {
+  opacity: 0.45;
+}
+.hint {
+  font-size: 11px;
+  color: var(--graphite-muted);
+  line-height: 1.45;
+}
+.note {
+  color: var(--graphite-muted);
+}
+.queue {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.queue li {
+  font-size: 11px;
+  color: var(--graphite-body);
+  border: 1px dashed var(--graphite-line);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.error {
+  color: #f5a49a !important;
+}
+@media (max-width: 759px) {
+  .panel { margin-top: 12px; padding: 14px 16px 16px; border: 1px solid var(--graphite-edge); border-radius: 12px; background: var(--graphite-card); }
+  .panel h3 { margin: 2px 0 0; font-size: 17px; line-height: 1.4; letter-spacing: -.02em; }
+  .panel p, .hint, .queue li, .text, .fields label { font-size: 12px; line-height: 1.6; }
+  .tasks { max-width: none; margin-top: 12px; }
+  .tasks button { min-height: 44px; font-size: 12px; }
+  .panel textarea, .panel select, .panel input[type="number"] { font-size: 16px; min-height: 44px; }
+  .panel button { min-height: 44px; height: auto; padding: 8px 12px; border-radius: 6px; font-size: 12px; }
+  .fields { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .actions button { flex: 1 1 auto; }
+  .panel input[type="checkbox"] { width: 20px; height: 20px; }
+  .panel :global(.primary) { border-radius: 10px; }
+}
+.panel :global(.eyebrow) { font-size: 10px; letter-spacing: .1em; font-weight: 500; }

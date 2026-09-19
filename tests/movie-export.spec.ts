@@ -117,6 +117,10 @@ async function movieFixture(page: Page) {
     if (path === "/api/me") return json(me);
     if (path === "/api/workbench/atomik") return json({ models: [], jobs: [] });
     if (path === "/api/jobs") return json({ generations: [] });
+    // The Edit stage's generate panel reads the account's sound setup; it spends nothing here.
+    if (path === "/api/audio" && request.method() === "GET")
+      return json({ configured: false, speechModels: [], defaultSpeechModel: "", voices: [], voicesError: null, account: null, terms: {} });
+    if (path === "/api/audio/voices") return json({ configured: false, voices: [] });
     const item = media.get(path);
     if (item) {
       const requested = request.headers()["range"];

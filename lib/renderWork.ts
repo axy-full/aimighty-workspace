@@ -81,7 +81,7 @@ export type AudioJob = {
   genId: string;
   modelId: string;
   text: string;
-  task: "speech" | "sound" | "music";
+  task: "speech" | "sound" | "music" | "dialogue";
   params: Record<string, unknown>;
   estCredits: number;
   startedAt: number;
@@ -122,8 +122,10 @@ export async function loadJob(genId: string): Promise<Job | null> {
   const startedAt = Number(row.created_at);
 
   if (row.kind === "audio") {
-    const task = ["speech", "sound", "music"].includes(String(params.task))
-      ? (params.task as "speech" | "sound" | "music")
+    const task = ["speech", "sound", "music", "dialogue"].includes(
+      String(params.task),
+    )
+      ? (params.task as "speech" | "sound" | "music" | "dialogue")
       : "speech";
     return {
       kind: "audio",

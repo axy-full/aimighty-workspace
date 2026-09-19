@@ -174,3 +174,22 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
 export function ratesFor(modelId: string): VendorRates | null {
   return VENDOR_RATES[modelId] ?? null;
 }
+
+/**
+ * ElevenLabs endpoints wired after the launch card, in the vendor's own
+ * units (API pricing page, read 19 September 2026). Kept out of
+ * `VENDOR_RATES`, which is keyed by catalogue models; the audio engine has
+ * none. `lib/elevenlabs.ts` prices from these, never from a literal of its own.
+ */
+export const ELEVENLABS_RATES = {
+  /** POST /v1/text-to-dialogue — model eleven_v3, at most 2,000 characters
+   *  and 10 voices per request, billed per character like text-to-speech. */
+  dialogue: { modelId: "eleven_v3", creditsPerChar: 1, maxChars: 2000, maxVoices: 10 },
+  /** POST /v1/speech-to-speech/{voice_id} — model eleven_multilingual_sts_v2,
+   *  $0.12 per minute of input audio. Facts only: the app does not call it
+   *  until PR C2 verifies the contract (see docs/four-suites-v2-plan.md). */
+  voiceChange: { modelId: "eleven_multilingual_sts_v2", usdPerMinute: 0.12 },
+  /** POST /v1/dubbing — $0.33 to $2.20 per minute by tier, an asynchronous
+   *  project with status and download calls. Not wired (PR C2). */
+  dubbing: { usdPerMinuteMin: 0.33, usdPerMinuteMax: 2.2 },
+} as const;
