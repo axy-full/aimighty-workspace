@@ -38,7 +38,7 @@ export const POST = withTenant(
           {
             code: "not_connected",
             error:
-              "Connect your Higgsfield account before checking its read-only contracts.",
+              "Connect your account before checking its read-only contracts.",
           },
           { status: 409, headers },
         );
@@ -57,7 +57,7 @@ export const POST = withTenant(
           {
             code: error.code,
             error:
-              "The Higgsfield connection is unavailable. Reconnect or try again later.",
+              "The connected account is unavailable. Reconnect or try again later.",
           },
           { status: error.status, headers },
         );
@@ -73,7 +73,7 @@ export const POST = withTenant(
         {
           code: "unavailable",
           error:
-            "Higgsfield read-only qualification is temporarily unavailable.",
+            "Read-only account qualification is temporarily unavailable.",
         },
         { status: 503, headers },
       );

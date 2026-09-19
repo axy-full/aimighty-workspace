@@ -45,6 +45,7 @@ import {
 import styles from "./atomik-suite.module.css";
 import { SuiteAgentPanel } from "./SuiteAgentPanel";
 import { AtomikGenerate } from "./AtomikGenerate";
+import { providerDisplayName } from "@/lib/vendorNames";
 
 type Drafts = {
   project: Project | null;
@@ -69,11 +70,11 @@ type Props = {
   pageTitle?: string;
 };
 const providerNames: Record<string, string> = {
-  byteplus: "BytePlus ModelArk",
-  google: "Google",
-  fal: "fal",
-  higgsfield: "Higgsfield",
-  elevenlabs: "ElevenLabs",
+  byteplus: providerDisplayName("byteplus"),
+  google: providerDisplayName("google"),
+  fal: providerDisplayName("fal"),
+  higgsfield: providerDisplayName("higgsfield"),
+  elevenlabs: providerDisplayName("elevenlabs"),
 };
 function provider(model: string) {
   if (
@@ -81,14 +82,14 @@ function provider(model: string) {
     model.startsWith("openai/") ||
     model.startsWith("google/")
   )
-    return "Vercel AI Gateway";
+    return providerDisplayName("vercel");
   const engine = MODELS.find((item) => item.id === model);
   return engine
     ? (providerNames[engine.provider] ?? engine.provider)
     : model.startsWith("eleven_") ||
         model === "music_v1" ||
         model === "sound_effects_v1"
-      ? "ElevenLabs"
+      ? providerDisplayName("elevenlabs")
       : "Provider unavailable";
 }
 const amount = (value: number | null, unit: string = "cr") =>

@@ -149,7 +149,7 @@ export async function activeWriter(): Promise<ActiveWriter> {
       provider: "byteplus",
       model: TEXT_MODEL(),
       label: "Seedream",
-      via: `BytePlus ModelArk · ${prettyModel(TEXT_MODEL())}`,
+      via: `Video account · ${prettyModel(TEXT_MODEL())}`,
       configured: Boolean(vendorKey("ark")),
     };
   }
@@ -159,7 +159,7 @@ export async function activeWriter(): Promise<ActiveWriter> {
       provider: "anthropic",
       model: CLAUDE_MODEL(),
       label: prettyModel(CLAUDE_MODEL()),
-      via: "Anthropic",
+      via: "Model provider, direct",
       configured: true,
     };
   }
@@ -174,9 +174,9 @@ export async function activeWriter(): Promise<ActiveWriter> {
     provider: "gateway",
     model: m,
     label: prettyModel(m),
-    via: textVendor(m) === "openai" ? "OpenAI direct" : vendorKey("gateway")
-      ? "Vercel AI Gateway (API key)"
-      : "Vercel AI Gateway (OIDC)",
+    via: textVendor(m) === "openai" ? "Language account, direct" : vendorKey("gateway")
+      ? "Model gateway (API key)"
+      : "Model gateway (OIDC)",
     configured: textVendor(m) !== "openai" && gatewayReachable(),
   };
 }
@@ -426,7 +426,7 @@ async function refineWithGateway(
   // Inline refinement has only legacy static writer pricing and is skipped
   // for subscribed workspaces. OpenAI planning belongs to the durable, quoted
   // Atomik path; a manual environment override must not create an unpriced call.
-  if (textVendor(model) === "openai") throw new Error("Use a quoted Atomik request for OpenAI prompt development. Inline refinement is unavailable for this model.");
+  if (textVendor(model) === "openai") throw new Error("Use a quoted Atomik request for prompt development. Inline refinement is unavailable for this model.");
   const auth = await languageAuth(model);
   const res = await gatewayPost(
     JSON.stringify({
@@ -525,7 +525,7 @@ export async function enhancePrompt(opts: {
 
   const key = vendorKey("ark");
   if (!key)
-    throw new Error("BytePlus ModelArk isn't connected for this workspace.");
+    throw new Error("The video account isn't connected for this workspace.");
   {
     const model = TEXT_MODEL();
     // A minute, not two: this is a $0.001 helper sitting in front of a paid

@@ -17,7 +17,7 @@ type NativeProject = Project & { astraNative?: AstraNativeSource };
 type RenderState = { runtime: Runtime; jobs: RenderJob[] };
 type ReviewedQuote = { quote: RenderQuote; requestId: string; source: Source; sourceKey: string; name: string; runtime: Runtime };
 const ACTIVE = new Set<RenderJob['status']>(['queued', 'starting', 'running', 'saving']);
-const STATUS: Record<RenderJob['status'], string> = { queued: 'Queued', starting: 'Starting Blender', running: 'Rendering', saving: 'Saving outputs', succeeded: 'Completed', failed: 'Failed', cancelled: 'Cancelled', uncertain: 'Needs reconciliation' };
+const STATUS: Record<RenderJob['status'], string> = { queued: 'Queued', starting: 'Starting the 3D runtime', running: 'Rendering', saving: 'Saving outputs', succeeded: 'Completed', failed: 'Failed', cancelled: 'Cancelled', uncertain: 'Needs reconciliation' };
 
 function sourceIdentity(project: NativeProject, source: Source) {
   const scene = serializeAstraScene(project.astraBlender ?? createAstraScene('product'));
@@ -106,7 +106,7 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
     try {
       const saved = readPendingAstraRender(localStorage, scope, project.id);
       if (saved) { setPending(saved); throw new Error('Recover the previous render request before requesting another quote.'); }
-      if (source === 'native' && !project.astraNative) throw new Error('Review and apply a native Blender proposal before rendering native code.');
+      if (source === 'native' && !project.astraNative) throw new Error('Review and apply a native 3D proposal before rendering native code.');
       const sourceKey = sourceIdentity(project, source);
       if (!(await latest.current.onSave())) throw new Error('Save this project before reviewing a native render quote.');
       if (!mounted.current) return;
@@ -172,13 +172,13 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
   const sourceName = source === 'native' ? project.astraNative?.name : (project.astraBlender ?? createAstraScene('product')).name;
   const registeredMissing = state?.jobs.some((job) => job.assetsRegistered && job.artifacts.some((artifact) => !project.assets.some((asset) => asset.id === artifact.assetId)));
 
-  return <section className={styles.panel} aria-label="Native Blender renders">
-    <div className={styles.heading}><h3>Render in Blender</h3><Server size={16} /></div>
-    <p>Run the saved source in native Blender. Keep the finished image and editable scene in your project library, with GLB when compatible.</p>
-    <div className={styles.status} data-ready={state?.runtime.configured === true}><i />{state ? state.runtime.configured ? `Blender ${state.runtime.blenderVersion} · Ready` : 'Runtime setup required' : active ? 'Checking Blender runtime…' : 'Sign in to render this project'}</div>
-    {state && !state.runtime.configured && <div className={styles.notice} role="status"><strong>Native rendering is unavailable</strong><p>{state.runtime.reason || 'A workspace administrator needs to connect the Blender runtime.'}</p><p>You can keep editing and download the portable Blender package.</p></div>}
-    <label className={styles.source}>Render source<select aria-label="Native render source" value={source} disabled={busy || !!pending} onChange={(event) => { setSource(event.target.value as Source); setQuote(null); }}><option value="scene">3D workspace scene</option><option value="native" disabled={!project.astraNative}>Native Blender program{project.astraNative ? '' : ' · Apply a proposal first'}</option></select></label>
-    <p>{source === 'native' ? `${sourceName || 'Native program'} runs in Blender. Its geometry is shown in the finished render, not in the browser scene editor.` : `${sourceName} uses the saved scene camera and output settings.`}</p>
+  return <section className={styles.panel} aria-label="Native 3D renders">
+    <div className={styles.heading}><h3>Render in the 3D runtime</h3><Server size={16} /></div>
+    <p>Run the saved source in native 3D. Keep the finished image and editable scene in your project library, with GLB when compatible.</p>
+    <div className={styles.status} data-ready={state?.runtime.configured === true}><i />{state ? state.runtime.configured ? `3D runtime ${state.runtime.blenderVersion} · Ready` : 'Runtime setup required' : active ? 'Checking 3D runtime…' : 'Sign in to render this project'}</div>
+    {state && !state.runtime.configured && <div className={styles.notice} role="status"><strong>Native rendering is unavailable</strong><p>{state.runtime.reason || 'A workspace administrator needs to connect the 3D runtime.'}</p><p>You can keep editing and download the portable 3D package.</p></div>}
+    <label className={styles.source}>Render source<select aria-label="Native render source" value={source} disabled={busy || !!pending} onChange={(event) => { setSource(event.target.value as Source); setQuote(null); }}><option value="scene">3D workspace scene</option><option value="native" disabled={!project.astraNative}>Native 3D program{project.astraNative ? '' : ' · Apply a proposal first'}</option></select></label>
+    <p>{source === 'native' ? `${sourceName || 'Native program'} runs in the 3D runtime. Its geometry is shown in the finished render, not in the browser scene editor.` : `${sourceName} uses the saved scene camera and output settings.`}</p>
     <button className={`${styles.button} ${styles.primary}`} disabled={!active || !state?.runtime.configured || busy || !!pending || !!storageError || !!activeJobs || !!uncertainJobs || source === 'native' && !project.astraNative} onClick={() => void review()}>{busy ? 'Preparing render…' : activeJobs ? 'Render in progress' : uncertainJobs ? 'Awaiting render reconciliation' : 'Review render quote'}</button>
     {pending && <div className={styles.notice}><strong>One render request needs confirmation</strong><p>Recovery checks the original request before resubmitting its same identity and price.</p><button className={styles.button} disabled={!active || busy} onClick={() => void submit(pending)}>Recover saved render request</button></div>}
     {(error || storageError) && <div className={styles.error} role="alert">{storageError || error}</div>}
@@ -189,29 +189,29 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
       const preview = job.artifacts.find((artifact) => artifact.kind === 'preview');
       const previewUrl = preview ? safeArtifact(preview) : null;
       return <article className={styles.job} key={job.id} aria-label={`Native render ${job.id}`}>
-        <div className={styles.jobTitle}><strong>{job.source === 'native' ? 'Native Blender program' : '3D workspace scene'}</strong><span data-status={job.status}>{STATUS[job.status]}</span></div>
+        <div className={styles.jobTitle}><strong>{job.source === 'native' ? 'Native 3D program' : '3D workspace scene'}</strong><span data-status={job.status}>{STATUS[job.status]}</span></div>
         <div className={styles.meta}><span>{dateLabel(job.createdAt)}</span><span>{job.billedCredits === null ? `${job.estimateCredits} cr reserved` : `${job.billedCredits} cr charged`}</span></div>
-        {ACTIVE.has(job.status) && <div className={styles.progress} role="status"><span>{job.status === 'queued' ? 'Waiting for the native worker' : job.status === 'starting' ? 'Preparing the saved source and assets' : job.status === 'saving' ? 'Registering finished files in your library' : 'Blender is processing the scene'}</span><progress aria-label="Native render in progress" /></div>}
+        {ACTIVE.has(job.status) && <div className={styles.progress} role="status"><span>{job.status === 'queued' ? 'Waiting for the native worker' : job.status === 'starting' ? 'Preparing the saved source and assets' : job.status === 'saving' ? 'Registering finished files in your library' : 'The 3D runtime is processing the scene'}</span><progress aria-label="Native render in progress" /></div>}
         {job.error && <p className={styles.error} role="alert">{job.error}</p>}
         {job.status === 'uncertain' && <p>This attempt needs reconciliation. Refresh its saved status; recovery does not start another render.</p>}
         {previewUrl && <a href={previewUrl} target="_blank" rel="noreferrer" aria-label="Open rendered preview">
           {/* Original authenticated output is served directly without an image proxy. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className={styles.preview} src={previewUrl} alt="Native Blender rendered preview" />
+          <img className={styles.preview} src={previewUrl} alt="Native 3D rendered preview" />
         </a>}
         {job.artifacts.length > 0 && <div className={styles.artifacts}>{job.artifacts.map((artifact) => {
           const url = safeArtifact(artifact);
           return url ? <a key={artifact.kind} href={`${url.split('?')[0]}?download=1`} aria-label={`Download rendered ${artifactName(artifact.kind)}`}><Download size={12} />{artifactName(artifact.kind)}</a> : null;
         })}</div>}
         {job.assetsRegistered && <div className={styles.library}><Check size={12} /><span>Outputs saved in your project library.</span></div>}
-        {job.status === 'succeeded' && !job.artifacts.some((artifact) => artifact.kind === 'glb') && <p>GLB is unavailable for this run. Use the .blend file to retain native Blender features.</p>}
+        {job.status === 'succeeded' && !job.artifacts.some((artifact) => artifact.kind === 'glb') && <p>GLB is unavailable for this run. Use the .blend file to retain native 3D features.</p>}
         {ACTIVE.has(job.status) && <div className={styles.jobActions}><button className={styles.button} disabled={!!cancelId || !enabled} onClick={() => void cancel(job)}><Square size={11} />{cancelId === job.id ? 'Stopping…' : 'Cancel render'}</button></div>}
         <details className={styles.details}><summary>Run details</summary><code>Request: {job.requestId}</code><code>Source: {job.sourceDigest.slice(0, 16)}…</code></details>
       </article>;
     })}</div>
-    {quote && <Dialog open onOpenChange={(open) => { if (!open && !busy) setQuote(null); }}><DialogContent className="ps ps-dialog" showCloseButton={!busy}><DialogHeader><DialogTitle>Run native Blender render</DialogTitle><DialogDescription>{project.name} · {quote.name}</DialogDescription></DialogHeader><div className={styles.quote}>
-      <p>This starts a native Blender job for the saved {quote.source === 'native' ? 'Python program' : '3D scene'}. The job and its outputs remain in render history after you close this page.</p>
-      <dl className={styles.quoteFacts}><dt>Render source</dt><dd>{quote.source === 'native' ? 'Native program' : '3D workspace'}</dd><dt>Blender</dt><dd>{quote.runtime.blenderVersion}</dd><dt>Runtime limit</dt><dd>{Math.ceil(quote.runtime.timeoutMs / 1000)} seconds</dd><dt>Outputs</dt><dd>PNG · .blend<br />GLB when compatible</dd><dt>Credit ceiling</dt><dd>{quote.quote.estimateCredits} cr</dd></dl>
+    {quote && <Dialog open onOpenChange={(open) => { if (!open && !busy) setQuote(null); }}><DialogContent className="ps ps-dialog" showCloseButton={!busy}><DialogHeader><DialogTitle>Run native 3D render</DialogTitle><DialogDescription>{project.name} · {quote.name}</DialogDescription></DialogHeader><div className={styles.quote}>
+      <p>This starts a native 3D job for the saved {quote.source === 'native' ? 'Python program' : '3D scene'}. The job and its outputs remain in render history after you close this page.</p>
+      <dl className={styles.quoteFacts}><dt>Render source</dt><dd>{quote.source === 'native' ? 'Native program' : '3D workspace'}</dd><dt>3D runtime</dt><dd>{quote.runtime.blenderVersion}</dd><dt>Runtime limit</dt><dd>{Math.ceil(quote.runtime.timeoutMs / 1000)} seconds</dd><dt>Outputs</dt><dd>PNG · .blend<br />GLB when compatible</dd><dt>Credit ceiling</dt><dd>{quote.quote.estimateCredits} cr</dd></dl>
       <p>{quote.quote.billingNote}</p>
       {(expired || staleQuote) && <div className={styles.error} role="alert">{staleQuote ? 'The source changed after this quote. Close this dialog and review a new quote.' : 'This quote expired. Close this dialog and review a new quote.'}</div>}
       {error && <div className={styles.error} role="alert">{error}</div>}

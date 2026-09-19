@@ -11,6 +11,8 @@
  * This module is pure (no database, no network) so the browser can reuse the
  * same constraint logic; the one-hour cache lives in catalogue-cache.ts.
  */
+import { neutralModelText } from "../vendorNames";
+
 export const CONNECTED_OUTPUT_TYPES = ["image", "video", "audio", "3d"] as const;
 export type ConnectedOutputType = (typeof CONNECTED_OUTPUT_TYPES)[number];
 export type ConnectedParameterType = "string" | "number" | "bool" | "string_array";
@@ -134,8 +136,14 @@ function text(value: unknown, max: number): string {
 }
 /** Product copy never names the provider; catalogue names are shown without it. */
 export function displayName(value: string) {
-  return value.replace(PROVIDER_NAME, "").replace(/\s{2,}/g, " ").trim();
+  return neutralModelText(value.replace(PROVIDER_NAME, "").replace(/\s{2,}/g, " ").trim());
 }
+
+/** Workflows the catalogue names only by their provider's brand. */
+const WORKFLOW_NAMES: Record<string, string> = {
+  hf_mult_motion_control: "Motion Transfer",
+  hf_mult_replace_object: "Object Swap",
+};
 export function mediaKindForRole(role: string): ConnectedMediaKind {
   if (/video/.test(role)) return "video";
   if (/audio/.test(role)) return "audio";
@@ -160,7 +168,7 @@ function parameter(value: unknown): ConnectedParameter {
     type: type as ConnectedParameterType,
   };
   if (value.description !== undefined)
-    out.description = text(value.description, 2000);
+    out.description = displayName(text(value.description, 2000));
   if (value.options !== undefined) {
     if (
       !Array.isArray(value.options) ||
@@ -217,7 +225,7 @@ function mediaSlot(value: unknown): ConnectedMediaSlot {
     slot.max = value.max as number;
   }
   if (value.description !== undefined)
-    slot.description = text(value.description, 2000);
+    slot.description = displayName(text(value.description, 2000));
   return slot;
 }
 export function parseConnectedModel(value: unknown): ConnectedModel {
@@ -250,7 +258,7 @@ export function parseConnectedModel(value: unknown): ConnectedModel {
     invalid();
   const model: ConnectedModel = {
     id,
-    name: displayName(text(value.name ?? id, 200)) || id,
+    name: WORKFLOW_NAMES[id] ?? (displayName(text(value.name ?? id, 200)) || displayName(id.replace(/_/g, " ")) || id),
     description: displayName(text(value.description ?? "", 4000)),
     outputType: value.output_type as ConnectedOutputType,
     parameters: parsedParameters,

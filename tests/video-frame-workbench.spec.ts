@@ -131,7 +131,7 @@ async function controlsFixture(page: Page, holdSource = false) {
   });
   await page.goto("/subatomik?project=frames-draft&page=motion-transfer");
   const data = await page.evaluateHandle(() => { const data = new DataTransfer(); data.setData("application/x-particl-asset", JSON.stringify({ kind: "upload", upload: { id: "frame-source" } })); return data; });
-  await page.getByLabel("Genjutsu source drop area").dispatchEvent("drop", { dataTransfer: data }); await data.dispose();
+  await page.getByLabel("Transform source drop area").dispatchEvent("drop", { dataTransfer: data }); await data.dispose();
   await expect(page.getByRole("button", { name: "Extract start frame", exact: true })).toBeEnabled();
   return { writes, pngs, filings, errors, release, get captures() { return captures; } };
 }
@@ -157,12 +157,12 @@ test("leaving the selected project while extracting cannot upload or attach a st
   await page.getByRole("button", { name: "Extract start frame", exact: true }).click();
   await expect.poll(() => f.captures).toBe(1);
   await expect(page.getByRole("button", { name: "Remove source", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toBeDisabled();
   await page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Atomik Super Agent", exact: true }).click();
   await expect(page).toHaveURL(/\/atomik\?/);
   f.release();
   await expect(page.getByRole("region", { name: "Atomik Super Agent suite", exact: true }).getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Genjutsu source preview")).toHaveCount(0);
+  await expect(page.getByLabel("Transform source preview")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Extract start frame", exact: true })).toHaveCount(0);
   expect(f.writes).toEqual([]); expect(f.filings).toEqual([]); expect(f.errors).toEqual([]);
 });

@@ -64,7 +64,7 @@ function originalAsset(job: Job): Asset | null {
     asset.generationId !== original.generationId || asset.kind !== "video" || asset.mime !== "video/mp4" || asset.url !== `/api/media/${original.generationId}`) return null;
   return { id: original.generationId, generationId: original.generationId, url: asset.url,
     name: `Marketing video · ${job.input.prompt.slice(0, 100)}`, kind: "video", mime: "video/mp4", category: "Campaign video",
-    description: `Higgsfield Marketing Video · ${job.input.duration}s · ${job.input.resolution} · ${job.input.aspectRatio}`,
+    description: `Marketing Video · ${job.input.duration}s · ${job.input.resolution} · ${job.input.aspectRatio}`,
     prompt: job.input.prompt, status: "Draft", version: 1, locked: false, refs: [] };
 }
 function defaultInput(project: Project): ConsumerVideoInput {
@@ -217,41 +217,41 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
     catch (reason) { if (live.current && lifecycle.current === token) setError(reason instanceof Error ? reason.message : "The original could not be attached."); }
     finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
   }
-  return <section className={`suite-panel ${styles.panel}`} aria-label="Higgsfield Marketing Video">
-    <div className="suite-section-heading"><div><h2>Higgsfield Marketing Video</h2><p>Create a campaign video from an editable prompt using the workspace owner’s connected Higgsfield account.</p></div><span className="suite-badge">Higgsfield · Video</span></div>
+  return <section className={`suite-panel ${styles.panel}`} aria-label="Marketing Video">
+    <div className="suite-section-heading"><div><h2>Marketing Video</h2><p>Create a campaign video from an editable prompt using the workspace owner’s connected account.</p></div><span className="suite-badge">Connected · Video</span></div>
     {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.owner === false ? <p className="suite-footnote">The workspace owner can use this connected account. Your Particl generation tools remain available above.</p> : <>
       <p className="suite-footnote">This prompt flow sends the text and settings below. Product photos, cast images and the reference ad above use the separate Particl engine workflow.</p>
-      {capability && !capability.connected && <p className="suite-footnote">Connect or reconnect the owner’s Higgsfield marketing account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12}/></a>.</p>}
+      {capability && !capability.connected && <p className="suite-footnote">Connect or reconnect the owner’s connected marketing account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12}/></a>.</p>}
       {capability?.suspended && <p role="status">Rendering is paused for this workspace. Saved jobs can still be reviewed.</p>}
       <fieldset disabled={!enabled || !capability?.owner || !!busy} className="suite-fields">
-        <label>Creative format<select aria-label="Higgsfield video creative format" value={input.mode ?? ""} onChange={event => update({ ...input, mode: event.target.value as NonNullable<ConsumerVideoInput["mode"]> })}>
+        <label>Creative format<select aria-label="Video creative format" value={input.mode ?? ""} onChange={event => update({ ...input, mode: event.target.value as NonNullable<ConsumerVideoInput["mode"]> })}>
           {input.mode === undefined && <option value="">UGC (provider default)</option>}
           {CONSUMER_VIDEO_MODES.map(mode => <option key={mode} value={mode}>{modeLabels[mode]}</option>)}
         </select></label>
         <p className="suite-footnote">UGC and try-on formats may introduce a presenter or model. Review generated dialogue and commercial claims before publishing.</p>
-        <label className={styles.prompt}>Video prompt<textarea aria-label="Higgsfield video prompt" rows={6} maxLength={5000} value={input.prompt} onChange={event => update({ ...input, prompt: event.target.value })}/><small>{input.prompt.length}/5000</small></label>
+        <label className={styles.prompt}>Video prompt<textarea aria-label="Video prompt" rows={6} maxLength={5000} value={input.prompt} onChange={event => update({ ...input, prompt: event.target.value })}/><small>{input.prompt.length}/5000</small></label>
         <div className={styles.settings}>
-          <label>Duration<select aria-label="Higgsfield video duration" value={input.duration} onChange={event => update({ ...input, duration: Number(event.target.value) })}>{[12,13,14,15].map(value => <option key={value} value={value}>{value} seconds</option>)}</select></label>
-          <label>Resolution<select aria-label="Higgsfield video resolution" value={input.resolution} onChange={event => update({ ...input, resolution: event.target.value as ConsumerVideoInput["resolution"] })}>{CONSUMER_VIDEO_RESOLUTIONS.map(value => <option key={value}>{value}</option>)}</select></label>
-          <label>Aspect ratio<select aria-label="Higgsfield video aspect ratio" value={input.aspectRatio} onChange={event => update({ ...input, aspectRatio: event.target.value as ConsumerVideoInput["aspectRatio"] })}>{CONSUMER_VIDEO_RATIOS.map(value => <option key={value}>{value}</option>)}</select></label>
+          <label>Duration<select aria-label="Video duration" value={input.duration} onChange={event => update({ ...input, duration: Number(event.target.value) })}>{[12,13,14,15].map(value => <option key={value} value={value}>{value} seconds</option>)}</select></label>
+          <label>Resolution<select aria-label="Video resolution" value={input.resolution} onChange={event => update({ ...input, resolution: event.target.value as ConsumerVideoInput["resolution"] })}>{CONSUMER_VIDEO_RESOLUTIONS.map(value => <option key={value}>{value}</option>)}</select></label>
+          <label>Aspect ratio<select aria-label="Video aspect ratio" value={input.aspectRatio} onChange={event => update({ ...input, aspectRatio: event.target.value as ConsumerVideoInput["aspectRatio"] })}>{CONSUMER_VIDEO_RATIOS.map(value => <option key={value}>{value}</option>)}</select></label>
         </div>
         <label className={styles.checkbox}><input type="checkbox" checked={input.generateAudio} onChange={event => update({ ...input, generateAudio: event.target.checked })}/>Generate audio</label>
       </fieldset>
-      <div className={styles.actions}><button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get Higgsfield video quote"}</button><button type="button" className="suite-button" disabled={!enabled || !!busy} onClick={() => void refresh()}><RefreshCw size={14}/>Refresh saved video jobs</button></div>
+      <div className={styles.actions}><button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get video quote"}</button><button type="button" className="suite-button" disabled={!enabled || !!busy} onClick={() => void refresh()}><RefreshCw size={14}/>Refresh saved video jobs</button></div>
       {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
       {!!missingAttempts.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another video.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missingAttempts[0])}>Recover earlier submission</button></div>}
-      {selected?.status === "quoted" && <div className={styles.quote} aria-label="Higgsfield video quote">
-        <strong>{selected.quoteCredits} Higgsfield credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
+      {selected?.status === "quoted" && <div className={styles.quote} aria-label="Video quote">
+        <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
         <small>Creative format · {modeLabel(selected.input.mode)}</small>
         <p>{matches ? `${selected.input.duration} seconds · ${selected.input.resolution} · ${selected.input.aspectRatio} · ${selected.input.generateAudio ? "with audio" : "without audio"}` : "The prompt or settings changed. Request a new quote before generating."}</p>
-        <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} Higgsfield’s active wallet is shared across its connected clients. Particl checks the wallet and exact price again before submission.</p>
-        <label className={styles.checkbox}><input type="checkbox" checked={walletReviewed} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={event => setWalletReviewed(event.target.checked)}/>Charge {selected.quoteCredits} Higgsfield credits to {selected.workspaceName} for this video.</label>
-        <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Generate video · ${selected.quoteCredits} Higgsfield credits`}</button>
+        <p className="suite-footnote">{selected.quoteExpiresAt > clock ? `Quote valid until ${new Date(selected.quoteExpiresAt).toLocaleTimeString()}.` : "This quote expired. Request a fresh quote."} The connected account’s active wallet is shared across its connected clients. Particl checks the wallet and exact price again before submission.</p>
+        <label className={styles.checkbox}><input type="checkbox" checked={walletReviewed} disabled={!matches || !!busy || attempts.includes(selected.id)} onChange={event => setWalletReviewed(event.target.checked)}/>Charge {selected.quoteCredits} connected credits to {selected.workspaceName} for this video.</label>
+        <button type="button" className="suite-primary" disabled={!canSubmit} onClick={() => void act("submit")}>{busy === "submit" ? "Submitting once…" : `Generate video · ${selected.quoteCredits} connected credits`}</button>
       </div>}
-      {!!jobs.length && <div className={styles.jobs} aria-label="Saved Higgsfield video jobs">{jobs.map(job => {
+      {!!jobs.length && <div className={styles.jobs} aria-label="Saved video jobs">{jobs.map(job => {
         const original = originalAsset(job), attached = original && project.assets.some(asset => asset.generationId === original.generationId);
         const wait = Math.max(0, Math.ceil(((nextPoll[job.id] ?? 0) - clock) / 1000));
-        return <article key={job.id} className={styles.job}><div><strong>{job.status === "completed" ? original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable" : job.status === "accepted" ? "Video in progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || attempts.includes(job.id) && job.status === "quoted" ? "Submission needs reconciliation" : job.status === "failed" ? "Video failed" : "Saved quote"}</strong><span>{job.quoteCredits} Higgsfield credits</span></div>
+        return <article key={job.id} className={styles.job}><div><strong>{job.status === "completed" ? original ? "Original ready" : job.originalAvailability === "deleted" ? "Completed · original deleted" : "Completed · original unavailable" : job.status === "accepted" ? "Video in progress" : job.status === "quoted" && job.quoteExpired === true ? "Expired quote · no dispatch recorded" : job.status === "uncertain" || job.status === "dispatching" || attempts.includes(job.id) && job.status === "quoted" ? "Submission needs reconciliation" : job.status === "failed" ? "Video failed" : "Saved quote"}</strong><span>{job.quoteCredits} connected credits</span></div>
           <p>{job.input.prompt}</p><small>{modeLabel(job.input.mode)} · {job.input.duration}s · {job.input.resolution} · {job.input.aspectRatio} · {job.workspaceName}</small>
           {job.status === "quoted" && !attempts.includes(job.id) && <button type="button" className="suite-text-button" disabled={!!busy} onClick={() => { update(job.input); setSelectedId(job.id); setWalletReviewed(false); }}>Review this saved quote</button>}
           {(job.status === "accepted" || job.status === "uncertain" && !!job.providerReceipt) && <button type="button" className="suite-button" disabled={!!busy || wait > 0 || !capability?.connected} onClick={() => void act("status", job)}>{wait ? `Check again in ${wait}s` : job.status === "uncertain" ? "Recover saved video request" : "Check video result"}</button>}

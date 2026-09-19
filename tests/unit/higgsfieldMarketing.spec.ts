@@ -307,7 +307,7 @@ test("invalid preset pages log only bounded schema diagnostics and keep rejectin
       { ...workspace("catalog_invalid"), usesPlatformKeys: true },
       async () => {
         await expect(listMarketingPresets()).rejects.toMatchObject({
-          message: "Higgsfield returned an unusable preset page.",
+          message: "The connected account returned an unusable preset page.",
           status: 503,
           code: "invalid_response",
         });
@@ -373,13 +373,13 @@ test("estimate trusts only positive USD, bounds JSON, and redacts vendor/transpo
   globalThis.fetch = async () =>
     new Response("PRIVATE CREDENTIAL", { status: 401 });
   await expect(estimateMarketingInput(input)).rejects.toThrow(
-    "This Higgsfield connection cannot access Marketing Studio.",
+    "This connected account cannot access Marketing Studio.",
   );
   globalThis.fetch = async () => {
     throw new Error("PRIVATE TOKEN");
   };
   await expect(estimateMarketingInput(input)).rejects.toThrow(
-    "Higgsfield pricing or presets could not be reached.",
+    "Marketing pricing or presets could not be reached.",
   );
   await expect(
     marketingJson(new Response("x".repeat(512 * 1024 + 1))),

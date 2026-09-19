@@ -56,7 +56,7 @@ export const PUT = withTenant(async function PUT(req: Request) {
   const value = String(body.value ?? "").trim();
   if (!NAMES.has(name)) return NextResponse.json({ error: "Unknown vendor." }, { status: 400 });
   if (value.length < 8 || value.length > 4096 || /\s/.test(value)) return NextResponse.json({ error: "That doesn't look like a key." }, { status: 400 });
-  if (name === "higgsfield" && !/^[^:\s]+:[^:\s]+$/.test(value)) return NextResponse.json({ error: "Enter the Higgsfield API key ID and secret separated by a colon: KEY_ID:KEY_SECRET." }, { status: 400 });
+  if (name === "higgsfield" && !/^[^:\s]+:[^:\s]+$/.test(value)) return NextResponse.json({ error: "Enter the identity account API key ID and secret separated by a colon: KEY_ID:KEY_SECRET." }, { status: 400 });
   await updateWorkspaceVendorKey(ws.id, name, value, got.user.id);
   return NextResponse.json({ ok: true, name, masked: mask(value) });
 }, { requireRequestScope: true });

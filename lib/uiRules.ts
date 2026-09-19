@@ -18,7 +18,7 @@ export function engineSuggestion(o: { prompt: string; kind: "video" | "image"; f
   const s = suggestEngine(o.prompt);
   if (s.engine !== "kling" || (o.family ?? "").startsWith("kling")) return null;
   const word = s.why.split(":")[0];
-  return { modelId: ENGINE_MODEL.kling, label: `Kling for ${word} — switch`, why: s.why };
+  return { modelId: ENGINE_MODEL.kling, label: `Kinetic 3.0 for ${word} — switch`, why: s.why };
 }
 
 export type Lineage = { id: string; kind?: string; prompt?: string; params?: Record<string, unknown> };

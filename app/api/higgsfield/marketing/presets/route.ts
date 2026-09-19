@@ -31,7 +31,7 @@ export const GET = withTenant(async (req: Request) => {
       {
         configured: false,
         error:
-          "Connect Higgsfield before discovering Marketing Studio presets.",
+          "Connect the identity account before discovering Marketing Studio presets.",
         code: "not_configured",
       },
       { status: 503, headers },

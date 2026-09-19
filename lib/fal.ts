@@ -62,11 +62,11 @@ function explain(status: number, json: unknown): string {
   } else if (typeof j.detail === "string") detail = j.detail;
   else if (j.message) detail = j.message;
   else if (j.error) detail = j.error;
-  if (status === 401 || status === 403) return `fal.ai rejected the key (${status})${detail ? ` — ${detail}` : ""}.`;
-  if (status === 402) return "fal.ai account is out of credit — top it up at fal.ai/dashboard/billing.";
-  if (status === 422) return `fal.ai refused the request: ${detail || "invalid input"}.`;
-  if (status === 429) return "fal.ai rate limit — too many requests at once. Try a new request later.";
-  return `fal.ai returned ${status}${detail ? `: ${detail}` : ""}.`;
+  if (status === 401 || status === 403) return `The render service rejected the key (${status})${detail ? ` — ${detail}` : ""}.`;
+  if (status === 402) return "The render service account is out of credit — top it up in the render account billing settings.";
+  if (status === 422) return `The render service refused the request: ${detail || "invalid input"}.`;
+  if (status === 429) return "The render service rate limit — too many requests at once. Try a new request later.";
+  return `The render service returned ${status}${detail ? `: ${detail}` : ""}.`;
 }
 
 export class FalHttpError extends Error {
@@ -91,10 +91,10 @@ async function call<T>(url: string, init: RequestInit, timeoutMs = 60_000): Prom
       // as retryable, and a submit that may already have been accepted (and
       // billed) must never be sent a second time on its own.
       throw new Error(
-        `fal.ai did not answer within ${Math.round(timeoutMs / 1000)}s. The job may still be on their queue.`
+        `The render service did not answer within ${Math.round(timeoutMs / 1000)}s. The job may still be on their queue.`
       );
     }
-    throw new Error(`Could not reach fal.ai: ${err.message}`);
+    throw new Error(`Could not reach the render service: ${err.message}`);
   }
   const text = await res.text();
   let json: unknown = null;
@@ -112,7 +112,7 @@ export async function falSubmit(model: string, input: unknown, webhookUrl?: stri
     headers: { Authorization: auth(), "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!queued || typeof queued.request_id !== "string" || !queued.request_id) throw new Error("fal.ai returned no usable request handle. Submission may have been accepted.");
+  if (!queued || typeof queued.request_id !== "string" || !queued.request_id) throw new Error("The render service returned no usable request handle. Submission may have been accepted.");
   return queued;
 }
 
@@ -172,7 +172,7 @@ export async function falAwait<T>(
     const st = await falStatus(model, requestId);
     if (st.status === "COMPLETED") return falResult<T>(model, requestId);
     if (Date.now() - started > timeoutMs) {
-      throw new Error(`fal.ai is still working after ${Math.round(timeoutMs / 1000)}s — the job (${requestId}) is still on their queue and will be picked up again.`);
+      throw new Error(`The render service is still working after ${Math.round(timeoutMs / 1000)}s — the job (${requestId}) is still on their queue and will be picked up again.`);
     }
     await new Promise((r) => setTimeout(r, pollMs));
   }

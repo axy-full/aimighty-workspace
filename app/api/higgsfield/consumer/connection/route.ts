@@ -22,7 +22,7 @@ export const GET = withTenant(async (req: Request) => {
     return Response.json(await getConsumerConnection(identity), { headers });
   } catch {
     return Response.json(
-      { error: "The Higgsfield connection is temporarily unavailable." },
+      { error: "The connected account is temporarily unavailable." },
       { status: 503, headers },
     );
   }

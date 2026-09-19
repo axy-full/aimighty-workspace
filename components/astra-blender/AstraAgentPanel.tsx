@@ -58,10 +58,10 @@ export function AstraAgentPanel({ project, scope, enabled, onSave, onApply }: { 
     finally { setBusy(false); }
   }
   return <section className={styles.panel} aria-label="Astra scene assistant">
-    <h3>Build with GPT-6 Astra</h3>
-    <div className={styles.modeSwitch} role="group" aria-label="Astra workflow"><button className={styles.button} aria-pressed={mode === 'scene'} onClick={() => setMode('scene')}>Visual scene</button><button className={styles.button} aria-pressed={mode === 'native'} onClick={() => setMode('native')}>Native Blender</button></div>
-    <p>{mode === 'native' ? 'Use Blender Python for detailed modeling, geometry nodes, materials, rigging, animation, camera tours, compositing and simulation setups. Review the source, then render it in Output.' : 'Describe geometry, lighting, materials or movement. Astra uses your scene and up to 64 recent project assets. Review the proposal before applying it.'}</p>
-    {mode === 'native' && <details><summary>Start a Blender workflow</summary><div className={styles.modeSwitch}>{[
+    <h3>Build with Astra</h3>
+    <div className={styles.modeSwitch} role="group" aria-label="Astra workflow"><button className={styles.button} aria-pressed={mode === 'scene'} onClick={() => setMode('scene')}>Visual scene</button><button className={styles.button} aria-pressed={mode === 'native'} onClick={() => setMode('native')}>Native 3D</button></div>
+    <p>{mode === 'native' ? 'Use 3D runtime Python for detailed modeling, geometry nodes, materials, rigging, animation, camera tours, compositing and simulation setups. Review the source, then render it in Output.' : 'Describe geometry, lighting, materials or movement. Astra uses your scene and up to 64 recent project assets. Review the proposal before applying it.'}</p>
+    {mode === 'native' && <details><summary>Start a 3D runtime workflow</summary><div className={styles.modeSwitch}>{[
       ['Modeling', 'Refine this scene with production mesh modeling, modifiers and clean named objects.'],
       ['Geometry nodes', 'Create a reusable procedural geometry-node setup with exposed controls for this scene.'],
       ['Materials & UV', 'Develop physically based material nodes and appropriate UVs for the selected scene objects.'],
@@ -75,19 +75,19 @@ export function AstraAgentPanel({ project, scope, enabled, onSave, onApply }: { 
     <details><summary>Visual references · {referenceIds.length}/4</summary><p>Attach project images or a previous native render for Astra to inspect and refine.</p><div className={styles.referenceList}>{[...project.assets, ...(project.sharedAssets ?? [])].filter((asset, index, all) => asset.kind === 'image' && all.findIndex(item => item.id === asset.id) === index).map(asset => <label key={asset.id}><input type="checkbox" checked={referenceIds.includes(asset.id)} disabled={!referenceIds.includes(asset.id) && referenceIds.length >= 4} onChange={event => setReferenceIds(ids => event.target.checked ? [...ids, asset.id] : ids.filter(id => id !== asset.id))} />{asset.name}</label>)}</div></details>
     <button className={`${styles.button} ${styles.primary}`} disabled={!!recovery || !active || !model || running || busy || request.trim().length < 3} onClick={() => void review()}>{running ? 'Astra is working…' : busy ? 'Preparing scene…' : 'Review Astra quote'}</button>
     {recovery && <button className={styles.button} disabled={!enabled || busy} onClick={() => setTarget(recovery)}>Recover saved Astra request</button>}
-    <p className={styles.notice}>GPT-6 Astra · choose effort with the quote. Scene proposals and Blender rendering are separate actions.</p>
-    {state && !model && <p className={styles.error}>GPT-6 Astra is not available for this workspace. Check model access and the OpenAI connection in Workspace → Engines.</p>}
+    <p className={styles.notice}>Astra · choose effort with the quote. Scene proposals and 3D runtime rendering are separate actions.</p>
+    {state && !model && <p className={styles.error}>Astra is not available for this workspace. Check model access and the language account in Workspace → Engines.</p>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {jobs.slice(0, 8).map(job => {
       const plan = job.plan, proposal = plan?.astraBlender, native = plan?.astraNative;
       const applied = project.plans.some(item => item.id === job.id && item.applied);
-      return <article key={job.id} className={styles.result}><strong>{job.status === 'succeeded' ? native ? 'Native Blender proposal' : 'Scene proposal' : job.status}</strong><small>{job.credits ?? job.estimateCredits} cr{job.credits == null ? ' reserved' : ''} · {job.effort || 'default effort'}</small>
+      return <article key={job.id} className={styles.result}><strong>{job.status === 'succeeded' ? native ? 'Native 3D proposal' : 'Scene proposal' : job.status}</strong><small>{job.credits ?? job.estimateCredits} cr{job.credits == null ? ' reserved' : ''} · {job.effort || 'default effort'}</small>
         {job.error && <p role="alert" className={styles.error}>{job.error}</p>}
         {plan && proposal && <><p>{plan.summary}</p><ol>{plan.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
           <details><summary>{proposal.scene.objects.length} objects · {proposal.scene.lights.length} lights · review scene</summary><div className={styles.diff}>{proposal.scene.objects.map(object => <div key={object.id}>{object.name} · {object.type} · {object.position.join(', ')} m</div>)}</div></details>
           <button className={styles.button} disabled={!enabled || busy || applied} onClick={async () => { setBusy(true); try { await onApply(plan); setError(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>{applied ? 'Applied to scene' : 'Apply scene proposal'}</button>
         </>}
-        {plan && native && <><p>{plan.summary}</p><ol>{plan.steps.map((step, index) => <li key={index}>{step}</li>)}</ol><details><summary>Review Blender Python · {native.source.name}</summary><pre className={styles.sourceCode}>{native.source.program}</pre><p>{native.source.assetIds.length} asset inputs · {native.source.baseBlendAssetId ? 'Continues from a saved .blend' : 'Starts from the visual scene'}</p></details><button className={styles.button} disabled={!enabled || busy || applied} onClick={async () => { setBusy(true); try { await onApply(plan); setError(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>{applied ? 'Applied to native source' : 'Apply native proposal'}</button></>}
+        {plan && native && <><p>{plan.summary}</p><ol>{plan.steps.map((step, index) => <li key={index}>{step}</li>)}</ol><details><summary>Review 3D runtime Python · {native.source.name}</summary><pre className={styles.sourceCode}>{native.source.program}</pre><p>{native.source.assetIds.length} asset inputs · {native.source.baseBlendAssetId ? 'Continues from a saved .blend' : 'Starts from the visual scene'}</p></details><button className={styles.button} disabled={!enabled || busy || applied} onClick={async () => { setBusy(true); try { await onApply(plan); setError(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>{applied ? 'Applied to native source' : 'Apply native proposal'}</button></>}
       </article>;
     })}
     {target && enabled && <AtomikRunDialog project={project} scope={scope} models={model ? [model] : []} target={target} onSave={onSave} onClose={() => { setTarget(null); void refresh(); }} onQueued={() => { setTarget(null); void refresh(); }} />}

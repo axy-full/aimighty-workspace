@@ -76,7 +76,7 @@ export const GET = withTenant(async function GET() {
     const a = addedBy.get(p.id) ?? 0;
     const unit = p.id === "elevenlabs" ? "credits" as const : "usd" as const;
     return {
-      id: p.id, label: p.id === "google" ? "Google Gemini" : p.label, spent, added: a, remaining: a - spent, unit,
+      id: p.id, label: p.label, spent, added: a, remaining: a - spent, unit,
       ...(unit === "credits" ? { addedCredits: creditsBy.get(p.id) ?? 0, spentCredits: audioCredits, remainingCredits: (creditsBy.get(p.id) ?? 0) - audioCredits } : {}),
     };
   });

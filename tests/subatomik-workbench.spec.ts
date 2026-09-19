@@ -398,16 +398,16 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
       .getByRole("link"),
   ).toHaveCount(4);
   await expect(
-    page.getByRole("button", { name: "Review Genjutsu cost", exact: true }),
+    page.getByRole("button", { name: "Review transform cost", exact: true }),
   ).toBeDisabled();
   await useCard(page, "upload:motion-original");
   await dropIdentity(
     page,
-    page.getByLabel("Genjutsu reference drop area"),
+    page.getByLabel("Transform reference drop area"),
     "wardrobe-original",
     "upload",
   );
-  await expect(page.getByLabel("Genjutsu source preview")).toHaveAttribute(
+  await expect(page.getByLabel("Transform source preview")).toHaveAttribute(
     "src",
     "/api/uploads/motion-original",
   );
@@ -419,7 +419,7 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
   ).toBeVisible();
   await dropIdentity(
     page,
-    page.getByLabel("Genjutsu reference drop area"),
+    page.getByLabel("Transform reference drop area"),
     "world-original",
     "upload",
   );
@@ -447,10 +447,10 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
     .getByRole("button", { name: "Close reference preview", exact: true })
     .click();
   await page
-    .getByLabel("Genjutsu creative direction")
+    .getByLabel("Transform creative direction")
     .fill("Recast in a silver suit.");
   await page
-    .getByRole("button", { name: "Review Genjutsu cost", exact: true })
+    .getByRole("button", { name: "Review transform cost", exact: true })
     .click();
   const approve = page.getByRole("checkbox", {
     name: "Approve 12 cr for this generation.",
@@ -462,10 +462,10 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
     page.getByRole("button", { name: "Generate · 12 cr", exact: true }),
   ).toBeDisabled();
   await approve.check();
-  await page.getByLabel("Genjutsu output quality").selectOption("480p");
-  await expect(page.getByLabel("Genjutsu generation quote")).toHaveCount(0);
+  await page.getByLabel("Transform output quality").selectOption("480p");
+  await expect(page.getByLabel("Transform generation quote")).toHaveCount(0);
   await page
-    .getByRole("button", { name: "Review Genjutsu cost", exact: true })
+    .getByRole("button", { name: "Review transform cost", exact: true })
     .click();
   await expect(approve).not.toBeChecked();
   await approve.check();
@@ -494,11 +494,11 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
   await page
     .getByRole("button", { name: "Refresh results", exact: true })
     .click();
-  await expect(page.getByLabel("Genjutsu after preview")).toHaveAttribute(
+  await expect(page.getByLabel("Transform after preview")).toHaveAttribute(
     "src",
     "/api/media/genjutsu-result?stream=1",
   );
-  await expect(page.getByLabel("Genjutsu before preview")).toHaveAttribute(
+  await expect(page.getByLabel("Transform before preview")).toHaveAttribute(
     "src",
     "/api/uploads/motion-original",
   );
@@ -529,28 +529,28 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
     .press("End");
   expect(
     await page
-      .getByLabel("Genjutsu before preview", { exact: true })
+      .getByLabel("Transform before preview", { exact: true })
       .evaluate((video: HTMLVideoElement) =>
         Math.abs(
           video.currentTime -
             (
               document.querySelector(
-                '[aria-label="Genjutsu after preview"]',
+                '[aria-label="Transform after preview"]',
               ) as HTMLVideoElement
             ).currentTime,
         ),
       ),
   ).toBeLessThan(0.12);
   await page
-    .getByLabel("Genjutsu creative direction")
+    .getByLabel("Transform creative direction")
     .fill("An unsaved later idea.");
-  await page.getByLabel("Genjutsu output quality").selectOption("720p");
+  await page.getByLabel("Transform output quality").selectOption("720p");
   await page.getByRole("button", { name: "Recreate", exact: true }).click();
-  await expect(page.getByLabel("Genjutsu creative direction")).toHaveValue(
+  await expect(page.getByLabel("Transform creative direction")).toHaveValue(
     "Recast in a silver suit.",
   );
-  await expect(page.getByLabel("Genjutsu output quality")).toHaveValue("480p");
-  await expect(page.getByLabel("Genjutsu generation quote")).toHaveCount(0);
+  await expect(page.getByLabel("Transform output quality")).toHaveValue("480p");
+  await expect(page.getByLabel("Transform generation quote")).toHaveCount(0);
   expect(f.posts).toHaveLength(1);
   expect(
     await page.evaluate(
@@ -579,16 +579,16 @@ test("Object Swap recovers the exact request after reload and cannot turn a lost
   await page.goto("/subatomik?project=viral-draft&page=object-swap&account=particl");
   await dropIdentity(
     page,
-    page.getByLabel("Genjutsu source drop area"),
+    page.getByLabel("Transform source drop area"),
     "saved-camera-take",
     "gen",
   );
-  await expect(page.getByLabel("Genjutsu source preview")).toHaveAttribute(
+  await expect(page.getByLabel("Transform source preview")).toHaveAttribute(
     "src",
     "/api/media/saved-camera-take",
   );
   await page
-    .getByRole("button", { name: "Review Genjutsu cost", exact: true })
+    .getByRole("button", { name: "Review transform cost", exact: true })
     .click();
   await page
     .getByRole("checkbox", {
@@ -601,15 +601,15 @@ test("Object Swap recovers the exact request after reload and cannot turn a lost
     .click();
   await expect(
     page.getByRole("button", {
-      name: "Recover saved Genjutsu request",
+      name: "Recover saved transform request",
       exact: true,
     }),
   ).toBeEnabled();
   await page.reload();
-  await expect(page.getByLabel("Genjutsu creative direction")).toBeDisabled();
+  await expect(page.getByLabel("Transform creative direction")).toBeDisabled();
   await page
     .getByRole("button", {
-      name: "Recover saved Genjutsu request",
+      name: "Recover saved transform request",
       exact: true,
     })
     .click();
@@ -623,7 +623,7 @@ test("Object Swap recovers the exact request after reload and cannot turn a lost
   });
   await expect(
     page.getByRole("button", {
-      name: "Recover saved Genjutsu request",
+      name: "Recover saved transform request",
       exact: true,
     }),
   ).toHaveCount(0);
@@ -639,7 +639,7 @@ test("queued cancellation remains pending until the existing job confirms it", a
   await page.goto("/subatomik?project=viral-draft&page=motion-transfer&account=particl");
   await useCard(page, "upload:motion-original");
   await page
-    .getByRole("button", { name: "Review Genjutsu cost", exact: true })
+    .getByRole("button", { name: "Review transform cost", exact: true })
     .click();
   await page
     .getByRole("checkbox", {
@@ -675,33 +675,33 @@ test("queued cancellation remains pending until the existing job confirms it", a
   expect(f.errors).toEqual([]);
 });
 
-test("connected Genjutsu is the default: it reviews media transfer and its own 1080p wallet quote, then retains and edits the original", async ({
+test("connected transform is the default: it reviews media transfer and its own 1080p wallet quote, then retains and edits the original", async ({
   page,
 }, info) => {
   const f = await fixture(page);
   await page.goto("/subatomik?project=viral-draft&page=object-swap");
   await expect(
     page.getByRole("region", {
-      name: "Connected account Genjutsu",
+      name: "Connected account transform",
       exact: true,
     }),
   ).toBeVisible();
   await useCard(page, "upload:motion-original");
   await dropIdentity(
     page,
-    page.getByLabel("Connected Genjutsu reference drop area"),
+    page.getByLabel("Connected transform reference drop area"),
     "wardrobe-original",
     "upload",
   );
   await page
-    .getByLabel("Connected Genjutsu creative direction")
+    .getByLabel("Connected transform creative direction")
     .fill("Recast the bottle in glass.");
   await page
-    .getByLabel("Connected Genjutsu output quality")
+    .getByLabel("Connected transform output quality")
     .selectOption("1080p");
   await expect(
     page.getByRole("button", {
-      name: "Get connected Genjutsu quote",
+      name: "Get connected transform quote",
       exact: true,
     }),
   ).toBeDisabled();
@@ -713,9 +713,9 @@ test("connected Genjutsu is the default: it reviews media transfer and its own 1
     })
     .check();
   await page
-    .getByRole("button", { name: "Get connected Genjutsu quote", exact: true })
+    .getByRole("button", { name: "Get connected transform quote", exact: true })
     .click();
-  await expect(page.getByLabel("Connected Genjutsu quote")).toContainText(
+  await expect(page.getByLabel("Connected transform quote")).toContainText(
     "18 connected credits · Fixture wallet",
   );
   expect(f.consumerPosts[0]).toMatchObject({
@@ -731,32 +731,32 @@ test("connected Genjutsu is the default: it reviews media transfer and its own 1
   });
   expect(JSON.stringify(f.consumerPosts)).not.toContain("untrusted.invalid");
   const generate = page.getByRole("button", {
-    name: "Generate Genjutsu · 18 connected credits",
+    name: "Generate transform · 18 connected credits",
     exact: true,
   });
   await expect(generate).toBeDisabled();
   await page
     .getByRole("checkbox", {
-      name: "Charge 18 connected credits to Fixture wallet for this Genjutsu generation.",
+      name: "Charge 18 connected credits to Fixture wallet for this transform generation.",
       exact: true,
     })
     .check();
   await generate.click();
   await expect(
     page.getByRole("button", {
-      name: "Check saved Genjutsu result",
+      name: "Check saved transform result",
       exact: true,
     }),
   ).toBeEnabled();
   await page
-    .getByRole("button", { name: "Check saved Genjutsu result", exact: true })
+    .getByRole("button", { name: "Check saved transform result", exact: true })
     .click();
   await expect(
     page.getByRole("link", { name: "Download original", exact: true }),
   ).toHaveAttribute("href", `/api/media/${consumerGenerationId}?download=1`);
   expect(f.posts).toEqual([]);
   expect(f.quotes).toEqual([]);
-  await expect(page.getByLabel("Genjutsu before preview")).toHaveAttribute(
+  await expect(page.getByLabel("Transform before preview")).toHaveAttribute(
     "src",
     "/api/uploads/motion-original",
   );
@@ -767,7 +767,7 @@ test("connected Genjutsu is the default: it reviews media transfer and its own 1
     .getByRole("button", { name: "Recreate with fresh quote", exact: true })
     .click();
   await expect(
-    page.getByLabel("Connected Genjutsu output quality"),
+    page.getByLabel("Connected transform output quality"),
   ).toHaveValue("1080p");
   await expect(
     page.getByRole("checkbox", {
@@ -778,7 +778,7 @@ test("connected Genjutsu is the default: it reviews media transfer and its own 1
   expect(f.consumerPosts.filter((p) => p.action === "submit")).toHaveLength(1);
   await page
     .getByRole("region", {
-      name: "Connected Genjutsu project results",
+      name: "Connected transform project results",
       exact: true,
     })
     .getByRole("button", { name: /Object Swap Original ready/ })
@@ -808,41 +808,41 @@ test("an uncertain connected submission survives reload and polls its saved job 
     })
     .check();
   await page
-    .getByRole("button", { name: "Get connected Genjutsu quote", exact: true })
+    .getByRole("button", { name: "Get connected transform quote", exact: true })
     .click();
   await page
     .getByRole("checkbox", {
-      name: "Charge 18 connected credits to Fixture wallet for this Genjutsu generation.",
+      name: "Charge 18 connected credits to Fixture wallet for this transform generation.",
       exact: true,
     })
     .check();
   await page
     .getByRole("button", {
-      name: "Generate Genjutsu · 18 connected credits",
+      name: "Generate transform · 18 connected credits",
       exact: true,
     })
     .click();
   await expect(
     page
-      .getByRole("region", { name: "Connected account Genjutsu", exact: true })
+      .getByRole("region", { name: "Connected account transform", exact: true })
       .getByRole("alert"),
   ).toHaveText("Failed to fetch");
   await page.reload();
   await expect(
     page.getByRole("button", {
-      name: "Get connected Genjutsu quote",
+      name: "Get connected transform quote",
       exact: true,
     }),
   ).toBeDisabled();
   const history = page.getByRole("region", {
-    name: "Connected Genjutsu project results",
+    name: "Connected transform project results",
     exact: true,
   });
   await history
     .getByRole("button", { name: /Motion Transfer uncertain/ })
     .click();
   await page
-    .getByRole("button", { name: "Check saved Genjutsu result", exact: true })
+    .getByRole("button", { name: "Check saved transform result", exact: true })
     .click();
   await expect(
     page.getByRole("link", { name: "Download original", exact: true }),
@@ -862,7 +862,7 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
   );
   await useCard(page, "upload:motion-original");
   await page
-    .getByLabel("Connected Genjutsu output quality")
+    .getByLabel("Connected transform output quality")
     .selectOption("1080p");
   await page
     .getByRole("checkbox", {
@@ -871,22 +871,22 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
     })
     .check();
   await page
-    .getByRole("button", { name: "Get connected Genjutsu quote", exact: true })
+    .getByRole("button", { name: "Get connected transform quote", exact: true })
     .click();
   await expect(
     page.getByRole("button", {
-      name: "Recover saved Genjutsu quote",
+      name: "Recover saved transform quote",
       exact: true,
     }),
   ).toBeEnabled();
   await page.reload();
   await expect(
-    page.getByLabel("Connected Genjutsu creative direction"),
+    page.getByLabel("Connected transform creative direction"),
   ).toBeDisabled();
   await page
-    .getByRole("button", { name: "Recover saved Genjutsu quote", exact: true })
+    .getByRole("button", { name: "Recover saved transform quote", exact: true })
     .click();
-  await expect(page.getByLabel("Connected Genjutsu quote")).toContainText(
+  await expect(page.getByLabel("Connected transform quote")).toContainText(
     "18 connected credits",
   );
   expect(f.consumerJobs).toHaveLength(1);
@@ -894,13 +894,13 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
   expect(f.consumerPosts[1]).toEqual(f.consumerPosts[0]);
   await expect(
     page.getByRole("button", {
-      name: "Generate Genjutsu · 18 connected credits",
+      name: "Generate transform · 18 connected credits",
       exact: true,
     }),
   ).toBeDisabled();
   await expect(
     page.getByRole("checkbox", {
-      name: "Charge 18 connected credits to Fixture wallet for this Genjutsu generation.",
+      name: "Charge 18 connected credits to Fixture wallet for this transform generation.",
       exact: true,
     }),
   ).not.toBeChecked();
@@ -908,7 +908,7 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
   await expect(modeDock.getByRole("link", { name: "Object Swap", exact: true })).toHaveAttribute("href", "/subatomik?project=viral-draft&page=object-swap&account=higgsfield");
   await modeDock.getByRole("link", { name: "Object Swap", exact: true }).click();
   await expect(page).toHaveURL("/subatomik?project=viral-draft&page=object-swap&account=higgsfield");
-  await expect(page.getByRole("region", { name: "Connected account Genjutsu", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Connected account transform", exact: true })).toBeVisible();
   expect(f.unexpected).toEqual([]);
   expect(f.errors).toEqual([]);
 });
@@ -919,12 +919,12 @@ test("the main flow has no billing toggle; the connected default shows the exact
   const f = await fixture(page);
   await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
   await expect(
-    page.getByRole("region", { name: "Connected account Genjutsu", exact: true }),
+    page.getByRole("region", { name: "Connected account transform", exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("group", { name: "Genjutsu billing account" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Transform billing account" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Particl workspace billing" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Connected .* credits/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toHaveCount(0);
   await expect(page.getByText(/Higgsfield/)).toHaveCount(0);
   const dock = page.getByRole("navigation", { name: "Subatomik Viral Studio pages", exact: true });
   await expect(dock.getByRole("link", { name: "Object Swap", exact: true })).toHaveAttribute(
@@ -939,9 +939,9 @@ test("the main flow has no billing toggle; the connected default shows the exact
     })
     .check();
   await page
-    .getByRole("button", { name: "Get connected Genjutsu quote", exact: true })
+    .getByRole("button", { name: "Get connected transform quote", exact: true })
     .click();
-  const quote = page.getByLabel("Connected Genjutsu quote");
+  const quote = page.getByLabel("Connected transform quote");
   await expect(quote).toContainText("18 connected credits · Fixture wallet");
   await expect(quote).toContainText(`Wallet ${wallet}`);
   await expect(quote).toContainText(
@@ -949,12 +949,12 @@ test("the main flow has no billing toggle; the connected default shows the exact
   );
   await expect(
     page.getByRole("checkbox", {
-      name: "Charge 18 connected credits to Fixture wallet for this Genjutsu generation.",
+      name: "Charge 18 connected credits to Fixture wallet for this transform generation.",
       exact: true,
     }),
   ).not.toBeChecked();
   await expect(
-    page.getByRole("button", { name: "Generate Genjutsu · 18 connected credits", exact: true }),
+    page.getByRole("button", { name: "Generate transform · 18 connected credits", exact: true }),
   ).toBeDisabled();
   expect(f.consumerPosts.filter((p) => p.action === "submit")).toHaveLength(0);
   await page.screenshot({ path: info.outputPath("connected-default-quote.png") });
@@ -968,8 +968,8 @@ test("the main flow has no billing toggle; the connected default shows the exact
   );
   await override.click();
   await expect(page).toHaveURL("/subatomik?project=viral-draft&page=motion-transfer&account=particl");
-  await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Connected account Genjutsu", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Connected account transform", exact: true })).toHaveCount(0);
   await expect(dock.getByRole("link", { name: "Object Swap", exact: true })).toHaveAttribute(
     "href",
     "/subatomik?project=viral-draft&page=object-swap&account=particl",
@@ -984,16 +984,16 @@ test("without a connected account the page falls back to workspace billing with 
 }) => {
   const f = await fixture(page, false, { connected: false });
   await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
-  await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Review transform cost", exact: true })).toBeDisabled();
   const prompt = page.getByRole("status").filter({ hasText: "No connected account yet." });
   await expect(prompt).toContainText("Until then this project bills the Particl workspace.");
   await expect(prompt.getByRole("link", { name: "Workspace settings", exact: true })).toHaveAttribute(
     "href",
     "/settings#engines",
   );
-  await expect(page.getByRole("group", { name: "Genjutsu billing account" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Transform billing account" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Particl workspace billing" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Connected account Genjutsu", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Connected account transform", exact: true })).toHaveCount(0);
   await expect(page.getByText(/Higgsfield/)).toHaveCount(0);
   expect(f.consumerPosts).toEqual([]);
   expect(f.unexpected).toEqual([]);

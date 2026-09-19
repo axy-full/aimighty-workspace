@@ -17,7 +17,7 @@ export function providerCreditQuote(value: unknown): ProviderCreditQuote | null 
 }
 
 export function formatProviderCreditQuote(quote: ProviderCreditQuote): string {
-  return `${quote.credits.toLocaleString("en-US", { maximumFractionDigits: 8 })} Higgsfield cr (quoted)`;
+  return `${quote.credits.toLocaleString("en-US", { maximumFractionDigits: 8 })} connected cr (quoted)`;
 }
 
 export function sumWithProviderCreditQuotes<T extends { providerCreditQuote?: ProviderCreditQuote | null }>(

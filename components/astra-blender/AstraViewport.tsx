@@ -124,7 +124,7 @@ export default function AstraViewport(props: Props) {
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); }
     catch {
-      queueMicrotask(() => { if (!disposed) setError('3D preview needs WebGL. Scene controls, saving, and Blender exports remain available.'); });
+      queueMicrotask(() => { if (!disposed) setError('3D preview needs WebGL. Scene controls, saving, and 3D exports remain available.'); });
       return () => { disposed = true; };
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -471,7 +471,7 @@ export default function AstraViewport(props: Props) {
           link.href = renderer.domElement.toDataURL('image/png');
           link.download = `astra-viewport-frame-${currentFrame}.png`;
           link.click();
-        } catch { setAssetError('The browser could not export this preview. Use the Blender render export.'); }
+        } catch { setAssetError('The browser could not export this preview. Use the 3D runtime render export.'); }
         finally {
           [grid.visible, axes.visible, box.visible, gizmo.visible] = shown;
           invalidate();

@@ -29,7 +29,7 @@ const states: { id: ConsumerActivityState; label: string; note: string }[] = [
   },
 ];
 const credits = (amount: number) =>
-  `${amount.toLocaleString(undefined, { maximumFractionDigits: 20 })} Higgsfield credits`;
+  `${amount.toLocaleString(undefined, { maximumFractionDigits: 20 })} connected credits`;
 
 export default function ConsumerCreditActivity() {
   const session = useSession();
@@ -40,16 +40,16 @@ export default function ConsumerCreditActivity() {
     scope,
   );
   return (
-    <section aria-label="My Higgsfield activity">
+    <section aria-label="My connected-account activity">
       <ManagementCard
-        title="My Higgsfield activity"
+        title="My connected-account activity"
         description="Approved quote commitments for your own account in this workspace."
       >
         <p className="management-muted">
           These are the saved quotes you approved for submitted work, not a
           provider invoice or live balance. Failed and uncertain jobs may
-          require reconciliation in Higgsfield. Unused quotes are excluded.
-          Higgsfield credits are separate from Particl credits and USD.
+          require reconciliation in the connected account. Unused quotes are excluded.
+          Connected credits are separate from Particl credits and USD.
         </p>
         <button
           className="management-button small"
@@ -77,7 +77,7 @@ export default function ConsumerCreditActivity() {
         </ManagementNotice>
       ) : !data ? (
         <ManagementNotice>
-          Reading your Higgsfield credit activity…
+          Reading your connected-account credit activity…
         </ManagementNotice>
       ) : (
         <>
@@ -138,7 +138,7 @@ export default function ConsumerCreditActivity() {
               ))
             ) : (
               <p className="management-muted">
-                No submitted Higgsfield jobs for your account in this workspace
+                No submitted connected-account jobs for your account in this workspace
                 yet.
               </p>
             )}

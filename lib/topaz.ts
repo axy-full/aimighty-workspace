@@ -33,7 +33,7 @@ export function topazImageSettings(value: unknown): TopazImageSettings {
     p.faceStrength < 0 ||
     p.faceStrength > 1
   )
-    throw new Error("Choose a supported Topaz model, scale and face strength.");
+    throw new Error("Choose a supported upscale model, scale and face strength.");
   return {
     model: p.model!,
     factor: p.factor!,
@@ -62,7 +62,7 @@ export function topazImageOutput(
     Math.max(w, h) > 16_384
   )
     throw new Error(
-      "Choose a smaller scale. Topaz image output is limited to 48 megapixels and 16,384 pixels per side.",
+      "Choose a smaller scale. Upscaled image output is limited to 48 megapixels and 16,384 pixels per side.",
     );
   return {
     width: w,

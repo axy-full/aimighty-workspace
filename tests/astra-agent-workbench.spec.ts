@@ -16,9 +16,9 @@ async function fixture(page: Page, loseResponse = false, nativeAssets = false, f
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
   let project: Project = { ...newProject('Astra assistant study'), id: 'astra-assistant-study', productionProjectId: 'astra-assistant-production', shotMappings: {}, astraBlender: createAstraScene('product') };
   if (nativeAssets) project.assets = [
-    { id: 'base-blend', uploadId: 'base-blend-upload', name: 'Character rig.blend', mime: 'application/x-blender', kind: 'document', url: '/api/uploads/base-blend-upload', category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
-    { id: 'reference-render', uploadId: 'reference-render-upload', name: 'Reference render.png', mime: 'image/png', kind: 'image', url: '/api/uploads/reference-render-upload', category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
-    { id: 'reference-model', uploadId: 'reference-model-upload', name: 'Character.glb', mime: 'model/gltf-binary', kind: 'document', url: '/api/uploads/reference-model-upload', category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
+    { id: 'base-blend', uploadId: 'base-blend-upload', name: 'Character rig.blend', mime: 'application/x-blender', kind: 'document', url: '/api/uploads/base-blend-upload', category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
+    { id: 'reference-render', uploadId: 'reference-render-upload', name: 'Reference render.png', mime: 'image/png', kind: 'image', url: '/api/uploads/reference-render-upload', category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
+    { id: 'reference-model', uploadId: 'reference-model-upload', name: 'Character.glb', mime: 'model/gltf-binary', kind: 'document', url: '/api/uploads/reference-model-upload', category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] },
   ];
   let revision = 1;
   let jobs: Record<string, unknown>[] = [];
@@ -26,7 +26,7 @@ async function fixture(page: Page, loseResponse = false, nativeAssets = false, f
   const proposed = createAstraScene('product');
   proposed.name = 'Astra material study';
   proposed.objects.find((object) => object.id === 'product')!.material.color = '#4466aa';
-  const models = [{ id: ASTRA_BLENDER_MODEL, name: 'GPT-6 Astra', efforts: EFFORTS }, { id: 'anthropic/claude-fixture', name: 'Claude Fixture', efforts: EFFORTS }];
+  const models = [{ id: ASTRA_BLENDER_MODEL, name: 'Astra', efforts: EFFORTS }, { id: 'anthropic/claude-fixture', name: 'Sage fixture', efforts: EFFORTS }];
   await page.route('**/api/**', async (route) => {
     const request = route.request(), url = new URL(request.url());
     const json = (value: unknown) => route.fulfill({ json: value });
@@ -58,11 +58,11 @@ async function fixture(page: Page, loseResponse = false, nativeAssets = false, f
     if (url.pathname === '/api/workbench/development') return json({ models: [], jobs: [] });
     if (url.pathname === '/api/jobs') return json({ generations: [], nextCursor: null });
     if (url.pathname === '/api/engines' || url.pathname === '/api/workbench/engines') return json({ models: [], vendors: [] });
-    if (request.method() !== 'GET') { forbidden.push(url.pathname); return route.fulfill({ status: 409, json: { error: 'Media generation and Blender dispatch are forbidden in the assistant fixture.' } }); }
+    if (request.method() !== 'GET') { forbidden.push(url.pathname); return route.fulfill({ status: 409, json: { error: 'Media generation and 3D runtime dispatch are forbidden in the assistant fixture.' } }); }
     return json({});
   });
   await page.goto('/workbench?project=astra-assistant-study&stage=astra-blender');
-  const workspace = page.getByRole('region', { name: 'Astra blender', exact: true });
+  const workspace = page.getByRole('region', { name: 'Astra', exact: true });
   await expect(workspace).toBeVisible();
   await panel(workspace, 'Astra');
   const assistant = workspace.getByRole('region', { name: 'Astra scene assistant', exact: true });
@@ -80,9 +80,9 @@ async function panel(workspace: Locator, name: 'Astra' | 'Objects' | 'Properties
 async function quote(page: Page, assistant: Locator) {
   await assistant.getByLabel('Astra scene request').fill('Make the product blue with a restrained anodized-metal finish.');
   await assistant.getByRole('button', { name: 'Review Astra quote', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Build with Astra blender', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Build with Astra', exact: true });
   await expect(dialog.getByRole('button', { name: 'Atomik request model', exact: true })).toBeDisabled();
-  await expect(dialog.getByRole('button', { name: 'Atomik request model', exact: true })).toContainText('GPT-6 Astra');
+  await expect(dialog.getByRole('button', { name: 'Atomik request model', exact: true })).toContainText('Astra');
   await dialog.getByRole('combobox', { name: 'Atomik request effort', exact: true }).click();
   for (const effort of EFFORTS) await expect(page.getByRole('option', { name: effort.label, exact: true })).toBeVisible();
   await page.getByRole('option', { name: 'Maximum', exact: true }).click();
@@ -159,7 +159,7 @@ test('a lost Astra submission recovers identical request bytes after reload with
   const recovery = state.assistant.getByRole('button', { name: 'Recover saved Astra request', exact: true });
   await expect(recovery).toBeEnabled();
   await recovery.click();
-  const restored = page.getByRole('dialog', { name: 'Build with Astra blender', exact: true });
+  const restored = page.getByRole('dialog', { name: 'Build with Astra', exact: true });
   await expect(restored.getByLabel('Atomik request', { exact: true })).toBeDisabled();
   await restored.getByRole('button', { name: 'Recover this request', exact: true }).click();
   await expect(restored).toHaveCount(0);
@@ -170,9 +170,9 @@ test('a lost Astra submission recovers identical request bytes after reload with
   expect(state.forbidden).toEqual([]);
 });
 
-test('native Blender workflow reviews Python, retains base blend and asset references, then saves and downloads the applied source', async ({ page }, info) => {
+test('native 3D workflow reviews Python, retains base blend and asset references, then saves and downloads the applied source', async ({ page }, info) => {
   const state = await fixture(page, false, true);
-  const source = state.workspace.getByRole('region', { name: 'Native Blender source', exact: true });
+  const source = state.workspace.getByRole('region', { name: 'Native 3D source', exact: true });
   await source.getByLabel('Native source name', { exact: true }).fill('Character starting scene');
   await source.getByLabel('Native starting scene', { exact: true }).selectOption('base-blend');
   await source.getByText('Native input assets · 0/64', { exact: true }).click();
@@ -182,18 +182,18 @@ test('native Blender workflow reviews Python, retains base blend and asset refer
   await expect.poll(() => state.project.astraNative?.baseBlendAssetId).toBe('base-blend');
   expect(state.project.astraNative?.assetIds).toEqual(['reference-render', 'reference-model']);
   const nativeDigest = await astraNativeDigest(state.project.astraNative), sceneBefore = structuredClone(state.project.astraBlender);
-  await state.assistant.getByRole('button', { name: 'Native Blender', exact: true }).click();
-  await state.assistant.getByText('Start a Blender workflow', { exact: true }).click();
+  await state.assistant.getByRole('button', { name: 'Native 3D', exact: true }).click();
+  await state.assistant.getByText('Start a 3D runtime workflow', { exact: true }).click();
   await state.assistant.getByRole('button', { name: 'Geometry nodes', exact: true }).click();
   await expect(state.assistant.getByLabel('Astra scene request')).toHaveValue(/procedural geometry-node setup/);
   await state.assistant.getByText('Visual references · 0/4', { exact: true }).click();
   await state.assistant.getByRole('checkbox', { name: 'Reference render.png', exact: true }).check();
   await state.assistant.getByRole('button', { name: 'Review Astra quote', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Build with Astra blender', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Build with Astra', exact: true });
   await expect(dialog.getByRole('button', { name: 'Run · 7 cr estimated', exact: true })).toBeEnabled();
   expect(state.quotes.at(-1)?.astraBlender).toMatchObject({ mode: 'native', nativeDigest, referenceIds: ['reference-render'] });
   await dialog.getByRole('button', { name: 'Run · 7 cr estimated', exact: true }).click();
-  await state.assistant.getByText('Review Blender Python · Procedural character study', { exact: true }).click();
+  await state.assistant.getByText('Review 3D runtime Python · Procedural character study', { exact: true }).click();
   await expect(state.assistant.getByText('2 asset inputs · Continues from a saved .blend', { exact: true })).toBeVisible();
   await expect(state.assistant.locator('pre')).toContainText('Editable geometry nodes');
   expect(await state.assistant.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
@@ -206,7 +206,7 @@ test('native Blender workflow reviews Python, retains base blend and asset refer
   expect(state.project.astraBlender).toEqual(sceneBefore);
   await page.reload(); await panel(state.workspace, 'Astra');
   await expect(source.getByLabel('Native starting scene', { exact: true })).toHaveValue('base-blend');
-  await expect(source.getByLabel('Native Blender Python', { exact: true })).toHaveValue(state.project.astraNative!.program);
+  await expect(source.getByLabel('Native 3D Python', { exact: true })).toHaveValue(state.project.astraNative!.program);
   const downloading = page.waitForEvent('download');
   await source.getByRole('button', { name: 'Download Python', exact: true }).click();
   const download = await downloading;
@@ -218,13 +218,13 @@ test('native Blender workflow reviews Python, retains base blend and asset refer
 
 test('a failed native source save keeps the edited code and reports the failure after the editor remounts', async ({ page }) => {
   const state = await fixture(page, false, false, true);
-  const source = state.workspace.getByRole('region', { name: 'Native Blender source', exact: true });
+  const source = state.workspace.getByRole('region', { name: 'Native 3D source', exact: true });
   await source.getByText('Review or edit Python', { exact: true }).click();
   const program = 'import bpy\n# Keep this unsaved source visible\n';
-  await source.getByLabel('Native Blender Python', { exact: true }).fill(program);
+  await source.getByLabel('Native 3D Python', { exact: true }).fill(program);
   await source.getByRole('button', { name: 'Save native source', exact: true }).click();
   await expect(source.getByRole('alert')).toContainText('has not saved yet');
-  await expect(source.getByLabel('Native Blender Python', { exact: true })).toHaveValue(program);
+  await expect(source.getByLabel('Native 3D Python', { exact: true })).toHaveValue(program);
   await expect(source.getByRole('button', { name: 'Save native source', exact: true })).toBeEnabled();
   expect(state.project.astraNative).toBeUndefined();
   expect(state.submissions).toEqual([]); expect(state.forbidden).toEqual([]);

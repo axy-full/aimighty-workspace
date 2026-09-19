@@ -7,7 +7,7 @@ export const astraRequestSchema = z.object({
   mode: z.enum(['scene', 'native']).optional(),
   nativeDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   referenceIds: z.array(z.string().min(1).max(120)).max(4).optional(),
-}).strict().refine(value => value.mode === 'native' ? !!value.nativeDigest : !value.nativeDigest, 'Native requests must bind the saved Blender source.');
+}).strict().refine(value => value.mode === 'native' ? !!value.nativeDigest : !value.nativeDigest, 'Native requests must bind the saved 3D source.');
 export type AstraRequest = z.infer<typeof astraRequestSchema>;
 export const astraProposalSchema = z.object({ baseSceneDigest: z.string().regex(/^[a-f0-9]{64}$/), scene: astraSceneSchema }).strict();
 export type AstraProposal = z.infer<typeof astraProposalSchema>;

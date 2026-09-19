@@ -250,7 +250,7 @@ export default function SeedanceEdit({
     ? String(savedContext.sourceUrl ?? "")
     : source?.url;
   return (
-    <section className={styles.composer} aria-label="Seedance 2.5 Edit">
+    <section className={styles.composer} aria-label="Motion 2.5 Edit">
       <div className={styles.composerScroll}>
         <fieldset className={styles.fields} disabled={blocked}>
           <button
@@ -261,7 +261,7 @@ export default function SeedanceEdit({
           >
             <Film size={20} />
             <span>
-              <strong>Seedance 2.5 Edit</strong>
+              <strong>Motion 2.5 Edit</strong>
               <small>Edit an existing shot</small>
             </span>
           </button>

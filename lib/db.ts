@@ -1094,8 +1094,8 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
          loaded. Fixed ids: a redeploy never records them twice, and deleting
          one on the Usage page stays deleted. */
       for (const [tid, provider, usd, credits, note] of [
-        ["top_seed_fal_20260903", "fal", 50, null, "Added at fal.ai, 3 Sep 2026"],
-        ["top_seed_google_20260903", "google", 25, null, "Vercel AI Gateway credit, 3 Sep 2026"],
+        ["top_seed_fal_20260903", "fal", 50, null, "Added at the render account, 3 Sep 2026"],
+        ["top_seed_google_20260903", "google", 25, null, "Model gateway credit, 3 Sep 2026"],
         ["top_seed_eleven_20260903", "elevenlabs", 0, 131000, "Plan credits, 3 Sep 2026"],
       ] as const) {
         try {

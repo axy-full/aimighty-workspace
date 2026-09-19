@@ -358,7 +358,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
       // provider outcome. Keep the reservation and permanent submit-once claim.
       // A saved independent receipt lets polling restore a lost tenant handle.
       await db().execute({ sql: "UPDATE generations SET error=?,updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
-        args: ["The Higgsfield request outcome is unconfirmed. Its reservation remains pending; this request will not be submitted again. Collection will resume if its accepted request receipt is available.", now(), job.genId] }).catch(() => {});
+        args: ["The connected-account request outcome is unconfirmed. Its reservation remains pending; this request will not be submitted again. Collection will resume if its accepted request receipt is available.", now(), job.genId] }).catch(() => {});
       return null;
     }
     // A synchronous vendor may have charged before the connection failed.
@@ -408,7 +408,7 @@ async function produceStill(job: StillJob): Promise<Produced | null> {
             sql: "UPDATE generations SET params=json_set(params,'$.higgsfieldStillHandle',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0",
             args: [JSON.stringify(out.handle), now(), job.genId],
           });
-          if (!saved.rowsAffected) throw new Error("The Higgsfield generation record could not retain its accepted request.");
+          if (!saved.rowsAffected) throw new Error("The connected-account generation record could not retain its accepted request.");
         }, { max: 3 });
       } catch (error) {
         if (!receiptSaved) await saveHiggsfieldGenerationReceipt(job.genId, out.handle, (job.modelId === MARKETING_IMAGE_MODEL_ID ? job.higgsfieldCredentialFingerprint : job.soulCredentialFingerprint)!).catch(() => {});
@@ -467,7 +467,7 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
       const state = await engine.poll!({ ...saved, credentialFingerprint });
       if (state.status === "failed" || state.status === "cancelled") {
         // Higgsfield documents failed, NSFW and canceled requests as uncharged.
-        await failJob(genId, state.error ?? "The Higgsfield request was canceled.", true);
+        await failJob(genId, state.error ?? "The connected-account request was canceled.", true);
         await settleHiggsfieldGenerationReceipt(genId);
         return;
       }
@@ -477,7 +477,7 @@ export async function reconcileHiggsfieldImage(genId: string): Promise<void> {
         return;
       }
       if (!state.imageUrl || !Number.isFinite(vendorCostUsd) || !(vendorCostUsd! > 0))
-        throw new Error("The Higgsfield request needs its saved image and verified price before collection can finish.");
+        throw new Error("The connected-account request needs its saved image and verified price before collection can finish.");
       const out = await finishStill(job, {
         bytes: await engine.fetchMaster!(state.imageUrl), mime: "image/png",
         costUsd: vendorCostUsd!, totalTokens: null, via: "higgsfield", requestId: saved.ref,
@@ -510,7 +510,7 @@ async function finishStill(job: StillJob, img: EngineProduced, queueMs: number, 
   if (job.modelId === TOPAZ_IMAGE_MODEL) {
     const meta = await sharp(img.bytes, { limitInputPixels: 48_000_000 }).metadata();
     if (meta.format !== "png" || !meta.width || !meta.height || meta.width * meta.height > 48_000_000)
-      throw new Error("Topaz returned an unsupported master. The original provider request is retained for review.");
+      throw new Error("The upscaler returned an unsupported master. The original provider request is retained for review.");
     png = img.bytes; // Keep precision, color profile and metadata; the requested PNG needs no transcode.
   } else png = await sharp(img.bytes).png().toBuffer();
   const storeStart = now();
@@ -564,7 +564,7 @@ export async function reconcileTopazImage(genId: string): Promise<void> {
       const state = await falStatus(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
       if (state.status !== "COMPLETED") return;
       const result = await falResult<{ image?: { url?: string; content_type?: string } }>(TOPAZ_IMAGE_MODEL, String(params.falStillRequestId));
-      if (!result.image?.url) throw new Error("Topaz returned no image. The existing request remains available for reconciliation.");
+      if (!result.image?.url) throw new Error("The upscaler returned no image. The existing request remains available for reconciliation.");
       const out = await finishStill(job, { bytes: await fetchBytes(result.image.url, 60_000, 200 * 1024 * 1024), mime: result.image.content_type ?? "image/png",
         costUsd: estimateImageCostUsd(job.modelId, job.size, 0)?.net ?? null, totalTokens: null, via: "fal" }, 0, now() - job.startedAt);
       await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.producedOutcome',json(?)),updated_at=? WHERE id=? AND status IN ('queued','running') AND deleted=0", args: [JSON.stringify(out), now(), genId] });

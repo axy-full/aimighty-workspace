@@ -131,7 +131,7 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
       expect(query.getAll('uploadId')).toEqual([]);expect(query.getAll('genId')).toEqual([]);
       return route.fulfill({json:{credits:3}});
     }
-    return route.fulfill({json:{models:[{id:'hf-soul-character',label:'Higgsfield Soul Character',kind:'image',resolutions:['1080p'],ratios:['16:9'],durations:[],maxReferenceImages:0,maxReferenceVideos:0,soulIdentity:true}]}});
+    return route.fulfill({json:{models:[{id:'hf-soul-character',label:'Identity render',kind:'image',resolutions:['1080p'],ratios:['16:9'],durations:[],maxReferenceImages:0,maxReferenceVideos:0,soulIdentity:true}]}});
   });
   const generationBodies:Record<string,unknown>[]=[];
   await page.route(/\/api\/generate$/,route=>{generationBodies.push(route.request().postDataJSON());return route.fulfill({status:202,headers:{'Idempotency-Status':'complete'},json:{id:'gen-soul-test-sink',status:'queued'}});});
@@ -181,10 +181,10 @@ test('Soul ID submits through the real mock backend and saves a usable local bin
   const state=await page.request.get(`/api/soul/identities?projectId=${f.project.id}`,{headers:{'X-Workbench-Scope':f.scope}}).then(response=>response.json());
   expect(state.identities).toHaveLength(1);expect(state.identities[0].status).toBe('ready');expect(state.identities[0].creditsBilled).toBeGreaterThan(0);
   await page.goto('/settings#engines');
-  const connection=page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Higgsfield · Soul ID',exact:true})});
-  await expect(connection.getByRole('textbox',{name:'Higgsfield API key ID',exact:true})).toBeVisible();
-  await expect(connection.getByLabel('Higgsfield API key secret',{exact:true})).toHaveAttribute('type','password');
-  await expect(connection.getByRole('button',{name:'Save Higgsfield connection',exact:true})).toBeDisabled();
+  const connection=page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Connected identity account',exact:true})});
+  await expect(connection.getByRole('textbox',{name:'Identity account API key ID',exact:true})).toBeVisible();
+  await expect(connection.getByLabel('Identity account API key secret',{exact:true})).toHaveAttribute('type','password');
+  await expect(connection.getByRole('button',{name:'Save identity account',exact:true})).toBeDisabled();
   await connection.scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('higgsfield-connection.png')});
 });
 
@@ -217,7 +217,7 @@ test('ordinary generation keeps a regular image engine as default when Soul is a
   await page.route('**/api/workbench/engines*',route=>{
     if(new URL(route.request().url()).searchParams.has('model'))return route.fulfill({json:{credits:3}});
     const base={kind:'image',resolutions:['1080p'],ratios:['16:9'],durations:[],maxReferenceVideos:0};
-    return route.fulfill({json:{models:[{...base,id:'hf-soul-character',label:'Higgsfield Soul Character',maxReferenceImages:0,soulIdentity:true},{...base,id:'gemini-3-pro-image',label:'Nano Banana Pro',maxReferenceImages:8}]}});
+    return route.fulfill({json:{models:[{...base,id:'hf-soul-character',label:'Identity render',maxReferenceImages:0,soulIdentity:true},{...base,id:'gemini-3-pro-image',label:'Image Pro',maxReferenceImages:8}]}});
   });
   await page.goto('/workbench');await goWorkbenchStage(page,'canvas');
   const node=page.getByRole('article',{name:'Generate node: Ordinary image shot',exact:true});await node.focus();await node.press('Enter');

@@ -18,9 +18,9 @@ test("a provider quote retains its explicit unit, precision and non-invoice labe
   const value = quote(1075.125);
   expect(providerCreditQuote(value)).toEqual(value);
   expect(formatProviderCreditQuote(value)).toBe(
-    "1,075.125 Higgsfield cr (quoted)",
+    "1,075.125 connected cr (quoted)",
   );
-  expect(formatProviderCreditQuote(quote(0))).toBe("0 Higgsfield cr (quoted)");
+  expect(formatProviderCreditQuote(quote(0))).toBe("0 connected cr (quoted)");
 });
 
 test("invalid quote discriminators and nonnumeric, negative or nonfinite values cannot acquire the provider label", () => {
@@ -70,13 +70,13 @@ test("mixed totals keep provider quotes separate from USD and Particl credits wi
       received.push(standard);
       return `$${standard.reduce((sum, row) => sum + row.costUsd, 0).toFixed(2)}`;
     }),
-  ).toBe("$3.50 + 76.25 Higgsfield cr (quoted)");
+  ).toBe("$3.50 + 76.25 connected cr (quoted)");
   expect(
     sumWithProviderCreditQuotes(list, (standard) => {
       received.push(standard);
       return `${standard.reduce((sum, row) => sum + row.creditsBilled, 0)} Particl cr`;
     }),
-  ).toBe("8 Particl cr + 76.25 Higgsfield cr (quoted)");
+  ).toBe("8 Particl cr + 76.25 connected cr (quoted)");
   expect(received).toEqual([[ordinary], [ordinary]]);
   expect(list).toEqual([ordinary, provider, second]);
 });
@@ -91,7 +91,7 @@ test("provider-only totals do not add a fictitious zero-dollar subtotal; empty a
         return "$0.00";
       },
     ),
-  ).toBe("75 Higgsfield cr (quoted)");
+  ).toBe("75 connected cr (quoted)");
   expect(baseCalls).toBe(0);
   expect(
     sumWithProviderCreditQuotes([], (rows) => {

@@ -92,7 +92,7 @@ export default function PlatformPage() {
             </QA>
             <QA q="Where are originals stored?">
               {s.mode === "vercel-blob-private"
-                ? <>A private Vercel Blob store in <b>{s.region}</b>, alongside a
+                ? <>A private blob store in <b>{s.region}</b>, alongside a
                    Turso database in the same region. Nothing in the store is
                    public: media is served through an authenticated route that
                    hands out a short-lived signed link.</>
@@ -202,7 +202,7 @@ export default function PlatformPage() {
             </QA>
             <QA q="Where is the data physically hosted?">
               {s.database === "turso" ? "Turso" : "SQLite"} and{" "}
-              {s.mode === "vercel-blob-private" ? "a private Vercel Blob store" : "local disk"},
+              {s.mode === "vercel-blob-private" ? "a private blob store" : "local disk"},
               region <b>{s.region}</b>. Compute runs in the same region so
               media never crosses one unnecessarily.
             </QA>

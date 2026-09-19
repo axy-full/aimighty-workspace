@@ -43,7 +43,7 @@ export const GET = withTenant(
         );
       return Response.json(
         {
-          error: "Your Higgsfield credit activity is temporarily unavailable.",
+          error: "Your connected-account credit activity is temporarily unavailable.",
         },
         { status: 503, headers },
       );

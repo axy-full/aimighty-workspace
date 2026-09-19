@@ -34,7 +34,7 @@ export const POST = withTenant(
           {
             status: "unavailable",
             code: "not_connected",
-            error: "Connect your Higgsfield account before discovering tools.",
+            error: "Connect your account before discovering tools.",
           },
           { status: 409, headers },
         );
@@ -54,7 +54,7 @@ export const POST = withTenant(
             status: "unavailable",
             code: error.code,
             error:
-              "The Higgsfield connection is unavailable. Reconnect or try again later.",
+              "The connected account is unavailable. Reconnect or try again later.",
           },
           { status: error.status, headers },
         );
@@ -71,7 +71,7 @@ export const POST = withTenant(
         {
           status: "unavailable",
           code: "unavailable",
-          error: "Higgsfield tool discovery is temporarily unavailable.",
+          error: "Tool discovery is temporarily unavailable.",
         },
         { status: 503, headers },
       );

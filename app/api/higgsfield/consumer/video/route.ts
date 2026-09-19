@@ -33,7 +33,7 @@ function problem(error: unknown) {
   if (error instanceof ConsumerOAuthError || error instanceof ConsumerDiscoveryError || error instanceof ConsumerVideoServiceError)
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof ConsumerJobError)
-    return Response.json({ code: error.code, error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating." : error.code === "capacity" ? "Four Higgsfield jobs are already active or awaiting reconciliation." : "This job changed or is unavailable. Refresh before continuing." }, { status: error.status, headers });
+    return Response.json({ code: error.code, error: error.code === "quote_expired" ? "This quote expired. Request a fresh quote before generating." : error.code === "capacity" ? "Four connected-account jobs are already active or awaiting reconciliation." : "This job changed or is unavailable. Refresh before continuing." }, { status: error.status, headers });
   if (error instanceof ConsumerVideoError)
     return Response.json({ code: error.code, error: error.message }, { status: error.status, headers });
   if (error instanceof AccountError && error.status === 429)
@@ -42,7 +42,7 @@ function problem(error: unknown) {
     return Response.json({ error: error.message }, { status: error.status, headers });
   if (error instanceof SyntaxError)
     return Response.json({ error: "Send a valid JSON marketing request." }, { status: 400, headers });
-  return Response.json({ error: "Higgsfield could not complete this request. Check the saved job before trying again." }, { status: 503, headers });
+  return Response.json({ error: "The connected account could not complete this request. Check the saved job before trying again." }, { status: 503, headers });
 }
 export const GET = withTenant(async (req: Request) => {
   const owner = await requireOwner(); if (owner.response) return owner.response;

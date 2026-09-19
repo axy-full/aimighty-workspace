@@ -51,7 +51,7 @@ export const PAGES: Record<Suite, PageDef[]> = {
     page("particl", "brief", "Brief", "Brief & Script", "The brief, the script and the development passes read and write the same document."),
     page("particl", "boards", "Boards", "Boards", "Boards follow the script."),
     page("particl", "cast", "Cast", "Cast & Elements", "Groups references, builds each identity and binds it to the shots that cite it."),
-    page("particl", "astra", "Astra", "Astra blender", "Blocking before rendering."),
+    page("particl", "astra", "Astra", "Astra", "Blocking before rendering."),
     page("particl", "rig", "Rig", "Rig", "Resolves references, quotes each shot and dispatches it to a video engine."),
     page("particl", "takes", "Takes", "Takes", "Compares versions against the director’s note and marks what is worth cutting with."),
     page("particl", "edit", "Edit", "Edit & Sound", "Assembles the approved takes, then writes dialogue, effects and music against the cut."),

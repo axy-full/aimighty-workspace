@@ -51,7 +51,7 @@ async function fixture(page: Page, options: { initialError?: boolean; truncated?
       consumer.push(call); expect(call.scope).toBe(scope);
       if (path === "/api/higgsfield/consumer/activity" && request.method() === "GET") {
         activityReads++; await gate;
-        return error ? json({ error: "Saved Higgsfield activity is temporarily unavailable." }, 503)
+        return error ? json({ error: "Saved the connected account activity is temporarily unavailable." }, 503)
           : json({ ...activity, projectsTruncated: !!options.truncated });
       }
       unexpected.push(`${request.method()} ${path}`);
@@ -74,11 +74,11 @@ async function fixture(page: Page, options: { initialError?: boolean; truncated?
     release() { release?.(); },
   };
 }
-const activityTab = (page: Page) => page.getByRole("button", { name: "My Higgsfield activity", exact: true });
-const activityPanel = (page: Page) => page.getByRole("region", { name: "My Higgsfield activity", exact: true });
+const activityTab = (page: Page) => page.getByRole("button", { name: "My connected-account activity", exact: true });
+const activityPanel = (page: Page) => page.getByRole("region", { name: "My connected-account activity", exact: true });
 const standardSpend = (page: Page) => page.locator(".management-stat").filter({ hasText: "Recorded spend · all time" });
 
-test("Higgsfield quote commitments load only on demand and stay separate from dollar usage", async ({ page }, info) => {
+test("The connected account quote commitments load only on demand and stay separate from dollar usage", async ({ page }, info) => {
   const state = await fixture(page);
   await page.goto("/usage");
   await expect(standardSpend(page)).toContainText("$12.34");
@@ -89,7 +89,7 @@ test("Higgsfield quote commitments load only on demand and stay separate from do
   await expect(panel.getByText("Approved quote commitments for your own account in this workspace.", { exact: true })).toBeVisible();
   for (const [label, credits, jobs] of [["Completed", 150, 2], ["Pending", 75, 1], ["Uncertain", 225, 3], ["Failed", 300, 4]] as const) {
     const stat = panel.locator(".management-stat").filter({ has: page.getByText(label, { exact: true }) });
-    await expect(stat).toContainText(`${credits} Higgsfield credits`);
+    await expect(stat).toContainText(`${credits} connected credits`);
     await expect(stat).toContainText(`${jobs} jobs`);
   }
   await expect(panel).toContainText(/not an invoice|not a provider invoice/i);
@@ -118,7 +118,7 @@ test("activity errors need an explicit retry and never trigger provider discover
   const state = await fixture(page, { initialError: true });
   await page.goto("/usage");
   await activityTab(page).click();
-  await expect(activityPanel(page).getByRole("alert")).toContainText("Saved Higgsfield activity is temporarily unavailable.");
+  await expect(activityPanel(page).getByRole("alert")).toContainText("Saved the connected account activity is temporarily unavailable.");
   const failedReads = state.activityReads;
   expect(failedReads).toBeGreaterThanOrEqual(1);
   expect(failedReads).toBeLessThanOrEqual(2);

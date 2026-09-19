@@ -10,16 +10,16 @@ import { developmentPendingKey } from '../lib/workbench/development-client';
 
 const efforts = [{ value: 'low', label: 'Low', description: 'Faster planning' }, { value: 'high', label: 'High', description: 'More time for complex planning' }];
 const models = [
-  { id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6', vision: true, efforts },
-  { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6', vision: true, efforts },
-  { id: 'openai/gpt-5.5', name: 'GPT-5.5', vision: true, efforts },
+  { id: 'anthropic/claude-opus-4.6', name: 'Sage 4.6 Max', vision: true, efforts },
+  { id: 'anthropic/claude-sonnet-4.6', name: 'Sage 4.6', vision: true, efforts },
+  { id: 'openai/gpt-5.5', name: 'Forge 5.5', vision: true, efforts },
 ];
 
 
 function scopePanel(page: Page, kind: DevelopmentRequest['kind']) {
   return page.getByRole('region', { name: kind === 'idea' ? 'Idea development' : kind === 'adfilm' ? 'Ad-film breakdown' : 'Screenplay breakdown', exact: true });
 }
-async function choose(page: Page, panel: Locator, provider: 'Claude' | 'ChatGPT', model: string, effort = 'High') {
+async function choose(page: Page, panel: Locator, provider: 'Sage' | 'Forge', model: string, effort = 'High') {
   await panel.getByRole('group', { name: /provider$/ }).getByRole('button', { name: new RegExp('^' + provider) }).click();
   await panel.getByRole('button', { name: /model$/ }).click();
   const picker = page.getByRole('dialog', { name: 'Choose a thinking model', exact: true });
@@ -136,7 +136,7 @@ test('agentic screenplay and ad-film imports offer Claude and ChatGPT, persist r
   let panel = scopePanel(page, 'screenplay');
   await panel.getByRole('group', { name: /provider$/ }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('script-agent-controls.png'), fullPage: true });
-  await choose(page, panel, 'Claude', 'Claude Sonnet 4.6');
+  await choose(page, panel, 'Sage', 'Sage 4.6');
   await panel.getByRole('textbox', { name: 'Screenplay breakdown instructions', exact: true }).fill('Prioritize motivated lighting and a clear visual reveal.');
   await panel.getByRole('button', { name: 'Review development estimate', exact: true }).click();
   await expect(panel).toContainText('3 agent steps');
@@ -155,7 +155,7 @@ test('agentic screenplay and ad-film imports offer Claude and ChatGPT, persist r
   await imported.getByRole('button', { name: 'Import complete ad-film script', exact: true }).click();
   await expect.poll(async () => (await f.current()).scriptSource?.filename).toBe('Lamp commercial.txt');
   panel = scopePanel(page, 'adfilm');
-  await choose(page, panel, 'ChatGPT', 'GPT-5.5');
+  await choose(page, panel, 'Forge', 'Forge 5.5');
   await panel.getByRole('button', { name: 'Review development estimate', exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Start script breakdown', exact: true })).toBeVisible();
   expect(f.quotes.at(-1)).toMatchObject({ kind: 'adfilm', model: 'openai/gpt-5.5', effort: 'high', source: { scriptFormat: 'adfilm' } });
@@ -196,7 +196,7 @@ test('idea development recovers the exact request after a lost response and relo
   await page.goto('/workbench');
   await goStage(page, 'brief');
   let panel = scopePanel(page, 'idea');
-  await choose(page, panel, 'ChatGPT', 'GPT-5.5');
+  await choose(page, panel, 'Forge', 'Forge 5.5');
   await panel.getByRole('group', { name: /provider$/ }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('idea-agent-controls.png'), fullPage: true });
   await panel.getByRole('textbox', { name: 'Idea development instructions', exact: true }).fill('Give the product a human emotional context.');
@@ -217,7 +217,7 @@ test('idea development recovers the exact request after a lost response and relo
   await page.reload();
   await goStage(page, 'brief');
   panel = scopePanel(page, 'idea');
-  await expect(panel).toContainText('Recovery uses GPT-5.5 · High · up to 7 credits.');
+  await expect(panel).toContainText('Recovery uses Forge 5.5 · High · up to 7 credits.');
   await panel.getByRole('button', { name: 'Recover development request', exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('agentic-recovery-controls.png'), fullPage: true });
   await panel.getByRole('button', { name: 'Recover development request', exact: true }).click();
@@ -253,7 +253,7 @@ test('notifications remain interactive and model options stay above a live impor
   await goStage(page, 'brief');
   await page.getByRole('group', { name: 'Script format', exact: true }).getByRole('button', { name: /^Ad-film script/ }).click();
   const panel = scopePanel(page, 'adfilm');
-  await panel.getByRole('group', { name: /provider$/ }).getByRole('button', { name: /^ChatGPT/ }).click();
+  await panel.getByRole('group', { name: /provider$/ }).getByRole('button', { name: /^Forge/ }).click();
   await page.getByLabel('Import ad-film script file', { exact: true }).setInputFiles({ name: 'Popup layering.txt', mimeType: 'text/plain', buffer: Buffer.from('00–05s · OPEN\nVISUAL: The lamp turns on.\nAUDIO: Room tone.') });
   await page.getByRole('region', { name: 'Review screenplay import', exact: true }).getByRole('button', { name: 'Import complete ad-film script', exact: true }).click();
   const notice = page.locator('[data-sonner-toast][data-visible="true"]').filter({ hasText: 'Complete ad-film script imported.' });
@@ -268,7 +268,7 @@ test('notifications remain interactive and model options stay above a live impor
   })).toBe(true);
   await panel.getByRole('button', { name: /model$/ }).click();
   const picker = page.getByRole('dialog', { name: 'Choose a thinking model', exact: true });
-  const option = picker.getByRole('option', { name: 'GPT-5.5', exact: true });
+  const option = picker.getByRole('option', { name: 'Forge 5.5', exact: true });
   await expect(option).toBeVisible();
   await expect(notice).toBeVisible();
   const hit = await option.evaluate(element => {

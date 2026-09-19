@@ -60,7 +60,7 @@ export const TASKS: TaskDef[] = [
     triggers: [],
     defaultTrigger: "",
   },
-  { id: "genjutsu", label: "Genjutsu", blurb: "Transfer motion or swap subjects in an original video.", locked: true,
+  { id: "genjutsu", label: "Transform", blurb: "Transfer motion or swap subjects in an original video.", locked: true,
     forceRatio: "adaptive", forceDuration: "source", promptOptional: true, preferMov: false, triggers: [], defaultTrigger: "" },
   {
     id: "edit",
@@ -99,7 +99,7 @@ export const TASKS: TaskDef[] = [
   {
     id: "motion",
     label: "Motion control",
-    blurb: "Give a still character the movement of a reference clip — walking, dancing, a gesture — with Kling 3.0.",
+    blurb: "Give a still character the movement of a reference clip — walking, dancing, a gesture — with Kinetic 3.0.",
     locked: true,
     forceRatio: "adaptive",
     forceDuration: "source",
@@ -112,7 +112,7 @@ export const TASKS: TaskDef[] = [
     id: "upscale",
     promptOptional: true,
     label: "Upscale",
-    blurb: "Re-render a finished clip at up to 4K with Topaz Astra 2, inventing the fine detail the original never had.",
+    blurb: "Re-render a finished clip at up to 4K with Upscale 2, inventing the fine detail the original never had.",
     locked: true,
     forceRatio: "adaptive",
     forceDuration: "source",
@@ -128,7 +128,7 @@ export const TASKS: TaskDef[] = [
   {
     id: "reframe",
     label: "Reframe",
-    blurb: "Re-cut a finished clip to another aspect — 9:16, 1:1 — with Luma Ray 2 filling what the new frame reveals.",
+    blurb: "Re-cut a finished clip to another aspect — 9:16, 1:1 — with Reframe 2 filling what the new frame reveals.",
     locked: true,
     promptOptional: true,
     forceRatio: null,
@@ -211,7 +211,7 @@ export function hasTrigger(task: TaskDef, prompt: string): boolean {
  */
 export function sourceAdvice(task: TaskDef, sourceSeconds: number | null): string | null {
   if (task.id === "edit" && sourceSeconds != null && sourceSeconds > 20) {
-    return `This source is ${Math.round(sourceSeconds)}s. ByteDance advise editing videos of 20s or less — ` +
+    return `This source is ${Math.round(sourceSeconds)}s. The engine's guide advises editing videos of 20s or less — ` +
            `longer sources get less stable and may need several attempts.`;
   }
   return null;
@@ -237,9 +237,9 @@ export function sourceProblem(
   if (!task.locked || !source) return null;
   const res = String(source.resolution ?? "").toLowerCase();
   const seconds = typeof source.duration === "number" ? source.duration : null;
-  if (task.id === "genjutsu") return seconds != null && (seconds < 1 || seconds > 30) ? "Genjutsu requires an original video between 1 and 30 seconds." : null;
+  if (task.id === "genjutsu") return seconds != null && (seconds < 1 || seconds > 30) ? "Transform requires an original video between 1 and 30 seconds." : null;
   if (task.id === "upscale") {
-    if (seconds != null && seconds > 300) return `Topaz takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
+    if (seconds != null && seconds > 300) return `Upscale 2 takes clips of five minutes or less; this one is ${Math.round(seconds)}s.`;
     return null;
   }
   if (task.id === "reframe") {
@@ -249,14 +249,14 @@ export function sourceProblem(
   }
   if (task.id === "motion") {
     if (res === "480p") {
-      return `Kling reads the movement from a 720p or 1080p clip, and this one is 480P. ${origin === "upload" ? "Upload it at 720p or 1080p" : "Render it again at 720p"} to use it.`;
+      return `Kinetic 3.0 reads the movement from a 720p or 1080p clip, and this one is 480P. ${origin === "upload" ? "Upload it at 720p or 1080p" : "Render it again at 720p"} to use it.`;
     }
     if (seconds != null && seconds < 2) return `The reference clip has to be at least 2 seconds; this one is ${seconds}s.`;
     if (seconds != null && seconds > 30) return `The reference clip has to be 30 seconds or less; this one is ${seconds}s.`;
     return null;
   }
   if (res && res !== "480p" && res !== "720p") {
-    return `ModelArk only accepts 480p or 720p as an input video, and this one is ${res.toUpperCase()}. ` +
+    return `The video engine only accepts 480p or 720p as an input video, and this one is ${res.toUpperCase()}. ` +
            `${origin === "upload" ? "Upload a 720p version" : "Render it again at 720p"} to edit it — 1080p is fine as an output, just not as a source.`;
   }
   const secs = typeof source.duration === "number" ? source.duration : null;

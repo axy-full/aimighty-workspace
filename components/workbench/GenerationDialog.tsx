@@ -237,12 +237,12 @@ export function GenerationDialog({
           if (!identity) return null;
           return { ...identity, role: "reference_image" };
         });
-        if (references.some(ref => !ref)) { setQuote(null); setError("Upload the product and cast images to this project before requesting a Higgsfield quote."); return; }
+        if (references.some(ref => !ref)) { setQuote(null); setError("Upload the product and cast images to this project before requesting a quote."); return; }
         void studioRequest<{ estimatedCredits: number; fingerprint: string }>("/api/generate/quote", {
           method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
           body: JSON.stringify({ model: modelId, prompt, ratio, resolution, refine: false, marketing, references, projectId: mapped!.productionProjectId, shotId: mapped!.shotId }),
         }).then(value => {
-          if (!Number.isFinite(value.estimatedCredits) || value.estimatedCredits < 0 || !value.fingerprint) throw new Error("Higgsfield did not return a valid price. Please refresh the quote.");
+          if (!Number.isFinite(value.estimatedCredits) || value.estimatedCredits < 0 || !value.fingerprint) throw new Error("The connected account did not return a valid price. Please refresh the quote.");
           if (!abort.signal.aborted) { setError(""); setQuote({ key: quoteKey, credits: value.estimatedCredits, fingerprint: value.fingerprint }); }
         }).catch(error => { if (!abort.signal.aborted) { setQuote(null); setError(error.message); } });
       } else void studioRequest<{ credits: number | null }>(
@@ -440,7 +440,7 @@ export function GenerationDialog({
             <label className="field-label">Image quality<select aria-label="Marketing image quality" value={marketing.quality} disabled={busy || !!pending || marketing.enhancePrompt} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingGenerationOptions['quality'] })}>
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
             </select></label>
-            <p className="muted small-copy">{marketing.enhancePrompt ? "Higgsfield preset enhancement · product first, optional cast second · high quality" : "Higgsfield Marketing Studio · direct creative direction"}. Price is checked live before rendering.</p>
+            <p className="muted small-copy">{marketing.enhancePrompt ? "Preset enhancement · product first, optional cast second · high quality" : "Marketing Studio · direct creative direction"}. Price is checked live before rendering.</p>
           </div>}
           {kind !== "audio" && model?.soulIdentity && (
             <div className="generation-options">

@@ -26,7 +26,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
     try {
     const name = await appPrompt(
       scope === "render" ? "New token — can generate" : "New read-only token",
-      "", "What is it for? e.g. Claude"
+      "", "What is it for? e.g. your assistant"
     );
     if (!name?.trim()) return;
     const cap = scope === "render"

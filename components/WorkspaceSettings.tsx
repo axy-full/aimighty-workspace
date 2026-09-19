@@ -105,7 +105,7 @@ export default function WorkspaceSettings({ isAdmin }: { isAdmin: boolean }) {
           <span className="min-w-0 flex-1">
             Edit &amp; extend output
             <span className="mt-0.5 block text-[12px] leading-snug text-mute">
-              ByteDance recommends MOV for edits: it keeps the colour and audio
+              The video engine recommends MOV for edits: it keeps the colour and audio
               continuity an MP4 re-encode loses. MP4 stays the default because
               QuickTime files don&rsquo;t play reliably in Chrome.
             </span>

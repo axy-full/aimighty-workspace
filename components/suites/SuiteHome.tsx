@@ -26,7 +26,7 @@ const descriptions = {
   atomik: "Plan the work, choose the engines and approve each priced stage.",
   moleculr:
     "Build your brand, develop campaigns and create consistent campaign assets in one Marketing Studio.",
-  subatomik: "Transfer movement and rework subjects with Genjutsu, on your connected credits.",
+  subatomik: "Transfer movement and rework subjects with video transforms, on your connected credits.",
 };
 export default function SuiteHome() {
   const session = useSession(),

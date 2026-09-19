@@ -239,14 +239,14 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
   } catch (e) {
     const msg = (e as Error).message;
     if (/\b404\b|not found/i.test(msg))
-      return fail(gen, "fal.ai no longer has this job. Render again.");
+      return fail(gen, "The render service no longer has this job. Render again.");
     // A refusal (422) is final; anything else gets another pass, until the ceiling.
     if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg))
       return fail(gen, msg, true);
     if (now() - gen.createdAt > UNREACHABLE_CEILING_MS) {
       return fail(
         gen,
-        `Could not reach fal.ai to find out how this render went: ${msg} If it did complete, fal will still have charged for it.`,
+        `Could not reach the render service to find out how this render went: ${msg} If it did complete, the render service will still have charged for it.`,
       );
     }
     if (options.strict) throw e;
@@ -255,12 +255,12 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
   if (polled.status === "failed" || polled.status === "cancelled")
     return fail(
       gen,
-      polled.error ?? "fal.ai could not finish this render.",
+      polled.error ?? "The render service could not finish this render.",
       true,
     );
   if (polled.status !== "succeeded") {
     if (now() - gen.createdAt > CEILING_MS)
-      return fail(gen, "The render never came back from fal.ai. Render again.");
+      return fail(gen, "The render never came back from the render service. Render again.");
     return gen;
   }
   const url = polled.videoUrl!;

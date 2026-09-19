@@ -21,7 +21,7 @@ test('real routes retain GLB originals, save scene bindings, export a native pac
   const original = await request.get(receipt.url + '?download=1');
   expect(original.ok()).toBeTruthy(); expect(await original.body()).toEqual(source);
   const project = { ...newProject('Astra API study'), astraBlender: createAstraScene('product') };
-  project.assets.push({ id: 'glb-product', uploadId: receipt.id, name: receipt.filename, kind: 'document', mime: receipt.mime, url: receipt.url, category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] });
+  project.assets.push({ id: 'glb-product', uploadId: receipt.id, name: receipt.filename, kind: 'document', mime: receipt.mime, url: receipt.url, category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] });
   project.astraBlender.objects[2] = { ...project.astraBlender.objects[2], type: 'model', assetId: 'glb-product' };
   const save = await request.put('/api/workbench/projects', { headers, data: { project, revision: 0 } });
   expect(save.ok(), await save.text()).toBeTruthy();
@@ -46,7 +46,7 @@ test('real routes retain GLB originals, save scene bindings, export a native pac
 });
 
 
-test('native Blender intake preserves originals, rejects compressed inputs, and persists bound source', async ({ request }) => {
+test('native 3D intake preserves originals, rejects compressed inputs, and persists bound source', async ({ request }) => {
   await signInLocally(request);
   const me = await request.get('/api/me').then(response => response.json());
   const headers = { 'X-Workbench-Scope': `particl-active-${me.workspace.id}-${me.id}` };
@@ -57,7 +57,7 @@ test('native Blender intake preserves originals, rejects compressed inputs, and 
   expect(receipt.mime).toBe('application/x-blender');
   expect(await request.get(receipt.url + '?download=1').then(response => response.body())).toEqual(source);
   const project = newProject('Native file intake');
-  project.assets.push({ id: 'native-source', uploadId: receipt.id, name: receipt.filename, kind: 'document', mime: receipt.mime, url: receipt.url, category: 'Astra blender', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] });
+  project.assets.push({ id: 'native-source', uploadId: receipt.id, name: receipt.filename, kind: 'document', mime: receipt.mime, url: receipt.url, category: 'Astra', description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] });
   project.astraNative = { schemaVersion: 1, name: 'Native source', program: 'import bpy', assetIds: [], baseBlendAssetId: 'native-source' };
   const saved = await request.put('/api/workbench/projects', { headers, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBeTruthy();

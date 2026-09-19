@@ -86,7 +86,7 @@ export default function AdminPage() {
         </div>
         {!data ? <Waiting label="Reading the platform" /> : (
           <>
-            {!data.ready && <p className="rail-help text-lift">Sign-up isn&rsquo;t open yet: set TURSO_API_TOKEN, TURSO_ORG and KEYRING_SECRET in Vercel so new workspaces can be given a database and hold keys.</p>}
+            {!data.ready && <p className="rail-help text-lift">Sign-up isn&rsquo;t open yet: set TURSO_API_TOKEN, TURSO_ORG and KEYRING_SECRET in the hosting environment so new workspaces can be given a database and hold keys.</p>}
 
             <section className="scard">
               <div className="scard-h"><span>Invite someone to sign up</span><span>An invitation lets one address create an account and a workspace of its own. {data.mail ? "It is emailed at once." : "Email isn't set up, so copy the link and send it yourself."}</span></div>
@@ -140,7 +140,7 @@ export default function AdminPage() {
             <PreviewsCard />
 
             <section className="scard">
-              <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with ${data.signupCredits} credits (one credit is ${usd(data.creditUsd, 2)} of vendor cost) — or on its own keys once its owner switches. Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a Vercel AI Gateway key of its own."}</span></div>
+              <div className="scard-h"><span>Workspaces</span><span>{data.workspaces.length} on this deployment. The studio&rsquo;s own is the platform. {data.platformKeysByDefault ? `Every other one starts on the platform's keys with ${data.signupCredits} credits (one credit is ${usd(data.creditUsd, 2)} of vendor cost) — or on its own keys once its owner switches. Click a balance to add credits.` : "Every other one brings its own keys (PLATFORM_KEYS_FOR_NEW_WORKSPACES=0)."}{!data.gatewayMint && " Set VERCEL_TOKEN and VERCEL_TEAM_ID so each new workspace is minted a model gateway key of its own."}</span></div>
               <div className="flex flex-col">
                 <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px]"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
                 {data.workspaces.map((w) => (

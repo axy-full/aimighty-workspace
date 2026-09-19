@@ -114,7 +114,7 @@ export const fal: EngineAdapter = {
         status: "failed",
         videoUrl: null,
         totalTokens: null,
-        error: "fal.ai finished but returned no video.",
+        error: "The render service finished but returned no video.",
         vendorStartedAt: null,
         vendorEndedAt: null,
         raw: out,

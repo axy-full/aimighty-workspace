@@ -162,7 +162,7 @@ export function SyncedVideoComparison({
           {before ? (
             <video
               ref={source}
-              aria-label="Genjutsu before preview"
+              aria-label="Transform before preview"
               src={before}
               controls={!paired}
               playsInline
@@ -188,7 +188,7 @@ export function SyncedVideoComparison({
           {after ? (
             <video
               ref={result}
-              aria-label="Genjutsu after preview"
+              aria-label="Transform after preview"
               src={after}
               controls={!paired}
               muted={paired}

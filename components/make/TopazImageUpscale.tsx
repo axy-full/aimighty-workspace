@@ -143,7 +143,7 @@ export default function TopazImageUpscale({
       return original;
     },
     onAsset(asset) {
-      if (asset.kind !== "image") throw Error("Choose an image for Topaz Image Upscale.");
+      if (asset.kind !== "image") throw Error("Choose an image for Image Upscale.");
       setAdded((previous) => [asset, ...previous.filter((item) => item.key !== asset.key)]);
       setSourceKey(asset.key);
       setReviewed(null);
@@ -224,7 +224,7 @@ export default function TopazImageUpscale({
     ? String(savedContext.sourceUrl ?? "")
     : source?.url;
   return (
-    <section className={styles.composer} aria-label="Topaz Image Upscale">
+    <section className={styles.composer} aria-label="Image Upscale">
       <div className={styles.composerScroll}>
         <fieldset className={styles.fields} disabled={blocked}>
           <button
@@ -235,7 +235,7 @@ export default function TopazImageUpscale({
           >
             <ImageIcon size={20} />
             <span>
-              <strong>Topaz Image Upscale</strong>
+              <strong>Image Upscale</strong>
               <small>Precision enhancement from the original</small>
             </span>
           </button>

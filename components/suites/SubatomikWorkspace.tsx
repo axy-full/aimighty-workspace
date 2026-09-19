@@ -213,7 +213,7 @@ export default function SubatomikWorkspace() {
               new.
             </p>
           </div>
-          <span className="suite-badge">Genjutsu</span>
+          <span className="suite-badge">Transform</span>
         </header>
         {!session.signedIn ? (
           <section className="suite-panel">
@@ -543,7 +543,7 @@ function Studio({
     setConfirmed(false);
     try {
       if (!validId(id))
-        throw Error("Choose a saved Genjutsu take to recreate.");
+        throw Error("Choose a saved transform take to recreate.");
       const response = await fetch(
         `/api/jobs/${encodeURIComponent(id)}?sync=0`,
         {
@@ -722,7 +722,7 @@ function Studio({
         setReviewed(null);
         setConfirmed(false);
         setNotice(
-          "Genjutsu generation queued. Follow this exact job in Project results.",
+          "Transform generation queued. Follow this exact job in Project results.",
         );
         void history.refresh();
         window.dispatchEvent(
@@ -941,7 +941,7 @@ function Studio({
       <div className={styles.columns}>
         <section
           className={`suite-panel ${styles.creator}`}
-          aria-label="Genjutsu creation"
+          aria-label="Transform creation"
         >
           <div className="suite-section-heading">
             <div>
@@ -995,7 +995,7 @@ function Studio({
           <fieldset disabled={blocked} className={styles.form}>
             <div
               className={styles.source}
-              aria-label="Genjutsu source drop area"
+              aria-label="Transform source drop area"
               onDragOver={receiver.onDragOver}
               onDrop={(event) => receiver.onDrop(event, "source")}
             >
@@ -1006,7 +1006,7 @@ function Studio({
               {previewSource ? (
                 <>
                   <video
-                    aria-label="Genjutsu source preview"
+                    aria-label="Transform source preview"
                     src={previewSource}
                     controls
                     playsInline
@@ -1062,7 +1062,7 @@ function Studio({
                 type="file"
                 ref={sourcePicker}
                 accept=".mp4,.mov,.webm,video/*"
-                aria-label="Upload Genjutsu source video"
+                aria-label="Upload transform source video"
                 onChange={(event) => {
                   if (event.target.files)
                     void receiver.useFiles(event.target.files, "source");
@@ -1103,7 +1103,7 @@ function Studio({
             </div>
             <div
               className={styles.source}
-              aria-label="Genjutsu reference drop area"
+              aria-label="Transform reference drop area"
               onDragOver={receiver.onDragOver}
               onDrop={(event) => receiver.onDrop(event, "reference")}
             >
@@ -1187,7 +1187,7 @@ function Studio({
                 multiple
                 ref={imagePicker}
                 accept="image/png,image/jpeg,image/webp"
-                aria-label="Upload Genjutsu reference images"
+                aria-label="Upload transform reference images"
                 onChange={(event) => {
                   if (event.target.files)
                     void receiver.useFiles(event.target.files, "reference");
@@ -1199,7 +1199,7 @@ function Studio({
               Creative direction{" "}
               <span className={styles.optional}>Optional</span>
               <textarea
-                aria-label="Genjutsu creative direction"
+                aria-label="Transform creative direction"
                 rows={5}
                 maxLength={GENJUTSU_LIMITS.maxPromptChars}
                 value={saved ? String(saved.prompt ?? "") : input.prompt}
@@ -1226,7 +1226,7 @@ function Studio({
             <label>
               Output quality
               <select
-                aria-label="Genjutsu output quality"
+                aria-label="Transform output quality"
                 value={saved ? String(saved.resolution) : input.resolution}
                 onChange={(event) =>
                   change({
@@ -1274,7 +1274,7 @@ function Studio({
                 disabled={busy || !!paid.error || !recoverable}
                 onClick={() => void submit()}
               >
-                Recover saved Genjutsu request
+                Recover saved transform request
               </button>
               {!recoverable && (
                 <p role="alert">
@@ -1286,7 +1286,7 @@ function Studio({
           ) : quote ? (
             <div
               className={styles.quote}
-              aria-label="Genjutsu generation quote"
+              aria-label="Transform generation quote"
             >
               <strong>
                 {price(quote)} · {GENJUTSU_LABELS[variant]}
@@ -1320,7 +1320,7 @@ function Studio({
               disabled={blocked || !input.source}
               onClick={() => void review()}
             >
-              {busy ? "Checking source and price…" : "Review Genjutsu cost"}
+              {busy ? "Checking source and price…" : "Review transform cost"}
               <ArrowUpRight size={15} />
             </button>
           )}
@@ -1379,7 +1379,7 @@ function Studio({
           <div>
             <h2>Project results</h2>
             <p>
-              Genjutsu takes from the latest 500 project generations. Originals
+              Transform takes from the latest 500 project generations. Originals
               remain in the shared library.
             </p>
           </div>
@@ -1401,7 +1401,7 @@ function Studio({
           <p role="status">Loading project results…</p>
         ) : !takes.length ? (
           <p className={styles.hint}>
-            Your first Genjutsu result will appear here after you approve a
+            Your first transform result will appear here after you approve a
             generation.
           </p>
         ) : (

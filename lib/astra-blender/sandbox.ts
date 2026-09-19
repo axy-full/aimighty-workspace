@@ -63,7 +63,7 @@ export function astraSessionHandle(sandbox: Sandbox): AstraSandboxHandle {
 }
 const sdk: AstraSandboxSdk = {
   create: async options => {
-    if (engineMock()) throw new AstraRuntimeError("Native Blender compute is disabled while ENGINE_MOCK=1.", "not_configured");
+    if (engineMock()) throw new AstraRuntimeError("Native 3D compute is disabled while ENGINE_MOCK=1.", "not_configured");
     return astraSessionHandle(await Sandbox.create(options));
   },
   get: async options => astraSessionHandle(await Sandbox.get(options)),
@@ -80,7 +80,7 @@ export function astraRuntimeStatus() {
   const configured = /^snap_[A-Za-z0-9_-]{3,160}$/.test(process.env.ASTRA_BLENDER_SNAPSHOT_ID ?? "");
   return {
     configured,
-    reason: configured ? null : "Native Blender rendering is not connected. A Blender runtime snapshot must be configured.",
+    reason: configured ? null : "Native 3D rendering is not connected. A 3D runtime snapshot must be configured.",
     blenderVersion: ASTRA_BLENDER_VERSION,
     timeoutMs: ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs,
     vcpus: 2,
@@ -112,14 +112,14 @@ function imageSignature(data: Buffer, path: string): boolean {
 }
 
 export function prepareAstraInputs(scene: AstraScene, bindings: AstraNativeBindings, inputs: AstraRenderInput[], native?:AstraNativeSource) {
-  if (!Array.isArray(inputs) || inputs.length > 64) throw new AstraRuntimeError("Too many Blender input files.", "invalid_input");
+  if (!Array.isArray(inputs) || inputs.length > 64) throw new AstraRuntimeError("Too many 3D input files.", "invalid_input");
   const paths = new Map<string, Buffer>();
   let bytes = 0;
   for (const input of inputs) {
     if (!new RegExp(`^${ASTRA_SANDBOX_INPUT_DIR}/[A-Za-z0-9][A-Za-z0-9_-]{0,99}\\.(?:glb|png|jpg|jpeg|webp|tif|tiff|bmp|blend)$`, "i").test(input.path) || paths.has(input.path) || !Buffer.isBuffer(input.data) || !input.data.length || input.data.length > ASTRA_BLENDER_RUNTIME_LIMITS.assetBytes)
       throw new AstraRuntimeError("Use distinct bounded renderer files inside the input directory.", "invalid_input");
     bytes += input.data.length;
-    if (bytes > MAX_INPUT_BYTES) throw new AstraRuntimeError("Blender inputs exceed 100 MiB.", "invalid_input");
+    if (bytes > MAX_INPUT_BYTES) throw new AstraRuntimeError("3D inputs exceed 100 MiB.", "invalid_input");
     paths.set(input.path, input.data);
   }
   const used = new Set<string>();
@@ -146,7 +146,7 @@ os.execve('/opt/astra-blender/blender', ['/opt/astra-blender/blender', '--backgr
 
 async function readBounded(sandbox: AstraSandboxHandle, filename: string, limit: number, signal?: AbortSignal): Promise<Buffer> {
   const stream = await sandbox.readFile({ path: `${ASTRA_SANDBOX_OUTPUT_DIR}/${filename}` }, { signal });
-  if (!stream) throw new AstraRuntimeError(`Blender did not produce ${filename}.`, "invalid_output");
+  if (!stream) throw new AstraRuntimeError(`The 3D runtime did not produce ${filename}.`, "invalid_output");
   const readable = stream as Readable;
   const chunks: Buffer[] = [];
   let bytes = 0;
@@ -155,11 +155,11 @@ async function readBounded(sandbox: AstraSandboxHandle, filename: string, limit:
       signal?.throwIfAborted();
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       bytes += buffer.length;
-      if (bytes > limit) throw new AstraRuntimeError("Blender output exceeded its collection limit.", "invalid_output");
+      if (bytes > limit) throw new AstraRuntimeError("3D output exceeded its collection limit.", "invalid_output");
       chunks.push(buffer);
     }
   } catch (error) { readable.destroy(); throw error; }
-  if (!bytes) throw new AstraRuntimeError(`Blender produced an empty ${filename}.`, "invalid_output");
+  if (!bytes) throw new AstraRuntimeError(`The 3D runtime produced an empty ${filename}.`, "invalid_output");
   return Buffer.concat(chunks, bytes);
 }
 
@@ -179,7 +179,7 @@ export async function renderAstraNative(sceneValue:AstraScene,nativeValue:AstraN
 
 async function executeAstraProgram(program:string,inputs:AstraRenderInput[],onCreated:((id:string)=>Promise<void>)|undefined,dependencies:AstraSandboxDependencies):Promise<AstraRenderArtifacts>{
   const snapshotId = dependencies.snapshotId ?? process.env.ASTRA_BLENDER_SNAPSHOT_ID;
-  if (!snapshotId || !/^snap_[A-Za-z0-9_-]{3,160}$/.test(snapshotId)) throw new AstraRuntimeError(astraRuntimeStatus().reason ?? "A Blender runtime snapshot must be configured.", "not_configured");
+  if (!snapshotId || !/^snap_[A-Za-z0-9_-]{3,160}$/.test(snapshotId)) throw new AstraRuntimeError(astraRuntimeStatus().reason ?? "A 3D runtime snapshot must be configured.", "not_configured");
   const signal = dependencies.signal ? AbortSignal.any([dependencies.signal, AbortSignal.timeout(ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs)]) : AbortSignal.timeout(ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs);
   signal.throwIfAborted();
   if(dependencies.runtimeId && !runtimeName.test(dependencies.runtimeId)) throw new AstraRuntimeError("Invalid runtime name.","invalid_input");
@@ -198,7 +198,7 @@ async function executeAstraProgram(program:string,inputs:AstraRenderInput[],onCr
       ...inputs.map(input => ({ path: input.path, content: input.data })),
     ], { signal });
     const result = await instance.runCommand({ cmd: "/usr/bin/python3", args: [`${ROOT}/run.py`], cwd: ROOT, timeoutMs: RENDER_TIMEOUT_MS, signal });
-    if (result.exitCode !== 0) throw new AstraRuntimeError("Blender could not finish within this scene's runtime limits. This attempt will not restart automatically.", "render_failed");
+    if (result.exitCode !== 0) throw new AstraRuntimeError("The 3D runtime could not finish within this scene's runtime limits. This attempt will not restart automatically.", "render_failed");
     const blend = await readBounded(instance, ASTRA_BLENDER_OUTPUTS.blend, ASTRA_BLENDER_RUNTIME_LIMITS.artifactBytes, signal);
     if (blend.toString("ascii", 0, 7) !== "BLENDER") throw new AstraRuntimeError("The native scene file is invalid.", "invalid_output");
     const preview = await readBounded(instance, ASTRA_BLENDER_OUTPUTS.preview, MAX_PREVIEW_BYTES, signal);
@@ -224,19 +224,19 @@ async function executeAstraProgram(program:string,inputs:AstraRenderInput[],onCr
         await dependencies.onStopped(runtimeUsage(stopped));
       }
     }
-    catch { if (!failed) throw new AstraRuntimeError("Blender completed, but runtime shutdown could not be confirmed. The persisted runtime needs reconciliation.", "stop_unconfirmed"); }
+    catch { if (!failed) throw new AstraRuntimeError("The 3D runtime completed, but runtime shutdown could not be confirmed. The persisted runtime needs reconciliation.", "stop_unconfirmed"); }
   }
 }
 
 /** Read/cancel only; never resumes or purchases a replacement for a stopped run. */
 export async function getAstraRenderStatus(id: string, dependencies: Pick<AstraSandboxDependencies, "sdk" | "signal"> = {}) {
-  if (!runtimeName.test(id)) throw new AstraRuntimeError("Invalid Blender runtime identity.", "invalid_input");
+  if (!runtimeName.test(id)) throw new AstraRuntimeError("Invalid 3D runtime identity.", "invalid_input");
   const instance = await (dependencies.sdk ?? sdk).get({ ...credentials(), name: id, resume: false, signal: dependencies.signal });
   return { runtimeId: instance.name, status: instance.status, usage:runtimeUsage(instance) };
 }
 
 export async function cancelAstraRender(id: string, dependencies: Pick<AstraSandboxDependencies, "sdk" | "signal"> = {}) {
-  if (!runtimeName.test(id)) throw new AstraRuntimeError("Invalid Blender runtime identity.", "invalid_input");
+  if (!runtimeName.test(id)) throw new AstraRuntimeError("Invalid 3D runtime identity.", "invalid_input");
   const instance = await (dependencies.sdk ?? sdk).get({ ...credentials(), name: id, resume: false, signal: dependencies.signal });
   if (!["stopped", "failed", "aborted"].includes(instance.status)) await instance.stop({ signal: dependencies.signal ?? AbortSignal.timeout(10_000) });
   const final=await (dependencies.sdk??sdk).get({...credentials(),name:id,resume:false,signal:dependencies.signal??AbortSignal.timeout(10000)});

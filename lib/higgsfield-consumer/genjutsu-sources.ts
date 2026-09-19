@@ -37,7 +37,7 @@ export class ConsumerGenjutsuError extends Error {
         import_uncertain:
           "An earlier media transfer could not be confirmed. It will not be retried automatically. No video was submitted.",
         import_changed:
-          "The source, connection or selected Higgsfield wallet changed. Request a new quote.",
+          "The source, connection or selected connected wallet changed. Request a new quote.",
       }[code],
     );
   }

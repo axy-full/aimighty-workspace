@@ -9,7 +9,7 @@
  * validation, pricing and the ledger stay in exactly one place.
  */
 
-import { getModel } from "./models";
+import { displayModelName, getModel } from "./models";
 
 export type ToolDef = {
   name: string;
@@ -23,7 +23,7 @@ export const TOOLS: ToolDef[] = [
     description:
       "Start a video render in Particl. Returns an id immediately — renders take " +
       "roughly one to three minutes — then use wait_for_render to collect it. Every prompt is " +
-      "rewritten with ByteDance's Seedance recipe before rendering; prefix with 'raw:' to send " +
+      "rewritten with the engine's own recipe before rendering; prefix with 'raw:' to send " +
       "exact words. This spends real money from the workspace's credit.",
     inputSchema: {
       type: "object",
@@ -34,7 +34,7 @@ export const TOOLS: ToolDef[] = [
         duration: { type: "number", description: "Seconds. Default 5." },
         resolution: { type: "string", description: "480p | 720p | 1080p. Default 1080p." },
         ratio: { type: "string", description: "16:9 (default), 9:16, 1:1, 4:3, 3:4, 21:9." },
-        audio: { type: "boolean", description: "Native audio track. Seedance 2.5 only. Default false." },
+        audio: { type: "boolean", description: "Native audio track. Motion 2.5 only. Default false." },
         seed: { type: "number", description: "Fix the seed to make a shot reproducible." },
       },
       required: ["prompt"],
@@ -198,7 +198,7 @@ export async function runTool(
       })) as { id: string };
       return (
         `Rendering started.\n\nid: ${out.id}\nproject: ${project?.name ?? "Unfiled"}\n` +
-        `model: ${model.includes("2-5") ? "Seedance 2.5" : "Seedance 2.0"} · ` +
+        `model: ${displayModelName(model)} · ` +
         `${resolution} · ${ratio} · ${duration}s\n\n` +
         `Call wait_for_render with this id to collect it.`
       );

@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL_ID, MODELS, AUDIO_LABELS, type ModelDef } from "../models";
+import { DEFAULT_MODEL_ID, MODELS, AUDIO_LABELS, displayModelName, type ModelDef } from "../models";
 
 /**
  * Engines as the Rig names and constrains them.
@@ -8,8 +8,9 @@ import { DEFAULT_MODEL_ID, MODELS, AUDIO_LABELS, type ModelDef } from "../models
  * person reads (workspace brief, owner decision 5). Model ids stay what they
  * are, because an id is what is sent to the engine.
  *
- * NOTE for the lead: no global `displayModelName` existed on main when this
- * was written. If one lands, `engineLabel` should delegate to it.
+ * The long name of every catalogue engine comes from `displayModelName`
+ * (lib/models.ts), the product's one display-name function; this module adds
+ * only the Rig's short column and the capability-only audio names.
  */
 
 export type EngineLabel = {
@@ -22,8 +23,8 @@ export type EngineLabel = {
 const FIXED: Record<string, EngineLabel> = {
   "dreamina-seedance-2-5-260628": { short: "2.5", long: "Motion 2.5" },
   "dreamina-seedance-2-0-260128": { short: "2.0", long: "Motion 2.0" },
-  "fal-ai/kling-video/v3/standard": { short: "3.0", long: "Motion 3.0" },
-  "fal-ai/kling-video/v3/pro": { short: "3.0 Pro", long: "Motion 3.0 Pro" },
+  "fal-ai/kling-video/v3/standard": { short: "K 3.0", long: "Kinetic 3.0" },
+  "fal-ai/kling-video/v3/pro": { short: "K 3.0 Pro", long: "Kinetic 3.0 Pro" },
   "topaz/upscale/video/creative": { short: "Upscale", long: "Video upscale" },
   "fal-ai/luma-dream-machine/ray-2-flash/reframe": { short: "Reframe", long: "Reframe" },
   "fal-ai/topaz/upscale/image": { short: "Upscale", long: "Image upscale" },
@@ -50,7 +51,9 @@ function audioLabel(modelId: string): EngineLabel | null {
 /** A neutral label for any model id; unknown or retired ids never leak their raw id. */
 export function engineLabel(modelId: string | null | undefined): EngineLabel {
   const id = modelId ?? "";
-  const known = FIXED[id] ?? audioLabel(id);
+  const fixed = FIXED[id];
+  if (fixed) return { short: fixed.short, long: displayModelName(id) };
+  const known = audioLabel(id);
   if (known) return known;
   /* Retired dated Seedance builds keep their family's name. */
   if (/seedance-2-5/.test(id)) return FIXED["dreamina-seedance-2-5-260628"];

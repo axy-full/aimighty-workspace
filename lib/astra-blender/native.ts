@@ -35,8 +35,8 @@ export function validateAstraNativeBindings(source: AstraNativeSource, assets: P
   const available = new Map(assets.map(asset => [asset.id, asset]));
   for (const assetId of [...source.assetIds, ...(source.baseBlendAssetId ? [source.baseBlendAssetId] : [])]) {
     const asset = available.get(assetId);
-    if (!asset) throw new Error('A native Blender input is no longer in this project.');
-    if (assetId === source.baseBlendAssetId ? !isAstraBlendAsset(asset) : !(asset.kind === 'image' || asset.kind === 'document' && asset.mime === 'model/gltf-binary')) throw new Error('Native Blender inputs must be images, embedded GLB models or the selected base .blend file.');
+    if (!asset) throw new Error('A native 3D input is no longer in this project.');
+    if (assetId === source.baseBlendAssetId ? !isAstraBlendAsset(asset) : !(asset.kind === 'image' || asset.kind === 'document' && asset.mime === 'model/gltf-binary')) throw new Error('Native 3D inputs must be images, embedded GLB models or the selected base .blend file.');
   }
 }
 export function validateAstraNativeResult(value: z.infer<typeof astraNativeResultSchema>, assets: Pick<Asset, 'id' | 'kind' | 'mime' | 'name'>[]) {

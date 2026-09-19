@@ -139,7 +139,7 @@ test("real ledger checks sources in creation/dispatch and source deletion pins q
       await records.workbenchTransaction((tx) =>
         f.bindings.mediaBindingProblem(tx, "upload", "video"),
       ),
-    ).toContain("active Higgsfield");
+    ).toContain("active quote or job");
     // Simulate an out-of-band deletion; final dispatch validation still refuses.
     await f.database.db().execute("DELETE FROM uploads WHERE id='still'");
     await expect(f.jobs.claimConsumerDispatch(job)).rejects.toMatchObject({

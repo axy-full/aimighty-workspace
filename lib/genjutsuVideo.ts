@@ -20,7 +20,7 @@ import { invalidate, PROJECTS_KEY } from "./cache";
 
 type Original = { bytes: number; sha256: string; width: number; height: number; seconds: number; requestId: string };
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-const safeFailure = "The accepted Genjutsu original could not be collected yet. Its request and reserved cost are retained; check again after storage and the original connection are available.";
+const safeFailure = "The accepted transform original could not be collected yet. Its request and reserved cost are retained; check again after storage and the original connection are available.";
 
 /** A separate lease protects collection, never paid dispatch. Bytes are reserved
  * on the existing generation before storage I/O, so crash uncertainty remains
@@ -58,7 +58,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         if (state.status === "failed" || state.status === "cancelled") {
           if (original) throw new Error("Contradictory provider outcome");
           await writeGenerationOutcome({ sql: `UPDATE generations SET status=?,cost_usd=0,error=?,updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?`,
-            args: [state.status, state.error || "Higgsfield canceled this Genjutsu request.", now(), id, token] },
+            args: [state.status, state.error || "The connected account canceled this transform request.", now(), id, token] },
             { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: 0, projectId: row.project_id == null ? null : String(row.project_id), createdBy: row.created_by == null ? undefined : String(row.created_by) });
           await deliverGenerationSettlement(id);
           await settleHiggsfieldGenerationReceipt(id);
@@ -86,7 +86,7 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
             (SELECT COALESCE(SUM(COALESCE(bytes,0)+COALESCE(derivative_bytes,0)),0) FROM uploads) +
             (SELECT COALESCE(SUM(reserved_bytes),0) FROM upload_sessions) +
             (SELECT COALESCE(SUM(bytes),0) FROM consumer_video_originals WHERE state <> 'stored') AS n`)).rows[0].n);
-          if (!quotaVerdict({ usedBytes: used, incomingBytes: Math.max(0, bytes.length - Number(current.bytes || 0)), quotaBytes: quota }).allow) throw new HiggsfieldHttpError(507, "Workspace storage is full. The Genjutsu original remains available for collection; free storage and retry status.");
+          if (!quotaVerdict({ usedBytes: used, incomingBytes: Math.max(0, bytes.length - Number(current.bytes || 0)), quotaBytes: quota }).allow) throw new HiggsfieldHttpError(507, "Workspace storage is full. The transform original remains available for collection; free storage and retry status.");
           await tx.execute({ sql: "UPDATE generations SET bytes=?,params=json_set(params,'$.genjutsuOriginal',json(?)),updated_at=? WHERE id=?", args: [bytes.length, JSON.stringify(original), now(), id] });
         });
         stored = await storeVideoBytes(id, bytes);
@@ -117,7 +117,7 @@ export async function cancelGenjutsuVideo(id: string): Promise<{status: "request
   return withRecoveryJob(requireTenant().id, id, async () => {
     await ready();
     const row = (await db().execute({sql: "SELECT model,provider,kind,status,created_by,params FROM generations WHERE id=? AND deleted=0",args:[id]})).rows[0];
-    if (!row || !isGenjutsuModel(String(row.model)) || row.provider !== "higgsfield" || row.kind !== "video") throw new HiggsfieldHttpError(404,"No such Genjutsu request.");
+    if (!row || !isGenjutsuModel(String(row.model)) || row.provider !== "higgsfield" || row.kind !== "video") throw new HiggsfieldHttpError(404,"No such transform request.");
     const user = currentTenant()?.user;
     if (!user || (user.role !== "admin" && row.created_by !== user.id)) throw new HiggsfieldHttpError(403,"Only the creator or a workspace administrator can cancel this request.");
     if (["succeeded","failed","cancelled"].includes(String(row.status))) return {status: row.status as "succeeded" | "failed" | "cancelled"};

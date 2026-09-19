@@ -623,7 +623,7 @@ async function finishRender(
   seed: number | null,
 ): Promise<void> {
   const img = out.images?.[0];
-  if (!img?.url) throw new RenderRefused("fal.ai returned no image.");
+  if (!img?.url) throw new RenderRefused("The render service returned no image.");
   if (out.has_nsfw_concepts?.[0])
     throw new RenderRefused(
       "The safety checker flagged this render. Reword the prompt.",
@@ -757,7 +757,7 @@ return await withRecoveryJob(requireTenant().id, row.id, async () => {
     if (/\b404\b|not found/i.test(msg)) {
       await failRender(
         row.id,
-        "fal.ai no longer has this job. Render again.",
+        "The render service no longer has this job. Render again.",
         row.createdAt,
       );
       return;
@@ -768,7 +768,7 @@ return await withRecoveryJob(requireTenant().id, row.id, async () => {
     if (now() - row.createdAt > RENDER_UNREACHABLE_CEILING_MS) {
       await failRender(
         row.id,
-        `Could not reach fal.ai to find out how this render went: ${msg} ` +
+        `Could not reach the render service to find out how this render went: ${msg} ` +
           "If it did complete, fal will still have charged for it.",
         row.createdAt,
       );
@@ -780,7 +780,7 @@ return await withRecoveryJob(requireTenant().id, row.id, async () => {
     if (now() - row.createdAt > RENDER_CEILING_MS) {
       await failRender(
         row.id,
-        "The render never came back from fal.ai. Render again.",
+        "The render never came back from the render service. Render again.",
         row.createdAt,
       );
     }

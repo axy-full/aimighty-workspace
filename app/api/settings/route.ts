@@ -23,7 +23,7 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
   for (const [k, v] of Object.entries(body)) {
     if (!keys.includes(k)) continue;
     if (k === "promptWriter" && !["none", "byteplus", "claude"].includes(String(v))) {
-      return NextResponse.json({ error: "Prompt writer must be none, byteplus or claude." }, { status: 400 });
+      return NextResponse.json({ error: "Choose a supported prompt writer." }, { status: 400 });
     }
     if ((k === "defaultVideoModel" || k === "defaultImageModel") && String(v) !== "" && !modelOfKind(String(v), k === "defaultVideoModel" ? "video" : "image")) {
       return NextResponse.json({ error: k === "defaultVideoModel" ? "Not a video engine." : "Not a still engine." }, { status: 400 });

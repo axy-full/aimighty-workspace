@@ -278,18 +278,18 @@ test("Gen drags workspace assets into Seedance, Topaz and Astra source panels wi
   expect(redirected.searchParams.get("mode")).toBe("images");
   expect(redirected.searchParams.get("ref")).toBe(`upload:${f.imageUpload.id}`);
   expect(redirected.searchParams.get("task")).toBe("upscale");
-  await expect(page.getByRole("region", { name: "Topaz Image Upscale", exact: true }).getByLabel("Source image", { exact: true })).toHaveValue(`upload:${f.imageUpload.id}`);
+  await expect(page.getByRole("region", { name: "Image Upscale", exact: true }).getByLabel("Source image", { exact: true })).toHaveValue(`upload:${f.imageUpload.id}`);
   await page.goto("/make/not-a-generation-mode");
   // Next streams notFound() inside the app shell with HTTP 200; verify the
   // missing-route contract rather than the transport status after streaming.
   await expect(page).toHaveURL(/\/make\/not-a-generation-mode$/);
   await expect(page.getByText("Nothing here", { exact: true })).toBeVisible();
   await expect(page.locator('meta[name="robots"][content*="noindex"]').first()).toBeAttached();
-  await expect(page.getByRole("region", { name: "Topaz Image Upscale", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Image Upscale", exact: true })).toHaveCount(0);
   for (const [mode, task, panelName, sourceLabel, dropLabel, origin, id] of [
-    ["video", "edit", "Seedance 2.5 Edit", "Source clip", "Edit source drop area", "generation", f.generationVideo],
-    ["video", "upscale", "Topaz Astra 2", "Astra source clip", "Astra source drop area", "upload", f.videoUpload.id],
-    ["images", "upscale", "Topaz Image Upscale", "Source image", "Upscale image drop area", "upload", f.imageUpload.id],
+    ["video", "edit", "Motion 2.5 Edit", "Source clip", "Edit source drop area", "generation", f.generationVideo],
+    ["video", "upscale", "Upscale 2", "Astra source clip", "Astra source drop area", "upload", f.videoUpload.id],
+    ["images", "upscale", "Image Upscale", "Source image", "Upscale image drop area", "upload", f.imageUpload.id],
   ] as const) {
     await page.goto(`/generate?mode=${mode}&task=${task}`);
     const panel = page.getByRole("region", { name: panelName, exact: true });
@@ -314,10 +314,10 @@ test("Gen drags workspace assets into Seedance, Topaz and Astra source panels wi
   await originalImage.getByRole("button", { name: "Edit image", exact: true }).click();
   await expect(removeReference).toBeVisible();
   await assetCard(page, "upload", f.videoUpload.id).getByRole("button", { name: "Edit clip", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Seedance 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
+  await expect(page.getByRole("region", { name: "Motion 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
   await originalImage.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Upscale image", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Topaz Image Upscale", exact: true }).getByLabel("Source image", { exact: true })).toHaveValue(`upload:${f.imageUpload.id}`);
+  await expect(page.getByRole("region", { name: "Image Upscale", exact: true }).getByLabel("Source image", { exact: true })).toHaveValue(`upload:${f.imageUpload.id}`);
   expect(sourceScopes.length).toBeGreaterThan(0);
   expect(sourceScopes.every((scope) => scope === f.scope)).toBe(true);
   expect(f.paidRequests()).toBe(0);
@@ -447,7 +447,7 @@ test("collective Library navigation lists shared originals and all takes, with w
   await expect(collective).toBeVisible();
   await chooseAssetAction(page, assetCard(collective, "upload", f.videoUpload.id), "Edit clip");
   await expect(page).toHaveURL(new RegExp(`mode=video&task=edit&source=upload%3A${f.videoUpload.id}`));
-  await expect(page.getByRole("region", { name: "Seedance 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
+  await expect(page.getByRole("region", { name: "Motion 2.5 Edit", exact: true }).getByLabel("Source clip", { exact: true })).toHaveValue(`upload:${f.videoUpload.id}`);
   await allAssets.click();
   // Gen also renders these take cards on desktop. Confirm the destination
   // before opening its menu, otherwise navigation can remove Gen’s old menu.

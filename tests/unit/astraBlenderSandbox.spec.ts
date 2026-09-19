@@ -64,7 +64,7 @@ test("mock mode blocks the real SDK with a live snapshot while injected fakes re
   Sandbox.create = async () => { realCalls++; throw new Error("Unexpected real Sandbox.create"); };
   process.env.ENGINE_MOCK = "1";
   try {
-    await expect(renderAstraScene(createAstraScene(), {}, [], undefined, { snapshotId: SNAPSHOT })).rejects.toMatchObject({ code: "not_configured", message: "Native Blender compute is disabled while ENGINE_MOCK=1." });
+    await expect(renderAstraScene(createAstraScene(), {}, [], undefined, { snapshotId: SNAPSHOT })).rejects.toMatchObject({ code: "not_configured", message: "Native 3D compute is disabled while ENGINE_MOCK=1." });
     expect(realCalls).toBe(0);
     const f = fake();
     await renderAstraScene(createAstraScene(), {}, [], undefined, { sdk: f.sdk, snapshotId: SNAPSHOT });

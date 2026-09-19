@@ -83,14 +83,14 @@ const publicJob = (row: JobRecord): AstraRenderJob => ({ id: row.id, requestId: 
 async function record(id: string): Promise<JobRecord | null> { await astraRenderReady(); return ((await db().execute({ sql: 'SELECT * FROM astra_render_jobs WHERE id=?', args: [id] })).rows[0] as unknown as JobRecord) ?? null; }
 const event = (row: JobRecord, status: MeterEvent['status'], cost?: number): MeterEvent => ({ id: row.id, kind: 'image', engine: 'vercel-sandbox', model: ASTRA_COMPUTE_MODEL, status, engineCostUsd: cost, projectId: (JSON.parse(row.source_json) as Snapshot).productionProjectId, createdBy: row.owner });
 export function astraRenderAvailability() { const runtime = astraRuntimeStatus(); if (runtime.configured && !astraComputeRates())
-    return { ...runtime, configured: false, reason: 'Native Blender compute rates must be configured before quoting a render.' }; return runtime; }
+    return { ...runtime, configured: false, reason: 'Native 3D compute rates must be configured before quoting a render.' }; return runtime; }
 async function snapshot(input: AstraRenderRequest, owner: string): Promise<Snapshot> {
     const runtime = astraRenderAvailability();
     if (!runtime.configured)
         throw new AstraRenderError(runtime.reason!, 503);
     const ws = requireTenant();
     if (!ws.legacy && !ws.usesPlatformKeys)
-        throw new AstraRenderError('Enable platform compute funding before using native Blender.', 403);
+        throw new AstraRenderError('Enable platform compute funding before using native 3D.', 403);
     const project = await getAtomikProject(owner, input.projectId);
     if(project.assets.length>497)throw new AstraRenderError('Make room for three native render outputs in this project (maximum 500 assets).',422);
     if (!project.productionProjectId)
@@ -199,7 +199,7 @@ export async function runAstraRender(id: string, deps: AstraRenderDependencies =
     let usage: AstraRuntimeUsage | null = null;
     try {
         if (engineMock() && !deps.sandbox?.sdk)
-            throw new Error('Native Blender compute is disabled while ENGINE_MOCK=1.');
+            throw new Error('Native 3D compute is disabled while ENGINE_MOCK=1.');
         const source = JSON.parse(row.source_json) as Snapshot;
         const inputs = await (deps.loadInputs ?? loadAstraRenderInputs)(source.assets, row.owner);
         prepareAstraInputs(source.scene, inputs.bindings, inputs.inputs, source.native);

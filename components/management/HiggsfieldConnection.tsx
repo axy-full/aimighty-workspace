@@ -18,17 +18,17 @@ type Verification = {
 };
 const authLabels: Record<Verification['auth'], string> = {
   verified: 'Authentication verified', rejected: 'Authentication rejected',
-  unavailable: 'Authentication could not be checked', not_configured: 'No Higgsfield connection configured',
+  unavailable: 'Authentication could not be checked', not_configured: 'No identity account connected',
   mock: 'Local mock mode — provider not contacted',
 };
 const problemLabels: Record<CheckProblem | 'missing_configuration', string> = {
-  missing_configuration: 'Save a workspace connection or ask the platform operator to configure Higgsfield.',
-  authentication_rejected: 'Higgsfield did not accept the saved credentials.',
+  missing_configuration: 'Save a workspace connection or ask the platform operator to configure the identity account.',
+  authentication_rejected: 'The identity account did not accept the saved credentials.',
   rate_limited: 'The check was rate limited. Try again later.',
-  provider_unavailable: 'Higgsfield is temporarily unavailable. Try again later.',
-  invalid_response: 'Higgsfield did not return a usable verification response.',
-  model_unavailable: 'The Soul character estimate is not available for this connection.',
-  no_ready_identity: 'No ready Soul identity was found in the first results page.',
+  provider_unavailable: 'The identity account is temporarily unavailable. Try again later.',
+  invalid_response: 'The identity account did not return a usable verification response.',
+  model_unavailable: 'The identity render estimate is not available for this connection.',
+  no_ready_identity: 'No ready identity was found in the first results page.',
   mock_mode: 'No provider request was made in this local mock environment.',
 };
 function validVerification(value: unknown): value is Verification {
@@ -76,7 +76,7 @@ export default function HiggsfieldConnection() {
       if (!response.ok) throw new Error(result.error || "The connection could not be saved.");
       if (!active.current) return;
       setKeyId(""); setSecret(""); refresh();
-      setMessage("Higgsfield connection saved. Open Characters or Elements in Studio to create a Soul ID.");
+      setMessage("Identity account saved. Open Characters or Elements in Studio to create an identity.");
     } catch (cause) { if (active.current) setMessage(cause instanceof Error ? cause.message : "The connection could not be saved."); }
     finally { inFlight.current = false; if (active.current) setBusy(null); }
   }
@@ -95,26 +95,26 @@ export default function HiggsfieldConnection() {
     } finally { inFlight.current = false; if (active.current) setBusy(null); }
   }
 
-  return <ManagementCard title="Higgsfield · Soul ID" description="Create reusable character likenesses from portrait references. Your workspace key is encrypted and only its masked ending is returned.">
+  return <ManagementCard title="Connected identity account" description="Create reusable character likenesses from portrait references. Your workspace key is encrypted and only its masked ending is returned.">
     {!data ? <p role="status">{error ? "Connection settings could not be loaded." : "Loading connection…"}</p>
-      : data.mode === "legacy" ? <p>This workspace uses the platform’s Higgsfield connection. The platform operator can configure it in the deployment’s private environment.</p>
+      : data.mode === "legacy" ? <p>This workspace uses the platform’s identity account. The platform operator can configure it in the deployment’s private environment.</p>
       : !data.keyring ? <p>Ask the platform operator to enable encrypted workspace connections.</p>
       : <form onSubmit={event => { event.preventDefault(); void save(); }} className="space-y-4">
-        <p className="text-sm text-mute">{key?.set ? `Workspace connection saved · ${key.masked}` : "Add the API key ID and secret from your Higgsfield console."}</p>
-        {key?.set && <p className="text-sm text-mute">Existing Soul identities stay tied to this connection. Changing it pauses their use until the original connection is restored.</p>}
-        <label className="management-field">Higgsfield API key ID<input aria-label="Higgsfield API key ID" autoComplete="off" spellCheck={false} value={keyId} onChange={event => { invalidateCheck(); setKeyId(event.target.value); }} disabled={!!busy} /></label>
-        <label className="management-field">Higgsfield API key secret<input aria-label="Higgsfield API key secret" type="password" autoComplete="new-password" value={secret} onChange={event => { invalidateCheck(); setSecret(event.target.value); }} disabled={!!busy} /></label>
-        <button className="management-button primary" type="submit" disabled={!!busy || !keyId.trim() || !secret.trim()}>{busy === 'save' ? "Saving…" : "Save Higgsfield connection"}</button>
+        <p className="text-sm text-mute">{key?.set ? `Workspace connection saved · ${key.masked}` : <>Add the API key ID and secret from your <a href="https://cloud.higgsfield.ai/api-keys" target="_blank" rel="noreferrer">provider console</a>.</>}</p>
+        {key?.set && <p className="text-sm text-mute">Existing identities stay tied to this connection. Changing it pauses their use until the original connection is restored.</p>}
+        <label className="management-field">API key ID<input aria-label="Identity account API key ID" autoComplete="off" spellCheck={false} value={keyId} onChange={event => { invalidateCheck(); setKeyId(event.target.value); }} disabled={!!busy} /></label>
+        <label className="management-field">API key secret<input aria-label="Identity account API key secret" type="password" autoComplete="new-password" value={secret} onChange={event => { invalidateCheck(); setSecret(event.target.value); }} disabled={!!busy} /></label>
+        <button className="management-button primary" type="submit" disabled={!!busy || !keyId.trim() || !secret.trim()}>{busy === 'save' ? "Saving…" : "Save identity account"}</button>
       </form>}
     {message && <p role="status">{message}</p>}
     {data && <div className="mt-5 space-y-3">
-      <p className="text-sm text-mute">Check the saved connection and available Soul character price estimates. No training or generation credits are spent.</p>
+      <p className="text-sm text-mute">Check the saved connection and available identity render price estimates. No training or generation credits are spent.</p>
       <button className="management-button" type="button" disabled={!!busy || edited || !canVerify} onClick={() => void verify()}>{busy === 'verify' ? 'Verifying connection…' : 'Verify connection'}</button>
-      {!canVerify && <p className="text-sm text-mute">Save your own Higgsfield connection to verify it.</p>}
+      {!canVerify && <p className="text-sm text-mute">Save your own identity account to verify it.</p>}
       {edited && <p className="text-sm text-mute">Save or clear your credential edits before checking the saved connection.</p>}
       {verificationError && <ManagementNotice error>{verificationError}</ManagementNotice>}
       {verification && <ManagementNotice error={verification.auth === 'rejected' || verification.auth === 'unavailable' || verification.auth === 'not_configured'}>
-        <div className="space-y-2" aria-label="Higgsfield verification result">
+        <div className="space-y-2" aria-label="Identity account verification result">
           <p><strong>{authLabels[verification.auth]}</strong></p>
           {verification.error && <p>{problemLabels[verification.error]}</p>}
           {(['720p','1080p'] as const).map(resolution => {

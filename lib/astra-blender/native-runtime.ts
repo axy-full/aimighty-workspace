@@ -22,7 +22,7 @@ export function compileAstraNativeRuntime(scene: AstraScene, value: AstraNativeS
     const marker = "scene.frame_set(scene.frame_start)\nscene.render.filepath";
     const index = full.indexOf(marker);
     if (index < 0)
-        throw new Error('Blender compiler construction boundary changed.');
+        throw new Error('3D compiler construction boundary changed.');
     const payload = { program: source.program, assets: Object.fromEntries([...new Set([...source.assetIds, ...(source.baseBlendAssetId ? [source.baseBlendAssetId] : [])])].map(id => {
             const binding = bindings[id];
             if (!binding || !/^\/vercel\/sandbox\/astra\/input\/[A-Za-z0-9][A-Za-z0-9_-]{0,99}\.(?:glb|png|jpg|jpeg|webp|tiff?|bmp|blend)$/i.test(binding.path))

@@ -34,7 +34,7 @@ function rehearsalId(userId: string) {
 export async function ensureConsumerRehearsal(userId: string) {
   const id = rehearsalId(userId);
   if (!await readDraft(userId, id)) {
-    const project = { ...newProject("Higgsfield qualification"), id,
+    const project = { ...newProject("Connected-account qualification"), id,
       description: "Internal provider verification. Synthetic product demonstrations only.",
       brief: MARKETING_VIDEO_REHEARSAL.prompt };
     try { await saveDraft(userId, project, 0); }
@@ -85,7 +85,7 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
     return consumerVideoView(previous);
   }
   if (!await readDraft(userId, draftId))
-    throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a Higgsfield quote.", 404);
+    throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
   const access = await connected(userId);
   const quote = await getConsumerVideoQuote(access.accessToken, normalized);
   // Reconnection during the quote cannot bind its result to a replacement grant.
@@ -94,7 +94,7 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
     const { job } = await createConsumerJob({ userId, draftId, connectedOwnerId: userId,
       connectionGeneration: access.generation, higgsfieldWorkspaceId: quote.workspace.id,
       workflow: "marketing-video", idempotencyKey,
-      payload: { input: { ...quote.input }, workspaceName: quote.workspace.name ?? "Higgsfield workspace" },
+      payload: { input: { ...quote.input }, workspaceName: quote.workspace.name ?? "connected workspace" },
       quoteCredits: quote.credits, quoteExpiresAt: Date.now() + QUOTE_LIFETIME_MS, originalAssetIds: [],
     });
     return consumerVideoView(job);

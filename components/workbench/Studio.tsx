@@ -226,7 +226,7 @@ const nodeLabels = {
   scene: "SCENE 01",
   note: "DIRECTION",
 };
-const AstraStudio = dynamic(() => import('@/components/astra-blender/AstraStudio').then(module => module.AstraStudio), { loading: () => <p>Opening Astra blender…</p> });
+const AstraStudio = dynamic(() => import('@/components/astra-blender/AstraStudio').then(module => module.AstraStudio), { loading: () => <p>Opening Astra…</p> });
 
 function IconButton({
   label,
@@ -1106,7 +1106,7 @@ export default function Studio({
   }
   function applyPlan(plan: Plan) {
     if (plan.applied) return;
-    if (plan.astraBlender || plan.astraNative || plan.intent === 'astra-blender') { setStage('astra-blender'); setAtomOpen(false); toast('Review this scene proposal in Astra blender.'); return; }
+    if (plan.astraBlender || plan.astraNative || plan.intent === 'astra-blender') { setStage('astra-blender'); setAtomOpen(false); toast('Review this scene proposal in Astra.'); return; }
     if (plan.referenceAdAnalysis) {
       toast.error('Review and apply this analysis in Moleculr’s Reference ad panel so its selected original can be verified.');
       return;
@@ -2048,7 +2048,7 @@ export default function Studio({
                             if (serializeAstraNative(old.astraNative) !== serializeAstraNative(current.astraNative)) throw new Error('The native source changed. Review a new proposal.');
                             validateAstraNativeBindings(native.source, [...old.assets, ...(old.sharedAssets ?? [])]);
                           } else validateAstraBindings(proposal!.scene, [...old.assets, ...(old.sharedAssets ?? [])]);
-                          return {...old, ...(native ? {astraNative:native.source} : {astraBlender:proposal!.scene}), plans:[{...plan,astraNative:undefined,astraBlender:undefined,role:'Astra blender',applied:true}, ...old.plans.filter(item=>item.id!==plan.id)].slice(0,100)};
+                          return {...old, ...(native ? {astraNative:native.source} : {astraBlender:proposal!.scene}), plans:[{...plan,astraNative:undefined,astraBlender:undefined,role:'Astra',applied:true}, ...old.plans.filter(item=>item.id!==plan.id)].slice(0,100)};
                         });
                       }} />}
                     {stage === "storyboard" && (

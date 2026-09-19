@@ -583,7 +583,7 @@ test('Astra uses the exact requested model, binds the saved scene and prices bot
     expect(quote.model).toBe(ASTRA_BLENDER_MODEL);
     expect(quote.estimateUsd).toBeCloseTo(textCostUsd(astraModel, ASTRA_AGENT_INPUT_TOKENS, quote.maxTokens)! * ASTRA_AGENT_STEPS);
     expect(h.calls()).toBe(0); expect(h.reservations()).toBe(0);
-    await expect(quoteAtomikJob({ ...request, model: 'auto' }, 'owner', h.deps)).rejects.toThrow('uses GPT-6 Astra');
+    await expect(quoteAtomikJob({ ...request, model: 'auto' }, 'owner', h.deps)).rejects.toThrow('uses its own model');
     h.deps.models = async () => [model];
     await expect(quoteAtomikJob(request, 'owner', h.deps)).rejects.toThrow('No priced language model');
     h.deps.models = async () => [astraModel];

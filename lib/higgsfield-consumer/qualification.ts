@@ -12,7 +12,7 @@ export class QualificationPayloadError extends Error {
     super(
       code === "result_limit"
         ? "The read-only result exceeded the diagnostic limit."
-        : "Higgsfield returned an unusable read-only result.",
+        : "The connected account returned an unusable read-only result.",
     );
   }
 }

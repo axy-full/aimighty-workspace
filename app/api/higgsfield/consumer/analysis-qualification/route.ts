@@ -37,7 +37,7 @@ export const POST = withTenant(
           {
             code: "not_connected",
             error:
-              "Connect your Higgsfield account before checking analysis model definitions.",
+              "Connect your account before checking analysis model definitions.",
           },
           { status: 409, headers },
         );
@@ -56,7 +56,7 @@ export const POST = withTenant(
           {
             code: error.code,
             error:
-              "The Higgsfield connection is unavailable. Reconnect or try again later.",
+              "The connected account is unavailable. Reconnect or try again later.",
           },
           { status: error.status, headers },
         );
@@ -72,7 +72,7 @@ export const POST = withTenant(
         {
           code: "unavailable",
           error:
-            "Higgsfield analysis model definitions are temporarily unavailable.",
+            "Analysis model definitions are temporarily unavailable.",
         },
         { status: 503, headers },
       );
