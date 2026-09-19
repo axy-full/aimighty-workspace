@@ -1,0 +1,250 @@
+{
+ "capturedAt": "2026-09-19",
+ "note": "Input schemas exactly as the connected account's MCP tools/list advertised them on 19 September 2026 (descriptions abridged). Read-only capture; no tool was invoked. None of voice_change, dubbing or video_analysis_create declares get_cost, and each declares additionalProperties:false, so no price preflight can be sent to them.",
+ "tools": [
+  {
+   "name": "voice_change",
+   "description": "Replace the spoken voice in a video with a different voice while keeping the original timing and visuals, then re-merge the new audio onto the video. Pass video_id for the source video (a confirmed uploaded media_id or a completed video generation job_id) and voice_id for the target voice. voice_type selects whether voice_id is a built-in preset voice ('preset') or a workspace reference element ('element'). This tool does not use prompt or count; output dimensions are taken from the source video automatically.",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Voice change parameters.",
+      "properties": {
+       "video_id": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "description": "Source video. Confirmed uploaded video media_id or completed video job_id."
+       },
+       "voice_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Target voice id: a preset voice id (voice_type='preset') or a reference element id (voice_type='element')."
+       },
+       "voice_type": {
+        "type": "string",
+        "enum": [
+         "preset",
+         "element"
+        ],
+        "default": "preset",
+        "description": "Whether voice_id is a built-in preset voice ('preset') or a workspace reference element ('element')."
+       }
+      },
+      "required": [
+       "video_id",
+       "voice_id"
+      ]
+     }
+    },
+    "required": [
+     "params"
+    ]
+   }
+  },
+  {
+   "name": "dubbing",
+   "description": "Dub a video into another language: translate the spoken audio, synthesize it in the target language, and lip-sync the result back onto the video. Pass video_id for the source video (a confirmed uploaded media_id or a completed video generation job_id) and target_language as one of the supported language codes. This tool does not use prompt or count; output dimensions are taken from the source video automatically.",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Dubbing parameters.",
+      "properties": {
+       "target_language": {
+        "type": "string",
+        "enum": [
+         "eng",
+         "cmn",
+         "fra",
+         "hin",
+         "ita",
+         "jpn",
+         "kor",
+         "por",
+         "rus",
+         "tur",
+         "spa",
+         "deu",
+         "ara",
+         "pol",
+         "ind",
+         "fil",
+         "swe",
+         "fin"
+        ],
+        "description": "Target language code."
+       },
+       "video_id": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "description": "Source video. Confirmed uploaded video media_id or completed video job_id."
+       }
+      },
+      "required": [
+       "video_id",
+       "target_language"
+      ]
+     }
+    },
+    "required": [
+     "params"
+    ]
+   }
+  },
+  {
+   "name": "video_analysis_create",
+   "description": "Start a scene-by-scene analysis of a video. Provide EXACTLY ONE of: (a) video_input_id - UUID of a video the user has uploaded via media_upload/media_confirm, or (b) youtube_url. Returns immediately with status='queued'; poll video_analysis_status until status='completed'. Processing typically takes 3-5 minutes on average. The longer the video, the less accurate the scene-by-scene analysis becomes.",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "video_input_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "description": "UUID of the uploaded source video (the media_id returned by the upload tool)."
+     },
+     "youtube_url": {
+      "type": "string",
+      "pattern": "^https:\\/\\/(?:(?:www\\.|m\\.)?youtube\\.com\\/|youtu\\.be\\/).+",
+      "description": "HTTPS YouTube video URL."
+     }
+    }
+   }
+  },
+  {
+   "name": "video_analysis_status",
+   "description": "Get the status and result of a video analysis. Poll this after video_analysis_create until status='completed' (scenes populated) or 'failed' (fail_reason populated). Analyses typically finish in 3-5 minutes - poll accordingly every 30-60 seconds.",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "video_analyze_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "description": "UUID returned by video_analysis_create or video_analysis_jobs."
+     }
+    },
+    "required": [
+     "video_analyze_id"
+    ]
+   }
+  },
+  {
+   "name": "video_analysis_jobs",
+   "description": "List the user's video analyses in the current workspace, newest first. Paginate by passing the previous response's cursor.",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "cursor": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Pagination cursor - unix timestamp of created_at from the previous page."
+     },
+     "size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Page size."
+     }
+    }
+   }
+  },
+  {
+   "name": "list_voices",
+   "description": "List available voices for speech and voice tools. Returns built-in preset voices plus the user's own custom voices. Each voice has a voice_id and a voice_type ('preset' or 'element'); pass that exact pair to the audio models and to the voice_change tool to select the speaking voice. Use the preview_url to hear a sample. Paginate with the returned next_cursor.",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "cursor": {
+      "type": "string",
+      "description": "Pagination cursor (next_cursor from a previous list_voices result)."
+     },
+     "size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Max voices to return, default 20."
+     }
+    }
+   }
+  },
+  {
+   "name": "virality_predictor",
+   "description": "Virality Predictor: create starts analysis from a confirmed uploaded video or completed generated video; preview re-opens an existing dashboard. No non-submitting price form is advertised.",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "create",
+       "preview"
+      ]
+     },
+     "params": {
+      "type": "object",
+      "additionalProperties": {},
+      "properties": {
+       "job_id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "medias": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "role": {
+           "type": "string",
+           "const": "video"
+          }
+         },
+         "required": [
+          "role",
+          "id"
+         ]
+        }
+       },
+       "model": {
+        "type": "string",
+        "const": "virality_predictor"
+       }
+      },
+      "required": [
+       "model"
+      ]
+     }
+    },
+    "required": [
+     "action",
+     "params"
+    ]
+   }
+  }
+ ]
+}

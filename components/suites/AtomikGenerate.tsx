@@ -24,6 +24,8 @@ import {
 import { consumerGenerationInputSchema, type ConsumerGenerationInput } from "@/lib/higgsfield-consumer/generation-contract";
 import { CONNECTED_TOOLS, connectedToolModels, connectedToolResultName, connectedToolRoles, findConnectedTool, validateToolRequest, type ConnectedToolName } from "@/lib/higgsfield-consumer/tools";
 import GenAssetLibrary from "@/components/make/GenAssetLibrary";
+import { VOICE_TOOLS, findVoiceTool, type VoiceToolName } from "@/lib/higgsfield-consumer/voice-tools";
+import { AtomikVoiceTools, parseVoiceJob, voiceEndpoint, type VoiceCapabilities, type VoiceToolsHandle } from "./AtomikVoiceTools";
 import styles from "./atomik-generate.module.css";
 
 const endpoint = "/api/higgsfield/consumer/generation";
@@ -32,8 +34,8 @@ const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 export const WORKFLOW_LABELS: Record<ConnectedOutputType, string> = { image: "Image", video: "Video", audio: "Sound", "3d": "3D" };
 type ParameterValue = string | number | boolean | string[];
 type StoredAsset = { id: string; origin: "upload" | "generation"; kind: "image" | "video" | "audio"; name: string; url: string };
-type Creative = { type: ConnectedOutputType; tool: ConnectedToolName | ""; model: string; prompt: string; parameters: Record<string, ParameterValue>; medias: { role: string; asset: StoredAsset }[] };
-const empty: Creative = { type: "image", tool: "", model: "", prompt: "", parameters: {}, medias: [] };
+type Creative = { type: ConnectedOutputType; tool: ConnectedToolName | ""; voice: VoiceToolName | ""; model: string; prompt: string; parameters: Record<string, ParameterValue>; medias: { role: string; asset: StoredAsset }[] };
+const empty: Creative = { type: "image", tool: "", voice: "", model: "", prompt: "", parameters: {}, medias: [] };
 type JobTool = { name: ConnectedToolName; label: string; model: string; suffix: string };
 type JobSource = { role: string; kind: string; name: string };
 type Catalogue = { models: ConnectedModel[]; unlim: ConnectedUnlim; complete: boolean; fetchedAt: number };
@@ -71,6 +73,7 @@ function creative(value: unknown): Creative {
   return {
     type: CONNECTED_OUTPUT_TYPES.includes(value.type as ConnectedOutputType) ? (value.type as ConnectedOutputType) : "image",
     tool: findConnectedTool(String(value.tool ?? ""))?.name ?? "",
+    voice: findVoiceTool(String(value.voice ?? ""))?.name ?? "",
     model: typeof value.model === "string" ? value.model.slice(0, 80) : "",
     prompt: typeof value.prompt === "string" ? value.prompt.slice(0, 5000) : "",
     parameters: record(value.parameters) ? Object.fromEntries(Object.entries(value.parameters).filter(([, v]) => ["string", "number", "boolean"].includes(typeof v) || Array.isArray(v)).slice(0, 64)) as Record<string, ParameterValue> : {},
@@ -142,7 +145,11 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
   const [search, setSearch] = useState(""), [activeRole, setActiveRole] = useState("");
   const [clock, setClock] = useState(() => Date.now()), [nextPoll, setNextPoll] = useState<Record<string, number>>({});
   const pending = useRef(false), live = useRef(false), lifecycle = useRef(0), attemptIds = useRef<string[]>([]);
-  const tool = findConnectedTool(input.tool);
+  const voiceRef = useRef<VoiceToolsHandle>(null);
+  const [voiceCapabilities, setVoiceCapabilities] = useState<VoiceCapabilities | null>(null);
+  const [voiceJobs, setVoiceJobs] = useState<Parameters<typeof AtomikVoiceTools>[0]["jobs"]>([]), [voiceRevision, setVoiceRevision] = useState(0);
+  const voiceTool = findVoiceTool(input.voice);
+  const tool = voiceTool ? null : findConnectedTool(input.tool);
   const models = !catalogue ? [] : tool ? connectedToolModels(tool, catalogue) : catalogue.models.filter((m) => m.outputType === input.type);
   const model = models.find((m) => m.id === input.model && m.outputType === input.type) ?? null;
   const specs = model ? effectiveParameters(model) : [];
@@ -194,12 +201,26 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
       if (typeof me.id !== "string" || !record(me.workspace) || typeof me.workspace.id !== "string" || workbenchScopeFor(me.workspace.id, me.id) !== scope)
         throw new Error("Your account or workspace changed. Reload this project before continuing.");
       if (me.owner !== true) { setCapability({ owner: false, connected: false, suspended: false }); setJobs([]); return; }
-      const [connection, result] = await Promise.all([json("/api/higgsfield/consumer/connection"), json(`${endpoint}?${new URLSearchParams({ draftId })}`)]);
+      const [connection, result, voice] = await Promise.all([json("/api/higgsfield/consumer/connection"), json(`${endpoint}?${new URLSearchParams({ draftId })}`), json(`${voiceEndpoint}?${new URLSearchParams({ draftId })}`).catch(() => null)]);
       if (!live.current || lifecycle.current !== token) return;
       if (!Array.isArray(result.jobs) || result.jobs.length > 25) throw new Error("Saved generation jobs could not be loaded.");
       const saved = result.jobs.map((job) => parseJob(job, draftId));
       confirmAttempts(saved);
       setJobs(retain(saved, attemptIds.current));
+      // Voice tools are read independently: an unavailable or unreadable voice
+      // listing disables that group only, never the workflows or Tools.
+      let voiceReady = false;
+      if (voice && Array.isArray(voice.jobs) && voice.jobs.length <= 25 && record(voice.capabilities)) {
+        try {
+          const caps = voice.capabilities;
+          const languages = Array.isArray(caps.languages) ? caps.languages.flatMap((entry) => record(entry) && typeof entry.code === "string" && typeof entry.name === "string" ? [{ code: entry.code.slice(0, 8), name: entry.name.slice(0, 40) }] : []).slice(0, 64) : [];
+          setVoiceJobs(voice.jobs.map((job) => parseVoiceJob(job, draftId)));
+          setVoiceCapabilities({ voice: caps.voice === true, dubbing: caps.dubbing === true, analysis: caps.analysis === true, languages });
+          voiceReady = true;
+        } catch { /* Fall through to the disabled voice group below. */ }
+      }
+      if (!voiceReady) { setVoiceJobs([]); setVoiceCapabilities({ voice: false, dubbing: false, analysis: false, languages: [] }); }
+      setVoiceRevision((before) => before + 1);
       const connected = connection.connected === true && connection.requiresReconnect !== true;
       setCapability({ owner: true, connected, suspended: me.workspace.suspended === true });
       setClock(Date.now());
@@ -257,6 +278,17 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
     } finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
   }
   async function addReference(payload: Parameters<typeof resolveGenInput>[0]) {
+    if (voiceTool) {
+      if (pending.current) return;
+      const token = lifecycle.current; pending.current = true; setBusy("reference"); setError("");
+      try {
+        const asset: GenInputAsset = await resolveGenInput(payload, scope);
+        if (!live.current || lifecycle.current !== token) return;
+        voiceRef.current?.addSource(asset);
+      } catch (reason) { if (live.current && lifecycle.current === token) setError(reason instanceof Error ? reason.message : "This file cannot be used as the source."); }
+      finally { if (lifecycle.current === token) { pending.current = false; if (live.current) setBusy(""); } }
+      return;
+    }
     if (pending.current || !model || !role) { setError(model ? "Choose a reference role first." : "Choose a model before adding reference files."); return; }
     const token = lifecycle.current; pending.current = true; setBusy("reference"); setError("");
     try {
@@ -291,12 +323,13 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
     finally { if (token === lifecycle.current) { pending.current = false; if (live.current) setBusy(""); } }
   }
   const unlimited = (m: ConnectedModel) => m.supportsUnlim && catalogue?.unlim.available === true;
-  const pickTool = (next: ConnectedToolName) => { const preset = findConnectedTool(next)!; const first = catalogue ? connectedToolModels(preset, catalogue)[0] : undefined; change({ tool: next, type: preset.outputType, model: first?.id ?? "", prompt: "", parameters: {}, medias: [] }); setActiveRole(""); };
+  const pickTool = (next: ConnectedToolName) => { const preset = findConnectedTool(next)!; const first = catalogue ? connectedToolModels(preset, catalogue)[0] : undefined; change({ tool: next, voice: "", type: preset.outputType, model: first?.id ?? "", prompt: "", parameters: {}, medias: [] }); setActiveRole(""); };
+  const voiceTools = VOICE_TOOLS.filter((preset) => voiceCapabilities?.[preset.name === "voice_change" ? "voice" : preset.name === "dubbing" ? "dubbing" : "analysis"] === true);
   const settingsSummary = (job: Job) => Object.entries(job.input.parameters).map(([k, v]) => `${k.replace(/_/g, " ")} ${Array.isArray(v) ? v.join("/") : String(v)}`).join(" · ");
   return <div className={styles.workspace}>
     <div className={styles.columns}>
       <section className={`suite-panel ${styles.creator}`} aria-label="Generate on the connected account">
-        <div className="suite-section-heading"><div><h2>Generate</h2><p>Image, video, sound and 3D workflows from the connected account’s catalogue, plus tools that transform a project file. Every run is quoted in connected credits and approved before it is submitted.</p></div><span className="suite-badge">Connected account</span></div>
+        <div className="suite-section-heading"><div><h2>Generate</h2><p>Image, video, sound and 3D workflows from the connected account’s catalogue, tools that transform a project file, and voice tools that revoice or dub a project video. Every run is quoted in connected credits and approved before it is submitted.</p></div><span className="suite-badge">Connected account</span></div>
         {capability?.owner === false ? <p className="suite-footnote">The workspace owner can use the connected account. Your Particl generation tools remain available in Runs.</p> : <>
           {capability && !capability.connected && <p className="suite-footnote">Connect or reconnect the owner’s account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12} /></a>.</p>}
           {capability?.suspended && <p role="status">Rendering is paused for this workspace. Saved jobs can still be reviewed.</p>}
@@ -304,14 +337,18 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
             <div className={styles.groups}>
               <span className={styles.hint}>Workflows</span>
               <div role="group" aria-label="Generate workflow" className={styles.workflows}>
-                {CONNECTED_OUTPUT_TYPES.map((type) => <button key={type} type="button" aria-pressed={!tool && input.type === type} onClick={() => { change({ type, tool: "", model: "", parameters: {}, medias: [] }); setActiveRole(""); }}>{WORKFLOW_LABELS[type]}</button>)}
+                {CONNECTED_OUTPUT_TYPES.map((type) => <button key={type} type="button" aria-pressed={!tool && !voiceTool && input.type === type} onClick={() => { change({ type, tool: "", voice: "", model: "", parameters: {}, medias: [] }); setActiveRole(""); }}>{WORKFLOW_LABELS[type]}</button>)}
               </div>
               <span className={styles.hint}>Tools</span>
               <div role="group" aria-label="Tools" className={styles.workflows}>
                 {CONNECTED_TOOLS.map((preset) => <button key={preset.name} type="button" aria-pressed={tool?.name === preset.name} onClick={() => pickTool(preset.name)}>{preset.label}</button>)}
               </div>
+              {voiceTools.length > 0 && <span className={styles.hint}>Voice</span>}
+              {voiceTools.length > 0 && <div role="group" aria-label="Voice tools" className={styles.workflows}>
+                {voiceTools.map((preset) => <button key={preset.name} type="button" aria-pressed={voiceTool?.name === preset.name} onClick={() => { change({ voice: preset.name, tool: "", model: "", prompt: "", parameters: {}, medias: [] }); setActiveRole(""); }}>{preset.label}</button>)}
+              </div>}
             </div>
-            {!catalogue ? <p className={styles.hint}>{busy === "refresh" ? "Reading the connected catalogue…" : "The connected catalogue is not loaded. Refresh to read it."}</p> : <>
+            {voiceTool ? null : !catalogue ? <p className={styles.hint}>{busy === "refresh" ? "Reading the connected catalogue…" : "The connected catalogue is not loaded. Refresh to read it."}</p> : <>
               {tool && <p className={styles.hint} aria-label="Selected tool">{tool.label}: {tool.description} Needs one {tool.sourceKind}{tool.extraKinds.map((kind) => ` and one ${kind} file`).join("")} from this project; no prompt.</p>}
               <label>Model<select aria-label="Generate model" value={model?.id ?? ""} onChange={(e) => { change({ model: e.target.value, parameters: {}, medias: [] }); setActiveRole(""); }}>
                 <option value="">Choose a {tool ? `model for ${tool.label}` : `${WORKFLOW_LABELS[input.type].toLowerCase()} model`}</option>
@@ -327,11 +364,11 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
                 </dl>
               </div>}
             </>}
-            {!tool && <label>Prompt<textarea aria-label="Generate prompt" rows={5} maxLength={5000} value={input.prompt} onChange={(e) => change({ prompt: e.target.value })} /><small className={styles.hint}>{input.prompt.length}/5000</small></label>}
-            {specs.length > 0 && <div className={styles.settings} role="group" aria-label="Model settings">
+            {!tool && !voiceTool && <label>Prompt<textarea aria-label="Generate prompt" rows={5} maxLength={5000} value={input.prompt} onChange={(e) => change({ prompt: e.target.value })} /><small className={styles.hint}>{input.prompt.length}/5000</small></label>}
+            {!voiceTool && specs.length > 0 && <div className={styles.settings} role="group" aria-label="Model settings">
               {specs.map((spec) => <ParameterField key={spec.name} spec={spec} value={input.parameters[spec.name]} disabled={!!busy} onChange={(next) => { const parameters = { ...input.parameters }; if (next === undefined) delete parameters[spec.name]; else parameters[spec.name] = next; change({ parameters }); }} />)}
             </div>}
-            {model && roles.length > 0 && <div className={styles.references} role="group" aria-label={tool ? "Source files" : "Reference files"}>
+            {!voiceTool && model && roles.length > 0 && <div className={styles.references} role="group" aria-label={tool ? "Source files" : "Reference files"}>
               <span className={styles.hint}>{tool ? `Pick the ${tool.sourceKind}${tool.extraKinds.length ? ` and ${tool.extraKinds.join(", ")}` : ""} this tool works on from the library. Source files are copied to the connected account when a quote is requested.` : "Choose a role, then pick a project file from the library. Reference files are copied to the connected account when a quote is requested."}</span>
               <div className={styles.chips} role="group" aria-label={tool ? "Source role" : "Reference role"}>{roles.map((r) => <button key={r} type="button" aria-pressed={role === r} onClick={() => setActiveRole(r)}>{tool ? `${mediaKindForRole(r)} source` : `${r.replace(/_/g, " ")} · ${mediaKindForRole(r)}`}</button>)}</div>
               {input.medias.map((m, index) => <div key={`${m.asset.origin}:${m.asset.id}`} className={styles.reference}>
@@ -345,15 +382,17 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
               {input.medias.length > 0 && <label className={styles.checkbox}><input type="checkbox" checked={disclosed} onChange={(e) => setDisclosed(e.target.checked)} />I understand these project originals are copied to the connected account to prepare the quote.</label>}
             </div>}
           </fieldset>
-          {validation && model && <p className={styles.hint} role="status">{validation}</p>}
-          <div className={styles.actions}>
+          {voiceTool && capability && <AtomikVoiceTools ref={voiceRef} project={project} scope={scope} tool={voiceTool.name} capability={capability} capabilities={voiceCapabilities} jobs={voiceJobs} revision={voiceRevision} refreshProject={refreshProject} />}
+          {!voiceTool && validation && model && <p className={styles.hint} role="status">{validation}</p>}
+          {!voiceTool && <div className={styles.actions}>
             <button type="button" className="suite-primary" disabled={!canQuote} onClick={() => void act("quote")}>{busy === "quote" ? "Reading exact price…" : "Get connected-credit quote"}</button>
             <button type="button" className="suite-button" disabled={!!busy} onClick={() => void refresh(true)}><RefreshCw size={14} />Refresh saved jobs</button>
             <button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void refresh(true, true)}>Reload catalogue</button>
-          </div>
+          </div>}
+          {voiceTool && <div className={styles.actions}><button type="button" className="suite-button" disabled={!!busy} onClick={() => void refresh(true)}><RefreshCw size={14} />Refresh saved jobs</button></div>}
           {unresolved && <p role="status" className="suite-footnote">A submission needs reconciliation. Refresh saved jobs to recover it; this request will not be submitted again.</p>}
           {!!missing.length && <div className={styles.actions}><p className="suite-footnote">An earlier submission is outside the recent history. Recover its saved record before starting another generation.</p><button type="button" className="suite-button" disabled={!!busy || !capability?.connected} onClick={() => void act("status", null, missing[0])}>Recover earlier submission</button></div>}
-          {selected?.status === "quoted" && <div className={styles.quote} aria-label="Connected-credit quote">
+          {!voiceTool && selected?.status === "quoted" && <div className={styles.quote} aria-label="Connected-credit quote">
             <strong>{selected.quoteCredits} connected credits · {selected.workspaceName}</strong><small>Wallet {selected.workspaceId}</small>
             <small>{jobLabel(selected)} · {selected.model.name}{settingsSummary(selected) ? ` · ${settingsSummary(selected)}` : ""}{selected.input.medias.length ? ` · ${selected.input.medias.length} reference file${selected.input.medias.length === 1 ? "" : "s"}` : ""}</small>
             <p>{matches ? selected.input.prompt || (selected.tool ? selected.sources.map((source) => source.name).join(" + ") || "No prompt." : "No prompt.") : "The prompt, settings or references changed. Request a new quote before generating."}</p>
@@ -366,9 +405,9 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
         {error && <p role="alert" className={styles.error}>{error}</p>}
       </section>
       <aside className={`suite-panel ${styles.library}`} aria-label="Project library">
-        <div className="suite-section-heading"><div><h2>Project library</h2><p>{tool ? `Pick the source file for ${tool.label}.` : "Pick reference files for the selected model."}</p></div></div>
+        <div className="suite-section-heading"><div><h2>Project library</h2><p>{voiceTool ? `Pick the video for ${voiceTool.label}.` : tool ? `Pick the source file for ${tool.label}.` : "Pick reference files for the selected model."}</p></div></div>
         <label className={styles.search}>Search assets<input aria-label="Search project assets" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
-        <GenAssetLibrary workbenchProjectId={project.id} projectName={project.name} allowWorkspaceBrowse initialBrowseScope="project" search={search} audioReference={roles.some((r) => mediaKindForRole(r) === "audio")}
+        <GenAssetLibrary workbenchProjectId={project.id} projectName={project.name} allowWorkspaceBrowse initialBrowseScope="project" search={search} audioReference={!voiceTool && roles.some((r) => mediaKindForRole(r) === "audio")}
           onUseAsset={(asset) => void addReference(asset)} onUseReference={(asset) => void addReference(libraryInput(asset))}
           onUsePrompt={(take) => change({ prompt: take.prompt.slice(0, 5000) })} onEdit={() => {}} onUpscale={() => {}} />
       </aside>

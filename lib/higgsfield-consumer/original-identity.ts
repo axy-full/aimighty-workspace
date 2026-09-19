@@ -8,6 +8,8 @@ import { GENERATION_OUTPUT_KIND, parseConsumerGenerationInput } from "./generati
 import { mediaKindForRole } from "./catalogue";
 import { parseConsumerMarketingTemplateInput } from "./marketing-templates";
 import { MARKETING_TEMPLATE_PRODUCT_ROLE } from "./marketing-template-sources";
+import { parseConsumerVoiceToolInput } from "./voice-tools";
+import { VOICE_TOOL_SOURCE_ROLE } from "./voice-tool-sources";
 export type ConsumerOriginalKind = "video" | "image" | "audio" | "model";
 export const CONSUMER_ORIGINAL_MIMES: Record<ConsumerOriginalKind, readonly string[]> = {
   video: ["video/mp4"],
@@ -89,6 +91,26 @@ export function consumerVideoIdentity(job: ConsumerJob) {
         templateCategory: template.category,
         workbenchProjectId: job.draftId,
         references: input.productImage ? [{ ...input.productImage, role: MARKETING_TEMPLATE_PRODUCT_ROLE, kind: "image" }] : [],
+      } as Record<string, unknown>,
+    };
+  }
+  if (job.workflow === "voice-tool") {
+    const input = parseConsumerVoiceToolInput(payload.input);
+    if (input.tool === "video_analysis" || !object(provider) || typeof provider.video_id !== "string")
+      throw Error("The original voice tool differs from its admission.");
+    return {
+      model: input.tool,
+      kind: "video" as ConsumerOriginalKind,
+      prompt: "",
+      params: {
+        task: "connected-generation",
+        workflow: "voice-tool",
+        tool: input.tool,
+        outputType: "video",
+        workbenchProjectId: job.draftId,
+        ...(input.voice ? { voiceId: input.voice.id, voiceType: input.voice.type } : {}),
+        ...(input.targetLanguage ? { targetLanguage: input.targetLanguage } : {}),
+        references: [{ ...input.source, role: VOICE_TOOL_SOURCE_ROLE, kind: "video" }],
       } as Record<string, unknown>,
     };
   }

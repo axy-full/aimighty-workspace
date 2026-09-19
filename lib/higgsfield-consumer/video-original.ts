@@ -201,7 +201,7 @@ async function currentJob(tx: Transaction, job: ConsumerJob) {
     row.payload_json !== job.payloadJson ||
     Number(row.quote_credits) !== job.quoteCredits ||
     row.connection_generation !== job.connectionGeneration ||
-    row.workflow !== job.workflow || !["marketing-video", "genjutsu", "generation", "marketing-template"].includes(job.workflow)
+    row.workflow !== job.workflow || !["marketing-video", "genjutsu", "generation", "marketing-template", "voice-tool"].includes(job.workflow)
   )
     throw new ConsumerOriginalError("not_found");
   return row;
@@ -511,7 +511,7 @@ export async function collectConsumerVideoOriginal(
             originalSha256: sha256,
             ...(metadata!.width !== undefined ? { width: metadata!.width } : {}),
             ...(metadata!.height !== undefined ? { height: metadata!.height } : {}),
-            ...(job.workflow === "generation" || job.workflow === "marketing-template" ? { consumerOriginalMime: result.asset.mime } : {}),
+            ...(job.workflow === "generation" || job.workflow === "marketing-template" || job.workflow === "voice-tool" ? { consumerOriginalMime: result.asset.mime } : {}),
           };
           await tx.execute({
             sql: `INSERT INTO generations(id,project_id,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,kind,provider,bytes,billed_to) VALUES(?,?,?,?,?,'succeeded',?,NULL,?,?,?,?,'higgsfield',?,'higgsfield')`,
