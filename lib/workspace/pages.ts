@@ -1,5 +1,6 @@
 import { SUITES as BASE_SUITES, PARTICL_STAGE_ALIASES } from "@/lib/suites";
 import { rigSubtitle } from "./shots";
+import { takesSubtitle } from "./takes";
 import type { AppState, PageId, SelKind, Suite } from "./types";
 
 /* ── Suites ───────────────────────────────────────────────────────────────
@@ -245,7 +246,7 @@ export function subtitle(state: Pick<AppState, "page" | "lists">, data: Subtitle
     case "rig":
       return shots ? rigSubtitle(shots) : "";
     case "takes":
-      return takes ? plural(takes.length, "asset") : "";
+      return takes ? takesSubtitle(takes.map((t) => ({ credits: t.credits ?? null }))) : "";
     case "cast":
       return cast
         ? `${cast.filter((c) => c.group !== "elements").length.toLocaleString("en-US")} cast · ${plural(cast.filter((c) => c.group === "elements").length, "element")}`

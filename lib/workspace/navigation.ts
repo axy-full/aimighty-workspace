@@ -118,6 +118,15 @@ export function withLibFilter(state: AppState, libFilter: LibFilter): AppState {
   return { ...next, ...repairSelection(next, next.page) };
 }
 
+/** The neighbour of the current selection in its own visible list, or null at either end. */
+export function stepSelection(state: Pick<AppState, "selKind" | "selId" | "lists" | "libFilter">, delta: -1 | 1): string | null {
+  const list = listFor(state.selKind, state.lists, state.libFilter);
+  if (!list?.length) return null;
+  const at = list.findIndex((item) => item.id === state.selId);
+  if (at < 0) return list[0].id;
+  return list[at + delta]?.id ?? null;
+}
+
 /* ── URL ──────────────────────────────────────────────────────────────── */
 
 export const WORKSPACE_PATH = "/workspace";

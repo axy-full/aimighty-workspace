@@ -1,0 +1,63 @@
+/*
+ * Particl workspace — Takes, Cast & Elements, Edit & Sound (03-pages.md).
+ * Tokens come from app/workspace.css; every rule is scoped under `.pxw`.
+ */
+
+/* ── Shared ────────────────────────────────────────────────────────── */
+
+.pxw .pxw-notice { display: flex; align-items: center; gap: 9px; margin: 0 0 14px; padding: 10px 13px; border-radius: 11px; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); font-size: 12.5px; color: var(--pxw-body); }
+.pxw .pxw-notice > .pxw-dot { width: 6px; height: 6px; }
+.pxw .pxw-notice--error { border-color: rgba(255, 69, 58, 0.3); background: var(--pxw-red-tint); color: var(--pxw-red-ink); }
+.pxw .pxw-dot--pulse { animation: pulseDot 1.4s ease-in-out infinite; }
+.pxw .pxw-empty { margin: 0; padding: 26px; border: 1px dashed var(--pxw-dashed); border-radius: 13px; font-size: 13px; color: var(--pxw-dimmer); line-height: 1.5; }
+.pxw .pxw-empty p { margin: 0 0 12px; }
+.pxw .pxw-more { margin-top: 14px; }
+.pxw .pxw-lazy { position: absolute; inset: 0; display: block; }
+.pxw .pxw-lazy img,
+.pxw .pxw-lazy video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pxw .pxw-flat { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.pxw .pxw-flat > span { display: block; flex: 1; }
+.pxw .pxw-flat > span:last-child { flex: 1.1; }
+.pxw .pxw-media-item { width: 100%; text-align: left; }
+.pxw .pxw-media-item:hover { border-color: var(--pxw-hover-border); }
+.pxw .pxw-media-thumb .pxw-lazy { position: absolute; inset: 0; }
+
+/* ── Takes: asset grid ─────────────────────────────────────────────── */
+
+.pxw .pxw-takes { padding: 18px 20px 32px; }
+.pxw .pxw-take-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.pxw .pxw-take-card { display: block; width: 100%; background: var(--pxw-card); border: 1px solid var(--pxw-card-border); border-radius: 13px; overflow: hidden; padding: 0; }
+.pxw .pxw-take-card:hover { border-color: var(--pxw-hover-border); }
+.pxw .pxw-take-card[aria-pressed="true"] { border-color: var(--pxw-selected); }
+.pxw .pxw-take-media { display: block; position: relative; aspect-ratio: 16 / 9; background: var(--pxw-chip-inner); overflow: hidden; }
+.pxw .pxw-take-version { position: absolute; left: 9px; top: 9px; font-family: var(--pxw-mono); font-size: 9.5px; color: #121210; background: rgba(255, 255, 255, 0.78); padding: 2px 6px; border-radius: 5px; }
+.pxw .pxw-take-kind { position: absolute; right: 9px; top: 9px; font-family: var(--pxw-mono); font-size: 9px; letter-spacing: 0.09em; padding: 2px 6px; border-radius: 5px; background: rgba(0, 0, 0, 0.6); color: var(--pxw-blue-soft-ink); }
+.pxw .pxw-take-kind[data-kind="UPLOAD"] { color: var(--pxw-body); }
+.pxw .pxw-take-body { display: block; padding: 11px 12px 13px; }
+.pxw .pxw-take-name { display: block; font-size: 13px; font-weight: 550; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-take-meta { display: flex; justify-content: space-between; gap: 10px; font-family: var(--pxw-mono); font-size: 10.5px; color: var(--pxw-faint); margin-top: 6px; }
+.pxw .pxw-take-meta > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pxw .pxw-take-meta > span:last-child { flex: none; }
+.pxw .pxw-take-status { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11.5px; color: var(--pxw-dimmer); }
+.pxw .pxw-take-status > .pxw-dot { width: 5px; height: 5px; }
+
+/* ── Inspector bodies ──────────────────────────────────────────────── */
+
+.pxw .pxw-insp-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.pxw .pxw-insp-aside { font-size: 11.5px; color: var(--pxw-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pxw .pxw-insp-kicker { display: block; margin: 20px 0 10px; }
+.pxw .pxw-insp-preview { display: flex; flex-direction: column; border: none; }
+.pxw .pxw-insp-preview > img,
+.pxw .pxw-insp-preview > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.pxw .pxw-playhead { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(0, 0, 0, 0.45); }
+.pxw .pxw-playhead > div { height: 100%; background: var(--pxw-blue); }
+.pxw .pxw-play-chip { position: absolute; left: 8px; bottom: 9px; display: flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); font-size: 11px; font-weight: 530; color: var(--pxw-primary); }
+.pxw .pxw-facts { margin: 0; }
+.pxw .pxw-fact { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--pxw-inner-rule); }
+.pxw .pxw-fact dt { font-size: 12.5px; color: var(--pxw-dimmer); }
+.pxw .pxw-fact dd { margin: 0; font-family: var(--pxw-mono); font-size: 12px; text-align: right; color: var(--pxw-body); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pxw .pxw-fact dd[data-tone="primary"] { color: var(--pxw-primary); }
+.pxw .pxw-fact dd[data-tone="green"] { color: var(--pxw-green); }
+.pxw .pxw-fact dd[data-tone="blue"] { color: var(--pxw-blue-ink); }
+.pxw .pxw-insp-action { width: 100%; justify-content: center; margin-top: 16px; padding: 9px; border-radius: 10px; }
+.pxw .pxw-insp-primary { width: 100%; justify-content: center; margin-top: 16px; padding: 10px; border-radius: 10px; font-size: 13px; }

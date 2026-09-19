@@ -82,7 +82,8 @@ test("subtitles derive from loaded data and say nothing before it loads", () => 
   const lists = { shots: null, takes: null, cast: null };
   expect(subtitle({ page: "rig", lists })).toBe("");
   expect(subtitle({ page: "rig", lists: { ...lists, shots: [{ id: "a", name: "A", status: "approved" }, { id: "b", name: "B", status: "draft" }] } })).toBe("2 shots · 1 approved");
-  expect(subtitle({ page: "takes", lists: { ...lists, takes: Array.from({ length: 1200 }, (_, i) => ({ id: String(i), name: "t" })) } })).toBe("1,200 assets");
+  expect(subtitle({ page: "takes", lists: { ...lists, takes: Array.from({ length: 1200 }, (_, i) => ({ id: String(i), name: "t" })) } })).toBe("1,200 assets · 0 cr settled");
+  expect(subtitle({ page: "takes", lists: { ...lists, takes: [{ id: "g", name: "g", kind: "generation", credits: 1200 }, { id: "f", name: "f", kind: "generation", credits: 0 }, { id: "u", name: "u", kind: "upload", credits: null }] } })).toBe("3 assets · 1,200 cr settled");
   expect(subtitle({ page: "cast", lists: { ...lists, cast: [{ id: "a", name: "A", group: "cast" }, { id: "b", name: "B", group: "elements" }] } })).toBe("1 cast · 1 element");
   expect(subtitle({ page: "deliver", lists }, { aspect: "16:9", fps: 24 })).toBe("16:9 · 24 fps");
 });

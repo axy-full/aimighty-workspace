@@ -34,6 +34,8 @@ export type SelectableItem = {
   status?: string;
   /** Cast only: "cast" or "elements". */
   group?: "cast" | "elements";
+  /** Takes only: billed credits once settled (lib/workspace/takes.ts). */
+  credits?: number | null;
 };
 
 /**
