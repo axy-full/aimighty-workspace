@@ -147,7 +147,8 @@ test("owner voices, quote, exact approval and status receive server-derived iden
   const body = await response.json();
   expect(body).toEqual({ connection: f.connection, jobs: [f.job], capabilities: {
     voice: true, dubbing: true, analysis: false,
-    tools: [{ name: "voice_change", label: "Change voice", output: "video", suffix: "voice changed" }, { name: "dubbing", label: "Dub", output: "video", suffix: "dubbed" }],
+    reframe: true, reframeAspectRatios: ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"], reframeResolutions: ["480p", "720p", "1080p"], maxReframeSeconds: 60,
+    tools: [{ name: "voice_change", label: "Change voice", output: "video", suffix: "voice changed" }, { name: "dubbing", label: "Dub", output: "video", suffix: "dubbed" }, { name: "reframe", label: "Reframe", output: "video", suffix: "reframed" }],
     languages: tools.DUBBING_LANGUAGES, sourceKind: "video", maxSourceBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, priceSources: ["get_cost"], cancel: false,
   } });
   // Capability copy never names the provider (the ledger's credit-unit key is an internal identifier shared by every consumer route).
@@ -177,7 +178,7 @@ test("an analysis quote is refused while the flag is off and admitted only when 
   expect(on.calls.map((call) => call.name)).toEqual(["quote"]);
   const capabilities = (await (await on.request("GET", undefined, { query: "?draftId=draft-1" })).json()).capabilities;
   expect(capabilities.analysis).toBe(true);
-  expect(capabilities.tools.map((tool: { name: string }) => tool.name)).toEqual(["voice_change", "dubbing", "video_analysis"]);
+  expect(capabilities.tools.map((tool: { name: string }) => tool.name)).toEqual(["voice_change", "dubbing", "video_analysis", "reframe"]);
 });
 
 test("strict voice tool schemas reject remote URLs, spoofed identities, provider overrides and unknown actions", async () => {

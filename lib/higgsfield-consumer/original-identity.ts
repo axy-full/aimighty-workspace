@@ -96,7 +96,9 @@ export function consumerVideoIdentity(job: ConsumerJob) {
   }
   if (job.workflow === "voice-tool") {
     const input = parseConsumerVoiceToolInput(payload.input);
-    if (input.tool === "video_analysis" || !object(provider) || typeof provider.video_id !== "string")
+    const reframed = input.tool === "reframe" && object(provider) && Array.isArray(provider.medias) && provider.medias.length === 1 &&
+      object(provider.medias[0]) && provider.medias[0].role === "video" && typeof provider.medias[0].value === "string";
+    if (input.tool === "video_analysis" || !object(provider) || (typeof provider.video_id !== "string" && !reframed))
       throw Error("The original voice tool differs from its admission.");
     return {
       model: input.tool,
@@ -110,6 +112,7 @@ export function consumerVideoIdentity(job: ConsumerJob) {
         workbenchProjectId: job.draftId,
         ...(input.voice ? { voiceId: input.voice.id, voiceType: input.voice.type } : {}),
         ...(input.targetLanguage ? { targetLanguage: input.targetLanguage } : {}),
+        ...(input.aspectRatio ? { aspectRatio: input.aspectRatio, resolution: input.resolution, durationSeconds: provider.duration_seconds } : {}),
         references: [{ ...input.source, role: VOICE_TOOL_SOURCE_ROLE, kind: "video" }],
       } as Record<string, unknown>,
     };

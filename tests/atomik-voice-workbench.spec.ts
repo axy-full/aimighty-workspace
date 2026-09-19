@@ -56,7 +56,7 @@ async function fixture(page: Page, options: { analysis?: boolean } = {}) {
       expect(request.headers()["x-workbench-scope"]).toBe(scope);
       if (request.method() === "GET") {
         expect(url.searchParams.get("draftId")).toBe(project.id);
-        return json({ connection: { connected: true, requiresReconnect: false }, capabilities: { voice: true, dubbing: true, analysis: options.analysis === true, tools, languages: DUBBING_LANGUAGES, sourceKind: "video", maxSourceBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, priceSources: ["get_cost"], cancel: false }, jobs: [...jobs].reverse() });
+        return json({ connection: { connected: true, requiresReconnect: false }, capabilities: { voice: true, dubbing: true, analysis: options.analysis === true, reframe: true, tools, languages: DUBBING_LANGUAGES, sourceKind: "video", maxSourceBytes: 52428800, maxOriginalBytes: 104857600, importsMediaForQuote: true, priceSources: ["get_cost"], cancel: false }, jobs: [...jobs].reverse() });
       }
       const body = request.postDataJSON();
       posts.push(body);
@@ -69,7 +69,7 @@ async function fixture(page: Page, options: { analysis?: boolean } = {}) {
         expect(body.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
         const tool = findVoiceTool(body.input.tool)!;
         const job: Job = { id: `11111111-1111-4111-8111-${String(jobs.length + 1).padStart(12, "0")}`, draftId: project.id, status: "quoted", input: body.input,
-          tool: { name: tool.name, label: tool.label, suffix: tool.suffix, output: tool.output }, source: { kind: "video", name: "Hero take.mp4" }, priceSource: "get_cost",
+          tool: { name: tool.name, label: tool.label, suffix: tool.suffix, output: tool.output }, source: { kind: "video", name: "Hero take.mp4" }, priceSource: "get_cost", ...(tool.name === "reframe" ? { pricedSeconds: 2 } : {}),
           workspaceId: wallet, workspaceName: "Studio wallet", quoteCredits: 9, creditUnit: "higgsfield_credits", quoteExpiresAt: Date.now() + 300000, providerJobId: null, result: null, createdAt: Date.now() };
         jobs.push(job);
         return json({ job });
@@ -279,6 +279,38 @@ test("Analyse video appears only when the capability is on, and a completed repo
   expect(String(state.project.assets.at(-1)!.description)).toContain("hook strength: 72");
   expect(String(state.project.assets.at(-1)!.description)).toContain("not a measurement");
   expect(state.posts.map((body) => body.action)).toEqual(["catalogue", "quote", "submit", "status", "save-project"]);
+  await noOverflow(page);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test("Reframe sits with the Tools, takes an advertised aspect ratio and resolution, is priced for the stored length and files “<source> · reframed (<ratio>)”", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto("/atomik?project=atomik-draft&page=generate");
+  const panel = page.getByRole("region", { name: "Generate on the connected account", exact: true });
+  await expect(panel.getByRole("group", { name: "Voice tools", exact: true }).getByRole("button", { name: "Reframe", exact: true })).toHaveCount(0);
+  await panel.getByRole("group", { name: "Tools", exact: true }).getByRole("button", { name: "Reframe", exact: true }).click();
+  await expect(panel.getByRole("group", { name: "Tools", exact: true }).getByRole("button", { name: "Reframe", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByRole("textbox", { name: "Generate prompt", exact: true })).toHaveCount(0);
+  const ratio = panel.getByRole("combobox", { name: "Target aspect ratio", exact: true });
+  await expect(ratio.locator("option")).toHaveCount(7);
+  await expect(panel.getByRole("combobox", { name: "Resolution", exact: true })).toHaveValue("720p");
+  await useSource(page, "upload:clip-original");
+  await expect(panel.getByText("Choose the target aspect ratio.", { exact: true })).toBeVisible();
+  await ratio.selectOption("9:16");
+  await panel.getByRole("combobox", { name: "Resolution", exact: true }).selectOption("1080p");
+  await noOverflow(page);
+  const card = await runTool(page, state, "Reframe", async (quote) => {
+    await expect(quote).toContainText("Reframe · Hero take.mp4 · to 9:16 at 1080p · 2 s");
+    await expect(quote).toContainText("Result: “Hero take · reframed (9:16)”.");
+  });
+  const quoted = state.posts.find((body) => body.action === "quote")!;
+  expect(quoted.input).toEqual({ tool: "reframe", source: { uploadId: "clip-original" }, aspectRatio: "9:16", resolution: "1080p" });
+  await expect(card.getByText("Original ready", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Save to project", exact: true }).click();
+  await expect(card.getByRole("button", { name: "In project library", exact: true })).toBeDisabled();
+  expect(state.project.assets.at(-1)).toMatchObject({ name: "Hero take · reframed (9:16)", kind: "video", category: "Tools", description: "Reframe · to 9:16 at 1080p · 2 s · 9 connected credits" });
+  expect(state.posts.map((body) => body.action)).toEqual(["catalogue", "quote", "submit", "status", "save-project"]);
+  expect((await panel.innerText()).toLowerCase()).not.toContain("higgsfield");
   await noOverflow(page);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });

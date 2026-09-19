@@ -1,0 +1,101 @@
+{
+ "capturedAt": "2026-09-19",
+ "note": "The reframe tool's input schema as a connected-account MCP session advertised it in tools/list on 19 September 2026 (descriptions abridged). Read-only capture of the listing; the tool was never invoked. Its get_cost form needs only duration_seconds + resolution. The status tool is job_status (as for the other typed video tools); that reframe jobs report through job_status is unverified until the first owner-approved run.",
+ "tools": [
+  {
+   "name": "reframe",
+   "description": "Expand or reframe an existing video to a new aspect ratio while preserving the source content. Set params.get_cost=true to estimate credits without submitting a job.",
+   "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+     "params"
+    ],
+    "properties": {
+     "params": {
+      "type": "object",
+      "description": "Video reframe parameters. prompt and count are not supported.",
+      "properties": {
+       "aspect_ratio": {
+        "type": "string",
+        "enum": [
+         "16:9",
+         "9:16",
+         "4:3",
+         "3:4",
+         "1:1",
+         "21:9"
+        ],
+        "description": "Target aspect ratio. Required unless get_cost is true."
+       },
+       "duration_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 60,
+        "description": "Source video duration in seconds. Required with resolution when the source video is over 15 seconds. Maximum supported duration is 60 seconds."
+       },
+       "get_cost": {
+        "type": "boolean",
+        "description": "If true, return the cost in credits for this reframe without submitting any job. Requires duration_seconds and resolution; medias and aspect_ratio are not needed."
+       },
+       "medias": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "description": "Required unless get_cost is true. Exactly one source video, optional one start_image, and optional 1-2 image references.",
+        "items": {
+         "oneOf": [
+          {
+           "type": "object",
+           "required": [
+            "value",
+            "role"
+           ],
+           "properties": {
+            "role": {
+             "type": "string",
+             "const": "video"
+            },
+            "value": {
+             "type": "string"
+            }
+           }
+          },
+          {
+           "type": "object",
+           "required": [
+            "value",
+            "role"
+           ],
+           "properties": {
+            "role": {
+             "type": "string",
+             "enum": [
+              "start_image",
+              "image"
+             ]
+            },
+            "value": {
+             "type": "string"
+            }
+           }
+          }
+         ]
+        }
+       },
+       "resolution": {
+        "type": "string",
+        "enum": [
+         "480p",
+         "720p",
+         "1080p"
+        ],
+        "description": "Required when get_cost is true or duration_seconds is over 15 seconds."
+       }
+      }
+     }
+    }
+   }
+  }
+ ]
+}

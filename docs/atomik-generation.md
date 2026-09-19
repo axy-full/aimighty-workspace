@@ -56,7 +56,7 @@ Results are filed into the project library as `<source name without extension> �
 
 **Excluded from I2, and why**
 
-- **Reframe.** The catalogue has no `reframe` model, so `models_explore get` gives no constraints. The connected account's MCP does advertise a `reframe` tool with its own form (`params:{medias:[{role:"video"}…], aspect_ratio, duration_seconds, resolution, get_cost}`), but `mcp.ts` has no typed operation for it — the catalogue pipeline quotes only through `generate_image/video/audio/3d` by model id — and its status envelope is unverified. It needs its own typed quote/submit/status contract; deferred.
+- **Reframe** is not a catalogue model; it shipped as a typed tool in slice F1 (see "Reframe (slice F1)").
 - **Clipify.** `clipify` is declared, but its only input is a required `urls` list of YouTube links (no project source) and it yields up to 20 clips, while the collector stores exactly one `results.rawUrl` original. It is not a transform of a project file and does not fit the single-original pipeline; deferred.
 - Also unchanged: 3D tools were already covered by I1's 3D workflow (`image_to_3d`, rigging, remesh, retexture models with their declared roles) and are not duplicated as presets.
 
@@ -121,6 +121,22 @@ The Atomik chat planner (`lib/atomik.ts`, the rail and phone sheet) now works ov
 - **Every paid step is still quote-gated.** A recipe only shapes what the planner proposes; each connected step is priced live and approved exactly as in A2–A4, and Particl-engine steps keep their own prices.
 - Reads are toolset-guarded, names and paths are validated before any call (`WORKFLOW_NAME`, `BUNDLE_PATH`, no `..`, no absolute paths, text files only), and the catalogue and each recipe are cached one hour per connection.
 - Files: `lib/higgsfield-consumer/workflows.ts`, `recipes-service.ts`, `mcp.ts` (`readConnectedWorkflow`), `lib/atomik.ts` (`recipeSection`), `app/api/atomik/recipes/route.ts`, `app/api/atomik/route.ts`, `app/api/atomik/[id]/route.ts`, `components/atomik/ChatComposer.tsx`, `components/atomik/AtomikProvider.tsx`, `components/suites/AtomikSuite.tsx`; fixture `tests/fixtures/connected-workflows.json` (shape captured 19 September; names verbatim, text paraphrased); specs `tests/unit/connectedRecipes.spec.ts`, `tests/atomik-connected-recipes-workbench.spec.ts`.
+
+## Reframe (slice F1)
+
+**Reframe** appears in the Tools group but runs on the typed-tool pipeline of slice I3 (`voice-tools.ts`, the `audio-tools` route, workflow `voice-tool`, `AtomikVoiceTools.tsx`) rather than as a catalogue preset: the connected account advertises `reframe` as its own MCP tool. Captured schema: `tests/fixtures/connected-reframe-tool.json`.
+
+| Step | What is sent / checked |
+| --- | --- |
+| Validate | one project video (upload or completed generation, ≤50 MB), `aspectRatio` ∈ 16:9, 9:16, 4:3, 3:4, 1:1, 21:9, `resolution` ∈ 480p, 720p, 1080p. The duration comes from the stored original's `duration_s` (never from the browser) and is rounded up to hundredths. If the duration is missing or over 60 s, the request is refused (`invalid_input`) before any provider call. |
+| Contract | The advertised schema must declare `params.{medias, aspect_ratio, duration_seconds, resolution}` and `get_cost`. Enums, `maximum`/`exclusiveMinimum` and `maxItems` must admit our values; otherwise the request fails with `contract_unverified`. |
+| Exact quote (before import) | `reframe {params:{duration_seconds, resolution, get_cost:true}}`, which is the tool's advertised cost form and needs no media. `credits === credits_exact`. |
+| Import | `media_import_url {url, type:"video"}` once per quote, under the durable import claim. |
+| Re-price | The same cost form is priced again after the import. If the price moved, the quote is refused (`quote_changed`). |
+| Approve → submit | Exact wallet + credits. Fresh wallet/contract/price/balance checks, one dispatch claim, then exactly one `reframe {params:{medias:[{role:"video",value}], aspect_ratio, duration_seconds, resolution, get_cost:false}}`. |
+| Status → original | `job_status` for exactly the acknowledged job (type video). The MP4 is collected like the other typed video tools and filed as a `generations` row whose `params.references` names the source (lineage), plus `aspectRatio`, `resolution` and `durationSeconds`. "Save to project" files `<source> · reframed (<ratio>)` under **Tools**. |
+
+The quote card shows the priced length (`pricedSeconds`). Unverified until the first owner-approved run: that reframe jobs report through `job_status`. Optional start-image and edge-reference media are not offered. There is no Takes/Edit entry point for connected tools today, so Reframe lives on the Generate page only.
 
 ## Not covered by I1/I2
 

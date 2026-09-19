@@ -13,7 +13,7 @@ import { ConsumerJobError } from "@/lib/higgsfield-consumer/jobs";
 import { ConsumerOriginalError } from "@/lib/higgsfield-consumer/video-original";
 import { ConsumerVideoError } from "@/lib/higgsfield-consumer/video-contract";
 import { GENERATION_SOURCE_BYTES } from "@/lib/higgsfield-consumer/generation-sources";
-import { DUBBING_LANGUAGES, VOICE_TOOLS, VoiceToolError, consumerVoiceToolInputSchema } from "@/lib/higgsfield-consumer/voice-tools";
+import { DUBBING_LANGUAGES, REFRAME_ASPECT_RATIOS, REFRAME_MAX_SECONDS, REFRAME_RESOLUTIONS, VOICE_TOOLS, VoiceToolError, consumerVoiceToolInputSchema } from "@/lib/higgsfield-consumer/voice-tools";
 import {
   VIDEO_ANALYSIS_ENABLED,
   connectedVoices,
@@ -76,6 +76,10 @@ const capabilities = () => ({
   voice: true,
   dubbing: true,
   analysis: VIDEO_ANALYSIS_ENABLED,
+  reframe: true,
+  reframeAspectRatios: REFRAME_ASPECT_RATIOS,
+  reframeResolutions: REFRAME_RESOLUTIONS,
+  maxReframeSeconds: REFRAME_MAX_SECONDS,
   tools: VOICE_TOOLS.filter((tool) => tool.name !== "video_analysis" || VIDEO_ANALYSIS_ENABLED).map((tool) => ({ name: tool.name, label: tool.label, output: tool.output, suffix: tool.suffix })),
   languages: DUBBING_LANGUAGES,
   sourceKind: "video" as const,

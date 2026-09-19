@@ -260,11 +260,11 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
           const caps = voice.capabilities;
           const languages = Array.isArray(caps.languages) ? caps.languages.flatMap((entry) => record(entry) && typeof entry.code === "string" && typeof entry.name === "string" ? [{ code: entry.code.slice(0, 8), name: entry.name.slice(0, 40) }] : []).slice(0, 64) : [];
           setVoiceJobs(voice.jobs.map((job) => parseVoiceJob(job, draftId)));
-          setVoiceCapabilities({ voice: caps.voice === true, dubbing: caps.dubbing === true, analysis: caps.analysis === true, languages });
+          setVoiceCapabilities({ voice: caps.voice === true, dubbing: caps.dubbing === true, analysis: caps.analysis === true, reframe: caps.reframe === true, languages });
           voiceReady = true;
         } catch { /* Fall through to the disabled voice group below. */ }
       }
-      if (!voiceReady) { setVoiceJobs([]); setVoiceCapabilities({ voice: false, dubbing: false, analysis: false, languages: [] }); }
+      if (!voiceReady) { setVoiceJobs([]); setVoiceCapabilities({ voice: false, dubbing: false, analysis: false, reframe: false, languages: [] }); }
       setVoiceRevision((before) => before + 1);
       const connected = connection.connected === true && connection.requiresReconnect !== true;
       setCapability({ owner: true, connected, suspended: me.workspace.suspended === true });
@@ -369,7 +369,11 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
   }
   const unlimited = (m: ConnectedModel) => m.supportsUnlim && catalogue?.unlim.available === true;
   const pickTool = (next: ConnectedToolName) => { const preset = findConnectedTool(next)!; const first = catalogue ? connectedToolModels(preset, catalogue)[0] : undefined; change({ tool: next, voice: "", type: preset.outputType, model: first?.id ?? "", prompt: "", parameters: {}, medias: [] }); setActiveRole(""); };
-  const voiceTools = VOICE_TOOLS.filter((preset) => voiceCapabilities?.[preset.name === "voice_change" ? "voice" : preset.name === "dubbing" ? "dubbing" : "analysis"] === true);
+  const typedTools = VOICE_TOOLS.filter((preset) => voiceCapabilities?.[preset.name === "voice_change" ? "voice" : preset.name === "dubbing" ? "dubbing" : preset.name === "reframe" ? "reframe" : "analysis"] === true);
+  const voiceTools = typedTools.filter((preset) => preset.group === "voice");
+  // Typed connected-account tools that transform a video (Reframe) sit with the Tools presets.
+  const typedToolPresets = typedTools.filter((preset) => preset.group === "tools");
+  const pickTyped = (name: VoiceToolName) => { change({ voice: name, tool: "", model: "", prompt: "", parameters: {}, medias: [] }); setActiveRole(""); };
   const settingsSummary = (job: Job) => Object.entries(job.input.parameters).map(([k, v]) => `${k.replace(/_/g, " ")} ${Array.isArray(v) ? v.join("/") : String(v)}`).join(" · ");
   return <div className={styles.workspace}>
     <div className={styles.columns}>
@@ -387,10 +391,11 @@ export function AtomikGenerate({ project, scope, refreshProject }: { project: Pr
               <span className={styles.hint}>Tools</span>
               <div role="group" aria-label="Tools" className={styles.workflows}>
                 {CONNECTED_TOOLS.map((preset) => <button key={preset.name} type="button" aria-pressed={tool?.name === preset.name} onClick={() => pickTool(preset.name)}>{preset.label}</button>)}
+                {typedToolPresets.map((preset) => <button key={preset.name} type="button" aria-pressed={voiceTool?.name === preset.name} onClick={() => pickTyped(preset.name)}>{preset.label}</button>)}
               </div>
               {voiceTools.length > 0 && <span className={styles.hint}>Voice</span>}
               {voiceTools.length > 0 && <div role="group" aria-label="Voice tools" className={styles.workflows}>
-                {voiceTools.map((preset) => <button key={preset.name} type="button" aria-pressed={voiceTool?.name === preset.name} onClick={() => { change({ voice: preset.name, tool: "", model: "", prompt: "", parameters: {}, medias: [] }); setActiveRole(""); }}>{preset.label}</button>)}
+                {voiceTools.map((preset) => <button key={preset.name} type="button" aria-pressed={voiceTool?.name === preset.name} onClick={() => pickTyped(preset.name)}>{preset.label}</button>)}
               </div>}
             </div>
             {voiceTool ? null : !catalogue ? <p className={styles.hint}>{busy === "refresh" ? "Reading the connected catalogue…" : "The connected catalogue is not loaded. Refresh to read it."}</p> : <>

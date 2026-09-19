@@ -48,6 +48,7 @@ test("each tool sends exactly the arguments its advertised schema declares, and 
   expect(languages).toEqual(DUBBING_LANGUAGES.map((entry) => entry.code));
   expect(VOICE_TOOLS.map((tool) => [tool.name, tool.create, tool.status])).toEqual([
     ["voice_change", "voice_change", "job_status"], ["dubbing", "dubbing", "job_status"], ["video_analysis", "video_analysis_create", "video_analysis_status"],
+    ["reframe", "reframe", "job_status"],
   ]);
   expect(voiceToolArgumentShape(schema("video_analysis_status"), { video_analyze_id: job })).toEqual({ nested: false, getCost: false });
 });

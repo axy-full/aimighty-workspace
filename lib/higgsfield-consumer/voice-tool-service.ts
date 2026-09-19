@@ -81,6 +81,8 @@ function presentVoiceTool(job: ConsumerJob, availability: ConsumerOriginalAvaila
     tool: snapshot.tool,
     source: snapshot.source,
     priceSource: snapshot.priceSource,
+    // The stored source duration the reframe price was quoted for.
+    ...(typeof snapshot.params?.duration_seconds === "number" ? { pricedSeconds: snapshot.params.duration_seconds } : {}),
     workspaceName: snapshot.workspaceName,
     workspaceId: job.higgsfieldWorkspaceId,
     quoteCredits: job.quoteCredits,
@@ -139,10 +141,12 @@ export async function quoteConsumerVoiceTool(userId: string, draftId: string, in
   if (!(await readDraft(userId, draftId)))
     throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
   // Argument validation precedes source resolution, imports and pricing.
-  consumerVoiceToolParams(normalized, "00000000-0000-4000-8000-000000000000");
+  consumerVoiceToolParams(normalized, "00000000-0000-4000-8000-000000000000", normalized.tool === "reframe" ? { durationSeconds: 1 } : {});
   const access = await connected(userId);
   const described = await describeConsumerVoiceToolSource(normalized);
   const source = await resolveConsumerVoiceToolSource(normalized);
+  // Reframe is priced from the stored duration; an unknown or over-long one stops here.
+  if (normalized.tool === "reframe") consumerVoiceToolParams(normalized, "00000000-0000-4000-8000-000000000000", { durationSeconds: source.durationSeconds });
   const quote = await getConsumerVoiceToolQuote(access.accessToken, normalized, source, {
     resolveMedia: async (workspaceId, perform) => {
       await connected(userId, access.generation);
