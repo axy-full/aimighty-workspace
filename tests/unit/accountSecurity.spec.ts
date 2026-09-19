@@ -702,3 +702,17 @@ for (const mode of ["disable", "reset"] as const)
     ).toBe(before.recoveryCodesRemaining);
     expect(await f.p.sessionLookup(f.session)).toBeNull();
   });
+
+test("a previous-step authenticator code is accepted with margin and refused once the window boundary has passed", async () => {
+  const { totpAt, matchingTotpCounter } = await import("../../lib/totp");
+  const secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+  const windowStart = Math.floor(1_789_800_000_000 / 30_000) * 30_000;
+  const filledAt = windowStart + 29_500;               // 500 ms before the boundary
+  const code = totpAt(secret, filledAt - 30_000);      // the previous step, as the browser spec sends
+  // Same window at POST time: accepted as current - 1.
+  expect(matchingTotpCounter(secret, code, windowStart + 29_900, -1)).toBe(Math.floor(filledAt / 30_000) - 1);
+  // Boundary crossed before the server evaluates it: now two steps old, refused.
+  expect(matchingTotpCounter(secret, code, windowStart + 30_100, -1)).toBeNull();
+  // The current step's code survives the boundary (it becomes current - 1).
+  expect(matchingTotpCounter(secret, totpAt(secret, filledAt), windowStart + 30_100, -1)).toBe(Math.floor(filledAt / 30_000));
+});
