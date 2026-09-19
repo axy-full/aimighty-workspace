@@ -23,6 +23,7 @@ import {
   submitConsumerGenerationJob,
   pollConsumerGeneration,
 } from "@/lib/higgsfield-consumer/generation-service";
+import { connectedExplainerPresets } from "@/lib/higgsfield-consumer/explainer-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,7 +40,9 @@ const submit = z
   .object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) })
   .strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
-const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll]);
+/** Read-only explainer style listing (slice F6); nothing is generated from it. */
+const explainer = z.object({ action: z.literal("explainer-presets"), refresh: z.boolean().optional() }).strict();
+const requestSchema = z.discriminatedUnion("action", [catalogue, quote, submit, poll, explainer]);
 /** Shared consumer error classes predate the product vocabulary; this surface
  * speaks only of the connected account. */
 const neutral = (message: string) =>
@@ -113,7 +116,7 @@ export const POST = withTenant(async (req: Request) => {
     const body = parsed.data;
     await takeAccountLimit(
       `hf-consumer-generation:${requireTenant().id}:${owner.user.id}:${body.action}`,
-      body.action === "status" ? 30 : body.action === "catalogue" ? 12 : 6,
+      body.action === "status" ? 30 : body.action === "catalogue" || body.action === "explainer-presets" ? 12 : 6,
       60_000,
     );
     if (body.action === "catalogue")
@@ -121,6 +124,8 @@ export const POST = withTenant(async (req: Request) => {
         { catalogue: presentCatalogue(await connectedGenerationCatalogue(owner.user.id, { refresh: body.refresh === true }), body.type) },
         { headers },
       );
+    if (body.action === "explainer-presets")
+      return Response.json({ explainer: await connectedExplainerPresets(owner.user.id, { refresh: body.refresh === true }) }, { headers });
     if (body.action === "submit") {
       const render = await requireRender();
       if (render.response) return render.response;

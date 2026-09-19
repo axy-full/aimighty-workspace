@@ -113,6 +113,7 @@ import {
   type ShortsPreset,
   type ShortsPresets,
 } from "./shorts-studio";
+import { EXPLAINER_PRESETS_TOOL, parseExplainerPresets, type ExplainerPresets } from "./explainer-presets";
 export const CATALOGUE_PAGE_LIMIT = 100;
 export const CATALOGUE_PAGES = 5;
 export const CONSUMER_MCP_URL = "https://mcp.higgsfield.ai/mcp";
@@ -305,6 +306,8 @@ type ConsumerSession = {
   plannerRead: (read: PlannerRead) => Promise<Record<string, unknown>>;
   /** Only the fixed Shorts Studio list/create/status tools. */
   shortsCall: (tool: keyof typeof SHORTS_TOOLS, args: Record<string, unknown>, sending?: () => void) => Promise<Record<string, unknown>>;
+  /** Read-only explainer style listing; takes no arguments. */
+  explainerPresets: () => Promise<Record<string, unknown>>;
 };
 // A caller's durable admission error must reach that caller unchanged. It is
 // never exposed by a transport response or interpreted as an attempted POST.
@@ -771,6 +774,7 @@ async function withConsumerSession<T>(
         return (await post("tools/call", { name: read.tool, arguments: read.args }))!;
       },
       shortsCall: async (tool, args, sending) => (await post("tools/call", { name: SHORTS_TOOLS[tool], arguments: args }, sending))!,
+      explainerPresets: async () => (await post("tools/call", { name: EXPLAINER_PRESETS_TOOL, arguments: {} }))!,
     });
   } catch (error) {
     if (
@@ -2412,6 +2416,20 @@ export async function readConsumerShortsClips(accessToken: string, clipJobIds: r
         out.push({ jobId, raw });
       }
       return out;
+    });
+  } catch (error) {
+    return videoPreflightError(error);
+  }
+}
+
+/* ── Explainer styles (slice F6, read-only) ──────────────────────────── */
+/** Free listing only: `get_explainer_presets {}`. Never resolves a preset
+ * (that imports media into the connected account) and never generates. */
+export async function readExplainerPresets(accessToken: string, options: Options = {}): Promise<ExplainerPresets> {
+  try {
+    return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
+      if (!session.supportsTools) throw new ConsumerVideoError("provider_error");
+      return parseExplainerPresets(videoReadResult(session, await session.explainerPresets()));
     });
   } catch (error) {
     return videoPreflightError(error);

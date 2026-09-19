@@ -44,6 +44,8 @@ async function fixture(page: Page, options: { connected?: boolean; unlim?: boole
       posts.push(body);
       if (body.action === "catalogue")
         return json({ catalogue: { models: catalogue.models, unlim: { available: options.unlim === true, remaining: options.unlim ? 5 : null, expiresAt: null }, complete: true, fetchedAt: catalogue.fetchedAt } });
+      if (body.action === "explainer-presets")
+        return json({ explainer: { presets: [{ id: "56fc6472-33b7-45dc-83ff-80c71d40aec6", title: "Editorial Motion Graphics", aspect: "9:16" }, { id: "237dd06c-3729-4895-9672-1c623c4266e0", title: "Stickman Cartoon", aspect: "9:16" }], fetchedAt: Date.now(), runnable: false, catalogueModels: [] } });
       expect(body.draftId).toBe(project.id);
       if (body.action === "quote") {
         expect(body.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
@@ -233,6 +235,26 @@ test("the Sound and Video workflows expose declared enum, number and toggle sett
   await panel.getByRole("button", { name: "Get connected-credit quote", exact: true }).click();
   const quoted = state.posts.filter((body) => body.action === "quote")[1];
   expect(quoted.input).toEqual({ type: "video", model: "kling3_0", prompt: "Slow push in.", parameters: { sound: "off", duration: 10 }, medias: [] });
+  await noOverflow(page);
+  expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
+});
+
+test("explainer styles are browsable on request and clearly not runnable: nothing is quoted, resolved or generated", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto("/atomik?project=atomik-draft&page=generate");
+  const panel = page.getByRole("region", { name: "Explainer styles", exact: true });
+  await expect(panel.getByText("Not runnable yet", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("status")).toContainText("Browsing only: the connected catalogue lists no explainer model to quote");
+  expect(state.posts.filter((body) => body.action === "explainer-presets")).toHaveLength(0);
+  await panel.getByRole("button", { name: "Load explainer styles", exact: true }).click();
+  const list = panel.getByRole("list", { name: "Explainer style list", exact: true });
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+  await expect(list.getByRole("listitem").first()).toContainText("Editorial Motion Graphics");
+  await expect(list.getByRole("listitem").first()).toContainText("9:16");
+  await expect(panel.getByRole("button", { name: /quote|generate/i })).toHaveCount(0);
+  await expect(panel.locator("img, video")).toHaveCount(0);
+  expect(state.posts.map((body) => body.action)).toEqual(["catalogue", "explainer-presets"]);
+  expect((await panel.innerText()).toLowerCase()).not.toMatch(/higgsfield|supercomputer/);
   await noOverflow(page);
   expect(state.unexpected).toEqual([]); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
 });
