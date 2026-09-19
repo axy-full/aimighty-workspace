@@ -50,6 +50,17 @@ A read-only audit of eight areas was run against this checkout (Astra release, d
 - **Long-form mastering** cannot run on any existing host (Sandbox 180 s / 4 GB, functions ≤300 s); it needs a separate CPU worker with a reviewed rate card and spend approval.
 - **Provider qualification** items (Cloud Genjutsu, connected Genjutsu, Marketing Studio Image, Soul) each need a paid rehearsal under an explicit ceiling; the marketing video rehearsal still runs in the provider's UGC mode.
 
+## Follow-up PRs opened 19 September (from the audit)
+
+| PR | Concern | Local verification |
+| --- | --- | --- |
+| [PR194](https://github.com/axy-full/aimighty-workspace/pull/194) | Astra render GET reserves a recovery continuation only when a render is unsettled; `astra_render_jobs` with `settled=0` blocks backup capture; unit test pins the served worker list, the Astra trigger, retries and concurrency; suite-navigation spec runs at all five viewports | tsc, eslint, ops backup tests 8/8, new unit spec, suite-navigation at five viewports on port 4765 |
+| [PR195](https://github.com/axy-full/aimighty-workspace/pull/195) | Generation DELETE requires the captured workbench scope (as upload DELETE already did); GenCard, Theatre and the context menu send it | tsc, eslint, asset-library unit spec 7/7 with the new refusal case |
+| [PR196](https://github.com/axy-full/aimighty-workspace/pull/196) | Direct-OpenAI catalog gate applies to language models only; Gateway-served OpenAI image/speech entries follow Gateway reachability | tsc, eslint, new unit spec + catalogTextPricing; first CI attempt failed two unit shards because the spec mutated `process.env` at module load — fixed by scoping and restoring inside the test |
+| [PR197](https://github.com/axy-full/aimighty-workspace/pull/197) | Atomik quotes carry `screenplay {chars, includedChars, truncated}` and the run dialog states the window read at this depth | tsc, eslint, workbenchAtomik spec 35/35 |
+
+Each is one concern and branched from `d4a68a7`; merge in number order after its own complete CI. Still separate: `PATCH /api/jobs/[id]` scope, `recoveryDrain` coverage for the Astra branch.
+
 ## Next work, in order
 
 1. Locate the Inngest organisation that owns the Vercel marketplace installation (the one with the 4 September keys) and confirm `Render Astra Blender` there; registration itself is already evidenced by the deploy-time PUT 200 in Vercel logs. Decide what to do with the empty `SensAI Studios LLP` organisation.
