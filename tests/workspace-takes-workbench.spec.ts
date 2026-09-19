@@ -80,7 +80,7 @@ test("Takes renders the project library, filters, walks the visible list and ins
   await expect(page.getByTestId("take-facts")).toContainText("Settled cost");
   await expect(page.getByTestId("take-facts")).toContainText("18 cr");
 
-  /* Uploads only: → never lands on a generation, and stops at the end. */
+  /* Uploads only: → never lands on a generation, and wraps at the end (#233's keymap). */
   await page.getByRole("group", { name: "Takes view" }).getByRole("button", { name: "Uploads" }).click();
   await expect(page.locator(".pxw-take-card")).toHaveCount(3);
   await expect(page.locator('.pxw-take-card[aria-pressed="true"]')).toHaveAttribute("data-take-id", "upload:up_plate");
@@ -89,10 +89,13 @@ test("Takes renders the project library, filters, walks the visible list and ins
   await expect(page.getByTestId("take-facts")).toContainText("Integrity");
   await expect(page.getByTestId("take-facts")).toContainText("sha256 ✓");
   await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("ArrowRight");
   await expect(page.locator('.pxw-take-card[aria-pressed="true"]')).toHaveAttribute("data-take-id", "upload:up_notes");
   /* No stored digest, no integrity claim. */
   await expect(page.getByTestId("take-facts")).not.toContainText("Integrity");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator('.pxw-take-card[aria-pressed="true"]')).toHaveAttribute("data-take-id", "upload:up_plate");
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator('.pxw-take-card[aria-pressed="true"]')).toHaveAttribute("data-take-id", "upload:up_notes");
   await page.keyboard.press("ArrowLeft");
   await expect(page.locator('.pxw-take-card[aria-pressed="true"]')).toHaveAttribute("data-take-id", "upload:up_scout");
 
