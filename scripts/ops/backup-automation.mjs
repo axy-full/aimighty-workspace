@@ -95,6 +95,11 @@ export async function assertNoActiveOrUncertain(config, env) {
           }
         }
       }
+      // Native Blender renders settle independently of their status word: an
+      // unsettled row may still hold a compute reservation, a claimed VM or
+      // an uncollected receipt, none of which a checkpoint may hide.
+      if (names.has("astra_render_jobs") &&
+          (await db.execute("SELECT 1 FROM astra_render_jobs WHERE COALESCE(settled,0)=0 LIMIT 1")).rows.length) blocked();
       // Consumer jobs use Higgsfield credits and their own status vocabulary.
       // A dispatch claim, accepted remote job or uncertain admission must not
       // disappear behind a successful scheduled checkpoint.

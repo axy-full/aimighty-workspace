@@ -5,7 +5,7 @@ import { currentTenant, requireTenant, runWithStore } from '@/lib/tenant';
 import { readBoundedText } from '@/lib/requestBody';
 import { workbenchScopeProblem } from '@/lib/workbench/request-scope';
 import { reserveRecoveryContinuation } from '@/lib/recovery';
-import { astraRenderRequestSchema, AstraRenderError, astraRenderAvailability, listAstraRenderJobs, quoteAstraRender, prepareAstraRender, runAstraRender, cancelAstraRenderJob } from '@/lib/astra-blender/render-jobs';
+import { astraRenderRequestSchema, AstraRenderError, astraRenderAvailability, listAstraRenderJobs, quoteAstraRender, prepareAstraRender, runAstraRender, cancelAstraRenderJob, pendingAstraRenders } from '@/lib/astra-blender/render-jobs';
 import { enqueueAstraRender, recoverAstraRenders } from '@/lib/astra-blender/render-dispatch';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,8 +22,13 @@ export const GET = withTenant(async (req: Request) => { const auth = await requi
     return problem; try {
     const params = new URL(req.url).searchParams, projectId = z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).parse(params.get('projectId')), requestId = z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/).optional().parse(params.get('requestId') ?? undefined);
     const jobs = await listAstraRenderJobs(auth.user.id, projectId, requestId);
-    const store = currentTenant()!;
-    after(await reserveRecoveryContinuation('after-response', () => runWithStore(store, () => recoverAstraRenders({ limit: 1, deadlineAt: Date.now() + 250000 }))));
+    // The panel polls every five seconds. Only reserve a recovery continuation
+    // when the workspace actually has an unsettled render; an idle poll must
+    // not reach the fence at all.
+    if ((await pendingAstraRenders(1)).length) {
+        const store = currentTenant()!;
+        after(await reserveRecoveryContinuation('after-response', () => runWithStore(store, () => recoverAstraRenders({ limit: 1, deadlineAt: Date.now() + 250000 }))));
+    }
     return response({ runtime: astraRenderAvailability(), jobs });
 }
 catch (error) {

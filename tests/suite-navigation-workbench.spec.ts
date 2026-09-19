@@ -10,11 +10,12 @@ test("shared suite shell keeps draft context, account controls and guarded keybo
   test.skip(
     ![
       "workbench-360x640",
+      "workbench-390x844",
       "workbench-844x390",
-      "workbench-1024x768",
       "workbench-1440x900",
+      "workbench-1920x1080",
     ].includes(info.project.name),
-    "phone, short landscape and desktop navigation",
+    "every configured viewport",
   );
   await signInLocally(page.request);
   const me = await page.request

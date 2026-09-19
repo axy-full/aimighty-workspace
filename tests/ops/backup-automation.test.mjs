@@ -177,6 +177,17 @@ test("preflight rejects actual live/uncertain rows without modifying them", asyn
     assertNoActiveOrUncertain(source, {}),
     /live or uncertain/,
   );
+  await db.execute("DELETE FROM meter_events");
+  await assertNoActiveOrUncertain(source, {});
+  await db.executeMultiple(
+    "CREATE TABLE astra_render_jobs(status TEXT,settled INTEGER); INSERT INTO astra_render_jobs VALUES('completed',0);",
+  );
+  await assert.rejects(
+    assertNoActiveOrUncertain(source, {}),
+    /live or uncertain/,
+  );
+  await db.execute("UPDATE astra_render_jobs SET settled=1");
+  await assertNoActiveOrUncertain(source, {});
 });
 test("capture publishes only after full restore and removes plaintext verification", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "particl-backup-publish-"));
