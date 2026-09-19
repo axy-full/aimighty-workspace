@@ -704,6 +704,7 @@ export default function Studio({
     if(params.get('suite')==='moleculr'){
       // Former Moleculr pages (`page=brand` …) open as sections of the single Marketing Studio page.
       const section=moleculrSection(params.get('page'))??moleculrSection(window.location.hash.replace(/^#/,''));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- URL-driven suite selection on mount, before any paint.
       setSuite('moleculr');storeMoleculrPage('marketing');storeMoleculrSection(section);setHome(false);
       if(sourceMode&&params.get('page')!=='marketing'){const url=new URL(window.location.href);url.searchParams.set('page','marketing');url.hash=section??'';window.history.replaceState(null,'',url);}
     }
