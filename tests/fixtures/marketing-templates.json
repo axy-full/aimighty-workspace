@@ -1,0 +1,30 @@
+{
+  "_note": "Synthetic Marketing Studio v2 fixture (19 September 2026). Confirmed from the connected account: the presets read takes {category,size} over the categories all/ugc/product-shot/motion/ads/posters/marketplace, returned 986 presets, and the costs read returned a versioned pricing document. The item and cost key names below are NOT captured from a live response; they follow this provider's sibling tools (ids/names/previews/descriptions, next_cursor paging, credits/credits_exact). The parser is lenient on these spellings and fails closed otherwise.",
+  "pages": [
+    {
+      "presets": [
+        { "id": "tpl_ugc_unboxing_01", "name": "Higgsfield UGC unboxing", "category": "ugc", "description": "A creator unboxes the product on camera.", "preview_url": "https://previews.example.test/tpl_ugc_unboxing_01.jpg", "type": "video", "inputs": ["product_image"] },
+        { "id": "tpl_product_shot_studio", "name": "Studio product shot", "category": "product-shot", "description": "Clean studio still on a seamless background.", "preview_url": "https://previews.example.test/tpl_product_shot_studio.jpg", "inputs": ["product_image"] },
+        { "id": "tpl_motion_loop", "name": "Motion loop", "category": "motion", "description": "A short looping product motion piece.", "thumbnail": { "url": "https://previews.example.test/tpl_motion_loop.jpg" } }
+      ],
+      "total": 6,
+      "next_cursor": "page-2"
+    },
+    {
+      "presets": [
+        { "id": "tpl_ads_hero", "name": "Hero ad", "category": "ads", "description": "A bold hero advert with headline space.", "preview_url": "https://previews.example.test/tpl_ads_hero.jpg", "credits": 120 },
+        { "id": "tpl_poster_launch", "name": "Launch poster", "category": "posters", "description": "Poster layout for a launch announcement.", "preview_url": "http://insecure.example.test/poster.jpg" },
+        { "id": "tpl_marketplace_listing", "name": "Marketplace listing", "category": "marketplace", "description": "Listing image with marketplace-safe framing." }
+      ],
+      "total": 6
+    }
+  ],
+  "costs": {
+    "version": "2026-09-18",
+    "costs": [
+      { "preset_id": "tpl_product_shot_studio", "credits": 40, "credits_exact": 40 },
+      { "category": "ugc", "credits": 75 },
+      { "key": "default", "credits": 30 }
+    ]
+  }
+}

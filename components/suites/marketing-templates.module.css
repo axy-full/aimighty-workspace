@@ -1,0 +1,53 @@
+.panel { min-width: 0; }
+.panel fieldset { border: 0; padding: 0; margin: 20px 0; }
+.hint, .selected { font-size: 12px; color: #9298a0; line-height: 1.6; overflow-wrap: anywhere; margin: 12px 0 0; }
+.selected { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #cbd0d8; }
+.selected strong { font-weight: 500; }
+.filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; margin-top: 16px; }
+.filters label, .search { min-width: 0; }
+.filters input, .filters select { width: 100%; min-width: 0; }
+.grid { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.grid li { min-width: 0; }
+.card { width: 100%; min-width: 0; text-align: left; display: grid; gap: 6px; padding: 10px; border: 1px solid #ffffff18; border-radius: 12px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.card:hover { border-color: #ffffff40; }
+.card[aria-pressed="true"] { border-color: #5cc8b4; background: #5cc8b410; }
+.card img, .card .placeholder, .picked img, .picked .placeholder { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 8px; background: #ffffff0c; display: flex; align-items: center; justify-content: center; color: #9298a0; font-size: 22px; }
+.card strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.card small, .picked small, .quote small, .job small { display: block; color: #9298a0; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.card p { margin: 0; font-size: 11px; color: #cbd0d8; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.price { font-size: 12px; color: #5cc8b4; }
+.picked { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; align-items: center; margin-top: 16px; min-width: 0; }
+.picked img, .picked .placeholder { aspect-ratio: 1; }
+.picked strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.prompt { width: 100%; }
+.prompt textarea { resize: vertical; min-height: 120px; }
+.prompt small { display: block; color: #9298a0; font-size: 11px; line-height: 1.6; }
+.settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.settings label { min-width: 0; }
+.settings input, .settings select { width: 100%; min-width: 0; }
+.panel .checkbox { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; font-size: 12px; line-height: 1.6; color: #cbd0d8; margin-top: 12px; }
+.panel .checkbox input { width: 15px; height: 15px; margin-top: 2px; flex: 0 0 auto; accent-color: #5cc8b4; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.quote { border: 1px solid #5cc8b448; background: #5cc8b408; border-radius: 14px; padding: 20px; display: grid; gap: 14px; margin-top: 20px; min-width: 0; }
+.quote strong { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.quote p { margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.quote button { justify-self: start; }
+.jobs { display: grid; gap: 14px; margin-top: 24px; }
+.job { padding: 18px; border: 1px solid #ffffff18; border-radius: 12px; display: grid; gap: 12px; min-width: 0; }
+.job > div:first-child { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+.job > div:first-child strong { font-weight: 500; }
+.job > div:first-child span { color: #9298a0; }
+.job p { margin: 0; font-size: 12px; color: #cbd0d8; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 150px; overflow-y: auto; }
+.job > button { justify-self: start; }
+.result { display: grid; gap: 10px; }
+.result img, .result video { width: 100%; max-width: 420px; max-height: 420px; object-fit: contain; border-radius: 10px; background: #000; }
+.error { font-size: 12px; color: #ed9292; line-height: 1.7; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .filters { grid-template-columns: 1fr; }
+  .filters button { width: 100%; white-space: normal; }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .settings { grid-template-columns: 1fr; gap: 12px; }
+  .picked { grid-template-columns: 72px minmax(0, 1fr); }
+  .quote { padding: 16px; }
+  .quote button, .actions > button { width: 100%; white-space: normal; }
+}
