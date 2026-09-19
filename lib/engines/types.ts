@@ -28,7 +28,7 @@ export type StillRenderRequest = {
   kind: "image"; genId: string; model: ModelDef; prompt: string; ratio: string; size: string; references: Reference[];
 };
 export type AudioRenderRequest = {
-  kind: "audio"; genId: string; modelId: string; task: "speech" | "sound" | "music"; text: string; params: Record<string, unknown>;
+  kind: "audio"; genId: string; modelId: string; task: "speech" | "sound" | "music" | "dialogue"; text: string; params: Record<string, unknown>;
 };
 export type RenderRequest = VideoRenderRequest | StillRenderRequest | AudioRenderRequest;
 

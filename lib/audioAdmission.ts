@@ -11,9 +11,14 @@ import {
   DEFAULT_SPEECH_MODEL,
   SFX_MODEL,
   MUSIC_MODEL,
+  DIALOGUE_MODEL,
+  DIALOGUE_MAX_CHARS,
+  DIALOGUE_MAX_VOICES,
   speechCredits,
   sfxCredits,
   musicCredits,
+  dialogueCredits,
+  type DialogueLine,
 } from "@/lib/elevenlabs";
 import { getShot } from "@/lib/shots";
 import {
@@ -50,6 +55,39 @@ import {
 } from "./admissionSupport";
 
 const MAX_TEXT = 5000;
+export type AudioTask = "speech" | "sound" | "music" | "dialogue";
+const AUDIO_TASKS: AudioTask[] = ["speech", "sound", "music", "dialogue"];
+const VOICE_ID = /^[A-Za-z0-9]{6,64}$/;
+
+/** Dialogue lines as the vendor takes them: text per voice, within its caps.
+ *  Returns a sentence when the request cannot be priced. */
+export function normalizeDialogueLines(
+  raw: unknown,
+): { lines: DialogueLine[] } | { error: string } {
+  if (!Array.isArray(raw) || !raw.length)
+    return { error: "Write the lines first." };
+  if (raw.length > 200) return { error: "A dialogue takes up to 200 lines." };
+  const lines: DialogueLine[] = [];
+  for (const item of raw) {
+    const line = (item ?? {}) as { text?: unknown; voiceId?: unknown };
+    const text = String(line.text ?? "").trim();
+    const voiceId = String(line.voiceId ?? "").trim();
+    if (!text) return { error: "Every line needs its text." };
+    if (!VOICE_ID.test(voiceId)) return { error: "Pick a voice for every line." };
+    lines.push({ text, voiceId });
+  }
+  const chars = lines.reduce((n, line) => n + line.text.length, 0);
+  if (chars > DIALOGUE_MAX_CHARS)
+    return {
+      error: `A dialogue takes up to ${DIALOGUE_MAX_CHARS.toLocaleString("en-US")} characters per request; this one has ${chars.toLocaleString("en-US")}.`,
+    };
+  const voices = new Set(lines.map((line) => line.voiceId));
+  if (voices.size > DIALOGUE_MAX_VOICES)
+    return {
+      error: `A dialogue takes up to ${DIALOGUE_MAX_VOICES} voices per request.`,
+    };
+  return { lines };
+}
 
 /** Audio preparation and admission share the exact normalizer and price calculation. */
 export async function executeAudioAdmission(
@@ -88,10 +126,20 @@ export async function executeAudioAdmission(
     );
   }
 
-  const task = ["speech", "sound", "music"].includes(String(body.task))
-    ? (String(body.task) as "speech" | "sound" | "music")
+  const task = AUDIO_TASKS.includes(String(body.task) as AudioTask)
+    ? (String(body.task) as AudioTask)
     : "speech";
-  const text = String(body.text ?? "")
+  /* Dialogue arrives as lines; the prompt column keeps a readable transcript
+     so Activity and the library show what was said, as they do for a line. */
+  const dialogue =
+    task === "dialogue" ? normalizeDialogueLines(body.lines) : null;
+  if (dialogue && "error" in dialogue)
+    return admissionReply({ error: dialogue.error }, { status: 400 });
+  const text = (
+    dialogue
+      ? dialogue.lines.map((line) => line.text).join("\n")
+      : String(body.text ?? "")
+  )
     .trim()
     .slice(0, MAX_TEXT);
   if (!text)
@@ -142,7 +190,7 @@ export async function executeAudioAdmission(
       ? String(body.modelId)
       : DEFAULT_SPEECH_MODEL;
     const voiceId = String(body.voiceId ?? "").trim();
-    if (!/^[A-Za-z0-9]{6,64}$/.test(voiceId))
+    if (!VOICE_ID.test(voiceId))
       return admissionReply({ error: "Pick a voice." }, { status: 400 });
     const num = (v: unknown, lo: number, hi: number) =>
       v == null || v === "" || !Number.isFinite(Number(v))
@@ -160,6 +208,10 @@ export async function executeAudioAdmission(
       use_speaker_boost: body.speakerBoost === false ? false : undefined,
     };
     estCredits = speechCredits(text, modelId);
+  } else if (task === "dialogue") {
+    modelId = DIALOGUE_MODEL;
+    params.lines = dialogue!.lines;
+    estCredits = dialogueCredits(dialogue!.lines);
   } else if (task === "sound") {
     modelId = SFX_MODEL;
     const d =

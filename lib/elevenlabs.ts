@@ -4,6 +4,7 @@ import { vendorKey } from "./vendorKeys";
 import { memoGet, memoPut } from "./memo";
 import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
+import { ELEVENLABS_RATES } from "./vendorRates";
 
 /**
  * ElevenLabs — voices, sound effects and music.
@@ -71,6 +72,10 @@ export const SPEECH_MODELS: SpeechModel[] = [
 export const DEFAULT_SPEECH_MODEL = "eleven_multilingual_v2";
 export const SFX_MODEL = "eleven_sfx";
 export const MUSIC_MODEL = "eleven_music";
+/** Text to Dialogue: several voices in one request, on the v3 model only. */
+export const DIALOGUE_MODEL = ELEVENLABS_RATES.dialogue.modelId;
+export const DIALOGUE_MAX_CHARS = ELEVENLABS_RATES.dialogue.maxChars;
+export const DIALOGUE_MAX_VOICES = ELEVENLABS_RATES.dialogue.maxVoices;
 
 /** A sound effect costs the same whatever its length (pricing page: "200
  *  credits per generation"). */
@@ -108,6 +113,12 @@ export function speechCredits(text: string, modelId: string): number {
   return Math.ceil(text.length * m.creditsPerChar);
 }
 export const sfxCredits = () => SFX_CREDITS;
+export type DialogueLine = { text: string; voiceId: string };
+/** Dialogue bills every character of every line at the v3 rate. */
+export function dialogueCredits(lines: DialogueLine[]): number {
+  const chars = lines.reduce((n, line) => n + line.text.length, 0);
+  return Math.ceil(chars * ELEVENLABS_RATES.dialogue.creditsPerChar);
+}
 export const musicCredits = (lengthMs: number) =>
   Math.ceil((lengthMs / 60_000) * MUSIC_CREDITS_PER_MINUTE);
 
@@ -331,6 +342,36 @@ export async function textToSpeech(opts: {
     ...out,
     credits: out.credits ?? speechCredits(opts.text, opts.modelId),
   };
+}
+
+/* ── Dialogue ──────────────────────────────────────────────────────── */
+
+/** POST /v1/text-to-dialogue: one MP3 with each line read by its voice. */
+export async function textToDialogue(opts: {
+  lines: DialogueLine[];
+  modelId?: string;
+  format?: string;
+}) {
+  const modelId = opts.modelId ?? DIALOGUE_MODEL;
+  if (engineMock())
+    return {
+      bytes: await fixtureBytes("tone.mp3"),
+      mime: "audio/mpeg",
+      credits: dialogueCredits(opts.lines),
+      requestId: "mock",
+    };
+  const format = opts.format ?? "mp3_44100_128";
+  const out = await callAudio(
+    `/v1/text-to-dialogue?output_format=${encodeURIComponent(format)}`,
+    {
+      inputs: opts.lines.map((line) => ({
+        text: line.text,
+        voice_id: line.voiceId,
+      })),
+      model_id: modelId,
+    },
+  );
+  return { ...out, credits: out.credits ?? dialogueCredits(opts.lines) };
 }
 
 /* ── Sound effects ─────────────────────────────────────────────────── */
