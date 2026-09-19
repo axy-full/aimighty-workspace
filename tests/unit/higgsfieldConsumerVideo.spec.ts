@@ -1,4 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync as readToolsFixture } from "node:fs";
+import { resetConnectedToolsetCache } from "../../lib/higgsfield-consumer/toolset";
+
+const connectedTools98 = JSON.parse(readToolsFixture("tests/fixtures/connected-tools-98.json", "utf8")) as { tools: { name: string; inputSchema: Record<string, unknown> }[] };
+test.beforeEach(() => resetConnectedToolsetCache());
 import {
   getConsumerVideoQuote,
   submitConsumerVideo,
@@ -111,6 +116,7 @@ function fixture(
     expect(headers.get("Mcp-Session-Id")).toBe(session);
     if (p.method === "notifications/initialized")
       return new Response(null, { status: 202 });
+    if (p.method === "tools/list") return Response.json({ jsonrpc: "2.0", id: p.id, result: { tools: connectedTools98.tools } });
     expect(p.method).toBe("tools/call");
     const params = p.params.arguments.params as
       Record<string, unknown> | undefined;
@@ -189,7 +195,7 @@ test("cost-only quote reads workspace before and after and sends exact immutable
       credits: 75,
     },
   );
-  const calls = f.calls.slice(2);
+  const calls = f.calls.filter((p) => p.method === "tools/call");
   expect(calls.map((p) => p.params.name)).toEqual([
     "list_workspaces",
     "generate_video",
@@ -223,7 +229,7 @@ test("submission persists admission after fresh quote and workspace checks, befo
   const result = await submitConsumerVideo(token, original, workspaceId, 75, {
     fetch: f.fetch,
     admit: async () => {
-      expect(f.calls.slice(2).map((p) => p.params.name)).toEqual([
+      expect(f.calls.filter((p) => p.method === "tools/call").map((p) => p.params.name)).toEqual([
         "list_workspaces",
         "generate_video",
         "list_workspaces",
@@ -522,7 +528,7 @@ test("job polling is read-only and validates workspace, known UUID and bounded p
     raw: { job_id: jobId, status: "in_progress", poll_after_seconds: 10 },
     pollAfterSeconds: 10,
   });
-  expect(f.calls.slice(2).map((p) => p.params)).toEqual([
+  expect(f.calls.filter((p) => p.method === "tools/call").map((p) => p.params)).toEqual([
     { name: "list_workspaces", arguments: {} },
     { name: "job_status", arguments: { jobId, sync: false, raw_data: true } },
   ]);
