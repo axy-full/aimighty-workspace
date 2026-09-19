@@ -11,7 +11,6 @@ import { newProject } from "../lib/workbench/studio";
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
-const SHOTS = "/private/tmp/ws-agent-shots";
 
 /* Test fixtures only — the app reads these from the real projects route. */
 const primary = { ...newProject("Coastal light study"), id: "ws-palette-a", description: "Product film · Spot 02", aspect: "16:9", fps: 24 };
@@ -95,7 +94,7 @@ test("⌘K opens from inside an input; ↑ ↓ move; Enter runs the highlighted 
   await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
   await expect(rows.nth(0)).toContainText("STUDIO");
   await expect(rows.nth(0)).toContainText("Brief & Script");
-  if (info.project.name === "workbench-1440x900") await page.screenshot({ path: `${SHOTS}/palette.png` });
+  if (info.project.name === "workbench-1440x900") await page.screenshot({ path: info.outputPath("palette.png") });
 
   /* The query filters; typing i/g/a inside the palette fires nothing. */
   await input.pressSequentially("ri");
