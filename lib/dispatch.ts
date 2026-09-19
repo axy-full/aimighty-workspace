@@ -80,7 +80,7 @@ export function dispatchMode(env: Environment = process.env): DispatchMode {
   return "inline";
 }
 
-export const DISPATCH_TIMEOUT_MS = 5_000;
+export const DISPATCH_TIMEOUT_MS = 15_000;
 
 /**
  * Hand one event to this deployment's own worker route.
@@ -100,8 +100,19 @@ export async function dispatchEvent(
   const env = deps.env ?? process.env;
   const origin = dispatchOrigin(env);
   const secret = env.CRON_SECRET;
-  if (!origin || !secret) return false;
+  // Fixed-shape lines only: the event carries identifiers, never a prompt,
+  // a URL or a credential, so the log can say exactly why a hand-off fell
+  // back without disclosing anything.
+  const report = (outcome: string, extra: Record<string, unknown> = {}) =>
+    console[outcome === "sent" ? "info" : "error"](
+      JSON.stringify({ level: outcome === "sent" ? "info" : "error", event: `dispatch.${outcome}`, name: event.name, ...extra }),
+    );
+  if (!origin || !secret) {
+    report("unconfigured", { origin: Boolean(origin), secret: Boolean(secret) });
+    return false;
+  }
   const doFetch = deps.fetch ?? fetch;
+  const startedAt = Date.now();
   try {
     const response = await doFetch(`${origin}/api/worker`, {
       method: "POST",
@@ -113,8 +124,11 @@ export async function dispatchEvent(
       signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
       cache: "no-store",
     });
-    return response.status === 202;
-  } catch {
+    const accepted = response.status === 202;
+    report(accepted ? "sent" : "refused", { status: response.status, durationMs: Date.now() - startedAt });
+    return accepted;
+  } catch (error) {
+    report("failed", { reason: error instanceof Error ? error.name : "unknown", durationMs: Date.now() - startedAt });
     return false;
   }
 }
