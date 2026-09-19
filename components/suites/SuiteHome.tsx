@@ -19,7 +19,7 @@ const descriptions = {
   atomik: "Plan the work, choose the engines and approve each priced stage.",
   moleculr:
     "Build your brand, develop campaigns and create consistent campaign assets.",
-  subatomik: "Subatomik viral studio. Transfer movement and rework subjects with Higgsfield Genjutsu.",
+  subatomik: "Subatomik viral studio. Transfer movement and rework subjects with Genjutsu, on your connected credits.",
 };
 export default function SuiteHome() {
   const session = useSession(),

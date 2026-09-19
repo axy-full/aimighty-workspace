@@ -120,6 +120,13 @@ async function fixture(
     const json = (data: unknown, status = 200) =>
       route.fulfill({ json: data, status });
     if (path === "/api/me") return json(me);
+    if (path === "/api/higgsfield/consumer/connection") {
+      expect(req.headers()["x-workbench-scope"]).toBe(scope);
+      return json({
+        connected: consumerOptions.connected ?? true,
+        requiresReconnect: false,
+      });
+    }
     if (path === "/api/higgsfield/consumer/genjutsu") {
       expect(req.headers()["x-workbench-scope"]).toBe(scope);
       if (req.method() === "GET")
@@ -381,7 +388,7 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
   page,
 }, info) => {
   const f = await fixture(page);
-  await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
+  await page.goto("/subatomik?project=viral-draft&page=motion-transfer&account=particl");
   await expect(
     page.getByRole("heading", { name: "Subatomik viral studio", exact: true }),
   ).toBeVisible();
@@ -569,7 +576,7 @@ test("Object Swap recovers the exact request after reload and cannot turn a lost
   page,
 }) => {
   const f = await fixture(page, true);
-  await page.goto("/subatomik?project=viral-draft&page=object-swap");
+  await page.goto("/subatomik?project=viral-draft&page=object-swap&account=particl");
   await dropIdentity(
     page,
     page.getByLabel("Genjutsu source drop area"),
@@ -629,7 +636,7 @@ test("queued cancellation remains pending until the existing job confirms it", a
   page,
 }) => {
   const f = await fixture(page);
-  await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
+  await page.goto("/subatomik?project=viral-draft&page=motion-transfer&account=particl");
   await useCard(page, "upload:motion-original");
   await page
     .getByRole("button", { name: "Review Genjutsu cost", exact: true })
@@ -668,16 +675,14 @@ test("queued cancellation remains pending until the existing job confirms it", a
   expect(f.errors).toEqual([]);
 });
 
-test("connected Genjutsu reviews media transfer and its own 1080p wallet quote, then retains and edits the original", async ({
+test("connected Genjutsu is the default: it reviews media transfer and its own 1080p wallet quote, then retains and edits the original", async ({
   page,
 }, info) => {
   const f = await fixture(page);
-  await page.goto(
-    "/subatomik?project=viral-draft&page=object-swap&account=higgsfield",
-  );
+  await page.goto("/subatomik?project=viral-draft&page=object-swap");
   await expect(
     page.getByRole("region", {
-      name: "Connected Higgsfield Genjutsu",
+      name: "Connected account Genjutsu",
       exact: true,
     }),
   ).toBeVisible();
@@ -703,7 +708,7 @@ test("connected Genjutsu reviews media transfer and its own 1080p wallet quote, 
   expect(f.consumerPosts).toHaveLength(0);
   await page
     .getByRole("checkbox", {
-      name: "Copy these selected originals to my connected Higgsfield account to obtain this quote.",
+      name: "Copy these selected originals to my connected account to obtain this quote.",
       exact: true,
     })
     .check();
@@ -711,7 +716,7 @@ test("connected Genjutsu reviews media transfer and its own 1080p wallet quote, 
     .getByRole("button", { name: "Get connected Genjutsu quote", exact: true })
     .click();
   await expect(page.getByLabel("Connected Genjutsu quote")).toContainText(
-    "18 Higgsfield credits · Fixture wallet",
+    "18 connected credits · Fixture wallet",
   );
   expect(f.consumerPosts[0]).toMatchObject({
     action: "quote",
@@ -726,13 +731,13 @@ test("connected Genjutsu reviews media transfer and its own 1080p wallet quote, 
   });
   expect(JSON.stringify(f.consumerPosts)).not.toContain("untrusted.invalid");
   const generate = page.getByRole("button", {
-    name: "Generate Genjutsu · 18 Higgsfield credits",
+    name: "Generate Genjutsu · 18 connected credits",
     exact: true,
   });
   await expect(generate).toBeDisabled();
   await page
     .getByRole("checkbox", {
-      name: "Charge 18 Higgsfield credits to Fixture wallet for this Genjutsu generation.",
+      name: "Charge 18 connected credits to Fixture wallet for this Genjutsu generation.",
       exact: true,
     })
     .check();
@@ -766,7 +771,7 @@ test("connected Genjutsu reviews media transfer and its own 1080p wallet quote, 
   ).toHaveValue("1080p");
   await expect(
     page.getByRole("checkbox", {
-      name: "Copy these selected originals to my connected Higgsfield account to obtain this quote.",
+      name: "Copy these selected originals to my connected account to obtain this quote.",
       exact: true,
     }),
   ).not.toBeChecked();
@@ -794,13 +799,11 @@ test("an uncertain connected submission survives reload and polls its saved job 
   page,
 }) => {
   const f = await fixture(page, false, { loseSubmit: true });
-  await page.goto(
-    "/subatomik?project=viral-draft&page=motion-transfer&account=higgsfield",
-  );
+  await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
   await useCard(page, "upload:motion-original");
   await page
     .getByRole("checkbox", {
-      name: "Copy these selected originals to my connected Higgsfield account to obtain this quote.",
+      name: "Copy these selected originals to my connected account to obtain this quote.",
       exact: true,
     })
     .check();
@@ -809,19 +812,19 @@ test("an uncertain connected submission survives reload and polls its saved job 
     .click();
   await page
     .getByRole("checkbox", {
-      name: "Charge 18 Higgsfield credits to Fixture wallet for this Genjutsu generation.",
+      name: "Charge 18 connected credits to Fixture wallet for this Genjutsu generation.",
       exact: true,
     })
     .check();
   await page
     .getByRole("button", {
-      name: "Generate Genjutsu · 18 Higgsfield credits",
+      name: "Generate Genjutsu · 18 connected credits",
       exact: true,
     })
     .click();
   await expect(
     page
-      .getByRole("region", { name: "Connected Higgsfield Genjutsu", exact: true })
+      .getByRole("region", { name: "Connected account Genjutsu", exact: true })
       .getByRole("alert"),
   ).toHaveText("Failed to fetch");
   await page.reload();
@@ -850,7 +853,7 @@ test("an uncertain connected submission survives reload and polls its saved job 
   expect(f.errors).toEqual([]);
 });
 
-test("a lost media-transfer quote reuses its immutable inputs and key after reload", async ({
+test("a lost media-transfer quote reuses its immutable inputs and key after reload, and the older explicit link still carries across pages", async ({
   page,
 }) => {
   const f = await fixture(page, false, { loseQuote: true });
@@ -863,7 +866,7 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
     .selectOption("1080p");
   await page
     .getByRole("checkbox", {
-      name: "Copy these selected originals to my connected Higgsfield account to obtain this quote.",
+      name: "Copy these selected originals to my connected account to obtain this quote.",
       exact: true,
     })
     .check();
@@ -884,20 +887,20 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
     .getByRole("button", { name: "Recover saved Genjutsu quote", exact: true })
     .click();
   await expect(page.getByLabel("Connected Genjutsu quote")).toContainText(
-    "18 Higgsfield credits",
+    "18 connected credits",
   );
   expect(f.consumerJobs).toHaveLength(1);
   expect(f.consumerPosts).toHaveLength(2);
   expect(f.consumerPosts[1]).toEqual(f.consumerPosts[0]);
   await expect(
     page.getByRole("button", {
-      name: "Generate Genjutsu · 18 Higgsfield credits",
+      name: "Generate Genjutsu · 18 connected credits",
       exact: true,
     }),
   ).toBeDisabled();
   await expect(
     page.getByRole("checkbox", {
-      name: "Charge 18 Higgsfield credits to Fixture wallet for this Genjutsu generation.",
+      name: "Charge 18 connected credits to Fixture wallet for this Genjutsu generation.",
       exact: true,
     }),
   ).not.toBeChecked();
@@ -905,7 +908,94 @@ test("a lost media-transfer quote reuses its immutable inputs and key after relo
   await expect(modeDock.getByRole("link", { name: "Object Swap", exact: true })).toHaveAttribute("href", "/subatomik?project=viral-draft&page=object-swap&account=higgsfield");
   await modeDock.getByRole("link", { name: "Object Swap", exact: true }).click();
   await expect(page).toHaveURL("/subatomik?project=viral-draft&page=object-swap&account=higgsfield");
-  await expect(page.getByRole("region", { name: "Connected Higgsfield Genjutsu", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Connected account Genjutsu", exact: true })).toBeVisible();
+  expect(f.unexpected).toEqual([]);
+  expect(f.errors).toEqual([]);
+});
+
+test("the main flow has no billing toggle; the connected default shows the exact connected-credit price and the shared-wallet caveat, and Advanced links the workspace-billing override", async ({
+  page,
+}, info) => {
+  const f = await fixture(page);
+  await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
+  await expect(
+    page.getByRole("region", { name: "Connected account Genjutsu", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("group", { name: "Genjutsu billing account" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Particl workspace billing" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Connected .* credits/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Higgsfield/)).toHaveCount(0);
+  const dock = page.getByRole("navigation", { name: "Subatomik pages", exact: true });
+  await expect(dock.getByRole("link", { name: "Object Swap", exact: true })).toHaveAttribute(
+    "href",
+    "/subatomik?project=viral-draft&page=object-swap",
+  );
+  await useCard(page, "upload:motion-original");
+  await page
+    .getByRole("checkbox", {
+      name: "Copy these selected originals to my connected account to obtain this quote.",
+      exact: true,
+    })
+    .check();
+  await page
+    .getByRole("button", { name: "Get connected Genjutsu quote", exact: true })
+    .click();
+  const quote = page.getByLabel("Connected Genjutsu quote");
+  await expect(quote).toContainText("18 connected credits · Fixture wallet");
+  await expect(quote).toContainText(`Wallet ${wallet}`);
+  await expect(quote).toContainText(
+    "The connected account’s active wallet is shared across its connected clients; Particl checks it again before submission.",
+  );
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Charge 18 connected credits to Fixture wallet for this Genjutsu generation.",
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Generate Genjutsu · 18 connected credits", exact: true }),
+  ).toBeDisabled();
+  expect(f.consumerPosts.filter((p) => p.action === "submit")).toHaveLength(0);
+  await page.screenshot({ path: info.outputPath("connected-default-quote.png") });
+  const advanced = page.locator("details", { hasText: "Advanced" }).last();
+  await advanced.locator("summary").click();
+  await expect(advanced).toContainText("This project generates with the owner’s connected credits.");
+  const override = advanced.getByRole("link", { name: "Use Particl workspace billing instead", exact: true });
+  await expect(override).toHaveAttribute(
+    "href",
+    "/subatomik?project=viral-draft&page=motion-transfer&account=particl",
+  );
+  await override.click();
+  await expect(page).toHaveURL("/subatomik?project=viral-draft&page=motion-transfer&account=particl");
+  await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Connected account Genjutsu", exact: true })).toHaveCount(0);
+  await expect(dock.getByRole("link", { name: "Object Swap", exact: true })).toHaveAttribute(
+    "href",
+    "/subatomik?project=viral-draft&page=object-swap&account=particl",
+  );
+  expect(f.posts).toEqual([]);
+  expect(f.unexpected).toEqual([]);
+  expect(f.errors).toEqual([]);
+});
+
+test("without a connected account the page falls back to workspace billing with the connect prompt, not a toggle", async ({
+  page,
+}) => {
+  const f = await fixture(page, false, { connected: false });
+  await page.goto("/subatomik?project=viral-draft&page=motion-transfer");
+  await expect(page.getByRole("button", { name: "Review Genjutsu cost", exact: true })).toBeDisabled();
+  const prompt = page.getByRole("status").filter({ hasText: "No connected account yet." });
+  await expect(prompt).toContainText("Until then this project bills the Particl workspace.");
+  await expect(prompt.getByRole("link", { name: "Workspace settings", exact: true })).toHaveAttribute(
+    "href",
+    "/settings#engines",
+  );
+  await expect(page.getByRole("group", { name: "Genjutsu billing account" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Particl workspace billing" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Connected account Genjutsu", exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Higgsfield/)).toHaveCount(0);
+  expect(f.consumerPosts).toEqual([]);
   expect(f.unexpected).toEqual([]);
   expect(f.errors).toEqual([]);
 });

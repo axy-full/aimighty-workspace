@@ -18,7 +18,7 @@ This plan is written from a read-only inventory of the current code (19 Septembe
 - Takes as the project library: `resolveProjectLibrary` already scopes uploads and generations to a project; the stage links out to `/library` instead of embedding them. → **PR B**.
 - Edit & Sound: the Edit inspector has no ElevenLabs control; speech, sound effects and music generation exist behind `/api/audio` (`text-to-speech`, `sound-generation`, `music`). Add a Sound tab that generates directly into the dialogue/music/sfx lanes. → **PR C**. Dubbing and speech-to-speech are ElevenLabs endpoints the app does not call; they are added only after a priced, verified call each. → **PR C2**.
 - Brief & Script "agentic": the development flow (`docs/agentic-development.md`) already serves both stages from one saved workflow; the merged stage makes the run dialog and development the primary actions. → **PR A/PR D**.
-- Subatomik billing: the explicit "Particl billing / Connected credits" toggle becomes a default to connected credits with the wallet caveat kept in the approval step (never removed: the wallet is shared account-wide). → **PR H**.
+- Subatomik billing: the explicit "Particl billing / Connected credits" toggle becomes a default to connected credits with the wallet caveat kept in the approval step (never removed: the wallet is shared account-wide). → **PR H** (done).
 - Rig bug pass: a full run of the Rig browser specs at five viewports plus an issue sweep. → **PR E**.
 
 **Gated on provider verification (needs a paid or read-only qualification first)**
@@ -42,7 +42,7 @@ Atomik today orchestrates Particl's own engines (runs, recipes, approvals, budge
 2. **PR B** Takes = project library in-stage.
 3. **PR C** Edit & Sound generation controls; **C2** dubbing/speech-to-speech after verification.
 4. **PR E** Rig bug pass.
-5. **PR H** Subatomik default to connected credits.
+5. **PR H** Subatomik default to connected credits — done (19 September): connected account is the silent default, `?account=particl` the unadvertised override behind an Advanced disclosure, approval-step disclosures and the shared-wallet caveat kept, provider unnamed in Subatomik copy; see `docs/subatomik-genjutsu.md`.
 6. **PR F** Cast & Elements identity-first (training now; generation when verified).
 7. **PR G** Marketing Studio v2 templates (create/status), approved run.
 8. **PR I** Atomik workflows over the verified tool surface.
