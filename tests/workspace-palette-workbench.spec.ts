@@ -177,8 +177,8 @@ test("the keyboard map: Enter on home, 1–9, A, I, G, Esc, and the status-bar l
 
   const legend = page.locator('[data-row="status"]');
   for (const text of ["1–8", "stage", "A", "atomik", "I", "inspector", "⌘K", "commands"]) await expect(legend).toContainText(text);
-  /* Keys whose seams are not connected here are not advertised. */
-  await expect(legend).not.toContainText("generate");
-  await expect(legend).not.toContainText("Space");
+  /* Rig connects the Generate and play seams (#236), so both keys are advertised, once each. */
+  for (const text of ["G", "generate", "Space", "play"]) await expect(legend).toContainText(text);
+  expect(await legend.locator("text=generate").count()).toBe(1);
   expect(sent).toEqual([]);
 });

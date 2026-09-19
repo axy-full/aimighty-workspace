@@ -230,13 +230,19 @@ test("plans without their page's data are not runnable and say why", async ({ pa
   const panel = page.getByTestId("atomik-panel");
   await expect(panel).toBeVisible();
   await expect(page.getByTestId("atomik-plan-title")).toHaveText("Render every ready shot");
-  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Rig data");
+  /* Rig publishes its request bodies (#236), so the plan's own reason applies. */
+  await expect(page.getByTestId("atomik-reason")).toHaveText("Not runnable yet — no shot is ready to render.");
   await expect(panel.getByRole("button", { name: /Run this page/ })).toBeDisabled();
   /* The chip still opens the panel and explains; the engine refuses to start. */
   await page.keyboard.press("Escape");
   await page.getByTestId("run-chip").click();
-  await expect(panel.getByRole("alert")).toHaveText("Needs Rig data");
+  await expect(panel.getByRole("alert")).toHaveText("Not runnable yet — no shot is ready to render.");
   await expect(page.getByTestId("atomik-state")).toHaveText("IDLE");
+  /* A page that provides nothing still says whose data is missing. */
+  await page.keyboard.press("Escape");
+  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Boards/ }).click();
+  await page.getByTestId("run-chip").click();
+  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Boards data");
   /* Astra without a saved scene: its own reason. */
   await page.keyboard.press("Escape");
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Astra/ }).click();

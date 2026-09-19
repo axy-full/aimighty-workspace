@@ -2,6 +2,7 @@
 import type { ComponentType } from "react";
 import { getSuite, pageDef } from "@/lib/workspace/pages";
 import type { AppState, SelKind } from "@/lib/workspace/types";
+import { RigInspector } from "../rig/RigInspector";
 import { Kicker } from "../ui";
 
 export type InspectorBodyProps = { state: AppState };
@@ -30,7 +31,7 @@ function Placeholder({ state }: InspectorBodyProps) {
 
 /** Selection kind → Inspector body. Later PRs replace an entry. */
 export const INSPECTOR_BODIES: Record<SelKind, ComponentType<InspectorBodyProps>> = {
-  shot: Placeholder,
+  shot: RigInspector,
   take: Placeholder,
   cast: Placeholder,
   page: Placeholder,

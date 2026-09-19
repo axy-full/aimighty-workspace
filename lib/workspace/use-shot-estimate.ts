@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ShotEstimator, type ShotEstimate, type ShotEstimateInput } from "./cost";
 
 /** One estimator per tab, so every row and the Inspector share the cache. */
-const shared = new ShotEstimator();
+export const sharedShotEstimator = new ShotEstimator();
+const shared = sharedShotEstimator;
 
 /**
  * The live credit estimate for one shot's settings.

@@ -10,7 +10,7 @@ import {
 } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { mediaReferenceIdentity, mediaQuoteReferences } from '@/lib/workbench/media-reference-input';
-import { uploadWorkbench } from "@/lib/workbench/upload";
+import { generationRequestBody, resolveGenerationReferences } from "@/lib/workbench/generation-request";
 import { nodeAudioBody, validAudioQuote, type NodeAudioSetup, type NodeAudioTask } from "@/lib/workbench/generation-audio";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { referenceVideoModels } from "@/lib/workbench/reference-ad";
@@ -285,51 +285,24 @@ export function GenerationDialog({
           }),
         });
         if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
-        const references = [];
-        for (const a of refs) {
-          const role = roleFor(a);
-          const identity = mediaReferenceIdentity(a);
-          if (identity) references.push({ ...identity, role });
-          else if (
-            a.url.startsWith("/campaign/") ||
-            a.url.startsWith("/api/workbench/media/")
-          ) {
-            const res = await fetch(a.url);
-            if (!res.ok) throw new Error("Cannot load reference " + a.name);
-            const blob = await res.blob();
-            const uploaded = await uploadWorkbench(
-              new File([blob], a.name, {
-                type: a.mime || blob.type || "image/webp",
-              }),
-              undefined,
-              scope,
-            );
-            onAsset(a.id, { uploadId: uploaded.id });
-            references.push({ uploadId: uploaded.id, role });
-          } else
-            throw new Error(
-              "Upload " +
-                a.name +
-                " from your device before using it as generation input.",
-            );
-        }
+        const references = await resolveGenerationReferences(refs, roleFor, { scope, onAsset });
         const body = JSON.stringify(kind === "audio" ? {
           ...JSON.parse(audioBody), projectId: mapping.productionProjectId, shotId: mapping.shotId, maxCredits: cost!,
-        } : {
+        } : generationRequestBody({
           prompt,
-          model: model!.id,
-          projectId: mapping.productionProjectId,
-          shotId: mapping.shotId,
+          kind,
+          model: model!,
+          mapping,
           ratio,
           resolution,
-          ...(model!.marketing ? {} : { duration }),
-          refine: false,
+          duration,
           maxCredits: cost!,
           references,
-          ...(model!.marketing ? { marketing, quoteFingerprint: quote?.fingerprint } : {}),
-          ...(kind === "video" ? { firstFrameAssetId: firstFrameId } : {}),
-          ...(model!.soulIdentity ? { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id } : {}),
-        });
+          marketing,
+          quoteFingerprint: quote?.fingerprint,
+          firstFrameAssetId: firstFrameId,
+          soul: { soulIdentityId: selectedSoulId, soulStrength, workbenchProjectId: project.id },
+        }));
         attempt = claimPendingGeneration(window.localStorage, storageId, {
           key: crypto.randomUUID(),
           body,

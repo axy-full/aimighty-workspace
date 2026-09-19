@@ -10,20 +10,34 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { LibFilter, RigView } from "@/lib/workspace/types";
 import { Button, ButtonLink, Segmented } from "./ui";
 
+/** Live state of Generate from the page that owns it: the quote on the button and anything blocking it. */
+export type GenerateStatus = {
+  /** "18 cr" — the exact live quote, shown on the button. Null while there is none. */
+  quote: string | null;
+  /** Why Generate cannot run (missing or stale quote, submitting…). */
+  blocked: string | null;
+  /** Something to read that does not block (e.g. a changed price awaiting approval). */
+  notice?: string | null;
+};
+
 /** Why the primary action cannot run right now, or null when it can. */
-export function primaryAvailability(state: ReturnType<typeof useWorkspace>["state"], onGenerate?: () => void): Availability {
+export function primaryAvailability(state: ReturnType<typeof useWorkspace>["state"], onGenerate?: () => void, generate?: GenerateStatus): Availability {
   const action = primaryAction(state.page);
-  if (action.kind === "generate") return generateAvailability(state, Boolean(onGenerate));
+  if (action.kind === "generate") {
+    const base = generateAvailability(state, Boolean(onGenerate));
+    if (base.enabled && generate?.blocked) return { enabled: false, reason: generate.blocked };
+    return base;
+  }
   return { enabled: true, reason: null };
 }
 
 /** 60px. Title + derived sub, views, Run with Atomik, primary, Inspector. */
-export function PageHeader({ project, onGenerate }: { project: Project | null; onGenerate?: () => void }) {
+export function PageHeader({ project, onGenerate, generate }: { project: Project | null; onGenerate?: () => void; generate?: GenerateStatus }) {
   const { state, dispatch, setLibFilter } = useWorkspace();
   const def = pageDef(state.page);
   const views = pageViews(state.page);
   const action = primaryAction(state.page);
-  const availability = primaryAvailability(state, onGenerate);
+  const availability = primaryAvailability(state, onGenerate, generate);
   const atomik = useAtomik();
   const run = atomik.runFor(state.page);
   const chip = runChip(run);
@@ -65,7 +79,7 @@ export function PageHeader({ project, onGenerate }: { project: Project | null; o
           aria-describedby={availability.reason ? "pxw-action-reason" : undefined}
           onClick={() => availability.enabled && onGenerate?.()}
         >
-          <span>{action.label}</span>
+          <span>{availability.enabled && generate?.quote ? `${action.label} · ${generate.quote}` : action.label}</span>
         </Button>
       ) : action.kind === "run-stage" ? (
         <Button variant="primary" keyHint={action.key} onClick={startRun}>
