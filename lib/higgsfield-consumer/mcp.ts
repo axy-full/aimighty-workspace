@@ -2287,6 +2287,15 @@ export type ConsumerShortsQuote = { input: ConsumerShortsInput; params: Consumer
 const shortsUnverified = () =>
   new ShortsStudioError("contract_unverified", "The connected account's Shorts Studio tools do not advertise the arguments this workflow sends. Nothing was submitted.");
 async function verifiedShortsSchemas(session: ConsumerSession, params: ConsumerShortsParams, status = false) {
+  // The connected-toolset guard first (#226): a tool this connection does not
+  // advertise, or advertises with arguments other than the ones we send, refuses
+  // here — before any import, wallet read or paid call. Then the Shorts contract
+  // check, which reads the create schema more closely than the generic one can.
+  await requireConnectedTools(session, [
+    { name: SHORTS_TOOLS.create, args: shortsCostArguments(params) },
+    { name: SHORTS_TOOLS.create, args: { ...params } },
+    ...(status ? [{ name: SHORTS_TOOLS.status, args: { session_id: IMPORT_PLACEHOLDER } }] : []),
+  ]);
   const schemas = await sessionToolSchemas(session, status ? [SHORTS_TOOLS.create, SHORTS_TOOLS.status] : [SHORTS_TOOLS.create]);
   if (!shortsCreateSchemaMatches(schemas.get(SHORTS_TOOLS.create), params) || (status && !shortsStatusSchemaMatches(schemas.get(SHORTS_TOOLS.status))))
     throw new ConsumerAdmissionStopped(shortsUnverified());
@@ -2379,13 +2388,18 @@ export async function submitConsumerShorts(
     return videoPreflightError(error);
   }
 }
-/** Read-only: one session's status (verified status schema first). */
+/** Read-only: one session's status, through the connected-toolset guard (#226)
+ * and then the Shorts contract check. The session read is the Shorts tool's own
+ * — a Shorts session is not a job id, so job_status has nothing to say about it —
+ * but it is refused the same way when the tool is not advertised, or advertises
+ * arguments other than the ones we send, rather than being called blind. */
 export async function readConsumerShortsSession(accessToken: string, sessionId: string, expectedWorkspaceId: string, options: Options = {}): Promise<QualificationValue> {
   consumerVideoJobId(sessionId);
   const expected = videoWorkspaceId(expectedWorkspaceId);
   try {
     return await withConsumerSession(accessToken, options, QUALIFICATION_LIMITS.timeoutMs, async (session) => {
       matchingWorkspace(parseConsumerVideoWorkspace(videoReadResult(session, await session.videoWorkspaces())), expected);
+      await requireConnectedTools(session, [{ name: SHORTS_TOOLS.status, args: { session_id: sessionId } }]);
       if (!shortsStatusSchemaMatches((await sessionToolSchemas(session, [SHORTS_TOOLS.status])).get(SHORTS_TOOLS.status)))
         throw new ConsumerAdmissionStopped(shortsUnverified());
       return videoReadResult(session, await session.shortsCall("status", { session_id: sessionId }));
@@ -2395,8 +2409,12 @@ export async function readConsumerShortsSession(accessToken: string, sessionId: 
     return videoPreflightError(error);
   }
 }
-/** Read-only: `job_status` for the given clip jobs of one session (at most the
- * clip cap), in one bounded MCP session. Each envelope must be for its job. */
+/** Read-only: the status of the given clip jobs of one session (at most the
+ * clip cap), in one bounded MCP session. A Shorts clip is an ordinary video job,
+ * so it reads through the same guarded path as every other product (#226):
+ * job_status when the connection advertises it, else job_display or jobs_wait
+ * normalized to the envelope this collector qualifies. No advertised status
+ * tool refuses the poll; it is never called blind. */
 export async function readConsumerShortsClips(accessToken: string, clipJobIds: readonly string[], expectedWorkspaceId: string, options: Options = {}): Promise<{ jobId: string; raw: QualificationValue }[]> {
   if (!Array.isArray(clipJobIds) || clipJobIds.length > SHORTS_LIMITS.clips) throw new ConsumerVideoError("invalid_job");
   const ids = clipJobIds.map((id) => consumerVideoJobId(id));
@@ -2407,7 +2425,7 @@ export async function readConsumerShortsClips(accessToken: string, clipJobIds: r
       const out: { jobId: string; raw: QualificationValue }[] = [];
       for (const jobId of ids) {
         if (!session.active()) throw new ConsumerVideoError("preflight_unavailable");
-        const raw = videoReadResult(session, await session.generationStatus(jobId));
+        const raw = await readConnectedStatus(session, jobId, { type: "video" });
         if (object(raw) && object(raw.generation)) {
           const generation = raw.generation;
           if (("id" in generation && consumerVideoJobId(generation.id) !== jobId) || ("type" in generation && generation.type !== "video"))
